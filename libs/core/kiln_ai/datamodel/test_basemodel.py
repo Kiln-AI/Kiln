@@ -1379,6 +1379,99 @@ def test_all_children_of_parent_path_single_parent_type(tmp_path):
     assert names == {"Child1", "Child2"}
 
 
+def write_unloadable_child(parent: BaseParentExample, dirname: str) -> Path:
+    """Write a child file this build refuses to load, as a newer Kiln might produce.
+
+    Uses a schema version above `max_schema_version`, the mechanism Kiln already has for
+    "this file was written by a build you don't have".
+    """
+    assert parent.path is not None
+    child_dir = parent.path.parent / "children" / dirname
+    child_dir.mkdir(parents=True)
+    child_file = child_dir / DefaultParentedModel.base_filename()
+    child_file.write_text(
+        json.dumps({"v": 99, "id": dirname, "model_type": "default_parented_model"})
+    )
+    return child_file
+
+
+def test_all_children_with_errors_all_loadable(tmp_path):
+    parent = BaseParentExample(path=tmp_path / "parent.kiln")
+    parent.save_to_file()
+    DefaultParentedModel(parent=parent, name="Child1").save_to_file()
+    DefaultParentedModel(parent=parent, name="Child2").save_to_file()
+
+    children, errors = DefaultParentedModel.all_children_of_parent_path_with_errors(
+        parent.path
+    )
+
+    assert {child.name for child in children} == {"Child1", "Child2"}
+    assert errors == []
+
+
+def test_all_children_with_errors_one_bad_among_several(tmp_path):
+    parent = BaseParentExample(path=tmp_path / "parent.kiln")
+    parent.save_to_file()
+    DefaultParentedModel(parent=parent, name="Child1").save_to_file()
+    DefaultParentedModel(parent=parent, name="Child2").save_to_file()
+    DefaultParentedModel(parent=parent, name="Child3").save_to_file()
+    bad_path = write_unloadable_child(parent, "from_the_future")
+
+    children, errors = DefaultParentedModel.all_children_of_parent_path_with_errors(
+        parent.path
+    )
+
+    assert {child.name for child in children} == {"Child1", "Child2", "Child3"}
+    assert [error.path for error in errors] == [bad_path]
+    assert "Upgrade kiln to the latest version" in errors[0].message
+
+
+def test_all_children_with_errors_all_bad(tmp_path):
+    parent = BaseParentExample(path=tmp_path / "parent.kiln")
+    parent.save_to_file()
+    bad_paths = {
+        write_unloadable_child(parent, "bad1"),
+        write_unloadable_child(parent, "bad2"),
+    }
+
+    children, errors = DefaultParentedModel.all_children_of_parent_path_with_errors(
+        parent.path
+    )
+
+    assert children == []
+    assert {error.path for error in errors} == bad_paths
+    assert all(error.message for error in errors)
+
+
+def test_all_children_with_errors_no_children(tmp_path):
+    parent = BaseParentExample(path=tmp_path / "parent.kiln")
+    parent.save_to_file()
+
+    assert DefaultParentedModel.all_children_of_parent_path_with_errors(
+        parent.path
+    ) == (
+        [],
+        [],
+    )
+
+
+def test_all_children_of_parent_path_still_raises_on_bad_child(tmp_path):
+    """The fail-fast API keeps failing where the partial-load API returns partial results."""
+    parent = BaseParentExample(path=tmp_path / "parent.kiln")
+    parent.save_to_file()
+    DefaultParentedModel(parent=parent, name="Child1").save_to_file()
+    write_unloadable_child(parent, "from_the_future")
+
+    with pytest.raises(ValueError, match="Upgrade kiln to the latest version"):
+        DefaultParentedModel.all_children_of_parent_path(parent.path)
+
+    children, errors = DefaultParentedModel.all_children_of_parent_path_with_errors(
+        parent.path
+    )
+    assert [child.name for child in children] == ["Child1"]
+    assert len(errors) == 1
+
+
 def test_created_at_is_timezone_aware():
     model = KilnBaseModel()
     assert model.created_at.tzinfo is not None

@@ -1,0 +1,19 @@
+{
+  "v": 1,
+  "id": "934331727063",
+  "created_at": "2026-08-17T22:11:15.267955Z",
+  "created_by": "root",
+  "name": "Hybrid Search - Vector and Full-Text",
+  "description": "LanceDB hybrid search: vector plus full-text. Vector queries need a live embedding call, so a sandbox with no API key can rebuild this index but cannot search it.",
+  "store_type": "lancedb_hybrid",
+  "properties": {
+    "store_type": "lancedb_hybrid",
+    "similarity_top_k": 5,
+    "overfetch_factor": 1,
+    "vector_column_name": "vector",
+    "text_key": "text",
+    "doc_id_key": "doc_id",
+    "nprobes": 20
+  },
+  "model_type": "vector_store_config"
+}

@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "272140150332",
+  "created_at": "2026-08-17T21:29:01.750588Z",
+  "created_by": "root",
+  "dataset_id": "122030456526",
+  "task_run_config_id": null,
+  "eval_config_eval": true,
+  "input": "{\"subject\": \"API returning 429 on every request since 9am\", \"body\": \"Every call to /v2/events comes back 429 with Retry-After 60, including single requests after ten minutes of no traffic. Our nightly sync is now four hours behind. Nothing changed on our side.\", \"customer_plan\": \"enterprise\"}",
+  "output": "{\"team\": \"technical_support\", \"priority\": \"high\", \"needs_human_review\": true, \"summary\": \"Enterprise customer has been receiving 429s on all /v2/events requests since 9am with no traffic, causing a 4-hour sync backlog—investigate possible rate limiter misconfiguration or platform incident.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output does **not** exhibit the desired behaviour.\n\n- The ticket is a technical/platform issue: an enterprise customer is getting 429s on `/v2/events` and their sync is behind.\n- It is urgent, but it does **not** involve a security or privacy incident, cross-tenant data exposure, suspicious login, billing dispute, or legal/regulatory threat.\n- According to the desired behaviour, an urgent outage or bug report should have `\"needs_human_review\": false`; urgency alone does not require human review.\n- The model incorrectly set `\"needs_human_review\": true`, which matches the failure example of flagging true solely because the issue is urgent.\n\nVerdict: **Fail** — the `needs_human_review` flag is incorrect.",
+    "reasoning": "We need answer final. Need return fail/pass maybe with concise."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 0.0
+  },
+  "task_run_usage": {
+    "input_tokens": 247,
+    "output_tokens": 395,
+    "total_tokens": 642,
+    "cost": 0.00014518,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 6279
+  },
+  "model_type": "eval_run"
+}

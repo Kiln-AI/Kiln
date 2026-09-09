@@ -3,9 +3,22 @@
 
   export let options: OptionListItem[] = []
   export let select_option: (id: string) => void
+  // Lay the options out in two columns on wider screens. Rows in the same
+  // grid row stretch to equal height.
+  export let two_columns: boolean = false
+  // Give every option an identical height sized for a two-line description:
+  // longer text truncates with an ellipsis; a one-line description keeps its
+  // normal distance from the title, with the title+description group centered
+  // vertically. The reserved height is title (1.5rem) + margin (0.125rem) +
+  // two description lines (2 x 1.25rem).
+  export let two_line_descriptions: boolean = false
 </script>
 
-<div class="flex flex-col gap-3">
+<div
+  class={two_columns
+    ? "grid grid-cols-1 lg:grid-cols-2 gap-3"
+    : "flex flex-col gap-3"}
+>
   {#each options as option}
     <button
       type="button"
@@ -21,7 +34,11 @@
             <svelte:component this={option.icon} />
           </div>
         {/if}
-        <div class="flex-1 min-w-0">
+        <div
+          class="flex-1 min-w-0 {two_line_descriptions
+            ? 'min-h-[4.125rem] flex flex-col justify-center'
+            : ''}"
+        >
           <div class="flex items-center gap-2 flex-wrap">
             <span class="font-medium">{option.name}</span>
             {#if option.recommended}
@@ -39,8 +56,15 @@
             {/each}
           </div>
           <div class="text-sm text-gray-500 mt-0.5">
-            {option.description}
+            <span class={two_line_descriptions ? "line-clamp-2" : ""}>
+              {option.description}
+            </span>
           </div>
+          {#if option.disabled && option.disabled_reason}
+            <div class="text-xs text-warning mt-1">
+              {option.disabled_reason}
+            </div>
+          {/if}
         </div>
         <svg
           xmlns="http://www.w3.org/2000/svg"

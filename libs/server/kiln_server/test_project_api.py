@@ -187,7 +187,9 @@ def test_import_project_success(client):
         patch("kiln_ai.datamodel.Project.load_from_file", return_value=mock_project),
         patch("kiln_server.project_api.add_project_to_config") as mock_add,
     ):
-        response = client.post("/api/import_project?project_path=/path/to/project.kiln")
+        response = client.post(
+            "/api/import_project?project_path=/path/to/project.kiln&trusted=true"
+        )
 
     assert response.status_code == 200
     result = response.json()
@@ -199,7 +201,7 @@ def test_import_project_success(client):
 def test_import_project_not_found(client):
     with patch("os.path.exists", return_value=False):
         response = client.post(
-            "/api/import_project?project_path=/nonexistent/path.json"
+            "/api/import_project?project_path=/nonexistent/path.json&trusted=true"
         )
 
     assert response.status_code == 400
@@ -216,7 +218,9 @@ def test_import_project_load_error(client):
             side_effect=Exception("Load error"),
         ),
     ):
-        response = client.post("/api/import_project?project_path=/path/to/project.kiln")
+        response = client.post(
+            "/api/import_project?project_path=/path/to/project.kiln&trusted=true"
+        )
 
     assert response.status_code == 500
     assert response.json() == {
@@ -238,7 +242,9 @@ def test_import_project_duplicate_same_path(client):
             ),
         ),
     ):
-        response = client.post("/api/import_project?project_path=/path/to/project.kiln")
+        response = client.post(
+            "/api/import_project?project_path=/path/to/project.kiln&trusted=true"
+        )
 
     assert response.status_code == 409
     assert response.json()["message"] == "This project is already imported."
@@ -259,7 +265,9 @@ def test_import_project_duplicate_different_path(client):
             ),
         ),
     ):
-        response = client.post("/api/import_project?project_path=/path/to/project.kiln")
+        response = client.post(
+            "/api/import_project?project_path=/path/to/project.kiln&trusted=true"
+        )
 
     assert response.status_code == 409
     assert "remove project" in response.json()["message"]
@@ -293,7 +301,7 @@ def test_import_project_duplicate_remove_conflicting_id_success(client):
         patch("kiln_server.project_api.add_project_to_config") as mock_add,
     ):
         response = client.post(
-            "/api/import_project?project_path=/new/path/project.kiln&remove_conflicting_id=true"
+            "/api/import_project?project_path=/new/path/project.kiln&remove_conflicting_id=true&trusted=true"
         )
 
     assert response.status_code == 200
@@ -319,7 +327,7 @@ def test_import_project_duplicate_remove_conflicting_id_false_still_409(client):
         ),
     ):
         response = client.post(
-            "/api/import_project?project_path=/path/to/project.kiln&remove_conflicting_id=false"
+            "/api/import_project?project_path=/path/to/project.kiln&remove_conflicting_id=false&trusted=true"
         )
 
     assert response.status_code == 409
@@ -354,7 +362,7 @@ def test_import_project_duplicate_same_path_remove_conflicting_id(client):
         patch("kiln_server.project_api.add_project_to_config") as mock_add,
     ):
         response = client.post(
-            "/api/import_project?project_path=/path/to/project.kiln&remove_conflicting_id=true"
+            "/api/import_project?project_path=/path/to/project.kiln&remove_conflicting_id=true&trusted=true"
         )
 
     assert response.status_code == 200
@@ -375,7 +383,7 @@ def test_import_project_remove_conflicting_id_no_conflict(client):
         patch("kiln_server.project_api.add_project_to_config") as mock_add,
     ):
         response = client.post(
-            "/api/import_project?project_path=/path/to/project.kiln&remove_conflicting_id=true"
+            "/api/import_project?project_path=/path/to/project.kiln&remove_conflicting_id=true&trusted=true"
         )
 
     assert response.status_code == 200
@@ -384,8 +392,22 @@ def test_import_project_remove_conflicting_id_no_conflict(client):
     mock_add.assert_called_once_with("/path/to/project.kiln")
 
 
+def test_import_project_rejected_when_not_trusted(client):
+    response = client.post("/api/import_project?project_path=/path/to/project.kiln")
+    assert response.status_code == 400
+    assert "you must confirm you trust" in response.json()["message"].lower()
+
+
+def test_import_project_rejected_when_trusted_false(client):
+    response = client.post(
+        "/api/import_project?project_path=/path/to/project.kiln&trusted=false"
+    )
+    assert response.status_code == 400
+    assert "you must confirm you trust" in response.json()["message"].lower()
+
+
 def test_import_project_missing_path(client):
-    response = client.post("/api/import_project")
+    response = client.post("/api/import_project?trusted=true")
 
     assert response.status_code == 422
     assert "project_path" in response.text

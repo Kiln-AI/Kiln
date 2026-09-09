@@ -6,7 +6,7 @@
     EvalRunResult,
     Eval,
     EvalConfig,
-    EvalRun,
+    EvalRunWithTrace,
     TaskRunConfig,
   } from "$lib/types"
   import { isKilnAgentRunConfig } from "$lib/types"
@@ -15,7 +15,15 @@
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
-  import { eval_config_to_ui_name } from "$lib/utils/formatters"
+  import { eval_split_filter_id } from "$lib/utils/eval_splits"
+  import {
+    eval_config_to_ui_name,
+    eval_config_to_detailed_ui_name,
+  } from "$lib/utils/formatters"
+  import {
+    getV2TypeFromEvalConfig,
+    getV2EvalTypeMetadata,
+  } from "$lib/utils/eval_types/registry"
   import {
     get_task_composite_id,
     model_info,
@@ -47,7 +55,7 @@
   let results_loading = true
   let peek_dialog: Dialog | null = null
   let thinking_dialog: Dialog | null = null
-  let displayed_result: EvalRun | null = null
+  let displayed_result: EvalRunWithTrace | null = null
 
   onMount(() => {
     peek_dialog?.show()
@@ -99,6 +107,9 @@
               eval_config_id: req_eval_config_id,
               run_config_id: req_run_config_id,
             },
+            // This page renders the eval's test split, which is what it has always
+            // shown. Train and val are not surfaced in the UI (functional spec 4.4).
+            query: { split: "test" },
           },
         },
       )
@@ -144,9 +155,12 @@
     if (!run_config || !evaluator) {
       return {}
     }
-    const base = {
+    const base: Record<string, string> = {
       "Run Configuration Name": run_config.name,
-      "Task Inputs From Dataset": evaluator.eval_set_filter_id,
+    }
+    const test_filter_id = eval_split_filter_id(evaluator, "test")
+    if (test_filter_id) {
+      base["Task Inputs From Dataset"] = test_filter_id
     }
     if (!isKilnAgentRunConfig(run_config.run_config_properties)) {
       return {
@@ -180,13 +194,31 @@
     if (!evaluator || !eval_config) {
       return {}
     }
+    if (eval_config.config_type === "v2") {
+      return {
+        "Judge Name": eval_config.name,
+        "Judge Type": eval_config_to_detailed_ui_name(eval_config),
+      }
+    }
     return {
       "Judge Name": eval_config.name,
       "Judge Algorithm": eval_config_to_ui_name(eval_config.config_type),
-      "Judge Model": model_name(eval_config.model_name, $model_info),
-      "Model Provider": provider_name_from_id(eval_config.model_provider),
+      "Judge Model": model_name(
+        eval_config.model_name ?? undefined,
+        $model_info,
+      ),
+      "Model Provider": provider_name_from_id(eval_config.model_provider ?? ""),
     }
   }
+
+  $: is_v2_config = results?.eval_config?.config_type === "v2"
+
+  $: v2_result_component = (() => {
+    if (!results?.eval_config) return null
+    const v2type = getV2TypeFromEvalConfig(results.eval_config)
+    if (!v2type) return null
+    return getV2EvalTypeMetadata(v2type).resultRendererComponent
+  })()
 </script>
 
 <AppPage
@@ -255,15 +287,21 @@
         <thead>
           <tr>
             <th>Input & Output</th>
-            <th>Thinking</th>
-            {#each results.eval.output_scores as score}
-              <th class="text-center">
-                {score.name}
-                {#if score.type}
-                  <OutputTypeTablePreview output_score_type={score.type} />
-                {/if}
-              </th>
-            {/each}
+            {#if !is_v2_config}
+              <th>Thinking</th>
+            {/if}
+            {#if is_v2_config && v2_result_component}
+              <th>Result</th>
+            {:else}
+              {#each results.eval.output_scores as score}
+                <th class="text-center">
+                  {score.name}
+                  {#if score.type}
+                    <OutputTypeTablePreview output_score_type={score.type} />
+                  {/if}
+                </th>
+              {/each}
+            {/if}
           </tr>
         </thead>
         <tbody>
@@ -272,57 +310,76 @@
               <td>
                 <div class="font-medium">Input:</div>
                 <div>
-                  {result.input}
+                  <!-- Both are nullable: a dangling trace reference, or a skipped run
+                       whose dataset item is gone. Svelte stringifies null to "null". -->
+                  {result.input ?? ""}
                 </div>
-                {#if result.reference_answer}
+                {#if result.eval_run.reference_answer}
                   <div class="font-medium mt-4">Reference Answer:</div>
                   <div>
-                    {result.reference_answer}
+                    {result.eval_run.reference_answer}
                   </div>
                 {/if}
                 <div class="font-medium mt-4">Output:</div>
                 <div>
-                  {result.output}
+                  {result.output ?? ""}
                 </div>
               </td>
-              <td>
-                {#if result.intermediate_outputs?.reasoning || result.intermediate_outputs?.chain_of_thought}
-                  <div class="max-w-[600px] min-w-[200px]">
-                    <div class="max-h-[140px] overflow-y-hidden relative">
-                      {result.intermediate_outputs?.reasoning ||
-                        result.intermediate_outputs?.chain_of_thought ||
-                        "N/A"}
-                      <div class="absolute bottom-0 left-0 w-full">
-                        <div
-                          class="h-36 bg-gradient-to-t from-white to-transparent"
-                        ></div>
-                        <div
-                          class="text-center bg-white font-medium font-sm text-gray-500"
-                        >
-                          <button
-                            class="text-gray-500"
-                            on:click={() => {
-                              displayed_result = result
-                              thinking_dialog?.show()
-                            }}
+              {#if !is_v2_config}
+                <td>
+                  {#if result.eval_run.intermediate_outputs?.reasoning || result.eval_run.intermediate_outputs?.chain_of_thought}
+                    <div class="max-w-[600px] min-w-[200px]">
+                      <div class="max-h-[140px] overflow-y-hidden relative">
+                        {result.eval_run.intermediate_outputs?.reasoning ||
+                          result.eval_run.intermediate_outputs
+                            ?.chain_of_thought ||
+                          "N/A"}
+                        <div class="absolute bottom-0 left-0 w-full">
+                          <div
+                            class="h-36 bg-gradient-to-t from-white to-transparent"
+                          ></div>
+                          <div
+                            class="text-center bg-white font-medium font-sm text-gray-500"
                           >
-                            See all
-                          </button>
+                            <button
+                              class="text-gray-500"
+                              on:click={() => {
+                                displayed_result = result
+                                thinking_dialog?.show()
+                              }}
+                            >
+                              See all
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                {:else}
-                  N/A
-                {/if}
-              </td>
-              {#each results.eval.output_scores as score}
-                {@const score_value =
-                  result.scores[string_to_json_key(score.name)]}
-                <td class="text-center">
-                  {score_value != null ? score_value.toFixed(2) : "N/A"}
+                  {:else}
+                    N/A
+                  {/if}
                 </td>
-              {/each}
+              {/if}
+              {#if is_v2_config && v2_result_component}
+                <td>
+                  <svelte:component
+                    this={v2_result_component}
+                    scores={result.eval_run.scores}
+                    skipped_reason={result.eval_run.skipped_reason ?? null}
+                    skipped_detail={result.eval_run.skipped_detail ?? null}
+                    eval_config={results.eval_config}
+                    intermediate_outputs={result.eval_run
+                      .intermediate_outputs ?? null}
+                  />
+                </td>
+              {:else}
+                {#each results.eval.output_scores as score}
+                  {@const score_value =
+                    result.eval_run.scores[string_to_json_key(score.name)]}
+                  <td class="text-center">
+                    {score_value != null ? score_value.toFixed(2) : "N/A"}
+                  </td>
+                {/each}
+              {/if}
             </tr>
           {/each}
         </tbody>
@@ -368,19 +425,10 @@
   </div>
 </Dialog>
 
-<Dialog
-  bind:this={thinking_dialog}
-  title="Thinking Output"
-  action_buttons={[
-    {
-      label: "Close",
-      isCancel: true,
-    },
-  ]}
->
+<Dialog bind:this={thinking_dialog} title="Thinking Output">
   <div class="font-light text-sm whitespace-pre-wrap">
-    {displayed_result?.intermediate_outputs?.reasoning ||
-      displayed_result?.intermediate_outputs?.chain_of_thought ||
+    {displayed_result?.eval_run.intermediate_outputs?.reasoning ||
+      displayed_result?.eval_run.intermediate_outputs?.chain_of_thought ||
       "N/A"}
   </div>
 </Dialog>

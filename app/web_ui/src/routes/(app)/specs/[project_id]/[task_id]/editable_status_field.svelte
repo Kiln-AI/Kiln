@@ -1,29 +1,32 @@
 <script lang="ts">
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
-  import type { SpecStatus, Spec } from "$lib/types"
+  import type { Eval, EvalStatus } from "$lib/types"
   import { capitalize } from "$lib/utils/formatters"
   import EditableFieldBase from "./editable_field_base.svelte"
 
-  export let spec: Spec
+  // Status lives on the eval (the server resolves legacy spec-backed evals
+  // on read, so `status` is always concrete here despite the nullable type).
+  export let evaluator: Eval
   export let options: OptionGroup[]
   export let aria_label: string = "Status"
-  export let onUpdate: (spec: Spec, value: SpecStatus) => void
+  export let onUpdate: (evaluator: Eval, value: EvalStatus) => void
   export let compact: boolean = false
   export let onOpen: (() => void) | undefined = undefined
 
-  let baseComponent: EditableFieldBase<SpecStatus>
-  let currentValue: SpecStatus = spec.status
-  let lastSyncedSpecValue: SpecStatus = spec.status
+  let baseComponent: EditableFieldBase<EvalStatus>
+  let currentValue: EvalStatus = evaluator.status ?? "active"
+  let lastSyncedValue: EvalStatus = currentValue
 
   $: {
-    if (spec.status !== lastSyncedSpecValue) {
-      lastSyncedSpecValue = spec.status
-      currentValue = spec.status
+    const evaluator_status = evaluator.status ?? "active"
+    if (evaluator_status !== lastSyncedValue) {
+      lastSyncedValue = evaluator_status
+      currentValue = evaluator_status
       baseComponent?.setPendingComplete()
     }
   }
 
-  $: if (currentValue !== lastSyncedSpecValue && baseComponent) {
+  $: if (currentValue !== lastSyncedValue && baseComponent) {
     baseComponent.triggerUpdate()
   }
 
@@ -34,7 +37,7 @@
 
 <EditableFieldBase
   bind:this={baseComponent}
-  {spec}
+  {evaluator}
   bind:currentValue
   {options}
   {aria_label}

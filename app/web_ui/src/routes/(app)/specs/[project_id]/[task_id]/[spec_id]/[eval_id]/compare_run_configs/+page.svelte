@@ -601,7 +601,7 @@
 <CreateNewRunConfigDialog
   bind:this={create_new_run_config_dialog}
   subtitle="Your evaluator can compare multiple run configurations to find which one produces
-    the highest scores on your eval dataset."
+    the highest scores on your eval's test dataset."
   {project_id}
   {task}
   new_run_config_created={async () => {

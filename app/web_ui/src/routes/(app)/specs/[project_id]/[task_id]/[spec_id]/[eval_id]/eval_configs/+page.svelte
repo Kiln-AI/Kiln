@@ -8,24 +8,23 @@
   import RunEval from "$lib/components/run_eval.svelte"
   import type { EvalConfig, EvalConfigCompareSummary } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
-  import {
-    model_info,
-    load_model_info,
-    model_name,
-    provider_name_from_id,
-    load_available_models,
-  } from "$lib/stores"
+  import { load_model_info, load_available_models } from "$lib/stores"
   import { load_task_prompts } from "$lib/stores/prompts_store"
   import { set_current_eval_config } from "$lib/stores/evals_store"
   import Warning from "$lib/ui/warning.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
-  import EvalConfigInstruction from "./eval_config_instruction.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
-  import { eval_config_to_ui_name } from "$lib/utils/formatters"
+  import { eval_config_to_detailed_ui_name } from "$lib/utils/formatters"
   import type { TaskOutputRatingType } from "$lib/types"
   import type { UiProperty } from "$lib/ui/property_list"
   import Intro from "$lib/ui/intro.svelte"
+  import EvalConfigInstruction from "./eval_config_instruction.svelte"
+  import ClampedText from "$lib/ui/clamped_text.svelte"
+  import {
+    comparable_eval_configs,
+    compute_run_disallowed_missing_ref_data,
+  } from "$lib/utils/eval_types/judge_comparison_gate"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -49,6 +48,12 @@
 
   let eval_config_instructions_dialog: Dialog | null = null
   let displayed_eval_config: EvalConfig | null = null
+  $: displayed_eval_config_dialog_title = displayed_eval_config
+    ? `Details for Judge '${displayed_eval_config.name}'`
+    : "Details for Judge"
+  $: displayed_eval_config_dialog_subtitle = displayed_eval_config
+    ? `${eval_config_type_label(displayed_eval_config)}`
+    : undefined
 
   let eval_configs: EvalConfig[] | null = null
   let eval_configs_error: KilnError | null = null
@@ -77,15 +82,19 @@
     | "running"
     | "complete"
     | "complete_with_errors" = "not_started"
+  // The judges this page can actually compare. A judge that grades against reference
+  // data is excluded everywhere the page reasons about completion or about picking a
+  // winner: judge comparison never scores it, so counting it would either report a
+  // completion it can't reach or nudge the user to crown a judge with no scores.
+  $: comparable_configs = comparable_eval_configs(eval_configs, evaluator)
   $: should_select_eval_config = !!(
-    eval_configs?.length && !evaluator?.current_config_id
+    comparable_configs.length && !evaluator?.current_config_id
   )
   $: focus_select_eval_config = !!(
     should_select_eval_config &&
     (eval_state?.includes("complete") ||
-      (eval_configs &&
-        score_summary &&
-        eval_configs.every(
+      (score_summary &&
+        comparable_configs.every(
           (config) =>
             (score_summary!.eval_config_percent_complete?.["" + config.id] ||
               0.0) >= 1.0,
@@ -451,6 +460,7 @@
 
   function incomplete_warning(
     score_summary: EvalConfigCompareSummary | null,
+    comparable_configs: EvalConfig[],
   ): string[] {
     if (!score_summary) {
       return []
@@ -473,17 +483,29 @@
       )
     }
 
-    const completion_values = Object.values(
-      score_summary.eval_config_percent_complete,
-    )
-    const minComplete =
-      completion_values.length > 0
-        ? completion_values.reduce((min, val) => Math.min(min, val), 1.0)
-        : 1.0
-    if (minComplete < 1.0) {
-      warnings.push(
-        "You evals are incomplete. Click 'Run All Evals' to generate scores for the missing items.",
+    // Only the judges "Run All Evals" will actually run. A judge that grades against
+    // reference data never completes here, so counting it would leave this warning
+    // permanently on screen telling the user to click a button that skips it.
+    //
+    // Skipped entirely for an empty golden dataset: the server returns
+    // `eval_config_percent_complete: {}` in that case, and reading a missing entry as 0%
+    // would stack "click Run All Evals to generate the missing scores" on top of the
+    // "there are zero items in your golden dataset" warning above, where there is
+    // nothing to run.
+    if (score_summary.dataset_size > 0) {
+      const completion_values = comparable_configs.map(
+        (config) =>
+          score_summary.eval_config_percent_complete?.["" + config.id] || 0.0,
       )
+      const minComplete =
+        completion_values.length > 0
+          ? completion_values.reduce((min, val) => Math.min(min, val), 1.0)
+          : 1.0
+      if (minComplete < 1.0) {
+        warnings.push(
+          "You evals are incomplete. Click 'Run All Evals' to generate scores for the missing items.",
+        )
+      }
     }
 
     return warnings
@@ -500,6 +522,14 @@
     } catch (error) {
       eval_error = createKilnError(error)
     }
+  }
+
+  function eval_config_type_label(eval_config: EvalConfig): string {
+    if (eval_config.config_type === "v2") {
+      return eval_config_to_detailed_ui_name(eval_config)
+    }
+    // V1 g_eval and llm_as_judge both show as "LLM as Judge"
+    return "LLM as Judge"
   }
 
   function info_tooltip_text(
@@ -673,14 +703,14 @@
 
         <!-- Warn the user if some evals are incomplete -->
 
-        {#if incomplete_warning(score_summary).length}
+        {#if incomplete_warning(score_summary, comparable_configs).length}
           <div class="mt-6 mb-4">
             <Warning
               warning_message={`There are issues you should resolve before analyzing this data.`}
               tight={true}
             />
             <ul class="list-disc list-inside text-sm text-gray-500 pl-2 pt-2">
-              {#each incomplete_warning(score_summary) as warning}
+              {#each incomplete_warning(score_summary, comparable_configs) as warning}
                 <li>{warning}</li>
               {/each}
             </ul>
@@ -701,14 +731,14 @@
           <table class="table table-fixed">
             <thead>
               <tr>
-                <th class="max-w-[400px]">
+                <th class="w-[200px] max-w-[250px]">
                   <div>Judge</div>
                   <div class="font-normal">How task output is evaluated</div>
                 </th>
-                <th class="text-center">Status</th>
-                <th> Eval Instructions </th>
+                <th class="text-center w-[160px]">Status</th>
+                <th class="w-auto">Eval Details</th>
                 {#each evaluator.output_scores as output_score}
-                  <th class="text-center">
+                  <th class="text-center w-[130px]">
                     {output_score.name}
                     {#if output_score.type}
                       <InfoTooltip
@@ -729,25 +759,37 @@
                   score_summary?.eval_config_percent_complete?.[
                     "" + eval_config.id
                   ] || 0.0}
+                {@const run_disallowed_missing_ref_data =
+                  compute_run_disallowed_missing_ref_data(
+                    eval_config,
+                    evaluator,
+                  )}
                 <tr>
-                  <td class="max-w-[400px]">
-                    <div class="font-medium">
-                      {model_name(eval_config?.model_name, $model_info)}
+                  <td class="max-w-[250px]">
+                    <div class="font-medium break-words">
+                      {eval_config.name}
                     </div>
                     <div class="text-sm text-gray-500">
-                      Method: {eval_config_to_ui_name(eval_config.config_type)}
+                      Type: {eval_config_type_label(eval_config)}
                     </div>
-                    <div class="text-sm text-gray-500">
-                      Provider: {provider_name_from_id(
-                        eval_config?.model_provider,
-                      )}
-                    </div>
-                    <div class="text-sm text-gray-500">
-                      Name: {eval_config.name}
-                    </div>
+                    {#if run_disallowed_missing_ref_data}
+                      <div class="mt-2">
+                        <Warning
+                          warning_message="This judge requires reference data, which is not populated. It can't be run or compared here."
+                          warning_color="warning"
+                          tight={true}
+                          text_size="xs"
+                        />
+                      </div>
+                    {/if}
                   </td>
                   <td class="text-center text-sm">
-                    {#if percent_complete < 1.0}
+                    {#if run_disallowed_missing_ref_data}
+                      <!-- Neither complete nor behind: a percentage in error red would
+                           read as something to fix, and the row's warning already says
+                           this judge is one the comparison skips. -->
+                      <div class="text-gray-500">Not comparable</div>
+                    {:else if percent_complete < 1.0}
                       <div class="text-error">
                         {(percent_complete * 100.0).toFixed(0)}% Complete
                       </div>
@@ -765,7 +807,8 @@
                       </button>
                     {:else}
                       <button
-                        class="btn btn-xs rounded-full mt-1 min-w-[120px] {focus_select_eval_config
+                        class="btn btn-xs rounded-full mt-1 min-w-[120px] {focus_select_eval_config &&
+                        !run_disallowed_missing_ref_data
                           ? 'btn-primary'
                           : 'btn-secondary btn-outline'}"
                         on:click={() => {
@@ -779,28 +822,16 @@
                     {/if}
                   </td>
                   <td>
-                    <div class="max-w-[600px] min-w-[200px]">
-                      <div class="max-h-[140px] overflow-y-hidden relative">
+                    <div class="min-w-[300px]">
+                      <ClampedText
+                        max_lines={5}
+                        on:see_all={() => {
+                          displayed_eval_config = eval_config
+                          eval_config_instructions_dialog?.show()
+                        }}
+                      >
                         <EvalConfigInstruction {eval_config} />
-                        <div class="absolute bottom-0 left-0 w-full">
-                          <div
-                            class="h-36 bg-gradient-to-t from-white to-transparent"
-                          ></div>
-                          <div
-                            class="text-center bg-white font-medium font-sm text-gray-500"
-                          >
-                            <button
-                              class="text-gray-500"
-                              on:click={() => {
-                                displayed_eval_config = eval_config
-                                eval_config_instructions_dialog?.show()
-                              }}
-                            >
-                              See all
-                            </button>
-                          </div>
-                        </div>
-                      </div>
+                      </ClampedText>
                     </div>
                   </td>
                   {#each evaluator.output_scores as output_score}
@@ -848,10 +879,12 @@
                         {/if}
                       {:else}
                         None
-                        <InfoTooltip
-                          tooltip_text="No scores were found for this judge. Click 'Run All Evals' to generate scores and ensure your golden dataset has human ratings."
-                          no_pad={true}
-                        />
+                        {#if !run_disallowed_missing_ref_data}
+                          <InfoTooltip
+                            tooltip_text="No scores were found for this judge. Click 'Run All Evals' to generate scores and ensure your golden dataset has human ratings."
+                            no_pad={true}
+                          />
+                        {/if}
                       {/if}
                     </td>
                   {/each}
@@ -883,27 +916,16 @@
 
 <Dialog
   bind:this={eval_config_instructions_dialog}
-  title="Instructions for Judge '{displayed_eval_config?.name}'"
-  action_buttons={[
-    {
-      label: "Close",
-      isCancel: true,
-    },
-  ]}
+  width="wide"
+  title={displayed_eval_config_dialog_title}
+  subtitle={displayed_eval_config_dialog_subtitle}
 >
-  <EvalConfigInstruction bind:eval_config={displayed_eval_config} />
+  {#if displayed_eval_config}
+    <EvalConfigInstruction eval_config={displayed_eval_config} />
+  {/if}
 </Dialog>
 
-<Dialog
-  bind:this={score_legend_dialog}
-  title="How to Compare Judges"
-  action_buttons={[
-    {
-      label: "Close",
-      isCancel: true,
-    },
-  ]}
->
+<Dialog bind:this={score_legend_dialog} title="How to Compare Judges">
   <div class="font-medium text-sm text-gray-500">
     Each score is a correlation score between human ratings and the automated
     judge's scores. Use these scores to find the judge which best matches human

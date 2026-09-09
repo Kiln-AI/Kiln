@@ -1,0 +1,20 @@
+{
+  "v": 1,
+  "id": "118643298183",
+  "created_at": "2026-08-17T22:17:43.774994Z",
+  "created_by": "root",
+  "chunker_config_id": "227908374129",
+  "chunks": [
+    {
+      "content": {
+        "path": "content_126531116475.txt"
+      }
+    },
+    {
+      "content": {
+        "path": "content_284542877607.txt"
+      }
+    }
+  ],
+  "model_type": "chunked_document"
+}

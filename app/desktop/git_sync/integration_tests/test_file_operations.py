@@ -56,7 +56,7 @@ class TestGitignoreFiles:
 
     @pytest.mark.asyncio
     async def test_gitignore_files_not_committed(self, write_ctx, git_repos):
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
 
         commit_in_repo(local_path, ".gitignore", "*.tmp\n", "add gitignore")
         push_from(local_path)

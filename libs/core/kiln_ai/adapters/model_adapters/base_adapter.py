@@ -54,16 +54,8 @@ from kiln_ai.datamodel.run_config import (
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX, skill_id_from_tool_id
-
-# Import agent run context for run lifecycle management
-from kiln_ai.run_context import (
-    clear_agent_run_id,
-    generate_agent_run_id,
-    get_agent_run_id,
-    set_agent_run_id,
-)
 from kiln_ai.tools import KilnToolInterface
-from kiln_ai.tools.mcp_session_manager import MCPSessionManager
+from kiln_ai.tools.mcp_session_manager import mcp_session_scope
 from kiln_ai.tools.skill_tool import SkillTool
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
@@ -135,6 +127,14 @@ class AdapterConfig:
     requests. This is a cost optimization and does not affect model output.
     """
     automatic_prompt_caching: bool = False
+
+    """
+    When True, thinking instructions from the prompt builder are forwarded
+    into the user message for reasoning models instead of being silently
+    dropped. This is useful for eval runs that need to replicate the exact
+    prompt seen during task execution.
+    """
+    forward_thinking_instructions: bool = False
 
 
 class BaseAdapter(metaclass=ABCMeta):
@@ -365,25 +365,10 @@ class BaseAdapter(metaclass=ABCMeta):
         prior_trace: list[ChatCompletionMessageParam] | None = None,
         parent_task_run: TaskRun | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
-        # Determine if this is the root agent (no existing run context)
-        is_root_agent = get_agent_run_id() is None
-
-        if is_root_agent:
-            run_id = generate_agent_run_id()
-            set_agent_run_id(run_id)
-
-        try:
+        async with mcp_session_scope():
             return await self._run_returning_run_output(
                 input, input_source, prior_trace, parent_task_run
             )
-        finally:
-            if is_root_agent:
-                try:
-                    run_id = get_agent_run_id()
-                    if run_id:
-                        await MCPSessionManager.shared().cleanup_session(run_id)
-                finally:
-                    clear_agent_run_id()
 
     def invoke_openai_stream(
         self,
@@ -698,6 +683,7 @@ class BaseAdapter(metaclass=ABCMeta):
                 system_message=system_message,
                 user_input=input,
                 thinking_instructions=cot_prompt,
+                forward_thinking_instructions=self.base_adapter_config.forward_thinking_instructions,
             )
         else:
             # Unstructured output with COT
@@ -707,6 +693,7 @@ class BaseAdapter(metaclass=ABCMeta):
                 system_message=system_message,
                 user_input=input,
                 thinking_instructions=cot_prompt,
+                forward_thinking_instructions=self.base_adapter_config.forward_thinking_instructions,
             )
 
     # create a run and task output
@@ -822,32 +809,59 @@ class BaseAdapter(metaclass=ABCMeta):
         if tool_config is None or tool_config.tools is None:
             return []
 
-        non_skill_tool_ids = [
-            tid for tid in tool_config.tools if not tid.startswith(SKILL_TOOL_ID_PREFIX)
-        ]
+        return await assemble_unique_agent_tools(
+            self.task, tool_config.tools, self._resolve_skills()
+        )
 
-        tools: list[KilnToolInterface] = [
-            tool_from_id(tool_id, self.task) for tool_id in non_skill_tool_ids
-        ]
 
-        skills = self._resolve_skills()
-        if skills:
-            seen_names: set[str] = set()
-            for skill in skills:
-                if skill.name in seen_names:
-                    raise ValueError(
-                        f"Duplicate skill name '{skill.name}'. Each skill must have a unique name."
-                    )
-                seen_names.add(skill.name)
-            tools.append(SkillTool(f"{SKILL_TOOL_ID_PREFIX}_combined", skills))
+async def assemble_unique_agent_tools(
+    task: Task, tool_ids: list[str], skills: list[Skill]
+) -> list[KilnToolInterface]:
+    """Resolve a run config's tool IDs into tool instances, rejecting name collisions.
 
-        tool_names = [await tool.name() for tool in tools]
-        if len(tool_names) != len(set(tool_names)):
-            raise ValueError(
-                "Each tool must have a unique name. Either de-select the duplicate tools, or modify their names to describe their unique purpose. Model will struggle if tools do not have descriptive names and tool execution will be undefined."
+    Names may repeat across a project, but within one run config every tool the
+    model sees must have a unique function name (and every attached skill a
+    unique skill name — skills are loaded by name through the single "skill"
+    tool). Shared by creation-time validation of run configs, which catches
+    collisions at selection time, and by the runtime adapter, which stays the
+    backstop for configs whose tools were renamed after creation (e.g. via
+    edit_kiln_task_tool) or that were created outside the API.
+    """
+    non_skill_tool_ids = [
+        tid for tid in tool_ids if not tid.startswith(SKILL_TOOL_ID_PREFIX)
+    ]
+
+    tools: list[KilnToolInterface] = [
+        tool_from_id(tool_id, task) for tool_id in non_skill_tool_ids
+    ]
+
+    if skills:
+        seen_names: set[str] = set()
+        for skill in skills:
+            if skill.name in seen_names:
+                raise ValueError(
+                    f"Duplicate skill name '{skill.name}'. Each skill must have a unique name."
+                )
+            seen_names.add(skill.name)
+        tools.append(SkillTool(f"{SKILL_TOOL_ID_PREFIX}_combined", skills))
+
+    tool_names = [await tool.name() for tool in tools]
+    if len(tool_names) != len(set(tool_names)):
+        duplicates = sorted({n for n in tool_names if tool_names.count(n) > 1})
+        message = (
+            f"Multiple selected tools share the same function name: {', '.join(duplicates)}. "
+            "Each tool must have a unique name. Either de-select the duplicate tools, or "
+            "modify their names to describe their unique purpose. The model will struggle "
+            "if tools do not have descriptive names and tool execution will be undefined."
+        )
+        if skills and "skill" in duplicates:
+            message += (
+                " The name 'skill' is reserved for the tool that loads skills, "
+                "so no other tool may use it while skills are selected."
             )
+        raise ValueError(message)
 
-        return tools
+    return tools
 
 
 class OpenAIStreamResult:
@@ -886,11 +900,7 @@ class OpenAIStreamResult:
 
     async def __aiter__(self) -> AsyncIterator[ModelResponseStream]:
         self._task_run = None
-        is_root_agent = get_agent_run_id() is None
-        if is_root_agent:
-            set_agent_run_id(generate_agent_run_id())
-
-        try:
+        async with mcp_session_scope():
             adapter_stream = self._adapter._prepare_stream(
                 self._input, self._prior_trace
             )
@@ -902,14 +912,6 @@ class OpenAIStreamResult:
             self._task_run = self._adapter._finalize_stream(
                 adapter_stream, self._input, self._input_source, self._parent_task_run
             )
-        finally:
-            if is_root_agent:
-                try:
-                    run_id = get_agent_run_id()
-                    if run_id:
-                        await MCPSessionManager.shared().cleanup_session(run_id)
-                finally:
-                    clear_agent_run_id()
 
 
 class AiSdkStreamResult:
@@ -949,11 +951,7 @@ class AiSdkStreamResult:
 
     async def __aiter__(self) -> AsyncIterator[AiSdkStreamEvent]:
         self._task_run = None
-        is_root_agent = get_agent_run_id() is None
-        if is_root_agent:
-            set_agent_run_id(generate_agent_run_id())
-
-        try:
+        async with mcp_session_scope():
             adapter_stream = self._adapter._prepare_stream(
                 self._input, self._prior_trace
             )
@@ -993,11 +991,3 @@ class AiSdkStreamResult:
             else:
                 for ai_event in converter.finalize():
                     yield ai_event
-        finally:
-            if is_root_agent:
-                try:
-                    run_id = get_agent_run_id()
-                    if run_id:
-                        await MCPSessionManager.shared().cleanup_session(run_id)
-                finally:
-                    clear_agent_run_id()

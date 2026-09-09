@@ -59,22 +59,7 @@
     })
   }
 
-  const sampleRemoteMcpServers: RemoteMcpServer[] = [
-    {
-      name: "Control GitHub",
-      subtitle: "by GitHub",
-      description: "Manage repos, issues, PRs and workflows.",
-      server_url: "https://api.githubcopilot.com/mcp/",
-      headers: [
-        {
-          key: "Authorization",
-          value: "Bearer REPLACE_WITH_GITHUB_PERSONAL_ACCESS_TOKEN",
-          placeholder: "Format: 'Bearer your-token-here'",
-          is_secret: true,
-        },
-      ],
-    },
-  ]
+  const sampleRemoteMcpServers: RemoteMcpServer[] = []
 
   const sampleLocalMcpServers: LocalMcpServer[] = [
     {
@@ -157,6 +142,13 @@
         "Build smarter workflows with Kiln tasks as tools, acting as subtasks.",
       on_click: () => goto(`/tools/${project_id}/add_tools/kiln_task`),
     },
+    {
+      name: "Code Tool",
+      subtitle: "by Kiln",
+      description:
+        "Write a Python function that runs as a tool, and can call other tools.",
+      on_click: () => goto(`/tools/${project_id}/add_tools/code_tool`),
+    },
     ...sampleLocalMcpServers.map((tool) => ({
       ...tool,
       on_click: () => connectLocalMcp(tool),
@@ -229,6 +221,14 @@
               "Allow your tasks to call another Kiln task, as a tool call.",
             button_text: "Create",
             on_click: () => goto(`/tools/${project_id}/add_tools/kiln_task`),
+          },
+          {
+            type: "settings",
+            name: "Code Tool",
+            description:
+              "Write a Python function that runs as a tool, and can call other tools.",
+            button_text: "Create",
+            on_click: () => goto(`/tools/${project_id}/add_tools/code_tool`),
           },
           {
             type: "settings",

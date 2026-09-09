@@ -1,0 +1,9 @@
+{
+  "v": 1,
+  "id": "148834163100",
+  "created_at": "2026-08-17T19:18:39.749993Z",
+  "created_by": "root",
+  "feedback": "Wrong owner: an accidental project deletion is a data-recovery question for technical support, not a security incident. The urgent priority and the human-review flag are both right — losing eighteen months of board reporting data is exactly the irreversible case the instructions call out.",
+  "source": "run-page",
+  "model_type": "feedback"
+}

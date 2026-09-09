@@ -251,11 +251,51 @@ class TwoMessageCotFormatter(ChatFormatter):
 
 
 class SingleTurnR1ThinkingFormatter(ChatFormatter):
+    def __init__(
+        self,
+        system_message: str,
+        user_input: InputType,
+        thinking_instructions: str | None = None,
+        forward_thinking_instructions: bool = False,
+    ) -> None:
+        """SingleTurnR1ThinkingFormatter for reasoning models.
+
+        Args:
+            forward_thinking_instructions: When True, thinking_instructions are
+                appended to the user message so reasoning-model judges receive
+                eval criteria. Default False preserves legacy behavior where
+                thinking_instructions are silently dropped. New callers should
+                pass True.
+        """
+        super().__init__(system_message, user_input, thinking_instructions)
+        self.forward_thinking_instructions = forward_thinking_instructions
+
     def next_turn(self, previous_output: str | None = None) -> Optional[ChatTurn]:
         if self._state == "start":
+            formatted = format_user_message(self.user_input)
+            if self.forward_thinking_instructions and self.thinking_instructions:
+                if "<conversation_history>" in formatted:
+                    user_content = f"{formatted}\n\n{self.thinking_instructions}"
+                else:
+                    user_content = f"The input is:\n<user_input>\n{formatted}\n</user_input>\n\n{self.thinking_instructions}"
+            else:
+                user_content = formatted
+                if (
+                    self.thinking_instructions
+                    and not self.forward_thinking_instructions
+                ):
+                    import warnings
+
+                    warnings.warn(
+                        "SingleTurnR1ThinkingFormatter is dropping thinking_instructions "
+                        "because forward_thinking_instructions is False. New callers "
+                        "should pass forward_thinking_instructions=True.",
+                        DeprecationWarning,
+                        stacklevel=2,
+                    )
             msgs = [
                 BasicChatMessage("system", self.system_message),
-                BasicChatMessage("user", format_user_message(self.user_input)),
+                BasicChatMessage("user", user_content),
             ]
             self._state = "awaiting_final"
             self._messages.extend(msgs)
@@ -356,6 +396,7 @@ def get_chat_formatter(
     system_message: str,
     user_input: InputType,
     thinking_instructions: str | None = None,
+    forward_thinking_instructions: bool = False,
 ) -> ChatFormatter:
     match strategy:
         case ChatStrategy.single_turn:
@@ -369,7 +410,12 @@ def get_chat_formatter(
                 system_message, user_input, thinking_instructions
             )
         case ChatStrategy.single_turn_r1_thinking:
-            return SingleTurnR1ThinkingFormatter(system_message, user_input)
+            return SingleTurnR1ThinkingFormatter(
+                system_message,
+                user_input,
+                thinking_instructions,
+                forward_thinking_instructions=forward_thinking_instructions,
+            )
         case _:
             raise_exhaustive_enum_error(strategy)
 

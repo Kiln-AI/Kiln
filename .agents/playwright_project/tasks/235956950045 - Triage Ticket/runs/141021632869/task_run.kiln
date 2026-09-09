@@ -1,0 +1,123 @@
+{
+  "v": 1,
+  "id": "141021632869",
+  "created_at": "2026-08-17T19:23:23.391639Z",
+  "created_by": "root",
+  "input": "{\"subject\": \"Password reset emails never arrive\", \"body\": \"Three of our users have asked for a password reset today and none of them received the email. Not in spam either. Our own SMTP logs show nothing inbound from you. Everything else about the account works.\", \"customer_plan\": \"pro\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "root"
+    },
+    "run_config_id": null,
+    "run_config": null
+  },
+  "output": {
+    "v": 1,
+    "id": "289791510692",
+    "path": null,
+    "created_at": "2026-08-17T19:23:23.391335Z",
+    "created_by": "root",
+    "output": "{\"team\": \"technical_support\", \"priority\": \"high\", \"needs_human_review\": false, \"summary\": \"Investigate why password reset emails for three PRO users are not arriving, since your SMTP logs show nothing inbound from us while the rest of the account works.\"}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_openai_compatible_adapter",
+        "model_name": "deepseek_4_flash",
+        "model_provider": "openrouter",
+        "prompt_id": "id::281098421169",
+        "structured_output_mode": "json_schema",
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "run_config_id": "140414461876",
+      "run_config": {
+        "type": "kiln_agent",
+        "model_name": "deepseek_4_flash",
+        "model_provider_name": "openrouter",
+        "prompt_id": "id::281098421169",
+        "top_p": 1.0,
+        "temperature": 1.0,
+        "structured_output_mode": "json_schema",
+        "thinking_level": "high",
+        "tools_config": {
+          "tools": []
+        },
+        "input_transform": {
+          "type": "jinja",
+          "template": "Plan: {{ input.customer_plan | upper }}\nSubject: {{ input.subject }}\n\n--- ticket body ---\n{{ input.body }}\n--- end ---"
+        }
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "- **What they’re asking for:** Investigation into why password reset emails are not being delivered to three users, despite the rest of the account functioning.\n- **Irreversible/disputed:** None — no data loss, no billing dispute, no security incident indicated.\n- **Who is blocked:** The three PRO users who cannot complete password resets.\n\n- **Team:** technical_support\n- **Priority:** high — paying users are blocked from resetting passwords, but the whole account is not unusable.\n- **needs_human_review:** false\n- **Summary:** Investigate why password reset emails for three PRO users are not arriving, since your SMTP logs show nothing inbound from us while the rest of the account works.",
+    "reasoning": "We need to produce final result. We already have analysis. Need to output team, priority, needs_human_review, summary. Ensure consistency with instructions. The ticket: password reset emails never arrive. This is technical_support. Priority high because paying customers are blocked (can't log in via password reset). Not urgent since product not entirely unusable, but high. No data loss, billing dispute, security concern. So needs_human_review false. Summary one sentence. We'll output."
+  },
+  "tags": [
+    "eval_escalation_flagging",
+    "manual_run",
+    "fine_tune_triage"
+  ],
+  "usage": {
+    "input_tokens": 1023,
+    "output_tokens": 848,
+    "total_tokens": 1871,
+    "cost": 0.00036274,
+    "cached_tokens": 256,
+    "total_llm_latency_ms": 13938
+  },
+  "cumulative_usage": {
+    "input_tokens": 1023,
+    "output_tokens": 848,
+    "total_tokens": 1871,
+    "cost": 0.00036274,
+    "cached_tokens": 256
+  },
+  "trace": [
+    {
+      "content": "You are a support triage assistant for a B2B SaaS product.\n\nRead the inbound ticket and return the owning team, the priority, whether a human must review it, and a one-sentence summary.\n\nRouting rules:\n- billing — invoices, charges, refunds, plan changes, tax and VAT details.\n- technical_support — anything that is broken, slow, or behaving unexpectedly, including data that is missing or unrecoverable.\n- account_management — seats, ownership, roles, renewals, and cancellations that are not themselves a charge dispute.\n- security — suspected unauthorised access, credential exposure, or one customer seeing another customer's data.\n\nPriority: urgent when the product is unusable for the whole account or data is at risk; high when a paying customer is blocked; medium for a workaround that costs them time; low for questions and cosmetic issues.\n\nSet needs_human_review to true whenever the ticket involves data loss, a billing dispute, or a security concern. Enterprise tickets are not automatically urgent — judge them on impact.\n\nKeep the summary to one sentence, written for the engineer or agent who picks the ticket up next.",
+      "role": "system"
+    },
+    {
+      "content": "The input is:\n<user_input>\nPlan: PRO\nSubject: Password reset emails never arrive\n\n--- ticket body ---\nThree of our users have asked for a password reset today and none of them received the email. Not in spam either. Our own SMTP logs show nothing inbound from you. Everything else about the account works.\n--- end ---\n</user_input>\n\nWork through the ticket in order: what is the customer actually asking for, is anything in it irreversible or disputed, and who is blocked. Only then choose the team and the priority.",
+      "role": "user"
+    },
+    {
+      "role": "assistant",
+      "content": "- **What they’re asking for:** Investigation into why password reset emails are not being delivered to three users, despite the rest of the account functioning.\n- **Irreversible/disputed:** None — no data loss, no billing dispute, no security incident indicated.\n- **Who is blocked:** The three PRO users who cannot complete password resets.\n\n- **Team:** technical_support\n- **Priority:** high — paying users are blocked from resetting passwords, but the whole account is not unusable.\n- **needs_human_review:** false\n- **Summary:** Investigate why password reset emails for three PRO users are not arriving, since your SMTP logs show nothing inbound from us while the rest of the account works.",
+      "reasoning_content": "We need answer. Need follow instructions. Need work through. Need choose team, priority, needs_human_review, summary.\n\nTicket: Plan PRO. Subject: Password reset emails never arrive. Body: Three users asked password reset today, none received email. Not spam. Their SMTP logs show nothing inbound from vendor. Everything else account works.\n\nNeed determine owning team. This is about password reset emails not arriving. Is it broken/behaving unexpectedly: technical_support. Billing? no. Account management? password reset is account access but issue is delivery of emails, technical. Security? no unauthorized access. So technical_support.\n\nPriority: product unusable for whole account? Users can't reset passwords, but \"everything else about account works.\" Three users blocked from resetting password. Paying customer blocked? They are blocked from accessing accounts via password reset. Could be high because paying customer blocked. But maybe not all users, only three. Is there workaround? Admin can reset? Need judge. \"Paying customer is blocked\" likely high. Urgent if product unusable whole account or data at risk. Data at risk? No. So high.\n\nNeeds_human_review: true? Data loss? no. Billing dispute? no. Security concern? Password reset emails not arriving could be related to account takeover? But no suspected unauthorized access. It's not necessarily security. So false. However password reset functionality broken could be security? The rule says security — suspected unauthorised access, credential exposure, or one customer seeing another customer's data. This is not. So false.\n\nSummary one sentence for next engineer: \"Investigate why password reset emails for three PRO users are not arriving, as SMTP logs show no inbound from us, while rest of account works.\" Need mention team? Summary only.\n\nNeed output format? Maybe include fields. Use concise.\n\nNeed be careful: \"Work through the ticket in order: what is the customer actually asking for, is anything in it irreversible or disputed, and who is blocked. Only then choose team and priority.\" Need include reasoning? The final should include team/priority/review/summary. Let's craft with explanation? Desired oververbosity 5. Could include a brief \"Reasoning\" then answer. Since instructions say work through in order. Let's do that.\n\nNeed ensure no \"irreversible or disputed\" - no. \"who is blocked\" - three users trying to reset passwords. \"what asking\" - they want password reset emails to arrive / fix email delivery.\n\nLet's produce final with bullet points.",
+      "latency_ms": 11584,
+      "usage": {
+        "input_tokens": 430,
+        "output_tokens": 679,
+        "total_tokens": 1109,
+        "cost": 0.00025032,
+        "cached_tokens": 0
+      }
+    },
+    {
+      "content": "Considering the above, return a final result.",
+      "role": "user"
+    },
+    {
+      "role": "assistant",
+      "content": "{\n  \"team\": \"technical_support\",\n  \"priority\": \"high\",\n  \"needs_human_review\": false,\n  \"summary\": \"Investigate why password reset emails for three PRO users are not arriving, since your SMTP logs show nothing inbound from us while the rest of the account works.\"\n}",
+      "reasoning_content": "We need to produce final result. We already have analysis. Need to output team, priority, needs_human_review, summary. Ensure consistency with instructions. The ticket: password reset emails never arrive. This is technical_support. Priority high because paying customers are blocked (can't log in via password reset). Not urgent since product not entirely unusable, but high. No data loss, billing dispute, security concern. So needs_human_review false. Summary one sentence. We'll output.",
+      "latency_ms": 2354,
+      "usage": {
+        "input_tokens": 593,
+        "output_tokens": 169,
+        "total_tokens": 762,
+        "cost": 0.00011242,
+        "cached_tokens": 256
+      }
+    }
+  ],
+  "parent_task_run_id": null,
+  "model_type": "task_run"
+}

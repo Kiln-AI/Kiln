@@ -1,0 +1,15 @@
+{
+  "v": 1,
+  "id": "280529670660",
+  "created_at": "2026-08-17T16:16:42.502702Z",
+  "created_by": "root",
+  "name": "Draft Ticket Reply",
+  "description": "Writes the first customer-facing reply to a support ticket. Plain text in, plain text out.",
+  "instruction": "You are a customer support agent for a B2B SaaS product.\n\nGiven the text of an inbound support ticket, write the first reply the customer will receive. Open by restating the problem in your own words so they know they were understood, then give the next concrete step. Never promise a refund, a deadline, or a fix date.\n\nKeep it under 150 words, plain prose, no bullet lists, and sign off as 'The Support Team'.",
+  "requirements": [],
+  "output_json_schema": null,
+  "input_json_schema": null,
+  "thinking_instruction": null,
+  "default_run_config_id": null,
+  "model_type": "task"
+}

@@ -46,3 +46,30 @@ jobs:
       - name: Build Server
         run: uv build
         working-directory: ./libs/server
+
+  # The web host serves web app routes off the file system, and Windows rejects
+  # filenames that our routes allow. Only a real Windows file system catches that,
+  # so run the web host tests there. Scoped to one test file to stay quick.
+  windows-path-handling-tests:
+    name: Windows Path Handling Tests
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # No git operations after checkout; keep the token out of git config.
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install the project
+        run: uv sync --all-extras --dev
+
+      - name: Test Web Host
+        run: uv run python -m pytest app/desktop/studio_server/test_webhost.py

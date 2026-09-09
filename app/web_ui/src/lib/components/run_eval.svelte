@@ -3,6 +3,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import { base_url } from "$lib/api_client"
+  import { stream_sse } from "$lib/utils/sse_stream"
   import posthog from "posthog-js"
 
   export let btn_size: "normal" | "mid" | "small" | "xs" = "mid"
@@ -85,45 +86,48 @@
     eval_total_count = 0
     eval_error_count = 0
 
-    const eventSource = new EventSource(run_url)
+    eval_run_error = null
 
     posthog.capture("run_eval", {
       eval_type: eval_type,
       run_all: run_all,
     })
 
-    eventSource.onmessage = (event) => {
-      try {
-        if (event.data === "complete") {
-          // Special end message
-          eventSource.close()
-          eval_state =
-            eval_error_count > 0 ? "complete_with_errors" : "complete"
+    // fetch rather than EventSource: these endpoints refuse up front with a 4xx that
+    // names the reason (no golden set, no such split), and EventSource cannot read the
+    // status or body of a non-200 — every refusal reached the user as "Unknown error".
+    const stream = stream_sse(run_url, {
+      subject: "eval stream",
+      on_message: (data) => {
+        try {
+          if (data === "complete") {
+            // Special end message
+            stream.close()
+            eval_state =
+              eval_error_count > 0 ? "complete_with_errors" : "complete"
 
+            on_run_complete()
+          } else {
+            const parsed = JSON.parse(data)
+            eval_complete_count = parsed.progress
+            eval_total_count = parsed.total
+            eval_error_count = parsed.errors
+            eval_state = "running"
+          }
+        } catch (error) {
+          stream.close()
+          eval_run_error = createKilnError(error)
+          console.error(eval_run_error)
+          eval_state = "complete_with_errors"
           on_run_complete()
-        } else {
-          const data = JSON.parse(event.data)
-          eval_complete_count = data.progress
-          eval_total_count = data.total
-          eval_error_count = data.errors
-          eval_state = "running"
         }
-      } catch (error) {
-        eventSource.close()
-        eval_run_error = createKilnError(error)
-        console.error(eval_run_error)
+      },
+      on_error: (error) => {
         eval_state = "complete_with_errors"
+        eval_run_error = createKilnError(error)
         on_run_complete()
-      }
-    }
-
-    // Don't restart on an error (default SSE behavior)
-    eventSource.onerror = (error) => {
-      eventSource.close()
-      eval_state = "complete_with_errors"
-      eval_run_error = createKilnError(error)
-      on_run_complete()
-    }
+      },
+    })
 
     // Switch over to the progress dialog, closing the run dialog
     running_progress_dialog?.show()

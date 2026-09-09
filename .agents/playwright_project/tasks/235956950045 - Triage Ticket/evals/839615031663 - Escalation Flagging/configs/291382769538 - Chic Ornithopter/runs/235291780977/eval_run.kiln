@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "235291780977",
+  "created_at": "2026-08-17T21:33:25.447557Z",
+  "created_by": "root",
+  "dataset_id": "281115927207",
+  "task_run_config_id": "293284619675",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"SSO login loop after Okta metadata update\", \"body\": \"Since we rotated our Okta signing certificate this morning, every user who clicks Sign in with SSO gets bounced back to the login page. Local password accounts still work. About 40 people are locked out.\", \"customer_plan\": \"pro\"}",
+  "output": "{\"team\": \"security\", \"priority\": \"urgent\", \"needs_human_review\": false, \"summary\": \"Rotated Okta signing certificate is causing an SSO login redirect loop for 40 users, so verify the updated metadata/certificate and restore SAML sign-in for the Pro workspace.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output exhibits the desired behaviour.\n\n- **needs_human_review: false** is correct. The ticket describes an SSO login outage after an Okta certificate rotation, not a security incident, privacy breach, suspicious login, billing dispute, or legal threat. Urgency alone does not require human review before sending a reply.\n- **priority: urgent** is reasonable because 40 users are locked out of the product.\n- **team: security** is defensible because the issue involves SSO/Okta authentication infrastructure.\n- The summary is one clear sentence that explains the cause, impact, and likely fix.\n\n**Verdict: Pass**",
+    "reasoning": "We need answer final result. Need follow instruction. Need produce final result pass/fail likely. Need concise."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 647,
+    "output_tokens": 1016,
+    "total_tokens": 1663,
+    "cost": 0.00035714,
+    "cached_tokens": 256,
+    "total_llm_latency_ms": 22579
+  },
+  "model_type": "eval_run"
+}

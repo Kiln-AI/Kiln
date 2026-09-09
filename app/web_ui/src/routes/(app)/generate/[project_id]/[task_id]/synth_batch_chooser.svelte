@@ -10,7 +10,11 @@
   ]
 </script>
 
-<div class="mt-24 md:mt-36 mb-4 max-w-[680px] mx-auto">
+<!-- Centered in the space below the header (same treatment as the Data Guide
+  intro) so short viewports don't push the table off screen. -->
+<div
+  class="min-h-[50vh] mt-12 mb-4 max-w-[680px] mx-auto flex flex-col justify-center"
+>
   <div class="text-lg font-medium text-center mb-2">
     Build Synthetic Dataset
   </div>

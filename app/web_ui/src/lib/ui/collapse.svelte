@@ -17,7 +17,13 @@
     ? 'bg-transparent border border-base-300'
     : 'bg-base-200'} {small ? 'collapse-sm' : 'collapse-md'}"
 >
-  <input type="checkbox" class="peer min-h-[24px]" bind:checked={open} />
+  <input
+    type="checkbox"
+    class="peer min-h-[24px]"
+    bind:checked={open}
+    on:change|stopPropagation
+    on:input|stopPropagation
+  />
   <div
     class="collapse-title font-medium flex flex-col {small
       ? 'text-sm'

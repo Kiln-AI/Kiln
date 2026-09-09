@@ -1,0 +1,101 @@
+{
+  "v": 1,
+  "id": "219379828532",
+  "created_at": "2026-08-17T19:00:11.197823Z",
+  "created_by": "root",
+  "input": "{\"subject\": \"CSV export is missing the last three days\", \"body\": \"I pulled the usage export this morning and the file stops at Tuesday. The dashboard shows data through today, so the numbers do not match. Same result whether I export from the UI or the scheduled email.\", \"customer_plan\": \"free\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "root"
+    },
+    "run_config_id": null,
+    "run_config": null
+  },
+  "output": {
+    "v": 1,
+    "id": "289248637323",
+    "path": null,
+    "created_at": "2026-08-17T19:00:11.197377Z",
+    "created_by": "root",
+    "output": "{\"team\": \"technical_support\", \"priority\": \"medium\", \"needs_human_review\": false, \"summary\": \"CSV export stops at Tuesday while the dashboard shows current data, indicating a stale export pipeline bug affecting both UI and scheduled email exports.\"}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_openai_compatible_adapter",
+        "model_name": "deepseek_4_flash",
+        "model_provider": "openrouter",
+        "prompt_id": "task_run_config::507368061812::235956950045::177167545173",
+        "structured_output_mode": "json_schema",
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "run_config_id": "177167545173",
+      "run_config": {
+        "type": "kiln_agent",
+        "model_name": "deepseek_4_flash",
+        "model_provider_name": "openrouter",
+        "prompt_id": "task_run_config::507368061812::235956950045::177167545173",
+        "top_p": 1.0,
+        "temperature": 1.0,
+        "structured_output_mode": "json_schema",
+        "thinking_level": "high",
+        "tools_config": {
+          "tools": []
+        },
+        "input_transform": null
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "intermediate_outputs": {
+    "reasoning": "We need to classify ticket: team, urgency, human review needed? Summary one sentence.\n\nTicket: CSV export missing last three days, dashboard shows current data, export from UI and scheduled email both stop at Tuesday. Customer plan: free.\n\nPotential issues: data export bug, maybe sync delay? But dashboard shows data through today, so export pipeline is stale. Could be a bug in exporter. Not data loss, not billing, not security. But data discrepancy. Since free plan, maybe lower priority but still bug.\n\nNeed to decide team: likely Product/Engineering, specifically data/export team. Urgency: normal? It's a bug affecting reporting, but not critical. Could be high if many users affected, but no indication. Free plan. Human review? No explicit need, but data integrity issue? It's not data loss; the data is in dashboard. So could auto-reply? But we are triage assistant; need to specify if human needs to look before reply. Conservative: only escalate for data loss, billing, security. This is not those. So no human required.\n\nSummary one sentence: \"CSV export stops at Tuesday while dashboard shows current data, likely a stale export pipeline bug affecting both UI and scheduled emails.\"\n\nTeam: Engineering (or Data/Reporting). Urgency: Normal (maybe Medium). Let's output."
+  },
+  "tags": [
+    "eval_escalation_flagging",
+    "manual_run"
+  ],
+  "usage": {
+    "input_tokens": 240,
+    "output_tokens": 338,
+    "total_tokens": 578,
+    "cost": 0.00012824,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 5144
+  },
+  "cumulative_usage": {
+    "input_tokens": 240,
+    "output_tokens": 338,
+    "total_tokens": 578,
+    "cost": 0.00012824,
+    "cached_tokens": 0
+  },
+  "trace": [
+    {
+      "content": "You are a support triage assistant for a B2B SaaS product.\n\nRead the inbound ticket and decide which team should own it, how urgent it is, and whether a human needs to look at it before a reply goes out. Be conservative: when the ticket mentions data loss, billing disputes, or a security concern, escalate to a human.\n\nKeep the summary to one sentence, written for the engineer or agent who picks the ticket up next.",
+      "role": "system"
+    },
+    {
+      "content": "{\"subject\": \"CSV export is missing the last three days\", \"body\": \"I pulled the usage export this morning and the file stops at Tuesday. The dashboard shows data through today, so the numbers do not match. Same result whether I export from the UI or the scheduled email.\", \"customer_plan\": \"free\"}",
+      "role": "user"
+    },
+    {
+      "role": "assistant",
+      "content": "{\n  \"team\": \"technical_support\",\n  \"priority\": \"medium\",\n  \"needs_human_review\": false,\n  \"summary\": \"CSV export stops at Tuesday while the dashboard shows current data, indicating a stale export pipeline bug affecting both UI and scheduled email exports.\"\n}",
+      "reasoning_content": "We need to classify ticket: team, urgency, human review needed? Summary one sentence.\n\nTicket: CSV export missing last three days, dashboard shows current data, export from UI and scheduled email both stop at Tuesday. Customer plan: free.\n\nPotential issues: data export bug, maybe sync delay? But dashboard shows data through today, so export pipeline is stale. Could be a bug in exporter. Not data loss, not billing, not security. But data discrepancy. Since free plan, maybe lower priority but still bug.\n\nNeed to decide team: likely Product/Engineering, specifically data/export team. Urgency: normal? It's a bug affecting reporting, but not critical. Could be high if many users affected, but no indication. Free plan. Human review? No explicit need, but data integrity issue? It's not data loss; the data is in dashboard. So could auto-reply? But we are triage assistant; need to specify if human needs to look before reply. Conservative: only escalate for data loss, billing, security. This is not those. So no human required.\n\nSummary one sentence: \"CSV export stops at Tuesday while dashboard shows current data, likely a stale export pipeline bug affecting both UI and scheduled emails.\"\n\nTeam: Engineering (or Data/Reporting). Urgency: Normal (maybe Medium). Let's output.",
+      "latency_ms": 5144,
+      "usage": {
+        "input_tokens": 240,
+        "output_tokens": 338,
+        "total_tokens": 578,
+        "cost": 0.00012824,
+        "cached_tokens": 0
+      }
+    }
+  ],
+  "parent_task_run_id": null,
+  "model_type": "task_run"
+}

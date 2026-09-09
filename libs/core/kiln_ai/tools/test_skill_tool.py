@@ -1,7 +1,9 @@
+import re
 from unittest.mock import MagicMock
 
 import pytest
 
+import kiln_ai.tools.skill_tool as skill_tool_module
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.tool_id import _check_tool_id
@@ -79,6 +81,35 @@ class TestSkillToolDefinition:
         assert "assets/" in desc
         assert len(desc) <= 1024
 
+    async def test_description_teaches_root_first_protocol(self, skill_tool: SkillTool):
+        desc = await skill_tool.description()
+        assert "skill(name)" in desc
+        assert "skill(name, resource)" in desc
+        assert "never guess" in desc
+
+    async def test_schema_contains_no_concrete_resource_path(
+        self, skill_tool: SkillTool
+    ):
+        """The schema must describe the shape of a resource path, never spell one out.
+
+        A concrete-looking path in a tool schema gets copied verbatim as a real
+        request. The previous description's `references/guide.md` example was
+        issued as an actual resource request 32 times on an external agent-port
+        corpus, including at skills that ship no resource files at all.
+        """
+        concrete_path = re.compile(r"(?:references|assets)/\S*\.\w+")
+        defn = await skill_tool.toolcall_definition()
+        properties = defn["function"]["parameters"]["properties"]
+        texts = [
+            await skill_tool.description(),
+            properties["name"]["description"],
+            properties["resource"]["description"],
+        ]
+        for text in texts:
+            assert concrete_path.search(text) is None, (
+                f"schema text spells out a resource path: {text!r}"
+            )
+
     async def test_toolcall_definition_schema(self, skill_tool: SkillTool):
         defn = await skill_tool.toolcall_definition()
         assert defn["type"] == "function"
@@ -98,21 +129,29 @@ class TestSkillToolRun:
         result = await tool.run()
         assert "Error" in result.output
         assert "'name' parameter is required" in result.output
+        assert result.is_error is True
+        assert result.error_message == result.output
 
     async def test_empty_name_parameter(self, tool):
         result = await tool.run(name="")
         assert "'name' parameter is required" in result.output
+        assert result.is_error is True
+        assert result.error_message == result.output
 
     async def test_unknown_skill(self, tool):
         result = await tool.run(name="nonexistent")
         assert "not found" in result.output
         assert "code-review" in result.output
         assert "test-writing" in result.output
+        assert result.is_error is True
+        assert result.error_message == result.output
 
     async def test_successful_skill_load(self, tool, skills):
         skills[0].body.return_value = "# Code Review\nReview all code."
         result = await tool.run(name="code-review")
         assert result.output == "# Code Review\nReview all code."
+        assert result.is_error is False
+        assert result.error_message is None
 
     async def test_body_io_error_is_caught(self, tool, skills):
         skills[0].body.side_effect = FileNotFoundError(
@@ -121,6 +160,8 @@ class TestSkillToolRun:
         result = await tool.run(name="code-review")
         assert "Error" in result.output
         assert "code-review" in result.output
+        assert result.is_error is True
+        assert result.error_message == result.output
 
     async def test_body_value_error_is_caught(self, tool, skills):
         skills[0].body.side_effect = ValueError(
@@ -129,12 +170,16 @@ class TestSkillToolRun:
         result = await tool.run(name="code-review")
         assert "Error" in result.output
         assert "Failed to load skill" in result.output
+        assert result.is_error is True
+        assert result.error_message == result.output
 
     async def test_body_parse_error_is_caught(self, tool, skills):
         skills[0].body.side_effect = Exception("frontmatter parse error")
         result = await tool.run(name="code-review")
         assert "Error" in result.output
         assert "frontmatter parse error" in result.output
+        assert result.is_error is True
+        assert result.error_message == result.output
 
 
 class TestSkillToolResource:
@@ -187,12 +232,16 @@ class TestSkillToolResource:
         assert "Error" in result.output
         assert "references/" in result.output
         assert "assets/" in result.output
+        assert result.is_error is True
+        assert result.error_message == result.output
 
     async def test_path_traversal_blocked(self, skill_tool: SkillTool):
         result = await skill_tool.run(
             name="code-review", resource="references/../../etc/passwd"
         )
         assert "Error" in result.output
+        assert result.is_error is True
+        assert result.error_message == result.output
 
     async def test_missing_reference(self, skill_tool: SkillTool):
         result = await skill_tool.run(
@@ -200,14 +249,48 @@ class TestSkillToolResource:
         )
         assert "Error" in result.output
         assert "not found" in result.output.lower()
+        assert result.is_error is True
+        assert result.error_message == result.output
 
     async def test_no_filename_after_prefix(self, skill_tool: SkillTool):
         result = await skill_tool.run(name="code-review", resource="references/")
         assert "Error" in result.output
+        assert result.is_error is True
+        assert result.error_message == result.output
+
+    async def test_unknown_resource_directory(
+        self, skill_tool: SkillTool, monkeypatch: pytest.MonkeyPatch
+    ):
+        # The prefix allowlist normally makes this branch unreachable; widen it
+        # so the "unknown resource directory" failure shape can be exercised.
+        monkeypatch.setattr(
+            skill_tool_module,
+            "ALLOWED_RESOURCE_PREFIXES",
+            ("references/", "assets/", "templates/"),
+        )
+        result = await skill_tool.run(
+            name="code-review", resource="templates/report.md"
+        )
+        assert result.output == "Error: Unknown resource directory: templates"
+        assert result.is_error is True
+        assert result.error_message == result.output
 
     async def test_without_resource_returns_body(self, skill_tool: SkillTool):
         result = await skill_tool.run(name="code-review")
         assert result.output == "## Code Review\nCheck for bugs."
+        assert result.is_error is False
+        assert result.error_message is None
+
+    async def test_successful_resource_load_is_not_flagged(
+        self, sample_skills: list[Skill], skill_tool: SkillTool
+    ):
+        ref_dir = sample_skills[0].references_dir()
+        ref_dir.mkdir(parents=True, exist_ok=True)
+        (ref_dir / "ok.md").write_text("fine", encoding="utf-8")
+        result = await skill_tool.run(name="code-review", resource="references/ok.md")
+        assert result.output == "fine"
+        assert result.is_error is False
+        assert result.error_message is None
 
     async def test_binary_resource_rejected(
         self, sample_skills: list[Skill], skill_tool: SkillTool
@@ -220,6 +303,62 @@ class TestSkillToolResource:
         )
         assert "Error" in result.output
         assert "not a readable text file" in result.output
+        assert result.is_error is True
+        assert result.error_message == result.output
+
+
+class TestSkillToolErrorOutputIsStable:
+    """The ``output`` text of each failure is a stable contract.
+
+    Downstream consumers match on these exact strings, so flagging a failure
+    with ``is_error``/``error_message`` must never reword the output.
+    """
+
+    async def test_missing_name_output_unchanged(self, tool):
+        result = await tool.run()
+        assert result.output == "Error: 'name' parameter is required."
+
+    async def test_unknown_skill_output_unchanged(self, tool):
+        result = await tool.run(name="nonexistent")
+        assert result.output == (
+            "Error: Skill 'nonexistent' not found. "
+            "Available skills: code-review, test-writing"
+        )
+
+    async def test_body_failure_output_unchanged(self, tool, skills):
+        skills[0].body.side_effect = ValueError("boom")
+        result = await tool.run(name="code-review")
+        assert result.output == "Error: Failed to load skill 'code-review': boom"
+
+    async def test_invalid_prefix_output_unchanged(self, skill_tool: SkillTool):
+        result = await skill_tool.run(name="code-review", resource="secrets/key.txt")
+        assert result.output == (
+            "Error: Resource path must start with one of: references/, assets/"
+        )
+
+    async def test_no_filename_output_unchanged(self, skill_tool: SkillTool):
+        result = await skill_tool.run(name="code-review", resource="references/")
+        assert result.output == (
+            "Error: Resource path must include a filename after the directory prefix."
+        )
+
+    async def test_resource_not_found_output_unchanged(self, skill_tool: SkillTool):
+        result = await skill_tool.run(
+            name="code-review", resource="references/nonexistent.md"
+        )
+        assert result.output == "Error: Resource not found: references/nonexistent.md"
+
+    async def test_value_error_output_unchanged(
+        self, sample_skills: list[Skill], skill_tool: SkillTool
+    ):
+        ref_dir = sample_skills[0].references_dir()
+        ref_dir.mkdir(parents=True, exist_ok=True)
+        (ref_dir / "image.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00")
+        result = await skill_tool.run(
+            name="code-review", resource="references/image.png"
+        )
+        assert result.output.startswith("Error: ")
+        assert "Error: Error:" not in result.output
 
 
 class TestSkillToolId:

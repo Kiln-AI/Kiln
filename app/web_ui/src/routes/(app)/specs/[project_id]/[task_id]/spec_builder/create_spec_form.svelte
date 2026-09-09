@@ -2,7 +2,6 @@
   import { createEventDispatcher } from "svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
-  import Collapse from "$lib/ui/collapse.svelte"
   import type { KilnError } from "$lib/utils/error_handlers"
   import type { FieldConfig } from "../select_template/spec_templates"
   import { filename_string_short_validator } from "$lib/utils/input_validators"
@@ -13,12 +12,9 @@
   export let name: string
   export let property_values: Record<string, string | null>
   export let initial_property_values: Record<string, string | null>
-  export let evaluate_full_trace: boolean
   export let priority: Priority = 1
   export let field_configs: FieldConfig[]
   export let copilot_enabled: boolean
-  export let hide_full_trace_option: boolean
-  export let full_trace_disabled: boolean
   export let error: KilnError | null
   export let submitting: boolean
   export let is_prompt_building: boolean = false
@@ -51,8 +47,7 @@
   }
 
   // copilot_enabled = copilot is available for this task
-  // copilot_allowed = copilot is available AND not blocked by current form state
-  $: copilot_allowed = copilot_enabled && !evaluate_full_trace
+  $: copilot_allowed = copilot_enabled
 
   $: computed_warn_before_unload =
     warn_before_unload &&
@@ -90,6 +85,20 @@
     validator={filename_string_short_validator}
   />
 
+  <FormElement
+    label="Priority"
+    id="priority"
+    inputType="select"
+    bind:value={priority}
+    description="The priority level for this eval."
+    select_options={[
+      [0, "P0 - Critical"],
+      [1, "P1 - High"],
+      [2, "P2 - Medium"],
+      [3, "P3 - Low"],
+    ]}
+  />
+
   {#each field_configs as field (field.key)}
     <FormElement
       label={field.label}
@@ -120,36 +129,6 @@
       {is_prompt_building}
     />
   {/if}
-
-  <Collapse title="Advanced Options">
-    <FormElement
-      label="Priority"
-      id="priority"
-      inputType="select"
-      bind:value={priority}
-      description="The priority level for this eval."
-      select_options={[
-        [0, "P0 - Critical"],
-        [1, "P1 - High"],
-        [2, "P2 - Medium"],
-        [3, "P3 - Low"],
-      ]}
-    />
-    {#if !hide_full_trace_option}
-      <FormElement
-        label="Evaluate Complete Agent History"
-        id="evaluate_full_trace"
-        inputType="checkbox"
-        bind:value={evaluate_full_trace}
-        disabled={full_trace_disabled}
-        description="When enabled, this will be evaluated on the full agent history including intermediate steps and tool calls. When disabled, only the final answer is evaluated."
-        info_description={full_trace_disabled
-          ? "Evals for tool use always analyze the full conversation history including tool calls."
-          : "Enable this for evals that cover reasoning steps, tool usage, or intermediate outputs." +
-            (copilot_enabled ? " Not supported by Kiln Pro." : "")}
-      />
-    {/if}
-  </Collapse>
 </FormContainer>
 
 {#if copilot_allowed}

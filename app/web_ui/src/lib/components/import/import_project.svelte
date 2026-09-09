@@ -30,19 +30,23 @@
 
   const hash_to_step: Record<string, WizardStep> = {
     "#local": "local_file",
+    "#local-trust": "local_trust_confirm",
     "#git": "url",
     "#git-credentials": "credentials",
     "#git-branch": "branch",
     "#git-project": "project",
+    "#git-trust": "trust_confirm",
     "#git-complete": "complete",
   }
 
   const step_to_hash: Partial<Record<WizardStep, string>> = {
     local_file: "#local",
+    local_trust_confirm: "#local-trust",
     url: "#git",
     credentials: "#git-credentials",
     branch: "#git-branch",
     project: "#git-project",
+    trust_confirm: "#git-trust",
     complete: "#git-complete",
   }
 
@@ -51,7 +55,7 @@
   $: import_mode =
     current_step === "method"
       ? "method"
-      : current_step === "local_file"
+      : current_step === "local_file" || current_step === "local_trust_confirm"
         ? "local"
         : "git"
 
@@ -89,6 +93,8 @@
   $: show_progress =
     current_step !== "method" &&
     current_step !== "local_file" &&
+    current_step !== "local_trust_confirm" &&
+    current_step !== "trust_confirm" &&
     current_step !== "complete"
 
   function step_from_hash(): WizardStep {
@@ -162,7 +168,7 @@
 
   function on_url_success(url: string, detected_auth_method: string) {
     update_store({ git_url: url, auth_mode: detected_auth_method })
-    set_step("branch")
+    set_step("trust_confirm")
   }
 
   function on_url_auth_required(url: string) {
@@ -184,7 +190,14 @@
         auth_mode: detected_auth_method,
       })
     }
-    set_step("branch")
+    // If clone_path is set, the user already passed the trust gate and the
+    // branch step redirected back here for credentials — skip trust and
+    // return directly to branch.
+    if ($git_import_wizard_store.clone_path) {
+      set_step("branch")
+    } else {
+      set_step("trust_confirm")
+    }
   }
 
   function on_branch_selected(
@@ -278,6 +291,31 @@
     }
   }
 
+  function show_local_trust_page() {
+    set_step("local_trust_confirm")
+  }
+
+  async function on_local_trust_confirmed() {
+    // Navigate back to local_file WITHOUT resetting state (set_step clears
+    // the path and error state, which we need to preserve for the import).
+    current_step = "local_file"
+    window.location.hash = "#local"
+    await tick()
+    import_project()
+  }
+
+  function on_git_trust_confirmed() {
+    set_step("branch")
+  }
+
+  function on_local_trust_cancelled() {
+    set_step("local_file")
+  }
+
+  function on_git_trust_cancelled() {
+    set_step("method")
+  }
+
   const import_project = async (remove_conflicting_id = false) => {
     try {
       import_submitting = true
@@ -292,6 +330,7 @@
         params: {
           query: {
             project_path: import_project_path,
+            trusted: true,
             ...(remove_conflicting_id && { remove_conflicting_id: true }),
           },
         },
@@ -381,8 +420,8 @@
 
     {#if !import_done}
       <FormContainer
-        submit_label="Import Project"
-        on:submit={() => import_project()}
+        submit_label="Continue"
+        on:submit={show_local_trust_page}
         bind:submitting={import_submitting}
         bind:error={import_error}
         bind:saved={import_saved}
@@ -440,6 +479,45 @@
       on_selected={on_project_selected}
       {on_stale_clone}
     />
+  {:else if current_step === "local_trust_confirm" || current_step === "trust_confirm"}
+    <div class="flex flex-col items-center py-8 gap-6">
+      <svg
+        class="w-16 h-16 text-warning"
+        fill="currentColor"
+        viewBox="0 0 256 256"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M128,20.00012a108,108,0,1,0,108,108A108.12217,108.12217,0,0,0,128,20.00012Zm0,192a84,84,0,1,1,84-84A84.0953,84.0953,0,0,1,128,212.00012Zm-12-80v-52a12,12,0,1,1,24,0v52a12,12,0,1,1-24,0Zm28,40a16,16,0,1,1-16-16A16.018,16.018,0,0,1,144,172.00012Z"
+        />
+      </svg>
+
+      <h2 class="text-2xl font-medium">Trust this Project?</h2>
+
+      <p class="text-sm text-gray-500 text-center max-w-md">
+        Kiln projects can contain code that runs on your machine. Only import
+        projects from sources you trust.
+      </p>
+
+      <div class="flex flex-row gap-3 mt-2">
+        <button
+          class="btn btn-outline"
+          on:click={current_step === "local_trust_confirm"
+            ? on_local_trust_cancelled
+            : on_git_trust_cancelled}
+        >
+          Cancel
+        </button>
+        <button
+          class="btn btn-warning"
+          on:click={current_step === "local_trust_confirm"
+            ? on_local_trust_confirmed
+            : on_git_trust_confirmed}
+        >
+          Trust Project
+        </button>
+      </div>
+    </div>
   {:else if current_step === "complete"}
     <StepComplete
       {git_url}

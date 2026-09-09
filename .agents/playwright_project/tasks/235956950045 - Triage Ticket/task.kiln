@@ -1,0 +1,15 @@
+{
+  "v": 1,
+  "id": "235956950045",
+  "created_at": "2026-08-17T16:14:49.854063Z",
+  "created_by": "root",
+  "name": "Triage Ticket",
+  "description": "Classifies an inbound support ticket: owning team, priority, and whether a human should review it before a reply goes out.",
+  "instruction": "You are a support triage assistant for a B2B SaaS product.\n\nRead the inbound ticket and decide which team should own it, how urgent it is, and whether a human needs to look at it before a reply goes out. Be conservative: when the ticket mentions data loss, billing disputes, or a security concern, escalate to a human.\n\nKeep the summary to one sentence, written for the engineer or agent who picks the ticket up next.",
+  "requirements": [],
+  "output_json_schema": "{\"type\":\"object\",\"properties\":{\"team\":{\"title\":\"team\",\"type\":\"string\",\"description\":\"The team that should own this ticket.\",\"enum\":[\"billing\",\"technical_support\",\"account_management\",\"security\"]},\"priority\":{\"title\":\"priority\",\"type\":\"string\",\"description\":\"How urgent this ticket is.\",\"enum\":[\"low\",\"medium\",\"high\",\"urgent\"]},\"needs_human_review\":{\"title\":\"needs_human_review\",\"type\":\"boolean\",\"description\":\"True when a human should read the ticket before any reply is sent.\"},\"summary\":{\"title\":\"summary\",\"type\":\"string\",\"description\":\"One sentence describing the ticket for whoever picks it up.\"}},\"required\":[\"team\",\"priority\",\"needs_human_review\",\"summary\"],\"additionalProperties\":false}",
+  "input_json_schema": "{\"type\":\"object\",\"properties\":{\"subject\":{\"title\":\"subject\",\"type\":\"string\",\"description\":\"The ticket subject line, as the customer wrote it.\"},\"body\":{\"title\":\"body\",\"type\":\"string\",\"description\":\"The full text of the customer's message.\"},\"customer_plan\":{\"title\":\"customer_plan\",\"type\":\"string\",\"description\":\"The customer's subscription plan.\",\"enum\":[\"free\",\"pro\",\"enterprise\"]}},\"required\":[\"subject\",\"body\",\"customer_plan\"],\"additionalProperties\":false}",
+  "thinking_instruction": "First decide what the customer is actually asking for, then whether anything in the ticket is irreversible or disputed. Only then pick the team and priority.",
+  "default_run_config_id": null,
+  "model_type": "task"
+}

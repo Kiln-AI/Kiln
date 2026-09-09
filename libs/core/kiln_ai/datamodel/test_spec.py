@@ -446,6 +446,51 @@ def test_spec_with_appropriate_tool_use_properties(sample_task):
     assert spec.properties["inappropriate_tool_use_examples"] == "Example: simple math"
 
 
+def test_spec_with_appropriate_tool_use_properties_without_tool(sample_task):
+    """Tool use specs no longer pin a single tool at creation.
+
+    The Tool Call Check judge carries its own expected-tool list, so tool_id and
+    tool_function_name are only set on specs created before that judge existed.
+    """
+    properties = AppropriateToolUseProperties(
+        spec_type=SpecType.appropriate_tool_use,
+        core_requirement="Test instruction",
+        tool_use_guidelines="Use the tool when needed",
+        appropriate_tool_use_examples="Example: search queries",
+        inappropriate_tool_use_examples="Example: simple math",
+    )
+    spec = Spec(
+        name="Tool Use Spec",
+        definition="Test tool use spec",
+        properties=properties,
+        eval_id="test_eval_id",
+        parent=sample_task,
+    )
+
+    assert spec.properties["spec_type"] == SpecType.appropriate_tool_use
+    assert "tool_id" not in spec.properties
+    assert "tool_function_name" not in spec.properties
+
+
+def test_spec_with_appropriate_tool_use_properties_rejects_empty_tool_id(sample_task):
+    """Optional doesn't mean blank: a supplied tool_id still has to be real."""
+    with pytest.raises(ValidationError, match="tool_id if provided cannot be empty"):
+        Spec(
+            name="Tool Use Spec",
+            definition="Test tool use spec",
+            properties=AppropriateToolUseProperties(
+                spec_type=SpecType.appropriate_tool_use,
+                core_requirement="Test instruction",
+                tool_id="  ",
+                tool_use_guidelines="Use the tool when needed",
+                appropriate_tool_use_examples="Example: search queries",
+                inappropriate_tool_use_examples="Example: simple math",
+            ),
+            eval_id="test_eval_id",
+            parent=sample_task,
+        )
+
+
 def test_spec_with_appropriate_tool_use_properties_all_fields(sample_task):
     """Test creating a spec with AppropriateToolUseProperties with all fields."""
     properties = AppropriateToolUseProperties(

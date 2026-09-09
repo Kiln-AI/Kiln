@@ -1,11 +1,12 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte"
-  import type { TaskRun } from "$lib/types"
+  import type { TaskRun, TaskRunOutput } from "$lib/types"
   import ClampedText from "$lib/ui/clamped_text.svelte"
   import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
   import { formatExpandedContent } from "$lib/utils/format_expanded_content"
+  import { formatDate } from "$lib/utils/formatters"
 
-  export let available_runs: TaskRun[] = []
+  export let available_runs: (TaskRun | TaskRunOutput)[] = []
   // When true, hide the Output column. Used by the input data guide flows
   // (manual + copilot) where outputs are out of scope.
   export let inputs_only: boolean = false
@@ -20,7 +21,7 @@
   let see_all_dialog: SeeAllDialog
 
   const dispatch = createEventDispatcher<{
-    select: TaskRun
+    select: TaskRun | TaskRunOutput
   }>()
 </script>
 
@@ -33,6 +34,7 @@
           {#if !inputs_only}
             <th>Output</th>
           {/if}
+          <th style="width: 110px">Created At</th>
           <th style="width: 80px"></th>
         </tr>
       </thead>
@@ -63,6 +65,9 @@
                 />
               </td>
             {/if}
+            <td class="py-2 text-xs text-gray-600 align-middle">
+              {formatDate(run.created_at ?? undefined)}
+            </td>
             <td class="py-2 text-center align-middle">
               <button
                 type="button"

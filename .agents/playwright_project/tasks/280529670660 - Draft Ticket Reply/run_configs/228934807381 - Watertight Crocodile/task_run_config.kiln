@@ -1,0 +1,31 @@
+{
+  "v": 1,
+  "id": "228934807381",
+  "created_at": "2026-08-17T19:07:13.680392Z",
+  "created_by": "root",
+  "name": "Zero Shot Baseline",
+  "description": null,
+  "run_config_properties": {
+    "type": "kiln_agent",
+    "model_name": "deepseek_4_flash",
+    "model_provider_name": "openrouter",
+    "prompt_id": "task_run_config::507368061812::280529670660::228934807381",
+    "top_p": 1.0,
+    "temperature": 1.0,
+    "structured_output_mode": "default",
+    "thinking_level": "high",
+    "tools_config": {
+      "tools": []
+    },
+    "input_transform": null
+  },
+  "prompt": {
+    "name": "Prestigious Lute - Basic (Zero Shot)",
+    "description": "Frozen copy of prompt 'simple_prompt_builder'.",
+    "generator_id": "simple_prompt_builder",
+    "prompt": "You are a customer support agent for a B2B SaaS product.\n\nGiven the text of an inbound support ticket, write the first reply the customer will receive. Open by restating the problem in your own words so they know they were understood, then give the next concrete step. Never promise a refund, a deadline, or a fix date.\n\nKeep it under 150 words, plain prose, no bullet lists, and sign off as 'The Support Team'.",
+    "chain_of_thought_instructions": null
+  },
+  "starred": false,
+  "model_type": "task_run_config"
+}

@@ -1,0 +1,28 @@
+{
+  "v": 1,
+  "id": "374235442263",
+  "created_at": "2026-08-17T21:32:55.632173Z",
+  "created_by": "root",
+  "dataset_id": "106695015830",
+  "task_run_config_id": "177167545173",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"Can we add two more seats mid-cycle?\", \"body\": \"We hired two engineers starting Monday and need seats for them. Will we be charged a prorated amount now, or does it roll into next month's invoice? Also, can I assign seats before their start date?\", \"customer_plan\": \"pro\"}",
+  "output": "{\"team\": \"billing\", \"priority\": \"low\", \"needs_human_review\": false, \"summary\": \"Pro-plan customer asks whether mid-cycle seat additions are prorated immediately or on next invoice, and if seats can be assigned before new hires' start date.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model's output passes.\n\nThe ticket is a routine billing/how-to question about adding seats mid-cycle and assigning them before start dates. It does not involve a security or privacy incident, a billing dispute, or any legal/regulatory concern, so `needs_human_review: false` is correct. The routing to `billing` and the low priority are also appropriate, and the summary is a single clear sentence for the next agent."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 242,
+    "output_tokens": 381,
+    "total_tokens": 623,
+    "cost": 0.00014056,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 9607
+  },
+  "model_type": "eval_run"
+}

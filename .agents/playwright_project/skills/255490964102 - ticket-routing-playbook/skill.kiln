@@ -1,0 +1,10 @@
+{
+  "v": 1,
+  "id": "255490964102",
+  "created_at": "2026-08-17T21:57:58.102062Z",
+  "created_by": "root",
+  "name": "ticket-routing-playbook",
+  "description": "How to pick the owning team and the priority for an inbound support ticket, including what to do when a ticket spans two teams. Use when triaging a ticket.",
+  "is_archived": false,
+  "model_type": "skill"
+}

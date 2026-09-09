@@ -33,6 +33,21 @@
 
   $: spec_id_for_url = spec_id || "legacy"
 
+  function excluded_for_run_config(
+    summary: EvalResultSummary | null,
+    rc_id: string | null,
+    output_scores: { name: string }[],
+  ): { n_excluded: number; n_used: number } {
+    if (!summary || !rc_id) return { n_excluded: 0, n_used: 0 }
+    const per_score = summary.results?.["" + rc_id]
+    if (!per_score) return { n_excluded: 0, n_used: 0 }
+    for (const s of output_scores) {
+      const ss = per_score[string_to_json_key(s.name)]
+      if (ss) return { n_excluded: ss.n_excluded ?? 0, n_used: ss.n_used ?? 0 }
+    }
+    return { n_excluded: 0, n_used: 0 }
+  }
+
   function show_incomplete_warning(
     score_summary: EvalResultSummary | null,
   ): boolean {
@@ -155,6 +170,11 @@
             score_summary?.run_config_percent_complete?.[
               "" + task_run_config.id
             ] || 0.0}
+          {@const excluded = excluded_for_run_config(
+            score_summary,
+            task_run_config.id ?? null,
+            evaluator.output_scores,
+          )}
           <tr class="max-w-[400px]">
             <td>
               <RunConfigSummary
@@ -207,6 +227,19 @@
                   >
                     View Data
                   </a>
+                </div>
+              {/if}
+              {#if excluded.n_excluded > 0}
+                {@const ratio =
+                  excluded.n_excluded / (excluded.n_used + excluded.n_excluded)}
+                <div class="mt-1">
+                  <span class={ratio > 0.2 ? "text-error" : "text-warning"}>
+                    <InfoTooltip
+                      symbol="info"
+                      position="top"
+                      tooltip_text={`${excluded.n_excluded} of ${excluded.n_used + excluded.n_excluded} cases were skipped and are not reflected in this score.`}
+                    />
+                  </span>
                 </div>
               {/if}
             </td>

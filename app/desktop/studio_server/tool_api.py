@@ -18,6 +18,7 @@ from kiln_ai.datamodel.tool_id import (
     MCP_REMOTE_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     ToolId,
+    build_code_tool_id,
     build_kiln_task_tool_id,
     build_rag_tool_id,
     build_skill_tool_id,
@@ -178,9 +179,13 @@ class ExternalToolServerApiDescription(BaseModel):
 
 
 class ToolApiDescription(BaseModel):
+    """A tool as shown in pickers: name is the user-facing display name,
+    function_name the callable name the model sees (they often coincide)."""
+
     id: ToolId
     name: str
     description: str | None
+    function_name: str | None = None
 
 
 class ToolSetType(Enum):
@@ -190,6 +195,14 @@ class ToolSetType(Enum):
     DEMO = "demo"
     SKILL = "skill"
     BUILTIN = "builtin"
+    CODE = "code"
+    # Tools that only user-authored sandboxed code can call, over the sandbox
+    # bridge (`kiln.tools`). They are not agent tools -- an agent cannot select
+    # one and one can never appear in an agent's trace -- so a picker offering
+    # agent tools must exclude this whole set. Carried on the set rather than
+    # inferred from tool ids so API consumers can see it, and so the rule cannot
+    # drift if a KilnBuiltInToolId value is ever renamed.
+    SANDBOX_CODE = "sandbox_code"
 
 
 class ToolSetApiDescription(BaseModel):
@@ -252,6 +265,7 @@ async def available_mcp_tools(
                 id=f"{prefix}{server.id}::{tool.name}",
                 name=tool.name,
                 description=tool.description,
+                function_name=tool.name,
             )
             for tool in tools_result.tools
         ]
@@ -289,14 +303,42 @@ def connect_tool_servers_api(app: FastAPI):
 
         tool_sets = []
 
+        # AI-model tools, for user-authored sandboxed code to call over the sandbox
+        # bridge: `llm` calls a model from a code tool or code judge, and `llm_judge`
+        # runs an LLM-as-judge call using a code judge's own score schema. The
+        # SANDBOX_CODE set type says neither is an agent tool. `llm_judge` is narrower
+        # still -- it needs a code judge's score schema and errors without one -- so
+        # the code-eval picker is the only one that offers it.
+        tool_sets.append(
+            ToolSetApiDescription(
+                type=ToolSetType.SANDBOX_CODE,
+                set_name="AI Models",
+                tools=[
+                    ToolApiDescription(
+                        id=KilnBuiltInToolId.LLM.value,
+                        name="LLM",
+                        description="Call a language model with a rendered prompt. Optionally pass a JSON schema for structured output.",
+                        function_name="llm",
+                    ),
+                    ToolApiDescription(
+                        id=KilnBuiltInToolId.LLM_JUDGE.value,
+                        name="LLM Judge",
+                        description="Run an LLM-as-judge call using the code judge's own score schema. Only usable inside a code judge.",
+                        function_name="llm_judge",
+                    ),
+                ],
+            )
+        )
+
         # Add search tools (RAG)
         rag_configs = project.rag_configs(readonly=True)
         if rag_configs:
             tools = [
                 ToolApiDescription(
                     id=build_rag_tool_id(rag_config.id),
-                    name=rag_config.tool_name,
-                    description=f"{rag_config.name}: {rag_config.tool_description}",
+                    name=rag_config.name,
+                    description=rag_config.tool_description,
+                    function_name=rag_config.tool_name,
                 )
                 for rag_config in rag_configs
                 if not rag_config.is_archived
@@ -326,11 +368,13 @@ def connect_tool_servers_api(app: FastAPI):
                         # Skip the tool when we can't connect to the server
                         continue
                 case ToolServerType.kiln_task:
+                    kt_name = server.properties.get("name") or ""
                     task_tools.append(
                         ToolApiDescription(
                             id=build_kiln_task_tool_id(server.id),
-                            name=server.properties.get("name") or "",
+                            name=kt_name,
                             description=server.properties.get("description") or "",
+                            function_name=kt_name,
                         )
                     )
                 case _:
@@ -366,6 +410,7 @@ def connect_tool_servers_api(app: FastAPI):
                     id=build_skill_tool_id(skill.id),
                     name=skill.name,
                     description=skill.description,
+                    function_name=skill.name,
                 )
                 for skill in skills
                 if skill.id is not None and not skill.is_archived
@@ -390,25 +435,51 @@ def connect_tool_servers_api(app: FastAPI):
                             id=f"{KilnBuiltInToolId.ADD_NUMBERS.value}",
                             name="Addition",
                             description="Add two numbers together",
+                            function_name="add",
                         ),
                         ToolApiDescription(
                             id=f"{KilnBuiltInToolId.SUBTRACT_NUMBERS.value}",
                             name="Subtraction",
                             description="Subtract two numbers",
+                            function_name="subtract",
                         ),
                         ToolApiDescription(
                             id=f"{KilnBuiltInToolId.MULTIPLY_NUMBERS.value}",
                             name="Multiplication",
                             description="Multiply two numbers",
+                            function_name="multiply",
                         ),
                         ToolApiDescription(
                             id=f"{KilnBuiltInToolId.DIVIDE_NUMBERS.value}",
                             name="Division",
                             description="Divide two numbers",
+                            function_name="divide",
                         ),
                     ],
                 )
             )
+
+        # Add code tools
+        code_tools = project.code_tools(readonly=True)
+        if code_tools:
+            code_tool_items = [
+                ToolApiDescription(
+                    id=build_code_tool_id(ct.id),
+                    name=ct.name,
+                    description=ct.tool_description,
+                    function_name=ct.tool_function_name,
+                )
+                for ct in code_tools
+                if not ct.is_archived
+            ]
+            if code_tool_items:
+                tool_sets.append(
+                    ToolSetApiDescription(
+                        type=ToolSetType.CODE,
+                        set_name="Code Tools",
+                        tools=code_tool_items,
+                    )
+                )
 
         # Note: the Call Kiln API built-in tool (KilnBuiltInToolId.CALL_KILN_API)
         # is intentionally not listed here. It's an internal agent tool — still

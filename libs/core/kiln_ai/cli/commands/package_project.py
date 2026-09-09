@@ -995,6 +995,29 @@ def export_task_runs(task: Task, exported_task: Task) -> None:
     shutil.copytree(source_runs_dir, dest_runs_dir)
 
 
+def export_eval_inputs(task: Task, exported_task: Task) -> None:
+    """Copy the eval_inputs/ directory from the source task to the exported task.
+
+    Eval inputs are the dataset items behind EvalInput-backed eval splits, so a
+    package that carries evals must carry them for those splits to resolve.
+
+    Args:
+        task: The source task containing the eval inputs
+        exported_task: The exported task to copy eval inputs into
+    """
+    if task.path is None:
+        raise ValueError(f"Task '{task.name}' path is not set")
+    if exported_task.path is None:
+        raise ValueError("Exported task path is not set")
+
+    source_eval_inputs_dir = task.path.parent / "eval_inputs"
+    if not source_eval_inputs_dir.exists() or not source_eval_inputs_dir.is_dir():
+        return
+
+    dest_eval_inputs_dir = exported_task.path.parent / "eval_inputs"
+    shutil.copytree(source_eval_inputs_dir, dest_eval_inputs_dir)
+
+
 def _get_run_config_by_id(task: Task, run_config_id: str) -> TaskRunConfig:
     """Look up a run config by ID from a task's run configs.
 
@@ -1084,6 +1107,10 @@ def package_project_for_training(
             for task in validated_tasks:
                 exported_task = exported_tasks[task.id]  # type: ignore
                 export_task_runs(task, exported_task)
+
+        for task in validated_tasks:
+            exported_task = exported_tasks[task.id]  # type: ignore
+            export_eval_inputs(task, exported_task)
 
         if config.include_documents:
             export_documents(project, exported_project)

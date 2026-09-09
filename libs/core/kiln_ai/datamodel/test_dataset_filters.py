@@ -5,15 +5,20 @@ from pydantic import BaseModel
 
 from kiln_ai.datamodel.dataset_filters import (
     AllDatasetFilter,
+    AllEvalInputFilter,
     DatasetFilterId,
+    EvalInputFilterId,
     HighRatingDatasetFilter,
     MultiDatasetFilter,
     StaticDatasetFilters,
+    TagEvalInputFilter,
     TagFilter,
     ThinkingModelDatasetFilter,
     ThinkingModelHighRatedFilter,
     dataset_filter_from_id,
+    eval_input_filter_from_id,
 )
+from kiln_ai.datamodel.eval import EvalInput, SingleTurnEvalInputData, UserMessage
 from kiln_ai.datamodel.task_run import TaskRun
 
 # Note: Many more filter tests in test_dataset_split.py
@@ -151,3 +156,91 @@ class TestMultiDatasetFilter:
         assert any(
             isinstance(f, type(ThinkingModelDatasetFilter)) for f in filter.filters
         )
+
+
+# ── EvalInputFilter Tests ─────────────────────────────────────────────
+
+
+class TestAllEvalInputFilter:
+    def test_always_returns_true(self):
+        f = AllEvalInputFilter()
+        ei = EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="hello")),
+        )
+        assert f(ei) is True
+
+    def test_returns_true_with_tags(self):
+        f = AllEvalInputFilter()
+        ei = EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
+            tags=["a", "b"],
+        )
+        assert f(ei) is True
+
+
+class TestTagEvalInputFilter:
+    def test_matches_tag(self):
+        f = TagEvalInputFilter("math")
+        ei = EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="q")),
+            tags=["math", "easy"],
+        )
+        assert f(ei) is True
+
+    def test_no_match(self):
+        f = TagEvalInputFilter("science")
+        ei = EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="q")),
+            tags=["math"],
+        )
+        assert f(ei) is False
+
+    def test_empty_tags(self):
+        f = TagEvalInputFilter("any")
+        ei = EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="q")),
+        )
+        assert f(ei) is False
+
+
+class TestEvalInputFilterIdValidation:
+    def test_valid_static_all(self):
+        from pydantic import TypeAdapter
+
+        ta = TypeAdapter(EvalInputFilterId)
+        assert ta.validate_python("all") == "all"
+
+    def test_valid_tag_prefix(self):
+        from pydantic import TypeAdapter
+
+        ta = TypeAdapter(EvalInputFilterId)
+        assert ta.validate_python("tag::math") == "tag::math"
+
+    def test_invalid_tag_prefix_empty_suffix(self):
+        from pydantic import TypeAdapter
+
+        ta = TypeAdapter(EvalInputFilterId)
+        with pytest.raises(Exception):
+            ta.validate_python("tag::")
+
+    def test_invalid_id(self):
+        from pydantic import TypeAdapter
+
+        ta = TypeAdapter(EvalInputFilterId)
+        with pytest.raises(Exception):
+            ta.validate_python("unknown_filter")
+
+
+class TestEvalInputFilterFromIdRegistry:
+    def test_static_all(self):
+        f = eval_input_filter_from_id("all")
+        assert isinstance(f, AllEvalInputFilter)
+
+    def test_tag_filter(self):
+        f = eval_input_filter_from_id("tag::science")
+        assert isinstance(f, TagEvalInputFilter)
+        assert f.tag == "science"
+
+    def test_invalid_raises(self):
+        with pytest.raises(ValueError, match="Invalid eval-input filter ID"):
+            eval_input_filter_from_id("bogus")

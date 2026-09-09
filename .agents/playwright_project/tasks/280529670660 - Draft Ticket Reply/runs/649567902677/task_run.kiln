@@ -1,0 +1,110 @@
+{
+  "v": 1,
+  "id": "649567902677",
+  "created_at": "2026-08-17T19:08:04.201921Z",
+  "created_by": "root",
+  "input": "Subject: Invoice charged twice this month. We were billed twice for our June subscription — two identical charges of $480 on the same card, three minutes apart. Please refund one of them and confirm which invoice is the duplicate.",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "root"
+    },
+    "run_config_id": null,
+    "run_config": null
+  },
+  "output": {
+    "v": 1,
+    "id": "168887961085",
+    "path": null,
+    "created_at": "2026-08-17T19:08:04.201349Z",
+    "created_by": "root",
+    "output": "Thanks for reaching out. I understand you were charged twice for your June subscription—two identical $480 charges on the same card, three minutes apart. That’s clearly not what you expected, and I’m sorry for the confusion.\n\nOur billing team will review both transactions to identify which one is the duplicate and verify the correct invoice. Once we’ve confirmed the details, we’ll update you with the next steps. You don’t need to do anything right now, but if you have any additional reference numbers, feel free to share them.\n\nWe’ll get back to you as soon as we have more information.\n\nThe Support Team",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_openai_compatible_adapter",
+        "model_name": "deepseek_4_flash",
+        "model_provider": "openrouter",
+        "prompt_id": "task_run_config::507368061812::280529670660::228934807381",
+        "structured_output_mode": "default",
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "run_config_id": "228934807381",
+      "run_config": {
+        "type": "kiln_agent",
+        "model_name": "deepseek_4_flash",
+        "model_provider_name": "openrouter",
+        "prompt_id": "task_run_config::507368061812::280529670660::228934807381",
+        "top_p": 1.0,
+        "temperature": 1.0,
+        "structured_output_mode": "default",
+        "thinking_level": "high",
+        "tools_config": {
+          "tools": []
+        },
+        "input_transform": null
+      }
+    },
+    "rating": {
+      "v": 1,
+      "id": "228723084474",
+      "path": null,
+      "created_at": "2026-08-17T19:11:39.774641Z",
+      "created_by": "root",
+      "type": "five_star",
+      "value": 4.0,
+      "requirement_ratings": {},
+      "model_type": "task_output_rating"
+    },
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "intermediate_outputs": {
+    "reasoning": "We need to write a reply. Restate problem: double charge for June subscription, two identical charges. Next step: we'll investigate, but don't promise refund or deadline. Keep under 150 words, plain prose, no bullets, sign off asThe Support Team."
+  },
+  "tags": [
+    "manual_run"
+  ],
+  "usage": {
+    "input_tokens": 141,
+    "output_tokens": 187,
+    "total_tokens": 328,
+    "cost": 0.0000721,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 21413
+  },
+  "cumulative_usage": {
+    "input_tokens": 141,
+    "output_tokens": 187,
+    "total_tokens": 328,
+    "cost": 0.0000721,
+    "cached_tokens": 0
+  },
+  "trace": [
+    {
+      "content": "You are a customer support agent for a B2B SaaS product.\n\nGiven the text of an inbound support ticket, write the first reply the customer will receive. Open by restating the problem in your own words so they know they were understood, then give the next concrete step. Never promise a refund, a deadline, or a fix date.\n\nKeep it under 150 words, plain prose, no bullet lists, and sign off as 'The Support Team'.",
+      "role": "system"
+    },
+    {
+      "content": "Subject: Invoice charged twice this month. We were billed twice for our June subscription — two identical charges of $480 on the same card, three minutes apart. Please refund one of them and confirm which invoice is the duplicate.",
+      "role": "user"
+    },
+    {
+      "role": "assistant",
+      "content": "Thanks for reaching out. I understand you were charged twice for your June subscription—two identical $480 charges on the same card, three minutes apart. That’s clearly not what you expected, and I’m sorry for the confusion.\n\nOur billing team will review both transactions to identify which one is the duplicate and verify the correct invoice. Once we’ve confirmed the details, we’ll update you with the next steps. You don’t need to do anything right now, but if you have any additional reference numbers, feel free to share them.\n\nWe’ll get back to you as soon as we have more information.\n\nThe Support Team",
+      "reasoning_content": "We need to write a reply. Restate problem: double charge for June subscription, two identical charges. Next step: we'll investigate, but don't promise refund or deadline. Keep under 150 words, plain prose, no bullets, sign off asThe Support Team.",
+      "latency_ms": 21413,
+      "usage": {
+        "input_tokens": 141,
+        "output_tokens": 187,
+        "total_tokens": 328,
+        "cost": 0.0000721,
+        "cached_tokens": 0
+      }
+    }
+  ],
+  "parent_task_run_id": null,
+  "model_type": "task_run"
+}

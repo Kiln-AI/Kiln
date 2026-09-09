@@ -27,17 +27,42 @@ if TYPE_CHECKING:
     from kiln_ai.datamodel.input_transform import InputTransform
 
 
+class JinjaExtractionError(ValueError):
+    """Raised when a Jinja2 filter encounters invalid data during extraction.
+
+    For example, the ``fromjson`` filter raises this when the input string is
+    not valid JSON.
+    """
+
+
+def _fromjson(value: object) -> Any:
+    """Jinja2 filter: parse a JSON string into a Python object.
+
+    Raises ``JinjaExtractionError`` on non-string input or invalid JSON.
+    """
+    if not isinstance(value, str):
+        raise JinjaExtractionError(
+            f"fromjson filter expected a string, got {type(value).__name__}"
+        )
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as e:
+        raise JinjaExtractionError(f"value is not valid JSON: {e}") from e
+
+
 _template_env = SandboxedEnvironment(
     undefined=StrictUndefined,
     trim_blocks=True,
     lstrip_blocks=True,
 )
+_template_env.filters["fromjson"] = _fromjson
 
 _expression_env = SandboxedEnvironment(
     undefined=Undefined,
     trim_blocks=True,
     lstrip_blocks=True,
 )
+_expression_env.filters["fromjson"] = _fromjson
 
 
 def compile_template_or_raise(template: str) -> None:
