@@ -349,6 +349,7 @@ class KilnModelProvider(BaseModel):
         tuned_chat_strategy: Used when a model is finetuned with a specific chat strategy, and it's best to use it at call time.
         supports_doc_extraction: Whether the provider is meant to support document extraction
         suggested_for_doc_extraction: Whether the model is suggested for document extraction
+        suggested_for_synthetic_user: Whether the model is suggested to play the synthetic user in multi-turn evals: a fast, inexpensive chat model that reads a whole conversation each turn
         multimodal_capable: Whether the model supports multimodal inputs (e.g. images, audio, video, PDFs, etc.)
         multimodal_mime_types: The mime types that the model supports for multimodal inputs (e.g. image/jpeg, video/mp4, application/pdf, etc.)
         multimodal_requires_pdf_as_image: Whether the model requires PDFs to be processed as images
@@ -374,6 +375,7 @@ class KilnModelProvider(BaseModel):
     tuned_chat_strategy: ChatStrategy | None = None
     supports_doc_extraction: bool = False
     suggested_for_doc_extraction: bool = False
+    suggested_for_synthetic_user: bool = False
     multimodal_capable: bool = False
     multimodal_mime_types: List[str] | None = None
     multimodal_requires_pdf_as_image: bool = False
@@ -810,6 +812,7 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
+                suggested_for_synthetic_user=True,
                 model_id="gpt-5.6-terra",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
@@ -833,6 +836,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_synthetic_user=True,
                 model_id="openai/gpt-5.6-terra",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
@@ -866,6 +870,7 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
+                suggested_for_synthetic_user=True,
                 model_id="gpt-5.6-luna",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
@@ -889,6 +894,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_synthetic_user=True,
                 model_id="openai/gpt-5.6-luna",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
@@ -2518,6 +2524,7 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_synthetic_user=True,
                 model_id="anthropic/claude-sonnet-5",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 openrouter_reasoning_object=True,
@@ -2537,6 +2544,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
+                suggested_for_synthetic_user=True,
                 model_id="claude-sonnet-5",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
@@ -2775,6 +2783,7 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_synthetic_user=True,
                 model_id="google/gemini-3.8-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 # while the model is capable of reasoning, it doesn't always return it in the response
@@ -2808,6 +2817,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
+                suggested_for_synthetic_user=True,
                 model_id="gemini-3.8-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_doc_extraction=True,
@@ -2839,6 +2849,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.vertex,
+                suggested_for_synthetic_user=True,
                 model_id="gemini-3.8-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_doc_extraction=True,
@@ -5523,6 +5534,7 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_synthetic_user=True,
                 model_id="deepseek/deepseek-v4-flash-0731",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
@@ -5532,12 +5544,14 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
+                suggested_for_synthetic_user=True,
                 model_id="accounts/fireworks/models/deepseek-v4-flash-0731",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
+                suggested_for_synthetic_user=True,
                 model_id="deepseek-ai/DeepSeek-V4-Flash-0731",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,

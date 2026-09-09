@@ -561,6 +561,25 @@ describe("Generation Settings dialog", () => {
     expect(drive).toContain("run_config_json: input_gen_config_key,")
   })
 
+  it("recommends the user-model lane's own tier, and filters on nothing", () => {
+    // The simulated user writes one plain-text message a turn: no schema, no
+    // tools. Recommending it from the data-gen flag pointed at the frontier
+    // models, and requiring data-gen support pushed usable chat models into
+    // "Not Recommended". It now reads its own registry flag and excludes
+    // nothing.
+    const su_lane = drive_settings_dialog.slice(
+      drive_settings_dialog.indexOf("<AvailableModelsDropdown"),
+    )
+    const lane = normalize(su_lane.slice(0, su_lane.indexOf("/>")))
+    expect(lane).toContain('suggested_mode: "synthetic_user"')
+    expect(lane).not.toContain("requires_")
+    // The lane's pre-selected default comes from the same set that badges it,
+    // so the dialog does not open on a model its own advisory warns about.
+    expect(
+      normalize(function_body("async function fill_null_lanes() {")),
+    ).toContain('build_suggested_models(models, "synthetic_user")[0]')
+  })
+
   it("names the judge lane once and explains it per arm", () => {
     expect(contains('label="Judge Model"')).toBe(true)
     expect(

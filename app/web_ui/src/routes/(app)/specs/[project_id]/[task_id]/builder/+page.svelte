@@ -1460,7 +1460,7 @@
     await load_available_models()
     const models = get(available_models)
     if (is_multi_turn && su_driver === null) {
-      const suggested = build_suggested_models(models, "data_gen")[0]
+      const suggested = build_suggested_models(models, "synthetic_user")[0]
       if (suggested) {
         su_driver = model_choice(suggested.model_id, suggested.provider_id)
       }
@@ -5244,14 +5244,17 @@
      user-simulator and judge are fixed-prompt internal roles, so they stay
      model-only. Each lane's explanation is pinned to its label as a tooltip
      rather than set below it, so the lanes and a warning still read as a
-     short form. Lane filters: the simulator and input generator want a
-     data-gen model (SDG's settings); the input generator also wants
-     structured output, and tool support once tools are chosen; judge needs
-     structured output (v1 judge form's settings). A model that fails a
-     filter is never cleared: it moves into the dropdown's "Not Recommended"
-     group and the lane explains why. With no usable model, the empty state
-     links to provider settings (same-tab, so the models list is fresh when
-     the user returns) and submit refuses to start. -->
+     short form. Lane filters: the input generator wants a data-gen model
+     with structured output (SDG's settings), plus tool support once tools
+     are chosen; judge needs structured output (v1 judge form's settings).
+     The simulator filters on nothing — it writes one plain-text message a
+     turn, with no schema and no tools, so any chat model can do it — and
+     recommends the fast, inexpensive models rather than the frontier ones
+     the other two want. A model that fails a filter is never cleared: it
+     moves into the dropdown's "Not Recommended" group and the lane explains
+     why. With no usable model, the empty state links to provider settings
+     (same-tab, so the models list is fresh when the user returns) and submit
+     refuses to start. -->
 <Dialog bind:this={drive_settings_dialog} title="Generation Settings">
   <FormContainer
     submit_label={`Generate Dataset (${planned_total} items)`}
@@ -5268,8 +5271,7 @@
         bind:model_name={su_model_id}
         bind:provider_name={su_provider_id}
         settings={{
-          requires_data_gen: true,
-          suggested_mode: "data_gen",
+          suggested_mode: "synthetic_user",
         }}
       />
       <!-- Conversation length, in the synthetic data dialog's stepper-row
