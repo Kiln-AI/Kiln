@@ -84,14 +84,19 @@ async def test_instances_are_isolated(provider, world, fixture):
     )
 
 
-async def test_finalize_drops_unchanged_copy(provider, world, fixture):
+async def test_finalize_marks_unchanged_copy_but_keeps_it(provider, world, fixture):
+    """The copy stays until the runner destroys it: a concurrent grader may be reading."""
     inst = await provider.create(world, fixture, frozen_time=None)
     done = await provider.finalize(inst)
     assert done.unchanged is True
     assert done.effective_path == str(fixture.data_dir())
-    assert not (provider.cache_root / inst.instance_id).exists()
+    copy = provider.cache_root / inst.instance_id
+    assert copy.is_dir()
+    assert not (copy / ACTIVE_MARKER).exists()
     # Idempotent on an already-settled record.
     assert (await provider.finalize(done)).unchanged is True
+    await provider.destroy(done)
+    assert not copy.exists()
 
 
 async def test_finalize_keeps_changed_copy(provider, world, fixture):

@@ -113,7 +113,12 @@ class LocalCopyProvider:
         )
 
     async def finalize(self, instance: SyntheticInstance) -> SyntheticInstance:
-        """Drop the copy if the run left it byte-identical to the fixture."""
+        """Mark the copy `unchanged` if the run left it byte-identical to the fixture.
+
+        Does not delete the copy: another job grading the same trace (a second judge
+        that reused this generation) may still be reading it. The runner destroys
+        unchanged copies once every job has finished, and `prune` catches the rest.
+        """
         if instance.unchanged:
             return instance
         dest = Path(instance.path)
@@ -124,10 +129,7 @@ class LocalCopyProvider:
             marker = dest / ACTIVE_MARKER
             if marker.exists():
                 marker.unlink()
-            if _tree_digest(dest) == _tree_digest(Path(instance.fixture_data_path)):
-                shutil.rmtree(dest, ignore_errors=True)
-                return True
-            return False
+            return _tree_digest(dest) == _tree_digest(Path(instance.fixture_data_path))
 
         unchanged = await asyncio.to_thread(_compare_and_settle)
         if unchanged:

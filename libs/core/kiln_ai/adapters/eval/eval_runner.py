@@ -38,6 +38,7 @@ from kiln_ai.datamodel.eval_splits import (
 from kiln_ai.datamodel.synthetic_world import (
     SyntheticEnvironment,
     SyntheticFixture,
+    SyntheticInstance,
     SyntheticWorld,
     synthetic_fingerprint,
 )
@@ -206,6 +207,10 @@ class EvalRunner:
         self._synthetic_provider: SyntheticInstanceProvider = (
             synthetic_provider or LocalCopyProvider()
         )
+        # Copies found byte-identical to their fixture during this run. Deleted only
+        # after every job has finished: a concurrent judge of the same trace may still
+        # be reading the copy, and its record predates the `unchanged` re-save.
+        self._unchanged_instances: List[SyntheticInstance] = []
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":
@@ -319,8 +324,11 @@ class EvalRunner:
             run_job_fn=self.run_job,
             max_retries=2,
         )
-        async for progress in runner.run():
-            yield progress
+        try:
+            async for progress in runner.run():
+                yield progress
+        finally:
+            await self._drop_unchanged_instances()
 
     async def run_job(self, job: EvalJob) -> bool:
         try:
@@ -527,7 +535,20 @@ class EvalRunner:
                 trace.synthetic_instance = finalized
                 async with self._save_context():
                     trace.save_to_file()
+                self._unchanged_instances.append(finalized)
         return persisted
+
+    async def _drop_unchanged_instances(self) -> None:
+        pending, self._unchanged_instances = self._unchanged_instances, []
+        for instance in pending:
+            try:
+                await self._synthetic_provider.destroy(instance)
+            except Exception as e:
+                logger.warning(
+                    "Dropping unchanged synthetic instance %s failed: %s",
+                    instance.instance_id,
+                    e,
+                )
 
     def _resolve_synthetic_environment(
         self, environment: SyntheticEnvironment

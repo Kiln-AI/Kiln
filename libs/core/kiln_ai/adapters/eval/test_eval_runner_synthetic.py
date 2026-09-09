@@ -533,3 +533,41 @@ async def test_prune_runs_before_synthetic_jobs_only(
     ):
         await _drain(_runner([cfg], run_config, provider))
     prune.assert_called_once()
+
+
+async def test_concurrent_judges_share_one_generation_and_copy(
+    project, task, world, fixtures, real_tool, run_config, eval_, provider
+):
+    """Two judges on one read-only item, in one run: the second must still be able to
+    read the copy while the first finalizes it. The copy is dropped only at the end."""
+    read_only_tool = world.tools()[0]
+    read_only_tool.code = "def run(note):\n    return 'looked'\n"
+    read_only_tool.save_to_file()
+    _input(task, "look", _env(world, fixtures["a"]), id="ei_a")
+    scorer_code = (
+        "import os, time\n"
+        "def score(output, synthetic_instance):\n"
+        "    p = os.path.join(synthetic_instance['path'], 'fixture.db')\n"
+        "    ok = os.path.exists(p)\n"
+        "    time.sleep(0.3)\n"
+        "    ok = ok and os.path.exists(p)\n"
+        "    return {'accuracy': 1.0 if ok else 0.0}\n"
+    )
+    first = _config(
+        eval_, CodeEvalProperties(code=scorer_code, timeout_seconds=30), name="first"
+    )
+    second = _config(
+        eval_, CodeEvalProperties(code=scorer_code, timeout_seconds=30), name="second"
+    )
+    generator = ToolCallingGenerator(task, build_code_tool_id(real_tool.id))
+    with patch.object(BaseV2EvalBridge, "run_task", new=generator):
+        await _drain(_runner([first, second], run_config, provider))
+    assert len(_traces(task)) == 1
+    assert len(generator.outputs) == 1
+    for cfg in (first, second):
+        run = cfg.runs(readonly=True)[0]
+        assert run.skipped_reason is None, cfg.name
+        assert run.scores == {"accuracy": 1.0}, cfg.name
+    trace = _traces(task)[0]
+    assert trace.synthetic_instance.unchanged is True
+    assert not Path(trace.synthetic_instance.path).exists()
