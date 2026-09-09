@@ -347,6 +347,40 @@ async def test_json_schema_response_format_adds_required_to_nested(config, tmp_p
     assert result_schema["properties"]["result"]["required"] == ["value", "unit"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("openai_responses_api", [True, False])
+async def test_json_schema_response_format_strict_for_responses_api(
+    config, mock_task, openai_responses_api
+):
+    """litellm's responses bridge turns an absent strict into an explicit false, and
+    /v1/responses defaults it to true, so structured output would run unconstrained.
+    Other providers keep the existing shape: some reject an unknown strict key."""
+    config.run_config_properties.structured_output_mode = (
+        StructuredOutputMode.json_schema
+    )
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    provider = KilnModelProvider(
+        name=ModelProviderName.openai,
+        model_id="gpt-6-astra",
+        openai_responses_api=openai_responses_api,
+    )
+
+    with (
+        patch.object(adapter, "model_provider", return_value=provider),
+        patch.object(adapter, "has_structured_output", return_value=True),
+    ):
+        options = await adapter.response_format_options()
+
+    json_schema = options["response_format"]["json_schema"]
+    assert json_schema["name"] == "task_response"
+    assert json_schema["schema"]["properties"]["test"] == {"type": "string"}
+    if openai_responses_api:
+        assert json_schema["strict"] is True
+    else:
+        assert "strict" not in json_schema
+
+
 @pytest.mark.parametrize(
     "provider_name,expected_prefix",
     [

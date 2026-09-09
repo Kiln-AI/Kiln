@@ -39,6 +39,7 @@ from unittest.mock import Mock, patch
 import httpx
 import pytest
 
+from kiln_ai import datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.ml_model_list import ModelName, built_in_models
 from kiln_ai.adapters.model_adapters.test_litellm_adapter_tools import build_test_task
@@ -527,3 +528,95 @@ async def test_openai_responses_narration_then_tool_call(
     assert run is not None, f"No run produced.{ctx}"
     assert tool_called, f"The 'add' tool was never called.{ctx}"
     assert "[4]" in run.output.output, f"Final answer missing '[4]'.{ctx}"
+
+
+# A minimal structured task: one required string field, which is enough for OpenAI to
+# either honour the schema or not.
+STRUCTURED_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "answer": {"type": "string", "description": "The answer, spelled out in words"},
+    },
+    "required": ["answer"],
+}
+
+STRUCTURED_PROMPT = "What is 2+2?"
+
+
+def build_structured_task(tmp_path) -> datamodel.Task:
+    project = datamodel.Project(name="test", path=tmp_path / "test.kiln")
+    project.save_to_file()
+    task = datamodel.Task(
+        parent=project,
+        name="test task",
+        instruction="Answer the question. Spell the answer out in words.",
+        output_json_schema=json.dumps(STRUCTURED_SCHEMA),
+    )
+    task.save_to_file()
+    return task
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize(("model_name", "provider_name"), NARRATION_CASES)
+async def test_openai_responses_structured_output_is_strict(
+    tmp_path, model_name: str, provider_name: str
+):
+    """Structured output must stay schema-constrained on the responses bridge.
+
+    litellm turns an absent `strict` into an explicit `strict: false`, and
+    /v1/responses defaults it to true, so omitting it silently runs structured
+    output unconstrained.
+    """
+    skip_if_missing_provider_keys(provider_name)
+
+    task = build_structured_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        KilnAgentRunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name=model_name,
+            model_provider_name=ModelProviderName(provider_name),
+            prompt_id="simple_prompt_builder",
+            thinking_level="low",
+            temperature=1.0,
+            top_p=1.0,
+        ),
+    )
+
+    run = None
+    error: Exception | None = None
+    with record_provider_requests("openai.com") as request_log:
+        try:
+            run = await adapter.invoke(STRUCTURED_PROMPT)
+        except Exception as e:
+            error = e
+
+    formats = [
+        ((r.body or {}).get("text") or {}).get("format") or {}
+        for r in request_log.requests
+    ]
+    ctx = (
+        f"\ncase: model={model_name} provider={provider_name}"
+        f"\nendpoints: {request_log.paths}"
+        f"\ntext.format on the wire: {formats}"
+        f"\nfirst error line: {first_error_line(error)}\n"
+    )
+
+    assert error is None, f"Run raised: {first_error_line(error)}{ctx}"
+    assert run is not None, f"No run produced.{ctx}"
+    assert request_log.requests, f"No provider request was recorded at all.{ctx}"
+
+    not_json_schema = [f for f in formats if f.get("type") != "json_schema"]
+    assert not not_json_schema, (
+        f"Expected every request to send a json_schema format.{ctx}"
+    )
+
+    not_strict = [f for f in formats if f.get("strict") is not True]
+    assert not not_strict, (
+        f"Expected every request to send strict=True, but "
+        f"{len(not_strict)} of {len(formats)} did not.{ctx}"
+    )
+
+    assert isinstance(json.loads(run.output.output), dict), (
+        f"Output did not parse as a JSON object.{ctx}"
+    )

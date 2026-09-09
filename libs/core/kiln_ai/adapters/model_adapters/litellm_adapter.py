@@ -540,13 +540,20 @@ class LiteLlmAdapter(BaseAdapter):
         # The valid ranges are still enforced by the prompt + post-hoc
         # validation, so this only affects the schema sent over the wire.
         output_schema = strip_numeric_bounds(output_schema)
+        json_schema: dict[str, Any] = {
+            "name": "task_response",
+            "schema": output_schema,
+        }
+        if self.model_provider().openai_responses_api:
+            # litellm's responses bridge turns an absent strict into an explicit
+            # false, and /v1/responses defaults it to true, so leaving it out runs
+            # structured output unconstrained. Only set it for the bridge: json_schema
+            # mode is shared by hundreds of providers, some of which reject the key.
+            json_schema["strict"] = True
         return {
             "response_format": {
                 "type": "json_schema",
-                "json_schema": {
-                    "name": "task_response",
-                    "schema": output_schema,
-                },
+                "json_schema": json_schema,
             }
         }
 
