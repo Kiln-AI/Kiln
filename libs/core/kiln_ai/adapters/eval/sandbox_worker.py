@@ -18,6 +18,7 @@ from multiprocessing import Queue
 from typing import Any
 
 from kiln_ai.sandbox.entrypoint import call_entrypoint
+from kiln_ai.sandbox.synthetic_env import apply_synthetic_instance
 from kiln_ai.sandbox.tools_api import install_tools_modules
 
 
@@ -51,6 +52,7 @@ def execute_scorer_bridged(
         sys.stdout = captured_stdout  # type: ignore[assignment]
         sys.stderr = captured_stderr  # type: ignore[assignment]
 
+        apply_synthetic_instance(inputs.get("synthetic_instance"))
         install_tools_modules(requests, responses)
 
         namespace: dict[str, Any] = {}
@@ -79,6 +81,7 @@ def execute_scorer_bridged(
             "trace": inputs.get("trace"),
             "reference_data": inputs.get("reference_data"),
             "task_input": inputs["task_input"],
+            "synthetic_instance": inputs.get("synthetic_instance"),
         }
         sig = inspect.signature(score_fn)
         declared = set(sig.parameters.keys())

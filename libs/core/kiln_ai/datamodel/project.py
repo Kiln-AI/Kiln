@@ -9,6 +9,7 @@ from kiln_ai.datamodel.extraction import Document, ExtractorConfig
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.reranker import RerankerConfig
 from kiln_ai.datamodel.skill import Skill
+from kiln_ai.datamodel.synthetic_world import SyntheticWorld
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.vector_store import VectorStoreConfig
 
@@ -27,6 +28,7 @@ class Project(
         "reranker_configs": RerankerConfig,
         "skills": Skill,
         "code_tools": CodeTool,
+        "synthetic_worlds": SyntheticWorld,
     },
 ):
     """
@@ -75,3 +77,6 @@ class Project(
 
     def code_tools(self, readonly: bool = False) -> list[CodeTool]:
         return super().code_tools(readonly=readonly)  # type: ignore
+
+    def synthetic_worlds(self, readonly: bool = False) -> list[SyntheticWorld]:
+        return super().synthetic_worlds(readonly=readonly)  # type: ignore

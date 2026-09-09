@@ -168,6 +168,7 @@ export function generate_default_code(
         trace: List of message dicts from the conversation.
         reference_data: Dict of expected data, or None. Dataset items supply their stored output as 'reference_answer'.
         task_input: The original task input string.
+        synthetic_instance: Dict with 'path' to the synthetic world instance the run wrote to, or None. Declare it to inspect state (e.g. sqlite3.connect(f"{synthetic_instance['path']}/fixture.db")).
 
     Return dictionary:
         ${returns_doc}
@@ -187,6 +188,7 @@ export function generate_default_code(
         output: The model's final output string.
         trace: List of message dicts from the conversation.
         task_input: The original task input string.
+        synthetic_instance: Dict with 'path' to the synthetic world instance the run wrote to, or None. Declare it to inspect state (e.g. sqlite3.connect(f"{synthetic_instance['path']}/fixture.db")).
 
     Return dictionary:
         ${returns_doc}

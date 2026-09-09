@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, AsyncGenerator, Callable, Dict, List, Literal, Set, Tuple
 
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
@@ -50,14 +51,31 @@ from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     as_kiln_agent_run_config,
 )
+from kiln_ai.datamodel.synthetic_world import (
+    SyntheticEnvironment,
+    SyntheticFixture,
+    SyntheticInstance,
+    SyntheticWorld,
+    synthetic_fingerprint,
+)
 from kiln_ai.datamodel.task import Task, TaskRunConfig
 from kiln_ai.datamodel.task_run import EvalItemSource, TaskRun, Usage
 from kiln_ai.datamodel.usage import MessageUsage
+from kiln_ai.run_context import (
+    SyntheticInstanceContext,
+    get_synthetic_instance,
+    reset_synthetic_instance,
+    set_synthetic_instance,
+)
 from kiln_ai.synthetic_user import drive_case_for_eval
 from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
 from kiln_ai.synthetic_user.models import (
     TAG_SU_ENDED_CONVERSATION,
     SyntheticUserDriverConfig,
+)
+from kiln_ai.synthetic_worlds.provider import (
+    LocalCopyProvider,
+    SyntheticInstanceProvider,
 )
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
@@ -218,6 +236,41 @@ def _splits_a_turn_into_two_messages(
     )
 
 
+@dataclass(frozen=True)
+class _SyntheticTarget:
+    """A resolved synthetic environment: what a job needs to create instances and to
+    key its traces."""
+
+    world: SyntheticWorld
+    fixture: SyntheticFixture
+    frozen_time: Any
+    bindings: dict[str, Any]
+    variant: str
+
+
+@dataclass(frozen=True)
+class _Generation:
+    """How a job produces its trace: the key it files under, and the call that makes
+    and persists it. Built per lane, run through the trace index by the caller."""
+
+    key: TraceKey
+    generate: Callable[[], Any]
+
+
+@dataclass(frozen=True)
+class _Skip:
+    reason: SkippedReason
+    detail: str
+
+
+def _synthetic_environment_of(job: EvalJob) -> SyntheticEnvironment | None:
+    """The synthetic environment a job's item declares, if it is an EvalInput with one."""
+    item = getattr(job, "item", None)
+    if isinstance(item, EvalInput):
+        return item.synthetic_environment
+    return None
+
+
 def no_golden_set_message(eval: Eval) -> str:
     """Why judge comparison can't run without a golden set. One wording, two raisers.
 
@@ -252,6 +305,7 @@ class EvalRunner:
         eval_run_type: Literal["eval_config_eval", "task_run_eval"],
         split: ResolvedSplit | None = None,
         save_context: SaveContext | None = None,
+        synthetic_provider: SyntheticInstanceProvider | None = None,
     ):
         if len(eval_configs) == 0:
             raise ValueError("Eval runner requires at least one eval config")
@@ -318,6 +372,15 @@ class EvalRunner:
         # visible to the next, whether that next job is running concurrently under a
         # different eval config or is this job's own retry (functional spec 4.2, 4.3).
         self._trace_index = TraceIndex(self.task, vet=self._build_trace_vet())
+        # Instantiated inline: one implementation exists. The Protocol is the seam for a
+        # hosted provider, and tests pass their own to point the cache at tmp_path.
+        self._synthetic_provider: SyntheticInstanceProvider = (
+            synthetic_provider or LocalCopyProvider()
+        )
+        # Copies found byte-identical to their fixture during this run. Deleted only
+        # after every job has finished: a concurrent judge of the same trace may still
+        # be reading the copy, and its record predates the `unchanged` re-save.
+        self._unchanged_instances: List[SyntheticInstance] = []
 
     def _build_trace_vet(self) -> Callable[[TraceKey, TaskRun], str | None] | None:
         """The completeness check the trace index applies to reuse candidates, or None
@@ -345,7 +408,7 @@ class EvalRunner:
             return None
 
         def vet_conversation(key: TraceKey, trace: TaskRun) -> str | None:
-            source_type, source_id, _ = key
+            source_type, source_id, _, _ = key
             turns = required_turns.get((source_type, source_id))
             if turns is None:
                 return None
@@ -621,14 +684,20 @@ class EvalRunner:
         """
         jobs = self.collect_tasks()
 
+        if any(_synthetic_environment_of(job) is not None for job in jobs):
+            await self._prune_synthetic_instances()
+
         runner = AsyncJobRunner(
             concurrency=concurrency,
             jobs=jobs,
             run_job_fn=self.run_job,
             max_retries=2,
         )
-        async for progress in runner.run():
-            yield progress
+        try:
+            async for progress in runner.run():
+                yield progress
+        finally:
+            await self._drop_unchanged_instances()
 
     async def run_job(self, job: EvalJob) -> bool:
         try:
@@ -765,23 +834,62 @@ class EvalRunner:
                 "V2 eval type not yet implemented",
             )
 
-        if (
+        is_multi_turn_input = (
             isinstance(job.item, EvalInput)
             and isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
             and job.type == "task_run_eval"
-        ):
+        )
+
+        # Synthetic world lane. After the type skip (a skipped item must never create
+        # an instance) and before either generation lane, so single-turn and multi-turn
+        # inputs share one lifecycle: the multi-turn drive runs with the instance in
+        # context for every turn, and the leaf trace records it.
+        environment = _synthetic_environment_of(job)
+        if environment is not None:
+            if job.task_run_config is None:
+                raise ValueError("A task_run_eval job requires a run config")
+            target = self._resolve_synthetic_target(environment)
+            if is_multi_turn_input:
+                assert isinstance(job.item, EvalInput)
+                assert isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
+                generation = self._multi_turn_generation(
+                    job, job.item, job.item.data, variant=target.variant
+                )
+            else:
+                generation = self._single_turn_generation(
+                    job, evaluator, variant=target.variant
+                )
+            if isinstance(generation, _Skip):
+                return await self._persist_skip(
+                    job, generation.reason, generation.detail
+                )
+            return await self._run_v2_job_in_synthetic_world(
+                job, evaluator, target, generation
+            )
+
+        if is_multi_turn_input:
             # Multi-turn synthetic input: re-drive the conversation fresh
             # for this run config, then judge the new trace. The job.type
             # guard is defensive — collect_tasks never pairs eval_config_eval
             # with EvalInput items, because judge calibration is scoped by the
             # golden filter and golden filters only address TaskRuns. There is
             # no runtime handler for a hand-built job of that shape.
-            seed = (
-                job.item.data.first_message.text if job.item.data.first_message else ""
+            assert isinstance(job.item, EvalInput)
+            assert isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
+            generation = self._multi_turn_generation(job, job.item, job.item.data)
+            if isinstance(generation, _Skip):
+                return await self._persist_skip(
+                    job, generation.reason, generation.detail
+                )
+            # A raising drive persists nothing, so the job's retry re-drives; a
+            # successful one is on disk before the judge sees it, so a scoring
+            # failure re-scores without paying for the conversation again.
+            trace, _ = await self._trace_index.get_or_create(
+                generation.key, generation.generate
             )
-            return await self._run_v2_multi_turn_synthetic_job(
-                job, evaluator, job.item, job.item.data, seed
-            )
+            eval_task_input = EvalTaskInput.from_trace(trace, job.item)
+            result = await evaluator.evaluate(eval_task_input)
+            return await self._persist_judgment(job, trace, result)
 
         if isinstance(job.item, TaskRun) and job.item.parent_task_run_id is not None:
             # Multi-turn chain leaf: a conversation can't be regenerated in
@@ -816,6 +924,148 @@ class EvalRunner:
         result = await evaluator.evaluate(eval_task_input)
         return await self._persist_judgment(job, trace, result)
 
+    async def _run_v2_job_in_synthetic_world(
+        self,
+        job: EvalJob,
+        evaluator: BaseV2EvalBridge,
+        target: "_SyntheticTarget",
+        generation: "_Generation",
+    ) -> bool:
+        """One job against a synthetic world instance, for either generation lane.
+
+        Generation runs under the trace index's per-key lock with a freshly created
+        instance in context, so racing judges of one item share a single generation and
+        a single copy, and every turn of a multi-turn drive sees the same instance.
+        Grading then runs with the context rebuilt from whatever the trace recorded —
+        the same record for a reused trace — so scorers read the state the generation
+        actually left. The context is reset in `finally` both times: worker tasks are
+        reused across jobs.
+        """
+
+        async def generate() -> TaskRun:
+            instance = await self._synthetic_provider.create(
+                target.world, target.fixture, frozen_time=target.frozen_time
+            )
+            token = set_synthetic_instance(
+                SyntheticInstanceContext(
+                    instance=instance, world=target.world, bindings=target.bindings
+                )
+            )
+            try:
+                return await generation.generate()
+            finally:
+                reset_synthetic_instance(token)
+
+        trace, was_generated = await self._trace_index.get_or_create(
+            generation.key, generate
+        )
+        instance = trace.synthetic_instance
+        if instance is None:
+            raise ValueError(
+                f"Eval trace {trace.id} was generated for a synthetic environment but "
+                "records no synthetic instance"
+            )
+        state_unavailable = not instance.unchanged and not Path(instance.path).is_dir()
+        if state_unavailable:
+            logger.warning(
+                "Synthetic instance %s for trace %s has been evicted; graders that "
+                "need its state will be skipped rather than regenerating",
+                instance.instance_id,
+                trace.id,
+            )
+        token = set_synthetic_instance(
+            SyntheticInstanceContext(
+                instance=instance,
+                world=target.world,
+                bindings=target.bindings,
+                state_unavailable=state_unavailable,
+            )
+        )
+        try:
+            eval_task_input = EvalTaskInput.from_trace(trace, job.item)
+            result = await evaluator.evaluate(eval_task_input)
+            persisted = await self._persist_judgment(job, trace, result)
+        finally:
+            reset_synthetic_instance(token)
+
+        if was_generated:
+            finalized = await self._synthetic_provider.finalize(instance)
+            if finalized.unchanged and not instance.unchanged:
+                trace.synthetic_instance = finalized
+                async with self._save_context():
+                    trace.save_to_file()
+                self._unchanged_instances.append(finalized)
+        return persisted
+
+    def _resolve_synthetic_target(
+        self, environment: SyntheticEnvironment
+    ) -> "_SyntheticTarget":
+        """The world and fixture an input names, or an error: never a silent fallback."""
+        project = self.task.parent_project()
+        if project is None:
+            raise ValueError(
+                "Synthetic environments require the task to belong to a project"
+            )
+        world = SyntheticWorld.from_id_and_parent_path(
+            environment.world_id, project.path
+        )
+        if world is None:
+            raise ValueError(
+                f"Synthetic world {environment.world_id} not found in project {project.id}"
+            )
+        fixture = world.fixture_by_id(environment.fixture_id)
+        if fixture is None:
+            raise ValueError(
+                f"Synthetic fixture {environment.fixture_id} not found in world {world.id}"
+            )
+        frozen_time = environment.frozen_time or fixture.frozen_time
+        return _SyntheticTarget(
+            world=world,
+            fixture=fixture,
+            frozen_time=frozen_time,
+            bindings=world.bindings(),
+            variant=synthetic_fingerprint(
+                world.id or "",
+                fixture.id or "",
+                frozen_time,
+                world.framework_content_hash,
+            ),
+        )
+
+    def _single_turn_generation(
+        self, job: EvalJob, evaluator: BaseV2EvalBridge, variant: str | None = None
+    ) -> "_Generation":
+        if job.task_run_config is None:
+            raise ValueError("A task_run_eval job requires a run config")
+        key = trace_key(item_key(job.item), job.task_run_config.id, variant)
+        return _Generation(
+            key=key,
+            generate=lambda: self._generate_and_persist(job, evaluator, key),
+        )
+
+    async def _drop_unchanged_instances(self) -> None:
+        pending, self._unchanged_instances = self._unchanged_instances, []
+        for instance in pending:
+            try:
+                await self._synthetic_provider.destroy(instance)
+            except Exception as e:
+                logger.warning(
+                    "Dropping unchanged synthetic instance %s failed: %s",
+                    instance.instance_id,
+                    e,
+                )
+
+    async def _prune_synthetic_instances(self) -> None:
+        live = [
+            run.synthetic_instance
+            for run in self.task.runs(readonly=True, include_eval_generated=True)
+            if run.synthetic_instance is not None
+        ]
+        try:
+            await self._synthetic_provider.prune(live)
+        except Exception as e:
+            logger.warning("Pruning synthetic instances failed: %s", e, exc_info=True)
+
     async def _resolve_trace(
         self, job: EvalJob, evaluator: BaseV2EvalBridge
     ) -> TaskRun:
@@ -844,7 +1094,7 @@ class EvalRunner:
         under exactly the key the index filed it under. A run that disagrees is never
         found again, and the eval regenerates it on every future run.
         """
-        source_type, source_id, run_config_id = key
+        source_type, source_id, run_config_id, variant = key
         trace = await evaluator.run_task(job.item, run_config_id=run_config_id)
         if trace.id is None:
             # `run_task` builds its adapter with allow_saving=False, and every adapter
@@ -857,7 +1107,12 @@ class EvalRunner:
             # leave an eval trace permanently indistinguishable from a curated dataset
             # row — the contamination Task.runs()' default-exclude exists to prevent.
             trace.id = generate_model_id()
-        trace.eval_source = EvalItemSource(source_type=source_type, source_id=source_id)
+        trace.eval_source = EvalItemSource(
+            source_type=source_type, source_id=source_id, variant=variant or None
+        )
+        synthetic_ctx = get_synthetic_instance()
+        if synthetic_ctx is not None:
+            trace.synthetic_instance = synthetic_ctx.instance
         async with self._save_context():
             trace.save_to_file()
         return trace
@@ -944,15 +1199,15 @@ class EvalRunner:
             eval_usage=result.usage,
         )
 
-    async def _run_v2_multi_turn_synthetic_job(
+    def _multi_turn_generation(
         self,
         job: EvalJob,
-        evaluator: BaseV2EvalBridge,
         eval_input: EvalInput,
         data: MultiTurnSyntheticEvalInputData,
-        seed: str,
-    ) -> bool:
-        """task_run_eval over a multi-turn synthetic input.
+        variant: str | None = None,
+    ) -> "_Generation | _Skip":
+        """The generation for a task_run_eval over a multi-turn synthetic input, or the
+        skip that stands in for it.
 
         The run config under evaluation drives the agent while the drive
         config stamped on the item plays the synthetic user, so each run
@@ -962,18 +1217,17 @@ class EvalRunner:
         like single-turn generations: durable before scoring, and reusable
         by every other judge over the same item and run config.
         """
+        seed = data.first_message.text if data.first_message else ""
         drive_config = data.drive_config
         if drive_config is None:
-            return await self._persist_skip(
-                job,
+            return _Skip(
                 SkippedReason.missing_drive_config,
                 "This item has no synthetic user configuration. "
                 "Create a new batch to replace it.",
             )
 
         if not seed:
-            return await self._persist_skip(
-                job,
+            return _Skip(
                 SkippedReason.incompatible_input_shape,
                 "Multi-turn synthetic input has no first_message to open the conversation",
             )
@@ -997,7 +1251,7 @@ class EvalRunner:
                 f"drive config: {drive_config.model_provider}"
             ) from e
 
-        key = trace_key(item_key(eval_input), job.task_run_config.id)
+        key = trace_key(item_key(eval_input), job.task_run_config.id, variant)
 
         async def drive_and_persist() -> TaskRun:
             # No app-level timeout on the re-drive: it terminates
@@ -1050,14 +1304,7 @@ class EvalRunner:
                 key, drive_result, seed=seed, ended_by_su=ended_by_su
             )
 
-        # A raising drive persists nothing, so the job's retry re-drives; a
-        # successful one is on disk before the judge sees it, so a scoring
-        # failure re-scores without paying for the conversation again.
-        trace, _ = await self._trace_index.get_or_create(key, drive_and_persist)
-
-        eval_task_input = EvalTaskInput.from_trace(trace, eval_input)
-        result = await evaluator.evaluate(eval_task_input)
-        return await self._persist_judgment(job, trace, result)
+        return _Generation(key=key, generate=drive_and_persist)
 
     async def _persist_driven_conversation(
         self,
@@ -1083,7 +1330,7 @@ class EvalRunner:
         completeness gate that needs it runs again on every later reuse of this
         file, when the drive that produced it is long gone.
         """
-        source_type, source_id, run_config_id = key
+        source_type, source_id, run_config_id, variant = key
         leaf = drive_result.chain[-1]
         if leaf.output.source is None:
             # Fail before anything is saved: a run without an output source can't
@@ -1115,9 +1362,14 @@ class EvalRunner:
             synthetic_user_usage=drive_result.su_usage,
             cumulative_usage=leaf.cumulative_usage
             or MessageUsage.from_trace(leaf.trace),
-            eval_source=EvalItemSource(source_type=source_type, source_id=source_id),
+            eval_source=EvalItemSource(
+                source_type=source_type, source_id=source_id, variant=variant or None
+            ),
             tags=[TAG_SU_ENDED_CONVERSATION] if ended_by_su else [],
         )
+        synthetic_ctx = get_synthetic_instance()
+        if synthetic_ctx is not None:
+            run.synthetic_instance = synthetic_ctx.instance
         # The drive runs with allow_saving=False, so nothing touched disk before
         # this fully-stamped run — no crash window in which a driven conversation
         # could persist without eval_source and pass for a curated dataset row.
