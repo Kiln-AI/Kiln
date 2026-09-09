@@ -442,6 +442,8 @@ def test_suggested_for_synthetic_user():
         ModelName.claude_sonnet_5,
         ModelName.deepseek_4_flash,
         ModelName.gemini_3_8_flash,
+        ModelName.glm_5_3_flash,
+        ModelName.claude_4_5_haiku,
     }
 
     suggested = {
