@@ -3364,3 +3364,74 @@ class TestEmptyResponseErrors:
                     await adapter._run_model_turn(
                         provider, [{"role": "user", "content": "Hi"}], None, False
                     )
+
+
+async def test_process_tool_calls_passes_synthetic_instance_context(config, mock_task):
+    """The active synthetic instance reaches every tool through ToolCallContext."""
+    from kiln_ai.datamodel.synthetic_world import SyntheticInstance
+    from kiln_ai.datamodel.tool_id import ToolId
+    from kiln_ai.run_context import (
+        SyntheticInstanceContext,
+        reset_synthetic_instance,
+        set_synthetic_instance,
+    )
+    from kiln_ai.tools.base_tool import (
+        KilnToolInterface,
+        ToolCallContext,
+        ToolCallDefinition,
+        ToolCallResult,
+    )
+
+    seen: list[ToolCallContext | None] = []
+
+    class RecordingTool(KilnToolInterface):
+        async def run(
+            self, context: ToolCallContext | None = None, **kwargs
+        ) -> ToolCallResult:
+            seen.append(context)
+            return ToolCallResult(output="ok")
+
+        async def toolcall_definition(self) -> ToolCallDefinition:
+            return {
+                "type": "function",
+                "function": {
+                    "name": "rec",
+                    "description": "records",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+
+        async def id(self) -> ToolId:
+            return "rec"
+
+        async def name(self) -> str:
+            return "rec"
+
+        async def description(self) -> str:
+            return "records"
+
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    call = ChatCompletionMessageToolCall(
+        id="call_1", type="function", function=Function(name="rec", arguments="{}")
+    )
+    instance = SyntheticInstance(
+        instance_id="inst_ctx",
+        world_id="w",
+        fixture_id="f",
+        path="/inst",
+        fixture_data_path="/fixture",
+    )
+    token = set_synthetic_instance(
+        SyntheticInstanceContext(instance=instance, world=Mock())
+    )
+    try:
+        with patch.object(adapter, "available_tools", return_value=[RecordingTool()]):
+            await adapter.process_tool_calls([call])
+    finally:
+        reset_synthetic_instance(token)
+
+    with patch.object(adapter, "available_tools", return_value=[RecordingTool()]):
+        await adapter.process_tool_calls([call])
+
+    assert seen[0] is not None and seen[0].synthetic_instance is instance
+    assert seen[1] is not None and seen[1].synthetic_instance is None

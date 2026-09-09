@@ -1489,3 +1489,85 @@ class TestUIExampleFilterAndTransform:
         assert not result.is_error, f"Expected success, got: {result.output}"
         parsed = json.loads(result.output)
         assert len(parsed) == 3
+
+
+# ---------------------------------------------------------------------------
+# Synthetic instance handoff
+# ---------------------------------------------------------------------------
+
+
+class TestSyntheticInstanceHandoff:
+    async def test_child_sees_instance_env_and_helper(self, tmp_path):
+        from kiln_ai.datamodel.synthetic_world import SyntheticInstance
+        from kiln_ai.tools.base_tool import ToolCallContext
+
+        code = textwrap.dedent(
+            """
+            import os
+            import kiln
+
+            def run(x):
+                info = kiln.synthetic_instance()
+                return {
+                    "env_id": os.environ.get("KILN_SYNTHETIC_INSTANCE_ID"),
+                    "env_path": os.environ.get("KILN_SYNTHETIC_INSTANCE_PATH"),
+                    "helper_id": info["instance_id"] if info else None,
+                    "frozen": os.environ.get("KILN_SYNTHETIC_FROZEN_TIME"),
+                }
+            """
+        )
+        tool = _make_python_code_tool(tmp_path, code)
+        instance = SyntheticInstance(
+            instance_id="inst_abc",
+            world_id="w",
+            fixture_id="f",
+            path=str(tmp_path / "inst"),
+            fixture_data_path=str(tmp_path / "fixture"),
+        )
+        result = await tool.run(ToolCallContext(synthetic_instance=instance), x="a")
+        assert result.is_error is False
+        payload = json.loads(result.output)
+        assert payload["env_id"] == "inst_abc"
+        assert payload["env_path"] == str(tmp_path / "inst")
+        assert payload["helper_id"] == "inst_abc"
+        assert payload["frozen"] is None
+
+    async def test_child_without_instance_has_no_env(self, tmp_path):
+        from kiln_ai.tools.base_tool import ToolCallContext
+
+        code = textwrap.dedent(
+            """
+            import os
+            import kiln
+
+            def run(x):
+                return {
+                    "env_id": os.environ.get("KILN_SYNTHETIC_INSTANCE_ID"),
+                    "helper": kiln.synthetic_instance(),
+                }
+            """
+        )
+        tool = _make_python_code_tool(tmp_path, code)
+        result = await tool.run(ToolCallContext(), x="a")
+        assert json.loads(result.output) == {"env_id": None, "helper": None}
+
+    async def test_world_lib_is_importable(self, tmp_path):
+        from kiln_ai.datamodel.synthetic_world import SyntheticInstance
+        from kiln_ai.tools.base_tool import ToolCallContext
+
+        lib = tmp_path / "lib"
+        lib.mkdir()
+        (lib / "world_engine.py").write_text("def answer():\n    return 42\n")
+        code = "import world_engine\n\ndef run(x):\n    return str(world_engine.answer())\n"
+        tool = _make_python_code_tool(tmp_path, code)
+        instance = SyntheticInstance(
+            instance_id="inst_lib",
+            world_id="w",
+            fixture_id="f",
+            path=str(tmp_path / "inst"),
+            fixture_data_path=str(tmp_path / "fixture"),
+            world_lib_path=str(lib),
+        )
+        result = await tool.run(ToolCallContext(synthetic_instance=instance), x="a")
+        assert result.is_error is False, result.output
+        assert result.output == "42"

@@ -1,11 +1,14 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, TypedDict
+from typing import TYPE_CHECKING, Any, Dict, TypedDict
 
 from pydantic import BaseModel, Field
 
 from kiln_ai.datamodel.json_schema import validate_schema_dict
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId, ToolId
+
+if TYPE_CHECKING:
+    from kiln_ai.datamodel.synthetic_world import SyntheticInstance
 
 
 class ToolFunction(TypedDict):
@@ -36,6 +39,13 @@ class ToolCallContext:
     generic tool path yet still see the eval's schema at call time. Ignored by every
     other caller and tool."""
     eval_output_schema: str | None = None
+
+    """The synthetic world instance the calling run is executing against, if any.
+
+    Populated from the run context by every caller that builds a context (adapter,
+    Kiln task tool, code-eval server). Sandboxed code receives it as env vars and
+    through `kiln.synthetic_instance()`."""
+    synthetic_instance: "SyntheticInstance | None" = None
 
 
 class ToolCallResult(BaseModel):

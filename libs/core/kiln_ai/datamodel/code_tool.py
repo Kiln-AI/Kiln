@@ -2,7 +2,7 @@
 
 import ast
 import re
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import (
     Field,
@@ -34,22 +34,22 @@ _FUNCTION_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 TOOL_CODE_FILENAME = "tool.py"
 
 
-class CodeTool(KilnParentedModel):
-    """A user-authored Python function that runs as a tool inside the agent harness.
+class CodeToolBase(KilnParentedModel):
+    """The shared shape of a user-authored Python tool: definition, source, sandbox limits.
 
-    Functional content (code, schema, allowlist, etc.) is immutable post-create
-    — the API enforces this; changing code means cloning into a new tool.
+    Concrete artifacts (`CodeTool`, `SyntheticTool`) subclass this and supply the two
+    class hooks below, so the code-file storage and validators live in one place while
+    each artifact keeps its own on-disk filename and tool-id form.
     """
+
+    # The artifact's .kiln filename, named in the unreadable-tool.py error.
+    _kiln_filename: ClassVar[str] = "code_tool.kiln"
 
     # Editable metadata
     name: FilenameString = Field(description="User-facing display name.")
     description: str | None = Field(
         default=None,
         description="User-facing notes shown in the UI. Not shown to models.",
-    )
-    is_archived: bool = Field(
-        default=False,
-        description="Archived tools are hidden from pickers but still resolve if referenced.",
     )
 
     # Functional content — immutable post-create (enforced at the API layer)
@@ -91,8 +91,8 @@ class CodeTool(KilnParentedModel):
             data,
             info.context or {},
             filename=TOOL_CODE_FILENAME,
-            kiln_filename="code_tool.kiln",
-            model_label="CodeTool",
+            kiln_filename=cls._kiln_filename,
+            model_label=cls.__name__,
         )
 
     @model_serializer(mode="wrap")
@@ -166,11 +166,36 @@ class CodeTool(KilnParentedModel):
 
         return self
 
+    def self_tool_id(self) -> ToolId | None:
+        """The tool id this artifact answers to, for self-reference rejection.
+
+        None when the artifact has no id yet or is never callable by its own id.
+        """
+        return None
+
     @model_validator(mode="after")
     def validate_allowlist(self) -> Self:
         validate_tool_allowlist(
             self.tool_allowlist,
             caller="code tools",
-            self_tool_id=build_code_tool_id(self.id) if self.id is not None else None,
+            self_tool_id=self.self_tool_id(),
         )
         return self
+
+
+class CodeTool(CodeToolBase):
+    """A user-authored Python function that runs as a tool inside the agent harness.
+
+    Functional content (code, schema, allowlist, etc.) is immutable post-create
+    — the API enforces this; changing code means cloning into a new tool.
+    """
+
+    _kiln_filename: ClassVar[str] = "code_tool.kiln"
+
+    is_archived: bool = Field(
+        default=False,
+        description="Archived tools are hidden from pickers but still resolve if referenced.",
+    )
+
+    def self_tool_id(self) -> ToolId | None:
+        return build_code_tool_id(self.id) if self.id is not None else None

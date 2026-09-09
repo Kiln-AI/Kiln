@@ -14,10 +14,15 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from kiln_ai.datamodel.code_tool import CodeTool
+from kiln_ai.datamodel.code_tool import CodeToolBase
 from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.synthetic_world import SyntheticTool
 from kiln_ai.datamodel.task import Task
-from kiln_ai.datamodel.tool_id import ToolId, build_code_tool_id
+from kiln_ai.datamodel.tool_id import (
+    ToolId,
+    build_code_tool_id,
+    build_synthetic_tool_id,
+)
 from kiln_ai.sandbox.worker import child_main
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
@@ -61,11 +66,12 @@ class ChildOutcome:
 
 
 class PythonCodeTool(KilnToolInterface):
-    """Wraps a :class:`CodeTool` artifact as a :class:`KilnToolInterface`."""
+    """Wraps a code-tool artifact (:class:`CodeTool` or :class:`SyntheticTool`) as a
+    :class:`KilnToolInterface`."""
 
     def __init__(
         self,
-        code_tool: CodeTool,
+        code_tool: CodeToolBase,
         project: Project,
         task: Task | None = None,
         tool_call_recorder: Callable[[ToolCallLogEntry], None] | None = None,
@@ -76,6 +82,11 @@ class PythonCodeTool(KilnToolInterface):
         self._tool_call_recorder = tool_call_recorder
 
     async def id(self) -> ToolId:
+        if isinstance(self._code_tool, SyntheticTool):
+            world = self._code_tool.parent
+            return build_synthetic_tool_id(
+                world.id if world is not None else None, self._code_tool.id
+            )
         return build_code_tool_id(self._code_tool.id)
 
     async def name(self) -> str:
@@ -133,9 +144,14 @@ class PythonCodeTool(KilnToolInterface):
         self, context: ToolCallContext | None, kwargs: dict[str, Any]
     ) -> ChildOutcome:
         server = self._build_server(context)
+        synthetic_instance = (
+            context.synthetic_instance.to_sandbox_dict()
+            if context is not None and context.synthetic_instance is not None
+            else None
+        )
         result = await run_bridged_child(
             target=child_main,
-            args=(self._code_tool.code, kwargs),
+            args=(self._code_tool.code, kwargs, synthetic_instance),
             timeout_s=float(self._code_tool.timeout_seconds),
             server=server,
         )

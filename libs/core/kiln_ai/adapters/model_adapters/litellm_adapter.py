@@ -50,6 +50,7 @@ from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     as_kiln_agent_run_config,
 )
+from kiln_ai.run_context import get_synthetic_instance
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
     ToolCallContext,
@@ -897,8 +898,12 @@ class LiteLlmAdapter(BaseAdapter):
                 ) from e
 
             # Create context with the calling task's allow_saving setting
+            synthetic_ctx = get_synthetic_instance()
             context = ToolCallContext(
-                allow_saving=self.base_adapter_config.allow_saving
+                allow_saving=self.base_adapter_config.allow_saving,
+                synthetic_instance=synthetic_ctx.instance
+                if synthetic_ctx is not None
+                else None,
             )
 
             async def run_tool_and_format(

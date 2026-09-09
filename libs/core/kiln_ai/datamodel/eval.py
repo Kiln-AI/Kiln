@@ -38,6 +38,10 @@ from kiln_ai.datamodel.datamodel_enums import (
 )
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, EvalInputFilterId
 from kiln_ai.datamodel.json_schema import string_to_json_key
+from kiln_ai.datamodel.synthetic_world import (
+    SyntheticEnvironment,
+    SyntheticInstanceInfo,
+)
 from kiln_ai.datamodel.task_run import Usage
 from kiln_ai.datamodel.tool_id import ToolId, validate_tool_allowlist
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -513,6 +517,7 @@ class SkippedReason(str, Enum):
     incompatible_input_shape = "incompatible_input_shape"
     code_eval_not_trusted = "code_eval_not_trusted"
     type_not_available = "type_not_available"
+    synthetic_instance_unavailable = "synthetic_instance_unavailable"
 
 
 class V2EvalResult(BaseModel):
@@ -570,6 +575,10 @@ class EvalInput(KilnParentedModel):
         default_factory=list,
         description="Tags for filtering eval inputs.",
     )
+    synthetic_environment: SyntheticEnvironment | None = Field(
+        default=None,
+        description="When set, this input runs against a synthetic world instance created from the named fixture, and the run config's bound tools are replaced by the world's synthetic tools. None runs against the real tools.",
+    )
 
 
 class EvalTaskInput(BaseModel):
@@ -601,6 +610,10 @@ class EvalTaskInput(BaseModel):
     task_input: str | None = Field(
         default=None,
         description="The original task input text.",
+    )
+    synthetic_instance: SyntheticInstanceInfo | None = Field(
+        default=None,
+        description="Identity and clock of the synthetic world instance the trace ran against, when it ran against one. No filesystem paths: this model travels in API request bodies. Code-eval scorers receive the full record separately.",
     )
 
     @classmethod
@@ -648,6 +661,11 @@ class EvalTaskInput(BaseModel):
             trace=trace_data,
             reference_data=reference_data,
             task_input=task_input,
+            synthetic_instance=SyntheticInstanceInfo.from_instance(
+                trace.synthetic_instance
+            )
+            if trace.synthetic_instance is not None
+            else None,
         )
 
     @classmethod

@@ -8,12 +8,15 @@ from kiln_ai.datamodel.tool_id import (
     MCP_REMOTE_TOOL_ID_PREFIX,
     RAG_TOOL_ID_PREFIX,
     SKILL_TOOL_ID_PREFIX,
+    SYNTHETIC_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     code_tool_id_from_tool_id,
     kiln_task_server_id_from_tool_id,
     mcp_server_and_tool_name_from_id,
     rag_config_id_from_id,
+    synthetic_world_and_tool_ids_from_id,
 )
+from kiln_ai.run_context import get_synthetic_instance
 from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallDefinition
 from kiln_ai.tools.built_in_tools.kiln_api_call_tool import KilnApiCallTool
 from kiln_ai.tools.built_in_tools.math_tools import (
@@ -28,6 +31,10 @@ from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
+class SyntheticWorldStrictError(ValueError):
+    """A strict synthetic world was asked for a tool it does not replace."""
+
+
 def tool_from_id_and_project(
     tool_id: str,
     project: Project | None = None,
@@ -37,7 +44,35 @@ def tool_from_id_and_project(
 
     This is the core resolution function. ``tool_from_id`` is a thin
     wrapper that derives the project from the task.
+
+    While a synthetic world instance is active (set by the eval runner for one job), a
+    tool id the world binds resolves to the world's synthetic tool, presented under the
+    real id. Every path that turns ids into tools comes through here — the adapter,
+    sub-agents, nested sandbox calls, code-eval servers — so this is the one place the
+    swap needs to happen. The context is job-task-local, so no request handler or
+    other caller can observe it.
     """
+    synthetic_ctx = get_synthetic_instance()
+    if synthetic_ctx is not None:
+        binding = synthetic_ctx.bindings.get(tool_id)
+        if binding is not None:
+            if project is None:
+                raise ValueError(
+                    f"Unable to resolve synthetic tool for {tool_id}: requires a parent project/task."
+                )
+            from kiln_ai.tools.synthetic_tool import SyntheticToolProxy
+
+            return SyntheticToolProxy(tool_id, binding, project, task)
+        if (
+            synthetic_ctx.world.strict
+            and tool_id not in [member.value for member in KilnBuiltInToolId]
+            and not tool_id.startswith(SYNTHETIC_TOOL_ID_PREFIX)
+        ):
+            raise SyntheticWorldStrictError(
+                f"Synthetic world '{synthetic_ctx.world.name}' is strict and does not "
+                f"replace tool {tool_id}. Bind it or remove it from the run config."
+            )
+
     # Check built-in tools
     if tool_id in [member.value for member in KilnBuiltInToolId]:
         typed_tool_id = KilnBuiltInToolId(tool_id)
@@ -161,6 +196,34 @@ def tool_from_id_and_project(
         from kiln_ai.tools.code_tool import PythonCodeTool
 
         return PythonCodeTool(code_tool, project, task)
+
+    elif tool_id.startswith(SYNTHETIC_TOOL_ID_PREFIX):
+        # Direct resolution, for tests and world tooling. Runs the synthetic tool under
+        # its own id; the eval-time swap above is what presents it under the real id.
+        if project is None:
+            raise ValueError(
+                f"Unable to resolve tool from id: {tool_id}. Requires a parent project/task."
+            )
+        world_id, synthetic_tool_id = synthetic_world_and_tool_ids_from_id(tool_id)
+
+        from kiln_ai.datamodel.synthetic_world import SyntheticTool, SyntheticWorld
+
+        world = SyntheticWorld.from_id_and_parent_path(world_id, project.path)
+        if world is None:
+            raise ValueError(
+                f"Synthetic world not found: {world_id} in project {project.id} for tool {tool_id}"
+            )
+        synthetic_tool = SyntheticTool.from_id_and_parent_path(
+            synthetic_tool_id, world.path
+        )
+        if synthetic_tool is None:
+            raise ValueError(
+                f"Synthetic tool not found: {synthetic_tool_id} in world {world_id} for tool {tool_id}"
+            )
+
+        from kiln_ai.tools.code_tool import PythonCodeTool
+
+        return PythonCodeTool(synthetic_tool, project, task)
 
     elif tool_id.startswith(SKILL_TOOL_ID_PREFIX):
         raise ValueError(

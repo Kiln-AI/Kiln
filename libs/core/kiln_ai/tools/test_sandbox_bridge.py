@@ -358,7 +358,7 @@ class TestBridgeExecutor:
         ):
             call = run_bridged_child(
                 target=child_main,
-                args=(code, {"x": "a"}),
+                args=(code, {"x": "a"}, None),
                 timeout_s=timeout_s,
                 server=_empty_server(tmp_path),
             )
@@ -425,7 +425,7 @@ class TestBridgeExecutor:
         with patch.object(sandbox_bridge, "_poll_get", spy):
             result = await run_bridged_child(
                 target=child_main,
-                args=('def run(x):\n    return "polled"\n', {"x": "a"}),
+                args=('def run(x):\n    return "polled"\n', {"x": "a"}, None),
                 timeout_s=10,
                 server=_empty_server(tmp_path),
             )
@@ -442,7 +442,7 @@ class TestRunBridgedChild:
     async def test_result_message_returned_raw(self, tmp_path):
         result = await run_bridged_child(
             target=child_main,
-            args=('def run(x):\n    return "hi " + x\n', {"x": "there"}),
+            args=('def run(x):\n    return "hi " + x\n', {"x": "there"}, None),
             timeout_s=10,
             server=_empty_server(tmp_path),
         )
@@ -455,7 +455,7 @@ class TestRunBridgedChild:
     async def test_crash_reports_exit_code(self, tmp_path):
         result = await run_bridged_child(
             target=child_main,
-            args=("import os\ndef run(x):\n    os._exit(4)\n", {"x": "a"}),
+            args=("import os\ndef run(x):\n    os._exit(4)\n", {"x": "a"}, None),
             timeout_s=10,
             server=_empty_server(tmp_path),
         )
@@ -467,7 +467,7 @@ class TestRunBridgedChild:
     async def test_timeout_kills_child(self, tmp_path):
         result = await run_bridged_child(
             target=child_main,
-            args=("import time\ndef run(x):\n    time.sleep(30)\n", {"x": "a"}),
+            args=("import time\ndef run(x):\n    time.sleep(30)\n", {"x": "a"}, None),
             timeout_s=0.3,
             server=_empty_server(tmp_path),
         )
@@ -480,7 +480,7 @@ class TestRunBridgedChild:
         try:
             result = await run_bridged_child(
                 target=child_main,
-                args=('def run(x):\n    return "should not run"\n', {"x": "a"}),
+                args=('def run(x):\n    return "should not run"\n', {"x": "a"}, None),
                 timeout_s=10,
                 server=_empty_server(tmp_path),
             )

@@ -16,6 +16,7 @@ from multiprocessing import Queue
 from typing import Any
 
 from kiln_ai.sandbox.entrypoint import call_entrypoint
+from kiln_ai.sandbox.synthetic_env import apply_synthetic_instance
 from kiln_ai.sandbox.tools_api import install_tools_modules
 
 _TRUNCATION_LIMIT = 64 * 1024  # 64 KB
@@ -25,10 +26,15 @@ _TRUNCATION_MARKER = "\n...[truncated]"
 def child_main(
     code: str,
     kwargs: dict[str, Any],
+    synthetic_instance: dict[str, Any] | None,
     requests: Queue,  # type: ignore[type-arg]
     responses: Queue,  # type: ignore[type-arg]
 ) -> None:
     """Entry point for the code-tool child process.
+
+    ``synthetic_instance`` is the active synthetic world instance as a plain dict (or
+    None); it is exported to the environment and the world's lib/ put on ``sys.path``
+    before user code runs, so tools can find their instance state.
 
     Puts exactly one ``result`` message on *requests* and then returns.
     """
@@ -40,6 +46,7 @@ def child_main(
         sys.stdout = captured_stdout  # type: ignore[assignment]
         sys.stderr = captured_stderr  # type: ignore[assignment]
 
+        apply_synthetic_instance(synthetic_instance)
         install_tools_modules(requests, responses)
 
         namespace: dict[str, Any] = {}
