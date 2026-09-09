@@ -215,6 +215,7 @@ async def run_tool_loop(
     host_fragment: str,
     temperature: float = 1.0,
     top_p: float = 1.0,
+    prompt: str = TOOL_PROMPT,
 ):
     """Run the real Kiln adapter tool loop, recording every provider request.
 
@@ -241,7 +242,7 @@ async def run_tool_loop(
     with record_provider_requests(host_fragment) as request_log:
         with patch.object(adapter, "available_tools", return_value=[add_spy]):
             try:
-                run = await adapter.invoke(TOOL_PROMPT)
+                run = await adapter.invoke(prompt)
             except Exception as e:
                 error = e
 
@@ -293,22 +294,26 @@ def build_context(
     )
 
 
-def responses_api_cases() -> list[Any]:
+def responses_api_model_providers() -> list[tuple[str, ModelProviderName]]:
     """Every built-in (model, provider) pair Kiln routes through /v1/responses."""
-    cases: list[Any] = []
-    for model in built_in_models:
-        for provider in model.providers:
-            if not provider.openai_responses_api:
-                continue
-            cases.append(
-                pytest.param(
-                    model.name,
-                    provider.name,
-                    True,
-                    id=f"{model.name}_{provider.name.value}",
-                )
-            )
-    return cases
+    return [
+        (model.name, provider.name)
+        for model in built_in_models
+        for provider in model.providers
+        if provider.openai_responses_api
+    ]
+
+
+def responses_api_cases() -> list[Any]:
+    return [
+        pytest.param(
+            model_name,
+            provider_name,
+            True,
+            id=f"{model_name}_{provider_name.value}",
+        )
+        for model_name, provider_name in responses_api_model_providers()
+    ]
 
 
 # gpt_5_2 is the control: it predates the 5.4 restriction, so reasoning_effort +
@@ -474,3 +479,51 @@ async def test_openai_responses_drops_custom_sampling_params(tmp_path, model_nam
     assert run is not None, f"No run produced.{ctx}"
     assert tool_called, f"The 'add' tool was never called.{ctx}"
     assert "4" in run.output.output, f"Final answer missing '4'.{ctx}"
+
+
+# Forces text and a tool call in the same assistant turn, which is the shape the
+# litellm bridge splits across several `Choices`.
+NARRATION_PROMPT = (
+    "First write one short sentence saying you will use the add tool, then call it "
+    "to add 2 and 2, then report the result."
+)
+
+NARRATION_CASES = [
+    pytest.param(model_name, provider_name, id=f"{model_name}_{provider_name.value}")
+    for model_name, provider_name in responses_api_model_providers()
+]
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize(("model_name", "provider_name"), NARRATION_CASES)
+async def test_openai_responses_narration_then_tool_call(
+    tmp_path, model_name: str, provider_name: str
+):
+    """Text plus a tool call in one turn must not lose the tool call.
+
+    litellm's responses bridge returns one `Choices` per content part and a trailing
+    `Choices` carrying the tool calls. Reading only `choices[0]` drops the tool call:
+    the loop ends after one turn and the narration is saved as the final answer.
+    """
+    skip_if_missing_provider_keys(provider_name)
+
+    run, error, add_spy, request_log = await run_tool_loop(
+        tmp_path,
+        model_name=model_name,
+        provider_name=provider_name,
+        # A low effort keeps the narration turn cheap and still reasons enough to
+        # both narrate and call the tool.
+        thinking_level="low",
+        host_fragment="openai.com",
+        prompt=NARRATION_PROMPT,
+    )
+
+    tool_called = add_spy.run.called
+    ctx = build_context(
+        model_name, provider_name, "low", request_log, error, run, tool_called
+    )
+
+    assert error is None, f"Run raised: {first_error_line(error)}{ctx}"
+    assert run is not None, f"No run produced.{ctx}"
+    assert tool_called, f"The 'add' tool was never called.{ctx}"
+    assert "[4]" in run.output.output, f"Final answer missing '[4]'.{ctx}"

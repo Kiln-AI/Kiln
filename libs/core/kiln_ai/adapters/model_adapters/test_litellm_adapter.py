@@ -7,9 +7,11 @@ import pytest
 from litellm.types.utils import (
     ChatCompletionMessageToolCall,
     ChoiceLogprobs,
+    Choices,
     Function,
     ModelResponse,
 )
+from litellm.types.utils import Message as LiteLLMMessage
 
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
@@ -3521,3 +3523,181 @@ class TestEmptyResponseErrors:
                     await adapter._run_model_turn(
                         provider, [{"role": "user", "content": "Hi"}], None, False
                     )
+
+
+def responses_bridge_provider(openai_responses_api: bool = True) -> KilnModelProvider:
+    return KilnModelProvider(
+        name=ModelProviderName.openai,
+        model_id="gpt-6-astra",
+        openai_responses_api=openai_responses_api,
+    )
+
+
+def add_tool_call(call_id: str, a: int, b: int) -> ChatCompletionMessageToolCall:
+    return ChatCompletionMessageToolCall(
+        id=call_id,
+        type="function",
+        function=Function(name="add", arguments=json.dumps({"a": a, "b": b})),
+    )
+
+
+def split_choices_response(
+    contents: list[str],
+    tool_calls: list[ChatCompletionMessageToolCall],
+    reasoning_content: str | None = "I should use the add tool.",
+) -> ModelResponse:
+    """A response shaped the way litellm's responses bridge returns one turn.
+
+    One Choices per content part (finish_reason "stop"), then a trailing Choices
+    holding every tool call (finish_reason "tool_calls", content None).
+    """
+    choices = [
+        Choices(
+            finish_reason="stop",
+            index=index,
+            message=LiteLLMMessage(
+                content=content,
+                role="assistant",
+                reasoning_content=reasoning_content if index == 0 else None,
+            ),
+        )
+        for index, content in enumerate(contents)
+    ]
+    if tool_calls:
+        choices.append(
+            Choices(
+                finish_reason="tool_calls",
+                index=len(choices),
+                message=LiteLLMMessage(
+                    content=None, role="assistant", tool_calls=tool_calls
+                ),
+            )
+        )
+    return ModelResponse(model="gpt-6-astra", choices=choices)
+
+
+@pytest.mark.asyncio
+async def test_acompletion_merges_split_choices_from_responses_bridge(
+    config, mock_task
+):
+    """litellm's responses bridge splits text and tool calls across several Choices.
+    Reading only choices[0] would drop the tool call whenever the model narrates."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    response = split_choices_response(
+        ["I will use the add tool."], [add_tool_call("call_1", 2, 2)]
+    )
+
+    with (
+        patch.object(
+            adapter, "model_provider", return_value=responses_bridge_provider()
+        ),
+        patch("litellm.acompletion", new=AsyncMock(return_value=response)),
+    ):
+        returned_response, choice = await adapter.acompletion_checking_response()
+
+    # The tool loop appends choice.message to the history and dispatches on the real
+    # litellm types, so the merge must produce real Choices/Message objects.
+    assert isinstance(choice, Choices)
+    assert isinstance(choice.message, LiteLLMMessage)
+    assert choice.message.content == "I will use the add tool."
+    assert choice.message.tool_calls is not None
+    assert [t.function.name for t in choice.message.tool_calls] == ["add"]
+    assert choice.finish_reason == "tool_calls"
+    assert choice.index == 0
+    assert choice.message.role == "assistant"
+    assert choice.message.reasoning_content == "I should use the add tool."
+    # Usage/cost readers walk response.choices, so it must agree with what we returned.
+    assert returned_response.choices == [choice]
+
+
+@pytest.mark.asyncio
+async def test_acompletion_merges_multiple_text_parts_and_tool_calls(config, mock_task):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    response = split_choices_response(
+        ["First I plan.", "Then I act."],
+        [add_tool_call("call_1", 2, 2), add_tool_call("call_2", 3, 4)],
+    )
+
+    with (
+        patch.object(
+            adapter, "model_provider", return_value=responses_bridge_provider()
+        ),
+        patch("litellm.acompletion", new=AsyncMock(return_value=response)),
+    ):
+        _, choice = await adapter.acompletion_checking_response()
+
+    assert choice.message.content == "First I plan.\nThen I act."
+    assert [t.id for t in choice.message.tool_calls or []] == ["call_1", "call_2"]
+
+
+@pytest.mark.asyncio
+async def test_acompletion_does_not_merge_without_responses_api_flag(config, mock_task):
+    """Providers that legitimately return several choices are untouched."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    response = split_choices_response(
+        ["I will use the add tool."], [add_tool_call("call_1", 2, 2)]
+    )
+
+    with (
+        patch.object(
+            adapter,
+            "model_provider",
+            return_value=responses_bridge_provider(openai_responses_api=False),
+        ),
+        patch("litellm.acompletion", new=AsyncMock(return_value=response)),
+    ):
+        returned_response, choice = await adapter.acompletion_checking_response()
+
+    assert len(returned_response.choices) == 2
+    assert choice is returned_response.choices[0]
+
+
+@pytest.mark.asyncio
+async def test_acompletion_single_choice_is_returned_unchanged(config, mock_task):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    response = split_choices_response(["Just an answer."], [])
+
+    with (
+        patch.object(
+            adapter, "model_provider", return_value=responses_bridge_provider()
+        ),
+        patch("litellm.acompletion", new=AsyncMock(return_value=response)),
+    ):
+        returned_response, choice = await adapter.acompletion_checking_response()
+
+    assert returned_response is response
+    assert choice is response.choices[0]
+
+
+@pytest.mark.asyncio
+async def test_run_model_turn_executes_tool_from_split_choices(config, mock_task):
+    """End to end through the tool loop: the merged tool call must actually run and
+    the loop must make a second LLM call with the tool result."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    provider = responses_bridge_provider()
+
+    split_response = split_choices_response(
+        ["I will use the add tool."], [add_tool_call("call_1", 2, 2)]
+    )
+    final_response = ModelResponse(
+        model="gpt-6-astra",
+        choices=[{"message": {"content": "The answer is 4", "tool_calls": None}}],
+    )
+    acompletion = AsyncMock(side_effect=[split_response, final_response])
+
+    add_spy = Mock(wraps=AddTool())
+    messages: list = [{"role": "user", "content": "what is 2+2"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=provider),
+        patch.object(adapter, "cached_available_tools", return_value=[add_spy]),
+        patch.object(adapter, "build_completion_kwargs", return_value={}),
+        patch("litellm.acompletion", new=acompletion),
+    ):
+        result = await adapter._run_model_turn(provider, messages, None, False)
+
+    add_spy.run.assert_called_once()
+    assert add_spy.run.call_args.kwargs == {"a": 2, "b": 2}
+    assert acompletion.await_count == 2
+    assert isinstance(result, ModelTurnResult)
+    assert result.assistant_message == "The answer is 4"

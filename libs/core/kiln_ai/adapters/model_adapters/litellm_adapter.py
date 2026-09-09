@@ -428,7 +428,55 @@ class LiteLlmAdapter(BaseAdapter):
             raise RuntimeError(
                 f"Expected ModelResponse with Choices, got {type(response)}."
             )
+
+        if self.model_provider().openai_responses_api and len(response.choices) > 1:
+            # litellm's responses bridge splits one assistant turn into a Choices per
+            # content part plus a trailing Choices holding the tool calls. Reading only
+            # choices[0] would drop the tool call whenever the model narrates first.
+            merged = self._merge_split_choices(response.choices)
+            response.choices = [merged]
+            return response, merged
+
         return response, response.choices[0]
+
+    def _merge_split_choices(self, choices: List[Any]) -> Choices:
+        """Collapse the choices litellm's responses bridge split into one turn."""
+        messages = [
+            choice.message
+            for choice in choices
+            if isinstance(choice, Choices) and choice.message is not None
+        ]
+
+        contents = [m.content for m in messages if m.content]
+        tool_calls: List[Any] = []
+        for message in messages:
+            tool_calls.extend(message.tool_calls or [])
+
+        def first(field: str) -> Any:
+            return next(
+                (
+                    value
+                    for value in (getattr(m, field, None) for m in messages)
+                    if value is not None
+                ),
+                None,
+            )
+
+        merged_message = LiteLLMMessage(
+            content="\n".join(contents) if contents else None,
+            role=first("role") or "assistant",
+            tool_calls=tool_calls or None,
+            reasoning_content=first("reasoning_content"),
+            reasoning_items=first("reasoning_items"),
+            annotations=first("annotations"),
+            provider_specific_fields=first("provider_specific_fields"),
+        )
+
+        return Choices(
+            finish_reason="tool_calls" if tool_calls else choices[0].finish_reason,
+            index=0,
+            message=merged_message,
+        )
 
     def adapter_name(self) -> str:
         return "kiln_openai_compatible_adapter"
