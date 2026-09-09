@@ -11,7 +11,10 @@ Exported variables:
 
     KILN_SYNTHETIC_INSTANCE_ID, KILN_SYNTHETIC_WORLD_ID
     KILN_SYNTHETIC_INSTANCE_PATH      local state directory (file-backed launchers)
-    KILN_SYNTHETIC_ENDPOINT           hosted instance address (network launchers)
+    KILN_SYNTHETIC_ENDPOINT           URL of a hosted instance (network launchers)
+    KILN_SYNTHETIC_CONNECTION         the full connection as JSON: transport, url, headers,
+                                      command, args, env (credentials included; this is
+                                      the one place they travel, into the tool's process)
     KILN_SYNTHETIC_SOURCE_PATH        the read-only original of a file-backed instance
     KILN_SYNTHETIC_WORLD_LIB_PATH     the world's lib/, also prepended to sys.path
     KILN_SYNTHETIC_CONFIG             the launch config, as JSON
@@ -39,6 +42,7 @@ ENV_WORLD_ID = "KILN_SYNTHETIC_WORLD_ID"
 ENV_WORLD_LIB_PATH = "KILN_SYNTHETIC_WORLD_LIB_PATH"
 ENV_CONFIG = "KILN_SYNTHETIC_CONFIG"
 ENV_METADATA = "KILN_SYNTHETIC_METADATA"
+ENV_CONNECTION = "KILN_SYNTHETIC_CONNECTION"
 
 _ENV_BY_KEY: dict[str, str] = {
     "instance_id": ENV_INSTANCE_ID,
@@ -48,7 +52,11 @@ _ENV_BY_KEY: dict[str, str] = {
     "world_id": ENV_WORLD_ID,
     "world_lib_path": ENV_WORLD_LIB_PATH,
 }
-_JSON_BY_KEY: dict[str, str] = {"config": ENV_CONFIG, "metadata": ENV_METADATA}
+_JSON_BY_KEY: dict[str, str] = {
+    "config": ENV_CONFIG,
+    "metadata": ENV_METADATA,
+    "connection": ENV_CONNECTION,
+}
 _RESERVED = set(_ENV_BY_KEY.values()) | set(_JSON_BY_KEY.values())
 
 
@@ -71,7 +79,11 @@ def apply_synthetic_instance(instance: dict[str, Any] | None) -> None:
         else:
             os.environ[env_name] = str(value)
     for key, env_name in _JSON_BY_KEY.items():
-        os.environ[env_name] = json.dumps(instance.get(key) or {}, sort_keys=True)
+        value = instance.get(key)
+        if key == "connection" and value is None:
+            os.environ.pop(env_name, None)
+            continue
+        os.environ[env_name] = json.dumps(value or {}, sort_keys=True)
     metadata = instance.get("metadata") or {}
     if isinstance(metadata, dict):
         for key, value in metadata.items():
@@ -100,8 +112,9 @@ def synthetic_instance_from_env() -> dict[str, Any] | None:
     }
     for key, env_name in _JSON_BY_KEY.items():
         raw = os.environ.get(env_name)
+        empty = None if key == "connection" else {}
         try:
-            result[key] = json.loads(raw) if raw else {}
+            result[key] = json.loads(raw) if raw else empty
         except json.JSONDecodeError:
-            result[key] = {}
+            result[key] = empty
     return result

@@ -8,6 +8,7 @@ import pytest
 
 from kiln_ai.sandbox.synthetic_env import (
     ENV_CONFIG,
+    ENV_CONNECTION,
     ENV_ENDPOINT,
     ENV_INSTANCE_ID,
     ENV_INSTANCE_PATH,
@@ -27,6 +28,7 @@ ALL_ENV = [
     ENV_WORLD_LIB_PATH,
     ENV_CONFIG,
     ENV_METADATA,
+    ENV_CONNECTION,
     "KILN_SYNTHETIC_WORLD_ID",
     "KILN_SYNTHETIC_FROZEN_TIME",
     "KILN_SYNTHETIC_FIXTURE_ID",
@@ -50,10 +52,11 @@ def _instance(**overrides):
         "config": {"fixture_id": "alpha"},
         "path": "/inst",
         "endpoint": None,
+        "connection": None,
         "source_path": "/fixture",
         "world_lib_path": None,
         "metadata": {"fixture_id": "alpha", "frozen_time": "2026-07-14T00:00:00+00:00"},
-        "framework_content_hash": "eng1",
+        "content_version": "eng1",
         "unchanged": False,
     }
     base.update(overrides)
@@ -105,11 +108,34 @@ def test_none_values_are_not_exported_as_strings():
 
 
 def test_endpoint_only_instance():
+    connection = {
+        "transport": "http",
+        "url": "http://host:9000/inst_1",
+        "headers": {"Authorization": "Bearer s3cret"},
+        "command": None,
+        "args": [],
+        "env": {},
+    }
     apply_synthetic_instance(
-        _instance(path=None, source_path=None, endpoint="http://host:9000/inst_1")
+        _instance(
+            path=None,
+            source_path=None,
+            endpoint="http://host:9000/inst_1",
+            connection=connection,
+        )
     )
     assert os.environ[ENV_ENDPOINT] == "http://host:9000/inst_1"
     assert ENV_INSTANCE_PATH not in os.environ
+    assert json.loads(os.environ[ENV_CONNECTION]) == connection
+    seen = synthetic_instance_from_env()
+    assert seen is not None and seen["connection"] == connection
+
+
+def test_no_connection_is_not_exported():
+    apply_synthetic_instance(_instance())
+    assert ENV_CONNECTION not in os.environ
+    seen = synthetic_instance_from_env()
+    assert seen is not None and seen["connection"] is None
 
 
 def test_metadata_key_cannot_shadow_reserved_names():

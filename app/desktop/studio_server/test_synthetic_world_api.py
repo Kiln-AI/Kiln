@@ -51,7 +51,7 @@ def mock_project_from_id(project):
 def world_id(client):
     r = client.post(
         "/api/projects/p1/synthetic_worlds",
-        json={"name": "World A", "framework_content_hash": "eng1"},
+        json={"name": "World A", "content_version": "eng1"},
     )
     assert r.status_code == 200, r.text
     return r.json()["id"]
@@ -78,7 +78,8 @@ class TestWorlds:
         assert [w["id"] for w in listed] == [world_id]
         got = client.get(f"/api/projects/p1/synthetic_worlds/{world_id}").json()
         assert got["name"] == "World A"
-        assert got["framework_content_hash"] == "eng1"
+        assert got["content_version"] == "eng1"
+        assert got["replaces_tool_server_id"] is None
         assert got["launcher"] == "local_files"
         assert got["tool_count"] == 0
 

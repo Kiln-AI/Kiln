@@ -16,8 +16,8 @@ An **instance** is what a launch returns: isolated state one eval job acts on, r
 on the trace as `SyntheticInstance` rather than stored as a project artifact.
 
 Kiln never interprets a launch config or an instance's contents. It passes the config to
-the launcher, hands the instance to tools and graders, keys traces by the config, and
-decides when an instance can be released.
+the launcher, hands the instance to tools and graders, keys traces by the config and the
+launcher's content version, and decides when an instance can be released.
 """
 
 from __future__ import annotations
@@ -69,12 +69,54 @@ class SyntheticEnvironment(BaseModel):
     )
 
 
+class SyntheticInstanceConnection(BaseModel):
+    """How to reach a hosted instance: an HTTP endpoint or a stdio command.
+
+    `headers` and `env` hold per-instance credentials. They are excluded from
+    serialization, so they never land on the trace, in an API response, or in a judge
+    prompt; only the in-memory record handed to tools during the run carries them.
+    """
+
+    transport: str = Field(
+        default="http",
+        min_length=1,
+        description="'http' for a URL the instance serves (MCP or REST), 'stdio' for a command to spawn, or a launcher-defined name.",
+    )
+    url: str | None = Field(default=None, description="Address of an HTTP instance.")
+    headers: dict[str, str] = Field(
+        default_factory=dict,
+        exclude=True,
+        description="Request headers for an HTTP instance, typically a per-instance bearer token. Never persisted.",
+    )
+    command: str | None = Field(
+        default=None, description="Executable of a stdio instance."
+    )
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(
+        default_factory=dict,
+        exclude=True,
+        description="Environment for a stdio instance. Never persisted.",
+    )
+
+    def to_sandbox_dict(self) -> dict[str, JsonValue]:
+        return {
+            "transport": self.transport,
+            "url": self.url,
+            "headers": dict(self.headers),
+            "command": self.command,
+            "args": list(self.args),
+            "env": dict(self.env),
+        }
+
+
 class SyntheticInstance(BaseModel):
     """One launched instance, recorded on the trace it was generated for.
 
     Persisted on `TaskRun.synthetic_instance` so graders (including judges added
     later, which reuse the same trace) can find the state the run left behind.
-    Exactly what a launcher returns; `path` is local to the machine that ran the eval.
+    Exactly what a launcher returns; `path` is local to the machine that ran the eval,
+    `connection` is how to reach a hosted instance while it is alive, and `changes` is
+    what a launcher records at finalize for graders that outlive the instance.
     """
 
     instance_id: str = Field(min_length=1)
@@ -87,9 +129,9 @@ class SyntheticInstance(BaseModel):
         default=None,
         description="Local directory holding this instance's state, for file-backed launchers.",
     )
-    endpoint: str | None = Field(
+    connection: SyntheticInstanceConnection | None = Field(
         default=None,
-        description="Address of a hosted instance, for launchers that serve it over the network.",
+        description="How to reach a hosted instance, for launchers that serve it over the network or as a subprocess.",
     )
     source_path: str | None = Field(
         default=None,
@@ -103,15 +145,24 @@ class SyntheticInstance(BaseModel):
         default_factory=dict,
         description="Facts the launcher reports about the instance, e.g. frozen_time or fixture_id. Scalar entries are exported to tools as KILN_SYNTHETIC_<KEY>.",
     )
-    framework_content_hash: str | None = Field(
+    content_version: str | None = Field(
         default=None,
-        description="Hash of the world engine that backed this run, copied from the world.",
+        description="The launcher's identity for the content this instance started from (world code plus fixture bytes, or a framework's world and fixture versions). Part of the trace fingerprint.",
     )
     created_at: datetime = Field(default_factory=lambda: datetime.now().astimezone())
     unchanged: bool = Field(
         default=False,
         description="True once the run was found to have left the instance identical to its source; the copy is released and readers use source_path.",
     )
+    changes: dict[str, JsonValue] | None = Field(
+        default=None,
+        description="What the run changed, as recorded by the launcher at finalize (a changeset, a diff, a summary). Handed to code scorers; the durable record for launchers whose instances are short-lived.",
+    )
+    valid: bool = Field(
+        default=True,
+        description="False when the launcher judged the run not transferable: the instance served an unfaithful tool surface, or the run hit gaps in the world. Strict worlds skip grading such runs.",
+    )
+    invalid_reason: str | None = Field(default=None)
 
     @property
     def effective_path(self) -> str | None:
@@ -127,27 +178,37 @@ class SyntheticInstance(BaseModel):
             "world_id": self.world_id,
             "config": self.config,
             "path": self.effective_path,
-            "endpoint": self.endpoint,
+            "endpoint": self.connection.url if self.connection else None,
+            "connection": self.connection.to_sandbox_dict()
+            if self.connection
+            else None,
             "source_path": self.source_path,
             "world_lib_path": self.world_lib_path,
             "metadata": self.metadata,
-            "framework_content_hash": self.framework_content_hash,
+            "content_version": self.content_version,
             "unchanged": self.unchanged,
+            "changes": self.changes,
+            "valid": self.valid,
+            "invalid_reason": self.invalid_reason,
         }
 
 
 class SyntheticInstanceInfo(BaseModel):
-    """The grader-facing view of an instance: identity and reported facts, no locations.
+    """The grader-facing view of an instance: identity and reported facts, no locations
+    or credentials, and no changeset (it can be large; code scorers get it through the
+    sandbox inputs instead).
 
-    `EvalTaskInput` is a FastAPI request body, so paths and endpoints must not travel
-    on it; code-eval scorers get the full record through the sandbox inputs instead.
+    `EvalTaskInput` is a FastAPI request body, so paths and connections must not travel
+    on it.
     """
 
     instance_id: str
     world_id: str
     config: dict[str, JsonValue] = Field(default_factory=dict)
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
-    framework_content_hash: str | None = None
+    content_version: str | None = None
+    valid: bool = True
+    invalid_reason: str | None = None
 
     @classmethod
     def from_instance(cls, instance: SyntheticInstance) -> "SyntheticInstanceInfo":
@@ -156,21 +217,24 @@ class SyntheticInstanceInfo(BaseModel):
             world_id=instance.world_id,
             config=instance.config,
             metadata=instance.metadata,
-            framework_content_hash=instance.framework_content_hash,
+            content_version=instance.content_version,
+            valid=instance.valid,
+            invalid_reason=instance.invalid_reason,
         )
 
 
 def synthetic_fingerprint(
     world_id: str,
     config: dict[str, JsonValue],
-    framework_content_hash: str | None,
+    content_version: str | None,
 ) -> str:
-    """What makes two synthetic generations comparable: same world, config, engine.
+    """What makes two synthetic generations comparable: same world, config, content.
 
     Composed into the trace key's variant slot so a trace generated under one config is
-    never reused for another, and so a re-engineered world regenerates.
+    never reused for another, and so a re-engineered world or a regenerated fixture
+    regenerates. `content_version` comes from the launcher, before launch.
     """
-    payload = "|".join([world_id, canonical_json(config), framework_content_hash or ""])
+    payload = "|".join([world_id, canonical_json(config), content_version or ""])
     return "syn2:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
 
 
@@ -226,9 +290,13 @@ class SyntheticWorld(
         default=False,
         description="When an instance is active, fail the job if the run config uses a registry-resolved tool this world does not replace (built-ins excepted). Skills and unmanaged tools bypass the registry and are not covered.",
     )
-    framework_content_hash: str | None = Field(
+    content_version: str | None = Field(
         default=None,
-        description="Opaque hash of the engine code behind this world. Part of the trace fingerprint, so re-engineering the world regenerates its traces.",
+        description="Author-declared version of the code behind this world. Launchers fold it into the content version they report, so bumping it regenerates the world's traces.",
+    )
+    replaces_tool_server_id: str | None = Field(
+        default=None,
+        description="An external tool server (MCP) whose whole tool surface a launched instance serves. While an instance with a connection is active, every tool of that server resolves to the same-named tool on the instance. Per-tool bindings still apply to anything else.",
     )
 
     def tools(self, readonly: bool = False) -> list[SyntheticTool]:
@@ -257,6 +325,23 @@ class SyntheticWorld(
     def binding_for(self, tool_id: str) -> SyntheticTool | None:
         return self.bindings().get(tool_id)
 
+    def replaces_server_of(self, tool_id: str) -> bool:
+        """Whether *tool_id* belongs to the tool server this world replaces wholesale."""
+        if self.replaces_tool_server_id is None:
+            return False
+        from kiln_ai.datamodel.tool_id import (
+            MCP_LOCAL_TOOL_ID_PREFIX,
+            MCP_REMOTE_TOOL_ID_PREFIX,
+            mcp_server_and_tool_name_from_id,
+        )
+
+        if not tool_id.startswith(
+            (MCP_REMOTE_TOOL_ID_PREFIX, MCP_LOCAL_TOOL_ID_PREFIX)
+        ):
+            return False
+        server_id, _ = mcp_server_and_tool_name_from_id(tool_id)
+        return server_id == self.replaces_tool_server_id
+
     def validate_bindings(self, project: "Project") -> list[str]:
         """Check each binding against the real tool it replaces, without any network.
 
@@ -275,6 +360,12 @@ class SyntheticWorld(
         )
 
         warnings: list[str] = []
+        if self.replaces_tool_server_id is not None:
+            servers = {s.id for s in project.external_tool_servers(readonly=True)}
+            if self.replaces_tool_server_id not in servers:
+                warnings.append(
+                    f"replaces_tool_server_id {self.replaces_tool_server_id}: external tool server not found in project"
+                )
         for real_id, synthetic in self.bindings().items():
             if real_id.startswith(CODE_TOOL_ID_PREFIX):
                 real = CodeTool.from_id_and_parent_path(

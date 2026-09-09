@@ -518,6 +518,7 @@ class SkippedReason(str, Enum):
     code_eval_not_trusted = "code_eval_not_trusted"
     type_not_available = "type_not_available"
     synthetic_instance_unavailable = "synthetic_instance_unavailable"
+    synthetic_instance_invalid = "synthetic_instance_invalid"
 
 
 class V2EvalResult(BaseModel):

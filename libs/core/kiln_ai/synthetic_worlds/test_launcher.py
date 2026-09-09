@@ -27,7 +27,7 @@ def world(tmp_path):
     project = Project(name="proj", path=tmp_path / "proj" / "project.kiln")
     project.path.parent.mkdir(parents=True)
     project.save_to_file()
-    w = SyntheticWorld(name="w", parent=project, framework_content_hash="eng1")
+    w = SyntheticWorld(name="w", parent=project, content_version="eng1")
     w.save_to_file()
     return w
 
@@ -88,6 +88,40 @@ class TestFixtureDirs:
         assert launcher.list_fixtures(world) == ["a", "b"]
 
 
+class TestContentVersion:
+    async def test_follows_fixture_bytes_and_world_version(self, launcher, world):
+        d = make_fixture(world, "alpha")
+        first = await launcher.content_version(world, {"fixture_id": "alpha"})
+        assert first is not None and first.startswith("local:")
+        assert await launcher.content_version(world, {"fixture_id": "alpha"}) == first
+        # Extra config keys the launcher ignores do not move it; the fingerprint
+        # already covers the config itself.
+        assert (
+            await launcher.content_version(world, {"fixture_id": "alpha", "seed": 7})
+            == first
+        )
+        (d / "fixture.db").write_bytes(b"1" * 101)
+        changed = await launcher.content_version(world, {"fixture_id": "alpha"})
+        assert changed != first
+        world.content_version = "eng2"
+        assert await launcher.content_version(world, {"fixture_id": "alpha"}) not in (
+            first,
+            changed,
+        )
+
+    async def test_manifest_edits_do_not_move_it(self, launcher, world):
+        d = make_fixture(world, "alpha", manifest={"plan": "pro"})
+        first = await launcher.content_version(world, {"fixture_id": "alpha"})
+        (d / FIXTURE_MANIFEST).write_text("plan: enterprise\n")
+        assert await launcher.content_version(world, {"fixture_id": "alpha"}) == first
+
+    async def test_without_a_fixture_falls_back_to_world_version(self, launcher, world):
+        assert await launcher.content_version(world, {}) == "eng1"
+        assert (
+            await launcher.content_version(world, {"fixture_id": "missing"}) == "eng1"
+        )
+
+
 class TestLaunch:
     async def test_launch_copies_fixture_and_reports_metadata(self, launcher, world):
         make_fixture(
@@ -103,7 +137,11 @@ class TestLaunch:
             "frozen_time": NOW.isoformat(),
             "plan": "pro",
         }
-        assert inst.framework_content_hash == "eng1"
+        assert inst.content_version == await launcher.content_version(
+            world, {"fixture_id": "alpha"}
+        )
+        assert inst.content_version is not None
+        assert inst.content_version.startswith("local:")
         assert inst.world_lib_path is None
         copy = launcher.cache_root / inst.instance_id
         assert (copy / "fixture.db").read_bytes() == b"0" * 100

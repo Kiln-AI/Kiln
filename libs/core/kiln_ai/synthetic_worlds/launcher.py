@@ -1,22 +1,28 @@
 """World launchers: turn a launch config into an isolated instance, and release it.
 
 The launcher is the boundary between Kiln and whatever owns a world's state. Kiln
-calls four things and interprets nothing else:
+calls five things and interprets nothing else:
 
-    launch(world, config)   -> SyntheticInstance   isolated state one eval job acts on
-    finalize(instance)      -> SyntheticInstance   after grading; may mark it releasable
-    release(instance)                              drop it
-    prune(live)                                    drop every instance no trace references
+    content_version(world, config) -> str | None   cheap, before launch; keys the trace
+    launch(world, config)          -> SyntheticInstance   isolated state one job acts on
+    finalize(instance)             -> SyntheticInstance   after generation, before grading
+    release(instance)                                     drop it
+    prune(live)                                           drop instances no trace references
 
 `LocalFilesLauncher` is V1: a fixture is a directory under the world, and an instance
 is a copy of it under Kiln's cache. A hosted framework or a gym-style environment is
 another implementation of the same protocol, registered by name and selected by
 `SyntheticWorld.launcher`.
 
-Retention follows the trace, not a clock. The trace index reuses one generation across
-every judge, indefinitely, so an instance must stay readable as long as the trace that
-records it exists. The local launcher keeps storage bounded by marking copies a run left
-byte-identical to their source (they are released after the run) and by a size cap.
+Retention is the launcher's policy, bounded by what graders need. The trace index reuses
+one generation across every judge, indefinitely, so a judge added later may ask for the
+state a run left behind. The local launcher answers by keeping the copy as long as the
+trace exists (marking copies a run left byte-identical to their source, which are
+released after the run, and evicting oldest-first past a size cap). A launcher whose
+instances are short-lived instead records what graders need on the instance at
+`finalize` (`changes`, a frozen fixture id in `metadata`) and releases the live instance;
+Kiln treats a missing live instance as "state unavailable" and skips only the scorers
+that read it.
 """
 
 from __future__ import annotations
@@ -62,6 +68,13 @@ _CACHE_DIRNAME = "synthetic_instances"
 
 
 class SyntheticWorldLauncher(Protocol):
+    async def content_version(
+        self, world: SyntheticWorld, config: dict[str, JsonValue]
+    ) -> str | None:
+        """Identity of the content a launch of *config* would start from, without
+        launching. Folded into the trace fingerprint: change it and traces regenerate."""
+        ...
+
     async def launch(
         self, world: SyntheticWorld, config: dict[str, JsonValue]
     ) -> SyntheticInstance: ...
@@ -166,6 +179,22 @@ class LocalFilesLauncher:
             return []
         return sorted(p.name for p in base.iterdir() if p.is_dir())
 
+    async def content_version(
+        self, world: SyntheticWorld, config: dict[str, JsonValue]
+    ) -> str | None:
+        """The world's declared version plus a digest of the fixture's bytes, so a
+        regenerated fixture never matches a trace made from the old one. Digests are
+        cached per directory signature (paths, sizes, mtimes), so this is a stat walk
+        per call, not a read."""
+        fixture_id = config.get("fixture_id")
+        if not isinstance(fixture_id, str) or not fixture_id:
+            return world.content_version
+        source = local_fixture_dir(world, fixture_id)
+        if not source.is_dir():
+            return world.content_version
+        digest = await asyncio.to_thread(_cached_tree_digest, source)
+        return _compose_content_version(world.content_version, digest)
+
     async def launch(
         self, world: SyntheticWorld, config: dict[str, JsonValue]
     ) -> SyntheticInstance:
@@ -196,6 +225,7 @@ class LocalFilesLauncher:
         instance_id = generate_synthetic_instance_id()
         dest = self._root / instance_id
         lib_dir = world.lib_dir()
+        content_version = await self.content_version(world, config)
 
         def _copy() -> None:
             self._root.mkdir(parents=True, exist_ok=True)
@@ -213,15 +243,16 @@ class LocalFilesLauncher:
             source_path=str(source),
             world_lib_path=str(lib_dir) if lib_dir.is_dir() else None,
             metadata=metadata,
-            framework_content_hash=world.framework_content_hash,
+            content_version=content_version,
         )
 
     async def finalize(self, instance: SyntheticInstance) -> SyntheticInstance:
         """Mark the copy `unchanged` if the run left it byte-identical to its source.
 
-        Does not release the copy: another job grading the same trace (a second judge
-        that reused this generation) may still be reading it. The runner releases
-        unchanged copies once every job has finished, and `prune` catches the rest.
+        Does not release the copy: grading is about to read it, and another job
+        grading the same trace (a second judge that reused this generation) may be
+        too. The runner releases unchanged copies once every job has finished, and
+        `prune` catches the rest. Files are opaque here, so no `changes` are recorded.
         """
         if instance.unchanged or not instance.path or not instance.source_path:
             return instance
@@ -289,6 +320,36 @@ class LocalFilesLauncher:
 
 
 register_launcher(LOCAL_FILES_LAUNCHER, LocalFilesLauncher)
+
+
+def _compose_content_version(declared: str | None, fixture_digest: str) -> str:
+    payload = f"{declared or ''}|{fixture_digest}"
+    return "local:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
+
+
+_DIGEST_CACHE: dict[Path, tuple[tuple[tuple[str, int, int], ...], str]] = {}
+
+
+def _tree_signature(root: Path) -> tuple[tuple[str, int, int], ...]:
+    entries: list[tuple[str, int, int]] = []
+    for path in sorted(p for p in root.rglob("*") if p.is_file()):
+        rel = path.relative_to(root).as_posix()
+        if rel in (ACTIVE_MARKER, FIXTURE_MANIFEST):
+            continue
+        st = path.stat()
+        entries.append((rel, st.st_size, st.st_mtime_ns))
+    return tuple(entries)
+
+
+def _cached_tree_digest(root: Path) -> str:
+    key = root.resolve()
+    signature = _tree_signature(key)
+    cached = _DIGEST_CACHE.get(key)
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+    digest = _tree_digest(key)
+    _DIGEST_CACHE[key] = (signature, digest)
+    return digest
 
 
 def _tree_digest(root: Path) -> str:
