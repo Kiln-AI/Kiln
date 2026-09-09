@@ -3417,9 +3417,8 @@ async def test_process_tool_calls_passes_synthetic_instance_context(config, mock
     instance = SyntheticInstance(
         instance_id="inst_ctx",
         world_id="w",
-        fixture_id="f",
         path="/inst",
-        fixture_data_path="/fixture",
+        source_path="/fixture",
     )
     token = set_synthetic_instance(
         SyntheticInstanceContext(instance=instance, world=Mock())

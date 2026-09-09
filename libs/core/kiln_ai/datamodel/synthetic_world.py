@@ -1,32 +1,34 @@
-"""Synthetic worlds: a replica of the tool set an agent sees, replayed against synthetic
-starting states so evals can read and write without touching a real backend.
+"""Synthetic worlds: a replica of the tool set an agent sees, launched as isolated
+instances so evals can read and write without touching a real backend.
 
-Three concepts, three on-disk shapes under a project:
+On disk under a project:
 
     synthetic_worlds/<id> - <name>/synthetic_world.kiln          SyntheticWorld
         lib/                                                      shared world code
         tools/<id> - <name>/synthetic_tool.kiln + tool.py         SyntheticTool
-        fixtures/<id> - <name>/synthetic_fixture.kiln + data/     SyntheticFixture
+        fixtures/<fixture_id>/...                                 local-files launcher data
 
 A **world** is the code that plays a client's tool set: each `SyntheticTool` declares
-the real tool id it replaces. A **fixture** is one starting state: opaque data files
-plus the timezone-aware "now" they were authored against. An **instance** is a
-disposable copy of a fixture that one eval run mutates; it is runtime state, recorded
+the real tool id it replaces, and the world names the **launcher** that creates its
+instances. An eval input carries a `SyntheticEnvironment`: the world plus an opaque
+launch `config` the launcher understands (a fixture id, a seed, an OpenEnv task).
+An **instance** is what a launch returns: isolated state one eval job acts on, recorded
 on the trace as `SyntheticInstance` rather than stored as a project artifact.
 
-Kiln never reads fixture bytes. It copies them, hands the copy's path to the world's
-tools and to graders, and decides when the copy can be dropped.
+Kiln never interprets a launch config or an instance's contents. It passes the config to
+the launcher, hands the instance to tools and graders, keys traces by the config, and
+decides when an instance can be released.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from pydantic import BaseModel, Field, field_validator
-from typing_extensions import Self
+from pydantic import BaseModel, Field, JsonValue, field_validator
 
 from kiln_ai.datamodel.basemodel import (
     FilenameString,
@@ -45,63 +47,61 @@ if TYPE_CHECKING:
     from kiln_ai.datamodel.project import Project
 
 WORLD_LIB_DIRNAME = "lib"
-FIXTURE_DATA_DIRNAME = "data"
+LOCAL_FILES_LAUNCHER = "local_files"
 
 
-def _require_tz_aware(v: datetime | None) -> datetime | None:
-    """Reject naive datetimes rather than guessing the offset.
-
-    A fixture's "now" is compared against dates baked into its data, so an implicit
-    local offset would silently shift every relative query by the author's timezone.
-    """
-    if v is not None and v.tzinfo is None:
-        raise ValueError("frozen_time must be timezone-aware")
-    return v
+def canonical_json(value: JsonValue) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
 class SyntheticEnvironment(BaseModel):
-    """Which world and fixture an eval input runs against, set on `EvalInput`.
+    """Which world an eval input runs in, and the launch config for its instance.
 
-    `str` ids rather than `ID_TYPE`: an id-less reference cannot resolve to anything,
-    so the None state has no meaning here, and a min_length keeps an empty string
-    from slipping through validation.
+    `config` is opaque to Kiln: the world's launcher interprets it (a fixture id for
+    file-backed worlds, a seed or task for a gym-style environment). It is part of the
+    trace key, so two inputs with different configs never share a generation.
     """
 
     world_id: str = Field(min_length=1, description="The SyntheticWorld to run in.")
-    fixture_id: str = Field(
-        min_length=1, description="The world's SyntheticFixture to start from."
+    config: dict[str, JsonValue] = Field(
+        default_factory=dict,
+        description="Launch configuration passed verbatim to the world's launcher, e.g. {'fixture_id': ...}.",
     )
-    frozen_time: datetime | None = Field(
-        default=None,
-        description="Overrides the fixture's frozen_time for this input. Timezone-aware.",
-    )
-
-    _tz = field_validator("frozen_time")(_require_tz_aware)
 
 
 class SyntheticInstance(BaseModel):
-    """One run's private copy of a fixture, recorded on the trace it was generated for.
+    """One launched instance, recorded on the trace it was generated for.
 
     Persisted on `TaskRun.synthetic_instance` so graders (including judges added
     later, which reuse the same trace) can find the state the run left behind.
-    Paths are local to the machine that ran the eval.
+    Exactly what a launcher returns; `path` is local to the machine that ran the eval.
     """
 
     instance_id: str = Field(min_length=1)
     world_id: str = Field(min_length=1)
-    fixture_id: str = Field(min_length=1)
-    path: str = Field(
-        description="Directory holding this instance's copy of the fixture data. Deleted once `unchanged` is set."
+    config: dict[str, JsonValue] = Field(
+        default_factory=dict,
+        description="The launch config this instance was created from.",
     )
-    fixture_data_path: str = Field(
-        description="The fixture's own data directory, read-only for consumers."
+    path: str | None = Field(
+        default=None,
+        description="Local directory holding this instance's state, for file-backed launchers.",
+    )
+    endpoint: str | None = Field(
+        default=None,
+        description="Address of a hosted instance, for launchers that serve it over the network.",
+    )
+    source_path: str | None = Field(
+        default=None,
+        description="For file-backed launchers: the read-only original the instance was copied from; what readers use once `unchanged` is set.",
     )
     world_lib_path: str | None = Field(
         default=None,
         description="The world's shared lib/ directory, put on the sandbox import path.",
     )
-    frozen_time: datetime | None = Field(
-        default=None, description="The clock this instance ran under. Timezone-aware."
+    metadata: dict[str, JsonValue] = Field(
+        default_factory=dict,
+        description="Facts the launcher reports about the instance, e.g. frozen_time or fixture_id. Scalar entries are exported to tools as KILN_SYNTHETIC_<KEY>.",
     )
     framework_content_hash: str | None = Field(
         default=None,
@@ -110,42 +110,43 @@ class SyntheticInstance(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now().astimezone())
     unchanged: bool = Field(
         default=False,
-        description="True once the run was found to have left the copy byte-identical to the fixture; the copy is deleted and readers use fixture_data_path.",
+        description="True once the run was found to have left the instance identical to its source; the copy is released and readers use source_path.",
     )
 
-    _tz = field_validator("frozen_time")(_require_tz_aware)
-
     @property
-    def effective_path(self) -> str:
-        """Where a reader finds this instance's state: the copy, or the fixture when unchanged."""
-        return self.fixture_data_path if self.unchanged else self.path
+    def effective_path(self) -> str | None:
+        """Where a reader finds this instance's state: the copy, or the source when unchanged."""
+        if self.unchanged and self.source_path:
+            return self.source_path
+        return self.path
 
-    def to_sandbox_dict(self) -> dict[str, str | bool | None]:
+    def to_sandbox_dict(self) -> dict[str, JsonValue]:
         """The stdlib-only shape handed to sandbox children and scorers."""
         return {
             "instance_id": self.instance_id,
             "world_id": self.world_id,
-            "fixture_id": self.fixture_id,
+            "config": self.config,
             "path": self.effective_path,
-            "fixture_data_path": self.fixture_data_path,
+            "endpoint": self.endpoint,
+            "source_path": self.source_path,
             "world_lib_path": self.world_lib_path,
-            "frozen_time": self.frozen_time.isoformat() if self.frozen_time else None,
+            "metadata": self.metadata,
             "framework_content_hash": self.framework_content_hash,
             "unchanged": self.unchanged,
         }
 
 
 class SyntheticInstanceInfo(BaseModel):
-    """The grader-facing view of an instance: identity and clock, no filesystem paths.
+    """The grader-facing view of an instance: identity and reported facts, no locations.
 
-    `EvalTaskInput` is a FastAPI request body, so paths must not travel on it; code-eval
-    scorers get the full record through the sandbox inputs instead.
+    `EvalTaskInput` is a FastAPI request body, so paths and endpoints must not travel
+    on it; code-eval scorers get the full record through the sandbox inputs instead.
     """
 
     instance_id: str
     world_id: str
-    fixture_id: str
-    frozen_time: datetime | None = None
+    config: dict[str, JsonValue] = Field(default_factory=dict)
+    metadata: dict[str, JsonValue] = Field(default_factory=dict)
     framework_content_hash: str | None = None
 
     @classmethod
@@ -153,32 +154,24 @@ class SyntheticInstanceInfo(BaseModel):
         return cls(
             instance_id=instance.instance_id,
             world_id=instance.world_id,
-            fixture_id=instance.fixture_id,
-            frozen_time=instance.frozen_time,
+            config=instance.config,
+            metadata=instance.metadata,
             framework_content_hash=instance.framework_content_hash,
         )
 
 
 def synthetic_fingerprint(
     world_id: str,
-    fixture_id: str,
-    frozen_time: datetime | None,
+    config: dict[str, JsonValue],
     framework_content_hash: str | None,
 ) -> str:
-    """What makes two synthetic generations comparable: same world, fixture, clock, engine.
+    """What makes two synthetic generations comparable: same world, config, engine.
 
-    Composed into the trace key's variant slot so a trace generated against one fixture
-    is never reused for another, and so a re-engineered world regenerates.
+    Composed into the trace key's variant slot so a trace generated under one config is
+    never reused for another, and so a re-engineered world regenerates.
     """
-    payload = "|".join(
-        [
-            world_id,
-            fixture_id,
-            frozen_time.isoformat() if frozen_time else "",
-            framework_content_hash or "",
-        ]
-    )
-    return "syn1:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
+    payload = "|".join([world_id, canonical_json(config), framework_content_hash or ""])
+    return "syn2:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
 
 
 class SyntheticTool(CodeToolBase):
@@ -211,68 +204,24 @@ class SyntheticTool(CodeToolBase):
         return v
 
 
-class SyntheticFixture(KilnParentedModel):
-    """A starting state for a world: data files plus the "now" they were authored against.
-
-    Data lives in a sibling `data/` directory and is opaque to Kiln. It is validated when
-    an instance is created, not on load, so listing fixtures never touches the files.
-    """
-
-    name: FilenameString = Field(description="User-facing display name.")
-    description: str | None = Field(default=None)
-    frozen_time: datetime | None = Field(
-        default=None,
-        description="The clock the data was authored against; becomes the instance clock unless the eval input overrides it. Timezone-aware.",
-    )
-
-    _tz = field_validator("frozen_time")(_require_tz_aware)
-
-    def data_dir(self) -> Path:
-        if self.path is None:
-            raise ValueError(
-                "Fixture must be saved before accessing its data directory"
-            )
-        return self.path.parent / FIXTURE_DATA_DIRNAME
-
-    def require_data_dir(self) -> Path:
-        """The data directory, checked to exist and hold at least one file."""
-        data_dir = self.data_dir()
-        if not data_dir.is_dir():
-            raise ValueError(
-                f"Fixture '{self.name}' has no {FIXTURE_DATA_DIRNAME}/ directory at {data_dir}"
-            )
-        if not any(p.is_file() for p in data_dir.rglob("*")):
-            raise ValueError(
-                f"Fixture '{self.name}' has an empty {FIXTURE_DATA_DIRNAME}/ directory at {data_dir}"
-            )
-        return data_dir
-
-    def resolve_data_file(self, relative_path: str) -> Path:
-        """A file inside data/, refusing anything that resolves outside it."""
-        if not relative_path or not relative_path.strip():
-            raise ValueError("Path cannot be empty")
-        base = self.data_dir()
-        target = base / relative_path
-        try:
-            resolved = target.resolve()
-            resolved.relative_to(base.resolve())
-        except ValueError:
-            raise ValueError("Path traversal is not allowed") from None
-        return resolved
-
-
 class SyntheticWorld(
     KilnParentedModel,
     KilnParentModel,
-    parent_of={
-        "tools": SyntheticTool,
-        "fixtures": SyntheticFixture,
-    },
+    parent_of={"tools": SyntheticTool},
 ):
-    """The code that plays a client's tool set, plus the fixtures it can start from."""
+    """The code that plays a client's tool set, and the launcher that creates its instances."""
 
     name: FilenameString = Field(description="User-facing display name.")
     description: str | None = Field(default=None)
+    launcher: str = Field(
+        default=LOCAL_FILES_LAUNCHER,
+        min_length=1,
+        description="Which launcher creates this world's instances. 'local_files' copies a fixture directory under the world; other launchers are registered by name.",
+    )
+    launcher_config: dict[str, JsonValue] = Field(
+        default_factory=dict,
+        description="World-level settings for the launcher (an image, a server address). Opaque to Kiln.",
+    )
     strict: bool = Field(
         default=False,
         description="When an instance is active, fail the job if the run config uses a registry-resolved tool this world does not replace (built-ins excepted). Skills and unmanaged tools bypass the registry and are not covered.",
@@ -285,13 +234,13 @@ class SyntheticWorld(
     def tools(self, readonly: bool = False) -> list[SyntheticTool]:
         return super().tools(readonly=readonly)  # type: ignore
 
-    def fixtures(self, readonly: bool = False) -> list[SyntheticFixture]:
-        return super().fixtures(readonly=readonly)  # type: ignore
+    def world_dir(self) -> Path:
+        if self.path is None:
+            raise ValueError("World must be saved before accessing its directory")
+        return self.path.parent
 
     def lib_dir(self) -> Path:
-        if self.path is None:
-            raise ValueError("World must be saved before accessing its lib directory")
-        return self.path.parent / WORLD_LIB_DIRNAME
+        return self.world_dir() / WORLD_LIB_DIRNAME
 
     def bindings(self, readonly: bool = True) -> dict[str, SyntheticTool]:
         """Real tool id -> the synthetic tool that plays it."""
@@ -307,9 +256,6 @@ class SyntheticWorld(
 
     def binding_for(self, tool_id: str) -> SyntheticTool | None:
         return self.bindings().get(tool_id)
-
-    def fixture_by_id(self, fixture_id: str) -> SyntheticFixture | None:
-        return SyntheticFixture.from_id_and_parent_path(fixture_id, self.path)
 
     def validate_bindings(self, project: "Project") -> list[str]:
         """Check each binding against the real tool it replaces, without any network.
@@ -362,7 +308,3 @@ class SyntheticWorld(
                         f"{real_id}: function name mismatch (real '{real_name}', synthetic '{synthetic.tool_function_name}')"
                     )
         return warnings
-
-    def check_bindings_unique(self) -> Self:
-        self.bindings()
-        return self

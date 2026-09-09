@@ -42,7 +42,6 @@ from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.synthetic_world import (
     SyntheticEnvironment,
-    SyntheticFixture,
     SyntheticTool,
     SyntheticWorld,
 )
@@ -51,7 +50,7 @@ from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.datamodel.tool_id import build_code_tool_id
 from kiln_ai.run_context import get_synthetic_instance
-from kiln_ai.synthetic_worlds.provider import LocalCopyProvider
+from kiln_ai.synthetic_worlds.launcher import LocalFilesLauncher, local_fixture_dir
 from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.tool_registry import tool_from_id
 
@@ -108,19 +107,20 @@ def world(project, real_tool):
     return w
 
 
-def _fixture(world, name, clock, content):
-    f = SyntheticFixture(name=name, parent=world, frozen_time=clock)
-    f.save_to_file()
-    f.data_dir().mkdir()
-    (f.data_dir() / "fixture.db").write_bytes(content)
-    return f
+def _fixture(world, fixture_id, clock, content):
+    d = local_fixture_dir(world, fixture_id)
+    d.mkdir(parents=True)
+    (d / "fixture.db").write_bytes(content)
+    (d / "fixture.yaml").write_text(f"frozen_time: '{clock.isoformat()}'\n")
+    return d
 
 
 @pytest.fixture
 def fixtures(world):
+    """fixture id -> its directory."""
     return {
-        "a": _fixture(world, "A", CLOCK_A, b"a-data"),
-        "b": _fixture(world, "B", CLOCK_B, b"b-data"),
+        "a": _fixture(world, "a", CLOCK_A, b"a-data"),
+        "b": _fixture(world, "b", CLOCK_B, b"b-data"),
     }
 
 
@@ -186,10 +186,11 @@ def _input(task, text, environment=None, id=None):
     return ei
 
 
-def _env(world, fixture, frozen_time=None):
-    return SyntheticEnvironment(
-        world_id=world.id, fixture_id=fixture.id, frozen_time=frozen_time
-    )
+def _env(world, fixture_id, frozen_time=None):
+    config = {"fixture_id": fixture_id}
+    if frozen_time is not None:
+        config["frozen_time"] = frozen_time.isoformat()
+    return SyntheticEnvironment(world_id=world.id, config=config)
 
 
 class ToolCallingGenerator:
@@ -274,7 +275,7 @@ def _reset_judge():
     RecordingJudge.counters = {}
 
 
-def _runner(eval_configs, run_config, provider, split_name="test"):
+def _runner(eval_configs, run_config, launcher, split_name="test"):
     eval_ = eval_configs[0].parent_eval()
     task = eval_.parent_task()
     split = resolve_split(task, eval_, split_name)
@@ -283,7 +284,7 @@ def _runner(eval_configs, run_config, provider, split_name="test"):
         run_configs=[run_config],
         eval_run_type="task_run_eval",
         split=split,
-        synthetic_provider=provider,
+        synthetic_launcher=launcher,
     )
 
 
@@ -302,14 +303,14 @@ def _traces(task):
 
 @pytest.fixture
 def provider(tmp_path):
-    return LocalCopyProvider(cache_root=tmp_path / "cache", max_bytes=10**9)
+    return LocalFilesLauncher(cache_root=tmp_path / "cache", max_bytes=10**9)
 
 
 async def test_full_run_isolates_and_records_instances(
     project, task, world, fixtures, real_tool, run_config, eval_, provider
 ):
-    a = _input(task, "note for a", _env(world, fixtures["a"]), id="ei_a")
-    b = _input(task, "note for b", _env(world, fixtures["b"]), id="ei_b")
+    a = _input(task, "note for a", _env(world, "a"), id="ei_a")
+    b = _input(task, "note for b", _env(world, "b"), id="ei_b")
     none = _input(task, "note for none", None, id="ei_none")
     cfg = _config(
         eval_,
@@ -337,10 +338,9 @@ async def test_full_run_isolates_and_records_instances(
     assert traces[none.id].synthetic_instance is None
     assert inst_a is not None and inst_b is not None
     assert inst_a.instance_id != inst_b.instance_id
-    assert (
-        inst_a.fixture_id == fixtures["a"].id and inst_b.fixture_id == fixtures["b"].id
-    )
-    assert inst_a.frozen_time == CLOCK_A and inst_b.frozen_time == CLOCK_B
+    assert inst_a.config == {"fixture_id": "a"} and inst_b.config == {"fixture_id": "b"}
+    assert inst_a.metadata["frozen_time"] == CLOCK_A.isoformat()
+    assert inst_b.metadata["frozen_time"] == CLOCK_B.isoformat()
     assert inst_a.framework_content_hash == "eng1"
     # Both runs wrote, so both copies are kept and hold only their own note.
     assert inst_a.unchanged is False and inst_b.unchanged is False
@@ -348,14 +348,15 @@ async def test_full_run_isolates_and_records_instances(
     assert (Path(inst_b.path) / "counter.txt").read_text() == "note for b\n"
     # Variant on the trace key separates fixtures; the plain input has none.
     assert traces[a.id].eval_source.variant != traces[b.id].eval_source.variant
-    assert traces[a.id].eval_source.variant.startswith("syn1:")
+    assert traces[a.id].eval_source.variant.startswith("syn2:")
     assert traces[none.id].eval_source.variant is None
 
     # The judge saw ids and clock, no paths, and could read the instance state.
     by_input = {s.task_input: s for s in RecordingJudge.seen}
     info = by_input["note for a"].synthetic_instance
     assert info is not None
-    assert info.fixture_id == fixtures["a"].id
+    assert info.config == {"fixture_id": "a"}
+    assert info.metadata["fixture_id"] == "a"
     assert "path" not in info.model_dump()
     assert by_input["note for none"].synthetic_instance is None
     assert RecordingJudge.counters["note for a"] == "note for a\n"
@@ -374,7 +375,7 @@ async def test_read_only_run_drops_copy_and_later_judge_reuses_trace(
     read_only_tool = world.tools()[0]
     read_only_tool.code = "def run(note):\n    return 'looked'\n"
     read_only_tool.save_to_file()
-    _input(task, "look", _env(world, fixtures["a"]), id="ei_a")
+    _input(task, "look", _env(world, "a"), id="ei_a")
     first = _config(eval_, ExactMatchProperties(expected_value="looked"), name="first")
     generator = ToolCallingGenerator(task, build_code_tool_id(real_tool.id))
     patches = (
@@ -389,7 +390,7 @@ async def test_read_only_run_drops_copy_and_later_judge_reuses_trace(
     trace = _traces(task)[0]
     assert trace.synthetic_instance.unchanged is True
     assert not Path(trace.synthetic_instance.path).exists()
-    assert trace.synthetic_instance.effective_path == str(fixtures["a"].data_dir())
+    assert trace.synthetic_instance.effective_path == str(fixtures["a"])
 
     second = _config(
         eval_, ExactMatchProperties(expected_value="looked"), name="second"
@@ -407,7 +408,7 @@ async def test_read_only_run_drops_copy_and_later_judge_reuses_trace(
 async def test_changed_fixture_regenerates_and_evicted_state_skips_scorer(
     project, task, world, fixtures, real_tool, run_config, eval_, provider
 ):
-    a = _input(task, "note", _env(world, fixtures["a"]), id="ei_a")
+    a = _input(task, "note", _env(world, "a"), id="ei_a")
     judge = _config(eval_, ExactMatchProperties(expected_value="x"), name="judge")
     scorer = _config(
         eval_,
@@ -431,7 +432,7 @@ async def test_changed_fixture_regenerates_and_evicted_state_skips_scorer(
     assert scorer_run.skipped_reason is None
 
     # Pointing the input at the other fixture is a new variant: a fresh generation.
-    a.synthetic_environment = _env(world, fixtures["b"])
+    a.synthetic_environment = _env(world, "b")
     a.save_to_file()
     third = _config(eval_, ExactMatchProperties(expected_value="x"), name="third")
     with patch.object(BaseV2EvalBridge, "run_task", new=generator):
@@ -441,7 +442,7 @@ async def test_changed_fixture_regenerates_and_evicted_state_skips_scorer(
     # Evict the newest instance's copy, then add a fourth config with a state-reading
     # scorer: it is skipped, never regenerated, while a trace-only judge still scores.
     newest = next(
-        t for t in _traces(task) if t.synthetic_instance.fixture_id == fixtures["b"].id
+        t for t in _traces(task) if t.synthetic_instance.config["fixture_id"] == "b"
     )
     import shutil
 
@@ -466,7 +467,7 @@ async def test_missing_world_or_fixture_is_an_error_not_a_skip(
     _input(
         task,
         "note",
-        SyntheticEnvironment(world_id="nope", fixture_id=fixtures["a"].id),
+        SyntheticEnvironment(world_id="nope", config={"fixture_id": "a"}),
         id="ei_bad",
     )
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
@@ -484,7 +485,7 @@ async def test_missing_world_or_fixture_is_an_error_not_a_skip(
 async def test_skipped_job_creates_no_instance(
     project, task, world, fixtures, real_tool, run_config, eval_, provider
 ):
-    _input(task, "note", _env(world, fixtures["a"]), id="ei_a")
+    _input(task, "note", _env(world, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     generator = ToolCallingGenerator(task, build_code_tool_id(real_tool.id))
     with (
@@ -504,13 +505,16 @@ async def test_frozen_time_override_on_input(
     project, task, world, fixtures, real_tool, run_config, eval_, provider
 ):
     override = datetime(2030, 3, 3, tzinfo=timezone.utc)
-    _input(task, "note", _env(world, fixtures["a"], frozen_time=override), id="ei_a")
+    _input(task, "note", _env(world, "a", frozen_time=override), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     generator = ToolCallingGenerator(task, build_code_tool_id(real_tool.id))
     with patch.object(BaseV2EvalBridge, "run_task", new=generator):
         await _drain(_runner([cfg], run_config, provider))
     assert generator.outputs["ei_a"] == "synthetic:2030-03-03T00:00:00+00:00"
-    assert _traces(task)[0].synthetic_instance.frozen_time == override
+    assert (
+        _traces(task)[0].synthetic_instance.metadata["frozen_time"]
+        == override.isoformat()
+    )
 
 
 async def test_prune_runs_before_synthetic_jobs_only(
@@ -526,7 +530,7 @@ async def test_prune_runs_before_synthetic_jobs_only(
         await _drain(_runner([cfg], run_config, provider))
     prune.assert_not_called()
 
-    _input(task, "note", _env(world, fixtures["a"]), id="ei_a")
+    _input(task, "note", _env(world, "a"), id="ei_a")
     with (
         patch.object(BaseV2EvalBridge, "run_task", new=generator),
         patch.object(provider, "prune") as prune,
@@ -543,7 +547,7 @@ async def test_concurrent_judges_share_one_generation_and_copy(
     read_only_tool = world.tools()[0]
     read_only_tool.code = "def run(note):\n    return 'looked'\n"
     read_only_tool.save_to_file()
-    _input(task, "look", _env(world, fixtures["a"]), id="ei_a")
+    _input(task, "look", _env(world, "a"), id="ei_a")
     scorer_code = (
         "import os, time\n"
         "def score(output, synthetic_instance):\n"
@@ -571,6 +575,41 @@ async def test_concurrent_judges_share_one_generation_and_copy(
     trace = _traces(task)[0]
     assert trace.synthetic_instance.unchanged is True
     assert not Path(trace.synthetic_instance.path).exists()
+
+
+async def test_missing_fixture_is_a_job_error_at_launch(
+    project, task, world, fixtures, real_tool, run_config, eval_, provider
+):
+    """The world resolves but the launcher does not know the fixture: the job errors
+    before any generation and nothing is persisted."""
+    _input(task, "note", _env(world, "nope"), id="ei_bad")
+    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
+    generator = ToolCallingGenerator(task, build_code_tool_id(real_tool.id))
+    with patch.object(BaseV2EvalBridge, "run_task", new=generator):
+        runner = _runner([cfg], run_config, provider)
+        job = runner.collect_tasks()[0]
+        with pytest.raises(ValueError, match="Fixture 'nope' not found"):
+            await runner.run_job(job)
+    assert generator.outputs == {}
+    assert _traces(task) == []
+
+
+async def test_world_launcher_selected_by_name(
+    project, task, world, fixtures, real_tool, run_config, eval_
+):
+    """Without an injected launcher, the runner picks the world's own launcher by name,
+    and an unregistered name is a job error rather than a silent fallback."""
+    _input(task, "note", _env(world, "a"), id="ei_a")
+    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
+    generator = ToolCallingGenerator(task, build_code_tool_id(real_tool.id))
+    world.launcher = "not_a_registered_launcher"
+    world.save_to_file()
+    with patch.object(BaseV2EvalBridge, "run_task", new=generator):
+        runner = _runner([cfg], run_config, None)
+        job = runner.collect_tasks()[0]
+        with pytest.raises(ValueError, match="not_a_registered_launcher"):
+            await runner.run_job(job)
+    assert generator.outputs == {}
 
 
 # ---------------------------------------------------------------------------
@@ -605,7 +644,7 @@ async def test_multi_turn_drive_shares_one_instance_across_turns(
                 model_name="claude_4_5_haiku", model_provider="openrouter", turns=2
             ),
         ),
-        synthetic_environment=_env(world, fixtures["a"]),
+        synthetic_environment=_env(world, "a"),
     )
     ei.save_to_file()
     cfg = _config(
@@ -674,7 +713,7 @@ async def test_multi_turn_drive_shares_one_instance_across_turns(
     assert trace.synthetic_instance is not None
     assert trace.synthetic_instance.instance_id == seen_instances[0]
     assert trace.synthetic_instance.unchanged is False
-    assert trace.eval_source.variant.startswith("syn1:")
+    assert trace.eval_source.variant.startswith("syn2:")
     assert (Path(trace.synthetic_instance.path) / "counter.txt").read_text() == (
         "first note\nsecond note\n"
     )
@@ -708,7 +747,7 @@ async def test_multi_turn_skip_creates_no_instance(
             synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
             drive_config=None,
         ),
-        synthetic_environment=_env(world, fixtures["a"]),
+        synthetic_environment=_env(world, "a"),
     ).save_to_file()
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     await _drain(_runner([cfg], run_config, provider))

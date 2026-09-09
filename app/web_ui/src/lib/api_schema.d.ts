@@ -2894,28 +2894,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Synthetic Fixtures */
-        get: operations["list_synthetic_fixtures_api_projects__project_id__synthetic_worlds__world_id__fixtures_get"];
+        /** List Local Fixtures */
+        get: operations["list_local_fixtures_api_projects__project_id__synthetic_worlds__world_id__fixtures_get"];
         put?: never;
-        /** Create Synthetic Fixture */
-        post: operations["create_synthetic_fixture_api_projects__project_id__synthetic_worlds__world_id__fixtures_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/synthetic_worlds/{world_id}/fixtures/{fixture_id}/data": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Upload Synthetic Fixture Data File */
-        post: operations["upload_synthetic_fixture_data_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__data_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2931,9 +2913,27 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post?: never;
-        /** Delete Synthetic Fixture */
-        delete: operations["delete_synthetic_fixture_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__delete"];
+        /** Create Local Fixture */
+        post: operations["create_local_fixture_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__post"];
+        /** Delete Local Fixture */
+        delete: operations["delete_local_fixture_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/synthetic_worlds/{world_id}/fixtures/{fixture_id}/data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Local Fixture Data File */
+        post: operations["upload_local_fixture_data_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__data_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -4892,8 +4892,8 @@ export interface components {
              */
             file: string;
         };
-        /** Body_upload_synthetic_fixture_data_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__data_post */
-        Body_upload_synthetic_fixture_data_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__data_post: {
+        /** Body_upload_local_fixture_data_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__data_post */
+        Body_upload_local_fixture_data_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__data_post: {
             /**
              * File
              * Format: binary
@@ -9490,6 +9490,27 @@ export interface components {
             /** Judge Instructions */
             judge_instructions?: string[] | null;
         };
+        /** LocalFixtureCreateRequest */
+        LocalFixtureCreateRequest: {
+            /**
+             * Manifest
+             * @description Facts the launcher reports on instances of this fixture, e.g. {'frozen_time': '2026-07-14T00:00:00+00:00'}. Written to fixture.yaml.
+             */
+            manifest?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
+        /** LocalFixtureResponse */
+        LocalFixtureResponse: {
+            /** Fixture Id */
+            fixture_id: string;
+            /** Manifest */
+            manifest?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Data Files */
+            data_files?: string[];
+        };
         /** LocalServerProperties */
         LocalServerProperties: {
             /** Command */
@@ -12265,67 +12286,53 @@ export interface components {
             /** Prompt */
             prompt: string;
         };
-        /** SyntheticFixtureCreateRequest */
-        SyntheticFixtureCreateRequest: {
-            /** Name */
-            name: string;
-            /** Description */
-            description?: string | null;
-            /** Frozen Time */
-            frozen_time?: string | null;
-        };
-        /** SyntheticFixtureResponse */
-        SyntheticFixtureResponse: {
-            /** Id */
-            id?: string | null;
-            /** Name */
-            name: string;
-            /** Description */
-            description?: string | null;
-            /** Frozen Time */
-            frozen_time?: string | null;
-            /** Data Files */
-            data_files?: string[];
-            /** Created At */
-            created_at?: string | null;
-            /** Created By */
-            created_by?: string | null;
-        };
         /**
          * SyntheticInstance
-         * @description One run's private copy of a fixture, recorded on the trace it was generated for.
+         * @description One launched instance, recorded on the trace it was generated for.
          *
          *     Persisted on `TaskRun.synthetic_instance` so graders (including judges added
          *     later, which reuse the same trace) can find the state the run left behind.
-         *     Paths are local to the machine that ran the eval.
+         *     Exactly what a launcher returns; `path` is local to the machine that ran the eval.
          */
         SyntheticInstance: {
             /** Instance Id */
             instance_id: string;
             /** World Id */
             world_id: string;
-            /** Fixture Id */
-            fixture_id: string;
+            /**
+             * Config
+             * @description The launch config this instance was created from.
+             */
+            config?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
             /**
              * Path
-             * @description Directory holding this instance's copy of the fixture data. Deleted once `unchanged` is set.
+             * @description Local directory holding this instance's state, for file-backed launchers.
              */
-            path: string;
+            path?: string | null;
             /**
-             * Fixture Data Path
-             * @description The fixture's own data directory, read-only for consumers.
+             * Endpoint
+             * @description Address of a hosted instance, for launchers that serve it over the network.
              */
-            fixture_data_path: string;
+            endpoint?: string | null;
+            /**
+             * Source Path
+             * @description For file-backed launchers: the read-only original the instance was copied from; what readers use once `unchanged` is set.
+             */
+            source_path?: string | null;
             /**
              * World Lib Path
              * @description The world's shared lib/ directory, put on the sandbox import path.
              */
             world_lib_path?: string | null;
             /**
-             * Frozen Time
-             * @description The clock this instance ran under. Timezone-aware.
+             * Metadata
+             * @description Facts the launcher reports about the instance, e.g. frozen_time or fixture_id. Scalar entries are exported to tools as KILN_SYNTHETIC_<KEY>.
              */
-            frozen_time?: string | null;
+            metadata?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
             /**
              * Framework Content Hash
              * @description Hash of the world engine that backed this run, copied from the world.
@@ -12338,27 +12345,31 @@ export interface components {
             created_at?: string;
             /**
              * Unchanged
-             * @description True once the run was found to have left the copy byte-identical to the fixture; the copy is deleted and readers use fixture_data_path.
+             * @description True once the run was found to have left the instance identical to its source; the copy is released and readers use source_path.
              * @default false
              */
             unchanged: boolean;
         };
         /**
          * SyntheticInstanceInfo
-         * @description The grader-facing view of an instance: identity and clock, no filesystem paths.
+         * @description The grader-facing view of an instance: identity and reported facts, no locations.
          *
-         *     `EvalTaskInput` is a FastAPI request body, so paths must not travel on it; code-eval
-         *     scorers get the full record through the sandbox inputs instead.
+         *     `EvalTaskInput` is a FastAPI request body, so paths and endpoints must not travel
+         *     on it; code-eval scorers get the full record through the sandbox inputs instead.
          */
         SyntheticInstanceInfo: {
             /** Instance Id */
             instance_id: string;
             /** World Id */
             world_id: string;
-            /** Fixture Id */
-            fixture_id: string;
-            /** Frozen Time */
-            frozen_time?: string | null;
+            /** Config */
+            config?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Metadata */
+            metadata?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
             /** Framework Content Hash */
             framework_content_hash?: string | null;
         };
@@ -12475,6 +12486,15 @@ export interface components {
             /** Description */
             description?: string | null;
             /**
+             * Launcher
+             * @default local_files
+             */
+            launcher: string;
+            /** Launcher Config */
+            launcher_config?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
              * Strict
              * @default false
              */
@@ -12490,6 +12510,12 @@ export interface components {
             name: string;
             /** Description */
             description?: string | null;
+            /** Launcher */
+            launcher: string;
+            /** Launcher Config */
+            launcher_config?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
             /**
              * Strict
              * @default false
@@ -12502,11 +12528,6 @@ export interface components {
              * @default 0
              */
             tool_count: number;
-            /**
-             * Fixture Count
-             * @default 0
-             */
-            fixture_count: number;
             /** Created At */
             created_at?: string | null;
             /** Created By */
@@ -12518,6 +12539,12 @@ export interface components {
             name?: string | null;
             /** Description */
             description?: string | null;
+            /** Launcher */
+            launcher?: string | null;
+            /** Launcher Config */
+            launcher_config?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
             /** Strict */
             strict?: boolean | null;
             /** Framework Content Hash */
@@ -20943,7 +20970,7 @@ export interface operations {
             };
         };
     };
-    list_synthetic_fixtures_api_projects__project_id__synthetic_worlds__world_id__fixtures_get: {
+    list_local_fixtures_api_projects__project_id__synthetic_worlds__world_id__fixtures_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20963,7 +20990,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SyntheticFixtureResponse"][];
+                    "application/json": components["schemas"]["LocalFixtureResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -20977,7 +21004,7 @@ export interface operations {
             };
         };
     };
-    create_synthetic_fixture_api_projects__project_id__synthetic_worlds__world_id__fixtures_post: {
+    create_local_fixture_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__post: {
         parameters: {
             query?: never;
             header?: never;
@@ -20986,52 +21013,14 @@ export interface operations {
                 project_id: string;
                 /** @description The synthetic world id. */
                 world_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SyntheticFixtureCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SyntheticFixtureResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    upload_synthetic_fixture_data_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__data_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The project id. */
-                project_id: string;
-                /** @description The synthetic world id. */
-                world_id: string;
-                /** @description The synthetic fixture id. */
+                /** @description Directory name of the fixture. */
                 fixture_id: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["Body_upload_synthetic_fixture_data_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__data_post"];
+                "application/json": components["schemas"]["LocalFixtureCreateRequest"];
             };
         };
         responses: {
@@ -21041,7 +21030,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SyntheticFixtureResponse"];
+                    "application/json": components["schemas"]["LocalFixtureResponse"];
                 };
             };
             /** @description Validation Error */
@@ -21055,7 +21044,7 @@ export interface operations {
             };
         };
     };
-    delete_synthetic_fixture_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__delete: {
+    delete_local_fixture_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__delete: {
         parameters: {
             query?: never;
             header?: never;
@@ -21064,7 +21053,7 @@ export interface operations {
                 project_id: string;
                 /** @description The synthetic world id. */
                 world_id: string;
-                /** @description The synthetic fixture id. */
+                /** @description Directory name of the fixture. */
                 fixture_id: string;
             };
             cookie?: never;
@@ -21078,6 +21067,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_local_fixture_data_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__data_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project id. */
+                project_id: string;
+                /** @description The synthetic world id. */
+                world_id: string;
+                /** @description Directory name of the fixture. */
+                fixture_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_local_fixture_data_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__data_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalFixtureResponse"];
                 };
             };
             /** @description Validation Error */

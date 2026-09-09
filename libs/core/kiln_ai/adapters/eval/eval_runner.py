@@ -53,7 +53,6 @@ from kiln_ai.datamodel.run_config import (
 )
 from kiln_ai.datamodel.synthetic_world import (
     SyntheticEnvironment,
-    SyntheticFixture,
     SyntheticInstance,
     SyntheticWorld,
     synthetic_fingerprint,
@@ -73,9 +72,9 @@ from kiln_ai.synthetic_user.models import (
     TAG_SU_ENDED_CONVERSATION,
     SyntheticUserDriverConfig,
 )
-from kiln_ai.synthetic_worlds.provider import (
-    LocalCopyProvider,
-    SyntheticInstanceProvider,
+from kiln_ai.synthetic_worlds.launcher import (
+    SyntheticWorldLauncher,
+    launcher_for_world,
 )
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
@@ -238,12 +237,12 @@ def _splits_a_turn_into_two_messages(
 
 @dataclass(frozen=True)
 class _SyntheticTarget:
-    """A resolved synthetic environment: what a job needs to create instances and to
+    """A resolved synthetic environment: what a job needs to launch instances and to
     key its traces."""
 
     world: SyntheticWorld
-    fixture: SyntheticFixture
-    frozen_time: Any
+    launcher: SyntheticWorldLauncher
+    config: dict[str, Any]
     bindings: dict[str, Any]
     variant: str
 
@@ -305,7 +304,7 @@ class EvalRunner:
         eval_run_type: Literal["eval_config_eval", "task_run_eval"],
         split: ResolvedSplit | None = None,
         save_context: SaveContext | None = None,
-        synthetic_provider: SyntheticInstanceProvider | None = None,
+        synthetic_launcher: SyntheticWorldLauncher | None = None,
     ):
         if len(eval_configs) == 0:
             raise ValueError("Eval runner requires at least one eval config")
@@ -372,15 +371,15 @@ class EvalRunner:
         # visible to the next, whether that next job is running concurrently under a
         # different eval config or is this job's own retry (functional spec 4.2, 4.3).
         self._trace_index = TraceIndex(self.task, vet=self._build_trace_vet())
-        # Instantiated inline: one implementation exists. The Protocol is the seam for a
-        # hosted provider, and tests pass their own to point the cache at tmp_path.
-        self._synthetic_provider: SyntheticInstanceProvider = (
-            synthetic_provider or LocalCopyProvider()
-        )
-        # Copies found byte-identical to their fixture during this run. Deleted only
-        # after every job has finished: a concurrent judge of the same trace may still
-        # be reading the copy, and its record predates the `unchanged` re-save.
-        self._unchanged_instances: List[SyntheticInstance] = []
+        # A launcher passed in overrides the world's own (tests point the cache at
+        # tmp_path); otherwise each world's `launcher` name selects one.
+        self._synthetic_launcher_override = synthetic_launcher
+        # Instances found unchanged during this run. Released only after every job has
+        # finished: a concurrent judge of the same trace may still be reading one, and
+        # its record predates the `unchanged` re-save.
+        self._unchanged_instances: List[
+            tuple[SyntheticWorldLauncher, SyntheticInstance]
+        ] = []
 
     def _build_trace_vet(self) -> Callable[[TraceKey, TaskRun], str | None] | None:
         """The completeness check the trace index applies to reuse candidates, or None
@@ -933,9 +932,9 @@ class EvalRunner:
     ) -> bool:
         """One job against a synthetic world instance, for either generation lane.
 
-        Generation runs under the trace index's per-key lock with a freshly created
+        Generation runs under the trace index's per-key lock with a freshly launched
         instance in context, so racing judges of one item share a single generation and
-        a single copy, and every turn of a multi-turn drive sees the same instance.
+        a single instance, and every turn of a multi-turn drive sees the same instance.
         Grading then runs with the context rebuilt from whatever the trace recorded —
         the same record for a reused trace — so scorers read the state the generation
         actually left. The context is reset in `finally` both times: worker tasks are
@@ -943,9 +942,7 @@ class EvalRunner:
         """
 
         async def generate() -> TaskRun:
-            instance = await self._synthetic_provider.create(
-                target.world, target.fixture, frozen_time=target.frozen_time
-            )
+            instance = await target.launcher.launch(target.world, target.config)
             token = set_synthetic_instance(
                 SyntheticInstanceContext(
                     instance=instance, world=target.world, bindings=target.bindings
@@ -965,7 +962,11 @@ class EvalRunner:
                 f"Eval trace {trace.id} was generated for a synthetic environment but "
                 "records no synthetic instance"
             )
-        state_unavailable = not instance.unchanged and not Path(instance.path).is_dir()
+        state_unavailable = (
+            instance.path is not None
+            and not instance.unchanged
+            and not Path(instance.path).is_dir()
+        )
         if state_unavailable:
             logger.warning(
                 "Synthetic instance %s for trace %s has been evicted; graders that "
@@ -989,18 +990,20 @@ class EvalRunner:
             reset_synthetic_instance(token)
 
         if was_generated:
-            finalized = await self._synthetic_provider.finalize(instance)
+            finalized = await target.launcher.finalize(instance)
             if finalized.unchanged and not instance.unchanged:
                 trace.synthetic_instance = finalized
                 async with self._save_context():
                     trace.save_to_file()
-                self._unchanged_instances.append(finalized)
+                self._unchanged_instances.append((target.launcher, finalized))
         return persisted
 
     def _resolve_synthetic_target(
         self, environment: SyntheticEnvironment
     ) -> "_SyntheticTarget":
-        """The world and fixture an input names, or an error: never a silent fallback."""
+        """The world an input names, its launcher, and the trace variant — or an error:
+        never a silent fallback. The launch config is the launcher's to validate, which
+        it does at launch."""
         project = self.task.parent_project()
         if project is None:
             raise ValueError(
@@ -1013,22 +1016,14 @@ class EvalRunner:
             raise ValueError(
                 f"Synthetic world {environment.world_id} not found in project {project.id}"
             )
-        fixture = world.fixture_by_id(environment.fixture_id)
-        if fixture is None:
-            raise ValueError(
-                f"Synthetic fixture {environment.fixture_id} not found in world {world.id}"
-            )
-        frozen_time = environment.frozen_time or fixture.frozen_time
+        launcher = self._synthetic_launcher_override or launcher_for_world(world)
         return _SyntheticTarget(
             world=world,
-            fixture=fixture,
-            frozen_time=frozen_time,
+            launcher=launcher,
+            config=environment.config,
             bindings=world.bindings(),
             variant=synthetic_fingerprint(
-                world.id or "",
-                fixture.id or "",
-                frozen_time,
-                world.framework_content_hash,
+                world.id or "", environment.config, world.framework_content_hash
             ),
         )
 
@@ -1045,12 +1040,12 @@ class EvalRunner:
 
     async def _drop_unchanged_instances(self) -> None:
         pending, self._unchanged_instances = self._unchanged_instances, []
-        for instance in pending:
+        for launcher, instance in pending:
             try:
-                await self._synthetic_provider.destroy(instance)
+                await launcher.release(instance)
             except Exception as e:
                 logger.warning(
-                    "Dropping unchanged synthetic instance %s failed: %s",
+                    "Releasing unchanged synthetic instance %s failed: %s",
                     instance.instance_id,
                     e,
                 )
@@ -1061,10 +1056,23 @@ class EvalRunner:
             for run in self.task.runs(readonly=True, include_eval_generated=True)
             if run.synthetic_instance is not None
         ]
-        try:
-            await self._synthetic_provider.prune(live)
-        except Exception as e:
-            logger.warning("Pruning synthetic instances failed: %s", e, exc_info=True)
+        project = self.task.parent_project()
+        worlds = project.synthetic_worlds(readonly=True) if project else []
+        launchers: dict[str, SyntheticWorldLauncher] = {}
+        for world in worlds:
+            try:
+                launchers[world.launcher] = self._synthetic_launcher_override or (
+                    launchers.get(world.launcher) or launcher_for_world(world)
+                )
+            except Exception as e:
+                logger.warning("No launcher for world %s: %s", world.name, e)
+        for launcher in launchers.values():
+            try:
+                await launcher.prune(live)
+            except Exception as e:
+                logger.warning(
+                    "Pruning synthetic instances failed: %s", e, exc_info=True
+                )
 
     async def _resolve_trace(
         self, job: EvalJob, evaluator: BaseV2EvalBridge

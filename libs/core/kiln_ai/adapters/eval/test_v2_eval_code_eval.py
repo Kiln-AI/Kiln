@@ -360,9 +360,8 @@ class TestSyntheticInstanceHandoff:
         instance = SyntheticInstance(
             instance_id="inst_x",
             world_id="w",
-            fixture_id="f",
             path=str(tmp_path / "inst"),
-            fixture_data_path=str(tmp_path / "fixture"),
+            source_path=str(tmp_path / "fixture"),
         )
         return SyntheticInstanceContext(
             instance=instance, world=Mock(), state_unavailable=state_unavailable
@@ -456,10 +455,10 @@ class TestSyntheticInstanceHandoff:
         record = {
             "instance_id": "inst_w",
             "world_id": "w",
-            "fixture_id": "f",
+            "config": {"fixture_id": "f"},
             "path": str(tmp_path),
-            "fixture_data_path": str(tmp_path),
-            "frozen_time": "2026-07-14T00:00:00+00:00",
+            "source_path": str(tmp_path),
+            "metadata": {"frozen_time": "2026-07-14T00:00:00+00:00"},
             "world_lib_path": None,
         }
         declared = (
