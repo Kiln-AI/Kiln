@@ -4,5 +4,644 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "properties": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/LlmJudgeProperties"
+            },
+            {
+              "$ref": "#/$defs/ExactMatchProperties"
+            },
+            {
+              "$ref": "#/$defs/PatternMatchProperties"
+            },
+            {
+              "$ref": "#/$defs/SetCheckProperties"
+            },
+            {
+              "$ref": "#/$defs/ToolCallCheckProperties"
+            },
+            {
+              "$ref": "#/$defs/ContainsProperties"
+            },
+            {
+              "$ref": "#/$defs/StepCountCheckProperties"
+            },
+            {
+              "$ref": "#/$defs/CodeEvalProperties"
+            }
+          ],
+          "title": "Properties",
+          "description": "The V2 eval config properties to test.",
+          "discriminator": {
+            "propertyName": "type",
+            "mapping": {
+              "code_eval": "#/$defs/CodeEvalProperties",
+              "contains": "#/$defs/ContainsProperties",
+              "exact_match": "#/$defs/ExactMatchProperties",
+              "llm_judge": "#/$defs/LlmJudgeProperties",
+              "pattern_match": "#/$defs/PatternMatchProperties",
+              "set_check": "#/$defs/SetCheckProperties",
+              "step_count_check": "#/$defs/StepCountCheckProperties",
+              "tool_call_check": "#/$defs/ToolCallCheckProperties"
+            }
+          }
+        },
+        "output_scores": {
+          "items": {
+            "properties": {
+              "name": {
+                "type": "string",
+                "maxLength": 32,
+                "minLength": 1,
+                "title": "Name",
+                "description": "The name of the score. Will be provided to the model so use a descriptive name. Should align to the model's TaskRequirement name if you want to use human evals to evaluate the evaluator's performance."
+              },
+              "instruction": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Instruction",
+                "description": "A description of the score, used to help the model understand the goal of the score. Will be provided to evaluator models, so should be written for the model, not the team/user."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "five_star",
+                  "pass_fail",
+                  "pass_fail_critical",
+                  "custom"
+                ],
+                "title": "TaskOutputRatingType",
+                "description": "Defines the types of rating systems available for task outputs."
+              }
+            },
+            "type": "object",
+            "required": [
+              "name",
+              "type"
+            ],
+            "title": "EvalOutputScore",
+            "description": "A definition of a score that an evaluator will produce.\n\nVery similar to TaskRequirement, but conceptually different keeping in a separate models."
+          },
+          "type": "array",
+          "title": "Output Scores",
+          "description": "The scores the drafted eval will declare; returned scores are validated against them."
+        },
+        "eval_input": {
+          "properties": {
+            "final_message": {
+              "type": "string",
+              "title": "Final Message",
+              "description": "The final model output (task output text)."
+            },
+            "trace": {
+              "anyOf": [
+                {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Trace",
+              "description": "The full conversation trace, if available."
+            },
+            "reference_data": {
+              "anyOf": [
+                {
+                  "additionalProperties": {},
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reference Data",
+              "description": "Ground-truth data for the item being evaluated, keyed by reference name. Taken from EvalInput.reference for an EvalInput-backed item; for a TaskRun-backed dataset item it is the item's own stored output under the key 'reference_answer', since that output is the curated answer. None when a TaskRun is scored as itself (judge calibration), where the item and the scored run are the same record."
+            },
+            "task_input": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task Input",
+              "description": "The original task input text."
+            }
+          },
+          "type": "object",
+          "required": [
+            "final_message"
+          ],
+          "title": "EvalTaskInput",
+          "description": "The runtime data bundle passed to V2 evaluators.\n\nAssembled by the eval runner from the item being evaluated and the task run that\nwas scored. The item is either an EvalInput or a TaskRun drawn from the dataset;\nwhich one it is determines where `reference_data` and `task_input` come from."
+        }
+      },
+      "type": "object",
+      "required": [
+        "properties",
+        "output_scores",
+        "eval_input"
+      ],
+      "title": "TestV2EvalDraftRequest",
+      "description": "Request to test-run a V2 eval config for an eval that doesn't exist yet.\n\nUsed by the creation flow, where the eval (and its scores) are still being\ndrafted; the server builds a transient in-memory eval from output_scores.",
+      "$defs": {
+        "CodeEvalProperties": {
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "code_eval",
+              "title": "Type",
+              "default": "code_eval"
+            },
+            "code": {
+              "type": "string",
+              "title": "Code"
+            },
+            "reference_keys": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "title": "Reference Keys",
+              "default": []
+            },
+            "timeout_seconds": {
+              "type": "integer",
+              "maximum": 300.0,
+              "minimum": 1.0,
+              "title": "Timeout Seconds",
+              "default": 180
+            },
+            "tool_allowlist": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "title": "Tool Allowlist",
+              "description": "Explicit per-tool allowlist of tools the scorer code may call."
+            }
+          },
+          "type": "object",
+          "required": [
+            "code"
+          ],
+          "title": "CodeEvalProperties"
+        },
+        "ContainsProperties": {
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "contains",
+              "title": "Type",
+              "default": "contains"
+            },
+            "value_expression": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Value Expression"
+            },
+            "substring": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Substring"
+            },
+            "reference_key": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reference Key"
+            },
+            "case_sensitive": {
+              "type": "boolean",
+              "title": "Case Sensitive",
+              "default": true
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "must_contain",
+                "must_not_contain"
+              ],
+              "title": "Mode",
+              "default": "must_contain"
+            }
+          },
+          "type": "object",
+          "title": "ContainsProperties"
+        },
+        "ExactMatchProperties": {
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "exact_match",
+              "title": "Type",
+              "default": "exact_match"
+            },
+            "value_expression": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Value Expression"
+            },
+            "expected_value": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Value"
+            },
+            "reference_key": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reference Key"
+            },
+            "case_sensitive": {
+              "type": "boolean",
+              "title": "Case Sensitive",
+              "default": true
+            }
+          },
+          "type": "object",
+          "title": "ExactMatchProperties"
+        },
+        "LlmJudgeProperties": {
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "llm_judge",
+              "title": "Type",
+              "default": "llm_judge"
+            },
+            "model_name": {
+              "type": "string",
+              "title": "Model Name"
+            },
+            "model_provider": {
+              "type": "string",
+              "title": "Model Provider"
+            },
+            "system_prompt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "System Prompt"
+            },
+            "prompt_template": {
+              "type": "string",
+              "title": "Prompt Template"
+            },
+            "reference_keys": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "title": "Reference Keys",
+              "default": []
+            },
+            "thinking_instruction": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Thinking Instruction"
+            },
+            "g_eval": {
+              "type": "boolean",
+              "title": "G Eval",
+              "default": false
+            },
+            "judge_instructions": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Judge Instructions"
+            }
+          },
+          "type": "object",
+          "required": [
+            "model_name",
+            "model_provider",
+            "prompt_template"
+          ],
+          "title": "LlmJudgeProperties"
+        },
+        "PatternMatchProperties": {
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "pattern_match",
+              "title": "Type",
+              "default": "pattern_match"
+            },
+            "value_expression": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Value Expression"
+            },
+            "pattern": {
+              "type": "string",
+              "title": "Pattern"
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "must_match",
+                "must_not_match"
+              ],
+              "title": "Mode",
+              "default": "must_match"
+            }
+          },
+          "type": "object",
+          "required": [
+            "pattern"
+          ],
+          "title": "PatternMatchProperties"
+        },
+        "SetCheckProperties": {
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "set_check",
+              "title": "Type",
+              "default": "set_check"
+            },
+            "value_expression": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Value Expression"
+            },
+            "expected_set": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Set"
+            },
+            "reference_key": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reference Key"
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "subset",
+                "superset",
+                "equal"
+              ],
+              "title": "Mode"
+            }
+          },
+          "type": "object",
+          "required": [
+            "mode"
+          ],
+          "title": "SetCheckProperties"
+        },
+        "StepCountCheckProperties": {
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "step_count_check",
+              "title": "Type",
+              "default": "step_count_check"
+            },
+            "count_type": {
+              "type": "string",
+              "enum": [
+                "tool_calls",
+                "model_responses",
+                "turns"
+              ],
+              "title": "Count Type"
+            },
+            "min_count": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Count"
+            },
+            "max_count": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Count"
+            }
+          },
+          "type": "object",
+          "required": [
+            "count_type"
+          ],
+          "title": "StepCountCheckProperties"
+        },
+        "ToolCallCheckProperties": {
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "tool_call_check",
+              "title": "Type",
+              "default": "tool_call_check"
+            },
+            "expected_tools": {
+              "items": {
+                "properties": {
+                  "tool_name": {
+                    "type": "string",
+                    "title": "Tool Name"
+                  },
+                  "expected_args": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": {
+                          "properties": {
+                            "value": {},
+                            "match_mode": {
+                              "type": "string",
+                              "enum": [
+                                "exact",
+                                "contains",
+                                "regex"
+                              ],
+                              "title": "Match Mode",
+                              "default": "exact"
+                            }
+                          },
+                          "type": "object",
+                          "required": [
+                            "value"
+                          ],
+                          "title": "ArgMatch"
+                        },
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Expected Args"
+                  }
+                },
+                "type": "object",
+                "required": [
+                  "tool_name"
+                ],
+                "title": "ToolCallSpec"
+              },
+              "type": "array",
+              "minItems": 1,
+              "title": "Expected Tools"
+            },
+            "match_mode": {
+              "type": "string",
+              "enum": [
+                "any",
+                "all",
+                "ordered",
+                "never"
+              ],
+              "title": "Match Mode",
+              "default": "all"
+            },
+            "on_unexpected_tools": {
+              "type": "string",
+              "enum": [
+                "ignore",
+                "fail"
+              ],
+              "title": "On Unexpected Tools",
+              "default": "ignore"
+            }
+          },
+          "type": "object",
+          "required": [
+            "expected_tools"
+          ],
+          "title": "ToolCallCheckProperties"
+        }
+      }
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      }
+    },
+    "query": {}
   }
 }

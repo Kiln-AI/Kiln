@@ -4,5 +4,55 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name",
+          "description": "User-facing display name."
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Description",
+          "description": "User-facing notes shown in the UI."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "title": "CodeToolUpdateRequest"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "code_tool_id": {
+        "type": "string",
+        "description": "The unique identifier of the code tool.",
+        "title": "Code Tool Id"
+      }
+    },
+    "query": {}
   }
 }

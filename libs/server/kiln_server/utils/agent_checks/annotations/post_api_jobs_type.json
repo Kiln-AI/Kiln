@@ -4,5 +4,77 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "params": {
+          "additionalProperties": true,
+          "type": "object",
+          "title": "Params",
+          "description": "Type-specific job parameters, validated against the type's params model."
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Project Id",
+          "description": "Project to scope this job to (for filtering/visibility). Falls back to the params' project_id when omitted."
+        },
+        "metadata": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Metadata",
+          "description": "Free-form pass-through attribution, stored verbatim."
+        }
+      },
+      "type": "object",
+      "title": "CreateJobRequest",
+      "description": "Request body for creating a job. Params are validated per job type."
+    }
+  },
+  "parameters": {
+    "path": {
+      "type": {
+        "type": "string",
+        "description": "The registered job type to run.",
+        "title": "Type"
+      }
+    },
+    "query": {
+      "wait": {
+        "type": "boolean",
+        "description": "When true, block until the job reaches a terminal state and return the full JobRecord instead of CreateJobResponse.",
+        "default": false,
+        "title": "Wait"
+      },
+      "timeout": {
+        "anyOf": [
+          {
+            "type": "number",
+            "minimum": 0
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Seconds to wait when wait=true (504 on timeout). Omit to wait indefinitely.",
+        "title": "Timeout"
+      }
+    }
   }
 }

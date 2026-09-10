@@ -4,5 +4,16 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {
+      "id": {
+        "type": "string",
+        "description": "The job id.",
+        "title": "Id"
+      }
+    },
+    "query": {}
   }
 }

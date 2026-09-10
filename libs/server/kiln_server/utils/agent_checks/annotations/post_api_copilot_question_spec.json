@@ -5,5 +5,55 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Run Copilot spec questioner?"
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "target_task_info": {
+          "properties": {
+            "task_prompt": {
+              "type": "string",
+              "title": "Task Prompt",
+              "description": "The task's prompt."
+            },
+            "task_input_schema": {
+              "type": "string",
+              "title": "Task Input Schema",
+              "description": "The task's input JSON schema."
+            },
+            "task_output_schema": {
+              "type": "string",
+              "title": "Task Output Schema",
+              "description": "The task's output JSON schema."
+            }
+          },
+          "type": "object",
+          "required": [
+            "task_prompt",
+            "task_input_schema",
+            "task_output_schema"
+          ],
+          "title": "TaskInfoApi",
+          "description": "Task information for copilot API calls."
+        },
+        "target_specification": {
+          "type": "string",
+          "title": "target_specification",
+          "description": "The specification to analyze"
+        }
+      },
+      "type": "object",
+      "required": [
+        "target_task_info",
+        "target_specification"
+      ],
+      "title": "SpecQuestionerApiInput"
+    }
+  },
+  "parameters": {
+    "path": {},
+    "query": {}
   }
 }

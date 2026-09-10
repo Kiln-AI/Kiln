@@ -4,5 +4,76 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "dataset_split_type": {
+          "type": "string",
+          "enum": [
+            "train_val",
+            "train_test",
+            "train_test_val",
+            "train_test_val_80",
+            "all"
+          ],
+          "title": "DatasetSplitType",
+          "description": "Dataset split types used in the API. Any split type can be created in code."
+        },
+        "filter_id": {
+          "type": "string",
+          "title": "Filter Id",
+          "description": "The dataset filter to use."
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name",
+          "description": "The name of the dataset split."
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Description",
+          "description": "The description of the dataset split."
+        }
+      },
+      "type": "object",
+      "required": [
+        "dataset_split_type",
+        "filter_id"
+      ],
+      "title": "CreateDatasetSplitRequest",
+      "description": "Request to create a dataset split."
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      }
+    },
+    "query": {}
   }
 }

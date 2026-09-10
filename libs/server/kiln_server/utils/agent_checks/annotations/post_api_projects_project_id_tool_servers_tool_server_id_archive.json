@@ -4,5 +4,37 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "is_archived": {
+          "type": "boolean",
+          "title": "Is Archived"
+        }
+      },
+      "type": "object",
+      "required": [
+        "is_archived"
+      ],
+      "title": "ToolServerArchiveRequest"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "tool_server_id": {
+        "type": "string",
+        "description": "The unique identifier of the tool server.",
+        "title": "Tool Server Id"
+      }
+    },
+    "query": {}
   }
 }

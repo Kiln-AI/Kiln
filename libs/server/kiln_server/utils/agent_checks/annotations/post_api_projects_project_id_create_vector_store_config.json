@@ -4,5 +4,113 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 120,
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name",
+          "description": "A name for this entity."
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Description",
+          "description": "The description of the vector store config"
+        },
+        "store_type": {
+          "type": "string",
+          "enum": [
+            "lancedb_fts",
+            "lancedb_hybrid",
+            "lancedb_vector"
+          ],
+          "title": "VectorStoreType",
+          "description": "The type of vector store backend."
+        },
+        "properties": {
+          "anyOf": [
+            {
+              "properties": {
+                "similarity_top_k": {
+                  "type": "integer",
+                  "title": "Similarity Top K",
+                  "description": "The number of results to return from the vector store."
+                }
+              },
+              "type": "object",
+              "required": [
+                "similarity_top_k"
+              ],
+              "title": "LanceDBConfigFTSPropertiesPublic"
+            },
+            {
+              "properties": {
+                "similarity_top_k": {
+                  "type": "integer",
+                  "title": "Similarity Top K",
+                  "description": "The number of results to return from the vector store."
+                }
+              },
+              "type": "object",
+              "required": [
+                "similarity_top_k"
+              ],
+              "title": "LanceDBConfigVectorPropertiesPublic"
+            },
+            {
+              "properties": {
+                "similarity_top_k": {
+                  "type": "integer",
+                  "title": "Similarity Top K",
+                  "description": "The number of results to return from the vector store."
+                }
+              },
+              "type": "object",
+              "required": [
+                "similarity_top_k"
+              ],
+              "title": "LanceDBConfigHybridPropertiesPublic"
+            }
+          ],
+          "title": "Properties",
+          "description": "The properties of the vector store config, specific to the selected store_type."
+        }
+      },
+      "type": "object",
+      "required": [
+        "store_type",
+        "properties"
+      ],
+      "title": "CreateVectorStoreConfigRequest"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      }
+    },
+    "query": {}
   }
 }

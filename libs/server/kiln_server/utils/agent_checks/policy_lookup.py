@@ -21,6 +21,10 @@ class AgentPolicyLookup:
             )
         self._cache = {}
         for filepath in self._annotations_dir.glob("*.json"):
+            # Underscore-prefixed files are sidecars (e.g. the version
+            # manifest), not endpoint annotations.
+            if filepath.name.startswith("_"):
+                continue
             with open(filepath, encoding="utf-8") as f:
                 data = json.load(f)
             method = data["method"].lower()

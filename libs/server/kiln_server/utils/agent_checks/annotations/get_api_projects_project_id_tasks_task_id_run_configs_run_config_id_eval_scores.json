@@ -4,5 +4,26 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      },
+      "run_config_id": {
+        "type": "string",
+        "description": "The unique identifier of the run configuration.",
+        "title": "Run Config Id"
+      }
+    },
+    "query": {}
   }
 }

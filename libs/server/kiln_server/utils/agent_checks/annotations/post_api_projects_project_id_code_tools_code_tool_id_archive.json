@@ -4,5 +4,38 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "archived": {
+          "type": "boolean",
+          "title": "Archived",
+          "description": "Whether to archive or unarchive the tool."
+        }
+      },
+      "type": "object",
+      "required": [
+        "archived"
+      ],
+      "title": "CodeToolArchiveRequest"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "code_tool_id": {
+        "type": "string",
+        "description": "The unique identifier of the code tool.",
+        "title": "Code Tool Id"
+      }
+    },
+    "query": {}
   }
 }

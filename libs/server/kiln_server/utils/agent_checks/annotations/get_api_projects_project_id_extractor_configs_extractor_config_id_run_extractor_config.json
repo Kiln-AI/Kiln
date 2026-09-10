@@ -5,5 +5,46 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Run document extractor? This processes all documents and may take significant time."
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "extractor_config_id": {
+        "type": "string",
+        "description": "The unique identifier of the extractor configuration.",
+        "title": "Extractor Config Id"
+      }
+    },
+    "query": {
+      "tags": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Comma-separated list of tags to filter documents by.",
+        "title": "Tags"
+      },
+      "document_ids": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Comma-separated list of document ids to filter by. Combined (AND) with tags when both are set.",
+        "title": "Document Ids"
+      }
+    }
   }
 }

@@ -4,5 +4,16 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {
+      "state": {
+        "type": "string",
+        "description": "The OAuth state parameter to check.",
+        "title": "State"
+      }
+    },
+    "query": {}
   }
 }

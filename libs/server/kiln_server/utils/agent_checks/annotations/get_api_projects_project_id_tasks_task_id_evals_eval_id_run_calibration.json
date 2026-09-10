@@ -5,5 +5,26 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Run eval calibration? This runs LLM calls across all eval configs and uses AI credits."
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      },
+      "eval_id": {
+        "type": "string",
+        "description": "The unique identifier of the eval.",
+        "title": "Eval Id"
+      }
+    },
+    "query": {}
   }
 }

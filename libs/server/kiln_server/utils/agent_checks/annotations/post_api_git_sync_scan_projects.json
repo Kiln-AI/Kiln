@@ -4,5 +4,28 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "clone_path": {
+          "type": "string",
+          "title": "Clone Path",
+          "description": "Local filesystem path of the cloned repo."
+        }
+      },
+      "type": "object",
+      "required": [
+        "clone_path"
+      ],
+      "title": "ScanProjectsRequest",
+      "description": "Request to scan a cloned repo for Kiln project files."
+    }
+  },
+  "parameters": {
+    "path": {},
+    "query": {}
   }
 }

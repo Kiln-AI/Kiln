@@ -4,5 +4,30 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {
+      "id": {
+        "type": "string",
+        "description": "The job id.",
+        "title": "Id"
+      }
+    },
+    "query": {
+      "timeout": {
+        "anyOf": [
+          {
+            "type": "number",
+            "minimum": 0
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Seconds to wait before giving up (504 on timeout). Omit to wait indefinitely.",
+        "title": "Timeout"
+      }
+    }
   }
 }

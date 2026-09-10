@@ -4,5 +4,29 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {
+      "id": {
+        "type": "string",
+        "description": "The job id.",
+        "title": "Id"
+      }
+    },
+    "query": {
+      "run_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Read the error log for a specific past run id.",
+        "title": "Run Id"
+      }
+    }
   }
 }

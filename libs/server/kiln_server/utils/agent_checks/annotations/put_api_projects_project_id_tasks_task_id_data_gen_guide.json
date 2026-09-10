@@ -4,5 +4,52 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "guide": {
+          "type": "string",
+          "title": "Guide",
+          "description": "Markdown body of the input data guide.",
+          "default": ""
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "manual",
+                "kiln_pro"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source",
+          "description": "Which flow created this guide. Determines which refine metaprompter branch runs on subsequent edits. On edit, omit to preserve the existing source; on first save, send the originating flow."
+        }
+      },
+      "type": "object",
+      "title": "SaveTaskDataGuideInput"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      }
+    },
+    "query": {}
   }
 }

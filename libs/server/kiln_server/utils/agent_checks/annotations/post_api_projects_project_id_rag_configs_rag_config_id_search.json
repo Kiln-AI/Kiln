@@ -4,5 +4,38 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "query": {
+          "type": "string",
+          "title": "Query",
+          "description": "The search query text"
+        }
+      },
+      "type": "object",
+      "required": [
+        "query"
+      ],
+      "title": "RagSearchRequest"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "rag_config_id": {
+        "type": "string",
+        "description": "The unique identifier of the RAG configuration.",
+        "title": "Rag Config Id"
+      }
+    },
+    "query": {}
   }
 }

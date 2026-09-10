@@ -4,5 +4,81 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "generator_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Generator Id",
+          "description": "The generator ID if this prompt was auto-generated."
+        },
+        "name": {
+          "type": "string",
+          "title": "Name",
+          "description": "The name of the prompt."
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Description",
+          "description": "A description of the prompt."
+        },
+        "prompt": {
+          "type": "string",
+          "title": "Prompt",
+          "description": "The prompt text."
+        },
+        "chain_of_thought_instructions": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Chain Of Thought Instructions",
+          "description": "Chain of thought instructions to include in the prompt."
+        }
+      },
+      "type": "object",
+      "required": [
+        "name",
+        "prompt"
+      ],
+      "title": "PromptCreateRequest",
+      "description": "Request to create a new prompt."
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      }
+    },
+    "query": {}
   }
 }
