@@ -1,7 +1,8 @@
 // Source assertions for Step 5's entry screen. Same house precedent as
 // generate_step_surface.test.ts: the builder page is too large to mount, and
-// these are contractual — the reviewer supplied this copy word for word, and
-// asked for the shared Intro control by name rather than a bespoke screen.
+// these are contractual — the reviewer supplied the screen's framing copy
+// word for word, and asked for the shared Intro control by name rather than a
+// bespoke screen.
 import { describe, expect, it } from "vitest"
 import * as fs from "fs"
 import * as path from "path"
@@ -39,6 +40,15 @@ describe("Step 5 entry screen", () => {
     // the multi-turn arm where every item is a whole conversation.
     expect(normalized).toContain(
       "We'll show a set of ${judged_noun}s, and you tell us if you agree with its judgement.",
+    )
+  })
+
+  it("states what a grade does before any grading starts", () => {
+    // A verdict disagreement refines the judge and every other one is a note.
+    // A reviewer who learns that by tripping over it has already graded on
+    // the wrong assumption. The cards carry the tagged-claim exception.
+    expect(normalize(intro_source)).toContain(
+      "Disagreeing with a verdict refines the judge. Disagreeing with any other claim saves a note.",
     )
   })
 

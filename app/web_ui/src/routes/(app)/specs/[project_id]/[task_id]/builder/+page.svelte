@@ -3176,22 +3176,23 @@
 
   // Same pattern for Review (5) → Save (6): land on Save with the request
   // already in flight; only show the in-step button on error as retry.
-  // Both arms first route through the calibration loop: a review with
-  // disagreement enters a refine+re-check round instead of saving, round
+  // Both arms first route through the calibration loop: a review carrying a
+  // refine trigger enters a refine+re-check round instead of saving, round
   // after round, until the grades converge (or the user opts out via the
-  // save-without-refining link under the CTA). A judge the reviewer said was
-  // wrong never ships without them seeing it re-checked.
+  // save-without-refining link under the CTA). A judge the reviewer said got
+  // the verdict wrong never ships without them seeing it re-checked.
   function on_advance_to_save() {
-    const graded = build_graded_traces(trace_claims, trace_reviews)
     const decision = plan_save_action({
-      has_disagreement: has_grade_disagreement(graded),
+      has_disagreement: has_grade_disagreement(trace_claims, trace_reviews),
     })
     if (decision.action === "calibrate") {
       void run_calibration_round()
       return
     }
-    // Converged: zero disagreement, so the judge whose verdicts were just
-    // graded (the last refined one) ships through the normal save.
+    // Converged: nothing left that a refine could move, so the judge whose
+    // verdicts were just graded (the last refined one) ships through the
+    // normal save. Notes on its reasoning may well remain; they are saved
+    // with the eval and are not something a refine round can act on.
     if (calibration_rounds_completed > 0) {
       posthog.capture("eval_v2_judge_calibration_converged", {
         is_multi_turn,
@@ -3248,13 +3249,16 @@
     trace_claims.length > 0 &&
     reviewable_trace_indices.length > 0 &&
     reviewed_count >= review_target_count
-  // The review CTA says what clicking it does: with any graded disagreement
-  // a save enters a refine round, so the button reads Refine Judge (with a
-  // tooltip naming the count). It flips back to Save the moment the last
-  // disagreement clears — the convergence signal. Uses the loop's exact entry
-  // predicate, so label and behavior can't drift apart.
+  // The review CTA says what clicking it does: with a graded disagreement
+  // that refines the judge (a verdict, or a claim the builder tagged as a
+  // possible judge error) a save enters a refine round, so the button reads
+  // Refine Judge (with a tooltip naming the count). A note on the judge's
+  // reasoning leaves it reading Save. It flips back to Save the moment the
+  // last such disagreement clears — the convergence signal. Uses the loop's
+  // exact entry predicate, so label and behavior can't drift apart.
   $: review_disagreement_count = grade_disagreement_count(
-    build_graded_traces(trace_claims, trace_reviews),
+    trace_claims,
+    trace_reviews,
   )
   $: review_cta_state = review_cta({
     num_disagreements: review_disagreement_count,
@@ -3461,14 +3465,18 @@
     void build_claims_for_index(index)
   }
 
-  // ── Judge calibration loop (both arms). A save with disagreement never
-  // ships a judge the reviewer hasn't seen judge: it refines EXPLICITLY,
-  // re-checks the eval data with the refined prompt, and asks the reviewer to
-  // grade the result — round after round. Both arms re-judge their driven
-  // runs by durable id (judge_traces) and re-open a smart-picked subset.
-  // Save happens only when a review carries zero disagreement (the judge
-  // that ships is the one whose verdicts were graded) or when the user opts
-  // out via the save-without-refining link under the review CTA.
+  // ── Judge calibration loop (both arms). A save whose review says the judge
+  // got a verdict wrong never ships a judge the reviewer hasn't seen judge:
+  // it refines EXPLICITLY, re-checks the eval data with the refined prompt,
+  // and asks the reviewer to grade the result — round after round. Both arms
+  // re-judge their driven runs by durable id (judge_traces) and re-open a
+  // smart-picked subset. Save happens when a review carries no refine trigger
+  // (the judge that ships is the one whose verdicts were graded) or when the
+  // user opts out via the save-without-refining link under the review CTA.
+  // A disagreement that is only a note about the judge's reasoning rides
+  // along to the refiner as context but starts no round: the refiner can only
+  // write rules that move verdicts, so a round for a note alone would decline
+  // it and re-review a judge that did not move.
   type CalibrationPhase = "idle" | "refining" | "rejudging" | "building_claims"
   let calibration_phase: CalibrationPhase = "idle"
   // Completed refine+re-judge rounds this batch — round tags, the gate
@@ -3742,10 +3750,10 @@
       let refined = resume ? calibration_pending_judge : null
       let disagreed = resume ? calibration_pending_disagreed : []
       if (!refined) {
-        // Snapshot who was reviewed and who was disagreed with BEFORE the
-        // grades reset — the smart pick prioritizes the disagreements and
-        // the fresh top-up excludes everyone already graded.
-        disagreed = disagreed_trace_indices(trace_reviews)
+        // Snapshot who was reviewed and who asked for this refine BEFORE the
+        // grades reset — the smart pick prioritizes the traces that triggered
+        // it and the fresh top-up excludes everyone already graded.
+        disagreed = disagreed_trace_indices(trace_claims, trace_reviews)
         trace_claims.forEach((tc, i) => {
           if (tc.leaf_run_id && is_trace_reviewed(tc, trace_reviews[i])) {
             calibration_reviewed_keys.add(tc.leaf_run_id)

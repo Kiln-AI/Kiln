@@ -376,7 +376,7 @@ describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
     // The parent flips these props when graded disagreements exist (see
     // review_cta_refines in the wizard); the component just renders them.
     const tip =
-      "You disagreed with the judge on 1 conversation. Kiln will improve the judge from your feedback and re-check your eval data, then you'll review once more."
+      "You disagreed with the judge's verdict on 1 conversation. Kiln will improve the judge from your feedback and re-check your eval data, then you'll review once more."
     const { getByText, queryByText, container } = render_review(
       [built_trace("only")],
       {
@@ -390,6 +390,22 @@ describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
     expect(container.querySelector(".tooltip")?.getAttribute("data-tip")).toBe(
       tip,
     )
+  })
+})
+
+describe("ClaimEvidenceReview — what each disagreement will do", () => {
+  it("tells the verdict claim's card it refines and the evidence claim's it notes", async () => {
+    // The rule lives in claim_triggers_judge_refine; this is the wiring that
+    // carries it to each card, so the reviewer reads the same rule the CTA
+    // acts on.
+    const { container } = render_review([built_trace("t0")])
+    await fireEvent.click(by_id(container, "claim-disagree-0"))
+    await fireEvent.click(by_id(container, "claim-disagree-1"))
+    const lines = [...container.querySelectorAll("[data-refine-consequence]")]
+    expect(lines.map((l) => l.textContent?.trim())).toEqual([
+      "Saved as a note. This does not change the judge.",
+      "This will refine the judge.",
+    ])
   })
 })
 
