@@ -10,10 +10,6 @@
   // omitted it, a Pass/Fail row after the claims asks the call outright. Continue
   // is gated on the whole trace being graded (is_trace_reviewed).
   //
-  // Each card is told whether a disagreement on its claim starts a judge
-  // refine, so the card can say so; the rule itself lives in
-  // claim_triggers_judge_refine, which the wizard's CTA reads too.
-  //
   // Subset review: `selected_indices` is the judge-stratified sample the
   // reviewer grades (sized to the golden answer key) — the review shows
   // exactly these traces, mirroring the single-turn flow where the user
@@ -30,7 +26,6 @@
   // same keyboard hint using the same platform check.
   import { isMacOS } from "$lib/utils/platform"
   import {
-    claim_triggers_judge_refine,
     has_verdict_claim,
     is_trace_reviewed,
     type Citation,
@@ -53,9 +48,8 @@
   // until the gate is met, then takes the Continue slot on the last conversation.
   export let save_disabled = true
   // The primary action's label and optional tooltip, parent-owned so the
-  // button can say what the click actually does (a review whose grades say
-  // the judge got a verdict wrong enters a judge-refine round instead of
-  // saving).
+  // button can say what the click actually does (a review with disagreements
+  // enters a judge-refine round instead of saving).
   export let save_label = "Save"
   export let save_tooltip: string | null = null
   // What the judge judged, in the caller's vocabulary: "conversation" for
@@ -193,7 +187,6 @@
             {index}
             bind:verdict={current_verdicts.claim_verdicts[index]}
             on_cite={open_citation}
-            triggers_refine={claim_triggers_judge_refine(claim)}
           />
         {/each}
       </div>
@@ -246,18 +239,6 @@
             </button>
           </div>
         </div>
-        <!-- The same consequence line the claim cards carry: this row is the
-             verdict when no claim states one, so a call that differs from
-             the judge's is exactly what starts a refine. A matching call is
-             agreement and says nothing, like an agreed claim. -->
-        {#if current_verdicts.overall !== null && current_verdicts.overall !== current.judge_score}
-          <p
-            class="text-sm text-gray-500 mt-2 leading-relaxed"
-            data-refine-consequence
-          >
-            This will refine the judge.
-          </p>
-        {/if}
       </div>
     {/if}
 

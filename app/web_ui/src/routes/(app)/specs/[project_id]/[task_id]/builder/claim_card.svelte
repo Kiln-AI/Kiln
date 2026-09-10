@@ -24,12 +24,6 @@
   export let index: number
   export let verdict: ClaimVerdict
   export let on_cite: (citation: Citation) => void = () => {}
-  // Whether disagreeing with THIS claim starts a judge refine, computed by
-  // the review from claim_triggers_judge_refine. Required, with no default: a
-  // card that was never told would quietly promise the reviewer their
-  // disagreement changes nothing. The card only says which of the two things
-  // a disagree does; it never decides.
-  export let triggers_refine: boolean
 
   let why_input: HTMLTextAreaElement | null = null
 
@@ -106,21 +100,5 @@
       bind:this={why_input}
       rows="2"
     ></textarea>
-    <!-- What this disagreement will do, said on the card so the rule is never
-         a surprise. A disagreement with the verdict (or with a claim the
-         builder tagged as a possible judge error) refines the judge; every
-         other one is a note about the judge's reasoning, saved with the eval
-         and handed to the refiner as context, and changes no verdict. Same
-         size and colour as the card's other helper text. -->
-    <p
-      class="text-sm text-gray-500 mt-2 leading-relaxed"
-      data-refine-consequence
-    >
-      {#if triggers_refine}
-        This will refine the judge.
-      {:else}
-        Saved as a note. This does not refine the judge.
-      {/if}
-    </p>
   {/if}
 </div>
