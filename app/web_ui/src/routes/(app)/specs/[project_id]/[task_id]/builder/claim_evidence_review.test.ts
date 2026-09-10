@@ -421,7 +421,7 @@ describe("ClaimEvidenceReview — what each disagreement will do", () => {
     await fireEvent.click(by_id(container, "claim-disagree-1"))
     const lines = [...container.querySelectorAll("[data-refine-consequence]")]
     expect(lines.map((l) => l.textContent?.trim())).toEqual([
-      "Saved as a note. This does not change the judge.",
+      "Saved as a note. This does not refine the judge.",
       "This will refine the judge.",
     ])
   })

@@ -119,7 +119,7 @@
       {#if triggers_refine}
         This will refine the judge.
       {:else}
-        Saved as a note. This does not change the judge.
+        Saved as a note. This does not refine the judge.
       {/if}
     </p>
   {/if}
