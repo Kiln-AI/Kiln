@@ -301,3 +301,19 @@ class TestGetLitellmProviderInfo:
 
         # Verify the original model ID is used
         assert result.litellm_model_id == "openai/gpt-4"
+
+    def test_openai_responses_api_flag_does_not_change_provider_info(self):
+        """This helper is shared with the extractor/embedding/reranker adapters, which
+        have no responses-API path. Only the task adapter rewrites the slug to
+        `openai/responses/<model>`."""
+        provider = KilnModelProvider(
+            name=ModelProviderName.openai,
+            model_id="gpt-5.4",
+            openai_responses_api=True,
+        )
+
+        result = get_litellm_provider_info(provider)
+
+        assert result.provider_name == "openai"
+        assert result.is_custom is False
+        assert result.litellm_model_id == "openai/gpt-5.4"

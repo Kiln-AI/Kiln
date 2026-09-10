@@ -428,7 +428,55 @@ class LiteLlmAdapter(BaseAdapter):
             raise RuntimeError(
                 f"Expected ModelResponse with Choices, got {type(response)}."
             )
+
+        if self.model_provider().openai_responses_api and len(response.choices) > 1:
+            # litellm's responses bridge splits one assistant turn into a Choices per
+            # content part plus a trailing Choices holding the tool calls. Reading only
+            # choices[0] would drop the tool call whenever the model narrates first.
+            merged = self._merge_split_choices(response.choices)
+            response.choices = [merged]
+            return response, merged
+
         return response, response.choices[0]
+
+    def _merge_split_choices(self, choices: List[Any]) -> Choices:
+        """Collapse the choices litellm's responses bridge split into one turn."""
+        messages = [
+            choice.message
+            for choice in choices
+            if isinstance(choice, Choices) and choice.message is not None
+        ]
+
+        contents = [m.content for m in messages if m.content]
+        tool_calls: List[Any] = []
+        for message in messages:
+            tool_calls.extend(message.tool_calls or [])
+
+        def first(field: str) -> Any:
+            return next(
+                (
+                    value
+                    for value in (getattr(m, field, None) for m in messages)
+                    if value is not None
+                ),
+                None,
+            )
+
+        merged_message = LiteLLMMessage(
+            content="\n".join(contents) if contents else None,
+            role=first("role") or "assistant",
+            tool_calls=tool_calls or None,
+            reasoning_content=first("reasoning_content"),
+            reasoning_items=first("reasoning_items"),
+            annotations=first("annotations"),
+            provider_specific_fields=first("provider_specific_fields"),
+        )
+
+        return Choices(
+            finish_reason="tool_calls" if tool_calls else choices[0].finish_reason,
+            index=0,
+            message=merged_message,
+        )
 
     def adapter_name(self) -> str:
         return "kiln_openai_compatible_adapter"
@@ -492,13 +540,20 @@ class LiteLlmAdapter(BaseAdapter):
         # The valid ranges are still enforced by the prompt + post-hoc
         # validation, so this only affects the schema sent over the wire.
         output_schema = strip_numeric_bounds(output_schema)
+        json_schema: dict[str, Any] = {
+            "name": "task_response",
+            "schema": output_schema,
+        }
+        if self.model_provider().openai_responses_api:
+            # litellm's responses bridge turns an absent strict into an explicit
+            # false, and /v1/responses defaults it to true, so leaving it out runs
+            # structured output unconstrained. Only set it for the bridge: json_schema
+            # mode is shared by hundreds of providers, some of which reject the key.
+            json_schema["strict"] = True
         return {
             "response_format": {
                 "type": "json_schema",
-                "json_schema": {
-                    "name": "task_response",
-                    "schema": output_schema,
-                },
+                "json_schema": json_schema,
             }
         }
 
@@ -568,6 +623,11 @@ class LiteLlmAdapter(BaseAdapter):
                 pass
             else:
                 extra_body["reasoning_effort"] = thinking_level
+                if provider.openai_responses_api and thinking_level != "none":
+                    # litellm folds this into reasoning={"effort": ..., "summary": ...}
+                    # for the responses bridge, and fills message.reasoning_content from
+                    # the summary. Without it these models surface no reasoning at all.
+                    extra_body["reasoning_summary"] = "auto"
                 # Opus 4.7/4.8 default thinking display to "omitted", returning empty
                 # thinking text. Request the summary so reasoning is surfaced. litellm
                 # still maps reasoning_effort to output_config.effort; this only adds the
@@ -652,17 +712,27 @@ class LiteLlmAdapter(BaseAdapter):
         if self._litellm_model_id:
             return self._litellm_model_id
 
-        litellm_provider_info = get_litellm_provider_info(self.model_provider())
+        provider = self.model_provider()
+        litellm_provider_info = get_litellm_provider_info(provider)
         if litellm_provider_info.is_custom and self._api_base is None:
             raise ValueError(
                 "Explicit Base URL is required for OpenAI compatible APIs (custom models, ollama, fine tunes, and custom registry models)"
             )
 
-        self._litellm_model_id = litellm_provider_info.litellm_model_id
+        litellm_model_id = litellm_provider_info.litellm_model_id
+        if provider.openai_responses_api:
+            # litellm bridges `openai/responses/<model>` to OpenAI's /v1/responses
+            # endpoint: the only one that accepts tools alongside reasoning effort
+            # for these models.
+            litellm_model_id = (
+                f"{litellm_provider_info.provider_name}/responses/{provider.model_id}"
+            )
+
+        self._litellm_model_id = litellm_model_id
         return self._litellm_model_id
 
     def _allowed_openai_params_for_completion_kwargs(
-        self, completion_kwargs: dict[str, Any]
+        self, completion_kwargs: dict[str, Any], provider: KilnModelProvider
     ) -> list[str]:
         """
         LiteLLM drops params it thinks are not supported by the model when drop_params is True. Sometimes it is wrong
@@ -693,6 +763,11 @@ class LiteLlmAdapter(BaseAdapter):
             automatic_allowed_params.append("tools")
         if "tool_choice" in completion_kwargs:
             automatic_allowed_params.append("tool_choice")
+        if provider.openai_responses_api and "reasoning_effort" in completion_kwargs:
+            # litellm's param map doesn't list reasoning_effort for every model we
+            # route to /v1/responses (eg gpt-6-astra), and drop_params would silently
+            # strip it, making the thinking level a no-op.
+            automatic_allowed_params.append("reasoning_effort")
 
         return list(set(explicit_allowed_params_validated + automatic_allowed_params))
 
@@ -737,6 +812,17 @@ class LiteLlmAdapter(BaseAdapter):
             completion_kwargs["tools"] = tool_calls
             completion_kwargs["tool_choice"] = "auto"
 
+        # OpenAI's reasoning models reject top_p, and any temperature other than the
+        # default 1.0, once a reasoning effort is in play. litellm drops both for the
+        # gpt-5.x family, but only matches names containing "gpt-5", so models like
+        # gpt-6-astra reach /v1/responses verbatim and 400. Dropping temperature is
+        # equivalent to sending the only value these models accept.
+        if provider.openai_responses_api and completion_kwargs.get(
+            "reasoning_effort"
+        ) not in (None, "none"):
+            completion_kwargs.pop("top_p", None)
+            completion_kwargs.pop("temperature", None)
+
         # Special condition for Claude Opus 4.1 and Sonnet 4.5, where we can only specify top_p or temp, not both.
         # Remove default values (1.0) prioritizing anything the user customized, then error with helpful message if they are both custom.
         if provider.temp_top_p_exclusive:
@@ -771,7 +857,7 @@ class LiteLlmAdapter(BaseAdapter):
 
         # any params listed in this list will be passed to the model regardless of LiteLLM's own validation
         allowed_openai_params = self._allowed_openai_params_for_completion_kwargs(
-            completion_kwargs
+            completion_kwargs, provider
         )
         if len(allowed_openai_params) > 0:
             completion_kwargs["allowed_openai_params"] = allowed_openai_params

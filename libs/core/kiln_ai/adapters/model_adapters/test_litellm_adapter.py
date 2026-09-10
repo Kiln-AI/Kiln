@@ -7,9 +7,11 @@ import pytest
 from litellm.types.utils import (
     ChatCompletionMessageToolCall,
     ChoiceLogprobs,
+    Choices,
     Function,
     ModelResponse,
 )
+from litellm.types.utils import Message as LiteLLMMessage
 
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
@@ -345,6 +347,40 @@ async def test_json_schema_response_format_adds_required_to_nested(config, tmp_p
     assert result_schema["properties"]["result"]["required"] == ["value", "unit"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("openai_responses_api", [True, False])
+async def test_json_schema_response_format_strict_for_responses_api(
+    config, mock_task, openai_responses_api
+):
+    """litellm's responses bridge turns an absent strict into an explicit false, and
+    /v1/responses defaults it to true, so structured output would run unconstrained.
+    Other providers keep the existing shape: some reject an unknown strict key."""
+    config.run_config_properties.structured_output_mode = (
+        StructuredOutputMode.json_schema
+    )
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    provider = KilnModelProvider(
+        name=ModelProviderName.openai,
+        model_id="gpt-6-astra",
+        openai_responses_api=openai_responses_api,
+    )
+
+    with (
+        patch.object(adapter, "model_provider", return_value=provider),
+        patch.object(adapter, "has_structured_output", return_value=True),
+    ):
+        options = await adapter.response_format_options()
+
+    json_schema = options["response_format"]["json_schema"]
+    assert json_schema["name"] == "task_response"
+    assert json_schema["schema"]["properties"]["test"] == {"type": "string"}
+    if openai_responses_api:
+        assert json_schema["strict"] is True
+    else:
+        assert "strict" not in json_schema
+
+
 @pytest.mark.parametrize(
     "provider_name,expected_prefix",
     [
@@ -375,11 +411,40 @@ def test_litellm_model_id_standard_providers(
     mock_provider = Mock()
     mock_provider.name = provider_name
     mock_provider.model_id = "test-model"
+    mock_provider.openai_responses_api = False
 
     with patch.object(adapter, "model_provider", return_value=mock_provider):
         model_id = adapter.litellm_model_id()
 
     assert model_id == f"{expected_prefix}/test-model"
+    # Verify caching works
+    assert adapter._litellm_model_id == model_id
+
+
+@pytest.mark.parametrize(
+    "openai_responses_api,expected_model_id",
+    [
+        (True, "openai/responses/test-model"),
+        (False, "openai/test-model"),
+    ],
+)
+def test_litellm_model_id_openai_responses_api(
+    config, mock_task, openai_responses_api, expected_model_id
+):
+    """Providers with openai_responses_api use litellm's `openai/responses/<model>`
+    bridge, which calls OpenAI's /v1/responses endpoint instead of chat completions."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    provider = KilnModelProvider(
+        name=ModelProviderName.openai,
+        model_id="test-model",
+        openai_responses_api=openai_responses_api,
+    )
+
+    with patch.object(adapter, "model_provider", return_value=provider):
+        model_id = adapter.litellm_model_id()
+
+    assert model_id == expected_model_id
     # Verify caching works
     assert adapter._litellm_model_id == model_id
 
@@ -401,6 +466,7 @@ def test_litellm_model_id_custom_providers(config, mock_task, provider_name):
     mock_provider = Mock()
     mock_provider.name = provider_name
     mock_provider.model_id = "custom-model"
+    mock_provider.openai_responses_api = False
 
     with patch.object(adapter, "model_provider", return_value=mock_provider):
         model_id = adapter.litellm_model_id()
@@ -584,6 +650,38 @@ def test_build_extra_body_thinking_level_anthropic_summarized_thinking(
 
     assert extra_body.get("reasoning_effort") == "high"
     assert extra_body.get("thinking") == {"type": "adaptive", "display": "summarized"}
+
+
+@pytest.mark.parametrize(
+    "openai_responses_api,thinking_level,expected_summary",
+    [
+        (True, "high", "auto"),
+        # "none" disables reasoning, so there is no summary to ask for
+        (True, "none", None),
+        (False, "high", None),
+    ],
+)
+def test_build_extra_body_reasoning_summary_for_openai_responses_api(
+    config, mock_task, openai_responses_api, thinking_level, expected_summary
+):
+    """The responses API returns no reasoning unless a summary is requested. litellm
+    folds reasoning_summary into reasoning={"effort": ..., "summary": ...} and fills
+    message.reasoning_content from what comes back."""
+    config.run_config_properties.thinking_level = thinking_level
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    provider = KilnModelProvider(
+        name=ModelProviderName.openai,
+        model_id="test-model",
+        openai_responses_api=openai_responses_api,
+        available_thinking_levels={"Off/None": "none", "High": "high"},
+        default_thinking_level="none",
+    )
+
+    extra_body = adapter.build_extra_body(provider)
+
+    assert extra_body.get("reasoning_effort") == thinking_level
+    assert extra_body.get("reasoning_summary") == expected_summary
 
 
 def test_build_extra_body_thinking_level_anthropic_none(config, mock_task):
@@ -829,6 +927,7 @@ async def test_build_completion_kwargs(
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.openai_responses_api = False
     messages = [{"role": "user", "content": "Hello"}]
 
     with (
@@ -1092,6 +1191,23 @@ async def test_litellm_tools_returns_empty_list_without_tools(config, mock_task)
     assert tools == []
 
 
+@pytest.fixture
+def plain_provider():
+    return KilnModelProvider(
+        name=ModelProviderName.openai,
+        model_id="test-model",
+    )
+
+
+@pytest.fixture
+def responses_api_provider():
+    return KilnModelProvider(
+        name=ModelProviderName.openai,
+        model_id="test-model",
+        openai_responses_api=True,
+    )
+
+
 @pytest.mark.parametrize(
     "kwargs_in,expected",
     [
@@ -1104,29 +1220,58 @@ async def test_litellm_tools_returns_empty_list_without_tools(config, mock_task)
             {"tools": [], "allowed_openai_params": ["custom_param"]},
             ["custom_param", "tools"],
         ),
+        # reasoning_effort is only allow-listed for providers routed to /v1/responses
+        ({"reasoning_effort": "high"}, []),
     ],
 )
 def test_allowed_openai_params_for_completion_kwargs_independent_keys(
-    config, mock_task, kwargs_in, expected
+    config, mock_task, plain_provider, kwargs_in, expected
 ):
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
-    result = adapter._allowed_openai_params_for_completion_kwargs(kwargs_in)
+    result = adapter._allowed_openai_params_for_completion_kwargs(
+        kwargs_in, plain_provider
+    )
     assert sorted(result) == sorted(expected)
 
 
-def test_allowed_openai_params_raises_for_non_list(config, mock_task):
+@pytest.mark.parametrize(
+    "kwargs_in,expected",
+    [
+        ({}, []),
+        ({"reasoning_effort": "high"}, ["reasoning_effort"]),
+        (
+            {"tools": [], "tool_choice": "auto", "reasoning_effort": "high"},
+            ["tools", "tool_choice", "reasoning_effort"],
+        ),
+    ],
+)
+def test_allowed_openai_params_for_completion_kwargs_openai_responses_api(
+    config, mock_task, responses_api_provider, kwargs_in, expected
+):
+    """litellm's param map is missing reasoning_effort for some responses-routed models
+    (eg gpt-6-astra), so drop_params would silently strip it without the allow-list."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    result = adapter._allowed_openai_params_for_completion_kwargs(
+        kwargs_in, responses_api_provider
+    )
+    assert sorted(result) == sorted(expected)
+
+
+def test_allowed_openai_params_raises_for_non_list(config, mock_task, plain_provider):
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     with pytest.raises(ValueError, match="expected list"):
         adapter._allowed_openai_params_for_completion_kwargs(
-            {"allowed_openai_params": "not_a_list"}
+            {"allowed_openai_params": "not_a_list"}, plain_provider
         )
 
 
-def test_allowed_openai_params_raises_for_non_string_items(config, mock_task):
+def test_allowed_openai_params_raises_for_non_string_items(
+    config, mock_task, plain_provider
+):
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     with pytest.raises(ValueError, match="items are not strings"):
         adapter._allowed_openai_params_for_completion_kwargs(
-            {"allowed_openai_params": ["valid", 123]}
+            {"allowed_openai_params": ["valid", 123]}, plain_provider
         )
 
 
@@ -1162,6 +1307,54 @@ async def test_build_completion_kwargs_includes_tools(
         assert "type" in tool
         assert tool["type"] == "function"
         assert "function" in tool
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "openai_responses_api,thinking_level,temperature,expect_sampling_params",
+    [
+        (True, "high", 1.0, False),
+        (True, "high", 0.4, False),
+        # both are legal for these models when no thinking is requested
+        (True, "none", 0.4, True),
+        (False, "high", 0.4, True),
+    ],
+)
+async def test_build_completion_kwargs_drops_sampling_params_for_openai_responses_api(
+    config,
+    mock_task,
+    openai_responses_api,
+    thinking_level,
+    temperature,
+    expect_sampling_params,
+):
+    """OpenAI's reasoning models reject top_p, and any temperature but the default,
+    once a reasoning effort is in play. litellm only strips them for models it
+    recognises as gpt-5.x, so /v1/responses returns a 400 for the others (eg
+    gpt-6-astra) unless we drop them ourselves."""
+    config.run_config_properties.thinking_level = thinking_level
+    config.run_config_properties.temperature = temperature
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    provider = KilnModelProvider(
+        name=ModelProviderName.openai,
+        model_id="test-model",
+        openai_responses_api=openai_responses_api,
+        available_thinking_levels={"Off/None": "none", "High": "high"},
+        default_thinking_level="none",
+    )
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=[]),
+    ):
+        kwargs = await adapter.build_completion_kwargs(provider, messages, None)
+
+    assert ("top_p" in kwargs) is expect_sampling_params
+    assert ("temperature" in kwargs) is expect_sampling_params
 
 
 @pytest.mark.asyncio
@@ -3364,3 +3557,181 @@ class TestEmptyResponseErrors:
                     await adapter._run_model_turn(
                         provider, [{"role": "user", "content": "Hi"}], None, False
                     )
+
+
+def responses_bridge_provider(openai_responses_api: bool = True) -> KilnModelProvider:
+    return KilnModelProvider(
+        name=ModelProviderName.openai,
+        model_id="gpt-6-astra",
+        openai_responses_api=openai_responses_api,
+    )
+
+
+def add_tool_call(call_id: str, a: int, b: int) -> ChatCompletionMessageToolCall:
+    return ChatCompletionMessageToolCall(
+        id=call_id,
+        type="function",
+        function=Function(name="add", arguments=json.dumps({"a": a, "b": b})),
+    )
+
+
+def split_choices_response(
+    contents: list[str],
+    tool_calls: list[ChatCompletionMessageToolCall],
+    reasoning_content: str | None = "I should use the add tool.",
+) -> ModelResponse:
+    """A response shaped the way litellm's responses bridge returns one turn.
+
+    One Choices per content part (finish_reason "stop"), then a trailing Choices
+    holding every tool call (finish_reason "tool_calls", content None).
+    """
+    choices = [
+        Choices(
+            finish_reason="stop",
+            index=index,
+            message=LiteLLMMessage(
+                content=content,
+                role="assistant",
+                reasoning_content=reasoning_content if index == 0 else None,
+            ),
+        )
+        for index, content in enumerate(contents)
+    ]
+    if tool_calls:
+        choices.append(
+            Choices(
+                finish_reason="tool_calls",
+                index=len(choices),
+                message=LiteLLMMessage(
+                    content=None, role="assistant", tool_calls=tool_calls
+                ),
+            )
+        )
+    return ModelResponse(model="gpt-6-astra", choices=choices)
+
+
+@pytest.mark.asyncio
+async def test_acompletion_merges_split_choices_from_responses_bridge(
+    config, mock_task
+):
+    """litellm's responses bridge splits text and tool calls across several Choices.
+    Reading only choices[0] would drop the tool call whenever the model narrates."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    response = split_choices_response(
+        ["I will use the add tool."], [add_tool_call("call_1", 2, 2)]
+    )
+
+    with (
+        patch.object(
+            adapter, "model_provider", return_value=responses_bridge_provider()
+        ),
+        patch("litellm.acompletion", new=AsyncMock(return_value=response)),
+    ):
+        returned_response, choice = await adapter.acompletion_checking_response()
+
+    # The tool loop appends choice.message to the history and dispatches on the real
+    # litellm types, so the merge must produce real Choices/Message objects.
+    assert isinstance(choice, Choices)
+    assert isinstance(choice.message, LiteLLMMessage)
+    assert choice.message.content == "I will use the add tool."
+    assert choice.message.tool_calls is not None
+    assert [t.function.name for t in choice.message.tool_calls] == ["add"]
+    assert choice.finish_reason == "tool_calls"
+    assert choice.index == 0
+    assert choice.message.role == "assistant"
+    assert choice.message.reasoning_content == "I should use the add tool."
+    # Usage/cost readers walk response.choices, so it must agree with what we returned.
+    assert returned_response.choices == [choice]
+
+
+@pytest.mark.asyncio
+async def test_acompletion_merges_multiple_text_parts_and_tool_calls(config, mock_task):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    response = split_choices_response(
+        ["First I plan.", "Then I act."],
+        [add_tool_call("call_1", 2, 2), add_tool_call("call_2", 3, 4)],
+    )
+
+    with (
+        patch.object(
+            adapter, "model_provider", return_value=responses_bridge_provider()
+        ),
+        patch("litellm.acompletion", new=AsyncMock(return_value=response)),
+    ):
+        _, choice = await adapter.acompletion_checking_response()
+
+    assert choice.message.content == "First I plan.\nThen I act."
+    assert [t.id for t in choice.message.tool_calls or []] == ["call_1", "call_2"]
+
+
+@pytest.mark.asyncio
+async def test_acompletion_does_not_merge_without_responses_api_flag(config, mock_task):
+    """Providers that legitimately return several choices are untouched."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    response = split_choices_response(
+        ["I will use the add tool."], [add_tool_call("call_1", 2, 2)]
+    )
+
+    with (
+        patch.object(
+            adapter,
+            "model_provider",
+            return_value=responses_bridge_provider(openai_responses_api=False),
+        ),
+        patch("litellm.acompletion", new=AsyncMock(return_value=response)),
+    ):
+        returned_response, choice = await adapter.acompletion_checking_response()
+
+    assert len(returned_response.choices) == 2
+    assert choice is returned_response.choices[0]
+
+
+@pytest.mark.asyncio
+async def test_acompletion_single_choice_is_returned_unchanged(config, mock_task):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    response = split_choices_response(["Just an answer."], [])
+
+    with (
+        patch.object(
+            adapter, "model_provider", return_value=responses_bridge_provider()
+        ),
+        patch("litellm.acompletion", new=AsyncMock(return_value=response)),
+    ):
+        returned_response, choice = await adapter.acompletion_checking_response()
+
+    assert returned_response is response
+    assert choice is response.choices[0]
+
+
+@pytest.mark.asyncio
+async def test_run_model_turn_executes_tool_from_split_choices(config, mock_task):
+    """End to end through the tool loop: the merged tool call must actually run and
+    the loop must make a second LLM call with the tool result."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    provider = responses_bridge_provider()
+
+    split_response = split_choices_response(
+        ["I will use the add tool."], [add_tool_call("call_1", 2, 2)]
+    )
+    final_response = ModelResponse(
+        model="gpt-6-astra",
+        choices=[{"message": {"content": "The answer is 4", "tool_calls": None}}],
+    )
+    acompletion = AsyncMock(side_effect=[split_response, final_response])
+
+    add_spy = Mock(wraps=AddTool())
+    messages: list = [{"role": "user", "content": "what is 2+2"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=provider),
+        patch.object(adapter, "cached_available_tools", return_value=[add_spy]),
+        patch.object(adapter, "build_completion_kwargs", return_value={}),
+        patch("litellm.acompletion", new=acompletion),
+    ):
+        result = await adapter._run_model_turn(provider, messages, None, False)
+
+    add_spy.run.assert_called_once()
+    assert add_spy.run.call_args.kwargs == {"a": 2, "b": 2}
+    assert acompletion.await_count == 2
+    assert isinstance(result, ModelTurnResult)
+    assert result.assistant_message == "The answer is 4"
