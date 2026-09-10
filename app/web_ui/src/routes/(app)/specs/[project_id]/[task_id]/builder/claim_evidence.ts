@@ -1126,60 +1126,17 @@ export type RefineJudgeProposal = {
   not_incorporated_feedback: string | null
 }
 
-// The refine model cites traces by label in its change rationales and in the
-// feedback it declines, and both come back to the reviewer as prose. So the
-// label has to be something the reviewer recognises: the message the user
-// opened with, which is how anyone remembers a conversation. A run id means
-// nothing on screen, and a review position stops meaning anything the moment
-// the next round redraws the subset.
-export const TRACE_LABEL_MAX_CHARS = 60
-
-export function trace_opener_label(
-  trace: Pick<TraceClaims, "trace" | "raw_input">,
-): string {
-  const first_user = (trace.trace ?? []).find(
-    (m) =>
-      trace_role(m) === "user" &&
-      "content" in m &&
-      typeof m.content === "string" &&
-      m.content.trim().length > 0,
-  )
-  const opener = (
-    first_user &&
-    "content" in first_user &&
-    typeof first_user.content === "string"
-      ? first_user.content
-      : trace.raw_input
-  )
-    .replace(/\s+/g, " ")
-    .trim()
-  const clipped =
-    opener.length > TRACE_LABEL_MAX_CHARS
-      ? opener.slice(0, TRACE_LABEL_MAX_CHARS - 1).trimEnd() + "…"
-      : opener
-  return `"${clipped}"`
-}
-
-// Two conversations can open identically (the same seed prompt driven twice),
-// and the refiner's citations would then be ambiguous. Number the repeats.
-export function unique_trace_labels(labels: string[]): string[] {
-  const seen = new Map<string, number>()
-  return labels.map((label) => {
-    const n = (seen.get(label) ?? 0) + 1
-    seen.set(label, n)
-    return n === 1 ? label : `${label} (${n})`
-  })
-}
-
 // Build the graded-traces payload for the refine call from the in-session
 // review. Only fully graded traces with BUILT claims contribute: a trace
 // graded on the overall call alone (a failed build) has no claim grade to
-// hand the refiner, and a half-graded trace is no signal.
+// hand the refiner, and a half-graded trace is no signal. trace_label is the
+// durable run id when present, else the client trace id (opaque — the
+// refine prompt tolerates that).
 export function build_graded_traces(
   traces: TraceClaims[],
   reviews: TraceReview[],
 ): GradedTracePayload[] {
-  const graded = traces
+  return traces
     .map((trace, i) => ({ trace, review: reviews[i] }))
     .filter(
       ({ trace, review }) =>
@@ -1187,13 +1144,10 @@ export function build_graded_traces(
         trace.claims_state === "built" &&
         is_trace_reviewed(trace, review),
     )
-  const labels = unique_trace_labels(
-    graded.map(({ trace }) => trace_opener_label(trace)),
-  )
-  return graded.map(({ trace, review }, i) => ({
-    trace_label: labels[i],
-    ...build_claim_review_payload(trace, review),
-  }))
+    .map(({ trace, review }) => ({
+      trace_label: trace.leaf_run_id || trace.trace_id,
+      ...build_claim_review_payload(trace, review),
+    }))
 }
 
 // How many graded traces carry a disagreement on any claim. This is the
@@ -1343,35 +1297,13 @@ export function rejudge_shortfall_notice(
 // The notice for feedback the refine model declined to incorporate. The
 // reviewer would otherwise see their note apparently ignored with no reason,
 // so the model's own words are quoted back. Null when it declined nothing.
-// The refine model's declined feedback is one free-text passage citing the
-// trace labels we handed it. Cut it into one item per cited conversation so
-// the reviewer reads a short list instead of a paragraph; a passage that
-// cites no label stays whole. The labels are ours, so the split is exact.
-export function declined_feedback_items(
+export function declined_feedback_notice(
   not_incorporated_feedback: string | null,
-  trace_labels: string[],
-): string[] | null {
+): string | null {
   const text = (not_incorporated_feedback ?? "").trim()
   if (!text) return null
-  const starts = trace_labels
-    .map((label) => text.indexOf(label))
-    .filter((i) => i > -1)
-    .sort((a, b) => a - b)
-  const cuts = [...new Set(starts)]
-  if (cuts.length === 0) return [text]
-  const items: string[] = []
-  const head = text.slice(0, cuts[0]).trim()
-  if (head) items.push(head)
-  cuts.forEach((start, i) => {
-    const end = i + 1 < cuts.length ? cuts[i + 1] : text.length
-    const item = text.slice(start, end).trim()
-    if (item) items.push(item)
-  })
-  return items
+  return `Some of your feedback was not applied this round: "${text}"`
 }
-
-export const DECLINED_FEEDBACK_HEADING =
-  "Some of your feedback was not applied this round:"
 
 // A judge prompt/rubric this long is almost certainly runaway model output,
 // not a rubric — reject it rather than persist it into the judge config.
