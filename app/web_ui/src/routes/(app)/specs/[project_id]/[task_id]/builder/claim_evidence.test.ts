@@ -20,9 +20,6 @@ import {
   has_grade_disagreement,
   human_verdict,
   is_trace_reviewed,
-  JUDGE_ERROR_TAG,
-  claim_triggers_judge_refine,
-  triggers_judge_refine,
   map_input_span_to_trace,
   map_output_span_to_trace,
   MAX_JUDGE_PROMPT_CHARS,
@@ -1424,176 +1421,45 @@ describe("plan_save_action — loop entry and exit", () => {
   // bypasses this planner entirely.
 })
 
-// ── The refine trigger ───────────────────────────────────────────────────
-//
-// Only two grades ask for a refine round: a verdict the reviewer flipped, and
-// a disagreement on a claim the builder tagged as a possible judge error.
-// Every other disagreement is a note about the judge's reasoning, which the
-// refiner receives as context but cannot act on.
-
-const TAGGED_TEXT =
-  "The empty list is acceptable [1]. The specification says every omitted detail must appear in it (possible judge error)."
-
-// A built trace whose claims are an ordinary claim, a tagged claim, and the
-// verdict claim.
-function tagged_trace(overrides: Partial<TraceClaims> = {}): TraceClaims {
-  return trace({
-    claims: [claim(), claim({ text: TAGGED_TEXT }), verdict_claim()],
-    ...overrides,
-  })
-}
-
-// A review grading each claim in order: true agrees, false disagrees (with
-// the reason the gate demands), null leaves it ungraded. No outright call.
-function graded(t: TraceClaims, ...agrees: (boolean | null)[]): TraceReview {
+// A graded trace's claims by grade, for the loop-entry predicates.
+function graded(...grades: ("agree" | "disagree")[]) {
   return {
-    trace_id: t.trace_id,
-    claim_verdicts: agrees.map((a) => ({
-      agrees: a,
-      why: a === false ? "the judge misread this" : "",
+    claims: grades.map((human_grade) => ({
+      text: "c",
+      human_grade,
+      human_feedback: null,
     })),
-    overall: null,
   }
 }
 
-describe("claim_triggers_judge_refine — what the card promises", () => {
-  it("the verdict claim and a tagged claim refine; an evidence claim notes", () => {
-    expect(claim_triggers_judge_refine(verdict_claim())).toBe(true)
-    expect(claim_triggers_judge_refine(claim({ text: TAGGED_TEXT }))).toBe(true)
-    expect(claim_triggers_judge_refine(claim())).toBe(false)
-  })
-
-  it("matches the tag case-insensitively, anywhere in the text", () => {
-    // The builder writes it inside a sentence, not as a prefix, and its
-    // casing is model output.
-    expect(
-      claim_triggers_judge_refine(
-        claim({
-          text: `Mid-sentence ${JUDGE_ERROR_TAG.toUpperCase()} and on.`,
-        }),
-      ),
-    ).toBe(true)
-    // Not the tag, just the words.
-    expect(
-      claim_triggers_judge_refine(
-        claim({ text: "This may be a possible judge error." }),
-      ),
-    ).toBe(false)
-  })
-})
-
-describe("triggers_judge_refine — what starts a refine round", () => {
-  it("a verdict disagreement triggers", () => {
-    const t = trace()
-    const review = graded(t, true, false)
-    // What makes it a trigger: the reviewer's call now differs from the
-    // judge's, which is the only grade that can flip a trace.
-    expect(human_verdict(t, review)).not.toBe(t.judge_score)
-    expect(triggers_judge_refine(t, review)).toBe(true)
-  })
-
-  it("a disagreement on a tagged claim triggers even though the verdict stood", () => {
-    const t = tagged_trace()
-    const review = graded(t, true, false, true)
-    expect(human_verdict(t, review)).toBe(t.judge_score)
-    expect(triggers_judge_refine(t, review)).toBe(true)
-  })
-
-  it("agreeing with a tagged claim is not a trigger", () => {
-    // The tag is the builder's suspicion, not the reviewer's. Almost every
-    // trace carries a tagged claim, so a trigger read off its presence alone
-    // would refine on every trace.
-    const t = tagged_trace()
-    expect(triggers_judge_refine(t, all_agreed(t))).toBe(false)
-    expect(triggers_judge_refine(t, graded(t, false, true, true))).toBe(false)
-  })
-
-  it("an evidence-only disagreement is a note, not a trigger", () => {
-    // The verdict stood; the reviewer pushed back on one sentence of the
-    // judge's reasoning. The refiner can only write rules that move verdicts.
-    const t = trace()
-    expect(triggers_judge_refine(t, graded(t, false, true))).toBe(false)
-  })
-
-  it("agreement everywhere is not a trigger", () => {
-    const t = trace()
-    expect(triggers_judge_refine(t, all_agreed(t))).toBe(false)
-  })
-
-  it("uses the outright Pass/Fail when the builder wrote no verdict claim", () => {
-    const t = trace({ claims: [claim()], judge_score: "fail" })
-    // Agreeing with the one claim says nothing about the verdict; only the
-    // outright call does.
-    expect(
-      triggers_judge_refine(t, { ...graded(t, true), overall: "fail" }),
-    ).toBe(false)
-    expect(
-      triggers_judge_refine(t, { ...graded(t, true), overall: "pass" }),
-    ).toBe(true)
-  })
-
-  it("asks nothing of a trace the reviewer has not finished grading", () => {
-    // A half-graded trace never reaches the refiner (build_graded_traces
-    // drops it), so it has nothing to refine from.
-    const t = tagged_trace()
-    expect(triggers_judge_refine(t, graded(t, true, false, null))).toBe(false)
-    expect(triggers_judge_refine(t, undefined)).toBe(false)
-  })
-
-  it("a built trace with no claims at all still turns on the outright call", () => {
-    // A claim builder that returned an overview and nothing else: the review
-    // asks the Pass/Fail outright, exactly as it does when only the verdict
-    // claim is missing, and that answer is still the only grade on offer.
-    const t = trace({ claims: [], judge_score: "pass" })
-    const review: TraceReview = {
-      trace_id: t.trace_id,
-      claim_verdicts: [],
-      overall: "pass",
-    }
-    expect(triggers_judge_refine(t, review)).toBe(false)
-    expect(triggers_judge_refine(t, { ...review, overall: "fail" })).toBe(true)
-  })
-
-  it("asks nothing of a trace whose claims failed to build", () => {
-    // Its outright call is recorded as the golden rating, but no claim grade
-    // exists to hand the refiner, so it cannot open a round either.
-    const t = errored({ judge_score: "fail" })
-    expect(
-      triggers_judge_refine(t, {
-        trace_id: t.trace_id,
-        claim_verdicts: [],
-        overall: "pass",
-      }),
-    ).toBe(false)
-  })
-})
-
 describe("has_grade_disagreement / disagreed_trace_indices", () => {
-  it("flags a review carrying a trigger, and not one carrying only notes", () => {
-    const t = trace()
-    expect(has_grade_disagreement([t], [all_agreed(t)])).toBe(false)
-    expect(has_grade_disagreement([t], [graded(t, false, true)])).toBe(false)
-    expect(has_grade_disagreement([t], [graded(t, true, false)])).toBe(true)
+  it("flags a disagreement on any claim", () => {
+    expect(has_grade_disagreement([graded("agree", "agree")])).toBe(false)
+    expect(has_grade_disagreement([graded("agree", "disagree")])).toBe(true)
   })
 
-  it("finds the triggering trace indices, skipping notes and part-grades", () => {
-    const agreed = trace({ trace_id: "t0" })
-    const note_only = trace({ trace_id: "t1" })
-    const verdict_flipped = trace({ trace_id: "t2" })
-    const tagged = tagged_trace({ trace_id: "t3" })
-    const unreviewed = trace({ trace_id: "t4" })
+  it("finds trace indices carrying any explicit disagree verdict", () => {
+    const agree: TraceReview = {
+      trace_id: "t0",
+      claim_verdicts: [{ agrees: true, why: "" }],
+      overall: null,
+    }
+    const claim_disagree: TraceReview = {
+      trace_id: "t1",
+      claim_verdicts: [
+        { agrees: true, why: "" },
+        { agrees: false, why: "off" },
+      ],
+      overall: null,
+    }
+    const unreviewed: TraceReview = {
+      trace_id: "t2",
+      claim_verdicts: [{ agrees: null, why: "" }],
+      overall: null,
+    }
     expect(
-      disagreed_trace_indices(
-        [agreed, note_only, verdict_flipped, tagged, unreviewed],
-        [
-          all_agreed(agreed),
-          graded(note_only, false, true),
-          graded(verdict_flipped, true, false),
-          graded(tagged, true, false, true),
-          graded(unreviewed, null, null),
-        ],
-      ),
-    ).toEqual([2, 3])
+      disagreed_trace_indices([agree, claim_disagree, unreviewed]),
+    ).toEqual([1])
   })
 })
 
@@ -1715,51 +1581,33 @@ describe("declined_feedback_items", () => {
 })
 
 describe("review CTA — grade_disagreement_count / refine_judge_tooltip", () => {
-  it("counts only the triggering traces, matching the loop's predicate", () => {
+  it("counts traces carrying a disagreement, matching the loop's predicate", () => {
     // The label flips to Refine Judge exactly when the count is non-zero —
-    // the same condition under which a save click starts a refine round. A
-    // mixed review counts the verdict flip and the tagged claim, not the
-    // notes beside them.
-    expect(grade_disagreement_count([], [])).toBe(0)
-    const agreed = trace({ trace_id: "t0" })
-    const note_only = trace({ trace_id: "t1" })
-    const verdict_flipped = trace({ trace_id: "t2" })
-    const tagged = tagged_trace({ trace_id: "t3" })
-    expect(grade_disagreement_count([agreed], [all_agreed(agreed)])).toBe(0)
-    expect(
-      grade_disagreement_count(
-        [agreed, note_only, verdict_flipped, tagged],
-        [
-          all_agreed(agreed),
-          graded(note_only, false, true),
-          graded(verdict_flipped, true, false),
-          graded(tagged, true, false, true),
-        ],
-      ),
-    ).toBe(2)
+    // the same condition under which a save click starts a refine round.
+    expect(grade_disagreement_count([])).toBe(0)
+    expect(grade_disagreement_count([graded("agree")])).toBe(0)
+    const set = [
+      graded("agree"),
+      graded("disagree"),
+      graded("agree", "agree", "disagree"),
+    ]
+    expect(grade_disagreement_count(set)).toBe(2)
   })
 
-  it("flips back to zero the moment the last trigger clears", () => {
-    // Convergence signal: a review whose only pushback is notes counts zero,
-    // so the CTA reads Save reactively.
-    const agreed = trace({ trace_id: "t0" })
-    const note_only = trace({ trace_id: "t1" })
+  it("flips back to zero the moment the last disagreement clears", () => {
+    // Convergence signal: an all-agree set counts zero, so the CTA returns
+    // to the save label reactively.
     expect(
-      grade_disagreement_count(
-        [agreed, note_only],
-        [all_agreed(agreed), graded(note_only, false, true)],
-      ),
+      grade_disagreement_count([graded("agree"), graded("agree", "agree")]),
     ).toBe(0)
   })
 
-  it("tooltip names the count and the verdict, singular and plural, without em-dashes", () => {
-    // It says verdict because a note does not bring the reviewer back for
-    // another round.
+  it("tooltip names the count, singular and plural, without em-dashes", () => {
     expect(refine_judge_tooltip(1, "conversation")).toContain(
-      "Your grades on 1 conversation will refine the judge.",
+      "disagreed with the judge on 1 conversation.",
     )
     expect(refine_judge_tooltip(3, "conversation")).toContain(
-      "Your grades on 3 conversations will refine the judge.",
+      "disagreed with the judge on 3 conversations.",
     )
     expect(refine_judge_tooltip(3, "conversation")).toContain(
       "improve the judge from your feedback and re-check your eval data, then you'll review once more.",
@@ -1769,10 +1617,10 @@ describe("review CTA — grade_disagreement_count / refine_judge_tooltip", () =>
 
   it("tooltip speaks each arm's noun", () => {
     expect(refine_judge_tooltip(1, "example")).toContain(
-      "Your grades on 1 example will refine the judge.",
+      "disagreed with the judge on 1 example.",
     )
     expect(refine_judge_tooltip(2, "example")).toContain(
-      "Your grades on 2 examples will refine the judge.",
+      "disagreed with the judge on 2 examples.",
     )
   })
 })

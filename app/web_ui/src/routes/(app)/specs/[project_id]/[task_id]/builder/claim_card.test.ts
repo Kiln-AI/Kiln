@@ -33,7 +33,7 @@ describe("ClaimCard — Agree / Disagree", () => {
   it("numbers the claim and records Agree without a reason box", async () => {
     const verdict = fresh_verdict()
     const { container } = render(ClaimCard, {
-      props: { claim: claim(), index: 2, verdict, triggers_refine: false },
+      props: { claim: claim(), index: 2, verdict },
     })
 
     // The number is the one the builder's own cross-references use.
@@ -48,7 +48,7 @@ describe("ClaimCard — Agree / Disagree", () => {
   it("Disagree opens the required reason box, and Agree drops the reason again", async () => {
     const verdict = fresh_verdict()
     const { container } = render(ClaimCard, {
-      props: { claim: claim(), index: 0, verdict, triggers_refine: false },
+      props: { claim: claim(), index: 0, verdict },
     })
 
     await fireEvent.click(by_id(container, "claim-disagree-0"))
@@ -74,61 +74,6 @@ describe("ClaimCard — Agree / Disagree", () => {
   })
 })
 
-describe("ClaimCard — what a disagreement will do", () => {
-  // The rule is stated on the card because it decides what the reviewer's
-  // click is worth: only a verdict (or a claim the builder tagged as a
-  // possible judge error) refines the judge, and everything else is a note.
-  const REFINES = "This will refine the judge."
-  const NOTE = "Saved as a note. This does not refine the judge."
-
-  function note_line(container: HTMLElement): string | null {
-    const found = container.querySelector("[data-refine-consequence]")
-    return found?.textContent?.trim() ?? null
-  }
-
-  it("promises a note on an ordinary claim's disagreement", async () => {
-    const { container } = render(ClaimCard, {
-      props: {
-        claim: claim(),
-        index: 0,
-        verdict: fresh_verdict(),
-        triggers_refine: false,
-      },
-    })
-    await fireEvent.click(by_id(container, "claim-disagree-0"))
-    expect(note_line(container)).toBe(NOTE)
-  })
-
-  it("promises a refine on a trigger claim's disagreement", async () => {
-    const { container } = render(ClaimCard, {
-      props: {
-        claim: claim(),
-        index: 0,
-        verdict: fresh_verdict(),
-        triggers_refine: true,
-      },
-    })
-    await fireEvent.click(by_id(container, "claim-disagree-0"))
-    expect(note_line(container)).toBe(REFINES)
-  })
-
-  it("says nothing on agreement, or before the claim is graded", async () => {
-    // Agreeing changes nothing about the judge, so there is nothing to
-    // acknowledge; an ungraded claim has no consequence to state yet.
-    const { container } = render(ClaimCard, {
-      props: {
-        claim: claim(),
-        index: 0,
-        verdict: fresh_verdict(),
-        triggers_refine: false,
-      },
-    })
-    expect(note_line(container)).toBeNull()
-    await fireEvent.click(by_id(container, "claim-agree-0"))
-    expect(note_line(container)).toBeNull()
-  })
-})
-
 describe("ClaimCard — the claim text", () => {
   it("chips a [n] that has a citation and leaves one without as plain text", async () => {
     let cited: Citation | undefined
@@ -139,7 +84,6 @@ describe("ClaimCard — the claim text", () => {
         }),
         index: 0,
         verdict: fresh_verdict(),
-        triggers_refine: false,
         on_cite: (c: Citation) => (cited = c),
       },
     })
@@ -162,7 +106,6 @@ describe("ClaimCard — the claim text", () => {
         }),
         index: 0,
         verdict: fresh_verdict(),
-        triggers_refine: false,
       },
     })
 
