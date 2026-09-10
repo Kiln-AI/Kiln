@@ -316,6 +316,24 @@ describe("ClaimEvidenceReview — the overall call", () => {
       build_claim_review_payload(traces[0], verdicts[0]).human_verdict,
     ).toBe("pass")
   })
+
+  it("says the outright call will refine the judge only when it differs from the judge's", async () => {
+    const traces = [built_trace("t0", { verdict: false })]
+    const { container } = render_review(traces)
+    await agree_all(container, 2)
+    const overall = by_id(container, "review-overall")
+    const line = () => overall.querySelector("[data-refine-consequence]")
+    // Unanswered: nothing promised either way.
+    expect(line()).toBeNull()
+    const judge = traces[0].judge_score
+    const same = judge === "pass" ? "overall-pass" : "overall-fail"
+    const differs = judge === "pass" ? "overall-fail" : "overall-pass"
+    await fireEvent.click(by_id(container, same))
+    expect(line()).toBeNull()
+    await fireEvent.click(by_id(container, differs))
+    expect(line()?.textContent).toContain("This will refine the judge.")
+    expect(overall.textContent).not.toContain("Saved as a note")
+  })
 })
 
 describe("ClaimEvidenceReview — failed claims build", () => {

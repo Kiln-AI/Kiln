@@ -246,6 +246,18 @@
             </button>
           </div>
         </div>
+        <!-- The same consequence line the claim cards carry: this row is the
+             verdict when no claim states one, so a call that differs from
+             the judge's is exactly what starts a refine. A matching call is
+             agreement and says nothing, like an agreed claim. -->
+        {#if current_verdicts.overall !== null && current_verdicts.overall !== current.judge_score}
+          <p
+            class="text-sm text-gray-500 mt-2 leading-relaxed"
+            data-refine-consequence
+          >
+            This will refine the judge.
+          </p>
+        {/if}
       </div>
     {/if}
 

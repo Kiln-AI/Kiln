@@ -34,7 +34,7 @@
     title="Validating the Judge"
     description_paragraphs={[
       "Let's confirm your judge is aligned to your expectations.",
-      "Disagreeing with a verdict refines the judge. Disagreeing with any other claim saves a note.",
+      "Disagreeing with a verdict, or with a claim marked as a possible judge error, refines the judge. Disagreeing with any other claim saves a note.",
       `We'll show a set of ${judged_noun}s, and you tell us if you agree with its judgement.`,
     ]}
     action_buttons={[

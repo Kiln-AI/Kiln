@@ -1294,7 +1294,7 @@ export function refine_judge_tooltip(
   judged_noun: string,
 ): string {
   const items = num_disagreements === 1 ? judged_noun : `${judged_noun}s`
-  return `You disagreed with the judge's verdict on ${num_disagreements} ${items}. Kiln will improve the judge from your feedback and re-check your eval data, then you'll review once more.`
+  return `Your grades on ${num_disagreements} ${items} will refine the judge. Kiln will improve the judge from your feedback and re-check your eval data, then you'll review once more.`
 }
 
 // ── Calibration loop ──────────────────────────────────────────────────────

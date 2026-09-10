@@ -1756,10 +1756,10 @@ describe("review CTA — grade_disagreement_count / refine_judge_tooltip", () =>
     // It says verdict because a note does not bring the reviewer back for
     // another round.
     expect(refine_judge_tooltip(1, "conversation")).toContain(
-      "disagreed with the judge's verdict on 1 conversation.",
+      "Your grades on 1 conversation will refine the judge.",
     )
     expect(refine_judge_tooltip(3, "conversation")).toContain(
-      "disagreed with the judge's verdict on 3 conversations.",
+      "Your grades on 3 conversations will refine the judge.",
     )
     expect(refine_judge_tooltip(3, "conversation")).toContain(
       "improve the judge from your feedback and re-check your eval data, then you'll review once more.",
@@ -1769,10 +1769,10 @@ describe("review CTA — grade_disagreement_count / refine_judge_tooltip", () =>
 
   it("tooltip speaks each arm's noun", () => {
     expect(refine_judge_tooltip(1, "example")).toContain(
-      "disagreed with the judge's verdict on 1 example.",
+      "Your grades on 1 example will refine the judge.",
     )
     expect(refine_judge_tooltip(2, "example")).toContain(
-      "disagreed with the judge's verdict on 2 examples.",
+      "Your grades on 2 examples will refine the judge.",
     )
   })
 })

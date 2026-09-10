@@ -48,7 +48,7 @@ describe("Step 5 entry screen", () => {
     // A reviewer who learns that by tripping over it has already graded on
     // the wrong assumption. The cards carry the tagged-claim exception.
     expect(normalize(intro_source)).toContain(
-      "Disagreeing with a verdict refines the judge. Disagreeing with any other claim saves a note.",
+      "Disagreeing with a verdict, or with a claim marked as a possible judge error, refines the judge. Disagreeing with any other claim saves a note.",
     )
   })
 
