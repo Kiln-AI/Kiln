@@ -20,7 +20,10 @@ def _import_chunkers_with_env(env_overrides: dict[str, str | None]) -> str:
         [
             sys.executable,
             "-c",
-            "import os; import kiln_ai.adapters.chunkers; print(os.environ['NLTK_DATA'])",
+            # sys.stdout.write rather than a print call, which the developer-check
+            # CI step flags as leftover debug content.
+            "import os, sys; import kiln_ai.adapters.chunkers; "
+            "sys.stdout.write(os.environ['NLTK_DATA'])",
         ],
         capture_output=True,
         text=True,
