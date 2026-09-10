@@ -4,10 +4,14 @@ import {
   apply_rejudge_results,
   build_claim_review_payload,
   build_graded_traces,
+  trace_opener_label,
+  unique_trace_labels,
+  TRACE_LABEL_MAX_CHARS,
   build_trace_reviews,
   calibration_gate_target,
   reviewable_subset,
-  declined_feedback_notice,
+  declined_feedback_items,
+  DECLINED_FEEDBACK_HEADING,
   disagreed_trace_indices,
   disagreement_feedback,
   flipped_indices,
@@ -400,7 +404,7 @@ describe("disagreement_feedback", () => {
 })
 
 describe("build_graded_traces", () => {
-  it("includes only fully graded traces and labels them by run id, else trace id", () => {
+  it("includes only fully graded traces and labels them by the user's opening message", () => {
     const reviewed_t = trace({ leaf_run_id: "leaf-abc" })
     const reviewed_review = all_agreed(reviewed_t)
     reviewed_review.claim_verdicts[1] = {
@@ -416,12 +420,22 @@ describe("build_graded_traces", () => {
     )
     expect(graded).toHaveLength(1)
     expect(graded[0]).toEqual({
-      trace_label: "leaf-abc",
+      trace_label: '"What\'s the return window?"',
       ...build_claim_review_payload(reviewed_t, reviewed_review),
     })
-    // Falls back to the client trace id when no durable run id exists.
-    const single = build_graded_traces([half_t], [all_agreed(half_t)])
-    expect(single[0].trace_label).toBe("trace_1")
+    // A run id or a client trace id never reaches the label: neither means
+    // anything to the reviewer who reads the refiner's citations.
+    expect(graded[0].trace_label).not.toContain("leaf-abc")
+  })
+
+  it("numbers repeated openers so the refiner's citations stay unambiguous", () => {
+    const a = trace({ trace_id: "a" })
+    const b = trace({ trace_id: "b" })
+    const graded = build_graded_traces([a, b], [all_agreed(a), all_agreed(b)])
+    expect(graded.map((g) => g.trace_label)).toEqual([
+      '"What\'s the return window?"',
+      '"What\'s the return window?" (2)',
+    ])
   })
 
   it("leaves out a trace graded on the overall call alone", () => {
@@ -1482,22 +1496,87 @@ describe("rejudge_shortfall_notice", () => {
   })
 })
 
-describe("declined_feedback_notice", () => {
-  it("quotes the declined feedback back to the reviewer", () => {
-    expect(
-      declined_feedback_notice("The tone complaint is out of scope."),
-    ).toBe(
-      'Some of your feedback was not applied this round: "The tone complaint is out of scope."',
+describe("trace_opener_label", () => {
+  it("uses the first user message of the trace, collapsed and quoted", () => {
+    const t = trace({
+      raw_input: "flattened transcript",
+      trace: [
+        { role: "system", content: "You are support." },
+        { role: "user", content: "  Hi,\n I want   to cancel. " },
+        { role: "assistant", content: "Sure." },
+      ] as TraceClaims["trace"],
+    })
+    expect(trace_opener_label(t)).toBe('"Hi, I want to cancel."')
+  })
+
+  it("falls back to the raw input when the trace has no user text", () => {
+    expect(trace_opener_label(trace({ trace: null }))).toBe(
+      '"What\'s the return window?"',
     )
+    expect(
+      trace_opener_label(
+        trace({
+          trace: [{ role: "user", content: "  " }] as TraceClaims["trace"],
+        }),
+      ),
+    ).toBe('"What\'s the return window?"')
   })
 
-  it("silent when the refine declined nothing", () => {
-    expect(declined_feedback_notice(null)).toBeNull()
+  it("clips a long opener to the label budget with an ellipsis", () => {
+    const long = "x".repeat(TRACE_LABEL_MAX_CHARS + 20)
+    const label = trace_opener_label(trace({ raw_input: long, trace: null }))
+    expect(label.length).toBe(TRACE_LABEL_MAX_CHARS + 2) // quotes
+    expect(label.endsWith('…"')).toBe(true)
+  })
+})
+
+describe("unique_trace_labels", () => {
+  it("leaves distinct labels alone and numbers repeats from the second on", () => {
+    expect(unique_trace_labels(['"a"', '"b"', '"a"', '"a"'])).toEqual([
+      '"a"',
+      '"b"',
+      '"a" (2)',
+      '"a" (3)',
+    ])
+  })
+})
+
+describe("declined_feedback_items", () => {
+  const labels = ['"I want to cancel."', '"Where is my order?"']
+
+  it("cuts the passage into one item per cited conversation, in text order", () => {
+    const text =
+      '"Where is my order?": the reviewer flagged speed, out of scope. "I want to cancel." claim 2: the pass verdict stands.'
+    expect(declined_feedback_items(text, labels)).toEqual([
+      '"Where is my order?": the reviewer flagged speed, out of scope.',
+      '"I want to cancel." claim 2: the pass verdict stands.',
+    ])
   })
 
-  it("silent on blank feedback, which says no more than nothing", () => {
-    expect(declined_feedback_notice("")).toBeNull()
-    expect(declined_feedback_notice("   \n\t ")).toBeNull()
+  it("keeps an uncited preamble as its own item and never drops text", () => {
+    const text = 'Two notes were left out. "I want to cancel.": see above.'
+    expect(declined_feedback_items(text, labels)).toEqual([
+      "Two notes were left out.",
+      '"I want to cancel.": see above.',
+    ])
+  })
+
+  it("keeps a passage that cites no label whole", () => {
+    expect(
+      declined_feedback_items("The tone complaint is out of scope.", labels),
+    ).toEqual(["The tone complaint is out of scope."])
+  })
+
+  it("silent when the refine declined nothing, or said nothing", () => {
+    expect(declined_feedback_items(null, labels)).toBeNull()
+    expect(declined_feedback_items("", labels)).toBeNull()
+    expect(declined_feedback_items("   \n\t ", labels)).toBeNull()
+  })
+
+  it("has a heading that names what the list is", () => {
+    expect(DECLINED_FEEDBACK_HEADING).toBe(
+      "Some of your feedback was not applied this round:",
+    )
   })
 })
 

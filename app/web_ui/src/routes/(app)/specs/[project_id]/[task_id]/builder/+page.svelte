@@ -60,6 +60,7 @@
   // agrees/disagrees with distilled claims; the trace stays hidden in a modal.
   import ClaimEvidenceReview from "./claim_evidence_review.svelte"
   import ReviewIntro from "./review_intro.svelte"
+  import DeclinedFeedbackNotice from "./declined_feedback_notice.svelte"
   // Multi-turn Step 4 is plan-first: the batch planner drafts one scenario
   // per conversation for approval before any conversation is driven.
   // Step 4 plan approval reuses the /generate batch-plan components — one
@@ -103,7 +104,7 @@
     build_graded_traces,
     build_trace_reviews,
     calibration_gate_target,
-    declined_feedback_notice,
+    declined_feedback_items,
     disagreed_trace_indices,
     disagreement_feedback,
     empty_claim_verdicts,
@@ -320,7 +321,7 @@
     calibration_refine_error = null
     // The declined-feedback notice belongs to the round the reviewer was in;
     // leaving review retires it rather than re-opening it later out of context.
-    calibration_declined_feedback_notice = null
+    calibration_declined_feedback_items = null
     // Leaving Step 4 with no plan undoes a Continue Without Data Guide, as
     // Back does on the synthetic data page: the next entry offers again.
     // With a plan, the skip stands; the plan is what the next entry shows.
@@ -3485,7 +3486,7 @@
   let calibration_failed_count = 0
   // Feedback the last refine declined to incorporate, as the notice to show
   // over the round it produced — otherwise the reviewer's note looks ignored.
-  let calibration_declined_feedback_notice: string | null = null
+  let calibration_declined_feedback_items: string[] | null = null
   // Durable run ids of traces graded in ANY round — the fresh top-up must
   // never re-serve them as "never reviewed".
   let calibration_reviewed_keys = new Set<string>()
@@ -3507,7 +3508,7 @@
     calibration_error = null
     calibration_refine_error = null
     calibration_failed_count = 0
-    calibration_declined_feedback_notice = null
+    calibration_declined_feedback_items = null
     calibration_reviewed_keys = new Set()
     calibration_pending_judge = null
     calibration_pending_disagreed = []
@@ -3560,7 +3561,7 @@
   ): Promise<JudgeConfig> {
     // A fresh refine answers the current grades: whatever the last one
     // declined is no longer what the reviewer is about to see.
-    calibration_declined_feedback_notice = null
+    calibration_declined_feedback_items = null
     const graded_traces = build_graded_traces(trace_claims, trace_reviews)
     const { signal, timed_out } = with_deadline(
       new_copilot_abort_signal(),
@@ -3618,8 +3619,9 @@
     }
     // Feedback the model says it left out — carried into the re-review the
     // refined judge produces, where the reviewer is looking for their note.
-    calibration_declined_feedback_notice = declined_feedback_notice(
+    calibration_declined_feedback_items = declined_feedback_items(
       proposal.not_incorporated_feedback,
+      graded_traces.map((t) => t.trace_label),
     )
     return { ...judge, prompt: refined_prompt }
   }
@@ -5067,14 +5069,10 @@
                 />
               </div>
             {/if}
-            {#if calibration_declined_feedback_notice}
-              <!-- Feedback the refine declined, said out loud over the round
-                   it produced — a note silently dropped reads as ignored. -->
+            {#if calibration_declined_feedback_items}
               <div class="mt-2 mb-4">
-                <Warning
-                  warning_color="primary"
-                  warning_icon="info"
-                  warning_message={calibration_declined_feedback_notice}
+                <DeclinedFeedbackNotice
+                  items={calibration_declined_feedback_items}
                 />
               </div>
             {/if}
