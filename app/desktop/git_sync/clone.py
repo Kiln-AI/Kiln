@@ -505,9 +505,12 @@ def scan_for_projects(clone_path: Path) -> list[dict[str, str]]:
         project_id = ""
         try:
             data = json.loads(kiln_file.read_text())
-            name = data.get("name", "")
-            description = data.get("description", "")
-            project_id = data.get("id", "")
+            # These fields can be present but null: that is what gets written for
+            # a value that was never set. `or ""` covers null, missing and empty
+            # alike, where a get() default would only cover missing.
+            name = data.get("name") or ""
+            description = data.get("description") or ""
+            project_id = data.get("id") or ""
         except Exception:
             pass
 
