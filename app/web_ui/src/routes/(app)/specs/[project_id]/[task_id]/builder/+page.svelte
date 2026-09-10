@@ -103,7 +103,6 @@
     build_graded_traces,
     build_trace_reviews,
     calibration_gate_target,
-    declined_feedback_notice,
     disagreed_trace_indices,
     disagreement_feedback,
     empty_claim_verdicts,
@@ -318,9 +317,6 @@
     calibration_phase = "idle"
     calibration_error = null
     calibration_refine_error = null
-    // The declined-feedback notice belongs to the round the reviewer was in;
-    // leaving review retires it rather than re-opening it later out of context.
-    calibration_declined_feedback_notice = null
     // Leaving Step 4 with no plan undoes a Continue Without Data Guide, as
     // Back does on the synthetic data page: the next entry offers again.
     // With a plan, the skip stands; the plan is what the next entry shows.
@@ -3483,9 +3479,6 @@
   // Cases without a fresh verdict last round — surfaced honestly above the
   // review; they keep stale results and sit the round out.
   let calibration_failed_count = 0
-  // Feedback the last refine declined to incorporate, as the notice to show
-  // over the round it produced — otherwise the reviewer's note looks ignored.
-  let calibration_declined_feedback_notice: string | null = null
   // Durable run ids of traces graded in ANY round — the fresh top-up must
   // never re-serve them as "never reviewed".
   let calibration_reviewed_keys = new Set<string>()
@@ -3507,7 +3500,6 @@
     calibration_error = null
     calibration_refine_error = null
     calibration_failed_count = 0
-    calibration_declined_feedback_notice = null
     calibration_reviewed_keys = new Set()
     calibration_pending_judge = null
     calibration_pending_disagreed = []
@@ -3558,9 +3550,6 @@
   async function refine_judge_for_calibration(
     judge: JudgeConfig,
   ): Promise<JudgeConfig> {
-    // A fresh refine answers the current grades: whatever the last one
-    // declined is no longer what the reviewer is about to see.
-    calibration_declined_feedback_notice = null
     const graded_traces = build_graded_traces(trace_claims, trace_reviews)
     const { signal, timed_out } = with_deadline(
       new_copilot_abort_signal(),
@@ -3616,11 +3605,17 @@
         "The refined judge prompt wasn't usable.",
       )
     }
-    // Feedback the model says it left out — carried into the re-review the
-    // refined judge produces, where the reviewer is looking for their note.
-    calibration_declined_feedback_notice = declined_feedback_notice(
-      proposal.not_incorporated_feedback,
-    )
+    // Feedback the refiner declined is a refiner problem, not something the
+    // reviewer can act on, so it is not shown. The event records how often it
+    // happens and whether the refiner changed anything else that round, which
+    // is what tuning the refiner needs; the text itself stays out of analytics.
+    if ((proposal.not_incorporated_feedback ?? "").trim()) {
+      posthog.capture("eval_v2_judge_calibration_feedback_declined", {
+        is_multi_turn,
+        round: calibration_rounds_completed + 1,
+        num_changes: proposal.changes.length,
+      })
+    }
     return { ...judge, prompt: refined_prompt }
   }
 
@@ -5064,17 +5059,6 @@
                     calibration_failed_count,
                     case_noun,
                   )}
-                />
-              </div>
-            {/if}
-            {#if calibration_declined_feedback_notice}
-              <!-- Feedback the refine declined, said out loud over the round
-                   it produced — a note silently dropped reads as ignored. -->
-              <div class="mt-2 mb-4">
-                <Warning
-                  warning_color="primary"
-                  warning_icon="info"
-                  warning_message={calibration_declined_feedback_notice}
                 />
               </div>
             {/if}
