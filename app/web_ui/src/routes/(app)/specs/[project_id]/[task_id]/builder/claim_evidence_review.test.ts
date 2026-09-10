@@ -316,6 +316,24 @@ describe("ClaimEvidenceReview — the overall call", () => {
       build_claim_review_payload(traces[0], verdicts[0]).human_verdict,
     ).toBe("pass")
   })
+
+  it("says the outright call will refine the judge only when it differs from the judge's", async () => {
+    const traces = [built_trace("t0", { verdict: false })]
+    const { container } = render_review(traces)
+    await agree_all(container, 2)
+    const overall = by_id(container, "review-overall")
+    const line = () => overall.querySelector("[data-refine-consequence]")
+    // Unanswered: nothing promised either way.
+    expect(line()).toBeNull()
+    const judge = traces[0].judge_score
+    const same = judge === "pass" ? "overall-pass" : "overall-fail"
+    const differs = judge === "pass" ? "overall-fail" : "overall-pass"
+    await fireEvent.click(by_id(container, same))
+    expect(line()).toBeNull()
+    await fireEvent.click(by_id(container, differs))
+    expect(line()?.textContent).toContain("This will refine the judge.")
+    expect(overall.textContent).not.toContain("Saved as a note")
+  })
 })
 
 describe("ClaimEvidenceReview — failed claims build", () => {
@@ -376,7 +394,7 @@ describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
     // The parent flips these props when graded disagreements exist (see
     // review_cta_refines in the wizard); the component just renders them.
     const tip =
-      "You disagreed with the judge on 1 conversation. Kiln will improve the judge from your feedback and re-check your eval data, then you'll review once more."
+      "You disagreed with the judge's verdict on 1 conversation. Kiln will improve the judge from your feedback and re-check your eval data, then you'll review once more."
     const { getByText, queryByText, container } = render_review(
       [built_trace("only")],
       {
@@ -390,6 +408,22 @@ describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
     expect(container.querySelector(".tooltip")?.getAttribute("data-tip")).toBe(
       tip,
     )
+  })
+})
+
+describe("ClaimEvidenceReview — what each disagreement will do", () => {
+  it("tells the verdict claim's card it refines and the evidence claim's it notes", async () => {
+    // The rule lives in claim_triggers_judge_refine; this is the wiring that
+    // carries it to each card, so the reviewer reads the same rule the CTA
+    // acts on.
+    const { container } = render_review([built_trace("t0")])
+    await fireEvent.click(by_id(container, "claim-disagree-0"))
+    await fireEvent.click(by_id(container, "claim-disagree-1"))
+    const lines = [...container.querySelectorAll("[data-refine-consequence]")]
+    expect(lines.map((l) => l.textContent?.trim())).toEqual([
+      "Saved as a note. This does not change the judge.",
+      "This will refine the judge.",
+    ])
   })
 })
 

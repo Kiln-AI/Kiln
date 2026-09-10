@@ -1023,7 +1023,7 @@ export function select_review_subset(
 export function select_calibration_subset(
   traces: Pick<TraceClaims, "judge_score">[],
   round: {
-    // Indices the reviewer disagreed with last round.
+    // Indices that asked for last round's refine (disagreed_trace_indices).
     disagreed: number[]
     // Indices whose verdict flipped under the refined judge.
     flipped: number[]
@@ -1126,17 +1126,60 @@ export type RefineJudgeProposal = {
   not_incorporated_feedback: string | null
 }
 
+// The refine model cites traces by label in its change rationales and in the
+// feedback it declines, and both come back to the reviewer as prose. So the
+// label has to be something the reviewer recognises: the message the user
+// opened with, which is how anyone remembers a conversation. A run id means
+// nothing on screen, and a review position stops meaning anything the moment
+// the next round redraws the subset.
+export const TRACE_LABEL_MAX_CHARS = 60
+
+export function trace_opener_label(
+  trace: Pick<TraceClaims, "trace" | "raw_input">,
+): string {
+  const first_user = (trace.trace ?? []).find(
+    (m) =>
+      trace_role(m) === "user" &&
+      "content" in m &&
+      typeof m.content === "string" &&
+      m.content.trim().length > 0,
+  )
+  const opener = (
+    first_user &&
+    "content" in first_user &&
+    typeof first_user.content === "string"
+      ? first_user.content
+      : trace.raw_input
+  )
+    .replace(/\s+/g, " ")
+    .trim()
+  const clipped =
+    opener.length > TRACE_LABEL_MAX_CHARS
+      ? opener.slice(0, TRACE_LABEL_MAX_CHARS - 1).trimEnd() + "…"
+      : opener
+  return `"${clipped}"`
+}
+
+// Two conversations can open identically (the same seed prompt driven twice),
+// and the refiner's citations would then be ambiguous. Number the repeats.
+export function unique_trace_labels(labels: string[]): string[] {
+  const seen = new Map<string, number>()
+  return labels.map((label) => {
+    const n = (seen.get(label) ?? 0) + 1
+    seen.set(label, n)
+    return n === 1 ? label : `${label} (${n})`
+  })
+}
+
 // Build the graded-traces payload for the refine call from the in-session
 // review. Only fully graded traces with BUILT claims contribute: a trace
 // graded on the overall call alone (a failed build) has no claim grade to
-// hand the refiner, and a half-graded trace is no signal. trace_label is the
-// durable run id when present, else the client trace id (opaque — the
-// refine prompt tolerates that).
+// hand the refiner, and a half-graded trace is no signal.
 export function build_graded_traces(
   traces: TraceClaims[],
   reviews: TraceReview[],
 ): GradedTracePayload[] {
-  return traces
+  const graded = traces
     .map((trace, i) => ({ trace, review: reviews[i] }))
     .filter(
       ({ trace, review }) =>
@@ -1144,34 +1187,106 @@ export function build_graded_traces(
         trace.claims_state === "built" &&
         is_trace_reviewed(trace, review),
     )
-    .map(({ trace, review }) => ({
-      trace_label: trace.leaf_run_id || trace.trace_id,
-      ...build_claim_review_payload(trace, review),
-    }))
+  const labels = unique_trace_labels(
+    graded.map(({ trace }) => trace_opener_label(trace)),
+  )
+  return graded.map(({ trace, review }, i) => ({
+    trace_label: labels[i],
+    ...build_claim_review_payload(trace, review),
+  }))
 }
 
-// How many graded traces carry a disagreement on any claim. This is the
-// loop's entry predicate as a count, so the review CTA flips to its refine
-// label precisely when a save click would start a calibration round, and
-// the tooltip can name the number honestly.
-export function grade_disagreement_count(
-  graded: Pick<ClaimReviewPayload, "claims">[],
-): number {
-  return graded.filter((t) =>
-    t.claims.some((c) => c.human_grade === "disagree"),
-  ).length
+// The literal tag the claim builder appends to a claim it suspects the judge
+// got wrong. It is the strongest signal the claim contract carries, so a
+// disagreement on such a claim refines the judge even when the verdict stood.
+// Matched case-insensitively anywhere in the claim text: it is written inside
+// a sentence, not as a prefix.
+export const JUDGE_ERROR_TAG = "(possible judge error)"
+
+function carries_judge_error_tag(claim: Claim): boolean {
+  return claim.text.toLowerCase().includes(JUDGE_ERROR_TAG.toLowerCase())
 }
 
-// Whether the reviewer pushed back anywhere in the graded set — the signal
-// that the judge needs refining before it ships.
-export function has_grade_disagreement(
-  graded: Pick<ClaimReviewPayload, "claims">[],
+// Whether a disagreement on THIS claim starts a judge refine: the verdict
+// claim, whose grade IS the reviewer's overall call, or a claim the builder
+// tagged as a possible judge error. The card uses this to tell the reviewer
+// which of the two things their disagree does.
+export function claim_triggers_judge_refine(claim: Claim): boolean {
+  return claim.is_verdict || carries_judge_error_tag(claim)
+}
+
+// Whether one reviewed trace should start a judge refine. Only two grades
+// can ask for one: the reviewer's overall verdict differing from the judge's,
+// and a disagreement on a claim the builder tagged as a possible judge error.
+//
+// Every other disagreement is a note about the judge's reasoning: it is
+// saved with the eval beside the reviewer's verdict, sent to the refiner as
+// context when a round runs for another reason, and acknowledged on the card.
+// It never starts a round on its own and never changes the verdict. The
+// refiner can only write rules that move verdicts, so a round opened for a
+// note alone declines the note and re-reviews a judge that did not move.
+//
+// Only traces whose grades actually reach the refiner count: a half-graded
+// trace, or one whose claims failed to build, hands the refiner nothing to
+// learn from (build_graded_traces drops both), so neither can ask for a round.
+export function triggers_judge_refine(
+  trace: TraceClaims,
+  review: TraceReview | undefined,
 ): boolean {
-  return grade_disagreement_count(graded) > 0
+  if (!review || trace.claims_state !== "built") return false
+  if (!is_trace_reviewed(trace, review)) return false
+  // The verdict is the only grade that can flip a trace: the verdict claim's
+  // grade when the builder wrote one, otherwise the Pass/Fail the reviewer
+  // answered outright. A fully reviewed trace always has one.
+  if (human_verdict(trace, review) !== trace.judge_score) return true
+  return (trace.claims ?? []).some(
+    (claim, i) =>
+      review.claim_verdicts[i]?.agrees === false &&
+      carries_judge_error_tag(claim),
+  )
+}
+
+// Indices of the traces asking for a refine — the loop's entry predicate,
+// and the highest-priority stratum of the next round's subset. Every
+// consumer (the CTA label, the save decision, the tooltip count, the next
+// round's first stratum) reads this one answer, so none of them can drift.
+export function disagreed_trace_indices(
+  traces: TraceClaims[],
+  reviews: TraceReview[],
+): number[] {
+  return traces
+    .map((trace, i) => ({ trace, i }))
+    .filter(({ trace, i }) => triggers_judge_refine(trace, reviews[i]))
+    .map(({ i }) => i)
+}
+
+// How many reviewed traces ask for a refine. This is the loop's entry
+// predicate as a count, so the review CTA flips to its refine label
+// precisely when a save click would start a calibration round, and the
+// tooltip can name the number honestly.
+export function grade_disagreement_count(
+  traces: TraceClaims[],
+  reviews: TraceReview[],
+): number {
+  return disagreed_trace_indices(traces, reviews).length
+}
+
+// Whether any reviewed trace asks for a refine — the signal that the judge
+// needs refining before it ships.
+export function has_grade_disagreement(
+  traces: TraceClaims[],
+  reviews: TraceReview[],
+): boolean {
+  return grade_disagreement_count(traces, reviews) > 0
 }
 
 // The refine CTA's tooltip: says what the click actually starts (a refine
-// round, not a save) and what it costs the reviewer (one more review).
+// round, not a save) and what it costs the reviewer (one more review). The
+// count is the number of traces asking for a refine, and the sentence names
+// the verdict, because that is what a refine round can move and a note on the
+// judge's reasoning cannot. It reads as the verdict for a trace pulled in by
+// a claim the builder tagged as a possible judge error too: the tag says the
+// judge's decision itself is in question, which is why that claim triggers.
 // judged_noun is the arm's word for one reviewed item — the wizard reviews
 // conversations in multi-turn and examples in single-turn.
 export function refine_judge_tooltip(
@@ -1179,18 +1294,7 @@ export function refine_judge_tooltip(
   judged_noun: string,
 ): string {
   const items = num_disagreements === 1 ? judged_noun : `${judged_noun}s`
-  return `You disagreed with the judge on ${num_disagreements} ${items}. Kiln will improve the judge from your feedback and re-check your eval data, then you'll review once more.`
-}
-
-// Indices of traces carrying any explicit disagreement on a claim — the
-// highest-priority stratum of the next round's subset.
-export function disagreed_trace_indices(reviews: TraceReview[]): number[] {
-  return reviews
-    .map((review, i) => ({ review, i }))
-    .filter(({ review }) =>
-      review.claim_verdicts.some((v) => v.agrees === false),
-    )
-    .map(({ i }) => i)
+  return `Your grades on ${num_disagreements} ${items} will refine the judge. Kiln will improve the judge from your feedback and re-check your eval data, then you'll review once more.`
 }
 
 // ── Calibration loop ──────────────────────────────────────────────────────
@@ -1259,26 +1363,32 @@ export function apply_rejudge_results(
   })
 }
 
-// What a save request should do next. A save with disagreement enters a
-// calibration round on either arm — as many rounds as it takes, since the
-// loop only exits on convergence or the explicit save-without-refining link.
-// Arm-independent: unaddressed disagreement may never ship unseen.
+// What a save request should do next. A save carrying a refine trigger (see
+// triggers_judge_refine) enters a calibration round on either arm — as many
+// rounds as it takes, since the loop only exits on convergence or the
+// explicit save-without-refining link. Arm-independent: a judge the reviewer
+// said got the verdict wrong may never ship unseen.
 export type SaveAction = { action: "save" } | { action: "calibrate" }
 
 export function plan_save_action(args: {
+  // From has_grade_disagreement: a note on the judge's reasoning is not one.
   has_disagreement: boolean
 }): SaveAction {
   return args.has_disagreement ? { action: "calibrate" } : { action: "save" }
 }
 
-// Which primary action the review CTA offers. Any disagreement enters a
-// refine round; a review with zero disagreements saves — clearing the last
-// disagreement flips the CTA back, which doubles as the convergence signal.
-// The way out of the loop with disagreement remaining is the explicit
-// save-without-refining link, not this CTA.
+// Which primary action the review CTA offers. A trigger enters a refine
+// round; a review carrying none saves — clearing the last trigger flips the
+// CTA back, which doubles as the convergence signal. The way out of the loop
+// with a trigger remaining is the explicit save-without-refining link, not
+// this CTA.
 export type ReviewCta = "save" | "refine"
 
-export function review_cta(args: { num_disagreements: number }): ReviewCta {
+export function review_cta(args: {
+  // From grade_disagreement_count: traces asking for a refine, not every
+  // trace the reviewer left a note on.
+  num_disagreements: number
+}): ReviewCta {
   return args.num_disagreements === 0 ? "save" : "refine"
 }
 
@@ -1297,13 +1407,35 @@ export function rejudge_shortfall_notice(
 // The notice for feedback the refine model declined to incorporate. The
 // reviewer would otherwise see their note apparently ignored with no reason,
 // so the model's own words are quoted back. Null when it declined nothing.
-export function declined_feedback_notice(
+// The refine model's declined feedback is one free-text passage citing the
+// trace labels we handed it. Cut it into one item per cited conversation so
+// the reviewer reads a short list instead of a paragraph; a passage that
+// cites no label stays whole. The labels are ours, so the split is exact.
+export function declined_feedback_items(
   not_incorporated_feedback: string | null,
-): string | null {
+  trace_labels: string[],
+): string[] | null {
   const text = (not_incorporated_feedback ?? "").trim()
   if (!text) return null
-  return `Some of your feedback was not applied this round: "${text}"`
+  const starts = trace_labels
+    .map((label) => text.indexOf(label))
+    .filter((i) => i > -1)
+    .sort((a, b) => a - b)
+  const cuts = [...new Set(starts)]
+  if (cuts.length === 0) return [text]
+  const items: string[] = []
+  const head = text.slice(0, cuts[0]).trim()
+  if (head) items.push(head)
+  cuts.forEach((start, i) => {
+    const end = i + 1 < cuts.length ? cuts[i + 1] : text.length
+    const item = text.slice(start, end).trim()
+    if (item) items.push(item)
+  })
+  return items
 }
+
+export const DECLINED_FEEDBACK_HEADING =
+  "Some of your feedback was not applied this round:"
 
 // A judge prompt/rubric this long is almost certainly runaway model output,
 // not a rubric — reject it rather than persist it into the judge config.
