@@ -101,7 +101,14 @@ from kiln_server.utils.spec_utils import (
     spec_eval_splits,
     tag_filter_id,
 )
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    ValidationError,
+    field_validator,
+)
 
 from app.desktop.studio_server.code_tool_api import ToolCallLogEntryResponse
 
@@ -735,6 +742,49 @@ class UpdateEvalRequest(BaseModel):
     )
 
 
+def eval_input_tags_must_be_filterable(tags: list[str] | None) -> list[str] | None:
+    """Tag rule for the eval-input requests, mirroring EvalInput's own.
+
+    A tag that is empty or contains a space can't be named by a `tag::`
+    filter, so an item carrying one would silently never be selected by any
+    eval. Same two rules and same wording as the datamodel, deliberately.
+
+    Restated here because the datamodel enforces them while the item is being
+    built or assigned: that failure is about the whole model, so the caller
+    gets an error located nowhere and a body quoting the item being saved.
+    Validating the request first points the 422 at `tags` and quotes what the
+    caller actually sent.
+
+    None is the update request's "leave tags alone" and carries nothing to
+    check; the route rejects it separately for the PATCH.
+    """
+    for tag in tags or []:
+        if not tag:
+            raise ValueError("Tags cannot be empty strings")
+        if " " in tag:
+            raise ValueError("Tags cannot contain spaces. Try underscores.")
+    return tags
+
+
+def multi_turn_data_must_carry_a_drive_config(data: EvalInputData) -> EvalInputData:
+    """Drive-config rule for the eval-input create request.
+
+    A multi-turn item is only useful if it can be re-driven, and the drive
+    settings live on the item alone: `data` is the immutable scenario, so no
+    later PATCH can supply one. Without it the eval runner skips the item with
+    missing_drive_config every time it is collected, so accepting the create
+    would mint a permanently dead item. Reject it while the caller can still
+    fix it.
+    """
+    if isinstance(data, MultiTurnSyntheticEvalInputData) and data.drive_config is None:
+        raise ValueError(
+            "drive_config is required for multi_turn_synthetic eval inputs. "
+            "It sets the synthetic-user model and turn count the item is "
+            "re-driven with, and cannot be added after the item is created."
+        )
+    return data
+
+
 class CreateEvalInputRequest(BaseModel):
     """Request to create an eval input item."""
 
@@ -746,6 +796,13 @@ class CreateEvalInputRequest(BaseModel):
     tags: list[str] = Field(
         default_factory=list,
         description="Tags for filtering eval inputs (matched by tag:: eval_input_filter_ids).",
+    )
+
+    _tags_must_be_filterable = field_validator("tags")(
+        eval_input_tags_must_be_filterable
+    )
+    _data_must_carry_a_drive_config = field_validator("data")(
+        multi_turn_data_must_carry_a_drive_config
     )
 
 
@@ -782,6 +839,10 @@ class UpdateEvalInputRequest(BaseModel):
     reference: dict[str, JsonValue] | None = Field(
         default=None,
         description="The item's reference data (ground truth), replacing the whole dict. Send null to clear it — omitting the field leaves it unchanged, which is a different request.",
+    )
+
+    _tags_must_be_filterable = field_validator("tags")(
+        eval_input_tags_must_be_filterable
     )
 
 

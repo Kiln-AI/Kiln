@@ -7566,6 +7566,11 @@ def test_create_eval_input_multi_turn(client, mock_task, mock_task_from_id):
                     "goal": "get an overdue-WO count",
                     "behavior_guidance": "terse",
                 },
+                "drive_config": {
+                    "model_name": "llama_3_1_8b",
+                    "model_provider": "groq",
+                    "turns": 4,
+                },
             },
             "reference": {"scenario": "overdue_wos", "expected_facts": ["190 open"]},
             "tags": ["corpus", "nm_app_crit"],
@@ -7586,6 +7591,91 @@ def test_create_eval_input_multi_turn(client, mock_task, mock_task_from_id):
     assert on_disk[0].data.synthetic_user_info.persona == "maintenance manager"
     assert on_disk[0].data.synthetic_user_info.goal == "get an overdue-WO count"
     assert on_disk[0].data.synthetic_user_info.behavior_guidance == "terse"
+    # The drive config is what makes the item re-drivable, and it can never be
+    # added later, so it has to survive the save rather than only the response.
+    drive_config = on_disk[0].data.drive_config
+    assert drive_config is not None
+    assert drive_config.model_name == "llama_3_1_8b"
+    assert drive_config.model_provider == "groq"
+    assert drive_config.turns == 4
+
+
+def test_create_eval_input_multi_turn_requires_a_drive_config(
+    client, mock_task, mock_task_from_id
+):
+    """Without one the runner skips the item forever, and PATCH can't add it."""
+    response = client.post(
+        "/api/projects/project1/tasks/task1/eval_inputs",
+        json={
+            "data": {
+                "type": "multi_turn_synthetic",
+                "first_message": {"text": "How many open work orders?"},
+                "synthetic_user_info": {"persona": "p", "goal": "g"},
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert "drive_config is required" in body["message"]
+    # Located on the field the caller sent, not reported against the whole item.
+    assert body["source_errors"][0]["loc"] == ["body", "data"]
+    assert mock_task.eval_inputs(readonly=True) == []
+
+
+@pytest.mark.parametrize(
+    "tag,expected_message",
+    [
+        ("has space", "Tags cannot contain spaces. Try underscores."),
+        ("", "Tags cannot be empty strings"),
+    ],
+)
+def test_create_eval_input_rejects_unusable_tags(
+    client, mock_task, mock_task_from_id, tag, expected_message
+):
+    """A tag no tag:: filter can name would make the item unselectable."""
+    response = client.post(
+        "/api/projects/project1/tasks/task1/eval_inputs",
+        json={
+            "data": {"type": "single_turn", "user_message": {"text": "hi"}},
+            "tags": [tag],
+        },
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert expected_message in body["message"]
+    assert body["source_errors"][0]["loc"] == ["body", "tags"]
+    assert mock_task.eval_inputs(readonly=True) == []
+
+
+@pytest.mark.parametrize(
+    "tag,expected_message",
+    [
+        ("has space", "Tags cannot contain spaces. Try underscores."),
+        ("", "Tags cannot be empty strings"),
+    ],
+)
+def test_update_eval_input_rejects_unusable_tags(
+    client, mock_task, mock_task_from_id, tag, expected_message
+):
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    response = client.patch(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
+        json={"tags": [tag]},
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert expected_message in body["message"]
+    assert body["source_errors"][0]["loc"] == ["body", "tags"]
+    # The rejected request quotes the tags sent, not the stored item — an error
+    # body has no business carrying the item's contents or its path on disk.
+    assert body["source_errors"][0]["input"] == str([tag])
+    # The rejected write must not have half-applied: the item keeps its tags.
+    on_disk = mock_task.eval_inputs(readonly=True)
+    assert [item.tags for item in on_disk] == [["corpus"]]
 
 
 def test_create_eval_input_single_turn_defaults(client, mock_task, mock_task_from_id):
