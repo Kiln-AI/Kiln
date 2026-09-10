@@ -1,0 +1,101 @@
+{
+  "v": 1,
+  "id": "106695015830",
+  "created_at": "2026-08-17T19:00:28.952224Z",
+  "created_by": "root",
+  "input": "{\"subject\": \"Can we add two more seats mid-cycle?\", \"body\": \"We hired two engineers starting Monday and need seats for them. Will we be charged a prorated amount now, or does it roll into next month's invoice? Also, can I assign seats before their start date?\", \"customer_plan\": \"pro\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "root"
+    },
+    "run_config_id": null,
+    "run_config": null
+  },
+  "output": {
+    "v": 1,
+    "id": "319638665148",
+    "path": null,
+    "created_at": "2026-08-17T19:00:28.951918Z",
+    "created_by": "root",
+    "output": "{\"team\": \"billing\", \"priority\": \"medium\", \"needs_human_review\": false, \"summary\": \"Pro plan customer with 2 new engineers starting Monday asks whether they'll be prorated now or billed next month, and whether seats can be assigned before the start date.\"}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_openai_compatible_adapter",
+        "model_name": "deepseek_4_flash",
+        "model_provider": "openrouter",
+        "prompt_id": "task_run_config::507368061812::235956950045::177167545173",
+        "structured_output_mode": "json_schema",
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "run_config_id": "177167545173",
+      "run_config": {
+        "type": "kiln_agent",
+        "model_name": "deepseek_4_flash",
+        "model_provider_name": "openrouter",
+        "prompt_id": "task_run_config::507368061812::235956950045::177167545173",
+        "top_p": 1.0,
+        "temperature": 1.0,
+        "structured_output_mode": "json_schema",
+        "thinking_level": "high",
+        "tools_config": {
+          "tools": []
+        },
+        "input_transform": null
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "intermediate_outputs": {
+    "reasoning": "We need answer as triage. Need decide team, urgency, human needed? Ticket: billing/plan seats question, no data loss/security. Need route likely billing or customer success? Product? Need summarize one sentence for next agent. Need be conservative: mentions billing dispute? No, just question. Need no human before reply? Can auto? But we are deciding. Need include team, urgency, human review flag.\n\nLet's craft: Team: Billing/Account Management. Urgency: normal (not urgent). Human needed: No. Summary: Pro customer asks about prorated charges and assigning seats before engineers start."
+  },
+  "tags": [
+    "eval_escalation_flagging",
+    "manual_run"
+  ],
+  "usage": {
+    "input_tokens": 242,
+    "output_tokens": 197,
+    "total_tokens": 439,
+    "cost": 0.00008904,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 8679
+  },
+  "cumulative_usage": {
+    "input_tokens": 242,
+    "output_tokens": 197,
+    "total_tokens": 439,
+    "cost": 0.00008904,
+    "cached_tokens": 0
+  },
+  "trace": [
+    {
+      "content": "You are a support triage assistant for a B2B SaaS product.\n\nRead the inbound ticket and decide which team should own it, how urgent it is, and whether a human needs to look at it before a reply goes out. Be conservative: when the ticket mentions data loss, billing disputes, or a security concern, escalate to a human.\n\nKeep the summary to one sentence, written for the engineer or agent who picks the ticket up next.",
+      "role": "system"
+    },
+    {
+      "content": "{\"subject\": \"Can we add two more seats mid-cycle?\", \"body\": \"We hired two engineers starting Monday and need seats for them. Will we be charged a prorated amount now, or does it roll into next month's invoice? Also, can I assign seats before their start date?\", \"customer_plan\": \"pro\"}",
+      "role": "user"
+    },
+    {
+      "role": "assistant",
+      "content": "{\n  \"team\": \"billing\",\n  \"priority\": \"medium\",\n  \"needs_human_review\": false,\n  \"summary\": \"Pro plan customer with 2 new engineers starting Monday asks whether they'll be prorated now or billed next month, and whether seats can be assigned before the start date.\"\n}",
+      "reasoning_content": "We need answer as triage. Need decide team, urgency, human needed? Ticket: billing/plan seats question, no data loss/security. Need route likely billing or customer success? Product? Need summarize one sentence for next agent. Need be conservative: mentions billing dispute? No, just question. Need no human before reply? Can auto? But we are deciding. Need include team, urgency, human review flag.\n\nLet's craft: Team: Billing/Account Management. Urgency: normal (not urgent). Human needed: No. Summary: Pro customer asks about prorated charges and assigning seats before engineers start.",
+      "latency_ms": 8679,
+      "usage": {
+        "input_tokens": 242,
+        "output_tokens": 197,
+        "total_tokens": 439,
+        "cost": 0.00008904,
+        "cached_tokens": 0
+      }
+    }
+  ],
+  "parent_task_run_id": null,
+  "model_type": "task_run"
+}

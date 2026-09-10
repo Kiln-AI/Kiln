@@ -20,7 +20,7 @@ class TestBackgroundSyncFetchAndFastForward:
     @pytest.mark.asyncio
     async def test_fetch_and_fast_forward(self, manager, git_repos, second_clone):
         """Fetch + fast-forward pulls new remote commits into local."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
 
         commit_in_repo(
             second_clone,

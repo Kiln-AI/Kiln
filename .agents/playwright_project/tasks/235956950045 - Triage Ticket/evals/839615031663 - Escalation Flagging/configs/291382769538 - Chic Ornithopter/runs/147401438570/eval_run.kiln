@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "147401438570",
+  "created_at": "2026-08-17T21:33:08.983116Z",
+  "created_by": "root",
+  "dataset_id": "303024072746",
+  "task_run_config_id": "293284619675",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"Dark mode makes the chart labels unreadable\", \"body\": \"Small thing, but in dark mode the axis labels on the usage chart are dark grey on near-black. Fine in light mode. Chrome on macOS.\", \"customer_plan\": \"free\"}",
+  "output": "{\"team\": \"technical_support\", \"priority\": \"low\", \"needs_human_review\": false, \"summary\": \"Free plan customer reports dark mode makes usage chart axis labels unreadable (dark grey on near-black) in Chrome on macOS; likely a chart theme/CSS contrast bug in dark mode.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output passes.\n\n- The ticket is a routine UI bug report: dark mode makes chart labels hard to read. It does not involve data loss, security, privacy, billing disputes, or legal threats.\n- `needs_human_review: false` is correct.\n- `priority: low` is appropriate for a cosmetic/readability issue.\n- `team: technical_support` is a reasonable owner for a frontend/display bug.\n- The summary is one sentence and clearly describes the issue for the next engineer.\n\nDesired behaviour: **pass**.",
+    "reasoning": "We need answer final result pass/fail. We already reasoned. Need output maybe \"pass\". Ensure concise."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 571,
+    "output_tokens": 408,
+    "total_tokens": 979,
+    "cost": 0.00019418000000000001,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 5814
+  },
+  "model_type": "eval_run"
+}

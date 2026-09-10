@@ -17,14 +17,13 @@ Three streams, one frame contract (see api_models/eval_builder_models.py):
   multi_turn_pipeline: runs [run → judge] per generated input. The task runs
   ONCE per input on the target run config — tools live, the user's keys —
   and each persisted, batch-tagged run pipes into the same judge unit.
-  The judge scores the I/O pair (final_answer), exactly what the saved
-  single-turn eval judges; the run's structured trace is echoed on the
-  frame for the UI only.
+  The judge scores the run's transcript, exactly what the saved eval
+  judges; the same trace is echoed on the frame for the UI.
 
   judge_traces (both arms) — re-judge previously driven results: the same
   judge unit and frames as the driving streams, with the drive replaced by
   a disk reload of each stored run by id. Multi-turn judges the chain
-  leaf's stored trace; single-turn judges the run's I/O pair. Nothing is
+  leaf's stored trace; single-turn judges the run's own. Nothing is
   driven or written; the judge input matches what the saved eval judges.
 
 Only the claim builder reaches the remote kiln_server; the judge runs
@@ -38,47 +37,8 @@ import logging
 import re
 import uuid
 from collections.abc import AsyncIterator, Callable
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, Literal
 
-from app.desktop.studio_server.api_models.eval_builder_models import (
-    AuthorJudgeApiInput,
-    AuthorJudgeApiOutput,
-    BuildClaimsApiInput,
-    BuildClaimsApiOutput,
-    JudgeConfig,
-    PipelineBatchAbortedEvent,
-    PipelineBatchCompletedEvent,
-    PipelineBatchStartedEvent,
-    PipelineCaseDrivenEvent,
-    PipelineCaseFailedEvent,
-    PipelineCaseJudgedEvent,
-    PipelineTurnCompletedEvent,
-    PreflightModelApiInput,
-    PreflightModelApiOutput,
-    RefineJudgeApiInput,
-    RefineJudgeApiOutput,
-)
-from app.desktop.studio_server.multiturn_sdg_api import (
-    RunCasesBatchApiInput,
-    TargetRunConfigFields,
-    guard_multiturn,
-    resolve_target_run_config,
-    to_su_driver_config,
-)
-from app.desktop.studio_server.utils.copilot_utils import (
-    delete_multi_turn_batch_chains,
-    delete_single_turn_batch_runs,
-    get_copilot_api_key,
-    single_turn_drive_tags,
-    tag_single_turn_drive_run,
-)
-from app.desktop.studio_server.utils.eval_builder_utils import (
-    author_judge_prompt,
-    build_claims_for_trace,
-    refine_judge_prompt_from_grades,
-    run_judge_for_trace,
-    transcript_io_for_trace,
-)
 from fastapi import FastAPI, HTTPException, Path, Request
 from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
@@ -110,14 +70,61 @@ from kiln_ai.utils.async_job_runner import (
     AsyncJobRunner,
     AsyncJobRunnerObserver,
     RetryableError,
+    compute_retry_delay,
 )
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
+from kiln_ai.utils.slow_operation import log_if_slow
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing_extensions import Self
+
+from app.desktop.studio_server.api_models.eval_builder_models import (
+    AuthorJudgeApiInput,
+    AuthorJudgeApiOutput,
+    BuildClaimsApiInput,
+    BuildClaimsApiOutput,
+    JudgeConfig,
+    PipelineBatchAbortedEvent,
+    PipelineBatchCompletedEvent,
+    PipelineBatchStartedEvent,
+    PipelineCaseDrivenEvent,
+    PipelineCaseFailedEvent,
+    PipelineCaseJudgedEvent,
+    PipelineTurnCompletedEvent,
+    PreflightModelApiInput,
+    PreflightModelApiOutput,
+    RefineJudgeApiInput,
+    RefineJudgeApiOutput,
+)
+from app.desktop.studio_server.multiturn_sdg_api import (
+    RunCasesBatchApiInput,
+    TargetRunConfigFields,
+    guard_multiturn,
+    resolve_target_run_config,
+    to_su_driver_config,
+)
+
+# TODO(eval-v2): remove — ClaimDebug capture scaffolding, deleted before GA.
+from app.desktop.studio_server.utils.claim_debug_capture import capture_claim_debug
+from app.desktop.studio_server.utils.copilot_utils import (
+    delete_multi_turn_batch_chains,
+    delete_single_turn_batch_runs,
+    get_copilot_api_key,
+    single_turn_drive_tags,
+    tag_single_turn_drive_run,
+    task_capabilities_for_task,
+)
+from app.desktop.studio_server.utils.eval_builder_utils import (
+    author_judge_prompt,
+    build_claims_for_trace,
+    refine_judge_prompt_from_grades,
+    run_judge_for_trace,
+    trace_or_echo,
+    transcript_io_for_trace,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -131,25 +138,27 @@ DRIVE_CONCURRENCY = 10
 REVIEW_CONCURRENCY = 8
 
 # The single-turn run stage's knobs — the same posture as the multi-turn
-# drive runner (shared retry classifier, retry count, delay), with the
-# drive's per-turn budget as the whole-case timeout: one single-turn case is
-# one agent invocation, the same unit of work as one multi-turn turn.
+# drive runner (shared retry classifier, retry count, backoff base). Like the
+# multi-turn drive, a run has no app-level timeout: termination is
+# guaranteed by structural bounds (the adapter's tool-call cap and the
+# model client's per-request timeout), and a pathologically slow run is
+# logged rather than killed.
 RUN_MAX_RETRIES = 2
 RUN_RETRY_DELAY_SECONDS = 1.0
-RUN_TIMEOUT_SECONDS = 120.0
 
 # Identifies the single-turn pipeline in input_source.properties.adapter_name
 # so a reader looking at a TaskRun can tell who created it.
 _SINGLE_TURN_ADAPTER_NAME = "kiln_eval_builder_single_turn"
 
 # The judge lane's retry policy — the same posture (shared classifier, same
-# attempt count and delay) as the drive runner in
+# attempt count and backoff) as the drive runner in
 # kiln_ai.synthetic_user.runner: transient provider failures retry,
 # deterministic ones fail the case immediately. The judge is the one local
 # leg without a runner-owned retry; the remote copilot legs already retry
 # inside kiln_server (pipeline jobs, retries=3), so no client retry stacks
 # on top of them.
 JUDGE_MAX_RETRIES = 2
+# Base of the shared exponential-backoff-with-jitter window, not a flat wait.
 JUDGE_RETRY_DELAY_SECONDS = 1.0
 
 
@@ -167,7 +176,11 @@ async def run_judge_with_retry(*args, **kwargs):
             attempt += 1
             if attempt > JUDGE_MAX_RETRIES or not is_retryable_error(e):
                 raise
-            await asyncio.sleep(JUDGE_RETRY_DELAY_SECONDS)
+            # attempt counts failures so far; the shared backoff windows are
+            # indexed from zero, so the first retry draws from (0, base).
+            await asyncio.sleep(
+                compute_retry_delay(JUDGE_RETRY_DELAY_SECONDS, attempt - 1)
+            )
 
 
 def _sse(payload: dict | BaseModel) -> str:
@@ -462,12 +475,13 @@ class JudgeStreamBase:
         self, case_index: int, trace: list[dict[str, Any]] | None
     ) -> tuple[str, str, list[dict[str, Any]] | None]:
         """What the judge scores for one case: (raw_input, raw_output, and
-        the structured trace to judge over, None to judge the I/O pair).
+        the structured trace to judge over; the Optional is vestigial, as
+        every arm now judges a transcript).
 
         The default is the multi-turn reading — transcript I/O plus the full
-        trace — matching what the saved full-trace eval judges. The
-        single-turn stream overrides it to the run's I/O pair with no judge
-        trace, matching its saved final_answer eval.
+        trace — matching what the saved eval judges. The single-turn streams
+        override only where raw_input comes from; both arms judge a
+        transcript, so every override still returns one.
         """
         assert trace is not None  # multi-turn streams always carry a trace
         raw_input, raw_output = transcript_io_for_trace(trace)
@@ -545,7 +559,7 @@ class JudgeStreamBase:
                         trace=trace,
                     )
                 )
-            except Exception as e:  # noqa: BLE001 — isolate to this case
+            except Exception as e:
                 # A config-scoped failure (bad key, deprecated model) will
                 # kill every judgment identically — abort the whole batch on
                 # the first one instead of failing every case one by one
@@ -561,6 +575,7 @@ class JudgeStreamBase:
                     "judge",
                     "judge_failed",
                     f"{type(root).__name__}: {root}",
+                    type(root).__name__,
                 )
                 return
             self._judged_count += 1
@@ -598,10 +613,21 @@ class JudgeStreamBase:
         stage: Literal["drive", "run", "judge"],
         code: str,
         message: str,
+        error_type: str | None = None,
     ) -> None:
-        """One case died at `stage`; the batch continues without it."""
+        """One case died at `stage`; the batch continues without it.
+
+        `error_type` is the class name of the provider or unexpected exception
+        behind the failure (None on deterministic failures, whose `code` already
+        names them) — included in the log line as a grep-able `error_type=...`
+        field so local logs can be grouped by failure kind, not just the frame.
+        """
         logger.exception(
-            "%s: %s failed for case %d", self._stream_name, stage, case_index
+            "%s: %s failed for case %d, error_type=%s",
+            self._stream_name,
+            stage,
+            case_index,
+            error_type,
         )
         self._failed_count += 1
         await self._emit(
@@ -610,6 +636,7 @@ class JudgeStreamBase:
                 stage=stage,
                 code=code,
                 message=message,
+                error_type=error_type,
             )
         )
 
@@ -658,7 +685,9 @@ class MultiTurnPipelineRun(JudgeStreamBase):
         # Latest cumulative trace per case, captured from the runner's
         # in-process turn events — the REAL trace (tool calls, system turns),
         # not a wire projection. Popped when the case's review starts.
-        self._latest_trace: dict[int, list[dict[str, Any]]] = {}
+        # Values are the runner's typed message params, read as loose dicts by
+        # the judge/claims layer (list[Any] because typing.cast is banned).
+        self._latest_trace: dict[int, list[Any]] = {}
         # The base's _total_cost accumulates the batch's actual drive
         # billing — failed cases and discarded retry attempts included, not
         # just surviving conversations.
@@ -691,9 +720,7 @@ class MultiTurnPipelineRun(JudgeStreamBase):
                 # The runner emits a fresh snapshot list per event; its typed
                 # message params are plain dicts at runtime, which the
                 # judge/claims layer treats loosely.
-                self._latest_trace[event.case_index] = cast(
-                    list[dict[str, Any]], event.trace
-                )
+                self._latest_trace[event.case_index] = event.trace
                 await self._emit(
                     PipelineTurnCompletedEvent(
                         case_index=event.case_index,
@@ -743,7 +770,11 @@ class MultiTurnPipelineRun(JudgeStreamBase):
                 # A dead case still billed for every attempt it made.
                 self._total_cost += event.total_cost
                 await self._fail_case(
-                    event.case_index, "drive", event.error_code, event.message
+                    event.case_index,
+                    "drive",
+                    event.error_code,
+                    event.message,
+                    event.error_type,
                 )
             # The runner's BatchCompletedEvent is not forwarded: the
             # pipeline's own batch_completed fires after reviews drain.
@@ -764,9 +795,9 @@ class JudgeTracesRun(JudgeStreamBase):
     and frame contract as the driving streams, with the drive replaced by a
     disk reload of each stored run by id. Multi-turn judges the chain leaf's
     stored cumulative trace — exactly the conversation the drive-time judge
-    saw and the saved eval will judge. Single-turn judges the run's stored
-    I/O pair — the same final_answer reading as its pipeline and its saved
-    eval. Nothing is driven and nothing is written.
+    saw and the saved eval will judge. Single-turn judges the run's own
+    stored trace, the same reading as its pipeline and its saved eval.
+    Nothing is driven and nothing is written.
     """
 
     _stream_name = "judge_traces"
@@ -790,21 +821,22 @@ class JudgeTracesRun(JudgeStreamBase):
         self._task = task
         self._leaf_run_ids = input.leaf_run_ids
         self._single_turn = task.turn_mode != TurnMode.multiturn
-        # Single-turn arm: each case's stored (input, output) pair — what
-        # the judge scores and the frames echo (the SingleTurnPipelineRun
-        # convention).
+        # Single-turn arm: each case's stored (input, output) pair. Only the
+        # input is read back — the judge and the frames take raw_input from
+        # here rather than from the transcript (the SingleTurnPipelineRun
+        # convention); raw_output comes from the transcript rendering.
         self._case_io: dict[int, tuple[str, str]] = {}
 
     def _judge_view(
         self, case_index: int, trace: list[dict[str, Any]] | None
     ) -> tuple[str, str, list[dict[str, Any]] | None]:
-        # Single-turn judges the run's I/O pair with no judge trace (the
-        # trace on the frame is a UI echo), matching its pipeline and its
-        # saved final_answer eval; multi-turn keeps the base's full-trace
-        # reading.
+        # Single-turn keeps the stored run's input verbatim (see the pipeline's
+        # override); multi-turn takes the base's transcript reading whole.
         if self._single_turn:
-            raw_input, raw_output = self._case_io[case_index]
-            return raw_input, raw_output, None
+            assert trace is not None  # the producer passes a trace or an echo
+            _, raw_output = transcript_io_for_trace(trace)
+            raw_input, _ = self._case_io[case_index]
+            return raw_input, raw_output, trace
         return super()._judge_view(case_index, trace)
 
     async def _produce(self) -> None:
@@ -864,9 +896,9 @@ class JudgeTracesRun(JudgeStreamBase):
     async def _produce_single_turn_case(
         self, case_index: int, leaf_run_id: str, leaf: TaskRun
     ) -> None:
-        """Feed one reloaded single-turn run into the judge unit: the stored
-        I/O pair is what the judge scores (the run's structured trace rides
-        the frame as a UI echo only). drive_cost is 0.0: the original
+        """Feed one reloaded single-turn run into the judge unit: the run's
+        stored transcript is what the judge scores, echoed to a two-message
+        pair when the run recorded none. drive_cost is 0.0: the original
         pipeline already reported this run's spend."""
         output = leaf.output.output if leaf.output is not None else None
         if not output:
@@ -878,7 +910,11 @@ class JudgeTracesRun(JudgeStreamBase):
             )
             return
         self._case_io[case_index] = (leaf.input, output)
-        trace = [dict(message) for message in leaf.trace] if leaf.trace else None
+        trace = trace_or_echo(
+            [dict(message) for message in leaf.trace] if leaf.trace else None,
+            leaf.input,
+            output,
+        )
         self._review_tasks.append(
             asyncio.create_task(
                 self._judge_case(case_index, leaf_run_id, trace, 0.0),
@@ -889,23 +925,34 @@ class JudgeTracesRun(JudgeStreamBase):
 
 class _RunFailure(Exception):
     """A terminal per-case failure of the single-turn run stage — never
-    retried. Deterministic input problems, per-case timeouts (a retry would
-    pin a worker for another full run budget), and provider errors the
-    shared classifier calls permanent. `code` is surfaced on case_failed.
+    retried. Deterministic input problems and provider errors the shared
+    classifier calls permanent. `code` and `error_type` are surfaced on
+    case_failed.
     """
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, error_type: str | None = None) -> None:
         super().__init__(message)
         self.code = code
+        # Class name of the provider or unexpected exception behind this
+        # failure; None on deterministic failures, whose `code` already names
+        # them.
+        self.error_type = error_type
 
 
-def _run_failure_details(error: Exception) -> tuple[str, str]:
-    """Map a case's terminal exception to case_failed's code and message."""
+def _run_failure_details(error: Exception) -> tuple[str, str, str | None]:
+    """Map a case's terminal exception to case_failed's code, message and
+    error type."""
     if isinstance(error, _RunFailure):
-        return error.code, str(error)
+        return error.code, str(error), error.error_type
     # A RetryableError whose attempts ran out (or an unexpected
-    # orchestration error surfaced by the job runner).
-    return "unexpected_error", str(error)
+    # orchestration error surfaced by the job runner). The retryable wrapper
+    # is always raised `from` the provider error it classified, so its cause
+    # names the real failure; an error that carries no cause falls back to None.
+    cause = error.__cause__
+    error_type = (
+        type(unwrap_kiln_run_error(cause)).__name__ if cause is not None else None
+    )
+    return "unexpected_error", str(error), error_type
 
 
 def _run_cost(run: TaskRun) -> float:
@@ -920,8 +967,11 @@ def _run_cost(run: TaskRun) -> float:
 
 def guard_single_turn(task: Task) -> None:
     """Reject early if the caller pointed the single-turn pipeline at a
-    multi-turn task: its judge and save contract are the final_answer ones,
-    and multi-turn conversations have their own drive (multi_turn_pipeline).
+    multi-turn task.
+
+    This pipeline runs the task once per generated input. A multi-turn task
+    needs a synthetic user to carry the conversation forward, which is a
+    different drive entirely (multi_turn_pipeline).
     """
     if task.turn_mode == TurnMode.multiturn:
         raise HTTPException(
@@ -979,19 +1029,28 @@ class SingleTurnPipelineRun(JudgeStreamBase):
         self._save_context = save_context or default_save_context
         self._batch_tag = input.batch_tag or uuid.uuid4().hex[:12]
         # Each case's (input, output) pair, recorded by the producer for the
-        # judge unit — what the judge scores and the frames echo.
+        # judge unit. Only the input is read back: raw_output and the judge's
+        # trace both come from the transcript (see _judge_view).
         self._case_io: dict[int, tuple[str, str]] = {}
         self._any_case_driven = False
 
     def _judge_view(
         self, case_index: int, trace: list[dict[str, Any]] | None
     ) -> tuple[str, str, list[dict[str, Any]] | None]:
-        # The saved single-turn eval is final_answer: the judge scores the
-        # input/output pair, never the trace — the trace on the frame is a
-        # UI echo only. Keeping the two readings identical is what makes the
-        # calibrated judge byte-equivalent to the one that ships.
-        raw_input, raw_output = self._case_io[case_index]
-        return raw_input, raw_output, None
+        # Single-turn keeps the REQUEST's input string verbatim: the saved
+        # eval stores that same string on its inputs-only item and reads it
+        # back from there (EvalTaskInput.from_trace takes task_input from the
+        # item, not the trace, because the adapter may have reserialized it).
+        # Taking the trace's opening user message instead would judge a
+        # different string than the eval that ships.
+        #
+        # The OUTPUT and the judge trace come from the transcript, so the
+        # judge sees what the agent actually did — tool calls and tool
+        # results included — rather than only its closing message.
+        assert trace is not None  # producers pass a trace or an echo of one
+        _, raw_output = transcript_io_for_trace(trace)
+        raw_input, _ = self._case_io[case_index]
+        return raw_input, raw_output, trace
 
     async def _produce(self) -> None:
         """The producer: run the task once per input; each persisted run
@@ -1017,8 +1076,8 @@ class SingleTurnPipelineRun(JudgeStreamBase):
 
             async def on_error(self, job: tuple[int, str], error: Exception) -> None:
                 case_index, _input_text = job
-                code, message = _run_failure_details(error)
-                await fail_case(case_index, "run", code, message)
+                code, message, error_type = _run_failure_details(error)
+                await fail_case(case_index, "run", code, message, error_type)
 
         async def _run_job(job: tuple[int, str]) -> bool:
             await self._run_one_input(job, skills)
@@ -1095,13 +1154,15 @@ class SingleTurnPipelineRun(JudgeStreamBase):
                     default_tags=single_turn_drive_tags(self._batch_tag),
                 ),
             )
-            # The timeout bounds the whole invocation (tool loops included):
-            # one hung provider call would otherwise pin this case's
-            # concurrency slot until the consumer disconnects.
-            run = await asyncio.wait_for(
-                adapter.invoke(input=parsed_input, input_source=self._input_source()),
-                timeout=RUN_TIMEOUT_SECONDS,
-            )
+            # No app-level timeout: a hung provider call is bounded by the
+            # model client's per-request timeout and the tool loop by the
+            # adapter's cap, so the invocation terminates structurally. The
+            # watchdog makes a pathologically slow run visible in logs
+            # without killing a healthy one.
+            async with log_if_slow(f"single_turn_pipeline: case {case_index}"):
+                run = await adapter.invoke(
+                    input=parsed_input, input_source=self._input_source()
+                )
             output = run.output.output if run.output is not None else None
             if not output:
                 raise _RunFailure(
@@ -1128,10 +1189,15 @@ class SingleTurnPipelineRun(JudgeStreamBase):
             await self._emit(
                 PipelineCaseDrivenEvent(case_index=case_index, leaf_run_id=run_id)
             )
-            # The run's structured trace (tool calls included) rides the
-            # case_judged frame for the UI's chat rendering; the judge
-            # itself scores the I/O pair (_judge_view).
-            trace = [dict(message) for message in run.trace] if run.trace else None
+            # The run's structured trace (tool calls included) is what the
+            # judge scores and what rides the case_judged frame. A run that
+            # recorded none is judged on a two-message echo of its I/O pair,
+            # which is lossless: the pair is everything that happened.
+            trace = trace_or_echo(
+                [dict(message) for message in run.trace] if run.trace else None,
+                input_text,
+                output,
+            )
             self._review_tasks.append(
                 asyncio.create_task(
                     self._judge_case(case_index, run_id, trace, case_cost),
@@ -1149,21 +1215,6 @@ class SingleTurnPipelineRun(JudgeStreamBase):
             # always propagate.
             await asyncio.shield(self._delete_partial_run(run))
             raise
-        except asyncio.TimeoutError as e:
-            # The run exceeded its budget; wait_for already cancelled it (an
-            # invoke cancelled mid-flight returns nothing, so there is
-            # usually no run to clean up).
-            logger.warning(
-                "single_turn_pipeline: case %d timed out after %.0fs",
-                case_index,
-                RUN_TIMEOUT_SECONDS,
-            )
-            await self._delete_partial_run(run)
-            raise _RunFailure(
-                "case_timeout",
-                f"The run did not finish within {RUN_TIMEOUT_SECONDS:.0f}s "
-                "and was cancelled.",
-            ) from e
         except Exception as e:
             # Adapter network errors, model misconfig, save blow-ups,
             # anything unexpected. Log with full traceback; clean this
@@ -1177,10 +1228,18 @@ class SingleTurnPipelineRun(JudgeStreamBase):
             # text — unwrap so failure events name the real provider failure
             # instead of the generic wrapper text.
             cause = unwrap_kiln_run_error(e)
+            detail = str(cause).strip()
+            if not detail and isinstance(cause, TimeoutError):
+                # A raw provider timeout lands here (no app-level budget
+                # remains) and carries no message; name it so the
+                # case_failed frame isn't an empty string.
+                detail = "The model provider request timed out."
             if is_retryable_error(e):
-                raise RetryableError(f"{type(cause).__name__}: {cause}") from e
+                raise RetryableError(f"{type(cause).__name__}: {detail}") from e
             raise _RunFailure(
-                "unexpected_error", f"{type(cause).__name__}: {cause}"
+                "unexpected_error",
+                f"{type(cause).__name__}: {detail}",
+                type(cause).__name__,
             ) from e
 
     async def _delete_partial_run(self, run: TaskRun | None) -> None:
@@ -1241,7 +1300,8 @@ def connect_eval_builder_api(app: FastAPI):
           - case_driven     { case_index, leaf_run_id }
           - case_judged     { case_index, leaf_run_id, raw_input, raw_output,
                               judge_score, judge_reasoning, total_cost }
-          - case_failed     { case_index, stage, code, message }  (batch continues)
+          - case_failed     { case_index, stage, code, message, error_type }
+                              (batch continues)
           - batch_completed { judged, failed, batch_tag, total_cost }
           - batch_aborted   { error, stage }  (in place of batch_completed:
                               a config-scoped judge failure aborted the whole
@@ -1316,7 +1376,7 @@ def connect_eval_builder_api(app: FastAPI):
                               judge_score, judge_reasoning, total_cost,
                               trace }
           - case_failed     { case_index, stage: "run" | "judge", code,
-                              message }  (batch continues)
+                              message, error_type }  (batch continues)
           - batch_completed { judged, failed, batch_tag, total_cost }
           - batch_aborted   { error, stage }  (in place of batch_completed:
                               a config-scoped judge failure aborted the whole
@@ -1325,11 +1385,13 @@ def connect_eval_builder_api(app: FastAPI):
                               an orchestration-level crash ended the stream;
                               results already streamed remain valid)
         Terminated by `data: complete`. No turn frames appear on this stream
-        (each case is one run). raw_input/raw_output are the run's I/O
-        pair — what the judge scored and what the saved final_answer eval
-        will score; `trace` is the run's structured trace (tool calls
-        included), echoed for the UI. Claims are built afterwards, per
-        opened trace, via build_claims.
+        (each case is one run). raw_input is the run's own input string,
+        kept verbatim because the saved eval reads that same string back;
+        raw_output is the role-labelled transcript rendering, not the closing
+        message. `trace` is the run's structured trace (tool calls included)
+        and is what the judge scored, matching what the saved eval will
+        score. Claims are built afterwards, per opened trace, via
+        build_claims.
         """
         # Same fail-fast posture as multi_turn_pipeline: this stream runs
         # entirely on the user's keys, but the review that follows builds
@@ -1373,16 +1435,17 @@ def connect_eval_builder_api(app: FastAPI):
         The judge calibration loop's re-score stream, both arms: after a
         refine produces a new judge prompt, this scores the SAME saved
         results again. Each run is reloaded from disk by id; multi-turn
-        judges the chain leaf's stored trace, single-turn judges the run's
-        stored I/O pair — either way the judge input matches what the saved
-        eval will judge. Nothing is driven and nothing is written.
+        judges the chain leaf's stored trace, single-turn the run's own —
+        either way the judge input matches what the saved eval will judge.
+        Nothing is driven and nothing is written.
 
         Emits (all frames `type`-discriminated; errors carry {code, message}):
           - batch_started   { batch_tag: "", total_cases }
           - case_judged     { case_index, leaf_run_id, raw_input, raw_output,
                               judge_score, judge_reasoning, total_cost: 0,
                               trace }
-          - case_failed     { case_index, stage: "judge", code, message }
+          - case_failed     { case_index, stage: "judge", code, message,
+                              error_type }
                               (batch continues; a run that cannot be
                               reloaded fails with code trace_not_found,
                               missing_trace, or missing_output)
@@ -1436,13 +1499,22 @@ def connect_eval_builder_api(app: FastAPI):
         subset review most traces are never opened). Also used by the refine
         loop to regenerate claims without re-running the judge.
         """
-        return await build_claims_for_trace(
+        # The builder reads the task's own instruction as context for what the
+        # task is; the endpoint resolves it here so the client never sends it.
+        task = task_from_id(project_id, task_id)
+        output = await build_claims_for_trace(
+            task_instruction=task.instruction,
             raw_input=input.raw_input,
             raw_output=input.raw_output,
             eval_rubric=input.eval_rubric,
             judge_score=input.judge_score,
             judge_reasoning=input.judge_reasoning,
         )
+        # TODO(eval-v2): remove — ClaimDebug capture writes a sidecar record of
+        # this build so claim data survives the browser tab. It is fail-open
+        # (swallows everything), so it can never fail the user's request.
+        await asyncio.to_thread(capture_claim_debug, project_id, task_id, input, output)
+        return output
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/eval_builder/preflight_model",
@@ -1522,10 +1594,10 @@ def connect_eval_builder_api(app: FastAPI):
     ) -> AuthorJudgeApiOutput:
         """Author a spec-tailored judge prompt for the review — both arms.
 
-        Returns the PROMPT only — the judge model is the user's pick. The
-        rubric's framing follows the task's turn mode: full conversations
-        for multi-turn, one I/O pair for single-turn — derived here, not
-        client-sent, so it can never disagree with the task being judged.
+        Returns the PROMPT only — the judge model is the user's pick. Both
+        arms judge a transcript, so both rubrics are authored against one:
+        the rubric arrives knowing the role labels and tool-call blocks its
+        judge will meet, whatever the task's turn mode.
         Authoring is a REQUIRED step of the drive: an error here stops the
         drive on a retryable error client-side. There is no fallback judge.
         """
@@ -1533,12 +1605,20 @@ def connect_eval_builder_api(app: FastAPI):
         # a keyless caller gets a clean 401, not a deep upstream error.
         get_copilot_api_key()
         task = task_from_id(project_id, task_id)
+        # The task is loaded for its tools and skills, so the rubric can grade
+        # tool and skill use instead of guessing at it.
+        task_tools, task_skills = await task_capabilities_for_task(task)
         return await author_judge_prompt(
             target_specification=input.target_specification,
             target_task_prompt=input.target_task_prompt,
-            trace_type=(
-                "multi_turn" if task.turn_mode == TurnMode.multiturn else "single_turn"
-            ),
+            # Constant on purpose: both arms judge a transcript, so both
+            # rubrics are authored against one. "multi_turn" names the
+            # authoring prompt that teaches the transcript's vocabulary — the
+            # role labels, the tool-call blocks, and that a missing tool call
+            # is evidence — not the turn mode of the task being judged.
+            trace_type="multi_turn",
+            task_tools=task_tools,
+            task_skills=task_skills,
         )
 
     @app.post(
@@ -1560,9 +1640,6 @@ def connect_eval_builder_api(app: FastAPI):
         The refined prompt is a PROPOSAL — the UI validates it and shows the
         changes for approval; it is never auto-applied.
         """
-        # Fail fast on a missing copilot key before the remote refine call:
-        # a keyless caller gets a clean 401, not a deep upstream error.
-        get_copilot_api_key()
         # Remote failures propagate as HTTPExceptions with the upstream's
         # message (custom_errors renders {"message": ...} for the UI), same as
         # the build_claims primitive.

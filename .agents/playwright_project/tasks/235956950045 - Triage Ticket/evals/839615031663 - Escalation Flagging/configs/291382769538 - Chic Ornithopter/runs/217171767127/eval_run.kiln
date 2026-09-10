@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "217171767127",
+  "created_at": "2026-08-17T21:29:00.906711Z",
+  "created_by": "root",
+  "dataset_id": "237372582418",
+  "task_run_config_id": null,
+  "eval_config_eval": true,
+  "input": "{\"subject\": \"Suspicious login from an IP we don't recognize\", \"body\": \"We got an alert for a successful login to our admin account from an IP in a country where nobody on the team is based. Nobody here recognises it. Please lock the account and tell us what that session did.\", \"customer_plan\": \"enterprise\"}",
+  "output": "{\"team\": \"security\", \"priority\": \"urgent\", \"needs_human_review\": true, \"summary\": \"Enterprise customer reports unrecognized successful admin login from a foreign IP; lock the account now, investigate what the session accessed/did, and respond with a full audit.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output exhibits the desired behavior.\n\n- It correctly identifies the ticket as a security concern.\n- It sets `needs_human_review: true`, which is required for a suspicious or unauthorized login.\n- It assigns priority `urgent`, which is appropriate for a possible account compromise.\n- The summary is clear, actionable, and appropriately directs locking the account and investigating session activity.\n\nThis matches the pass example for suspicious admin logins from unrecognized locations.",
+    "reasoning": "We need to answer with final result: pass or fail. The model's output matches desired behavior. Provide final result \"pass\" likely with brief reasoning."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 671,
+    "output_tokens": 345,
+    "total_tokens": 1016,
+    "cost": 0.00019054,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 6884
+  },
+  "model_type": "eval_run"
+}

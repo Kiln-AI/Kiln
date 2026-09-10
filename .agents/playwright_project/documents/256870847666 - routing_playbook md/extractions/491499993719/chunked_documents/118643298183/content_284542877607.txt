@@ -1,0 +1,33 @@
+Do not route this to technical support because the
+duplicate came from a retry in the payment pipeline; billing owns the outcome.
+
+**"Imports have been failing since this morning with a 502."** Technical support,
+urgent if imports are the customer's main workflow and no workaround exists, high if
+they can upload manually while it is fixed. Ask which before choosing.
+
+**"Can you move the workspace to my colleague, I am leaving the company."** Account
+management, medium. This is an ownership transfer and needs identity verification
+before anything changes. It is not urgent unless the departure is today.
+
+**"Exports stop at 10,000 rows and that is useless for us."** Product feedback, low.
+The limit is documented and working as designed. Route it to product feedback with a
+summary that names the customer's actual use case, because that is the part the
+product team cannot get from the ticket title.
+
+**"Someone from another company can see our dashboards."** Technical support, urgent,
+and flagged for human review under the escalation policy. Route it and escalate it;
+these are two separate decisions and both apply here.
+
+## Writing the summary
+
+The summary is read by whoever picks the ticket up, not by the customer. Name what
+broke, what the customer already tried, and what you could not determine from the
+ticket. Two sentences is usually enough. Do not restate the ticket title, and do not
+speculate about the cause: an incorrect guess in a summary is repeated by the next
+three people who read it.
+
+## When you are not sure
+
+Route to the team that owns the system, and say in the summary what you were unsure
+about. A ticket in the wrong queue with an honest summary is cheaper to fix than a
+ticket in the right queue with a summary that hides the ambiguity.

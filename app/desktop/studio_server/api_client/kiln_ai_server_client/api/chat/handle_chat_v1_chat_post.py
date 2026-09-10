@@ -11,6 +11,7 @@ from ...models.handle_chat_v1_chat_post_response_404 import HandleChatV1ChatPost
 from ...models.handle_chat_v1_chat_post_response_426 import HandleChatV1ChatPostResponse426
 from ...models.handle_chat_v1_chat_post_response_500 import HandleChatV1ChatPostResponse500
 from ...models.http_validation_error import HTTPValidationError
+from ...models.unauthorized_response import UnauthorizedResponse
 from ...types import Response
 
 
@@ -42,6 +43,7 @@ def _parse_response(
     | HandleChatV1ChatPostResponse404
     | HandleChatV1ChatPostResponse426
     | HandleChatV1ChatPostResponse500
+    | UnauthorizedResponse
     | None
 ):
     if response.status_code == 200:
@@ -52,6 +54,11 @@ def _parse_response(
         response_400 = HandleChatV1ChatPostResponse400.from_dict(response.json())
 
         return response_400
+
+    if response.status_code == 401:
+        response_401 = UnauthorizedResponse.from_dict(response.json())
+
+        return response_401
 
     if response.status_code == 404:
         response_404 = HandleChatV1ChatPostResponse404.from_dict(response.json())
@@ -88,6 +95,7 @@ def _build_response(
     | HandleChatV1ChatPostResponse404
     | HandleChatV1ChatPostResponse426
     | HandleChatV1ChatPostResponse500
+    | UnauthorizedResponse
 ]:
     return Response(
         status_code=HTTPStatus(response.status_code),
@@ -108,6 +116,7 @@ def sync_detailed(
     | HandleChatV1ChatPostResponse404
     | HandleChatV1ChatPostResponse426
     | HandleChatV1ChatPostResponse500
+    | UnauthorizedResponse
 ]:
     """Handle Chat
 
@@ -119,7 +128,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | HTTPValidationError | HandleChatV1ChatPostResponse400 | HandleChatV1ChatPostResponse404 | HandleChatV1ChatPostResponse426 | HandleChatV1ChatPostResponse500]
+        Response[Any | HTTPValidationError | HandleChatV1ChatPostResponse400 | HandleChatV1ChatPostResponse404 | HandleChatV1ChatPostResponse426 | HandleChatV1ChatPostResponse500 | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -144,6 +153,7 @@ def sync(
     | HandleChatV1ChatPostResponse404
     | HandleChatV1ChatPostResponse426
     | HandleChatV1ChatPostResponse500
+    | UnauthorizedResponse
     | None
 ):
     """Handle Chat
@@ -156,7 +166,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | HTTPValidationError | HandleChatV1ChatPostResponse400 | HandleChatV1ChatPostResponse404 | HandleChatV1ChatPostResponse426 | HandleChatV1ChatPostResponse500
+        Any | HTTPValidationError | HandleChatV1ChatPostResponse400 | HandleChatV1ChatPostResponse404 | HandleChatV1ChatPostResponse426 | HandleChatV1ChatPostResponse500 | UnauthorizedResponse
     """
 
     return sync_detailed(
@@ -176,6 +186,7 @@ async def asyncio_detailed(
     | HandleChatV1ChatPostResponse404
     | HandleChatV1ChatPostResponse426
     | HandleChatV1ChatPostResponse500
+    | UnauthorizedResponse
 ]:
     """Handle Chat
 
@@ -187,7 +198,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | HTTPValidationError | HandleChatV1ChatPostResponse400 | HandleChatV1ChatPostResponse404 | HandleChatV1ChatPostResponse426 | HandleChatV1ChatPostResponse500]
+        Response[Any | HTTPValidationError | HandleChatV1ChatPostResponse400 | HandleChatV1ChatPostResponse404 | HandleChatV1ChatPostResponse426 | HandleChatV1ChatPostResponse500 | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -210,6 +221,7 @@ async def asyncio(
     | HandleChatV1ChatPostResponse404
     | HandleChatV1ChatPostResponse426
     | HandleChatV1ChatPostResponse500
+    | UnauthorizedResponse
     | None
 ):
     """Handle Chat
@@ -222,7 +234,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | HTTPValidationError | HandleChatV1ChatPostResponse400 | HandleChatV1ChatPostResponse404 | HandleChatV1ChatPostResponse426 | HandleChatV1ChatPostResponse500
+        Any | HTTPValidationError | HandleChatV1ChatPostResponse400 | HandleChatV1ChatPostResponse404 | HandleChatV1ChatPostResponse426 | HandleChatV1ChatPostResponse500 | UnauthorizedResponse
     """
 
     return (

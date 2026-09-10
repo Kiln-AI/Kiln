@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from kiln_server.custom_errors import connect_custom_errors
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -18,17 +17,18 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutpu
 from kiln_ai.datamodel.extraction import Document
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_server.custom_errors import connect_custom_errors
 
 from app.desktop.studio_server.data_gen_api import (
+    _MAX_BATCH_JOBS,
     DataGenCategoriesApiInput,
     DataGenQnaApiInput,
     DataGenSampleApiInput,
     DataGenSaveSamplesApiInput,
     GenerateOutputsBatchItem,
     SaveQnaPairInput,
-    _MAX_BATCH_JOBS,
-    _BatchJob,
     _batch_jobs,
+    _BatchJob,
     _generate_one_input,
     _generate_one_output,
     _register_batch_job,
@@ -1080,12 +1080,12 @@ def test_generate_sample_does_not_inject_data_guide(
     """The output-generation `/generate_sample` endpoint must NOT see the
     Input Data Guide in its prompt, even when one is persisted on the task.
     Output behavior is owned by the task's system prompt + output schema."""
+    from kiln_ai.datamodel import DataSource, DataSourceType
     from kiln_ai.datamodel.data_guide import DataGuide
     from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
     from kiln_ai.datamodel.prompt_id import PromptGenerators
-    from kiln_ai.datamodel.task_run import TaskRun
-    from kiln_ai.datamodel import DataSource, DataSourceType
     from kiln_ai.datamodel.task_output import TaskOutput
+    from kiln_ai.datamodel.task_run import TaskRun
 
     saved = DataGuide(parent=test_task, guide="DO_NOT_LEAK_TO_OUTPUT_STAGE")
     saved.save_to_file()

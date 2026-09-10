@@ -2,8 +2,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator, Callable, Dict, List, Literal, Set, Tuple
 
-from pydantic import JsonValue
-
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
 from kiln_ai.adapters.chat.chat_formatter import (
     chat_strategy_for_run,
@@ -15,6 +13,7 @@ from kiln_ai.adapters.eval.registry import (
     v2_eval_type_available,
 )
 from kiln_ai.adapters.eval.trace_index import TraceIndex, TraceKey, trace_key
+from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.adapters.provider_tools import kiln_model_provider_from
@@ -56,10 +55,14 @@ from kiln_ai.datamodel.task_run import EvalItemSource, TaskRun, Usage
 from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.synthetic_user import drive_case_for_eval
 from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
-from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
+from kiln_ai.synthetic_user.models import (
+    TAG_SU_ENDED_CONVERSATION,
+    SyntheticUserDriverConfig,
+)
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam, serialize_trace
+from kiln_ai.utils.slow_operation import log_if_slow
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +120,10 @@ def _has_text_content(content: Any) -> bool:
 
 
 def conversation_health_problem(
-    trace: list[ChatCompletionMessageParam] | None, required_turns: int
+    trace: list[ChatCompletionMessageParam] | None,
+    required_turns: int,
+    *,
+    ended_by_su: bool = False,
 ) -> str | None:
     """Why `trace` is not a complete conversation for an item wanting `required_turns`
     turns, or None when it is complete.
@@ -125,19 +131,32 @@ def conversation_health_problem(
     Structural completeness only, never error-freeness: a conversation whose tool calls
     failed is a legitimate thing to evaluate (judging how an agent handles errors is a
     first-class eval), so error-bearing tool messages say nothing about health here. What
-    it does catch is a conversation that stopped short — a drive that ended early, or a
+    it does catch is a conversation that stopped short — a drive that died mid-way, or a
     partial record from an older writer — which would otherwise be judged as if the agent
     had simply finished.
 
     Health is a relationship between a trace and the item asking for it, not a property of
     the trace: the same conversation is complete for a two-turn item and short for a
     three-turn one, so the required count is always passed in by the caller.
+
+    `ended_by_su` says the synthetic user chose to end this conversation, which makes
+    `required_turns` a ceiling instead of an exact count: anything from one turn up to the
+    ceiling is a finished conversation, and only an empty one or one somehow longer than
+    the ceiling is a problem. It is for readers of a STORED trace, where all that survives
+    of the drive is a tag — a short conversation the synthetic user chose and one a crash
+    left behind look identical on disk, so the trace alone cannot say which it is. A caller
+    that still holds the drive knows how many turns actually ran and should pass that count
+    instead, keeping the exact check. The flag defaults to False so any caller that knows
+    nothing about early ending keeps the strict gate it had before.
     """
     messages = trace or []
     user_turns = sum(
         1 for message in messages if _message_field(message, "role") == "user"
     )
-    if user_turns != required_turns:
+    if ended_by_su:
+        if user_turns < 1 or user_turns > required_turns:
+            return f"expected 1 to {required_turns} user turns, found {user_turns}"
+    elif user_turns != required_turns:
         return f"expected {required_turns} user turns, found {user_turns}"
     if not messages:
         return "the conversation is empty"
@@ -161,21 +180,26 @@ def _splits_a_turn_into_two_messages(
     synthetic user as if the user had written it.
 
     The strategy is resolved from the same prompt builder and model provider the adapter
-    reads, so the answer here is the one the drive would get. A config that cannot be
-    resolved answers False: the drive fails on the identical lookup before it spends
-    anything, and one unresolvable config must not block the run configs beside it.
+    reads, so the answer here is the one the drive would get. Built-in models are read
+    straight from the model table rather than through the credentialed provider lookup:
+    this preflight runs before any paid call and must give the same answer on a machine
+    with no provider keys, and the two fields it needs are static entries in that table.
+    Custom, fine-tuned and litellm models are not in the table, so they keep the
+    credentialed lookup. A config that cannot be resolved answers False: the drive
+    fails on the identical lookup before it spends anything, and one unresolvable
+    config must not block the run configs beside it.
     """
     try:
         cot_prompt = prompt_builder_from_id(
             properties.prompt_id, task
         ).chain_of_thought_prompt()
-        provider = (
-            kiln_model_provider_from(
+        provider = None
+        if cot_prompt:
+            provider = built_in_models_from_provider(
+                properties.model_provider_name, properties.model_name
+            ) or kiln_model_provider_from(
                 properties.model_name, properties.model_provider_name
             )
-            if cot_prompt
-            else None
-        )
     except Exception as error:
         logger.warning(
             "Could not resolve the chat strategy for model '%s' with prompt '%s' (%s); "
@@ -304,7 +328,9 @@ class EvalRunner:
         Required turn counts come from the split's own items, so every candidate is judged
         against the item asking for it. Anything the map doesn't name — single-turn
         generations, and items outside this run's split — is accepted: neither has a turn
-        contract to fall short of.
+        contract to fall short of. A candidate tagged as one the synthetic user chose to
+        end is accepted at any length up to its item's turn count; the tag is the only
+        record of that choice by the time a later run reads the file.
         """
         if self.split is None:
             return None
@@ -323,7 +349,11 @@ class EvalRunner:
             turns = required_turns.get((source_type, source_id))
             if turns is None:
                 return None
-            return conversation_health_problem(trace.trace, turns)
+            return conversation_health_problem(
+                trace.trace,
+                turns,
+                ended_by_su=TAG_SU_ENDED_CONVERSATION in trace.tags,
+            )
 
         return vet_conversation
 
@@ -779,12 +809,12 @@ class EvalRunner:
 
             eval_task_input = EvalTaskInput.from_task_run(leaf)
             result = await evaluator.evaluate(eval_task_input)
-            return await self._persist_judgment(job, leaf, eval_task_input, result)
+            return await self._persist_judgment(job, leaf, result)
 
         trace = await self._resolve_trace(job, evaluator)
         eval_task_input = EvalTaskInput.from_trace(trace, job.item)
         result = await evaluator.evaluate(eval_task_input)
-        return await self._persist_judgment(job, trace, eval_task_input, result)
+        return await self._persist_judgment(job, trace, result)
 
     async def _resolve_trace(
         self, job: EvalJob, evaluator: BaseV2EvalBridge
@@ -838,7 +868,6 @@ class EvalRunner:
         *,
         scored_run_id: ID_TYPE = None,
         scores: EvalScores | None = None,
-        reference_data: dict[str, JsonValue] | None = None,
         skipped_reason: str | None = None,
         skipped_detail: str | None = None,
         intermediate_outputs: Dict[str, str] | None = None,
@@ -862,7 +891,6 @@ class EvalRunner:
                 eval_config_eval=job.type == "eval_config_eval",
                 scored_run_id=scored_run_id,
                 scores=scores or {},
-                reference_data=reference_data,
                 skipped_reason=skipped_reason,
                 skipped_detail=skipped_detail,
                 intermediate_outputs=intermediate_outputs,
@@ -896,7 +924,6 @@ class EvalRunner:
         self,
         job: EvalJob,
         trace: TaskRun,
-        eval_task_input: EvalTaskInput,
         result: V2EvalResult,
     ) -> bool:
         """The score for one item, pointing at the trace it was computed over.
@@ -909,9 +936,6 @@ class EvalRunner:
             job,
             scored_run_id=trace.id,
             scores=result.scores,
-            # From what was handed to the judge, not re-derived from the item: the field
-            # records what the scorer actually saw.
-            reference_data=eval_task_input.reference_data,
             skipped_reason=result.skipped_reason.value
             if result.skipped_reason
             else None,
@@ -976,29 +1000,55 @@ class EvalRunner:
         key = trace_key(item_key(eval_input), job.task_run_config.id)
 
         async def drive_and_persist() -> TaskRun:
-            drive_result = await drive_case_for_eval(
-                seed_prompt=seed,
-                synthetic_user_info=data.synthetic_user_info,
-                target_task=self.task,
-                target_run_config=agent_run_config,
-                su_driver_config=SyntheticUserDriverConfig(
-                    model_name=drive_config.model_name,
-                    model_provider_name=su_provider,
-                ),
-                turns=drive_config.turns,
-                skills=self._skills,
-            )
+            # No app-level timeout on the re-drive: it terminates
+            # structurally (the turn ceiling, the adapter's tool-call cap,
+            # the model client's per-request timeout). This path runs as a
+            # background job, so the watchdog log is how a pathologically
+            # slow drive gets noticed.
+            async with log_if_slow(f"eval re-drive for eval item {eval_input.id}"):
+                drive_result = await drive_case_for_eval(
+                    seed_prompt=seed,
+                    synthetic_user_info=data.synthetic_user_info,
+                    target_task=self.task,
+                    target_run_config=agent_run_config,
+                    su_driver_config=SyntheticUserDriverConfig(
+                        model_name=drive_config.model_name,
+                        model_provider_name=su_provider,
+                    ),
+                    turns=drive_config.turns,
+                    skills=self._skills,
+                )
+            turns_run = len(drive_result.chain)
+            ended_by_su = drive_result.ended_early(drive_config.turns)
+            if turns_run == 1 and drive_config.turns > 1:
+                # Not enforced: discarding a paid drive over a rule the synthetic
+                # user's prompt states but cannot guarantee would cost more than it
+                # saves. Logged because a one-turn conversation is a single-turn
+                # trace wearing a multi-turn label.
+                logger.warning(
+                    "The driven conversation for eval item %s ended on its first "
+                    "turn — the synthetic user ended it before the agent had "
+                    "answered a second message",
+                    eval_input.id,
+                )
             leaf_trace = drive_result.chain[-1].trace if drive_result.chain else None
-            problem = conversation_health_problem(leaf_trace, drive_config.turns)
+            # Gated on the turns that actually ran, not the item's ceiling: the drive
+            # is still in hand, so its own chain is the exact count the leaf's trace
+            # has to match. A conversation the synthetic user ended is shorter than
+            # the ceiling and still complete, while one whose trace lost turns the
+            # chain says it ran is a broken record either way.
+            problem = conversation_health_problem(leaf_trace, turns_run)
             if problem is not None:
-                # A drive that stopped short is a failed generation, not a cheap result:
-                # persisting it would index an incomplete conversation that every judge of
-                # this item reuses from then on. Retryable, so the job re-drives.
+                # Persisting it would index an incomplete conversation that every judge
+                # of this item reuses from then on, so it is a failed generation rather
+                # than a cheap result. Retryable, so the job re-drives.
                 raise RetryableError(
                     f"The driven conversation for eval item {eval_input.id} is "
                     f"incomplete ({problem}), so it was not saved."
                 )
-            return await self._persist_driven_conversation(key, drive_result, seed=seed)
+            return await self._persist_driven_conversation(
+                key, drive_result, seed=seed, ended_by_su=ended_by_su
+            )
 
         # A raising drive persists nothing, so the job's retry re-drives; a
         # successful one is on disk before the judge sees it, so a scoring
@@ -1007,10 +1057,15 @@ class EvalRunner:
 
         eval_task_input = EvalTaskInput.from_trace(trace, eval_input)
         result = await evaluator.evaluate(eval_task_input)
-        return await self._persist_judgment(job, trace, eval_task_input, result)
+        return await self._persist_judgment(job, trace, result)
 
     async def _persist_driven_conversation(
-        self, key: TraceKey, drive_result: DriveCaseResult, *, seed: str
+        self,
+        key: TraceKey,
+        drive_result: DriveCaseResult,
+        *,
+        seed: str,
+        ended_by_su: bool,
     ) -> TaskRun:
         """One standalone TaskRun holding a freshly driven multi-turn conversation.
 
@@ -1023,6 +1078,10 @@ class EvalRunner:
         Stamped from `key` rather than re-derived, for the same reason as
         `_generate_and_persist`: the run must file itself under exactly the key
         the index filed it under, or it is never found again.
+
+        `ended_by_su` is written as a tag rather than kept in memory because the
+        completeness gate that needs it runs again on every later reuse of this
+        file, when the drive that produced it is long gone.
         """
         source_type, source_id, run_config_id = key
         leaf = drive_result.chain[-1]
@@ -1048,13 +1107,16 @@ class EvalRunner:
             trace=leaf.trace,
             usage=_conversation_usage(drive_result.chain),
             # The synthetic-user driver's spend rides its own field so `usage`
-            # stays honestly assistant-only; a zero-cost drive records None.
-            synthetic_user_usage=Usage(cost=drive_result.su_total_cost)
-            if drive_result.su_total_cost > 0
-            else None,
+            # stays honestly assistant-only. The whole Usage, not a cost-only
+            # stub: the SU is usually a different model on a different provider
+            # from the agent, so its tokens are the half that makes the figure
+            # reconcilable. `drive_case` already returns None for a drive whose
+            # provider reported nothing.
+            synthetic_user_usage=drive_result.su_usage,
             cumulative_usage=leaf.cumulative_usage
             or MessageUsage.from_trace(leaf.trace),
             eval_source=EvalItemSource(source_type=source_type, source_id=source_id),
+            tags=[TAG_SU_ENDED_CONVERSATION] if ended_by_su else [],
         )
         # The drive runs with allow_saving=False, so nothing touched disk before
         # this fully-stamped run — no crash window in which a driven conversation

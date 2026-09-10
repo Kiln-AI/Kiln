@@ -24,7 +24,38 @@ export type CreateEvalConfigRequest =
   components["schemas"]["CreateEvalConfigRequest"]
 export type CreateLlmJudgeConfigRequest =
   components["schemas"]["CreateLlmJudgeConfigRequest"]
+export type DefaultLlmJudgePromptResponse =
+  components["schemas"]["DefaultLlmJudgePromptResponse"]
 export type LlmJudgeBuilderInput = components["schemas"]["LlmJudgeBuilderInput"]
+export type CreateEvaluatorRequest =
+  components["schemas"]["CreateEvaluatorRequest"]
+
+/**
+ * Create an eval directly (no spec). Filters and output scores are generated
+ * server-side from the eval name when omitted.
+ */
+export async function createEvaluator(
+  projectId: string,
+  taskId: string,
+  request: CreateEvaluatorRequest,
+): Promise<components["schemas"]["Eval"]> {
+  const { data, error } = await client.POST(
+    "/api/projects/{project_id}/tasks/{task_id}/create_evaluator",
+    {
+      params: {
+        path: {
+          project_id: projectId,
+          task_id: taskId,
+        },
+      },
+      body: request,
+    },
+  )
+  if (error) {
+    throw new Error(`create_evaluator failed: ${extractErrorMessage(error)}`)
+  }
+  return data
+}
 
 /**
  * Run a V2 eval config test without persisting.
@@ -52,6 +83,38 @@ export async function testV2Eval(
   )
   if (error) {
     throw new Error(`test_v2_eval failed: ${extractErrorMessage(error)}`)
+  }
+  return data
+}
+
+export type TestV2EvalDraftRequest =
+  components["schemas"]["TestV2EvalDraftRequest"]
+
+/**
+ * Test a judge config for an eval that hasn't been created yet (creation
+ * flow): the server builds a transient eval from the drafted output_scores.
+ */
+export async function testV2EvalDraft(
+  projectId: string,
+  taskId: string,
+  request: TestV2EvalDraftRequest,
+  signal?: AbortSignal,
+): Promise<TestV2EvalResponse> {
+  const { data, error } = await client.POST(
+    "/api/projects/{project_id}/tasks/{task_id}/test_v2_eval_draft",
+    {
+      params: {
+        path: {
+          project_id: projectId,
+          task_id: taskId,
+        },
+      },
+      body: request,
+      signal,
+    },
+  )
+  if (error) {
+    throw new Error(`test_v2_eval_draft failed: ${extractErrorMessage(error)}`)
   }
   return data
 }
@@ -144,7 +207,7 @@ export async function getDefaultLlmJudgePrompt(
   projectId: string,
   taskId: string,
   evalId: string,
-): Promise<{ judge_prompt: string; system_prompt: string }> {
+): Promise<DefaultLlmJudgePromptResponse> {
   const { data, error } = await client.GET(
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/default_llm_judge_prompt",
     {

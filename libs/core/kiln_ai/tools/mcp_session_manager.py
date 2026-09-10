@@ -16,6 +16,12 @@ from mcp.client.streamable_http import streamablehttp_client
 from mcp.shared.exceptions import McpError
 
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.run_context import (
+    clear_agent_run_id,
+    generate_agent_run_id,
+    get_agent_run_id,
+    set_agent_run_id,
+)
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
@@ -117,7 +123,8 @@ class MCPSessionManager:
     async def cleanup_session(self, session_id: str) -> None:
         """Close all MCP sessions associated with a session ID.
 
-        Called by the root agent's finally block when the agent run completes.
+        Called by `mcp_session_scope` when the scope that owns the id exits.
+        Nothing else reaps these sessions, so a skipped call leaks them.
 
         Args:
             session_id: The session ID to clean up
@@ -499,6 +506,40 @@ class MCPSessionManager:
     def clear_shell_path_cache(self):
         """Clear the cached shell path. Typically used when adding a new tool, which might have just been installed."""
         self._shell_path = None
+
+
+@asynccontextmanager
+async def mcp_session_scope() -> AsyncGenerator[None, None]:
+    """Run a block under an agent run id so MCP tool calls inside it share
+    cached sessions, and close those sessions when the block exits.
+
+    Nesting joins the enclosing scope and does nothing on exit: the sessions
+    belong to whoever opened it and may still be in use when the inner block
+    finishes.
+
+    Otherwise this scope owns the run id it creates, and cleanup runs on both
+    success and exception. Cleanup targets that local id rather than re-reading
+    the context, so code inside the block cannot redirect the teardown by
+    setting its own id. The manager has no reaper, so a session whose cleanup
+    is skipped stays open (with any stdio subprocess) until the process exits.
+
+    Sessions leave anyio cancel scopes open on the task that created them, so a
+    scope must open and close on one task — do not gather across it. See the
+    LIFO-close comment in `cleanup_session`.
+    """
+    if get_agent_run_id() is not None:
+        yield
+        return
+
+    run_id = generate_agent_run_id()
+    set_agent_run_id(run_id)
+    try:
+        yield
+    finally:
+        try:
+            await MCPSessionManager.shared().cleanup_session(run_id)
+        finally:
+            clear_agent_run_id()
 
 
 def build_mcp_session_cache_key(server_id: str | None, session_id: str) -> str:

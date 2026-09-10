@@ -521,11 +521,6 @@ async def run_structured_input_task(
 
 
 @pytest.mark.paid
-async def test_structured_input_gpt_4o_mini(tmp_path):
-    await run_structured_input_test(tmp_path, "llama_3_1_8b", "groq")
-
-
-@pytest.mark.paid
 @pytest.mark.ollama
 @pytest.mark.parametrize("model_name,provider_name", get_all_models_and_providers())
 async def test_all_built_in_models_structured_input(

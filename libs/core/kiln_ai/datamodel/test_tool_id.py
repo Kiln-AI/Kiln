@@ -29,13 +29,27 @@ class TestKilnBuiltInToolId:
         assert KilnBuiltInToolId.MULTIPLY_NUMBERS == "kiln_tool::multiply_numbers"
         assert KilnBuiltInToolId.DIVIDE_NUMBERS == "kiln_tool::divide_numbers"
         assert KilnBuiltInToolId.CALL_KILN_API == "kiln_tool::call_kiln_api"
+        assert KilnBuiltInToolId.LLM == "kiln_tool::llm"
+        assert KilnBuiltInToolId.LLM_JUDGE == "kiln_tool::llm_judge"
         for enum_value in KilnBuiltInToolId.__members__.values():
             assert _check_tool_id(enum_value) == enum_value
+
+    def test_llm_tool_ids_round_trip_through_validator(self):
+        """The new LLM built-ins validate through the built-in membership branch."""
+        for tool_id in (KilnBuiltInToolId.LLM, KilnBuiltInToolId.LLM_JUDGE):
+            assert _check_tool_id(tool_id.value) == tool_id.value
+
+            class _M(BaseModel):
+                tool_id: ToolId
+
+            assert _M(tool_id=tool_id.value).tool_id == tool_id.value
 
     def test_enum_membership(self):
         """Test enum membership checks."""
         assert "kiln_tool::add_numbers" in KilnBuiltInToolId.__members__.values()
         assert "kiln_tool::call_kiln_api" in KilnBuiltInToolId.__members__.values()
+        assert "kiln_tool::llm" in KilnBuiltInToolId.__members__.values()
+        assert "kiln_tool::llm_judge" in KilnBuiltInToolId.__members__.values()
         assert "invalid_tool" not in KilnBuiltInToolId.__members__.values()
 
 

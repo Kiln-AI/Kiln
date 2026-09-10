@@ -1,25 +1,25 @@
 <script lang="ts">
   import type { ToolCallMessageParam } from "$lib/types"
   import Output from "$lib/ui/output.svelte"
+  import { kiln_task_tool_server_id } from "$lib/stores/tools_store"
 
   export let tool_call: ToolCallMessageParam
   export let nameTag: string = "Tool Name"
   export let project_id: string | undefined = undefined
   export let persistent_tool_id: string | undefined = undefined
+  // A citation's span within the arguments, in the coordinates of the raw
+  // argument string. Output translates it onto the printed JSON.
+  export let arguments_mark: { start: number; end: number } | null = null
 
   function get_tool_link(): string | null {
     if (!project_id) return null
 
     // If we have a persistent_tool_id, try to create a specific link
-    if (persistent_tool_id) {
-      // For Kiln task tools, extract tool_server_id from the persistent_tool_id
-      // Kiln task tool IDs have format: "kiln_task::{tool_server_id}"
-      if (persistent_tool_id.startsWith("kiln_task::")) {
-        const tool_server_id = persistent_tool_id.substring(
-          "kiln_task::".length,
-        )
-        return `/tools/${project_id}/kiln_task/${tool_server_id}`
-      }
+    const tool_server_id = persistent_tool_id
+      ? kiln_task_tool_server_id(persistent_tool_id)
+      : null
+    if (tool_server_id) {
+      return `/tools/${project_id}/kiln_task/${tool_server_id}`
     }
 
     return null
@@ -38,5 +38,9 @@
     {/if}
   </div>
   <div class="font-medium text-gray-500">Arguments:</div>
-  <Output raw_output={tool_call.function.arguments} no_padding={true} />
+  <Output
+    raw_output={tool_call.function.arguments}
+    no_padding={true}
+    mark={arguments_mark}
+  />
 </div>

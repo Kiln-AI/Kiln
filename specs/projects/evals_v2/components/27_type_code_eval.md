@@ -80,7 +80,7 @@ def score(output, trace, reference_data, task_input, kiln) -> dict[str, float]:
 |---|---|---|
 | `output` | `str \| dict` | The model's final output for this eval case. String for plain-text tasks; dict for tasks with `output_json_schema`. Sourced from `TaskRun.output.output` (same as `components/40`'s `final_message`). |
 | `trace` | `list[dict] \| None` | The full conversation trace in Kiln's modified OpenAI format (`list[ChatCompletionMessageParam]`). `None` when the eval case has no trace (e.g., `EvalDataType.final_answer` runs). Each entry has `role` (system/user/assistant/tool), `content`, and optionally `tool_calls` / `tool_call_id`. |
-| `reference_data` | `dict[str, Any] \| None` | The reference data from `EvalInput.reference` for this case. `None` if no reference data is set. |
+| `reference_data` | `dict[str, Any] \| None` | Ground-truth data for this case. From `EvalInput.reference` for an EvalInput-backed case (`None` if none is set); for a TaskRun-backed dataset case it is `{"reference_answer": <the item's stored output>}`, since that output is the curated answer. `None` when a TaskRun is scored as itself (judge calibration). Scorers must not assume `None` means "TaskRun dataset". |
 | `task_input` | `str \| dict` | The original input given to the task being evaluated. Sourced from `TaskRun.input` / `EvalInput.data.user_message.text`. |
 | `kiln` | `KilnEvalHelpers` | Helper library namespace (see section 3). Provides trace-navigation, tool-call extraction, scoring constructors, and assertion helpers. |
 

@@ -14,8 +14,6 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
-
 from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
@@ -29,6 +27,15 @@ from kiln_ai.datamodel.run_config import (
 )
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.usage import MessageUsage
+from kiln_ai.synthetic_user.runner import (
+    NUM_CASES_MAX,
+    BatchCompletedEvent,
+    BatchStartedEvent,
+    CaseCompletedEvent,
+    CaseFailedEvent,
+    TurnCompletedEvent,
+)
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.custom_errors import connect_custom_errors
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
@@ -39,15 +46,6 @@ from app.desktop.studio_server.synthetic_user.client import (
     SyntheticUserRequestError,
     SyntheticUserServerError,
 )
-from kiln_ai.synthetic_user.runner import (
-    NUM_CASES_MAX,
-    BatchCompletedEvent,
-    BatchStartedEvent,
-    CaseCompletedEvent,
-    CaseFailedEvent,
-    TurnCompletedEvent,
-)
-
 
 # ───────────────────────── fixtures ─────────────────────────
 
@@ -289,6 +287,26 @@ def test_generate_cases_validates_num_cases_upper_bound(
     assert resp.status_code == 422
 
 
+def test_generate_cases_accepts_num_cases_at_upper_bound(
+    client: TestClient, patch_task_from_id, patch_api_key
+) -> None:
+    """The bound is inclusive: a full-size batch is a valid request."""
+    patch_task_from_id.return_value = _multiturn_task()
+    with patch(
+        "app.desktop.studio_server.multiturn_sdg_api.SyntheticUserClient"
+    ) as MockClient:
+        instance = MockClient.return_value
+        instance.generate = AsyncMock(return_value=_sdk_cases(NUM_CASES_MAX))
+
+        resp = client.post(
+            "/api/projects/proj-1/tasks/task-1/multiturn_sdg/generate_cases",
+            json=_generate_cases_body(num=NUM_CASES_MAX),
+        )
+
+    assert resp.status_code == 200, resp.text
+    assert len(resp.json()["cases"]) == NUM_CASES_MAX
+
+
 # ─────────────── generate_cases with per-case prompts (batch plan) ───────────────
 
 
@@ -523,6 +541,9 @@ def test_run_cases_batch_emits_full_sse_event_stream(
         "error_code": "bad_synthetic_user_info",
         "message": "missing required tag",
         "total_cost": 0.0,
+        # A deterministic failure leaves error_type None even though a parse
+        # error triggered it: error_code already names the bad input.
+        "error_type": None,
     }
     assert events[4] == {
         "event": "batch_completed",

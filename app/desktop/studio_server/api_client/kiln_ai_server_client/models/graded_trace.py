@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
+from ..models.human_verdict import HumanVerdict
 from ..models.judge_score import JudgeScore
 
 if TYPE_CHECKING:
     from ..models.graded_claim import GradedClaim
-    from ..models.graded_final_judgement import GradedFinalJudgement
 
 
 T = TypeVar("T", bound="GradedTrace")
@@ -24,17 +24,20 @@ class GradedTrace:
             Cite it as given in change rationales.
         judge_score (JudgeScore):
         judge_reasoning (str): The judge's explanation for its verdict.
-        claims (list[GradedClaim]): The claim/evidence pairs the reviewer actually graded, in the claim builder's most-
-            to-least-important order. A SUBSET of what the builder produced — absent claims were not reviewed, which is no
-            signal (never agreement). May be empty.
-        final_judgement (GradedFinalJudgement):
+        overview (str): The claim builder's neutral description of the trace (input context and output), as shown to the
+            reviewer. Context for reading the claims; it is never graded and is never evidence of misalignment on its own.
+        claims (list[GradedClaim]): Every claim on the review card, in the claim builder's order, each with the
+            reviewer's grade. The list is COMPLETE: every claim shown was graded, and a card always has at least one. The
+            last claim is the verdict claim when its text opens 'It passes' or 'It fails'.
+        human_verdict (HumanVerdict):
     """
 
     trace_label: str
     judge_score: JudgeScore
     judge_reasoning: str
+    overview: str
     claims: list[GradedClaim]
-    final_judgement: GradedFinalJudgement
+    human_verdict: HumanVerdict
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -44,12 +47,14 @@ class GradedTrace:
 
         judge_reasoning = self.judge_reasoning
 
+        overview = self.overview
+
         claims = []
         for claims_item_data in self.claims:
             claims_item = claims_item_data.to_dict()
             claims.append(claims_item)
 
-        final_judgement = self.final_judgement.to_dict()
+        human_verdict = self.human_verdict.value
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -58,8 +63,9 @@ class GradedTrace:
                 "trace_label": trace_label,
                 "judge_score": judge_score,
                 "judge_reasoning": judge_reasoning,
+                "overview": overview,
                 "claims": claims,
-                "final_judgement": final_judgement,
+                "human_verdict": human_verdict,
             }
         )
 
@@ -68,7 +74,6 @@ class GradedTrace:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.graded_claim import GradedClaim
-        from ..models.graded_final_judgement import GradedFinalJudgement
 
         d = dict(src_dict)
         trace_label = d.pop("trace_label")
@@ -77,6 +82,8 @@ class GradedTrace:
 
         judge_reasoning = d.pop("judge_reasoning")
 
+        overview = d.pop("overview")
+
         claims = []
         _claims = d.pop("claims")
         for claims_item_data in _claims:
@@ -84,14 +91,15 @@ class GradedTrace:
 
             claims.append(claims_item)
 
-        final_judgement = GradedFinalJudgement.from_dict(d.pop("final_judgement"))
+        human_verdict = HumanVerdict(d.pop("human_verdict"))
 
         graded_trace = cls(
             trace_label=trace_label,
             judge_score=judge_score,
             judge_reasoning=judge_reasoning,
+            overview=overview,
             claims=claims,
-            final_judgement=final_judgement,
+            human_verdict=human_verdict,
         )
 
         graded_trace.additional_properties = d

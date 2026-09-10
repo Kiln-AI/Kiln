@@ -1,0 +1,9 @@
+{
+  "v": 1,
+  "id": "507368061812",
+  "created_at": "2026-08-17T16:10:56.657538Z",
+  "created_by": "root",
+  "name": "Support Ticket Triage",
+  "description": "Route inbound customer support tickets to the right team, and draft first replies.",
+  "model_type": "project"
+}

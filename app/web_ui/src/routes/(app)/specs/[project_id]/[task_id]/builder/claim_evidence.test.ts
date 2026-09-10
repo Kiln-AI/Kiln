@@ -1,18 +1,22 @@
 import { describe, expect, it } from "vitest"
+import type { TraceMessage } from "$lib/types"
 import {
   apply_rejudge_results,
-  blind_final_judgement,
   build_claim_review_payload,
   build_graded_traces,
   build_trace_reviews,
   calibration_gate_target,
+  reviewable_subset,
+  declined_feedback_notice,
   disagreed_trace_indices,
   disagreement_feedback,
-  final_judgement_reason,
   flipped_indices,
+  fold_with_offsets,
   grade_disagreement_count,
   has_grade_disagreement,
+  human_verdict,
   is_trace_reviewed,
+  map_input_span_to_trace,
   map_output_span_to_trace,
   MAX_JUDGE_PROMPT_CHARS,
   plan_save_action,
@@ -20,12 +24,18 @@ import {
   rejudge_shortfall_notice,
   review_cta,
   resolve_citation_span,
+  resolve_citation_span_whitespace_tolerant,
   review_target,
   reviewed_trace_count,
   select_calibration_subset,
   select_review_subset,
+  split_claim_note,
+  strip_wrapping_code_fence,
+  tokenize_claim_text,
   user_says_meets_spec,
   validate_refined_judge_prompt,
+  WHITESPACE_FREE_FOLD,
+  WHITESPACE_TOLERANT_FOLD,
   type Claim,
   type RejudgeCaseResult,
   type TraceClaims,
@@ -34,16 +44,25 @@ import {
 
 function claim(overrides: Partial<Claim> = {}): Claim {
   return {
-    claim: "The agent stated a return window as fact.",
-    expected_result: "fail",
-    evidence: "The reply gives 30 days [1].",
+    text: "The agent stated a return window as fact [1].",
     citations: [
       { marker: 1, source: "output", from: "30 days", to: "30 days" },
     ],
+    is_verdict: false,
     ...overrides,
   }
 }
 
+// The verdict claim the builder writes last, when it writes one.
+function verdict_claim(overrides: Partial<Claim> = {}): Claim {
+  return claim({
+    text: "It fails because the window was never verified [1].",
+    is_verdict: true,
+    ...overrides,
+  })
+}
+
+// A built trace with one ordinary claim and the verdict claim.
 function trace(overrides: Partial<TraceClaims> = {}): TraceClaims {
   return {
     trace_id: "trace_0",
@@ -52,89 +71,145 @@ function trace(overrides: Partial<TraceClaims> = {}): TraceClaims {
     raw_output: "Our return window is 30 days.",
     judge_score: "fail",
     judge_reasoning: "Fabricated the window.",
-    claims: [claim()],
-    final_judgement: claim({
-      claim: "Fails Eval: fabricated policy.",
-      expected_result: "fail",
-    }),
+    overview: {
+      text: "The user asked about the return window.",
+      citations: [],
+    },
+    claims: [claim(), verdict_claim()],
     claims_state: "built",
     claims_error: null,
     ...overrides,
   }
 }
 
+// A trace whose claims build FAILED: no overview, no claims.
+function errored(overrides: Partial<TraceClaims> = {}): TraceClaims {
+  return trace({
+    overview: null,
+    claims: null,
+    claims_state: "error",
+    claims_error: "boom",
+    ...overrides,
+  })
+}
+
+// A review with every claim agreed and no outright overall call.
+function all_agreed(t: TraceClaims): TraceReview {
+  return {
+    trace_id: t.trace_id,
+    claim_verdicts: (t.claims ?? []).map(() => ({ agrees: true, why: "" })),
+    overall: null,
+  }
+}
+
 describe("build_trace_reviews", () => {
-  it("creates one positional verdict per claim plus the final judgement slot", () => {
+  it("creates one positional verdict per claim and an unanswered overall call", () => {
     const reviews = build_trace_reviews([trace({ claims: [claim(), claim()] })])
-    expect(reviews[0].claim_verdicts).toHaveLength(2)
-    expect(reviews[0].final_judgement_verdict).toEqual({
-      agrees: null,
-      why: "",
-    })
+    expect(reviews[0].claim_verdicts).toEqual([
+      { agrees: null, why: "" },
+      { agrees: null, why: "" },
+    ])
+    expect(reviews[0].overall).toBeNull()
   })
 
-  it("handles empty claims (trivial evals)", () => {
-    const reviews = build_trace_reviews([trace({ claims: [] })])
+  it("starts with no slots for a trace whose claims have not arrived", () => {
+    const reviews = build_trace_reviews([trace({ claims: null })])
     expect(reviews[0].claim_verdicts).toHaveLength(0)
-    expect(reviews[0].final_judgement_verdict.agrees).toBeNull()
   })
 })
 
 describe("is_trace_reviewed", () => {
-  it("requires the final judgement verdict", () => {
+  it("needs a grade on every claim", () => {
     const t = trace()
     const review = build_trace_reviews([t])[0]
     expect(is_trace_reviewed(t, review)).toBe(false)
-    review.final_judgement_verdict.agrees = true
+    review.claim_verdicts[0].agrees = true
+    expect(is_trace_reviewed(t, review)).toBe(false)
+    review.claim_verdicts[1].agrees = true
     expect(is_trace_reviewed(t, review)).toBe(true)
   })
 
-  it("requires a why on any disagreement, including the final judgement", () => {
+  it("needs a why on any disagreement", () => {
     const t = trace()
-    const review = build_trace_reviews([t])[0]
-    review.final_judgement_verdict.agrees = false
-    expect(is_trace_reviewed(t, review)).toBe(false)
-    review.final_judgement_verdict.why = "The policy is real."
-    expect(is_trace_reviewed(t, review)).toBe(true)
+    const review = all_agreed(t)
     review.claim_verdicts[0].agrees = false
     expect(is_trace_reviewed(t, review)).toBe(false)
     review.claim_verdicts[0].why = "Wrong claim."
     expect(is_trace_reviewed(t, review)).toBe(true)
   })
 
-  it("is reviewable with an empty claims list via the final judgement alone", () => {
-    const t = trace({ claims: [] })
-    const review = build_trace_reviews([t])[0]
-    review.final_judgement_verdict.agrees = true
-    expect(is_trace_reviewed(t, review)).toBe(true)
+  it("needs the outright overall call only when no claim is the verdict", () => {
+    const with_verdict = trace()
+    expect(is_trace_reviewed(with_verdict, all_agreed(with_verdict))).toBe(true)
+
+    const without = trace({ claims: [claim(), claim()] })
+    const review = all_agreed(without)
+    expect(is_trace_reviewed(without, review)).toBe(false)
+    review.overall = "fail"
+    expect(is_trace_reviewed(without, review)).toBe(true)
+  })
+
+  it("is never reviewed before the claim slots are sized to the claims", () => {
+    // The slots are sized when the build lands; an empty slot list must not
+    // read as "every claim graded".
+    const t = trace()
+    const review: TraceReview = {
+      trace_id: t.trace_id,
+      claim_verdicts: [],
+      overall: "fail",
+    }
+    expect(is_trace_reviewed(t, review)).toBe(false)
+  })
+
+  it("is never reviewed while the build is unbuilt or in flight", () => {
+    for (const claims_state of ["unbuilt", "building"] as const) {
+      const t = trace({ overview: null, claims: null, claims_state })
+      const review: TraceReview = {
+        trace_id: t.trace_id,
+        claim_verdicts: [],
+        overall: "pass",
+      }
+      expect(is_trace_reviewed(t, review)).toBe(false)
+    }
   })
 })
 
-describe("user_says_meets_spec", () => {
-  function reviewed(agrees: boolean): TraceReview {
-    return {
-      trace_id: "trace_0",
-      claim_verdicts: [{ agrees: null, why: "" }],
-      final_judgement_verdict: { agrees, why: agrees ? "" : "disagree why" },
-    }
-  }
+describe("human_verdict / user_says_meets_spec", () => {
+  it("derives the call from the verdict claim: agree keeps the judge's, disagree flips it", () => {
+    for (const judge_score of ["pass", "fail"] as const) {
+      const flipped = judge_score === "pass" ? "fail" : "pass"
+      const t = trace({ judge_score })
+      const review = all_agreed(t)
+      expect(human_verdict(t, review)).toBe(judge_score)
+      expect(user_says_meets_spec(t, review)).toBe(judge_score === "pass")
 
-  it("anchors to judge_score (the pinned final-judgement verdict)", () => {
-    expect(user_says_meets_spec(trace(), reviewed(true))).toBe(false)
-    const passing = trace({
-      judge_score: "pass",
-      final_judgement: claim({ expected_result: "pass" }),
-    })
-    expect(user_says_meets_spec(passing, reviewed(true))).toBe(true)
+      review.claim_verdicts[1] = { agrees: false, why: "Judge was wrong." }
+      expect(human_verdict(t, review)).toBe(flipped)
+      expect(user_says_meets_spec(t, review)).toBe(flipped === "pass")
+    }
   })
 
-  it("flips the verdict when the human disagrees with the final judgement", () => {
-    expect(user_says_meets_spec(trace(), reviewed(false))).toBe(true)
-    const passing = trace({
-      judge_score: "pass",
-      final_judgement: claim({ expected_result: "pass" }),
-    })
-    expect(user_says_meets_spec(passing, reviewed(false))).toBe(false)
+  it("ignores grades on ordinary claims: only the verdict claim moves the call", () => {
+    const t = trace({ judge_score: "fail" })
+    const review = all_agreed(t)
+    review.claim_verdicts[0] = { agrees: false, why: "Not a fact." }
+    expect(human_verdict(t, review)).toBe("fail")
+  })
+
+  it("reads the outright answer when the builder wrote no verdict claim", () => {
+    const t = trace({ claims: [claim(), claim()], judge_score: "fail" })
+    const review = all_agreed(t)
+    expect(human_verdict(t, review)).toBeNull()
+    review.overall = "pass"
+    expect(human_verdict(t, review)).toBe("pass")
+    expect(user_says_meets_spec(t, review)).toBe(true)
+  })
+
+  it("refuses to guess an unanswered call", () => {
+    const t = trace()
+    const review = build_trace_reviews([t])[0]
+    expect(human_verdict(t, review)).toBeNull()
+    expect(() => user_says_meets_spec(t, review)).toThrow(/graded/)
   })
 })
 
@@ -146,6 +221,14 @@ describe("review_target", () => {
     expect(review_target(3)).toBe(1)
     expect(review_target(1)).toBe(1)
     expect(review_target(0)).toBe(0)
+  })
+
+  it("stops growing past ten, so a bigger batch is not more review", () => {
+    // The default batch is 80, where a quarter would be 20. Reviewing is human
+    // work that does not scale with the batch, so the ask stays at ten and the
+    // answer key is simply shorter than the server's 25% ceiling.
+    expect(review_target(80)).toBe(10)
+    expect(review_target(200)).toBe(10)
   })
 })
 
@@ -217,148 +300,151 @@ describe("reviewed_trace_count", () => {
     const traces = [trace(), trace({ trace_id: "trace_1" })]
     const reviews = build_trace_reviews(traces)
     expect(reviewed_trace_count(traces, reviews)).toBe(0)
-    reviews[0].final_judgement_verdict.agrees = true
+    reviews[0] = all_agreed(traces[0])
     expect(reviewed_trace_count(traces, reviews)).toBe(1)
   })
 })
 
-describe("blind_final_judgement (failed claims build)", () => {
-  it("pins the verdict to judge_score and demotes judge_reasoning, no citations", () => {
-    const t = trace({
-      claims: null,
-      final_judgement: null,
-      claims_state: "error",
-      claims_error: "boom",
-      judge_score: "fail",
-      judge_reasoning: "The agent leaked the discount policy.",
-    })
-    const fj = blind_final_judgement(t)
-    expect(fj.expected_result).toBe("fail")
-    expect(fj.claim).toBe("The agent leaked the discount policy.")
-    expect(fj.evidence).toBe("")
-    expect(fj.citations).toEqual([])
-  })
-})
-
-describe("errored-build trace is gradable on the blind verdict", () => {
-  // A trace whose claims build failed has no claim slots, but the overall
-  // verdict is still answerable — setting it makes the trace count toward
-  // the save gate, the only recovery short of a paid re-drive.
-  const errored = () =>
-    trace({
-      claims: null,
-      final_judgement: null,
-      claims_state: "error",
-      claims_error: "boom",
-    })
-
-  it("is_trace_reviewed accepts it once the final verdict is set", () => {
-    const t = errored()
-    const review = build_trace_reviews([t])[0]
-    expect(review.claim_verdicts).toHaveLength(0)
-    expect(is_trace_reviewed(t, review)).toBe(false)
-    review.final_judgement_verdict.agrees = true
-    expect(is_trace_reviewed(t, review)).toBe(true)
-  })
-
-  it("counts toward the save gate so it stays reachable", () => {
+describe("errored-build trace is gradable on the overall call", () => {
+  // A trace whose claims build failed has nothing to grade but the overall
+  // call, answered from the transcript. Answering it makes the trace count
+  // toward the save gate, the only recovery short of a rebuild.
+  it("is reviewed once the outright call is answered", () => {
     const t = errored()
     const reviews = build_trace_reviews([t])
+    expect(reviews[0].claim_verdicts).toHaveLength(0)
     expect(reviewed_trace_count([t], reviews)).toBe(0)
-    reviews[0].final_judgement_verdict.agrees = false
-    reviews[0].final_judgement_verdict.why = "The judge was wrong."
+    reviews[0].overall = "pass"
     expect(reviewed_trace_count([t], reviews)).toBe(1)
+    expect(user_says_meets_spec(t, reviews[0])).toBe(true)
   })
 })
 
 describe("build_claim_review_payload", () => {
-  it("throws before claims are built (unbuilt traces cannot be graded)", () => {
-    const t = trace({
+  it("throws before claims are built (unbuilt and errored traces have no claims to grade)", () => {
+    const unbuilt = trace({
+      overview: null,
       claims: null,
-      final_judgement: null,
       claims_state: "unbuilt",
     })
-    const review = build_trace_reviews([t])[0]
-    expect(() => build_claim_review_payload(t, review)).toThrow(/built/)
+    expect(() =>
+      build_claim_review_payload(unbuilt, build_trace_reviews([unbuilt])[0]),
+    ).toThrow(/built/)
+    const failed = errored()
+    const review = build_trace_reviews([failed])[0]
+    review.overall = "fail"
+    expect(() => build_claim_review_payload(failed, review)).toThrow(/built/)
   })
 
-  it("throws on an ungraded overall call rather than guessing a verdict", () => {
-    // The answer key must never invent a human grade: written as "disagree"
-    // it would contradict user_says_meets_spec, which reads null as agree.
+  it("throws on a half-graded trace rather than inventing a grade", () => {
+    // The answer key must never carry a grade the reviewer never gave.
     // Reachable only if a caller ever skips the is_trace_reviewed gate — most
     // pressingly after a calibration round, which resets every grade to null.
     const t = trace()
-    const review = build_trace_reviews([t])[0]
-    expect(review.final_judgement_verdict.agrees).toBeNull()
+    const review = all_agreed(t)
+    review.claim_verdicts[1].agrees = null
     expect(() => build_claim_review_payload(t, review)).toThrow(/graded/)
   })
 
-  it("includes only graded claims and always the final judgement", () => {
-    const t = trace({ claims: [claim(), claim({ expected_result: "pass" })] })
+  it("writes the overview, every claim's grade and the overall call", () => {
+    const t = trace()
     const review: TraceReview = {
       trace_id: "trace_0",
       claim_verdicts: [
         { agrees: true, why: "" },
-        { agrees: null, why: "" }, // ungraded — excluded
+        { agrees: false, why: "  Policy is real.  " },
       ],
-      final_judgement_verdict: { agrees: false, why: "Policy is real." },
+      overall: null,
     }
-    const payload = build_claim_review_payload(t, review)
-    expect(payload.judge_score).toBe("fail")
-    expect(payload.judge_reasoning).toBe("Fabricated the window.")
-    expect(payload.claims).toHaveLength(1)
-    expect(payload.claims[0].human_grade).toBe("agree")
-    expect(payload.claims[0].human_feedback).toBeNull()
-    expect(payload.final_judgement.human_grade).toBe("disagree")
-    expect(payload.final_judgement.human_feedback).toBe("Policy is real.")
-    expect(payload.final_judgement.expected_result).toBe("fail")
+    expect(build_claim_review_payload(t, review)).toEqual({
+      judge_score: "fail",
+      judge_reasoning: "Fabricated the window.",
+      overview: "The user asked about the return window.",
+      claims: [
+        {
+          text: "The agent stated a return window as fact [1].",
+          human_grade: "agree",
+          human_feedback: null,
+        },
+        {
+          text: "It fails because the window was never verified [1].",
+          human_grade: "disagree",
+          human_feedback: "Policy is real.",
+        },
+      ],
+      human_verdict: "pass",
+    })
+  })
+
+  it("records the outright call when the builder wrote no verdict claim", () => {
+    const t = trace({ claims: [claim()] })
+    const review = all_agreed(t)
+    review.overall = "fail"
+    expect(build_claim_review_payload(t, review).human_verdict).toBe("fail")
   })
 })
 
 describe("disagreement_feedback", () => {
-  it("concatenates disagree whys across claims and the final judgement", () => {
+  it("concatenates the disagree whys across the claims", () => {
     const review: TraceReview = {
       trace_id: "trace_0",
       claim_verdicts: [
         { agrees: false, why: "claim why" },
         { agrees: true, why: "ignored" },
+        { agrees: false, why: "verdict why" },
       ],
-      final_judgement_verdict: { agrees: false, why: "final why" },
+      overall: null,
     }
-    expect(disagreement_feedback(review)).toBe("claim why final why")
+    expect(disagreement_feedback(review)).toBe("claim why verdict why")
   })
 })
 
 describe("build_graded_traces", () => {
-  it("includes only reviewed traces and labels them by run id, else trace id", () => {
+  it("includes only fully graded traces and labels them by run id, else trace id", () => {
     const reviewed_t = trace({ leaf_run_id: "leaf-abc" })
-    const reviewed_review: TraceReview = {
-      trace_id: "trace_0",
-      claim_verdicts: [{ agrees: true, why: "" }],
-      final_judgement_verdict: { agrees: false, why: "policy is real" },
+    const reviewed_review = all_agreed(reviewed_t)
+    reviewed_review.claim_verdicts[1] = {
+      agrees: false,
+      why: "policy is real",
     }
     const half_t = trace({ trace_id: "trace_1", leaf_run_id: null })
-    const half_review = build_trace_reviews([half_t])[0] // ungraded final → excluded
+    const half_review = build_trace_reviews([half_t])[0] // ungraded → excluded
 
     const graded = build_graded_traces(
       [reviewed_t, half_t],
       [reviewed_review, half_review],
     )
     expect(graded).toHaveLength(1)
-    expect(graded[0].trace_label).toBe("leaf-abc")
-    expect(graded[0].final_judgement.human_grade).toBe("disagree")
+    expect(graded[0]).toEqual({
+      trace_label: "leaf-abc",
+      ...build_claim_review_payload(reviewed_t, reviewed_review),
+    })
     // Falls back to the client trace id when no durable run id exists.
-    const single = build_graded_traces(
-      [half_t],
-      [
-        {
-          trace_id: "trace_1",
-          claim_verdicts: [{ agrees: true, why: "" }],
-          final_judgement_verdict: { agrees: true, why: "" },
-        },
-      ],
-    )
+    const single = build_graded_traces([half_t], [all_agreed(half_t)])
     expect(single[0].trace_label).toBe("trace_1")
+  })
+
+  it("leaves out a trace graded on the overall call alone", () => {
+    // A failed build has no claim grades to hand the refiner; its overall
+    // call still reaches the golden rating through user_says_meets_spec.
+    const t = errored()
+    const review = build_trace_reviews([t])[0]
+    review.overall = "pass"
+    expect(build_graded_traces([t], [review])).toEqual([])
+  })
+
+  it("excludes a trace whose claims build is still in flight", () => {
+    const in_flight = trace({
+      overview: null,
+      claims: null,
+      claims_state: "building",
+    })
+    const review: TraceReview = {
+      trace_id: "trace_0",
+      claim_verdicts: [],
+      overall: "pass",
+    }
+    expect(build_graded_traces([in_flight], [review])).toHaveLength(0)
   })
 })
 
@@ -394,6 +480,65 @@ describe("validate_refined_judge_prompt", () => {
   })
 })
 
+describe("strip_wrapping_code_fence", () => {
+  it("unwraps a fenced prompt, with or without a language tag", () => {
+    expect(strip_wrapping_code_fence("```\nPASS if polite.\n```")).toBe(
+      "PASS if polite.",
+    )
+    expect(strip_wrapping_code_fence("```markdown\nPASS if polite.\n```")).toBe(
+      "PASS if polite.",
+    )
+    expect(
+      validate_refined_judge_prompt(
+        strip_wrapping_code_fence("```markdown\nPASS if polite.\n```"),
+      ),
+    ).toBeNull()
+  })
+
+  it("leaves a prompt without a wrapping fence unchanged", () => {
+    const plain = "PASS if the reply is polite, FAIL otherwise."
+    expect(strip_wrapping_code_fence(plain)).toBe(plain)
+  })
+
+  it("leaves interior and one-sided fences unchanged", () => {
+    const interior = "Judge this:\n```\nexample\n```\nThen decide."
+    expect(strip_wrapping_code_fence(interior)).toBe(interior)
+    const open_only = "```markdown\nPASS if polite."
+    expect(strip_wrapping_code_fence(open_only)).toBe(open_only)
+    const close_only = "PASS if polite.\n```"
+    expect(strip_wrapping_code_fence(close_only)).toBe(close_only)
+  })
+
+  it("strips only one wrapping pair, so a doubly wrapped prompt still fails", () => {
+    const doubled = "```\n```\nPASS if polite.\n```\n```"
+    expect(strip_wrapping_code_fence(doubled)).toBe("```\nPASS if polite.\n```")
+    expect(
+      validate_refined_judge_prompt(strip_wrapping_code_fence(doubled)),
+    ).toMatch(/fences/)
+  })
+
+  it("recovers the wrapping only, never the content", () => {
+    // Jinja braces inside the fence survive the unwrap and still fail.
+    expect(
+      validate_refined_judge_prompt(
+        strip_wrapping_code_fence("```\nScore {{ trace }}\n```"),
+      ),
+    ).toMatch(/Jinja/)
+    // An empty fence unwraps to nothing, which is still not a judge prompt.
+    expect(
+      validate_refined_judge_prompt(strip_wrapping_code_fence("```\n\n```")),
+    ).toMatch(/empty/)
+    // Runaway output stays runaway once the fence is off.
+    expect(
+      validate_refined_judge_prompt(
+        strip_wrapping_code_fence(
+          `\`\`\`\n${"a".repeat(MAX_JUDGE_PROMPT_CHARS + 1)}\n\`\`\``,
+        ),
+      ),
+    ).toMatch(/too long/)
+  })
+})
+
 describe("resolve_citation_span", () => {
   it("resolves from/to anchors in order", () => {
     const span = resolve_citation_span(
@@ -403,7 +548,9 @@ describe("resolve_citation_span", () => {
         to: "purchase",
       },
     )
-    expect(span).toEqual({ start: 17, end: 38 })
+    // from_end closes the `from` anchor alone, for callers that cannot place
+    // the whole span.
+    expect(span).toEqual({ start: 17, from_end: 24, end: 38 })
   })
 
   it("returns null when an anchor is missing", () => {
@@ -413,30 +560,305 @@ describe("resolve_citation_span", () => {
   })
 })
 
-describe("final_judgement_reason — the verdict card's reason line", () => {
-  it("renders the contract's reason-only line verbatim", () => {
-    expect(
-      final_judgement_reason(
-        "The agent fabricated a return policy and repeated it under pressure.",
-      ),
-    ).toBe(
-      "The agent fabricated a return policy and repeated it under pressure.",
+describe("resolve_citation_span — curly vs straight punctuation", () => {
+  // The captured shape: the model's output carries typographic quotes, the
+  // anchors it retyped for the citation carry straight ones.
+  const curly = "Please confirm whether you’d like a “refund” or store credit."
+
+  it("resolves straight-quote anchors against curly source text", () => {
+    const span = resolve_citation_span(curly, {
+      from: "you'd like",
+      to: "“refund”",
+    })
+    expect(span).not.toBeNull()
+    // The offsets index the ORIGINAL text, curly characters and all — they
+    // slice the highlight the reviewer sees.
+    expect(curly.slice(span!.start, span!.end)).toBe("you’d like a “refund”")
+  })
+
+  it("resolves curly anchors against straight source text", () => {
+    const straight = "Please confirm whether you'd like a refund."
+    const span = resolve_citation_span(straight, {
+      from: "you’d like",
+      to: "refund",
+    })
+    expect(span).not.toBeNull()
+    expect(straight.slice(span!.start, span!.end)).toBe("you'd like a refund")
+  })
+
+  it("still resolves when both sides are curly", () => {
+    // Straight-on-straight is the suite above; this is the other unchanged
+    // pairing, which one-sided folding would break.
+    const span = resolve_citation_span(curly, {
+      from: "you’d like",
+      to: "store credit",
+    })
+    expect(span).not.toBeNull()
+    expect(curly.slice(span!.start, span!.end)).toBe(
+      "you’d like a “refund” or store credit",
     )
   })
 
-  it("empty and whitespace-only reasons yield no text (evidence steps in)", () => {
-    // "" is the contract's nothing-to-say value — also what the server's
-    // synthesized backstop emits — and the ONLY fallback trigger.
-    expect(final_judgement_reason("")).toBe("")
-    expect(final_judgement_reason("   ")).toBe("")
+  it("keeps offsets exact around every folded and unfolded character", () => {
+    // Folding may only ever swap one code unit for one. Text mixing all four
+    // folded characters with punctuation that is NOT folded (the en dash) puts
+    // any length-changing substitution straight into the slice.
+    const mixed = "Policy — the “30 day” window — you’d like a ‘refund’ now."
+    const span = resolve_citation_span(mixed, {
+      from: '"30 day"',
+      to: "'refund'",
+    })
+    expect(span).not.toBeNull()
+    expect(mixed.slice(span!.start, span!.end)).toBe(
+      "“30 day” window — you’d like a ‘refund’",
+    )
   })
 
-  it("legacy verdict-phrased output renders verbatim — enforcement is server-side", () => {
-    // Pre-contract captures (and any model regression) show their text
-    // as-is; the prompt's no-verdict-phrasing rule is tested where it
-    // lives, in kiln_server.
-    expect(final_judgement_reason("Eval passes per the judge's verdict.")).toBe(
-      "Eval passes per the judge's verdict.",
+  it("still returns null when the cited text genuinely isn't there", () => {
+    // Folding punctuation must not turn a real miss into a match.
+    expect(
+      resolve_citation_span(curly, {
+        from: "you'd like",
+        to: "a restocking fee",
+      }),
+    ).toBeNull()
+  })
+})
+
+// The tool-trace case's shape at its size: one JSON object whose
+// `updated_mention_sources` array carries the sources a discovery run seeded.
+// Built here rather than imported from the dev-only preview corpus, so the test
+// owns its fixture, but sized past 5000 characters like the run the bug was
+// reported on — the mark being lost in an unformatted blob is a length problem.
+function jumbo_json_output(): string {
+  const kinds = ["web_search", "news_outlet", "rss_feed", "twitter_query"]
+  return JSON.stringify({
+    summary:
+      "Initial mention-source curation for Acme Construction Tech: seeded 15 probationary agent sources across web, news, RSS, X, and Reddit tuned to Construction PM SaaS.",
+    updated_mention_sources: Array.from({ length: 15 }, (_, i) => ({
+      kind: kinds[i % kinds.length],
+      value: `"Acme Construction Tech" source ${i} -site:acmeconstructiontech.example`,
+      notes: `Seeded source ${i}: exact-name brand mentions scoped to the construction context and excluding the owned domain, so unrelated collisions stay out of the feed.`,
+      addedBy: "agent",
+      priority: "probationary",
+    })),
+    brand_memory_record: {
+      type: "discovery_run",
+      ran_at: "2026-07-07T22:15:00Z",
+      candidates_evaluated: 22,
+      rationale:
+        "First discovery run - the Brand Memory feed is empty and no sources existed. For B2B Construction PM SaaS, I biased toward X and Reddit plus web and news, adding US construction trade outlets, matching RSS feeds, and exact/alias web queries scoped away from the known exclusions. All new sources start probationary pending signal validation.",
+    },
+  })
+}
+
+// The anchors the rig's claim synthesizer writes for a case: the first three
+// whitespace-separated words of the raw output, then the next three. Retyped
+// from the RAW string, which is exactly why they miss the pretty-printed one.
+function leading_anchors(raw_output: string): { from: string; to: string } {
+  const words = raw_output.split(/\s+/).filter(Boolean)
+  return { from: words.slice(0, 3).join(" "), to: words.slice(3, 6).join(" ") }
+}
+
+describe("fold_with_offsets", () => {
+  it("collapses whitespace runs and maps each fold back over the whole run", () => {
+    const pretty = '{\n  "window": "30 days"\n}'
+    const { folded, map, map_end } = fold_with_offsets(
+      pretty,
+      WHITESPACE_TOLERANT_FOLD,
+    )
+    expect(folded).toBe('{ "window": "30 days" }')
+    // The offsets index the ORIGINAL, so slicing with them brings the newline
+    // and indent the fold hid back with the text.
+    const space = folded.indexOf(" ")
+    expect(pretty.slice(map[space], map_end[space])).toBe("\n  ")
+    // Every folded character round-trips: a fold that lost a character, or
+    // attributed one to the wrong run, shows up as a gap here.
+    expect(
+      [...folded].map((_, i) => pretty.slice(map[i], map_end[i])).join(""),
+    ).toBe(pretty)
+  })
+
+  it("folds typography 1:1 while collapsing whitespace around it", () => {
+    const text = "Policy:\n  the “30 day”\n  window."
+    const { folded, map, map_end } = fold_with_offsets(
+      text,
+      WHITESPACE_TOLERANT_FOLD,
+    )
+    expect(folded).toBe('Policy: the "30 day" window.')
+    const start = folded.indexOf('"30 day"')
+    const end = folded.indexOf("window.") + "window.".length
+    // A length-changing typographic fold would shift these offsets and slice
+    // the wrong characters out of the original.
+    expect(text.slice(map[start], map_end[end - 1])).toBe("“30 day”\n  window.")
+  })
+
+  it("copies a run through when no rule owns it", () => {
+    // The dispatch asks each rule to match its own run ANCHORED. A pattern
+    // whose match depends on what follows it cannot answer that, and the run
+    // is copied through as ordinary text — which keeps the offsets exact,
+    // where indexing past the end of the rule table would throw and cost the
+    // reviewer the citation entirely.
+    const { folded, map, map_end } = fold_with_offsets("axyb", [
+      { pattern: "x(?=y)", replace: () => "!" },
+    ])
+    expect(folded).toBe("axyb")
+    expect(map).toEqual([0, 1, 2, 3])
+    expect(map_end).toEqual([1, 2, 3, 4])
+  })
+
+  it("drops whitespace runs entirely under the free fold", () => {
+    // The pass that rescues tokens pretty-printing pushed APART: no collapse
+    // can match a space against the nothing the raw string had there.
+    const { folded, map, map_end } = fold_with_offsets(
+      '{\n  "a": 1\n}',
+      WHITESPACE_FREE_FOLD,
+    )
+    expect(folded).toBe('{"a":1}')
+    // A dropped run belongs to no folded character, so a span ending before
+    // one stops at the last character it really covered.
+    expect(map_end[folded.indexOf("1")]).toBe('{\n  "a": 1'.length)
+    // …and the character after a dropped run still points past it, or every
+    // offset from there on would be short by the run's length.
+    expect(map[folded.indexOf('"a"')]).toBe("{\n  ".length)
+  })
+})
+
+describe("resolve_citation_span_whitespace_tolerant", () => {
+  it("resolves anchors across a pretty-printed key/value boundary", () => {
+    // The exact bug shape: the model retyped its anchors off the raw string,
+    // where the colon is flush; the reviewer is looking at the pretty one,
+    // where it is followed by a space and the entries by newline + indent.
+    const raw = '{"window":"30 days","refund":"14 days"}'
+    const pretty = JSON.stringify(JSON.parse(raw), null, 2)
+    const span = resolve_citation_span_whitespace_tolerant(pretty, {
+      from: '"window":"30 days"',
+      to: '"refund":"14 days"',
+    })
+    expect(span).not.toBeNull()
+    expect(pretty.slice(span!.start, span!.end)).toBe(
+      '"window": "30 days",\n  "refund": "14 days"',
+    )
+  })
+
+  it("resolves anchors whose only difference is newline for space", () => {
+    // The collapsing pass on its own: both sides separate the tokens, the
+    // rendering just separates them differently.
+    const text = "Our return window\nis 30 days\nfrom purchase."
+    const span = resolve_citation_span_whitespace_tolerant(text, {
+      from: "window is 30 days",
+      to: "purchase",
+    })
+    expect(span).not.toBeNull()
+    expect(text.slice(span!.start, span!.end)).toBe(
+      "window\nis 30 days\nfrom purchase",
+    )
+  })
+
+  it("prefers the match that respects word boundaries", () => {
+    // Why the collapsing pass answers first: dropping whitespace outright lets
+    // `a b` match the earlier `ab`, and the reviewer would be sent to a span
+    // the citation never pointed at while the real one sat further down.
+    const pretty = JSON.stringify({ tag: "ab", name: "a b" }, null, 2)
+    const span = resolve_citation_span_whitespace_tolerant(pretty, {
+      from: "a b",
+      to: "a b",
+    })
+    expect(span).not.toBeNull()
+    expect(pretty.slice(0, span!.start)).toContain('"tag": "ab"')
+  })
+
+  it("keeps a JSON whitespace collision on the right value", () => {
+    // The JSON shape the fix exists for only ever reaches the whitespace-FREE
+    // pass (a flush `"key":"value"` cannot survive the collapsing one), so the
+    // wider pass has to stay honest on a haystack where dropping whitespace
+    // makes two different values look alike.
+    const pretty = JSON.stringify({ a: "30days", b: "30 days" }, null, 2)
+    const span = resolve_citation_span_whitespace_tolerant(pretty, {
+      from: '"b":"30 days"',
+      to: '"b":"30 days"',
+    })
+    expect(span).not.toBeNull()
+    expect(pretty.slice(span!.start, span!.end)).toBe('"b": "30 days"')
+  })
+
+  it("starts a span after the whitespace its first anchor begins on", () => {
+    // Symmetric with the trailing clamp below: an anchor retyped with a leading
+    // space must not drag the newline and indent pretty-printing inserted into
+    // the front of the highlight.
+    const pretty = JSON.stringify({ note: "see below", next: 1 }, null, 2)
+    const span = resolve_citation_span_whitespace_tolerant(pretty, {
+      from: ' "next"',
+      to: "1",
+    })
+    expect(span).not.toBeNull()
+    expect(pretty.slice(span!.start, span!.end)).toBe('"next": 1')
+  })
+
+  it("stops a span before the whitespace its last anchor ends on", () => {
+    // A `to` ending in whitespace must not drag the newline and indent
+    // pretty-printing inserted into the mark: on screen that is a highlighted
+    // line break, which reads as a rendering bug.
+    const pretty = JSON.stringify({ note: "see below", next: 1 }, null, 2)
+    const span = resolve_citation_span_whitespace_tolerant(pretty, {
+      from: '"note"',
+      to: '"see below", ',
+    })
+    expect(span).not.toBeNull()
+    expect(pretty.slice(span!.start, span!.end)).toBe('"note": "see below",')
+  })
+
+  it("returns null when the cited text genuinely isn't in the rendering", () => {
+    // Whitespace tolerance must not turn a real miss into a match, or the
+    // caller would mark a span the citation never pointed at.
+    expect(
+      resolve_citation_span_whitespace_tolerant('{\n  "a": 1\n}', {
+        from: '"restocking fee"',
+        to: '"a"',
+      }),
+    ).toBeNull()
+    // A present `from` with an absent `to` is the same miss from the other
+    // side: half an anchor pair locates nothing.
+    expect(
+      resolve_citation_span_whitespace_tolerant('{\n  "a": 1\n}', {
+        from: '"a"',
+        to: '"restocking fee"',
+      }),
+    ).toBeNull()
+  })
+
+  it("returns null for an anchor that is nothing but whitespace", () => {
+    // The fold that drops whitespace empties such an anchor out, and an empty
+    // needle matches at every position while covering none of them. Reporting
+    // that as a resolution would cost the caller the raw mark it falls back to.
+    expect(
+      resolve_citation_span_whitespace_tolerant('{\n  "a": 1\n}', {
+        from: '"a"',
+        to: " ",
+      }),
+    ).toBeNull()
+    expect(
+      resolve_citation_span_whitespace_tolerant('{\n  "a": 1\n}', {
+        from: "\n  ",
+        to: '"a"',
+      }),
+    ).toBeNull()
+  })
+
+  it("anchors the jumbo tool-trace citation in its pretty-printed output", () => {
+    const raw = jumbo_json_output()
+    expect(raw.length).toBeGreaterThan(5000)
+    const anchors = leading_anchors(raw)
+    const pretty = JSON.stringify(JSON.parse(raw), null, 2)
+    // The anchors resolve against the raw string — that is the mark the
+    // reviewer clicked, and today's fallback still shows it there.
+    expect(resolve_citation_span(raw, anchors)).not.toBeNull()
+    // The 1:1 fold cannot find them in the pretty rendering, which is the bug.
+    expect(resolve_citation_span(pretty, anchors)).toBeNull()
+    const span = resolve_citation_span_whitespace_tolerant(pretty, anchors)
+    expect(span).not.toBeNull()
+    expect(pretty.slice(span!.start, span!.end)).toBe(
+      '{\n  "summary": "Initial mention-source curation for Acme Construction',
     )
   })
 })
@@ -464,13 +886,14 @@ describe("map_output_span_to_trace — flattener block layout port", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ] as any[]
 
-  // Build raw_output exactly the way the server flattener does: one block per
-  // emitted message, joined by a blank line.
+  // Build raw_output exactly the way the server flattener does: every block a
+  // message carries, joined by a blank line. Each message here carries one, so
+  // the count matches; a message carrying both text and a call emits two.
   const raw_output = [
     "user:\n<user_message>\nWhat is the return window?\n</user_message>",
     "assistant reasoning:\n<assistant_reasoning_message>\nLet me think about policy.\n</assistant_reasoning_message>",
     'assistant requested tool calls:\n<assistant_requested_tool_calls>\n- Tool Name: lookup_policy\n- Arguments: {"q":1}\n</assistant_requested_tool_calls>',
-    "tool:\n<tool_tool_message>\n30 day window\n</tool_tool_message>",
+    "tool result from lookup_policy:\n<tool_tool_message>\n30 day window\n</tool_tool_message>",
     "assistant:\n<assistant_message>\nOur return window is 30 days.\n</assistant_message>",
   ].join("\n\n")
 
@@ -490,6 +913,8 @@ describe("map_output_span_to_trace — flattener block layout port", () => {
     expect("Our return window is 30 days.".slice(h!.start, h!.end)).toBe(
       "Our return window is 30 days",
     )
+    // Both anchors sit in this turn, so the whole span is marked.
+    expect(h!.from_anchor_only).toBe(false)
   })
 
   it("maps a span in a reasoning block", () => {
@@ -509,15 +934,207 @@ describe("map_output_span_to_trace — flattener block layout port", () => {
     expect(h!.kind).toBe("tool_calls")
   })
 
-  it("returns null when the span straddles two blocks", () => {
-    // from lands in the user turn, to in the reasoning turn — no single block
-    // contains the span, so there is no honest highlight.
+  it("marks the from anchor alone when the span crosses two turns", () => {
+    // from lands in the user turn, to in the reasoning turn. No block holds
+    // the whole span, so the anchor the model wrote is what gets marked.
     const span = resolve_citation_span(raw_output, {
       from: "What is the return",
       to: "think about",
     })
     expect(span).not.toBeNull()
-    expect(map_output_span_to_trace(trace, raw_output, span!)).toBeNull()
+    const h = map_output_span_to_trace(trace, raw_output, span!)
+    expect(h).not.toBeNull()
+    expect(h!.trace_index).toBe(0)
+    expect(h!.kind).toBe("content")
+    expect(h!.from_anchor_only).toBe(true)
+    expect("What is the return window?".slice(h!.start, h!.end)).toBe(
+      "What is the return",
+    )
+  })
+
+  it("returns null when the span starts in the flattener's tag chrome", () => {
+    // The recovery is scoped to the block holding `from`; an anchor that is
+    // part of the chrome belongs to no block and has nothing to mark.
+    const start = raw_output.indexOf("<assistant_reasoning_message>")
+    expect(start).toBeGreaterThan(0)
+    expect(
+      map_output_span_to_trace(trace, raw_output, {
+        start,
+        from_end: start + 5,
+        end: start + 5,
+      }),
+    ).toBeNull()
+  })
+
+  it("refuses a block whose text has drifted from raw_output", () => {
+    // The byte-identity guard: the recomputed layout says this block holds the
+    // span, but raw_output disagrees at that offset, so the port has drifted
+    // and no highlight is honest — recovery included.
+    const drifted = raw_output.replace(
+      "Let me think about policy.",
+      "Let me think about POLICY!",
+    )
+    const span = resolve_citation_span(drifted, {
+      from: "think about",
+      to: "POLICY",
+    })
+    expect(span).not.toBeNull()
+    expect(map_output_span_to_trace(trace, drifted, span!)).toBeNull()
+    // And with a cross-turn span, so the from-anchor path hits it too.
+    const crossing = resolve_citation_span(drifted, {
+      from: "think about",
+      to: "Our return window",
+    })
+    expect(crossing).not.toBeNull()
+    expect(map_output_span_to_trace(trace, drifted, crossing!)).toBeNull()
+  })
+
+  it("recovers a whitespace-drifted cross-turn citation", () => {
+    // The strict resolver misses anchors the model retyped with different
+    // whitespace; the tolerant one finds them, and the block mapper still
+    // adjudicates the result — here down to the from anchor.
+    const anchors = {
+      from: "Let me think\nabout policy",
+      to: "Our return window",
+    }
+    expect(resolve_citation_span(raw_output, anchors)).toBeNull()
+    const span = resolve_citation_span_whitespace_tolerant(raw_output, anchors)
+    expect(span).not.toBeNull()
+    const h = map_output_span_to_trace(trace, raw_output, span!)
+    expect(h).not.toBeNull()
+    expect(h!.trace_index).toBe(1)
+    expect(h!.kind).toBe("reasoning")
+    expect(h!.from_anchor_only).toBe(true)
+    expect("Let me think about policy.".slice(h!.start, h!.end)).toBe(
+      "Let me think about policy",
+    )
+  })
+})
+
+describe("map_output_span_to_trace — single-turn output", () => {
+  // Single-turn raw_output has none of the flattener's headers or tags: it IS
+  // the assistant message's content.
+  const raw_output = "Our return window is 30 days from delivery."
+  const trace = [
+    { role: "system", content: "You are a support agent." },
+    { role: "user", content: "What is the return window?" },
+    { role: "assistant", content: raw_output },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ] as any[]
+
+  it("maps a span onto the message whose content is the whole output", () => {
+    const span = resolve_citation_span(raw_output, {
+      from: "30 days",
+      to: "delivery",
+    })
+    expect(span).not.toBeNull()
+    const h = map_output_span_to_trace(trace, raw_output, span!)
+    expect(h).not.toBeNull()
+    expect(h!.trace_index).toBe(2)
+    expect(h!.kind).toBe("content")
+    // Offsets carry over unchanged — there is no block chrome to subtract.
+    expect(h!.start).toBe(span!.start)
+    expect(h!.end).toBe(span!.end)
+    expect(raw_output.slice(h!.start, h!.end)).toBe("30 days from delivery")
+  })
+
+  it("returns null when no message carries the whole output", () => {
+    const other = [
+      { role: "user", content: "What is the return window?" },
+      { role: "assistant", content: "A different answer entirely." },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ] as any[]
+    expect(
+      map_output_span_to_trace(other, raw_output, { start: 4, end: 10 }),
+    ).toBeNull()
+  })
+
+  it("returns null when two messages both carry the whole output", () => {
+    const echoed = [
+      { role: "user", content: raw_output },
+      { role: "assistant", content: raw_output },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ] as any[]
+    // Which one the citation meant is unknowable, so nothing is highlighted.
+    expect(
+      map_output_span_to_trace(echoed, raw_output, { start: 4, end: 10 }),
+    ).toBeNull()
+  })
+})
+
+describe("map_input_span_to_trace — input citations land on the opening user bubble", () => {
+  // On multi-turn, raw_input is the first user message's content verbatim
+  // (the server's transcript_io_for_trace pick), so the offsets carry over.
+  const raw_input = "I want to return my order from last week."
+  const trace = [
+    { role: "system", content: "You are a support agent." },
+    { role: "user", content: raw_input },
+    { role: "assistant", content: "Happy to help with that." },
+    { role: "user", content: "It arrived damaged." },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ] as any[]
+
+  it("maps a span onto the first user message, not a later one", () => {
+    const span = resolve_citation_span(raw_input, {
+      from: "return my order",
+      to: "last week",
+    })
+    expect(span).not.toBeNull()
+    const h = map_input_span_to_trace(trace, raw_input, span!)
+    expect(h).not.toBeNull()
+    expect(h!.trace_index).toBe(1)
+    expect(h!.kind).toBe("content")
+    expect(raw_input.slice(h!.start, h!.end)).toBe(
+      "return my order from last week",
+    )
+  })
+
+  it("skips an empty first user message, mirroring the server's pick", () => {
+    const with_empty = [
+      { role: "user", content: "" },
+      { role: "user", content: raw_input },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ] as any[]
+    const h = map_input_span_to_trace(with_empty, raw_input, {
+      start: 0,
+      end: 6,
+    })
+    expect(h).not.toBeNull()
+    expect(h!.trace_index).toBe(1)
+  })
+
+  it("returns null when the opening message differs from raw_input", () => {
+    // raw_input that did not come from this trace's opening message must not
+    // put a mark on it — the offsets would slice a different string.
+    const other = [
+      { role: "user", content: "A different opening entirely." },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ] as any[]
+    expect(
+      map_input_span_to_trace(other, raw_input, { start: 0, end: 6 }),
+    ).toBeNull()
+  })
+
+  it("returns null when the trace has no user message", () => {
+    const no_user = [
+      { role: "assistant", content: "Hello." },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ] as any[]
+    expect(
+      map_input_span_to_trace(no_user, raw_input, { start: 0, end: 6 }),
+    ).toBeNull()
+  })
+
+  it("returns null when the span overruns the input", () => {
+    expect(
+      map_input_span_to_trace(trace, raw_input, {
+        start: 0,
+        end: raw_input.length + 1,
+      }),
+    ).toBeNull()
+    expect(
+      map_input_span_to_trace(trace, raw_input, { start: -1, end: 6 }),
+    ).toBeNull()
   })
 })
 
@@ -656,6 +1273,48 @@ describe("select_calibration_subset", () => {
   })
 })
 
+describe("reviewable_subset — what the reviewer is really shown", () => {
+  // Claims state is the only field this reads, so the fixtures say just that.
+  function states(...states: ("built" | "error")[]) {
+    return states.map((claims_state) => ({ claims_state }))
+  }
+
+  it("drops the conversations whose claims never built", () => {
+    // Ten selected out of forty, two of which failed to analyze.
+    const traces = states(...Array<"built">(38).fill("built"), "error", "error")
+    const selected = [0, 1, 2, 3, 4, 5, 6, 7, 38, 39]
+
+    expect(reviewable_subset(traces, selected)).toEqual([
+      0, 1, 2, 3, 4, 5, 6, 7,
+    ])
+  })
+
+  it("keeps a fully built selection exactly as it was", () => {
+    const traces = states("built", "built", "built")
+    expect(reviewable_subset(traces, [0, 2])).toEqual([0, 2])
+  })
+
+  it("empties when nothing could be analyzed", () => {
+    // The all-errored case: the review has nothing to show, and the page owes
+    // the reviewer a message rather than an empty walk.
+    expect(reviewable_subset(states("error", "error"), [0, 1])).toEqual([])
+  })
+
+  it("makes the gate, the header count and the review counter agree", () => {
+    // Three numbers are drawn from these two values: the save gate's target,
+    // the step header's "reviewing N of M", and the review's own "1 of N".
+    const traces = states(...Array<"built">(38).fill("built"), "error", "error")
+    const walked = reviewable_subset(traces, [0, 1, 2, 3, 4, 5, 6, 7, 38, 39])
+    const target = calibration_gate_target(traces.length, walked.length)
+
+    expect(target).toBe(walked.length)
+    // Uncapped, the target is a pure function of the batch size, so it would
+    // still demand ten reviews of a walk that only offers eight.
+    expect(review_target(traces.length)).toBe(10)
+    expect(target).toBe(8)
+  })
+})
+
 describe("calibration_gate_target — save gate during rounds", () => {
   it("keeps the standard target when the round surfaced a full subset", () => {
     expect(calibration_gate_target(40, 10)).toBe(10)
@@ -701,7 +1360,7 @@ describe("apply_rejudge_results", () => {
     expect(applied[0].judge_score).toBe("pass")
     expect(applied[0].judge_reasoning).toBe("Re-checked: pass.")
     expect(applied[0].claims).toBeNull()
-    expect(applied[0].final_judgement).toBeNull()
+    expect(applied[0].overview).toBeNull()
     expect(applied[0].claims_state).toBe("unbuilt")
     // New per-round trace_id: an in-flight claim build from the previous
     // round must miss the identity guard, not corrupt the fresh state.
@@ -723,7 +1382,7 @@ describe("apply_rejudge_results", () => {
       "batch_r1",
     )
     const reviews = build_trace_reviews(applied)
-    expect(reviews[0].final_judgement_verdict.agrees).toBeNull()
+    expect(reviews[0].overall).toBeNull()
     expect(reviews[0].claim_verdicts).toHaveLength(0)
   })
 })
@@ -748,61 +1407,45 @@ describe("plan_save_action — loop entry and exit", () => {
   // bypasses this planner entirely.
 })
 
-describe("has_grade_disagreement / disagreed_trace_indices", () => {
-  function graded(
-    final: "agree" | "disagree",
-    claims: ("agree" | "disagree")[] = [],
-  ) {
-    const graded_claim = (human_grade: "agree" | "disagree") => ({
-      claim: "c",
-      evidence: "e",
-      expected_result: "fail" as const,
+// A graded trace's claims by grade, for the loop-entry predicates.
+function graded(...grades: ("agree" | "disagree")[]) {
+  return {
+    claims: grades.map((human_grade) => ({
+      text: "c",
       human_grade,
       human_feedback: null,
-    })
-    return {
-      final_judgement: graded_claim(final),
-      claims: claims.map(graded_claim),
-    }
+    })),
   }
+}
 
-  it("flags a disagreement on the final judgement or any claim", () => {
-    expect(has_grade_disagreement([graded("agree")])).toBe(false)
-    expect(has_grade_disagreement([graded("disagree")])).toBe(true)
-    expect(
-      has_grade_disagreement([graded("agree", ["agree", "disagree"])]),
-    ).toBe(true)
+describe("has_grade_disagreement / disagreed_trace_indices", () => {
+  it("flags a disagreement on any claim", () => {
+    expect(has_grade_disagreement([graded("agree", "agree")])).toBe(false)
+    expect(has_grade_disagreement([graded("agree", "disagree")])).toBe(true)
   })
 
   it("finds trace indices carrying any explicit disagree verdict", () => {
     const agree: TraceReview = {
       trace_id: "t0",
       claim_verdicts: [{ agrees: true, why: "" }],
-      final_judgement_verdict: { agrees: true, why: "" },
-    }
-    const final_disagree: TraceReview = {
-      trace_id: "t1",
-      claim_verdicts: [],
-      final_judgement_verdict: { agrees: false, why: "wrong" },
+      overall: null,
     }
     const claim_disagree: TraceReview = {
-      trace_id: "t2",
-      claim_verdicts: [{ agrees: false, why: "off" }],
-      final_judgement_verdict: { agrees: true, why: "" },
+      trace_id: "t1",
+      claim_verdicts: [
+        { agrees: true, why: "" },
+        { agrees: false, why: "off" },
+      ],
+      overall: null,
     }
     const unreviewed: TraceReview = {
-      trace_id: "t3",
+      trace_id: "t2",
       claim_verdicts: [{ agrees: null, why: "" }],
-      final_judgement_verdict: { agrees: null, why: "" },
+      overall: null,
     }
     expect(
-      disagreed_trace_indices([
-        agree,
-        final_disagree,
-        claim_disagree,
-        unreviewed,
-      ]),
-    ).toEqual([1, 2])
+      disagreed_trace_indices([agree, claim_disagree, unreviewed]),
+    ).toEqual([1])
   })
 })
 
@@ -839,24 +1482,26 @@ describe("rejudge_shortfall_notice", () => {
   })
 })
 
-describe("review CTA — grade_disagreement_count / refine_judge_tooltip", () => {
-  function graded(
-    final: "agree" | "disagree",
-    claims: ("agree" | "disagree")[] = [],
-  ) {
-    const graded_claim = (human_grade: "agree" | "disagree") => ({
-      claim: "c",
-      evidence: "e",
-      expected_result: "fail" as const,
-      human_grade,
-      human_feedback: null,
-    })
-    return {
-      final_judgement: graded_claim(final),
-      claims: claims.map(graded_claim),
-    }
-  }
+describe("declined_feedback_notice", () => {
+  it("quotes the declined feedback back to the reviewer", () => {
+    expect(
+      declined_feedback_notice("The tone complaint is out of scope."),
+    ).toBe(
+      'Some of your feedback was not applied this round: "The tone complaint is out of scope."',
+    )
+  })
 
+  it("silent when the refine declined nothing", () => {
+    expect(declined_feedback_notice(null)).toBeNull()
+  })
+
+  it("silent on blank feedback, which says no more than nothing", () => {
+    expect(declined_feedback_notice("")).toBeNull()
+    expect(declined_feedback_notice("   \n\t ")).toBeNull()
+  })
+})
+
+describe("review CTA — grade_disagreement_count / refine_judge_tooltip", () => {
   it("counts traces carrying a disagreement, matching the loop's predicate", () => {
     // The label flips to Refine Judge exactly when the count is non-zero —
     // the same condition under which a save click starts a refine round.
@@ -865,38 +1510,17 @@ describe("review CTA — grade_disagreement_count / refine_judge_tooltip", () =>
     const set = [
       graded("agree"),
       graded("disagree"),
-      graded("agree", ["agree", "disagree"]),
+      graded("agree", "agree", "disagree"),
     ]
     expect(grade_disagreement_count(set)).toBe(2)
-    expect(has_grade_disagreement(set)).toBe(true)
   })
 
   it("flips back to zero the moment the last disagreement clears", () => {
     // Convergence signal: an all-agree set counts zero, so the CTA returns
     // to the save label reactively.
     expect(
-      grade_disagreement_count([graded("agree"), graded("agree", ["agree"])]),
+      grade_disagreement_count([graded("agree"), graded("agree", "agree")]),
     ).toBe(0)
-  })
-
-  it("banner and tooltip share the built-claims count: blind disagreements don't count", () => {
-    // A disagreement graded on the blind verdict of a claims-errored trace
-    // is excluded by build_graded_traces, so the escape banner, the CTA
-    // tooltip, and the loop-entry predicate all see the same number.
-    const errored = trace({
-      claims_state: "error",
-      claims: null,
-      final_judgement: null,
-      claims_error: "build failed",
-    })
-    const review: TraceReview = {
-      trace_id: "trace_0",
-      claim_verdicts: [],
-      final_judgement_verdict: { agrees: false, why: "wrong call" },
-    }
-    const graded_set = build_graded_traces([errored], [review])
-    expect(graded_set).toHaveLength(0)
-    expect(grade_disagreement_count(graded_set)).toBe(0)
   })
 
   it("tooltip names the count, singular and plural, without em-dashes", () => {
@@ -919,5 +1543,204 @@ describe("review CTA — grade_disagreement_count / refine_judge_tooltip", () =>
     expect(refine_judge_tooltip(2, "example")).toContain(
       "disagreed with the judge on 2 examples.",
     )
+  })
+})
+
+describe("tokenize_claim_text — inline [n] markers", () => {
+  it("chips every marker with a citation and folds the rest into the text", () => {
+    const citations = [
+      { marker: 1, source: "output" as const, from: "a", to: "a" },
+      { marker: 12, source: "input" as const, from: "b", to: "b" },
+    ]
+    expect(
+      tokenize_claim_text(
+        "[1] leads, item [3] is quoted, [12] ends",
+        citations,
+      ),
+    ).toEqual([
+      { kind: "cite", n: 1, citation: citations[0] },
+      { kind: "text", value: " leads, item [3] is quoted, " },
+      { kind: "cite", n: 12, citation: citations[1] },
+      { kind: "text", value: " ends" },
+    ])
+  })
+
+  it("keeps text without markers as one token", () => {
+    expect(tokenize_claim_text("Plain.\nTwo lines.", [])).toEqual([
+      { kind: "text", value: "Plain.\nTwo lines." },
+    ])
+  })
+})
+
+describe("split_claim_note — the trailing Note paragraph", () => {
+  it("splits a Note paragraph off the claim body", () => {
+    expect(
+      split_claim_note(
+        "The joke retells a known one [1]. We suggest 'Agree'.\n\nNote: the rubric never mentions originality.",
+      ),
+    ).toEqual({
+      body: "The joke retells a known one [1]. We suggest 'Agree'.",
+      note: "Note: the rubric never mentions originality.",
+    })
+  })
+
+  it("keeps text with no Note paragraph whole, Note mid-sentence included", () => {
+    const text = "Note that the reply cites [1]. Disagree if the note is wrong."
+    expect(split_claim_note(text)).toEqual({ body: text, note: null })
+  })
+})
+
+describe("flattener port — every block a message carries", () => {
+  // The port recomputes the server's layout to place citations, so these pin
+  // the cases where a message emits more than one block. Offsets are written
+  // out longhand rather than computed, so a port change that shifts them fails
+  // here instead of silently mis-placing a highlight.
+  const CALL = {
+    id: "c1",
+    type: "function" as const,
+    function: { name: "multiply", arguments: '{"a": 135.0, "b": 0.15}' },
+  }
+
+  it("maps a citation onto the tool call of a message that also has text", () => {
+    const trace = [
+      {
+        role: "assistant",
+        content: "Let me calculate that.",
+        tool_calls: [CALL],
+      },
+    ] as unknown as TraceMessage[]
+    const raw =
+      "assistant:\n<assistant_message>\nLet me calculate that.\n</assistant_message>\n\n" +
+      "assistant requested tool calls:\n<assistant_requested_tool_calls>\n" +
+      '- Tool Name: multiply\n- Arguments: {"a": 135.0, "b": 0.15}\n' +
+      "</assistant_requested_tool_calls>"
+    const start = raw.indexOf('{"a": 135.0')
+    const hit = map_output_span_to_trace(trace, raw, {
+      start,
+      end: start + '{"a": 135.0, "b": 0.15}'.length,
+    })
+    expect(hit).not.toBeNull()
+    expect(hit?.kind).toBe("tool_calls")
+    expect(hit?.trace_index).toBe(0)
+  })
+
+  it("maps a citation onto the text of that same message", () => {
+    const trace = [
+      {
+        role: "assistant",
+        content: "Let me calculate that.",
+        tool_calls: [CALL],
+      },
+    ] as unknown as TraceMessage[]
+    const raw =
+      "assistant:\n<assistant_message>\nLet me calculate that.\n</assistant_message>\n\n" +
+      "assistant requested tool calls:\n<assistant_requested_tool_calls>\n" +
+      '- Tool Name: multiply\n- Arguments: {"a": 135.0, "b": 0.15}\n' +
+      "</assistant_requested_tool_calls>"
+    const start = raw.indexOf("Let me calculate")
+    const hit = map_output_span_to_trace(trace, raw, {
+      start,
+      end: start + "Let me calculate that.".length,
+    })
+    expect(hit?.kind).toBe("content")
+    expect(hit?.trace_index).toBe(0)
+  })
+
+  it("maps a citation onto a tool result whose label names its tool", () => {
+    const trace = [
+      { role: "assistant", content: null, tool_calls: [CALL] },
+      { role: "tool", tool_call_id: "c1", content: "20.25" },
+    ] as unknown as TraceMessage[]
+    const raw =
+      "assistant requested tool calls:\n<assistant_requested_tool_calls>\n" +
+      '- Tool Name: multiply\n- Arguments: {"a": 135.0, "b": 0.15}\n' +
+      "</assistant_requested_tool_calls>\n\n" +
+      "tool result from multiply:\n<tool_tool_message>\n20.25\n</tool_tool_message>"
+    const start = raw.lastIndexOf("20.25")
+    const hit = map_output_span_to_trace(trace, raw, {
+      start,
+      end: start + "20.25".length,
+    })
+    expect(hit?.kind).toBe("tool_result")
+    expect(hit?.trace_index).toBe(1)
+  })
+
+  it("draws nothing when the recomputed layout disagrees with raw_output", () => {
+    const trace = [
+      {
+        role: "assistant",
+        content: "Let me calculate that.",
+        tool_calls: [CALL],
+      },
+    ] as unknown as TraceMessage[]
+    // A transcript that does not match what this trace renders to.
+    const raw =
+      "assistant:\n<assistant_message>\nsomething else\n</assistant_message>"
+    expect(
+      map_output_span_to_trace(trace, raw, { start: 30, end: 39 }),
+    ).toBeNull()
+  })
+})
+
+describe("flattener port — the structured-output wrapper", () => {
+  const TR = {
+    id: "call_tr",
+    type: "function" as const,
+    function: {
+      name: "task_response",
+      arguments: '{"category": "refund_status"}',
+    },
+  }
+  const REAL = {
+    id: "c1",
+    type: "function" as const,
+    function: { name: "multiply", arguments: '{"a": 135, "b": 0.15}' },
+  }
+
+  it("maps a citation onto the structured answer, rendered as a message", () => {
+    const trace = [
+      { role: "assistant", content: null, tool_calls: [TR] },
+    ] as unknown as TraceMessage[]
+    const raw =
+      'assistant:\n<assistant_message>\n{"category": "refund_status"}\n</assistant_message>'
+    const start = raw.indexOf('"refund_status"')
+    const hit = map_output_span_to_trace(trace, raw, {
+      start,
+      end: start + '"refund_status"'.length,
+    })
+    expect(hit?.kind).toBe("content")
+    expect(hit?.trace_index).toBe(0)
+  })
+
+  it("keeps a real call listed beside the wrapper, and the wrapper out of it", () => {
+    // The wrapper sitting before a real call is what makes this worth pinning:
+    // if the port stopped excluding it, every offset after it would shift.
+    const trace = [
+      { role: "assistant", content: null, tool_calls: [REAL, TR] },
+      { role: "user", content: "thanks" },
+    ] as unknown as TraceMessage[]
+    const raw =
+      'assistant:\n<assistant_message>\n{"category": "refund_status"}\n</assistant_message>\n\n' +
+      "assistant requested tool calls:\n<assistant_requested_tool_calls>\n" +
+      '- Tool Name: multiply\n- Arguments: {"a": 135, "b": 0.15}\n' +
+      "</assistant_requested_tool_calls>\n\n" +
+      "user:\n<user_message>\nthanks\n</user_message>"
+    const call_start = raw.indexOf('{"a": 135')
+    const on_call = map_output_span_to_trace(trace, raw, {
+      start: call_start,
+      end: call_start + '{"a": 135, "b": 0.15}'.length,
+    })
+    expect(on_call?.kind).toBe("tool_calls")
+    expect(on_call?.trace_index).toBe(0)
+
+    // A later turn still resolves, which is what proves no extra block was
+    // emitted for the wrapper and shifted everything after it.
+    const later = raw.lastIndexOf("thanks")
+    const on_later = map_output_span_to_trace(trace, raw, {
+      start: later,
+      end: later + "thanks".length,
+    })
+    expect(on_later?.kind).toBe("content")
+    expect(on_later?.trace_index).toBe(1)
   })
 })

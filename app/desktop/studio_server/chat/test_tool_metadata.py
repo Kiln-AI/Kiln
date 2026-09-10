@@ -1,6 +1,7 @@
+from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
+
 from app.desktop.studio_server.chat import tool_input_executor_is_server
 from app.desktop.studio_server.chat.tool_metadata import tool_requires_user_approval
-from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
 
 
 class TestToolRequiresUserApproval:

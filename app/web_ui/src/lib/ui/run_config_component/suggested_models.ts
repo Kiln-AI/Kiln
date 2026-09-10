@@ -1,4 +1,4 @@
-import type { AvailableModels } from "$lib/types"
+import type { AvailableModels, ModelDetails } from "$lib/types"
 
 // A model the registry suggests for a given role, resolved to the best
 // provider the user has connected. model_id/provider_id are the wire ids
@@ -11,9 +11,26 @@ export type SuggestedModel = {
 }
 
 // Which registry suggestion flag to read. The registry (SDK ml_model_list)
-// maintains per-provider suggested_for_* booleans; these are the two roles
-// the eval builder and judge pickers care about.
-export type SuggestedModelMode = "evals" | "data_gen"
+// maintains per-provider suggested_for_* booleans; these are the roles the
+// eval builder and judge pickers care about.
+export type SuggestedModelMode = "evals" | "data_gen" | "synthetic_user"
+
+// Only the boolean fields of ModelDetails, so a role can be mapped to a real
+// suggestion flag and nothing else — a string field would read as always
+// suggested rather than failing to compile.
+type ModelDetailsBooleanField = {
+  [K in keyof ModelDetails]-?: NonNullable<ModelDetails[K]> extends boolean
+    ? K
+    : never
+}[keyof ModelDetails]
+
+// The registry flag each role reads, so adding a role is one line here
+// rather than another branch inside the loop below.
+const mode_flags: Record<SuggestedModelMode, ModelDetailsBooleanField> = {
+  evals: "suggested_for_evals",
+  data_gen: "suggested_for_data_gen",
+  synthetic_user: "suggested_for_synthetic_user",
+}
 
 // Tie-break when the same model is available via several providers:
 // official/native APIs before aggregators. (v1 judge form's order.)
@@ -44,11 +61,7 @@ export function build_suggested_models(
 
   for (const provider of providers) {
     for (const model of provider.models) {
-      const flagged =
-        mode === "evals"
-          ? model.suggested_for_evals
-          : model.suggested_for_data_gen
-      if (!flagged) {
+      if (!model[mode_flags[mode]]) {
         continue
       }
       const existing_index = suggested.findIndex((s) => s.model_id === model.id)

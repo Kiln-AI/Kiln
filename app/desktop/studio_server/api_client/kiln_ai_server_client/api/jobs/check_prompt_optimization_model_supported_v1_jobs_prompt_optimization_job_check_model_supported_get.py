@@ -7,6 +7,7 @@ from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.check_model_supported_response import CheckModelSupportedResponse
 from ...models.http_validation_error import HTTPValidationError
+from ...models.unauthorized_response import UnauthorizedResponse
 from ...types import UNSET, Response
 
 
@@ -35,11 +36,16 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> CheckModelSupportedResponse | HTTPValidationError | None:
+) -> CheckModelSupportedResponse | HTTPValidationError | UnauthorizedResponse | None:
     if response.status_code == 200:
         response_200 = CheckModelSupportedResponse.from_dict(response.json())
 
         return response_200
+
+    if response.status_code == 401:
+        response_401 = UnauthorizedResponse.from_dict(response.json())
+
+        return response_401
 
     if response.status_code == 422:
         response_422 = HTTPValidationError.from_dict(response.json())
@@ -54,7 +60,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[CheckModelSupportedResponse | HTTPValidationError]:
+) -> Response[CheckModelSupportedResponse | HTTPValidationError | UnauthorizedResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -68,7 +74,7 @@ def sync_detailed(
     client: AuthenticatedClient,
     model_name: str,
     model_provider_name: str,
-) -> Response[CheckModelSupportedResponse | HTTPValidationError]:
+) -> Response[CheckModelSupportedResponse | HTTPValidationError | UnauthorizedResponse]:
     """Check Prompt Optimization Model Supported
 
     Args:
@@ -80,7 +86,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[CheckModelSupportedResponse | HTTPValidationError]
+        Response[CheckModelSupportedResponse | HTTPValidationError | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -100,7 +106,7 @@ def sync(
     client: AuthenticatedClient,
     model_name: str,
     model_provider_name: str,
-) -> CheckModelSupportedResponse | HTTPValidationError | None:
+) -> CheckModelSupportedResponse | HTTPValidationError | UnauthorizedResponse | None:
     """Check Prompt Optimization Model Supported
 
     Args:
@@ -112,7 +118,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        CheckModelSupportedResponse | HTTPValidationError
+        CheckModelSupportedResponse | HTTPValidationError | UnauthorizedResponse
     """
 
     return sync_detailed(
@@ -127,7 +133,7 @@ async def asyncio_detailed(
     client: AuthenticatedClient,
     model_name: str,
     model_provider_name: str,
-) -> Response[CheckModelSupportedResponse | HTTPValidationError]:
+) -> Response[CheckModelSupportedResponse | HTTPValidationError | UnauthorizedResponse]:
     """Check Prompt Optimization Model Supported
 
     Args:
@@ -139,7 +145,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[CheckModelSupportedResponse | HTTPValidationError]
+        Response[CheckModelSupportedResponse | HTTPValidationError | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -157,7 +163,7 @@ async def asyncio(
     client: AuthenticatedClient,
     model_name: str,
     model_provider_name: str,
-) -> CheckModelSupportedResponse | HTTPValidationError | None:
+) -> CheckModelSupportedResponse | HTTPValidationError | UnauthorizedResponse | None:
     """Check Prompt Optimization Model Supported
 
     Args:
@@ -169,7 +175,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        CheckModelSupportedResponse | HTTPValidationError
+        CheckModelSupportedResponse | HTTPValidationError | UnauthorizedResponse
     """
 
     return (

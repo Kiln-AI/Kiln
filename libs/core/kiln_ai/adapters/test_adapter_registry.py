@@ -4,7 +4,11 @@ from unittest.mock import Mock, patch
 import pytest
 
 from kiln_ai import datamodel
-from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
+from kiln_ai.adapters.adapter_registry import (
+    adapter_for_task,
+    load_skills_for_task,
+    validate_run_config_tool_names,
+)
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import (
@@ -17,6 +21,7 @@ from kiln_ai.adapters.provider_tools import (
     LiteLlmCoreConfig,
     lite_llm_core_config_for_provider,
 )
+from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
@@ -1106,3 +1111,121 @@ class TestLoadSkillsForTask:
         assert set(result.keys()) == {skill_a.id, skill_b.id}
         assert result[skill_a.id].name == "skill-a"
         assert result[skill_b.id].name == "skill-b"
+
+
+class TestValidateRunConfigToolNames:
+    @pytest.fixture
+    def _agent_config(self):
+        def _make(**overrides) -> KilnAgentRunConfigProperties:
+            defaults = dict(
+                model_name="gpt-4o",
+                model_provider_name="openai",
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="json_schema",
+            )
+            defaults.update(overrides)
+            return KilnAgentRunConfigProperties(**defaults)
+
+        return _make
+
+    @pytest.fixture
+    def project_task(self, tmp_path):
+        project = datamodel.Project(name="test_project", path=tmp_path / "project.kiln")
+        project.save_to_file()
+        task = datamodel.Task(
+            name="test_task", instruction="do something", parent=project
+        )
+        task.save_to_file()
+        return project, task
+
+    def _make_code_tool(self, project, function_name: str) -> CodeTool:
+        code_tool = CodeTool(
+            name=function_name,
+            tool_function_name=function_name,
+            tool_description="d",
+            parameters_schema={"type": "object", "properties": {}},
+            code="def run() -> str:\n    return 'ok'\n",
+            parent=project,
+        )
+        code_tool.save_to_file()
+        return code_tool
+
+    async def test_noop_for_mcp_run_config(self, basic_task):
+        run_config = McpRunConfigProperties(
+            tool_reference=MCPToolReference(tool_id="mcp::local::s::t"),
+        )
+        await validate_run_config_tool_names(basic_task, run_config)
+
+    async def test_noop_without_tools(self, basic_task, _agent_config):
+        await validate_run_config_tool_names(basic_task, _agent_config())
+        await validate_run_config_tool_names(
+            basic_task, _agent_config(tools_config=ToolsRunConfig(tools=[]))
+        )
+
+    async def test_accepts_unique_names(self, project_task, _agent_config):
+        project, task = project_task
+        tool_a = self._make_code_tool(project, "tool_a")
+        tool_b = self._make_code_tool(project, "tool_b")
+        skill = Skill(name="my-skill", description="d", parent=project)
+        skill.save_to_file()
+        skill.save_skill_md("body")
+
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(
+                tools=[
+                    f"kiln_tool::code::{tool_a.id}",
+                    f"kiln_tool::code::{tool_b.id}",
+                    f"kiln_tool::skill::{skill.id}",
+                ]
+            )
+        )
+        await validate_run_config_tool_names(task, rc)
+
+    async def test_rejects_duplicate_function_names(self, project_task, _agent_config):
+        project, task = project_task
+        dup_a = self._make_code_tool(project, "dup_tool")
+        dup_b = self._make_code_tool(project, "dup_tool")
+
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(
+                tools=[
+                    f"kiln_tool::code::{dup_a.id}",
+                    f"kiln_tool::code::{dup_b.id}",
+                ]
+            )
+        )
+        with pytest.raises(ValueError, match="share the same function name: dup_tool"):
+            await validate_run_config_tool_names(task, rc)
+
+    async def test_rejects_duplicate_skill_names(self, project_task, _agent_config):
+        project, task = project_task
+        skill_ids = []
+        for _ in range(2):
+            skill = Skill(name="dup-skill", description="d", parent=project)
+            skill.save_to_file()
+            skill.save_skill_md("body")
+            skill_ids.append(skill.id)
+
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(
+                tools=[f"kiln_tool::skill::{sid}" for sid in skill_ids]
+            )
+        )
+        with pytest.raises(ValueError, match="Duplicate skill name 'dup-skill'"):
+            await validate_run_config_tool_names(task, rc)
+
+    async def test_rejects_unresolvable_tool_id(self, project_task, _agent_config):
+        _, task = project_task
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(tools=["kiln_tool::code::missing_id"])
+        )
+        with pytest.raises(ValueError, match="Code tool not found"):
+            await validate_run_config_tool_names(task, rc)
+
+    async def test_rejects_missing_skill_id(self, project_task, _agent_config):
+        _, task = project_task
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(tools=["kiln_tool::skill::missing_id"])
+        )
+        with pytest.raises(ValueError, match="not found in the project: missing_id"):
+            await validate_run_config_tool_names(task, rc)

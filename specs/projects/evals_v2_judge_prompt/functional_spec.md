@@ -124,10 +124,13 @@ Add optional `judge_prompt: str | None = None` and `system_prompt: str | None = 
 
 ```
 GET /api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/default_llm_judge_prompt
-→ 200 { "judge_prompt": str, "system_prompt": str }
+→ 200 { "judge_prompt": str, "system_prompt": str, "reference_keys": list[str] }
 ```
 
 - Returns `build_default_llm_judge_prompt(eval)` and the default system prompt.
+- `reference_keys` was added later: the reference data a judge for this eval will be
+  required to have, derived server-side so the builder can offer a place to supply it
+  when testing rather than reading the requirement out of the prompt's text.
 - Read-only, no side effects, `ALLOW_AGENT`. 404 via standard `eval_from_id`.
 
 ### `create_llm_judge_config` + `test_v2_eval` — accept the overrides
@@ -189,7 +192,7 @@ No change to `eval_config_instruction.svelte` — it already renders `prompt_tem
 | `build_default_llm_judge_prompt(eval)` (rich assembly, conditional per-piece raw) | `libs/core/.../eval/base_eval.py` |
 | `materialize_llm_judge_properties(..., judge_prompt=None, system_prompt=None)` | `libs/core/.../eval/base_eval.py` |
 | `judge_prompt` / `system_prompt` on `LlmJudgeBuilderInput` | `app/desktop/studio_server/eval_api.py` |
-| `GET .../evals/{eval_id}/default_llm_judge_prompt` → `{ judge_prompt, system_prompt }` | `app/desktop/studio_server/eval_api.py` |
+| `GET .../evals/{eval_id}/default_llm_judge_prompt` → `{ judge_prompt, system_prompt, reference_keys }` | `app/desktop/studio_server/eval_api.py` |
 | Thread overrides in create + test endpoints | `app/desktop/studio_server/eval_api.py` |
 | `getDefaultLlmJudgePrompt` + thread overrides | `app/web_ui/src/lib/api/v2_eval_api.ts` |
 | "Advanced: Judge Prompt" collapse: judge prompt + system prompt fields, pre-filled | `llm_judge_form.svelte` / `eval_config_builder.svelte` |

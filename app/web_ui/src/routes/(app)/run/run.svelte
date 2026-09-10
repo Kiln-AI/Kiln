@@ -450,7 +450,7 @@
             warning_message="Repair is not available for runs from {run.output
               .source?.type || 'unknown'} sources."
             warning_color="warning"
-            tight={true}
+            inline={true}
           />
         </div>
       {/if}

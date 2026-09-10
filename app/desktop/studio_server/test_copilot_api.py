@@ -1,10 +1,30 @@
 import json
 from http import HTTPStatus
+from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
-
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from kiln_ai.datamodel import Project, Task, TaskRun
+from kiln_ai.datamodel.datamodel_enums import (
+    EvalStatus,
+    Priority,
+    TaskOutputRatingType,
+)
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfigType,
+    EvalDataType,
+    EvalInputSplit,
+    LlmJudgeProperties,
+    TaskRunSplit,
+)
+from kiln_ai.datamodel.spec_properties import SpecType
+from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
+from kiln_server.custom_errors import connect_custom_errors
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.clarify_spec_output import (
     ClarifySpecOutput,
 )
@@ -29,6 +49,9 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.job_statu
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.job_type import (
     JobType,
 )
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.question_set import (
+    QuestionSet as QuestionSetServerApi,
+)
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_spec_api_output import (
     RefineSpecApiOutput,
 )
@@ -38,24 +61,13 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_sp
 from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
     Response as SdkResponse,
 )
-from app.desktop.studio_server.api_models.copilot_models import SampleApi
+from app.desktop.studio_server.api_models.copilot_models import (
+    SampleApi,
+    TaskSkillInfoApi,
+    TaskToolInfoApi,
+)
 from app.desktop.studio_server.copilot_api import connect_copilot_api
 from app.desktop.studio_server.utils.copilot_utils import SingleTurnDataset
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from kiln_ai.datamodel import Project, Task, TaskRun
-from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
-from kiln_ai.datamodel.eval import (
-    Eval,
-    EvalConfigType,
-    EvalDataType,
-    EvalInputSplit,
-    LlmJudgeProperties,
-    TaskRunSplit,
-)
-from kiln_ai.datamodel.spec_properties import SpecType
-from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
-from kiln_server.custom_errors import connect_custom_errors
 
 
 @pytest.fixture
@@ -662,10 +674,26 @@ class TestCreateSpecWithCopilot:
         assert "{{ task_input }}" in config.properties.prompt_template
         assert config.model_name is None and config.model_provider is None
 
-        # Golden is not a split, so splits below doesn't cover it: if it pointed at
+        # Every spec eval carries the same three splits: an EvalInput-backed
+        # test split (re-run per run config at eval time) beside TaskRun-backed
+        # train and val. This legacy arm deals no val items, so its val split
+        # resolves to zero runs rather than to a different splits shape.
+        assert evals[0].splits == {
+            "test": EvalInputSplit(filter_id="tag::test_test_spec"),
+            "train": TaskRunSplit(filter_id="tag::train_test_spec"),
+            "val": TaskRunSplit(filter_id="tag::val_test_spec"),
+        }
+        # Golden is not a split, so splits above doesn't cover it: if it pointed at
         # the test tag, eval-config comparison would score against test items
         # instead of golden.
-        assert evals[0].eval_configs_filter_id == "tag::eval_golden_test_spec"
+        assert evals[0].eval_configs_filter_id == "tag::golden_test_spec"
+
+        # Priority and status live on the eval; the spec mirrors them at
+        # creation, but reads and later edits go to the eval.
+        assert evals[0].priority == Priority.p1
+        assert evals[0].status == EvalStatus.active
+        assert evals[0].resolved_priority() == Priority.p1
+        assert evals[0].resolved_status() == EvalStatus.active
 
         specs = task.specs()
         assert len(specs) == 1
@@ -676,11 +704,57 @@ class TestCreateSpecWithCopilot:
         # the deprecated flat fields are written null.
         on_disk = json.loads(evals[0].path.read_text())
         assert on_disk["splits"] == {
-            "test": {"source": "eval_input", "filter_id": "tag::eval_test_spec"},
+            "test": {"source": "eval_input", "filter_id": "tag::test_test_spec"},
             "train": {"source": "task_run", "filter_id": "tag::train_test_spec"},
+            "val": {"source": "task_run", "filter_id": "tag::val_test_spec"},
         }
         assert on_disk["eval_set_filter_id"] is None
         assert on_disk["train_set_filter_id"] is None
+
+    def test_generation_sees_the_tasks_capability_surface(
+        self,
+        client,
+        project_and_task,
+        copilot_request_data,
+        give_task_one_tool_and_skill,
+    ):
+        """The generator is told what the target task can do, so the synthetic
+        inputs it writes can exercise the tools and skills the task has."""
+        project, task = project_and_task
+        give_task_one_tool_and_skill(project, task)
+
+        generate_mock = AsyncMock(return_value=[])
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.get_copilot_api_key",
+                return_value="test_key",
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_copilot_examples",
+                generate_mock,
+            ),
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=copilot_request_data,
+            )
+
+        assert response.status_code == 200
+        target_task_info = generate_mock.await_args.kwargs["target_task_info"]
+        assert target_task_info.task_tools == [
+            TaskToolInfoApi(
+                name="add", description="Add two numbers together and return the result"
+            )
+        ]
+        assert target_task_info.task_skills == [
+            TaskSkillInfoApi(
+                name="refund-policy", description="How and when refunds are issued."
+            )
+        ]
 
     def test_single_turn_save_writes_eval_inputs_and_splits_to_disk(
         self, client, project_and_task, copilot_request_data
@@ -705,22 +779,20 @@ class TestCreateSpecWithCopilot:
                 "claim_review": {
                     "judge_score": "fail",
                     "judge_reasoning": "Judge reasoning here.",
+                    "overview": "The user asked about returns.",
                     "claims": [
                         {
-                            "claim": "The agent stated a return window.",
-                            "evidence": "Gives 30 days [1].",
-                            "expected_result": "fail",
+                            "text": "The agent stated a return window [1].",
                             "human_grade": "agree",
                             "human_feedback": None,
-                        }
+                        },
+                        {
+                            "text": "It fails because the window was invented [1].",
+                            "human_grade": "agree",
+                            "human_feedback": None,
+                        },
                     ],
-                    "final_judgement": {
-                        "claim": "Overall verdict.",
-                        "evidence": "Decisive fact [1].",
-                        "expected_result": "fail",
-                        "human_grade": "agree",
-                        "human_feedback": None,
-                    },
+                    "human_verdict": "fail",
                 },
             },
             {
@@ -764,13 +836,14 @@ class TestCreateSpecWithCopilot:
         # Test split EvalInput-backed, train TaskRun-backed, both in `splits` —
         # the single home. The deprecated flat fields are written null.
         assert on_disk["splits"] == {
-            "test": {"source": "eval_input", "filter_id": "tag::eval_test_spec"},
+            "test": {"source": "eval_input", "filter_id": "tag::test_test_spec"},
             "train": {"source": "task_run", "filter_id": "tag::train_test_spec"},
+            "val": {"source": "task_run", "filter_id": "tag::val_test_spec"},
         }
         # Golden stays in the eval-configs filter the judge is calibrated against.
         assert on_disk["eval_set_filter_id"] is None
         assert on_disk["train_set_filter_id"] is None
-        assert on_disk["eval_configs_filter_id"] == "tag::eval_golden_test_spec"
+        assert on_disk["eval_configs_filter_id"] == "tag::golden_test_spec"
 
         # Reload → save again is byte-stable: the splits survive a round trip
         # rather than living only in the freshly-built instance.
@@ -786,26 +859,34 @@ class TestCreateSpecWithCopilot:
         assert slice_inputs <= {ex.input for ex in generated}
         for eval_input in eval_inputs:
             assert eval_input.data.type == "single_turn"
-            assert "eval_test_spec" in eval_input.tags
+            assert "test_test_spec" in eval_input.tags
             # The generated output is discarded at mint — the runner writes a
             # fresh one per run config, so a stored one would never be judged.
             assert "generated output" not in eval_input.path.read_text()
 
         # No run carries the eval tag any more: the dataset is the 6 train
         # runs plus the 2 golden ones, and nothing is in two splits at once.
+        # The legacy arm never reaches the train:val deal, so no run is val
+        # either — its generated pool is split train:eval by the v1 math.
         runs = task.runs()
         assert len(runs) == 8
         by_tag = {
             tag: [run for run in runs if tag in run.tags]
-            for tag in ("train_test_spec", "eval_golden_test_spec", "eval_test_spec")
+            for tag in (
+                "train_test_spec",
+                "golden_test_spec",
+                "test_test_spec",
+                "val_test_spec",
+            )
         }
         assert len(by_tag["train_test_spec"]) == 6
-        assert len(by_tag["eval_golden_test_spec"]) == 2
-        assert by_tag["eval_test_spec"] == []
+        assert len(by_tag["golden_test_spec"]) == 2
+        assert by_tag["test_test_spec"] == []
+        assert by_tag["val_test_spec"] == []
 
         # The golden answer key rides through untouched: human verdicts as
         # requirement ratings, plus the feedback and per-claim grades.
-        golden_by_input = {run.input: run for run in by_tag["eval_golden_test_spec"]}
+        golden_by_input = {run.input: run for run in by_tag["golden_test_spec"]}
         rating_key = "named::Test Spec"
         failed = golden_by_input["reviewed input 0"]
         assert failed.output.rating.requirement_ratings[rating_key].value == 0.0
@@ -872,18 +953,6 @@ class TestCreateSpecWithCopilot:
         assert task.specs() == []
         assert task.runs() == []
         assert task.eval_inputs() == []
-
-
-class TestClassifySpecDescription:
-    """Stub endpoint. Returns 501 until kiln_server ships the real classifier."""
-
-    def test_returns_501(self, client):
-        response = client.post(
-            "/api/copilot/classify_spec_description",
-            json={"description": "A classification request"},
-        )
-
-        assert response.status_code == 501
 
 
 class TestCreateSpecWithCopilotMultiTurn:
@@ -989,22 +1058,15 @@ class TestCreateSpecWithCopilotMultiTurn:
             "claim_review": {
                 "judge_score": "pass" if meets_spec else "fail",
                 "judge_reasoning": "Judge reasoning here.",
+                "overview": "The user asked about returns.",
                 "claims": [
                     {
-                        "claim": "The agent stated a return window.",
-                        "evidence": "Gives 30 days [1].",
-                        "expected_result": "fail",
+                        "text": "The agent stated a return window [1].",
                         "human_grade": "agree",
                         "human_feedback": None,
                     }
                 ],
-                "final_judgement": {
-                    "claim": "Overall verdict.",
-                    "evidence": "Decisive fact [1].",
-                    "expected_result": "pass" if meets_spec else "fail",
-                    "human_grade": "agree",
-                    "human_feedback": None,
-                },
+                "human_verdict": "pass" if meets_spec else "fail",
             },
         }
 
@@ -1056,10 +1118,13 @@ class TestCreateSpecWithCopilotMultiTurn:
         # The save path writes the EvalInput-backed test split natively; the
         # on-disk shape is covered by the saved-bytes test below.
         assert eval_obj.splits["test"] == EvalInputSplit(
-            filter_id="tag::eval_multi_turn_spec"
+            filter_id="tag::test_multi_turn_spec"
         )
         assert eval_obj.splits["train"] == TaskRunSplit(
             filter_id="tag::train_multi_turn_spec"
+        )
+        assert eval_obj.splits["val"] == TaskRunSplit(
+            filter_id="tag::val_multi_turn_spec"
         )
         assert eval_obj.model_dump()["train_set_filter_id"] is None
         assert eval_obj.current_config_id is not None
@@ -1082,7 +1147,7 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert first.data.synthetic_user_info.goal == "goal 0"
         assert first.data.synthetic_user_info.behavior_guidance == "guidance 0"
         assert set(first.tags) == {
-            "eval_multi_turn_spec",
+            "test_multi_turn_spec",
             f"synthetic_user_batch:{self.BATCH_TAG}",
             "scenario:0",
         }
@@ -1094,26 +1159,38 @@ class TestCreateSpecWithCopilotMultiTurn:
             assert ei.data.drive_config.turns == 5
 
         # Chains split into DISJOINT slices: each leaf carries exactly one of
-        # golden/train (on top of its synthetic_user_* tags) — the eval slice
-        # lives on the EvalInputs above, not on chains. Golden caps at 25% of
-        # 8 = 2, which here equals the two rated leaves — so both become
-        # golden (the answer key). The six unreviewed leaves are all train.
+        # golden/train/val (on top of its synthetic_user_* tags) — the eval
+        # slice lives on the EvalInputs above, not on chains. Golden caps at
+        # 25% of 8 = 2, which here equals the two rated leaves — so both
+        # become golden (the answer key). The six unreviewed leaves are dealt
+        # 4 train / 2 val at the 40:25 ratio.
         split_tags = {
             "train_multi_turn_spec",
-            "eval_golden_multi_turn_spec",
+            "golden_multi_turn_spec",
+            "val_multi_turn_spec",
         }
         runs_by_id = {run.id: run for run in task.runs()}
         for leaf in task.runs():
             assert len(split_tags & set(leaf.tags)) == 1
-            assert "eval_multi_turn_spec" not in leaf.tags
+            assert "test_multi_turn_spec" not in leaf.tags
             assert "synthetic_user_case" in leaf.tags
-        # Golden == exactly the two reviewed leaves (rated count == the 25% cap).
-        for reviewed_leaf in (synthetic_chain_leaves[0], synthetic_chain_leaves[1]):
-            assert "eval_golden_multi_turn_spec" in runs_by_id[reviewed_leaf.id].tags
-        # An unreviewed leaf is held out in train, never golden.
+        by_tag = {
+            tag: {run.id for run in task.runs() if tag in run.tags}
+            for tag in split_tags
+        }
+        assert len(by_tag["train_multi_turn_spec"]) == 4
+        assert len(by_tag["val_multi_turn_spec"]) == 2
+        # Golden == exactly the two reviewed leaves (rated count == the 25%
+        # cap), so the deal only ever touched the unreviewed remainder.
+        reviewed_ids = {
+            synthetic_chain_leaves[0].id,
+            synthetic_chain_leaves[1].id,
+        }
+        assert by_tag["golden_multi_turn_spec"] == reviewed_ids
+        assert by_tag["val_multi_turn_spec"].isdisjoint(reviewed_ids)
+        # An unreviewed leaf is held out in one of the dealt slices, never golden.
         unreviewed_tags = set(runs_by_id[synthetic_chain_leaves[2].id].tags)
-        assert "eval_golden_multi_turn_spec" not in unreviewed_tags
-        assert "train_multi_turn_spec" in unreviewed_tags
+        assert "golden_multi_turn_spec" not in unreviewed_tags
 
         # Reviewed leaves carry golden ratings matching the review clicks,
         # plus feedback + per-claim grades; the unreviewed leaf stays unrated.
@@ -1128,7 +1205,7 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert failed.feedback()[0].feedback == "Fabricated a return window."
         assert len(failed.claim_reviews()) == 1
         assert failed.claim_reviews()[0].judge_score == "fail"
-        assert failed.claim_reviews()[0].final_judgement.expected_result == "fail"
+        assert failed.claim_reviews()[0].human_verdict == "fail"
 
         passed = runs_by_id[synthetic_chain_leaves[1].id]
         assert passed.output.rating.requirement_ratings[rating_key].value == 1.0
@@ -1171,22 +1248,27 @@ class TestCreateSpecWithCopilotMultiTurn:
         first_bytes = eval_path.read_text()
         on_disk = json.loads(first_bytes)
 
-        # Test split EvalInput-backed, train TaskRun-backed, both in `splits` —
-        # the single home. The deprecated flat fields are written null.
+        # Test split EvalInput-backed, train and val TaskRun-backed, all three
+        # in `splits` — the single home. The deprecated flat fields are written
+        # null.
         assert on_disk["splits"] == {
             "test": {
                 "source": "eval_input",
-                "filter_id": "tag::eval_multi_turn_spec",
+                "filter_id": "tag::test_multi_turn_spec",
             },
             "train": {
                 "source": "task_run",
                 "filter_id": "tag::train_multi_turn_spec",
             },
+            "val": {
+                "source": "task_run",
+                "filter_id": "tag::val_multi_turn_spec",
+            },
         }
         assert on_disk["train_set_filter_id"] is None
         assert on_disk["eval_set_filter_id"] is None
         # Golden slice rides along unchanged.
-        assert on_disk["eval_configs_filter_id"] == "tag::eval_golden_multi_turn_spec"
+        assert on_disk["eval_configs_filter_id"] == "tag::golden_multi_turn_spec"
         # The retired pre-splits key never reaches disk, and drive settings
         # live on the eval items, not the eval.
         assert "eval_input_filter_id" not in first_bytes
@@ -1241,7 +1323,7 @@ class TestCreateSpecWithCopilotMultiTurn:
             assert leaf.feedback() == []
             assert leaf.claim_reviews() == []
             assert "train_multi_turn_spec" not in leaf.tags
-            assert "eval_golden_multi_turn_spec" not in leaf.tags
+            assert "golden_multi_turn_spec" not in leaf.tags
 
     def test_multi_turn_save_rejects_duplicate_reviewed_leaves(
         self,
@@ -1290,8 +1372,14 @@ class TestCreateSpecWithCopilotMultiTurn:
 
         from app.desktop.studio_server.utils import copilot_utils
 
+        # Tags are snapshotted at the moment of failure so the reversal
+        # assertions below can't pass vacuously against a tag never written.
+        tags_at_failure: set[str] = set()
+
         def rate_then_boom(*args, **kwargs):
             copilot_utils.rate_reviewed_batch_runs(*args, **kwargs)
+            for leaf in args[0]:
+                tags_at_failure.update(leaf.tags)
             raise RuntimeError("disk full")
 
         with (
@@ -1315,12 +1403,21 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert len(task.specs()) == 0
         # The eval slice rolled back too: no orphan EvalInputs.
         assert len(task.eval_inputs()) == 0
+        # All three split tags were on the leaves when the save blew up, and
+        # rollback took every one back off — val is reversed like the others.
+        assert {
+            "train_multi_turn_spec",
+            "golden_multi_turn_spec",
+            "val_multi_turn_spec",
+        } <= tags_at_failure
         for leaf in task.runs():
             assert leaf.output.rating is None
             assert leaf.feedback() == []
             assert leaf.claim_reviews() == []
-            assert "train_multi_turn_spec" not in leaf.tags
-            assert "eval_golden_multi_turn_spec" not in leaf.tags
+            assert set(leaf.tags) == {
+                "synthetic_user_case",
+                f"synthetic_user_batch:{self.BATCH_TAG}",
+            }
 
     def test_multi_turn_save_malformed_case_blob_is_422(
         self,
@@ -1644,7 +1741,7 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
                 "spec_type": SpecType.issue.value,
                 "issue_description": "Don't make stuff up",
             },
-            "evaluate_full_trace": False,
+            "evaluate_full_trace": True,
             "judge_info": {
                 "prompt": "Test prompt",
                 "model_name": "gpt-4",
@@ -1669,22 +1766,15 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
             "claim_review": {
                 "judge_score": "pass" if meets_spec else "fail",
                 "judge_reasoning": "Judge reasoning here.",
+                "overview": "The user asked about returns.",
                 "claims": [
                     {
-                        "claim": "The agent stated a return window.",
-                        "evidence": "Gives 30 days [1].",
-                        "expected_result": "fail",
+                        "text": "The agent stated a return window [1].",
                         "human_grade": "agree",
                         "human_feedback": None,
                     }
                 ],
-                "final_judgement": {
-                    "claim": "Overall verdict.",
-                    "evidence": "Decisive fact [1].",
-                    "expected_result": "pass" if meets_spec else "fail",
-                    "human_grade": "agree",
-                    "human_feedback": None,
-                },
+                "human_verdict": "pass" if meets_spec else "fail",
             },
         }
 
@@ -1731,13 +1821,18 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         evals = task.evals()
         assert len(evals) == 1
         eval_obj = evals[0]
-        assert eval_obj.evaluation_data_type == EvalDataType.final_answer
+        # Single-turn saves a full-trace eval now: the builder judged the
+        # transcript, so the eval that ships judges the same thing.
+        assert eval_obj.evaluation_data_type == EvalDataType.full_trace
         assert eval_obj.model_dump()["eval_set_filter_id"] is None
         assert eval_obj.splits["test"] == EvalInputSplit(
-            filter_id="tag::eval_single_turn_spec"
+            filter_id="tag::test_single_turn_spec"
         )
         assert eval_obj.splits["train"] == TaskRunSplit(
             filter_id="tag::train_single_turn_spec"
+        )
+        assert eval_obj.splits["val"] == TaskRunSplit(
+            filter_id="tag::val_single_turn_spec"
         )
         assert eval_obj.model_dump()["train_set_filter_id"] is None
         assert eval_obj.current_config_id is not None
@@ -1748,7 +1843,9 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         assert len(configs) == 1
         assert configs[0].config_type == EvalConfigType.v2
         assert isinstance(configs[0].properties, LlmJudgeProperties)
-        assert "format_trace" not in configs[0].properties.prompt_template
+        # The judge template renders the transcript on both arms now, so the
+        # saved judge reads what the builder's judge read.
+        assert "format_trace" in configs[0].properties.prompt_template
 
         # The eval slice: one inputs-only EvalInput per generated input,
         # tagged with the eval slice + the drive batch it came from.
@@ -1761,25 +1858,36 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         assert all(
             set(ei.tags)
             == {
-                "eval_single_turn_spec",
+                "test_single_turn_spec",
                 f"single_turn_drive_batch:{self.BATCH_TAG}",
             }
             for ei in eval_inputs
         )
 
-        # Runs split into DISJOINT golden/train slices on top of their
-        # pipeline tags. Golden caps at 25% of 8 = 2 = the reviewed runs.
-        split_tags = {"train_single_turn_spec", "eval_golden_single_turn_spec"}
+        # Runs split into DISJOINT golden/train/val slices on top of their
+        # pipeline tags. Golden caps at 25% of 8 = 2 = the reviewed runs; the
+        # 6 unreviewed runs are dealt 4 train / 2 val at the 40:25 ratio.
+        split_tags = {
+            "train_single_turn_spec",
+            "golden_single_turn_spec",
+            "val_single_turn_spec",
+        }
         runs_by_id = {run.id: run for run in task.runs()}
         for run in task.runs():
             assert len(split_tags & set(run.tags)) == 1
-            assert "eval_single_turn_spec" not in run.tags
+            assert "test_single_turn_spec" not in run.tags
             assert "single_turn_drive" in run.tags
-        for reviewed_run in (batch_runs[0], batch_runs[1]):
-            assert "eval_golden_single_turn_spec" in runs_by_id[reviewed_run.id].tags
+        by_tag = {
+            tag: {run.id for run in task.runs() if tag in run.tags}
+            for tag in split_tags
+        }
+        assert len(by_tag["train_single_turn_spec"]) == 4
+        assert len(by_tag["val_single_turn_spec"]) == 2
+        reviewed_ids = {batch_runs[0].id, batch_runs[1].id}
+        assert by_tag["golden_single_turn_spec"] == reviewed_ids
+        assert by_tag["val_single_turn_spec"].isdisjoint(reviewed_ids)
         unreviewed_tags = set(runs_by_id[batch_runs[2].id].tags)
-        assert "eval_golden_single_turn_spec" not in unreviewed_tags
-        assert "train_single_turn_spec" in unreviewed_tags
+        assert "golden_single_turn_spec" not in unreviewed_tags
 
         # Reviewed runs carry golden ratings matching the review clicks, plus
         # feedback + per-claim grades; unreviewed runs stay unrated — REAL
@@ -1825,16 +1933,20 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         assert on_disk["splits"] == {
             "test": {
                 "source": "eval_input",
-                "filter_id": "tag::eval_single_turn_spec",
+                "filter_id": "tag::test_single_turn_spec",
             },
             "train": {
                 "source": "task_run",
                 "filter_id": "tag::train_single_turn_spec",
             },
+            "val": {
+                "source": "task_run",
+                "filter_id": "tag::val_single_turn_spec",
+            },
         }
         assert on_disk["train_set_filter_id"] is None
         assert on_disk["eval_set_filter_id"] is None
-        assert on_disk["eval_configs_filter_id"] == "tag::eval_golden_single_turn_spec"
+        assert on_disk["eval_configs_filter_id"] == "tag::golden_single_turn_spec"
         assert "eval_input_filter_id" not in first_bytes
 
     def test_404_when_batch_tag_matches_nothing(
@@ -1871,11 +1983,13 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         assert response.status_code == 422
         assert "at most once" in response.json()["message"]
 
-    def test_validator_rejects_single_turn_with_full_trace(
+    def test_validator_rejects_single_turn_without_full_trace(
         self, client, project_and_task, single_turn_request_data
     ):
+        # Both wizard arms judge the transcript, so the saved eval must too —
+        # otherwise the calibrated judge is not the judge that ships.
         project, task = project_and_task
-        single_turn_request_data["evaluate_full_trace"] = True
+        single_turn_request_data["evaluate_full_trace"] = False
         response = self._post(client, project, task, single_turn_request_data)
         assert response.status_code == 422
         assert "evaluate_full_trace" in str(response.json())
@@ -2561,24 +2675,363 @@ class TestParseImportFile:
         assert "UTF-8" in response.json()["message"]
 
 
-def test_claim_review_api_rejects_unpinned_final_judgement():
-    """The request-model mirror of the persisted ClaimReview invariant: a
-    payload whose final judgement contradicts the judge's verdict 422s
-    before any model is written."""
+def test_claim_review_api_requires_the_overall_call():
+    """The request-model mirror of the persisted ClaimReview: the reviewer's
+    overall call is what the golden rating is built from, so a payload
+    without it is rejected before any model is written rather than defaulted
+    to the judge's verdict."""
     import pydantic
 
     from app.desktop.studio_server.api_models.copilot_models import ClaimReviewApi
 
-    with pytest.raises(pydantic.ValidationError, match="must equal judge_score"):
+    with pytest.raises(pydantic.ValidationError, match="human_verdict"):
         ClaimReviewApi(
             judge_score="pass",
             judge_reasoning="Fine.",
+            overview="Summary.",
             claims=[],
-            final_judgement={
-                "claim": "Overall verdict.",
-                "evidence": "Decisive fact [1].",
-                "expected_result": "fail",
-                "human_grade": "agree",
-                "human_feedback": None,
-            },
         )
+
+
+@pytest.mark.parametrize("model_name", ["ReviewedChainApi", "ReviewedExample"])
+def test_reviewed_item_rejects_a_rating_that_contradicts_its_review(model_name):
+    """The golden rating and the stored review carry the same overall call;
+    a payload where they differ is corrupt and 422s before anything is
+    written."""
+    import pydantic
+
+    from app.desktop.studio_server.api_models import copilot_models
+
+    model = getattr(copilot_models, model_name)
+    base = (
+        {"leaf_run_id": "run-1"}
+        if model_name == "ReviewedChainApi"
+        else {"input": "i", "output": "o", "model_says_meets_spec": True}
+    )
+    review = {
+        "judge_score": "pass",
+        "judge_reasoning": "Fine.",
+        "overview": "Summary.",
+        "claims": [],
+        "human_verdict": "pass",
+    }
+    model(**base, user_says_meets_spec=True, feedback="", claim_review=review)
+    with pytest.raises(pydantic.ValidationError, match="must match"):
+        model(**base, user_says_meets_spec=False, feedback="", claim_review=review)
+
+
+_QUESTION_SPEC_FN = (
+    "app.desktop.studio_server.copilot_api."
+    "question_spec_v1_copilot_question_spec_post.asyncio_detailed"
+)
+_CLARIFY_SPEC_FN = (
+    "app.desktop.studio_server.copilot_api."
+    "clarify_spec_v1_copilot_clarify_spec_post.asyncio_detailed"
+)
+_REFINE_SPEC_FN = (
+    "app.desktop.studio_server.copilot_api."
+    "refine_spec_v1_copilot_refine_spec_post.asyncio_detailed"
+)
+
+
+class TestPassthroughTaskCapabilities:
+    """The passthrough routes attach the target task's capability surface when
+    the caller names the task, and never leak the ids upstream."""
+
+    QUESTION_SPEC_BODY: ClassVar[dict] = {
+        "target_task_info": {
+            "task_prompt": "Handle the support request.",
+            "task_input_schema": "",
+            "task_output_schema": "",
+        },
+        "target_specification": "The agent must never fabricate a refund.",
+    }
+
+    @pytest.fixture
+    def capable_task(self, tmp_path, give_task_one_tool_and_skill):
+        """A task whose default run config gives it one tool and one skill."""
+        project = Project(name="Support", path=tmp_path / "project.kiln")
+        project.save_to_file()
+        task = Task(
+            name="Support Agent",
+            instruction="Handle the support request.",
+            parent=project,
+        )
+        task.save_to_file()
+        give_task_one_tool_and_skill(project, task)
+        return project, task
+
+    @staticmethod
+    def _question_set_response():
+        parsed = MagicMock(spec=QuestionSetServerApi)
+        parsed.to_dict.return_value = {"questions": []}
+        response = MagicMock()
+        response.status_code = 200
+        response.parsed = parsed
+        return response
+
+    def test_question_spec_wire_payload_snapshot(
+        self, client, capable_task, mock_api_key
+    ):
+        """The exact bytes question_spec forwards for a task with a tool and a
+        skill — capability names and descriptions only, ids stripped."""
+        project, task = capable_task
+        sdk_mock = AsyncMock(return_value=self._question_set_response())
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(_QUESTION_SPEC_FN, sdk_mock),
+        ):
+            response = client.post(
+                "/api/copilot/question_spec",
+                json={
+                    **self.QUESTION_SPEC_BODY,
+                    "project_id": str(project.id),
+                    "task_id": str(task.id),
+                },
+            )
+
+        assert response.status_code == 200
+        assert sdk_mock.await_args.kwargs["body"].to_dict() == {
+            "target_task_info": {
+                "task_prompt": "Handle the support request.",
+                "task_input_schema": "",
+                "task_output_schema": "",
+                "task_tools": [
+                    {
+                        "name": "add",
+                        "description": "Add two numbers together and return the result",
+                    }
+                ],
+                "task_skills": [
+                    {
+                        "name": "refund-policy",
+                        "description": "How and when refunds are issued.",
+                    }
+                ],
+            },
+            "target_specification": "The agent must never fabricate a refund.",
+        }
+
+    def test_question_spec_without_ids_forwards_unchanged(self, client, mock_api_key):
+        """A caller that names no task gets exactly the payload it always got:
+        no capability keys at all, not explicit nulls."""
+        sdk_mock = AsyncMock(return_value=self._question_set_response())
+
+        with patch(_QUESTION_SPEC_FN, sdk_mock):
+            response = client.post(
+                "/api/copilot/question_spec", json=self.QUESTION_SPEC_BODY
+            )
+
+        assert response.status_code == 200
+        assert sdk_mock.await_args.kwargs["body"].to_dict() == self.QUESTION_SPEC_BODY
+
+    def test_question_spec_survives_unreadable_task_storage(
+        self, client, capable_task, mock_api_key
+    ):
+        """Capability collection is best effort: a task whose storage cannot be
+        read still gets its spec built, on the un-enriched payload."""
+        project, task = capable_task
+        sdk_mock = AsyncMock(return_value=self._question_set_response())
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch.object(
+                type(task),
+                "run_configs",
+                side_effect=ValueError("corrupt run_config.kiln"),
+            ),
+            patch(_QUESTION_SPEC_FN, sdk_mock),
+        ):
+            response = client.post(
+                "/api/copilot/question_spec",
+                json={
+                    **self.QUESTION_SPEC_BODY,
+                    "project_id": str(project.id),
+                    "task_id": str(task.id),
+                },
+            )
+
+        assert response.status_code == 200
+        assert sdk_mock.await_args.kwargs["body"].to_dict() == self.QUESTION_SPEC_BODY
+
+    def test_question_spec_rejects_half_a_task_reference(self, client, mock_api_key):
+        """One id without the other is a caller bug. Rejecting beats silently
+        skipping enrichment, which would ship a prompt quietly missing the
+        task's capabilities."""
+        response = client.post(
+            "/api/copilot/question_spec",
+            json={**self.QUESTION_SPEC_BODY, "project_id": "project-1"},
+        )
+
+        assert response.status_code == 422
+        assert "must be provided together" in response.json()["message"]
+
+    @pytest.mark.parametrize(
+        ("project_id", "task_id"),
+        [("no-such-project", "no-such-task"), ("", "")],
+        ids=["unknown_ids", "empty_ids"],
+    )
+    def test_question_spec_unresolvable_task_404s(
+        self, client, mock_api_key, project_id, task_id
+    ):
+        """A bad id is fail-loud: the caller asked for this task's
+        capabilities and the server cannot produce them. Empty strings are
+        supplied ids too, so they 404 rather than quietly skipping
+        enrichment."""
+        sdk_mock = AsyncMock(return_value=self._question_set_response())
+
+        with patch(_QUESTION_SPEC_FN, sdk_mock):
+            response = client.post(
+                "/api/copilot/question_spec",
+                json={
+                    **self.QUESTION_SPEC_BODY,
+                    "project_id": project_id,
+                    "task_id": task_id,
+                },
+            )
+
+        assert response.status_code == 404
+        sdk_mock.assert_not_awaited()
+
+    def test_clarify_spec_attaches_capabilities_and_strips_ids(
+        self, client, capable_task, mock_api_key, clarify_spec_input
+    ):
+        project, task = capable_task
+        parsed = MagicMock(spec=ClarifySpecOutput)
+        parsed.to_dict.return_value = {
+            "examples_for_feedback": [],
+            "judge_result": {
+                "task_metadata": {
+                    "model_name": "gpt-4",
+                    "model_provider_name": "openai",
+                },
+                "prompt": "judge",
+            },
+            "sdg_session_config": {
+                key: {
+                    "task_metadata": {
+                        "model_name": "gpt-4",
+                        "model_provider_name": "openai",
+                    },
+                    "prompt": "Test prompt",
+                }
+                for key in (
+                    "topic_generation_config",
+                    "input_generation_config",
+                    "output_generation_config",
+                )
+            },
+        }
+        sdk_response = MagicMock()
+        sdk_response.status_code = 200
+        sdk_response.parsed = parsed
+        sdk_mock = AsyncMock(return_value=sdk_response)
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(_CLARIFY_SPEC_FN, sdk_mock),
+        ):
+            response = client.post(
+                "/api/copilot/clarify_spec",
+                json={
+                    **clarify_spec_input,
+                    "project_id": str(project.id),
+                    "task_id": str(task.id),
+                },
+            )
+
+        assert response.status_code == 200
+        body = sdk_mock.await_args.kwargs["body"].to_dict()
+        assert body["target_task_info"]["task_tools"] == [
+            {
+                "name": "add",
+                "description": "Add two numbers together and return the result",
+            }
+        ]
+        assert body["target_task_info"]["task_skills"] == [
+            {"name": "refund-policy", "description": "How and when refunds are issued."}
+        ]
+        assert "project_id" not in body and "task_id" not in body
+
+    def test_refine_spec_attaches_capabilities_and_strips_ids(
+        self, client, capable_task, mock_api_key, refine_spec_input
+    ):
+        project, task = capable_task
+        parsed = MagicMock(spec=RefineSpecApiOutput)
+        parsed.to_dict.return_value = {
+            "new_proposed_spec_edits": [],
+            "not_incorporated_feedback": "",
+        }
+        sdk_response = MagicMock()
+        sdk_response.status_code = 200
+        sdk_response.parsed = parsed
+        sdk_mock = AsyncMock(return_value=sdk_response)
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(_REFINE_SPEC_FN, sdk_mock),
+        ):
+            response = client.post(
+                "/api/copilot/refine_spec",
+                json={
+                    **refine_spec_input,
+                    "project_id": str(project.id),
+                    "task_id": str(task.id),
+                },
+            )
+
+        assert response.status_code == 200
+        body = sdk_mock.await_args.kwargs["body"].to_dict()
+        assert [t["name"] for t in body["target_task_info"]["task_tools"]] == ["add"]
+        assert [s["name"] for s in body["target_task_info"]["task_skills"]] == [
+            "refund-policy"
+        ]
+        assert "project_id" not in body and "task_id" not in body
+
+    def test_client_sent_capabilities_are_not_overwritten(
+        self, client, capable_task, mock_api_key
+    ):
+        """A caller that already collected the surface keeps its own answer."""
+        project, task = capable_task
+        sdk_mock = AsyncMock(return_value=self._question_set_response())
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(_QUESTION_SPEC_FN, sdk_mock),
+        ):
+            response = client.post(
+                "/api/copilot/question_spec",
+                json={
+                    "target_task_info": {
+                        **self.QUESTION_SPEC_BODY["target_task_info"],
+                        "task_tools": [],
+                        "task_skills": [],
+                    },
+                    "target_specification": self.QUESTION_SPEC_BODY[
+                        "target_specification"
+                    ],
+                    "project_id": str(project.id),
+                    "task_id": str(task.id),
+                },
+            )
+
+        assert response.status_code == 200
+        task_info = sdk_mock.await_args.kwargs["body"].to_dict()["target_task_info"]
+        assert task_info["task_tools"] == []
+        assert task_info["task_skills"] == []

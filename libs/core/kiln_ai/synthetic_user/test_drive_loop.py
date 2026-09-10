@@ -11,8 +11,10 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.datamodel.usage import Usage
 from kiln_ai.synthetic_user.drive_loop import DriveCaseResult, drive_case
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
+from kiln_ai.synthetic_user.models import EARLY_STOP_SENTINEL
 
 # ───────────────────────── helpers / fixtures ─────────────────────────
 
@@ -73,13 +75,27 @@ class _FakeInvoker:
         return _fake_run(new_trace, run_id=f"run-turn-{len(self.calls)}")
 
 
-def _su_driver_with_replies(replies: list[str], cost_per_reply: float = 0.0) -> Mock:
+def _su_driver_with_replies(
+    replies: list[str],
+    cost_per_reply: float = 0.0,
+    usage_per_reply: Usage | None = None,
+) -> Mock:
     """Mock(spec=SyntheticUserDriver) with respond() returning canned
-    (message, cost) tuples. `cost_per_reply` lets cost-aware tests inject
-    a non-zero per-call cost; defaults to 0.0 for the legacy tests.
+    (message, Usage | None) tuples.
+
+    `usage_per_reply` is the direct control, for tests that care about the
+    driver model's tokens. `cost_per_reply` is kept for the cost-only tests:
+    a non-zero value becomes a cost-only Usage, and the 0.0 default becomes
+    None — the shape a provider that reported nothing produces.
     """
+    if usage_per_reply is not None:
+        usage: Usage | None = usage_per_reply
+    elif cost_per_reply:
+        usage = Usage(cost=cost_per_reply)
+    else:
+        usage = None
     drv = Mock(spec=SyntheticUserDriver)
-    drv.respond = AsyncMock(side_effect=[(r, cost_per_reply) for r in replies])
+    drv.respond = AsyncMock(side_effect=[(r, usage) for r in replies])
     return drv
 
 
@@ -88,7 +104,7 @@ def _su_driver_with_replies(replies: list[str], cost_per_reply: float = 0.0) -> 
 
 @pytest.mark.asyncio
 async def test_drive_case_runs_exactly_turns_iterations() -> None:
-    """No early termination — loop always completes `turns` iterations."""
+    """Without a sentinel, the loop runs the full `turns` ceiling."""
     invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3", "a4"])
     su = _su_driver_with_replies(["u2", "u3", "u4"])
 
@@ -193,6 +209,87 @@ async def test_drive_case_skips_su_reply_after_final_turn() -> None:
 
 
 @pytest.mark.asyncio
+async def test_drive_case_sums_su_usage_across_turns() -> None:
+    """The driver model's tokens are summed, not just its cost.
+
+    SU turns are never persisted as TaskRuns, so anything the loop drops here
+    exists nowhere on disk afterwards. The SU is normally a different model on a
+    different provider from the agent, so its token counts are what make the
+    figure reconcilable against an invoice at all.
+    """
+    invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3"])
+    su = _su_driver_with_replies(
+        ["u2", "u3"],
+        usage_per_reply=Usage(
+            input_tokens=1000, output_tokens=20, total_tokens=1020, cost=0.01
+        ),
+    )
+
+    result = await drive_case(
+        seed_prompt="u1",
+        target_invoker=invoker,
+        su_driver=su,
+        turns=3,
+    )
+
+    # Two SU calls for three turns — the loop skips the SU after the final turn.
+    assert su.respond.await_count == 2
+    assert result.su_usage is not None
+    assert result.su_usage.input_tokens == 2000
+    assert result.su_usage.output_tokens == 40
+    assert result.su_usage.total_tokens == 2040
+    assert result.su_usage.cost == pytest.approx(0.02)
+    # The derived cost keeps the interactive runner's total unchanged.
+    assert result.su_total_cost == pytest.approx(0.02)
+
+
+@pytest.mark.asyncio
+async def test_drive_case_su_usage_is_none_when_no_turn_reports() -> None:
+    """None, not a zeroed Usage: an unmeasured drive must not read as a free
+    one. `su_total_cost` still answers 0.0, so cost sums stay well-defined."""
+    invoker = _FakeInvoker(assistant_replies=["a1", "a2"])
+    su = _su_driver_with_replies(["u2"])
+
+    result = await drive_case(
+        seed_prompt="u1",
+        target_invoker=invoker,
+        su_driver=su,
+        turns=2,
+    )
+
+    assert su.respond.await_count == 1
+    assert result.su_usage is None
+    assert result.su_total_cost == 0.0
+
+
+@pytest.mark.asyncio
+async def test_drive_case_su_usage_keeps_tokens_when_a_turn_reports_only_cost() -> None:
+    """A provider that surfaces pricing but no token counts on one turn must not
+    wipe out the counts another turn did report — Usage.__add__ is None-graceful
+    per field, and the loop relies on exactly that."""
+    invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3"])
+    su = Mock(spec=SyntheticUserDriver)
+    su.respond = AsyncMock(
+        side_effect=[
+            ("u2", Usage(input_tokens=800, output_tokens=10, cost=0.01)),
+            ("u3", Usage(cost=0.02)),
+        ]
+    )
+
+    result = await drive_case(
+        seed_prompt="u1",
+        target_invoker=invoker,
+        su_driver=su,
+        turns=3,
+    )
+
+    assert result.su_usage is not None
+    assert result.su_usage.input_tokens == 800
+    assert result.su_usage.output_tokens == 10
+    assert result.su_usage.cost == pytest.approx(0.03)
+
+
+@pytest.mark.asyncio
 async def test_drive_case_single_turn_never_calls_su_driver() -> None:
     """turns=1 is seed → target → done: the SU driver is never invoked."""
     invoker = _FakeInvoker(assistant_replies=["a1"])
@@ -255,6 +352,127 @@ async def test_drive_case_works_without_on_turn_hook() -> None:
     )
 
     assert len(result.chain) == 1
+
+
+# ───────────────────────── early stop ─────────────────────────
+
+
+@pytest.mark.parametrize(
+    "turns",
+    # 4: the sentinel arrives mid-conversation. 3: it arrives on the case's
+    # last SU call, which can end the case one turn short too.
+    [4, 3],
+    ids=["mid_conversation", "last_su_call"],
+)
+@pytest.mark.asyncio
+async def test_drive_case_stops_when_su_returns_sentinel(turns: int) -> None:
+    """The sentinel ends the case: the turn it arrived on is complete and kept,
+    and nothing is called after it."""
+    invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3", "a4"])
+    # A reply after the sentinel is queued so a loop that ignored it would run
+    # on and fail these assertions, rather than dying on an exhausted driver.
+    su = _su_driver_with_replies(["u2", EARLY_STOP_SENTINEL, "u4"])
+
+    result = await drive_case(
+        seed_prompt="u1",
+        target_invoker=invoker,
+        su_driver=su,
+        turns=turns,
+    )
+
+    assert len(result.chain) == 2
+    assert len(invoker.calls) == 2
+    assert su.respond.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_drive_case_hook_fires_for_stopping_turn_with_no_su_message() -> None:
+    """The stopping turn still gets its on_turn event — it was produced and paid
+    for — but the sentinel is a control signal, so it never rides the hook."""
+    invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3"])
+    su = _su_driver_with_replies(["u2", EARLY_STOP_SENTINEL])
+
+    captured: list[tuple[TaskRun, str | None]] = []
+
+    async def _hook(*, run: TaskRun, su_message: str | None, su_cost: float) -> None:
+        captured.append((run, su_message))
+
+    result = await drive_case(
+        seed_prompt="u1",
+        target_invoker=invoker,
+        su_driver=su,
+        turns=3,
+        on_turn=_hook,
+    )
+
+    assert [msg for _, msg in captured] == ["u2", None]
+    # The stopping turn's event carries the run that turn produced — the one
+    # the chain ends on, not a stale earlier turn.
+    assert captured[-1][0] is result.chain[-1]
+
+
+@pytest.mark.asyncio
+async def test_drive_case_counts_su_spend_of_the_stopping_call() -> None:
+    """The respond() call that returned the sentinel cost money, so its usage is
+    summed and its cost reaches the hook like any other turn's."""
+    invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3"])
+    su = _su_driver_with_replies(["u2", EARLY_STOP_SENTINEL], cost_per_reply=0.02)
+
+    captured_costs: list[float] = []
+
+    async def _hook(*, run: TaskRun, su_message: str | None, su_cost: float) -> None:
+        captured_costs.append(su_cost)
+
+    result = await drive_case(
+        seed_prompt="u1",
+        target_invoker=invoker,
+        su_driver=su,
+        turns=3,
+        on_turn=_hook,
+    )
+
+    assert captured_costs == [pytest.approx(0.02), pytest.approx(0.02)]
+    assert result.su_total_cost == pytest.approx(0.04)
+
+
+@pytest.mark.asyncio
+async def test_drive_case_stops_when_sentinel_has_surrounding_whitespace() -> None:
+    """Models pad their output; the match is on the trimmed message."""
+    invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3"])
+    # A second reply is queued so a loop that failed to trim would run on and
+    # fail these assertions, rather than dying on an exhausted driver.
+    su = _su_driver_with_replies([f"  {EARLY_STOP_SENTINEL}\n", "u3"])
+
+    result = await drive_case(
+        seed_prompt="u1",
+        target_invoker=invoker,
+        su_driver=su,
+        turns=3,
+    )
+
+    assert len(result.chain) == 1
+    # The padded sentinel is not forwarded as a turn of its own.
+    assert len(invoker.calls) == 1
+    assert su.respond.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_drive_case_does_not_stop_on_sentinel_amid_prose() -> None:
+    """Only a message that is nothing but the sentinel stops the case — a user
+    who quotes it mid-sentence gets an ordinary turn, forwarded verbatim."""
+    quoting_reply = f"ok thanks {EARLY_STOP_SENTINEL}"
+    invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3"])
+    su = _su_driver_with_replies([quoting_reply, "u3"])
+
+    result = await drive_case(
+        seed_prompt="u1",
+        target_invoker=invoker,
+        su_driver=su,
+        turns=3,
+    )
+
+    assert len(result.chain) == 3
+    assert invoker.calls[1]["input"] == quoting_reply
 
 
 # ───────────────────────── invariants ─────────────────────────

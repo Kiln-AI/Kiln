@@ -9,12 +9,6 @@ import httpx
 import litellm
 import openai
 import requests
-from app.desktop.studio_server.api_client.kiln_ai_server_client.api.auth import (
-    create_api_key_v1_create_api_key_post,
-)
-from app.desktop.studio_server.api_client.kiln_server_client import (
-    get_oauth_authenticated_client,
-)
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 from kiln_ai.adapters.docker_model_runner_tools import (
@@ -40,6 +34,7 @@ from kiln_ai.adapters.ollama_tools import (
     parse_ollama_tags,
 )
 from kiln_ai.adapters.provider_tools import (
+    PLACEHOLDER_API_KEY,
     get_all_user_models,
     get_legacy_custom_models,
     provider_name_from_id,
@@ -54,6 +49,13 @@ from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.wandb_utils import AuthenticationError, get_wandb_default_entity
 from kiln_server.utils.agent_checks.policy import ALLOW_AGENT, DENY_AGENT
 from pydantic import BaseModel, Field
+
+from app.desktop.studio_server.api_client.kiln_ai_server_client.api.auth import (
+    create_api_key_v1_create_api_key_post,
+)
+from app.desktop.studio_server.api_client.kiln_server_client import (
+    get_oauth_authenticated_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +161,7 @@ class ModelDetails(BaseModel):
     suggested_for_data_gen: bool
     supports_logprobs: bool
     suggested_for_evals: bool
+    suggested_for_synthetic_user: bool
     supports_function_calling: bool
     uncensored: bool
     suggested_for_uncensored_data_gen: bool
@@ -322,6 +325,7 @@ def connect_provider_api(app: FastAPI):
                                 supports_logprobs=provider.supports_logprobs,
                                 supports_function_calling=provider.supports_function_calling,
                                 suggested_for_evals=provider.suggested_for_evals,
+                                suggested_for_synthetic_user=provider.suggested_for_synthetic_user,
                                 uncensored=provider.uncensored,
                                 suggested_for_uncensored_data_gen=provider.suggested_for_uncensored_data_gen,
                                 structured_output_mode=provider.structured_output_mode,
@@ -1714,6 +1718,7 @@ async def available_ollama_models() -> AvailableModels | None:
                             supports_logprobs=False,  # Ollama doesn't support logprobs https://github.com/ollama/ollama/issues/2415
                             suggested_for_data_gen=ollama_provider.suggested_for_data_gen,
                             suggested_for_evals=ollama_provider.suggested_for_evals,
+                            suggested_for_synthetic_user=ollama_provider.suggested_for_synthetic_user,
                             supports_function_calling=ollama_provider.supports_function_calling,
                             uncensored=False,
                             suggested_for_uncensored_data_gen=False,
@@ -1744,6 +1749,7 @@ async def available_ollama_models() -> AvailableModels | None:
                     untested_model=True,
                     suggested_for_data_gen=False,
                     suggested_for_evals=False,
+                    suggested_for_synthetic_user=False,
                     uncensored=False,
                     suggested_for_uncensored_data_gen=False,
                     # Ollama has constrained decode and all models support json_schema. Use it!
@@ -1828,6 +1834,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                             supports_logprobs=docker_provider.supports_logprobs,
                             suggested_for_data_gen=docker_provider.suggested_for_data_gen,
                             suggested_for_evals=docker_provider.suggested_for_evals,
+                            suggested_for_synthetic_user=docker_provider.suggested_for_synthetic_user,
                             uncensored=docker_provider.uncensored,
                             suggested_for_uncensored_data_gen=docker_provider.suggested_for_uncensored_data_gen,
                             supports_vision=docker_provider.supports_vision,
@@ -1850,6 +1857,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                     untested_model=True,
                     suggested_for_data_gen=False,
                     suggested_for_evals=False,
+                    suggested_for_synthetic_user=False,
                     uncensored=False,
                     suggested_for_uncensored_data_gen=False,
                     supports_vision=False,
@@ -1970,6 +1978,7 @@ def legacy_custom_models_as_available() -> Dict[str, List[ModelDetails]]:
                 untested_model=True,
                 suggested_for_data_gen=False,
                 suggested_for_evals=False,
+                suggested_for_synthetic_user=False,
                 uncensored=False,
                 suggested_for_uncensored_data_gen=False,
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -2049,6 +2058,7 @@ def user_models_as_available() -> Dict[str, List[ModelDetails]]:
                 untested_model=True,
                 suggested_for_data_gen=False,
                 suggested_for_evals=False,
+                suggested_for_synthetic_user=False,
                 uncensored=overrides.get("uncensored", False),
                 suggested_for_uncensored_data_gen=False,
                 structured_output_mode=structured_output_mode_value,
@@ -2107,6 +2117,7 @@ def all_fine_tuned_models() -> AvailableModels | None:
                             task_filter=[str(task.id)],
                             suggested_for_data_gen=False,
                             suggested_for_evals=False,
+                            suggested_for_synthetic_user=False,
                             uncensored=False,
                             suggested_for_uncensored_data_gen=False,
                             structured_output_mode=fine_tune_model_structured_output_mode(
@@ -2199,18 +2210,18 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
             logger.warning("No name for OpenAI compatible provider %s", provider)
             continue
 
-        # API key is optional, as some providers don't require it
-        api_key = provider.get("api_key") or ""
-        openai_client = openai.OpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            # Important: max_retries must be 0 for performance.
-            # It's common for these servers to be down sometimes (could be local app that isn't running)
-            # OpenAI client will retry a few times, with a sleep in between! Big loading perf hit.
-            max_retries=0,
-        )
+        # API key optional - some providers like Ollama don't use it, but the OpenAI client errors without one
+        api_key = provider.get("api_key") or PLACEHOLDER_API_KEY
 
         try:
+            openai_client = openai.OpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                # Important: max_retries must be 0 for performance.
+                # It's common for these servers to be down sometimes (could be local app that isn't running)
+                # OpenAI client will retry a few times, with a sleep in between! Big loading perf hit.
+                max_retries=0,
+            )
             provider_models = openai_client.models.list()
             for model in provider_models:
                 models.append(
@@ -2224,6 +2235,7 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
                         untested_model=True,
                         suggested_for_data_gen=False,
                         suggested_for_evals=False,
+                        suggested_for_synthetic_user=False,
                         uncensored=False,
                         suggested_for_uncensored_data_gen=False,
                         # OpenAI compatible models could be anything. JSON instructions is the only safe bet that works everywhere.
@@ -2246,7 +2258,9 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
             )
         except Exception:
             logger.error(
-                "Error connecting to OpenAI compatible provider %s", name, exc_info=True
+                "Error loading models from OpenAI compatible provider %s",
+                name,
+                exc_info=True,
             )
             has_error = True
             continue

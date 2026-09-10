@@ -187,10 +187,7 @@ class RunCasesBatchApiInput(TargetRunConfigFields):
         default=MAX_TURNS_DEFAULT,
         ge=1,
         le=20,
-        description=(
-            "Exact number of assistant turns to produce per case. The drive "
-            "loop has no early termination."
-        ),
+        description="Ceiling on the assistant turns produced per case.",
     )
     su_driver: SyntheticUserDriverSpec
     batch_tag: str | None = Field(
@@ -463,7 +460,7 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
         # one.
         try:
             runner_cases = [RunnerCase.model_validate(c) for c in input.cases]
-        except Exception as exc:  # noqa: BLE001 — Pydantic ValidationError + any future shape drift
+        except Exception as exc:
             raise HTTPException(
                 status_code=400,
                 detail={
@@ -500,7 +497,7 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
                         )
                         + "\n\n"
                     )
-            except Exception as e:  # noqa: BLE001 — last-resort surface
+            except Exception as e:
                 # The catch is narrow in practice: run_cases_batch
                 # swallows per-case failures into CaseFailedEvent, so the
                 # only paths that escape here are developer bugs

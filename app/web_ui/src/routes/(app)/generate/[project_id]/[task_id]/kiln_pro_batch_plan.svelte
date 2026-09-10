@@ -20,13 +20,23 @@
   // page, so only one solid primary shows at a time. Default keeps /generate
   // unchanged.
   export let generate_button_outline = false
-  // Header, its sub-line, and the regenerate button label. Defaults equal the
-  // /generate strings so that surface renders unchanged; the eval builder
-  // overrides all three (it plans "scenarios", not a "batch").
+  // Header, its sub-line, and the regenerate button label. The regenerate
+  // default is shared copy both surfaces render, so neither overrides it. The
+  // eval builder overrides the header (what it lists is a proposed eval
+  // dataset) and the sub-line (which has to say what running its plan
+  // actually does); it renames the rows through the items_label /
+  // expanded_description props below.
   export let header_label = "Batch Plan"
   export let subheader =
     "Review the plan for generating your synthetic data batch."
-  export let regenerate_label = "New Batch Plan"
+  export let regenerate_label = "Refine Plan"
+  // Passed straight to the prompts table: the noun for the plan's rows (which
+  // drives its header and aria-label together), the sentence it shows when
+  // expanded, and the header over the rows' first column. Defaults match the
+  // table's own, so /generate is unchanged.
+  export let items_label = "Dataset Items"
+  export let expanded_description: string | null | false = null
+  export let column_label = "Prompt"
 
   $: count = plan.prompts.length
 
@@ -41,6 +51,10 @@
       <div class="text-sm font-light text-gray-500">
         {subheader}
       </div>
+      <!-- Optional per-consumer line under the sub-line (the eval builder's
+      note that the plan used the task's Data Guide). Nothing renders with
+      no consumer content, so /generate stays byte-identical. -->
+      <slot name="under_subheader" />
     </div>
     <div class="flex flex-row gap-2 shrink-0">
       <button class="btn btn-md" on:click={on_regenerate}
@@ -73,5 +87,11 @@
     summary={plan.summary}
     out_of_sync={summary_out_of_sync}
   />
-  <KilnProPromptsTable prompts={plan.prompts} on_delete={on_delete_prompt} />
+  <KilnProPromptsTable
+    prompts={plan.prompts}
+    on_delete={on_delete_prompt}
+    {items_label}
+    {expanded_description}
+    {column_label}
+  />
 </div>

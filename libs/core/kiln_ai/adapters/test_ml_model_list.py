@@ -227,7 +227,7 @@ class TestBuiltInModelsFromProvider:
         assert result.name == ModelProviderName.openai
         assert result.model_id == "gpt-4.1"
         assert result.supports_logprobs is True
-        assert result.suggested_for_data_gen is True
+        assert result.suggested_for_data_gen is False
 
     def test_valid_model_different_provider_returns_correct_provider(self):
         """Test that different providers for the same model return different configurations"""
@@ -426,6 +426,46 @@ def test_deprecated_providers_not_suggested():
                 assert not provider.suggested_for_uncensored_data_gen, (
                     f"{model.name} / {provider.name} ({provider.model_id}) is deprecated but suggested_for_uncensored_data_gen=True"
                 )
+                assert not provider.suggested_for_synthetic_user, (
+                    f"{model.name} / {provider.name} ({provider.model_id}) is deprecated but suggested_for_synthetic_user=True"
+                )
+
+
+def test_suggested_for_synthetic_user():
+    """The synthetic user only writes plain-text chat turns, so this set is
+    deliberately mid-tier: fast and cheap models rather than the frontier ones
+    the eval and data-gen flags carry. Pinned by name so a curation pass has to
+    say so."""
+    expected = {
+        ModelName.gpt_5_6_terra,
+        ModelName.gpt_5_6_luna,
+        ModelName.claude_sonnet_5,
+        ModelName.deepseek_4_flash,
+        ModelName.gemini_3_8_flash,
+        ModelName.glm_5_3_flash,
+        ModelName.claude_4_5_haiku,
+    }
+
+    suggested = {
+        ModelName(model.name)
+        for model in built_in_models
+        for provider in model.providers
+        if provider.suggested_for_synthetic_user
+    }
+    assert suggested == expected
+
+    # Every live provider of a suggested model carries the flag, so the
+    # suggestion does not depend on which provider the user happens to have
+    # connected. Deprecated providers are excluded: nothing is suggested on
+    # those.
+    for model_name in expected:
+        model = get_model_by_name(model_name)
+        for provider in model.providers:
+            if provider.deprecated:
+                continue
+            assert provider.suggested_for_synthetic_user, (
+                f"{model.name} / {provider.name} is missing suggested_for_synthetic_user"
+            )
 
 
 def test_no_empty_multimodal_mime_types():

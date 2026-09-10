@@ -1,15 +1,15 @@
 <script lang="ts" generics="T">
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
-  import type { Spec } from "$lib/types"
+  import type { Eval } from "$lib/types"
   import { computePosition, autoUpdate, offset } from "@floating-ui/dom"
   import { onMount, onDestroy } from "svelte"
 
-  export let spec: Spec
+  export let evaluator: Eval
   export let currentValue: T
   export let options: OptionGroup[]
   export let aria_label: string
   export let formatDisplay: (value: T) => string
-  export let onUpdate: (spec: Spec, value: T) => void
+  export let onUpdate: (evaluator: Eval, value: T) => void
   export let dropdownWidth: string = "w-24"
   export let compact: boolean = false
   export let onOpen: (() => void) | undefined = undefined
@@ -32,7 +32,7 @@
       const now = Date.now()
       if (now - lastUpdateTime > 300) {
         lastUpdateTime = now
-        onUpdate(spec, currentValue)
+        onUpdate(evaluator, currentValue)
       }
     }
   }

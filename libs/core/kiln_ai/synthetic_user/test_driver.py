@@ -42,20 +42,25 @@ def _patch_adapter(
     monkeypatch: pytest.MonkeyPatch,
     return_value: RunOutput,
     cost: float | None = None,
+    usage: Usage | None = None,
 ) -> Mock:
     """Replace adapter_for_task with a stub returning a mock adapter whose
     invoke_returning_run_output yields (Mock(spec=TaskRun), return_value).
     Returns the mock adapter so tests can assert call args.
 
-    Pass `cost` to populate the in-memory TaskRun's `.usage.cost`; when
-    omitted, `.usage` is None and `respond()` should report cost=0.0.
+    Pass `usage` to set the in-memory TaskRun's `.usage` outright, or `cost`
+    for the cost-only shorthand. With neither, `.usage` is None and
+    `respond()` reports None.
     """
     task_run = Mock(spec=TaskRun)
-    task_run.usage = (
-        Usage(input_tokens=0, output_tokens=0, total_tokens=0, cost=cost)
-        if cost is not None
-        else None
-    )
+    if usage is not None:
+        task_run.usage = usage
+    elif cost is not None:
+        task_run.usage = Usage(
+            input_tokens=0, output_tokens=0, total_tokens=0, cost=cost
+        )
+    else:
+        task_run.usage = None
     adapter = Mock()
     adapter.invoke_returning_run_output = AsyncMock(
         return_value=(task_run, return_value)
@@ -97,8 +102,11 @@ def test_construction_renders_system_prompt_once(
 async def test_respond_returns_adapter_output_and_zero_cost_when_unset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """When the provider doesn't surface pricing, cost defaults to 0.0
-    so downstream sums stay well-defined.
+    """A provider that reports nothing yields None, not a zeroed Usage.
+
+    The distinction is the point of returning Usage at all: a zeroed record
+    would read downstream as a genuinely free call rather than an unmeasured
+    one, and the drive's total would claim a precision it doesn't have.
     """
     adapter = _patch_adapter(monkeypatch, _fake_run_output("the SU's reply"))
     drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
@@ -107,28 +115,42 @@ async def test_respond_returns_adapter_output_and_zero_cost_when_unset(
         {"role": "assistant", "content": "a1"},
     ]
 
-    message, cost = await drv.respond(conversation)
+    message, usage = await drv.respond(conversation)
 
     assert message == "the SU's reply"
-    assert cost == 0.0
+    assert usage is None
     adapter.invoke_returning_run_output.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_respond_returns_cost_from_task_run_usage(
+async def test_respond_returns_usage_from_task_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Per-call cost is read from the in-memory TaskRun's `usage.cost`."""
-    _patch_adapter(monkeypatch, _fake_run_output("hi"), cost=0.0123)
+    """The whole Usage comes back, tokens included — not just the cost.
+
+    The SU's TaskRun is never persisted, so anything dropped here is gone for
+    good: these token counts exist nowhere else on disk.
+    """
+    _patch_adapter(
+        monkeypatch,
+        _fake_run_output("hi"),
+        usage=Usage(
+            input_tokens=3548, output_tokens=61, total_tokens=3609, cost=0.0123
+        ),
+    )
     drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
     conversation: list[ChatCompletionMessageParam] = [
         {"role": "user", "content": "u1"},
         {"role": "assistant", "content": "a1"},
     ]
 
-    _, cost = await drv.respond(conversation)
+    _, usage = await drv.respond(conversation)
 
-    assert cost == pytest.approx(0.0123)
+    assert usage is not None
+    assert usage.input_tokens == 3548
+    assert usage.output_tokens == 61
+    assert usage.total_tokens == 3609
+    assert usage.cost == pytest.approx(0.0123)
 
 
 @pytest.mark.asyncio

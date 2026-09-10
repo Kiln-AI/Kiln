@@ -8,6 +8,7 @@ from ...client import AuthenticatedClient, Client
 from ...models.build_claim_evidence_input import BuildClaimEvidenceInput
 from ...models.build_claim_evidence_output import BuildClaimEvidenceOutput
 from ...models.http_validation_error import HTTPValidationError
+from ...models.unauthorized_response import UnauthorizedResponse
 from ...types import Response
 
 
@@ -32,11 +33,16 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> BuildClaimEvidenceOutput | HTTPValidationError | None:
+) -> BuildClaimEvidenceOutput | HTTPValidationError | UnauthorizedResponse | None:
     if response.status_code == 200:
         response_200 = BuildClaimEvidenceOutput.from_dict(response.json())
 
         return response_200
+
+    if response.status_code == 401:
+        response_401 = UnauthorizedResponse.from_dict(response.json())
+
+        return response_401
 
     if response.status_code == 422:
         response_422 = HTTPValidationError.from_dict(response.json())
@@ -51,7 +57,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[BuildClaimEvidenceOutput | HTTPValidationError]:
+) -> Response[BuildClaimEvidenceOutput | HTTPValidationError | UnauthorizedResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -64,10 +70,10 @@ def sync_detailed(
     *,
     client: AuthenticatedClient,
     body: BuildClaimEvidenceInput,
-) -> Response[BuildClaimEvidenceOutput | HTTPValidationError]:
+) -> Response[BuildClaimEvidenceOutput | HTTPValidationError | UnauthorizedResponse]:
     """Build Claim Evidence
 
-     Build claim/evidence pairs for a single eval trace + judge decision.
+     Build a review card (overview plus claims) for one eval trace + judge decision.
 
     Args:
         body (BuildClaimEvidenceInput):
@@ -77,7 +83,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[BuildClaimEvidenceOutput | HTTPValidationError]
+        Response[BuildClaimEvidenceOutput | HTTPValidationError | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -95,10 +101,10 @@ def sync(
     *,
     client: AuthenticatedClient,
     body: BuildClaimEvidenceInput,
-) -> BuildClaimEvidenceOutput | HTTPValidationError | None:
+) -> BuildClaimEvidenceOutput | HTTPValidationError | UnauthorizedResponse | None:
     """Build Claim Evidence
 
-     Build claim/evidence pairs for a single eval trace + judge decision.
+     Build a review card (overview plus claims) for one eval trace + judge decision.
 
     Args:
         body (BuildClaimEvidenceInput):
@@ -108,7 +114,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        BuildClaimEvidenceOutput | HTTPValidationError
+        BuildClaimEvidenceOutput | HTTPValidationError | UnauthorizedResponse
     """
 
     return sync_detailed(
@@ -121,10 +127,10 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
     body: BuildClaimEvidenceInput,
-) -> Response[BuildClaimEvidenceOutput | HTTPValidationError]:
+) -> Response[BuildClaimEvidenceOutput | HTTPValidationError | UnauthorizedResponse]:
     """Build Claim Evidence
 
-     Build claim/evidence pairs for a single eval trace + judge decision.
+     Build a review card (overview plus claims) for one eval trace + judge decision.
 
     Args:
         body (BuildClaimEvidenceInput):
@@ -134,7 +140,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[BuildClaimEvidenceOutput | HTTPValidationError]
+        Response[BuildClaimEvidenceOutput | HTTPValidationError | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -150,10 +156,10 @@ async def asyncio(
     *,
     client: AuthenticatedClient,
     body: BuildClaimEvidenceInput,
-) -> BuildClaimEvidenceOutput | HTTPValidationError | None:
+) -> BuildClaimEvidenceOutput | HTTPValidationError | UnauthorizedResponse | None:
     """Build Claim Evidence
 
-     Build claim/evidence pairs for a single eval trace + judge decision.
+     Build a review card (overview plus claims) for one eval trace + judge decision.
 
     Args:
         body (BuildClaimEvidenceInput):
@@ -163,7 +169,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        BuildClaimEvidenceOutput | HTTPValidationError
+        BuildClaimEvidenceOutput | HTTPValidationError | UnauthorizedResponse
     """
 
     return (

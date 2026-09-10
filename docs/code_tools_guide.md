@@ -310,7 +310,7 @@ Judges need **no shim**: `score()` receives its inputs as plain keyword argument
 
 - `output` -- the model's final output string.
 - `trace` -- the conversation as a list of message dicts.
-- `reference_data` -- a dict of reference/expected data (keyed by the judge's `reference_keys`).
+- `reference_data` -- a dict of ground-truth data for the case, or `None`. For an EvalInput-backed case it is that input's `reference` dict (`None` if none is set); for a TaskRun-backed dataset case it is `{"reference_answer": <the item's stored output>}`, since that output is the curated answer. It is also `None` when a TaskRun is scored as itself (judge calibration), so scorers must not assume `None` means "TaskRun dataset".
 - `task_input` -- the original task input string.
 
 It returns a `dict` keyed by each of your eval's output scores' **JSON key** -- the score's display name normalized to lowercase, snake_case (for example a score named `"Exact Match"` has the key `"exact_match"`, and `"Accuracy"` has the key `"accuracy"`). At runtime the code-eval adapter checks the returned keys against exactly this set and raises a "Score key mismatch" error otherwise, so return the JSON keys, not the raw display names.

@@ -1,0 +1,101 @@
+{
+  "v": 1,
+  "id": "281115927207",
+  "created_at": "2026-08-17T18:58:48.088127Z",
+  "created_by": "root",
+  "input": "{\"subject\": \"SSO login loop after Okta metadata update\", \"body\": \"Since we rotated our Okta signing certificate this morning, every user who clicks Sign in with SSO gets bounced back to the login page. Local password accounts still work. About 40 people are locked out.\", \"customer_plan\": \"pro\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "root"
+    },
+    "run_config_id": null,
+    "run_config": null
+  },
+  "output": {
+    "v": 1,
+    "id": "104403615696",
+    "path": null,
+    "created_at": "2026-08-17T18:58:48.087761Z",
+    "created_by": "root",
+    "output": "{\"team\": \"security\", \"priority\": \"high\", \"needs_human_review\": true, \"summary\": \"Customer's Okta certificate rotation is causing an SSO login loop that locks out all 40 users; verify the new metadata was synced and help them re-register the updated certificate.\"}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_openai_compatible_adapter",
+        "model_name": "deepseek_4_flash",
+        "model_provider": "openrouter",
+        "prompt_id": "task_run_config::507368061812::235956950045::177167545173",
+        "structured_output_mode": "json_schema",
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "run_config_id": "177167545173",
+      "run_config": {
+        "type": "kiln_agent",
+        "model_name": "deepseek_4_flash",
+        "model_provider_name": "openrouter",
+        "prompt_id": "task_run_config::507368061812::235956950045::177167545173",
+        "top_p": 1.0,
+        "temperature": 1.0,
+        "structured_output_mode": "json_schema",
+        "thinking_level": "high",
+        "tools_config": {
+          "tools": []
+        },
+        "input_transform": null
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "intermediate_outputs": {
+    "reasoning": "We need to triage ticket. Subject: SSO login loop after Okta metadata update. Body: Since rotating Okta signing certificate this morning, every user who clicks Sign in with SSO gets bounced back to login page. Local password accounts still work. About 40 people locked out. Customer plan pro.\n\nWe need to decide team ownership, urgency, and whether human needs to look before reply. Be conservative: data loss, billing disputes, security concern escalate to human. Here, SSO login loop after certificate rotation. This is an authentication issue. Likely Identity/Auth team. Not data loss or billing. Security? Could be a security concern because SSO is broken, but not necessarily a security incident. However, 40 people locked out - high impact. Need human? Usually SSO config changes by customer often require self-service, but since they rotated certificate, they may need to update metadata. The ticket is about a product issue. Is it a support request that can be handled by automated reply? It's technical. Should a human look at it? No explicit red flag. But it's a significant outage for customer. Urgency high. Team: Identity/Auth support or Tier 2. We need to produce a summary sentence for engineer.\n\nLet's parse instructions: \"Read the inbound ticket and decide which team should own it, how urgent it is, and whether a human needs to look at it before a reply goes out.\" So we need output: team, urgency, human review needed? And summary sentence.\n\nConservative: escalate to human for data loss, billing disputes, security concern. Here SSO lockout for 40 people is not one of those, but it's a production outage-ish. But \"human needs to look at it before a reply goes out\" - perhaps yes because it's a technical issue requiring troubleshooting. But 'conservative' might imply: if any doubt, escalate. The ticket involves certificate rotation causing SSO loop. This is a common issue: customer needs to update metadata in our system. Could be handled by automated response? But \"every user\" locked out, 40 people. That's high urgency. The triage should probably route to an engineer for prompt handling. But is it \"human before reply\"? I think yes, because it's a service outage for many users. The instructions specifically say \"when the ticket mentions data loss, billing disputes, or a security concern, escalate to a human.\" That is a non-exhaustive list? \"Be conservative\" suggests we should escalate when in doubt. Here, it's not those, but it's a critical authentication failure. I'd say human should look because it's urgent and requires technical expertise beyond an automated reply. But we need to follow the given criteria precisely. The ticket doesn't mention data loss, billing, or security. However, a locked-out SSO could be considered a security concern? No, the opposite. It's an availability issue. So maybe no human required? But the team needs to own it. Urgency: high, because 40 people locked out. Team: Identity/Access or Integration support.\n\nI'll craft a response: Team: Identity & Access Management support. Urgency: High. Human review: Yes - human should review before automated reply because it's a widespread login outage affecting all SSO users. Or maybe not? Let's think.\n\nThe instruction: \"decide which team should own it, how urgent it is, and whether a human needs to look at it before a reply goes out.\" So we need to output three things. Then summary sentence.\n\nI'll go with: Team: Identity/Auth engineering (or \"Auth/SAML support\"). Urgency: High. Human review: Yes. Summary: \"Customer's Okta certificate rotation caused an SSO login loop for all 40 users; verify the updated metadata in our system and guide them to re-upload the new certificate.\"\n\nLet's produce."
+  },
+  "tags": [
+    "eval_escalation_flagging",
+    "manual_run"
+  ],
+  "usage": {
+    "input_tokens": 241,
+    "output_tokens": 879,
+    "total_tokens": 1120,
+    "cost": 0.00027986,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 11760
+  },
+  "cumulative_usage": {
+    "input_tokens": 241,
+    "output_tokens": 879,
+    "total_tokens": 1120,
+    "cost": 0.00027986,
+    "cached_tokens": 0
+  },
+  "trace": [
+    {
+      "content": "You are a support triage assistant for a B2B SaaS product.\n\nRead the inbound ticket and decide which team should own it, how urgent it is, and whether a human needs to look at it before a reply goes out. Be conservative: when the ticket mentions data loss, billing disputes, or a security concern, escalate to a human.\n\nKeep the summary to one sentence, written for the engineer or agent who picks the ticket up next.",
+      "role": "system"
+    },
+    {
+      "content": "{\"subject\": \"SSO login loop after Okta metadata update\", \"body\": \"Since we rotated our Okta signing certificate this morning, every user who clicks Sign in with SSO gets bounced back to the login page. Local password accounts still work. About 40 people are locked out.\", \"customer_plan\": \"pro\"}",
+      "role": "user"
+    },
+    {
+      "role": "assistant",
+      "content": "{ \n  \"team\": \"security\", \n  \"priority\": \"high\", \n  \"needs_human_review\": true,\n  \"summary\": \"Customer's Okta certificate rotation is causing an SSO login loop that locks out all 40 users; verify the new metadata was synced and help them re-register the updated certificate.\" \n}",
+      "reasoning_content": "We need to triage ticket. Subject: SSO login loop after Okta metadata update. Body: Since rotating Okta signing certificate this morning, every user who clicks Sign in with SSO gets bounced back to login page. Local password accounts still work. About 40 people locked out. Customer plan pro.\n\nWe need to decide team ownership, urgency, and whether human needs to look before reply. Be conservative: data loss, billing disputes, security concern escalate to human. Here, SSO login loop after certificate rotation. This is an authentication issue. Likely Identity/Auth team. Not data loss or billing. Security? Could be a security concern because SSO is broken, but not necessarily a security incident. However, 40 people locked out - high impact. Need human? Usually SSO config changes by customer often require self-service, but since they rotated certificate, they may need to update metadata. The ticket is about a product issue. Is it a support request that can be handled by automated reply? It's technical. Should a human look at it? No explicit red flag. But it's a significant outage for customer. Urgency high. Team: Identity/Auth support or Tier 2. We need to produce a summary sentence for engineer.\n\nLet's parse instructions: \"Read the inbound ticket and decide which team should own it, how urgent it is, and whether a human needs to look at it before a reply goes out.\" So we need output: team, urgency, human review needed? And summary sentence.\n\nConservative: escalate to human for data loss, billing disputes, security concern. Here SSO lockout for 40 people is not one of those, but it's a production outage-ish. But \"human needs to look at it before a reply goes out\" - perhaps yes because it's a technical issue requiring troubleshooting. But 'conservative' might imply: if any doubt, escalate. The ticket involves certificate rotation causing SSO loop. This is a common issue: customer needs to update metadata in our system. Could be handled by automated response? But \"every user\" locked out, 40 people. That's high urgency. The triage should probably route to an engineer for prompt handling. But is it \"human before reply\"? I think yes, because it's a service outage for many users. The instructions specifically say \"when the ticket mentions data loss, billing disputes, or a security concern, escalate to a human.\" That is a non-exhaustive list? \"Be conservative\" suggests we should escalate when in doubt. Here, it's not those, but it's a critical authentication failure. I'd say human should look because it's urgent and requires technical expertise beyond an automated reply. But we need to follow the given criteria precisely. The ticket doesn't mention data loss, billing, or security. However, a locked-out SSO could be considered a security concern? No, the opposite. It's an availability issue. So maybe no human required? But the team needs to own it. Urgency: high, because 40 people locked out. Team: Identity/Access or Integration support.\n\nI'll craft a response: Team: Identity & Access Management support. Urgency: High. Human review: Yes - human should review before automated reply because it's a widespread login outage affecting all SSO users. Or maybe not? Let's think.\n\nThe instruction: \"decide which team should own it, how urgent it is, and whether a human needs to look at it before a reply goes out.\" So we need to output three things. Then summary sentence.\n\nI'll go with: Team: Identity/Auth engineering (or \"Auth/SAML support\"). Urgency: High. Human review: Yes. Summary: \"Customer's Okta certificate rotation caused an SSO login loop for all 40 users; verify the updated metadata in our system and guide them to re-upload the new certificate.\"\n\nLet's produce.",
+      "latency_ms": 11760,
+      "usage": {
+        "input_tokens": 241,
+        "output_tokens": 879,
+        "total_tokens": 1120,
+        "cost": 0.00027986,
+        "cached_tokens": 0
+      }
+    }
+  ],
+  "parent_task_run_id": null,
+  "model_type": "task_run"
+}

@@ -1,0 +1,15 @@
+{
+  "v": 1,
+  "id": "227908374129",
+  "created_at": "2026-08-17T22:08:22.532830Z",
+  "created_by": "root",
+  "name": "Size 512 - Overlap 64",
+  "description": "Fixed window chunker at the app's default size and overlap.",
+  "chunker_type": "fixed_window",
+  "properties": {
+    "chunker_type": "fixed_window",
+    "chunk_overlap": 64,
+    "chunk_size": 512
+  },
+  "model_type": "chunker_config"
+}

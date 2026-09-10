@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
   import { page } from "$app/stores"
-  import { onMount, onDestroy } from "svelte"
+  import { onMount, onDestroy, tick } from "svelte"
   import { agentInfo } from "$lib/agent"
   import {
     afterNavigate,
@@ -15,6 +15,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
+  import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import { build_suggested_models } from "$lib/ui/run_config_component/suggested_models"
   import {
     available_models,
@@ -36,10 +37,15 @@
     builder_mock_active,
     draft_after_save_keeping_stranded_tags,
     draft_has_content,
+    draft_is_resumable,
+    questions_are_current,
     reset_draft_keeping_tags,
     restore_step,
     reusable_cached_cases,
     reusable_minted_inputs,
+    should_invalidate_refined_values,
+    should_prefill_suggested_name,
+    run_config_cache_key,
     EMPTY_BUILDER_DRAFT,
     type BuilderDraft,
     type CachedMintedInputs,
@@ -53,13 +59,34 @@
   // Claim/Evidence replaces the read-the-trace pass/fail review: the reviewer
   // agrees/disagrees with distilled claims; the trace stays hidden in a modal.
   import ClaimEvidenceReview from "./claim_evidence_review.svelte"
+  import ReviewIntro from "./review_intro.svelte"
   // Multi-turn Step 4 is plan-first: the batch planner drafts one scenario
   // per conversation for approval before any conversation is driven.
   // Step 4 plan approval reuses the /generate batch-plan components — one
   // plan-review surface across the app rather than a builder-local fork.
   import KilnProBatchPlan from "../../../../generate/[project_id]/[task_id]/kiln_pro_batch_plan.svelte"
+  // The Refine Plan dialog reuses /generate's batch form rows (count
+  // stepper + guidance box) so both flows ask for a batch the same way.
+  import KilnProBatchForm from "../../../../generate/[project_id]/[task_id]/kiln_pro_batch_form.svelte"
+  // The Data Guide offer and checkbox are synthetic data generation's own,
+  // shared: the single-turn arm generates task inputs for the same reason
+  // SDG does, so it opens by offering a guide and lets Refine Plan turn one
+  // off, in SDG's words and SDG's controls.
+  import DataGuideOffer from "../../../../generate/[project_id]/[task_id]/data_guide_offer.svelte"
+  import SynthDataGuide, {
+    open_data_guide_in_new_tab,
+  } from "../../../../generate/[project_id]/[task_id]/synth_data_guide.svelte"
   import {
+    data_guide_decision_pending,
+    data_guide_offer_open,
+    plan_used_data_guide,
+    type DataGuideRead,
+  } from "./data_guide_flow"
+  import { with_data_guide_caller } from "$lib/utils/data_guide_return"
+  import {
+    compose_plan_guidance,
     grounding_data_guide,
+    join_data_guides,
     multiturn_plan_guidance,
     single_turn_plan_guidance,
   } from "./batch_plan_guidance"
@@ -76,6 +103,7 @@
     build_graded_traces,
     build_trace_reviews,
     calibration_gate_target,
+    declined_feedback_notice,
     disagreed_trace_indices,
     disagreement_feedback,
     empty_claim_verdicts,
@@ -87,14 +115,15 @@
     refine_judge_tooltip,
     rejudge_shortfall_notice,
     review_cta,
-    review_target,
+    reviewable_subset,
     reviewed_trace_count,
     select_calibration_subset,
     select_review_subset,
+    strip_wrapping_code_fence,
     user_says_meets_spec,
     validate_refined_judge_prompt,
     type Claim,
-    type FinalJudgement,
+    type Overview,
     type RefineJudgeProposal,
     type RejudgeCaseResult,
     type TraceClaims,
@@ -103,12 +132,20 @@
   // Step 4 plan-flow logic (stop banner, destructive-action confirms, the
   // preparing-review gate's resolved counting) — pure and unit-tested.
   import {
+    clamp_turns_per_case,
+    compact_batch_slots,
     dominant_failure_message,
+    drive_cost_warning,
+    drive_lanes_unchanged,
     drive_stop_banner,
     driven_data_confirm,
     first_preflight_failure,
     new_plan_confirm,
+    plan_drive,
     resolved_selected_count,
+    restore_turns_per_case,
+    MAX_TURNS_PER_CASE,
+    MIN_TURNS_PER_CASE,
     type DriveStop,
     type PreflightFailure,
     type PreflightLane,
@@ -152,12 +189,16 @@
   } from "$lib/stores/copilot_connection_store"
   import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  // The house stepper + label tooltip, for the Generation Settings turns row.
+  import IncrementUi from "$lib/ui/increment_ui.svelte"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import type {
     Task,
     ModelProviderName,
     QuestionSet,
     QuestionWithAnswer,
     SpecType,
+    KilnAgentRunConfigProperties,
   } from "$lib/types"
   import posthog from "posthog-js"
 
@@ -265,7 +306,7 @@
     // Navigating away also cancels the preparing-review gate's ownership of
     // the advance: in-flight claim builds keep running (they belong to the
     // traces, not the screen), but the gate must not push the user into
-    // review from another step. Next re-enters it, resolving instantly
+    // review from another step. Continue re-enters it, resolving instantly
     // when everything already built.
     preparing_review = false
     claims_gate_error = null
@@ -277,6 +318,15 @@
     calibration_phase = "idle"
     calibration_error = null
     calibration_refine_error = null
+    // The declined-feedback notice belongs to the round the reviewer was in;
+    // leaving review retires it rather than re-opening it later out of context.
+    calibration_declined_feedback_notice = null
+    // Leaving Step 4 with no plan undoes a Continue Without Data Guide, as
+    // Back does on the synthetic data page: the next entry offers again.
+    // With a plan, the skip stands; the plan is what the next entry shows.
+    if (current_step === "generate" && batch_plan === null) {
+      data_guide_skipped = false
+    }
     current_step = step
   }
   $: sync_step_from_history(
@@ -348,8 +398,9 @@
   $: current_draft = draft_ready
     ? {
         description,
-        spec_type,
+        continued_description,
         name,
+        prefilled_name,
         property_values,
         refined_property_values,
         suggested_edits,
@@ -358,12 +409,18 @@
         cached_su_cases,
         cached_minted_inputs,
         grounding_sample,
+        data_guide_text,
+        use_data_guide,
+        data_guide_skipped,
+        data_guide_offer_pending,
         multi_turn_batch_tag,
         single_turn_batch_tag,
         undeleted_batch_tags,
         su_driver,
         input_generator,
+        input_gen_run_config,
         judge_model,
+        turns_per_case,
       }
     : null
   $: if (current_draft && draft_store) {
@@ -371,15 +428,18 @@
   }
 
   // The header Reset button (SDG's is_setup pattern): appears once the
-  // draft carries anything and stays through every step — the confirm's
-  // wording, not the button's visibility, is what escalates with the
-  // stakes. Absent under the mock (draft_ready never flips there).
+  // draft carries work to discard and stays through every step — the
+  // confirm's wording, not the button's visibility, is what escalates with
+  // the stakes. Cleanup tags alone do not show it: they survive a Reset by
+  // design, and a second Reset would have nothing to discard. Absent under
+  // the mock (draft_ready never flips there).
   $: reset_available =
-    current_draft !== null && draft_has_content(current_draft)
+    current_draft !== null && draft_is_resumable(current_draft)
 
   // Start the wizard over: wipe the draft but CARRY the batch tags (they
   // name chains on disk that only delete-on-next-drive cleans up), then
-  // reload into a fresh mount — SDG's clear-and-reload move.
+  // start over on the Setup and Eval Type page — SDG's clear-and-reload
+  // move, aimed at where eval creation begins.
   async function reset_draft_with_confirm() {
     const msg =
       trace_claims.length > 0
@@ -388,7 +448,7 @@
             trace_claims.length,
             drive_stop === null,
           )
-        : "Are you sure you want to start over? Your draft (description, eval details, and scenarios) will be discarded. This cannot be undone."
+        : "Are you sure you want to start over? Your draft (description, eval details, and the batch plan) will be discarded. This cannot be undone."
     if (!confirm(msg)) return
     const carried = draft_store ? get(draft_store) : EMPTY_BUILDER_DRAFT
     draft_ready = false
@@ -398,13 +458,17 @@
     } catch (e) {
       console.error("Failed to persist the reset draft:", e)
     }
-    // The reset is persisted — suppress both guards for the reload.
+    // The reset is persisted — suppress both guards for the navigation.
+    // Start over where eval creation starts, on the Setup and Eval Type
+    // page, rather than reloading this URL: it can carry the description
+    // that page handed over, which a reload would apply again and walk
+    // straight back into Step 2.
     leave_guard_suppressed = true
-    window.location.reload()
+    window.location.href = `/specs/${project_id}/${task_id}/select_template`
   }
 
   // Restore silently — no resume prompt. The three-tier destructive-action
-  // confirms (New Batch Plan etc.) are the reset escape hatch, so a stale
+  // confirms (Refine Plan etc.) are the reset escape hatch, so a stale
   // draft never traps the user.
   async function restore_draft() {
     const { store, initialized, persist } = indexedDBStore(
@@ -417,8 +481,14 @@
     const saved = get(store)
     if (draft_has_content(saved)) {
       description = saved.description
-      spec_type = saved.spec_type
+      // Pre-pairing drafts have no such key: null restores the "no Continue on
+      // record" state, which the gate's fallback already covers.
+      continued_description = saved.continued_description ?? null
       name = saved.name
+      // Pre-prefill-tracking drafts have no such key: null restores the "no
+      // machine claim on record" state, so the saved name is left as the
+      // user's and never clobbered by a later suggestion.
+      prefilled_name = saved.prefilled_name ?? null
       // An empty stored record keeps the var's seeded default (e.g.
       // property_values starts with the issue keys) instead of erasing it.
       if (Object.keys(saved.property_values).length > 0) {
@@ -440,13 +510,28 @@
       cached_su_cases = saved.cached_su_cases ?? null
       cached_minted_inputs = saved.cached_minted_inputs ?? null
       grounding_sample = saved.grounding_sample ?? null
+      // Drafts from before guides were read here restore as no guide, off.
+      data_guide_text = saved.data_guide_text ?? null
+      use_data_guide = saved.use_data_guide ?? false
+      data_guide_skipped = saved.data_guide_skipped ?? false
       multi_turn_batch_tag = saved.multi_turn_batch_tag
       single_turn_batch_tag = saved.single_turn_batch_tag ?? null
       undeleted_batch_tags = saved.undeleted_batch_tags
       // Model lanes: pre-Drive-Settings drafts have no such keys.
       su_driver = saved.su_driver ?? null
       input_generator = saved.input_generator ?? null
+      // Drafts written before the input lane carried a config restore null,
+      // which reads as nothing chosen: the dialog then falls back to
+      // pre-population, exactly like a lane with no model on record.
+      input_gen_run_config = saved.input_gen_run_config ?? null
       judge_model = saved.judge_model ?? null
+      // Conversation length: no key, no choice on record, or a stored value
+      // that isn't a number restores the default; a real number is clamped in
+      // case it predates today's range.
+      turns_per_case = restore_turns_per_case(
+        saved.turns_per_case,
+        TURNS_PER_CASE,
+      )
       // Rebuild the shallow-routing chain up to the restored step (the
       // mount already seeded "describe") so the browser's Back walks the
       // wizard steps exactly as in the original session instead of
@@ -523,6 +608,25 @@
       // writes either.
       if (!builder_mock_active()) {
         await restore_draft()
+        // A draft that was waiting on the Data Guide offer restores onto
+        // Step 4 with no plan: re-enter the step, so the guide is read again
+        // (the user may have just saved one) and the flow resumes where it
+        // paused — the plan fires under the new guide, or the offer reopens.
+        if (current_step === "generate" && batch_plan === null) {
+          if (await copilot_connection_resolved()) {
+            void plan_or_offer_data_guide()
+          }
+        }
+      }
+      // The eval type page hands the description over: it holds the textbox
+      // now, so step 1 is already answered and showing the same box again
+      // would ask twice. Read after the draft restore, not before, because a
+      // restored draft wins — someone resuming has typed more than a link can
+      // carry — and before this point `description` is empty either way.
+      const handed_over = $page.url.searchParams.get("description")
+      if (handed_over && !description.trim()) {
+        description = handed_over
+        continue_from_describe()
       }
     } catch (e) {
       task_error = e instanceof Error ? e.message : "Failed to load task."
@@ -537,17 +641,28 @@
 
   // ── Step 1 state
   let description = ""
-  // Defaulting to "issue" keeps the refine + save shapes valid even when
-  // classification fails or is unavailable.
-  let spec_type: SpecType = "issue"
+  // Every eval this builder authors is an issue spec; the refine and save
+  // shapes are built around that one type.
+  const spec_type: SpecType = "issue"
   let name = ""
+  // The name the machine last wrote. While `name` still matches it — or the
+  // field is empty — the field is machine-owned and a newer suggestion may
+  // replace it. Typing a different name takes ownership; clearing the field
+  // hands ownership back.
+  let prefilled_name: string | null = null
   let property_values: Record<string, string | null> = {
     issue_description: "",
     issue_examples: "",
     non_issue_examples: "",
   }
-  let classifying = false
-  let classify_error: string | null = null
+  // The description the last Continue processed. Questions pair against this,
+  // not the live textarea, so a browser Forward past an edit the user never
+  // continued from keeps the question set that still matches the
+  // property_values on record.
+  let continued_description: string | null = null
+  // The text questions are paired against; the live description only when no
+  // Continue is on record (a first entry, or a draft saved before this key).
+  $: questions_source = continued_description ?? description
   $: field_configs = spec_field_configs[spec_type]
 
   // Resolve a candidate eval name against the task's existing specs — the
@@ -575,64 +690,28 @@
     }
   }
 
-  // Call classify_spec_description to map the free-text Step 1 description
-  // to a spec_type + suggested name + structured property_values. On error
-  // we keep the "issue" defaults so the user can still proceed and fill in
-  // property_values via the Q&A / Refine steps.
-  async function classify_then_continue() {
-    classifying = true
-    classify_error = null
-    try {
-      // Seed property_values.issue_description from the free-text description
-      // up front. This is the fallback shape for the "issue" default — when
-      // the classifier ships, it'll overwrite below. Done here so Step 3's
-      // Refine reflects what the user typed in Step 1 (and Step 2's
-      // refine_spec_with_question_answers has something to refine from),
-      // even if classification fails.
-      property_values = {
-        ...property_values,
-        issue_description: description,
-      }
-
-      const { data, error } = await client.POST(
-        "/api/copilot/classify_spec_description",
-        {
-          body: {
-            description,
-            task_prompt: task?.instruction ?? null,
-          },
-          signal: new_copilot_abort_signal(),
-        },
-      )
-      if (error || !data) {
-        classify_error =
-          "Couldn't classify your description. Continuing with the default 'issue' type."
-        goto_step("clarify")
-        return
-      }
-      spec_type = data.spec_type as SpecType
-      // The suggester is deterministic over similar descriptions, so a
-      // second eval on this task would regenerate a taken name — prefill
-      // the nearest available variant instead (best-effort).
-      name =
-        (await resolve_available_name(data.suggested_name))?.name ??
-        data.suggested_name
-      // The classifier returns the property_values dict already keyed for
-      // this spec_type. Cast to the looser Record shape consumed by
-      // Questions and the refine form.
-      property_values = data.property_values as Record<string, string | null>
-      goto_step("clarify")
-    } catch (e) {
-      if (is_abort_error(e)) return
-      classify_error =
-        e instanceof Error ? e.message : "Couldn't classify your description."
-    } finally {
-      classifying = false
+  // Step 1's Continue: record the description as the issue text and move to
+  // the clarifying questions. The description is pinned to a local first so
+  // everything derived from this Continue describes the same text.
+  function continue_from_describe() {
+    const source = description
+    property_values = {
+      ...property_values,
+      issue_description: source,
     }
+    continued_description = source
+    // A new Continue is a fresh attempt: a stale question failure from the
+    // previous source must not block regeneration on this one.
+    questions_error = null
+    goto_step("clarify")
   }
 
   // ── Step 2 state — questions
   let question_set: QuestionSet | null = null
+  // Identity snapshot of the description the current question_set was
+  // generated from; null until a set successfully lands. Drives the
+  // regeneration gate below.
+  let question_set_source: string | null = null
   let questions_loading = false
   let questions_error: string | null = null
   let questions_form_error: KilnError | null = null
@@ -643,17 +722,33 @@
   let other_texts: string[] = []
 
   async function load_questions() {
+    // Only one load may be in flight: a second caller would abort the first and
+    // cascade into repeated paid calls.
+    if (questions_loading) return
     questions_loading = true
     questions_error = null
+    // A validation message about the set being replaced must not outlive it:
+    // the answers it complained about are cleared with the questions below.
+    questions_form_error = null
+    // Pin the text this set is being generated from before the await, so a
+    // later edit can't be mistaken for what the copilot actually saw. An edit
+    // the user hasn't continued from takes effect on the next Continue.
+    const source = questions_source
     try {
       const { data, error } = await client.POST("/api/copilot/question_spec", {
         body: {
+          project_id,
+          task_id,
+          // The task's real schemas, not blanks. A structured-output task
+          // that reports no schema gets asked to invent the very field names
+          // it already defines, and whatever the user answers then becomes
+          // the judge's idea of a valid value.
           target_task_info: {
             task_prompt: task?.instruction ?? "",
-            task_input_schema: "",
-            task_output_schema: "",
+            task_input_schema: task?.input_json_schema ?? "",
+            task_output_schema: task?.output_json_schema ?? "",
           },
-          target_specification: description,
+          target_specification: source,
         },
         signal: new_copilot_abort_signal(),
       })
@@ -661,9 +756,16 @@
         questions_error = "Failed to load clarifying questions."
         return
       }
-      question_set = data as QuestionSet
-      selections = question_set.questions.map(() => null)
-      other_texts = question_set.questions.map(() => "")
+      // Record nothing for a response that cannot render: derive the per-question
+      // state first so a malformed shape throws before the set is marked current,
+      // landing in the catch below as a normal failure.
+      const set = data as QuestionSet
+      const next_selections = set.questions.map(() => null)
+      const next_other_texts = set.questions.map(() => "")
+      question_set = set
+      question_set_source = source
+      selections = next_selections
+      other_texts = next_other_texts
     } catch (e) {
       if (is_abort_error(e)) return
       questions_error =
@@ -678,16 +780,43 @@
   // surface declared to the refine call. Edits for any other field are
   // discarded before they can reach the saved spec (the user never saw
   // them) and reported for telemetry.
-  // The builder is issue-type-only end to end (save also hardcodes the
-  // issue spec_type); this list must move with spec_type if that changes.
+  // The builder authors issue specs only, end to end: save hardcodes the
+  // issue spec_type, and issue_description is the one field it writes.
   const RENDERED_REFINE_FIELDS: readonly string[] = ["issue_description"]
   let refined_property_values: Record<string, string | null> = {}
+  // Snapshot of refined_property_values as the CODE last wrote it (refine
+  // success or a seed). The form's bind:value mutates the values without
+  // touching this, so "still byte-equal" means untouched model output — the
+  // only content a failed refine may discard. Null (draft-restored values)
+  // reads as user-owned.
+  let refined_values_programmatic_json: string | null = null
+  // Snapshot of the Step 1/2 property_values that same write was derived from. A
+  // failure only discards programmatic content once this no longer matches the
+  // current property_values — otherwise the refined text still fits the
+  // description on screen and is worth keeping.
+  let refined_values_derived_from_json: string | null = null
   let suggested_edits: Record<string, SuggestedEdit> = {}
+  // The Issue Description field's info tooltip on Step 3. Says the text was
+  // rewritten and carries the model's own reason, so the "why" sits on the
+  // field it explains instead of a separate caption below it.
+  $: refine_info_description = suggested_edits.issue_description
+    ?.reason_for_edit
+    ? `We crafted this based on your answers.\n\n${suggested_edits.issue_description.reason_for_edit}`
+    : ""
   let refine_form_error: KilnError | null = null
   let refined_preview_loading = false
   // Non-blocking: refinement failing still lands the user on an editable
   // refine step, but they should know their answers weren't incorporated.
   let refine_warning: string | null = null
+
+  // The Step 1/2 property_values as the refine form sees them. Every snapshot and
+  // compare of the form's source goes through here, so both sides of a byte
+  // compare are built the same way and key order can never differ.
+  function rendered_source_json(): string {
+    return JSON.stringify(
+      keep_rendered_fields(property_values, RENDERED_REFINE_FIELDS),
+    )
+  }
 
   // A failed refine still lands on an editable form: seed it from the
   // current values, unless a prior visit already populated it (a re-entered
@@ -701,10 +830,34 @@
         property_values,
         RENDERED_REFINE_FIELDS,
       )
+      refined_values_programmatic_json = JSON.stringify(refined_property_values)
+      refined_values_derived_from_json = rendered_source_json()
     }
   }
 
-  // Called by Questions component on Next. Fires the refinement call and
+  // A failed refine must not leave a previous round's refined text in place
+  // once the description behind it changed: it would silently outrank the
+  // user's newer description everywhere the spec text is read, while the
+  // warning above the form says their answers were not incorporated. Discard it
+  // — and the suggestions that annotate it — only when it is still exactly what
+  // the code wrote AND its source has moved, so both step 3 edits and a good
+  // refinement that merely hit a transient failure survive.
+  function reseed_refine_form_after_failure() {
+    if (
+      should_invalidate_refined_values(
+        refined_property_values,
+        refined_values_programmatic_json,
+        refined_values_derived_from_json,
+        rendered_source_json(),
+      )
+    ) {
+      refined_property_values = {}
+      suggested_edits = {}
+    }
+    seed_refine_form_if_empty()
+  }
+
+  // Called by Questions component on Continue. Fires the refinement call and
   // populates the refine form's state. Matches v1's flow:
   //   answer Qs → refining spinner → refine screen with editable suggestions.
   async function on_continue_from_clarify(
@@ -712,7 +865,7 @@
   ) {
     // FormContainer flips submitting=true on submit and leaves the reset to
     // us — clear it before advancing so browser Back to the clarify step
-    // doesn't find a permanently spinning Next button.
+    // doesn't find a permanently spinning Continue button.
     questions_submitting = false
     goto_step("refine")
     refined_preview_loading = true
@@ -743,7 +896,7 @@
         refine_warning = `Couldn't refine the spec from your answers (${createKilnError(
           error,
         ).getMessage()}). Edit it directly below.`
-        seed_refine_form_if_empty()
+        reseed_refine_form_after_failure()
         return
       }
 
@@ -752,20 +905,22 @@
         suggested_name?: string
       }
 
-      // Prefill the Eval Name from the model's suggestion, but only when the
-      // user hasn't typed one and the suggestion passes the same filename-safe
-      // validator the name field enforces. User input always wins; an invalid
-      // or absent suggestion leaves the field untouched.
+      // Prefill the Eval Name from the model's suggestion while the field is
+      // still machine-owned, and only when the suggestion passes the same
+      // filename-safe validator the name field enforces. Typing in the field
+      // takes ownership; an invalid or absent suggestion leaves it untouched.
       if (
-        !name.trim() &&
+        should_prefill_suggested_name(name, prefilled_name) &&
         refine_response.suggested_name &&
         filename_string_short_validator(refine_response.suggested_name) === null
       ) {
-        // Same deterministic-suggester hazard as the classify prefill: take
-        // the nearest available variant of the suggestion (best-effort).
+        // The suggester is deterministic over similar descriptions, so a
+        // second eval on this task would regenerate a taken name. Take the
+        // nearest available variant instead (best-effort).
         name =
           (await resolve_available_name(refine_response.suggested_name))
             ?.name ?? refine_response.suggested_name
+        prefilled_name = name
       }
 
       // Start from current values, then apply the edits the form can show.
@@ -790,6 +945,11 @@
         ...keep_rendered_fields(property_values, RENDERED_REFINE_FIELDS),
         ...split.refined_edits,
       }
+      refined_values_programmatic_json = JSON.stringify(refined_property_values)
+      // The property_values this refine ran against (they are not touched
+      // during the call), so a later failure can tell whether the
+      // description behind these values has since moved.
+      refined_values_derived_from_json = rendered_source_json()
       suggested_edits = split.suggested_edits
     } catch (e) {
       if (is_abort_error(e)) return
@@ -797,13 +957,13 @@
       // either way — but the failure must not be silent.
       refine_warning =
         "Couldn't refine your eval from your answers. Edit it directly below."
-      seed_refine_form_if_empty()
+      reseed_refine_form_after_failure()
     } finally {
       refined_preview_loading = false
     }
   }
 
-  // The refine form's Next action: advance to Step 4 generation with
+  // The refine form's Continue action: advance to Step 4 generation with
   // whatever refined_property_values the user finalized.
   // Reentry guard for the async submit below: a second activation during
   // the availability round trip (double-click, Cmd-Enter key-repeat) must
@@ -830,7 +990,7 @@
         )
         return
       }
-      on_advance_to_generate()
+      void on_advance_to_generate()
     } finally {
       refine_submit_in_flight = false
     }
@@ -854,11 +1014,23 @@
   // always free.
   let reviewed_identity: string | null = null
 
-  // Number of cases in one batch (conversations to drive, or single-turn
-  // inputs to run) — matches NUM_CASES_MAX in
-  // libs/core/kiln_ai/synthetic_user/runner.py and the single-turn
-  // pipeline's inputs cap.
-  const NUM_CASES = 40
+  // Default size of one batch (conversations to drive, or single-turn inputs
+  // to run) — what the first plan asks for before the user picks a size in
+  // the Refine Plan dialog. The dialog's ceiling is the server's cap
+  // (NUM_CASES_MAX in libs/core/kiln_ai/synthetic_user/runner.py, mirrored by
+  // the batch-plan and pipeline routes), not this number.
+  // Sized so the batch is still useful once it is split: part becomes the
+  // human-rated answer key and the rest is dealt train:val, so a batch this
+  // size leaves enough in every slice to train on later rather than only
+  // evaluate once. Growing it does NOT grow the review ask — that is capped
+  // (review_target), so the reviewer's work stays flat as the batch scales.
+  const NUM_CASES = 80
+  // The largest batch the server will plan or drive. Mirrors NUM_CASES_MAX in
+  // libs/core/kiln_ai/synthetic_user/runner.py, which the batch-plan and
+  // pipeline routes enforce — asking for more is rejected before anything
+  // runs, so the stepper stops here rather than letting the user compose a
+  // request that can only fail.
+  const NUM_CASES_MAX = 200
   // Batch plan for Step 4 — one prompt per unit of work (a conversation
   // scenario or a single-turn test input), drafted by the copilot batch
   // planner and approved (with edits/deletions) by the user before anything
@@ -868,7 +1040,7 @@
   // The summary isn't regenerated when the user edits/deletes prompts — flag
   // that it may no longer match (mirrors the /generate route's plan UI).
   let batch_plan_edited = false
-  // Snapshot of the prompts a drive actually ran — gates the Next-to-review
+  // Snapshot of the prompts a drive actually ran — gates the Continue-to-review
   // action so results are never presented for a plan edited after the drive.
   let driven_prompts_json: string | null = null
   // The plan's generated synthetic users, reused on a re-drive while the
@@ -887,9 +1059,55 @@
   // was drafted under. Null when the task has no runs — grounding is
   // best-effort, never a gate.
   let grounding_sample: TaskSampleExample | null = null
-  // Approved plan length drives the batch size; NUM_CASES is the requested
-  // plan size before any deletions.
-  $: planned_total = batch_plan?.prompts.length ?? NUM_CASES
+  // The task's saved Data Guide (single-turn only), as read when Step 4 was
+  // entered without a plan; rides the draft so a restore mints under the
+  // text its plan was drafted with. Multi-turn never reads it.
+  let data_guide_text: string | null = null
+  let use_data_guide = false
+  // Continue Without Data Guide: the plan fires without one, now and on
+  // every re-plan and reload of this draft. Rides the draft.
+  let data_guide_skipped = false
+  // Where the Step 4 entry read stands. Nothing on the step renders while
+  // it is "reading": the automatic plan must fire with the guide known.
+  let data_guide_read: DataGuideRead = "unread"
+  $: data_guide_decision_state = {
+    on_generate_step: current_step === "generate",
+    is_multi_turn,
+    read: data_guide_read,
+    skipped: data_guide_skipped,
+    has_plan: batch_plan !== null,
+    has_results: trace_claims.length > 0,
+    planning: generation_loading,
+  }
+  // Step 4 is waiting on the guide (reading it, or offering one). Persisted
+  // so a reload, or a return from setting the guide up, lands back here.
+  $: data_guide_offer_pending = data_guide_decision_pending(
+    data_guide_decision_state,
+  )
+  // The offer on screen (SDG's "Create a Data Guide"); the plan waits for
+  // the user's choice.
+  $: data_guide_offer_shown = data_guide_offer_open(data_guide_decision_state)
+  // The proposal's note that the plan was drafted under the guide. The
+  // committed on/off state always describes the plan on screen, because
+  // every change to it re-plans.
+  $: plan_drafted_with_data_guide = plan_used_data_guide({
+    is_multi_turn,
+    has_plan: batch_plan !== null,
+    use_data_guide,
+    has_guide: data_guide_text !== null,
+  })
+  // Approved plan length drives the batch size; before a plan exists it is
+  // the size that was requested, which the user may have changed.
+  $: planned_total = batch_plan?.prompts.length ?? eval_input_count
+  // What the approved plan will cost to run, shown in the settings dialog
+  // directly above the button that spends it. Quotes the STAGED length, so the
+  // number moves with the stepper the user is holding rather than with the
+  // value the last submit committed.
+  $: drive_cost_message = drive_cost_warning({
+    is_multi_turn,
+    count: planned_total,
+    turns_per_case: staged_drive_turns_per_case,
+  })
   // Which loading stage Step 4 is in — drives the progress screen only.
   // The interactive plan-approval view is DERIVED (show_plan_approval below),
   // not a phase, so no code path can strand it behind a stale flag.
@@ -914,10 +1132,10 @@
     !preparing_review &&
     claims_gate_error === null
   // Eager lane resolution when the plan surface becomes visible, so the
-  // primary run starts instantly and the models link opens a prefilled
-  // dialog. Fire-and-forget: prepopulate_lanes only fills null lanes (never
-  // overwrites a draft/user choice) and its own guard makes the drive's
-  // later call a no-op, so this never starts a drive nor races the run flow.
+  // settings dialog opens on filled dropdowns. Fire-and-forget:
+  // prepopulate_lanes only fills null lanes (never overwrites a draft/user
+  // choice) and memoizes the pass, so the dialog's later call awaits this
+  // one rather than starting a second — and neither starts a drive.
   $: if (show_plan_approval && !lanes_prepopulated) {
     void prepopulate_lanes()
   }
@@ -951,11 +1169,29 @@
   // disk). Save mints one EvalInput per driven case — the eval slice the
   // runner re-drives per run config.
   let driven_cases: SyntheticUserCaseWire[] = []
+  // The current batch's item list (cases on multi-turn, minted inputs on
+  // single-turn) and its per-slot results, kept across drives so a retry
+  // can TOP OFF the missing slots — drive only them, into the same batch
+  // tag — instead of replacing the batch and re-billing its paid
+  // successes. Not drafted: results don't survive a reload, so neither
+  // does the batch's slot state.
+  let batch_cases: SyntheticUserCaseWire[] | null = null
+  let batch_inputs: string[] | null = null
+  let built_by_case: (TraceClaims | null)[] = []
+  // Slots whose conversation was successfully driven. Guards driven_cases
+  // against a duplicate append when a top-off re-drives a case that drove
+  // but failed a later stage — its case must reach save exactly once.
+  let driven_slots = new Set<number>()
   // The synthetic-user model driven_cases actually ran with, captured at
   // batch commit. Save stamps THIS onto the minted items — the live
   // su_driver picker can change after the drive (Advanced dialog), and the
   // stamp must describe the conversations that exist, not a later pick.
   let driven_su_driver: ModelChoice | null = null
+  // The conversation length driven_cases actually ran for, captured at batch
+  // commit beside the synthetic-user model above. The progress denominator and
+  // the save stamp read THIS: the stepper can move after (or during) a drive,
+  // and both must describe the conversations that exist.
+  let driven_turns_per_case: number | null = null
   // batch_tag from each arm's pipeline batch_started event — passed to the
   // save endpoint so the backend can tag the matching runs for the eval
   // dataset.
@@ -971,9 +1207,9 @@
   // Unified stop screen: set when a drive ends short of the approved plan
   // (post-retry case failures or upstream salvage drops). The plan screen
   // stops ONCE with an informational banner and the recovery actions —
-  // continue with the survivors via Next (iff any) or Drive again. No
+  // continue with the survivors via Continue (iff any) or Drive again. No
   // failure is shown without an action, and no failure silently shrinks the
-  // batch; all-failed is the same screen with Next naturally absent.
+  // batch; all-failed is the same screen with Continue naturally absent.
   let drive_stop: DriveStop | null = null
   // Per-case failure messages from the last drive's case_failed frames —
   // aggregated into the stop banner's "most common" diagnosis.
@@ -1060,28 +1296,57 @@
   //      ([drive → judge]) or single_turn_pipeline ([run → judge]) — and
   //      the PipelineEvent frames drive progress + the review results.
   //
+  // The default conversation length, matching the drive loop's own default
+  // (MAX_TURNS_DEFAULT in libs/core/kiln_ai/synthetic_user/runner.py) so an
+  // untouched knob runs exactly what the SDK would run on its own.
   const TURNS_PER_CASE = 5
+  // The conversation length the user COMMITTED in Generation Settings. Rides
+  // the persisted draft, so a reload keeps the choice.
+  let turns_per_case = TURNS_PER_CASE
+  // The dialog's working copy, edited by the stepper. Staged like the model
+  // lanes' dropdown bindings: open_drive_settings reseeds it from the
+  // committed value and only submit commits it back, so leaving the dialog by
+  // Esc, X, or the backdrop discards a nudge — which matters because a
+  // half-changed length would otherwise silently disqualify a top-off drive.
+  let staged_turns_per_case = turns_per_case
+  // The turn count one drive spends per conversation. EVERY reader of the
+  // COMMITTED length goes through this alias — the drive request, the progress
+  // denominator, and the saved drive stamp — so what runs and what is
+  // persisted can never disagree. Clamped to the range the drive route
+  // accepts, so no stored value can compose a request that only 422s.
+  $: drive_turns_per_case = clamp_turns_per_case(turns_per_case)
+  // The same clamp over the staged value: what the open dialog quotes. Keeps
+  // the cost warning honest as the stepper moves, and never quotes a length
+  // the route would reject.
+  $: staged_drive_turns_per_case = clamp_turns_per_case(staged_turns_per_case)
 
-  // ── Model lanes (SDG's Generation Settings pattern). The primary button
-  // runs immediately with these lanes resolved to their defaults; the
-  // "Advanced" dialog lets the user pick them first — the user simulator
-  // (multi-turn), the input generator (single-turn), and the judge — and
-  // its submit starts the run the same way. The committed lanes ride the
-  // persisted draft; the builder has no hardcoded model or provider
-  // anywhere.
+  // ── Model lanes (SDG's Generation Settings pattern). The Generation
+  // Settings dialog is the drive's only entrance: it shows the lanes the
+  // run will spend on — the user simulator (multi-turn), the input
+  // generator (single-turn), and the judge — resolved to their defaults,
+  // and its submit starts the run. The committed lanes ride the persisted
+  // draft; the builder has no hardcoded model or provider anywhere.
   let su_driver: ModelChoice | null = null
   let input_generator: ModelChoice | null = null
+  // The input generator's committed run config: model, tools, skills and
+  // sampling. Set by the dialog's submit and sent verbatim to the minting
+  // route, so what runs is what the user configured. Rides the draft, so a
+  // restored session can run again without reopening the dialog.
+  let input_gen_run_config: KilnAgentRunConfigProperties | null = null
   let judge_model: ModelChoice | null = null
   let drive_settings_dialog: Dialog | null = null
-  // Dropdown bindings: the combined "provider_id/model_id" string plus the
-  // parsed ids the dropdown maintains. Committed to the lanes on submit —
-  // closing the dialog without submitting discards dropdown changes.
+  // Model-only lane bindings: the combined "provider_id/model_id" string plus
+  // the parsed ids the dropdown maintains. Committed to the lanes on submit —
+  // closing the dialog without submitting discards dropdown changes. The
+  // input generator binds only the combined string; its run config component
+  // owns the rest, and submit reads the whole config back off it.
   let su_model_combined: string | null = null
   let su_model_id: string | null = null
   let su_provider_id: string | null = null
   let input_gen_model_combined: string | null = null
-  let input_gen_model_id: string | null = null
-  let input_gen_provider_id: string | null = null
+  // The input lane's run config component, read on submit for the config it
+  // holds and reseeded on open from the config last committed.
+  let input_gen_config_component: RunConfigComponent | null = null
   let judge_model_combined: string | null = null
   let judge_model_id: string | null = null
   let judge_provider_id: string | null = null
@@ -1091,7 +1356,33 @@
   let drive_settings_error: KilnError | null = null
   // One pre-population pass per mount; lanes the draft restored (or the
   // user committed) are never overwritten — only null lanes are filled.
-  let lanes_prepopulated = false
+  // Held as the pass's PROMISE, not a done flag: the plan surface starts the
+  // pass eagerly, so a later caller has to await the one in flight rather
+  // than return early while the lanes are still null.
+  let lanes_prepopulated: Promise<void> | null = null
+
+  // ── Refine Plan dialog. Replaces the native confirm on the regenerate
+  // button: the same warning now rides a form that also asks how many items
+  // to plan and what to steer the planner toward.
+  let new_plan_dialog: Dialog | null = null
+  let new_plan_submitting = false
+  // How many traces the next plan asks for, and the count the last plan was
+  // REQUESTED with. Seeded from the plan on screen each time the dialog opens,
+  // so "regenerate" defaults to the size the user is already looking at; with
+  // no plan on screen (the last attempt failed) it keeps what was asked for,
+  // so the dialog and Retry agree on the size.
+  let eval_input_count = NUM_CASES
+  // The steer the NEXT plan request will send, appended to the arm's base
+  // guidance. Committed from the dialog's box on submit and cleared only once
+  // a plan arrives, so a failed attempt's Retry re-sends what was asked for.
+  let pending_plan_steer = ""
+  // The dialog's own guidance box. A draft until submit: closing the dialog
+  // without submitting resets it to the committed steer, so a typed-then-
+  // cancelled steer never rides a later request.
+  let plan_steer = ""
+  // The dialog's Data Guide checkbox, a draft until submit like the steer:
+  // closing the dialog any other way puts it back to the committed state.
+  let use_data_guide_draft = false
 
   // Judge lane from the task's LAST SAVED eval — the replay-what-worked
   // tier of pre-population. The judge lives on the eval's current config
@@ -1149,9 +1440,12 @@
   // Recommended badges). A lane with no usable model anywhere stays null:
   // the dropdown's empty state names the way out and submit refuses to
   // start.
-  async function prepopulate_lanes() {
-    if (lanes_prepopulated) return
-    lanes_prepopulated = true
+  function prepopulate_lanes(): Promise<void> {
+    if (!lanes_prepopulated) lanes_prepopulated = fill_null_lanes()
+    return lanes_prepopulated
+  }
+
+  async function fill_null_lanes() {
     const su_needed = is_multi_turn && su_driver === null
     const input_gen_needed = !is_multi_turn && input_generator === null
     if (!su_needed && !input_gen_needed && judge_model !== null) return
@@ -1166,7 +1460,7 @@
     await load_available_models()
     const models = get(available_models)
     if (is_multi_turn && su_driver === null) {
-      const suggested = build_suggested_models(models, "data_gen")[0]
+      const suggested = build_suggested_models(models, "synthetic_user")[0]
       if (suggested) {
         su_driver = model_choice(suggested.model_id, suggested.provider_id)
       }
@@ -1192,8 +1486,19 @@
 
   async function open_drive_settings() {
     drive_settings_error = null
+    // Reseed the stepper from the committed length before the dialog paints,
+    // so a cancelled nudge is gone the next time it opens. Unlike the lanes it
+    // waits on nothing, so it is seeded here rather than after the await.
+    staged_turns_per_case = turns_per_case
     drive_settings_dialog?.show()
-    await prepopulate_lanes()
+    // Await the pre-population pass (usually already in flight from the plan
+    // surface) so the reseed below reads resolved lanes: the dialog shows
+    // immediately and its dropdowns fill when the lanes land.
+    try {
+      await prepopulate_lanes()
+    } catch (e) {
+      console.warn("Could not resolve the default models:", e)
+    }
     // Reseed the dropdowns from the committed lanes (also discards any
     // uncommitted picks from a previously cancelled dialog).
     su_model_combined = su_driver
@@ -1205,21 +1510,18 @@
     judge_model_combined = judge_model
       ? `${judge_model.model_provider}/${judge_model.model_name}`
       : judge_model_combined
-  }
-
-  // Run-immediately (the plan-approval primary button): resolve the default
-  // model lanes (draft → saved-eval judge → registry suggestion) and start
-  // the drive without a settings detour — the common path is "just make my
-  // data". If a lane can't be resolved (no usable model anywhere), the
-  // drive opens the dialog instead of running — fail-loud recovery, never a
-  // silent substitution of some other model. "Advanced" opens the same
-  // dialog up front for users who want to pick the models before spending.
-  async function start_drive_with_defaults() {
-    await prepopulate_lanes()
-    if (is_multi_turn) {
-      on_drive_multi_turn()
+    // The input lane holds more than a model, and its component stays mounted
+    // between opens, so reseed the whole lane: a visit abandoned by Esc or
+    // Cancel must not leave its tool and sampling edits on the next one. With
+    // nothing committed yet the lane goes back to its defaults, which is what
+    // a first open shows. The model set above and the config applied here come
+    // from the same committed object, so they cannot disagree.
+    if (input_gen_run_config) {
+      input_gen_config_component?.apply_run_config_properties(
+        input_gen_run_config,
+      )
     } else {
-      void on_drive_single_turn()
+      input_gen_config_component?.reset_run_options()
     }
   }
 
@@ -1233,6 +1535,11 @@
     task_prompt: string
     prompt: string
   } | null = null
+
+  // How many extra authoring calls an unusable prompt is worth. An invalid
+  // authored prompt is model variance on a paid call, so one automatic re-ask
+  // recovers most of them without hiding a persistent failure behind spend.
+  const JUDGE_AUTHOR_RESAMPLE_ATTEMPTS = 1
 
   // Author a spec-tailored judge prompt via the studio (kiln_server's
   // multi-turn judge author) — the multi-turn counterpart of clarify_spec's
@@ -1252,55 +1559,81 @@
     ) {
       return authored_judge_cache.prompt
     }
-    const { signal, timed_out } = with_deadline(
-      user_signal,
-      JUDGE_COPILOT_DEADLINE_MS,
-    )
-    let data, error
-    try {
-      ;({ data, error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/author_judge",
-        {
-          params: { path: { project_id, task_id } },
-          body: {
-            target_specification: spec,
-            target_task_prompt: task_prompt,
+    // One authoring call and its validation: the usable prompt, or null when
+    // only the prompt itself was unusable — the single case worth re-asking.
+    // Every other failure throws from here, exactly as before.
+    async function author_attempt(): Promise<string | null> {
+      const { signal, timed_out } = with_deadline(
+        user_signal,
+        JUDGE_COPILOT_DEADLINE_MS,
+      )
+      let data, error
+      try {
+        ;({ data, error } = await client.POST(
+          "/api/projects/{project_id}/tasks/{task_id}/eval_builder/author_judge",
+          {
+            params: { path: { project_id, task_id } },
+            body: {
+              target_specification: spec,
+              target_task_prompt: task_prompt,
+            },
+            signal,
           },
-          signal,
-        },
-      ))
-    } catch (e) {
-      // Deadline check FIRST: its rejection is a TimeoutError (not
-      // AbortError) in most engines, but engines vary — timed_out() is the
-      // authoritative discriminator either way.
-      if (timed_out()) {
-        posthog.capture("eval_v2_judge_author_failure", { reason: "timeout" })
-        throw new KilnError("Authoring your judge took too long. Try again.")
+        ))
+      } catch (e) {
+        // Deadline check FIRST: its rejection is a TimeoutError (not
+        // AbortError) in most engines, but engines vary — timed_out() is the
+        // authoritative discriminator either way.
+        if (timed_out()) {
+          posthog.capture("eval_v2_judge_author_failure", { reason: "timeout" })
+          throw new KilnError("Authoring your judge took too long. Try again.")
+        }
+        if (is_abort_error(e)) throw e
+        posthog.capture("eval_v2_judge_author_failure", {
+          reason: "request_failed",
+        })
+        // Thrown = the request never completed (network/transport) — the one
+        // case where "check your connection" is the right diagnosis.
+        throw new KilnError(
+          "Couldn't reach the server to author a judge for your spec. Check your connection and try again.",
+        )
       }
-      if (is_abort_error(e)) throw e
-      posthog.capture("eval_v2_judge_author_failure", {
-        reason: "request_failed",
-      })
-      // Thrown = the request never completed (network/transport) — the one
-      // case where "check your connection" is the right diagnosis.
-      throw new KilnError(
-        "Couldn't reach the server to author a judge for your spec. Check your connection and try again.",
-      )
+      if (error || !data?.judge_prompt) {
+        posthog.capture("eval_v2_judge_author_failure", {
+          reason: "request_failed",
+        })
+        // The request completed and the server said no — surface ITS detail
+        // (e.g. "API key not configured"), like every sibling copilot call.
+        throw new KilnError(
+          `Couldn't author a judge for your spec: ${createKilnError(error).getMessage()}`,
+        )
+      }
+      // Same mechanical validation as the refine path: the prompt renders
+      // into the judge harness verbatim, so an unusable one is a failure.
+      if (!validate_refined_judge_prompt(data.judge_prompt)) {
+        return data.judge_prompt
+      }
+      // A prompt the model wrapped in a code fence is good content in bad
+      // packaging: unwrap it and re-validate rather than spend another call.
+      const unwrapped = strip_wrapping_code_fence(data.judge_prompt)
+      if (!validate_refined_judge_prompt(unwrapped)) {
+        posthog.capture("eval_v2_judge_prompt_sanitized", { site: "author" })
+        return unwrapped
+      }
+      return null
     }
-    if (error || !data?.judge_prompt) {
-      posthog.capture("eval_v2_judge_author_failure", {
-        reason: "request_failed",
-      })
-      // The request completed and the server said no — surface ITS detail
-      // (e.g. "API key not configured"), like every sibling copilot call.
-      throw new KilnError(
-        `Couldn't author a judge for your spec: ${createKilnError(error).getMessage()}`,
-      )
+
+    let prompt: string | null = null
+    for (
+      let attempt = 0;
+      prompt === null && attempt <= JUDGE_AUTHOR_RESAMPLE_ATTEMPTS;
+      attempt++
+    ) {
+      prompt = await author_attempt()
     }
-    // Same mechanical validation as the refine path: the prompt renders
-    // into the judge harness verbatim, so an unusable one is a failure.
-    const validation_error = validate_refined_judge_prompt(data.judge_prompt)
-    if (validation_error) {
+    if (prompt === null) {
+      // Captured once, here: the event means the user saw the failure, not
+      // that some attempt along the way came back unusable.
       posthog.capture("eval_v2_judge_author_failure", {
         reason: "invalid_authored_prompt",
       })
@@ -1309,36 +1642,61 @@
     authored_judge_cache = {
       spec_text: spec,
       task_prompt,
-      prompt: data.judge_prompt,
+      prompt,
     }
-    return data.judge_prompt
+    return prompt
   }
 
-  // Commit the lanes and start the run. Refuses on an unset lane — the
-  // SDG flow would fall through to raw server errors here; we stop with a
-  // visible error instead.
-  function submit_drive_settings() {
+  // Commit the lanes and the conversation length, then start the run. Refuses
+  // on an unset lane — the SDG flow would fall through to raw server errors
+  // here; we stop with a visible error instead.
+  async function submit_drive_settings() {
     drive_settings_submitting = false
+    // The input lane's run config comes out of its component whole. Only a
+    // kiln_agent config with a model on it can mint, so anything else is
+    // treated as an unset lane.
+    const input_gen_rcp = is_multi_turn
+      ? null
+      : input_gen_config_component?.run_options_as_run_config_properties() ??
+        null
+    const input_gen_config =
+      input_gen_rcp &&
+      isKilnAgentRunConfig(input_gen_rcp) &&
+      input_gen_rcp.model_name &&
+      input_gen_rcp.model_provider_name
+        ? input_gen_rcp
+        : null
     const su_ok = !is_multi_turn || (su_model_id && su_provider_id)
-    const input_gen_ok =
-      is_multi_turn || (input_gen_model_id && input_gen_provider_id)
+    const input_gen_ok = is_multi_turn || input_gen_config
     if (!su_ok || !input_gen_ok || !judge_model_id || !judge_provider_id) {
       drive_settings_error = new KilnError(
         is_multi_turn
           ? "Select a model to play the user and a judge model to continue."
-          : "Select a model to write the test inputs and a judge model to continue.",
+          : "Select an eval data generation model and a judge model to continue.",
       )
       return
     }
     if (is_multi_turn && su_model_id && su_provider_id) {
       su_driver = model_choice(su_model_id, su_provider_id)
     }
-    if (!is_multi_turn && input_gen_model_id && input_gen_provider_id) {
-      input_generator = model_choice(input_gen_model_id, input_gen_provider_id)
+    if (!is_multi_turn && input_gen_config) {
+      input_gen_run_config = input_gen_config
+      input_generator = model_choice(
+        input_gen_config.model_name,
+        input_gen_config.model_provider_name,
+      )
     }
     judge_model = model_choice(judge_model_id, judge_provider_id)
+    // Commit the staged length. Clamped on the way in so the committed value —
+    // what the request, the draft, and the stamp all read — is always one the
+    // drive route accepts.
+    turns_per_case = clamp_turns_per_case(staged_turns_per_case)
     drive_settings_error = null
     drive_settings_dialog?.close()
+    // Let the commit above reach the reactive graph before driving: the drive
+    // reads the clamped alias derived from turns_per_case, and Svelte
+    // recomputes derivations on the next tick, not on assignment.
+    await tick()
     if (is_multi_turn) {
       on_drive_multi_turn()
     } else {
@@ -1368,7 +1726,7 @@
         judge_score: TraceClaims["judge_score"]
         judge_reasoning: string
         total_cost: number
-        // The structured conversation behind raw_output (multi-turn); the
+        // The structured conversation behind raw_output, on either arm; the
         // trace modal renders it in the chat UI. Absent on legacy streams.
         trace?: TraceClaims["trace"]
       }
@@ -1378,6 +1736,10 @@
         stage: "drive" | "run" | "judge"
         code: string
         message: string
+        // Exception class name behind a provider or unexpected failure, so
+        // analytics can aggregate by type. Null on deterministic failures the
+        // code already names, and absent from older streams.
+        error_type?: string | null
       }
     | {
         type: "batch_completed"
@@ -1442,6 +1804,12 @@
     trace_reviews = []
     selected_trace_indices = []
     driven_prompts_json = null
+    // The batch's slot bookkeeping goes with the results: a later drive
+    // must start a fresh batch, never top off a discarded one.
+    batch_cases = null
+    batch_inputs = null
+    built_by_case = []
+    driven_slots = new Set()
     // Calibration rounds calibrated the discarded results' judge.
     reset_calibration_state()
     generation_phase = "planning"
@@ -1474,21 +1842,26 @@
         {
           params: { path: { project_id, task_id } },
           body: {
-            guidance: is_multi_turn
-              ? multiturn_plan_guidance(spec_text())
-              : single_turn_plan_guidance(spec_text()),
-            count: NUM_CASES,
-            // The grounding sample rides the planner's data-guide param
-            // (multi-turn plans scenarios, not inputs — no guide there).
-            data_guide: is_multi_turn
-              ? null
-              : grounding_data_guide(grounding_sample),
+            // The arm's base guidance carries the balance policy; the user's
+            // steer (when they typed one) is appended to it, never replaces
+            // it — see compose_plan_guidance.
+            guidance: compose_plan_guidance(
+              is_multi_turn
+                ? multiturn_plan_guidance(spec_text())
+                : single_turn_plan_guidance(spec_text()),
+              pending_plan_steer,
+            ),
+            count: eval_input_count,
+            // The Data Guide and the grounding sample ride the planner's
+            // data-guide param (multi-turn plans scenarios, not inputs — no
+            // guide there).
+            data_guide: is_multi_turn ? null : single_turn_data_guide(),
           },
           signal: new_copilot_abort_signal(),
         },
       )
       if (error || !data) {
-        generation_error = `Failed to draft ${plan_noun}.`
+        generation_error = "Failed to draft a batch plan."
         return
       }
       // Clamp: the planner is an LLM and can over-deliver or emit blanks;
@@ -1496,12 +1869,17 @@
       const prompts = data.prompts
         .map((p) => p.trim())
         .filter(Boolean)
-        .slice(0, NUM_CASES)
+        .slice(0, eval_input_count)
       if (prompts.length === 0) {
         generation_error = `The planner returned no usable ${plan_noun}. Retry.`
         return
       }
       batch_plan = { prompts, summary: data.summary }
+      // A plan landed, so the steer it was drafted under is spent. Every
+      // earlier return in this function leaves it in place, which is what
+      // makes Retry re-send the steer the user asked for.
+      pending_plan_steer = ""
+      plan_steer = ""
     } catch (e) {
       if (is_abort_error(e)) return
       generation_error = e instanceof Error ? e.message : "Planning failed."
@@ -1517,8 +1895,8 @@
     trace_claims.length > 0 &&
     batch_plan !== null &&
     driven_prompts_json === JSON.stringify(batch_plan.prompts)
-  // Accepted has-data state (clean drive, or survivors accepted via Next):
-  // Drive is hidden — Next (to review) is the only forward action. On the
+  // Accepted has-data state (clean drive, or survivors accepted via Continue):
+  // Drive is hidden — Continue (to review) is the only forward action. On the
   // stop screen Drive stays visible as the re-drive recovery.
   $: has_data_accepted = has_driven_results && drive_stop === null
   // How many cases the last drive was asked to run — the denominator for
@@ -1537,6 +1915,12 @@
     selected_trace_indices = []
     driven_prompts_json = null
     drive_stop = null
+    // The batch's slot bookkeeping goes with the results: a later drive
+    // must start a fresh batch, never top off a discarded one.
+    batch_cases = null
+    batch_inputs = null
+    built_by_case = []
+    driven_slots = new Set()
     reset_pipeline_counters()
     // The loop's rounds belong to the discarded results.
     reset_calibration_state()
@@ -1566,18 +1950,46 @@
     batch_plan_edited = true
   }
 
-  // New Batch Plan ALWAYS confirms — a plan alone costs minutes to make
-  // (SDG's New Batch Plan routes through its destructive-back confirm too).
-  function on_new_plan_with_confirm() {
-    const msg = new_plan_confirm({
-      has_driven_results,
-      survivors: trace_claims.length,
-      include_review_progress: drive_stop === null,
-      plan_edited: batch_plan_edited,
-      plan_noun,
-    })
-    if (!confirm(msg)) return
-    on_plan_batch()
+  // Refine Plan ALWAYS warns — a plan alone costs minutes to make. The
+  // warning rides inside the dialog (above its submit) rather than a native
+  // confirm, so the same click that accepts the loss also chooses the size
+  // and steer of what replaces it.
+  $: new_plan_warning = new_plan_confirm({
+    has_driven_results,
+    survivors: trace_claims.length,
+    include_review_progress: drive_stop === null,
+    plan_edited: batch_plan_edited,
+    plan_noun,
+  })
+
+  function open_new_plan_dialog() {
+    // Default to the size of the plan on screen. With no plan (the last
+    // attempt failed) eval_input_count still holds the size that attempt
+    // asked for, so the dialog and Retry never disagree about it.
+    if (batch_plan) eval_input_count = batch_plan.prompts.length
+    use_data_guide_draft = use_data_guide
+    new_plan_dialog?.show()
+  }
+
+  // Any close that isn't a submit — Esc, the X, the backdrop — discards the
+  // typed steer, so a steer the user abandoned can't ride the next request.
+  // A submitted one has already moved to pending_plan_steer, which this
+  // restores verbatim.
+  function discard_plan_steer_draft() {
+    plan_steer = pending_plan_steer
+    use_data_guide_draft = use_data_guide
+  }
+
+  function submit_new_plan() {
+    new_plan_submitting = false
+    // Commit the typed steer: from here it survives failed attempts (Retry
+    // re-sends it) until a plan actually arrives.
+    pending_plan_steer = plan_steer
+    // Off plus Refine Plan re-plans without the guide; the mint follows the
+    // plan, since both send the same value.
+    use_data_guide = use_data_guide_draft
+    new_plan_dialog?.close()
+    void on_plan_batch()
   }
 
   // Step 4 (multi-turn) part 2 — drive from the approved plan. The approved
@@ -1638,22 +2050,26 @@
   }
 
   async function on_drive_multi_turn() {
-    // The plan surface's primary button calls this directly (no FormContainer
-    // submit debounce anymore), so guard reentry: a double-click during lane
-    // resolution must not start a second concurrent pipeline.
+    // Only the Generation Settings dialog's submit starts a drive, and it is
+    // a plain click handler (no FormContainer submit debounce), so guard
+    // reentry: a double-click must not start a second concurrent pipeline.
     if (generation_loading) return
     if (!batch_plan || batch_plan.prompts.length === 0) {
-      generation_error = "No approved scenarios. Draft scenarios first."
+      generation_error = "No approved items. Plan a batch first."
       return
     }
-    // Lanes uncommitted (internal re-drive path reached before any
-    // Drive Settings submit) — ask, don't guess.
+    // Backstop for an unset lane — ask, don't guess: send the user back to
+    // the dialog rather than drive on a null model.
     const chosen_su = su_driver
     const chosen_judge_model = judge_model
     if (!chosen_su || !chosen_judge_model) {
       open_drive_settings()
       return
     }
+    // Read the length ONCE, here: everything below (the top-off decision, the
+    // request, the stamp) must describe one drive, even if the knob moves
+    // while it runs.
+    const chosen_turns = drive_turns_per_case
     const approved_prompts = batch_plan.prompts
     generation_loading = true
     generation_error = null
@@ -1662,6 +2078,9 @@
     // alongside a stale stop screen.
     drive_stop = null
     generation_phase = "preflight"
+    // Set once the drive's batch bookkeeping is committed; the abort
+    // handler must leave the previous results untouched before that point.
+    let drive_committed = false
 
     try {
       // 1. Resolve target_run_config (task default → first config). The
@@ -1726,32 +2145,28 @@
         return
       }
 
-      // 4. Preflight passed — commit to the drive. Every undeleted previous
-      // batch is superseded from here: the pipeline deletes their chains
-      // once this drive has produced replacements.
-      const previous_batch_tag = multi_turn_batch_tag
-      const previous_driven_cases = driven_cases
-      // Commit the synthetic-user choice alongside the batch identity: from
-      // here the drive runs with chosen_su, so the stamp source flips with
-      // the cases (and rolls back with them below if nothing is driven).
-      const previous_driven_su_driver = driven_su_driver
-      driven_su_driver = chosen_su
-      const tags_to_replace = [...undeleted_batch_tags]
-      trace_claims = []
-      trace_reviews = []
-      selected_trace_indices = []
-      driven_cases = []
-      driven_prompts_json = JSON.stringify(approved_prompts)
-      pipeline_total_cases = approved_prompts.length
-      reset_pipeline_counters()
-      // A fresh drive means fresh conversations: the loop starts over.
-      reset_calibration_state()
-
-      // 5. The synthetic-user cases. Their generation depends only on the
-      // plan and the spec — never the run config — so a re-drive with both
-      // byte-unchanged (the fix-config-then-drive-again recovery loop)
-      // reuses the cached cases instead of re-paying the multi-minute
-      // copilot call. Any plan edit or New Batch Plan misses the cache.
+      // 4. Preflight passed. Resolve the synthetic-user cases BEFORE
+      // committing to a drive shape: the drive plan below compares them to
+      // the current batch to pick top-off vs fresh, and a generation
+      // failure here leaves the previous drive's results intact. Their
+      // generation depends only on the plan and the spec — never the run
+      // config — so a re-drive with both byte-unchanged (the
+      // fix-config-then-drive-again recovery loop) reuses the cached cases
+      // instead of re-paying the multi-minute copilot call. Any plan edit
+      // or Refine Plan misses the cache.
+      //
+      // A batch whose every slot is filled but which is short of the plan
+      // lost cases to upstream salvage. Retrying with the cached list would
+      // replace the batch with the same shortfall forever; only a fresh
+      // generation can supply the missing scenarios.
+      if (
+        batch_cases !== null &&
+        built_by_case.length > 0 &&
+        built_by_case.every((s) => s !== null) &&
+        batch_cases.length < approved_prompts.length
+      ) {
+        cached_su_cases = null
+      }
       let cases = reusable_cached_cases(
         cached_su_cases,
         approved_prompts,
@@ -1780,7 +2195,8 @@
           },
         )
         if (cases_resp.error || !cases_resp.data) {
-          generation_error = "Failed to create eval inputs from the scenarios."
+          generation_error =
+            "Failed to create eval inputs from the approved items."
           return
         }
         cases = cases_resp.data.cases as SyntheticUserCaseWire[]
@@ -1790,17 +2206,80 @@
           cases,
         }
       }
-      // Salvage can drop cases upstream: the driven count (the progress
-      // denominator) is what actually came back, not the plan size.
-      pipeline_total_cases = cases.length
 
-      // 6. Remember the judge (the ONE JudgeConfig shape used by review and
+      // 5. The drive plan: TOP OFF the current batch — drive only the
+      // missing slots, into the same batch tag, keeping the paid
+      // successes — when the batch was driven from these exact cases under
+      // the same judge, synthetic user, and conversation length; otherwise a
+      // fresh batch under replace semantics.
+      const lanes_unchanged = drive_lanes_unchanged({
+        judge,
+        batch_judge: review_judge,
+        su: chosen_su,
+        batch_su: driven_su_driver,
+        turns: chosen_turns,
+        batch_turns: driven_turns_per_case,
+      })
+      const drive_plan = plan_drive({
+        items: cases,
+        batch_items: lanes_unchanged ? batch_cases : null,
+        built_slots: built_by_case,
+        batch_tag: multi_turn_batch_tag,
+        undeleted_batch_tags,
+      })
+      if (drive_plan.top_off) {
+        posthog.capture("eval_v2_drive_top_off", {
+          num_missing: drive_plan.items.length,
+        })
+      }
+
+      // 6. Commit. On a fresh drive every undeleted previous batch is
+      // superseded from here (the pipeline deletes their chains once this
+      // drive has produced replacements) and the slate resets; a top-off
+      // keeps the batch's results and bookkeeping — it only fills holes.
+      // The synthetic-user and conversation-length stamps flip with the cases
+      // (and roll back with them below if nothing is driven).
+      const previous_batch_tag = multi_turn_batch_tag
+      const previous_driven_cases = driven_cases
+      const previous_driven_su_driver = driven_su_driver
+      const previous_driven_turns_per_case = driven_turns_per_case
+      const previous_batch_cases = batch_cases
+      const previous_built_by_case = built_by_case
+      const previous_driven_slots = driven_slots
+      // The judge/identity stamps roll back with the results: a
+      // nothing-driven drive restores the previous batch, and the stamps
+      // must keep describing the verdicts on screen, not the failed
+      // attempt's lanes.
+      const previous_review_judge = review_judge
+      const previous_reviewed_identity = reviewed_identity
+      driven_su_driver = chosen_su
+      driven_turns_per_case = chosen_turns
+      if (!drive_plan.top_off) {
+        trace_claims = []
+        trace_reviews = []
+        selected_trace_indices = []
+        driven_cases = []
+        driven_slots = new Set()
+        batch_cases = cases
+        // Salvage can drop cases upstream: the batch's slot count is what
+        // actually came back, not the plan size.
+        built_by_case = new Array(cases.length).fill(null)
+        driven_prompts_json = JSON.stringify(approved_prompts)
+      }
+      pipeline_total_cases = drive_plan.items.length
+      reset_pipeline_counters()
+      // A fresh drive means fresh conversations — and a top-off adds
+      // some — so the calibration loop starts over either way.
+      reset_calibration_state()
+      drive_committed = true
+
+      // 7. Remember the judge (the ONE JudgeConfig shape used by review and
       // save alike, resolved at step 2) and identity BEFORE the pipeline
       // runs so save can verify nothing changed under the results.
       review_judge = judge
       reviewed_identity = spec_text()
 
-      // 7. One SSE stream runs the whole pipeline: [drive → judge → claims]
+      // 8. One SSE stream runs the whole pipeline: [drive → judge → claims]
       // per case. POST endpoint, so fetch + shared SSE reader (EventSource
       // is GET-only).
       generation_phase = "running_pipeline"
@@ -1812,11 +2291,14 @@
           Accept: "text/event-stream",
         },
         body: JSON.stringify({
-          cases,
-          turns: TURNS_PER_CASE,
+          cases: drive_plan.items,
+          turns: chosen_turns,
           target_run_config_id,
           su_driver: chosen_su,
-          replace_batch_tags: tags_to_replace,
+          // A top-off drives into the existing batch's tag; null lets the
+          // server mint a fresh one.
+          batch_tag: drive_plan.batch_tag,
+          replace_batch_tags: drive_plan.replace_batch_tags,
           judge,
         }),
         signal: new_copilot_abort_signal(),
@@ -1833,9 +2315,9 @@
         return
       }
 
-      // Fill by case_index as case_reviewed events arrive (cases complete
-      // out of order); compacted into trace_claims at batch end.
-      const built: (TraceClaims | null)[] = new Array(cases.length).fill(null)
+      // Results fill the batch's slots as case_judged events arrive (cases
+      // complete out of order); a top-off's stream indices map back to
+      // their batch slots, so its results land beside the kept ones.
       let any_case_driven = false
       // Set by a batch_aborted frame: a config-scoped judge failure aborted
       // the batch server-side. Cases judged before it remain valid.
@@ -1867,7 +2349,14 @@
           any_case_driven = true
           // This case's conversation exists on disk — it belongs in the
           // saved eval slice even if a later stage (judge/claims) fails.
-          driven_cases = [...driven_cases, cases[event.case_index]]
+          // The slot guard keeps a case in the slice exactly once: a
+          // top-off can re-drive a case whose earlier attempt drove but
+          // never judged.
+          const slot = drive_plan.slot_of_stream_index[event.case_index]
+          if (slot !== undefined && !driven_slots.has(slot)) {
+            driven_slots.add(slot)
+            driven_cases = [...driven_cases, drive_plan.items[event.case_index]]
+          }
           // Chains exist on disk under this batch's tag from here on —
           // record it immediately so an abort can't orphan the batch.
           if (
@@ -1882,26 +2371,34 @@
         } else if (event.type === "case_judged") {
           // Claims stay unbuilt here — they're built lazily (build_claims)
           // for the traces the review selection surfaces or the user opens.
-          // The per-drive batch_tag makes the trace id unique across drives:
-          // the case index alone repeats every drive, so a stale claims
-          // build from a prior drive would pass patch_trace_claims' identity
-          // guard and corrupt the new drive's trace at the same index.
-          built[event.case_index] = {
-            trace_id: `${multi_turn_batch_tag}_case_${event.case_index}`,
-            leaf_run_id: event.leaf_run_id || null,
-            raw_input: event.raw_input,
-            raw_output: event.raw_output,
-            judge_score: event.judge_score,
-            judge_reasoning: event.judge_reasoning,
-            claims: null,
-            final_judgement: null,
-            claims_state: "unbuilt",
-            claims_error: null,
-            // The structured trace powers the modal's chat rendering; null
-            // when the stream didn't carry it (legacy / single-turn).
-            trace: event.trace ?? null,
+          // The per-batch tag + slot make the trace id unique across
+          // batches, so a stale claims build from a prior batch can't pass
+          // patch_trace_claims' identity guard and corrupt the trace at
+          // the same index; within a batch a top-off reuses its slot's id.
+          const slot = drive_plan.slot_of_stream_index[event.case_index]
+          if (slot === undefined) {
+            console.error(
+              `multi_turn_pipeline: case_judged for unknown case_index ${event.case_index}`,
+            )
+          } else {
+            built_by_case[slot] = {
+              trace_id: `${multi_turn_batch_tag}_case_${slot}`,
+              leaf_run_id: event.leaf_run_id || null,
+              raw_input: event.raw_input,
+              raw_output: event.raw_output,
+              judge_score: event.judge_score,
+              judge_reasoning: event.judge_reasoning,
+              overview: null,
+              claims: null,
+              claims_state: "unbuilt",
+              claims_error: null,
+              // The structured trace powers the modal's chat rendering;
+              // null when the stream didn't carry it (legacy /
+              // single-turn).
+              trace: event.trace ?? null,
+            }
+            judged_case_count += 1
           }
-          judged_case_count += 1
         } else if (event.type === "case_failed") {
           pipeline_failed_count += 1
           // Keep the message: the stop banner aggregates these into the
@@ -1910,6 +2407,7 @@
           posthog.capture("eval_v2_pipeline_case_failed", {
             stage: event.stage,
             code: event.code,
+            error_type: event.error_type ?? null,
           })
         } else if (event.type === "batch_failed") {
           posthog.capture("eval_v2_pipeline_batch_failed", {
@@ -1943,21 +2441,32 @@
           // ride to the next drive's replace_batch_tags (idempotent, so
           // re-passing an already-deleted tag is harmless).
           undeleted_batch_tags = undeleted_batch_tags.filter(
-            (t) => !tags_to_replace.includes(t),
+            (t) => !drive_plan.replace_batch_tags.includes(t),
           )
         }
       } else {
         // Nothing was driven: no replacement chains, no deletions — keep
-        // pointing at the previous batch (its cases and the synthetic user
-        // that drove them) so save/cleanup still work.
+        // pointing at the previous batch (its cases, slots, and the synthetic
+        // user and length that drove them) so save/cleanup/top-off still
+        // work.
         multi_turn_batch_tag = previous_batch_tag
         driven_cases = previous_driven_cases
         driven_su_driver = previous_driven_su_driver
+        driven_turns_per_case = previous_driven_turns_per_case
+        batch_cases = previous_batch_cases
+        built_by_case = previous_built_by_case
+        driven_slots = previous_driven_slots
+        // The stamps roll back with the results: they must keep describing
+        // the verdicts on screen, not the failed attempt's lanes.
+        review_judge = previous_review_judge
+        reviewed_identity = previous_reviewed_identity
       }
 
       // Compact survivors BEFORE any error/warning path: completed verdicts
       // are paid results and must never be discarded by a late failure.
-      const complete = built.filter((t): t is TraceClaims => t !== null)
+      // Live review entries win over the slots' drive-time copies, so a
+      // kept case's built claims survive the compaction.
+      const complete = compact_batch_slots(built_by_case, trace_claims)
       if (complete.length > 0) {
         trace_claims = complete
         trace_reviews = build_trace_reviews(complete)
@@ -1996,7 +2505,30 @@
       // claims build, then advance to a fully-loaded review.
       start_claims_gate()
     } catch (e) {
-      if (is_abort_error(e)) return
+      if (is_abort_error(e)) {
+        // A user abort mid-stream leaves whatever cases completed as paid
+        // results on disk. Once the drive was committed, compact them so
+        // they stay visible, and restore the stop banner when the batch is
+        // short — without it the retry (top-off) affordance is unreachable
+        // from the accepted-data screen. Pre-commit aborts touched nothing.
+        if (drive_committed) {
+          const complete = compact_batch_slots(built_by_case, trace_claims)
+          if (complete.length > 0) {
+            trace_claims = complete
+            trace_reviews = build_trace_reviews(complete)
+            selected_trace_indices = select_review_subset(complete)
+            const failed = approved_prompts.length - complete.length
+            if (failed > 0) {
+              drive_stop = {
+                survivors: complete.length,
+                failed,
+                dominant_error: dominant_failure_message(case_failure_messages),
+              }
+            }
+          }
+        }
+        return
+      }
       generation_error =
         e instanceof Error ? e.message : "Multi-turn generation failed."
     } finally {
@@ -2013,7 +2545,7 @@
   // survivor accounting. Throws on job-level failure or zero survivors.
   async function mint_inputs_from_plan(
     approved_prompts: string[],
-    input_gen: ModelChoice,
+    input_gen_config: KilnAgentRunConfigProperties,
     data_guide: string | null,
     signal: AbortSignal,
   ): Promise<string[]> {
@@ -2029,25 +2561,18 @@
           // minted inputs match the dataset's real format and voice — and
           // the cache key above can't drift from what actually minted.
           data_guide,
-          run_config_properties: {
-            type: "kiln_agent" as const,
-            model_name: input_gen.model_name,
-            model_provider_name: input_gen.model_provider,
-            // Input generation runs its own purpose-built prompt server-side
-            // and the sampling knobs are the datamodel defaults; these
-            // fields just complete the run-config shape.
-            prompt_id: "simple_prompt_builder",
-            structured_output_mode: "default" as const,
-            top_p: 1.0,
-            temperature: 1.0,
-          },
+          // The config the Generation Settings dialog committed, verbatim:
+          // model, provider, tools, skills, and sampling. Input generation
+          // runs its own purpose-built prompt server-side, so the config's
+          // prompt is unused (the lane hides the prompt picker).
+          run_config_properties: input_gen_config,
         },
         signal,
       },
     )
     if (start.error || !start.data) {
       throw new KilnError(
-        `Couldn't start writing the test inputs: ${createKilnError(start.error).getMessage()}`,
+        `Couldn't start writing the eval data: ${createKilnError(start.error).getMessage()}`,
       )
     }
     const job_id = start.data.job_id
@@ -2066,7 +2591,7 @@
       minting_done = data.completed
       if (data.status === "error") {
         throw new KilnError(
-          `Writing the test inputs failed: ${data.error_message ?? "unknown error"}`,
+          `Writing the eval data failed: ${data.error_message ?? "unknown error"}`,
         )
       }
       if (data.status === "complete") {
@@ -2089,9 +2614,7 @@
           if (r.error) case_failure_messages.push(r.error)
         }
         if (inputs.length === 0) {
-          throw new KilnError(
-            "None of the test inputs could be written. Try again.",
-          )
+          throw new KilnError("No eval data could be written. Try again.")
         }
         return inputs
       }
@@ -2107,22 +2630,26 @@
   // single_turn_pipeline stream runs [run → judge] per input — the task
   // executes once per input with tools live on the user's keys.
   async function on_drive_single_turn() {
-    // The plan surface's primary button calls this directly, so guard
-    // reentry: a double-click during lane resolution must not start a
+    // Only the Generation Settings dialog's submit starts a run, and it is a
+    // plain click handler, so guard reentry: a double-click must not start a
     // second concurrent pipeline.
     if (generation_loading) return
     if (!batch_plan || batch_plan.prompts.length === 0) {
-      generation_error = "No approved inputs. Draft a plan first."
+      generation_error = "No approved items. Plan a batch first."
       return
     }
-    // Lanes uncommitted (internal re-run path reached before any settings
-    // submit) — ask, don't guess.
+    // Backstop for an unset lane — ask, don't guess: send the user back to
+    // the dialog rather than run on a null model.
     const chosen_input_gen = input_generator
+    const chosen_input_config = input_gen_run_config
     const chosen_judge_model = judge_model
-    if (!chosen_input_gen || !chosen_judge_model) {
+    if (!chosen_input_gen || !chosen_input_config || !chosen_judge_model) {
       open_drive_settings()
       return
     }
+    // The cache key for the config the mint will run under, derived from the
+    // very object the request sends, so key and request cannot drift.
+    const input_gen_config_key = run_config_cache_key(chosen_input_config)
     const approved_prompts = batch_plan.prompts
     generation_loading = true
     generation_error = null
@@ -2131,6 +2658,9 @@
     // alongside a stale stop screen.
     drive_stop = null
     generation_phase = "preflight"
+    // Set once the run's batch bookkeeping is committed; the abort
+    // handler must leave the previous results untouched before that point.
+    let drive_committed = false
 
     try {
       // 1. Resolve target_run_config (task default → first config). The
@@ -2141,8 +2671,8 @@
       const target_run_config_id = drive_config.id
 
       // 2. The judge, authored BEFORE the pipeline so the preflight covers
-      // its lane too. The server frames the rubric for single-turn from the
-      // task's turn mode; the per-spec cache makes re-runs free. A user
+      // its lane too. The server frames every rubric against a transcript,
+      // whatever the turn mode; the per-spec cache makes re-runs free. A user
       // abort during it cancels the whole run.
       generation_phase = "authoring_judge"
       const authored = await author_judge_prompt_for_spec(
@@ -2189,33 +2719,21 @@
         return
       }
 
-      // 4. Preflight passed — commit to the run. Every undeleted previous
-      // batch is superseded from here: the pipeline deletes their runs once
-      // this one has produced replacements.
-      const previous_batch_tag = single_turn_batch_tag
-      const tags_to_replace = [...undeleted_batch_tags]
-      trace_claims = []
-      trace_reviews = []
-      selected_trace_indices = []
-      driven_prompts_json = JSON.stringify(approved_prompts)
-      pipeline_total_cases = approved_prompts.length
-      reset_pipeline_counters()
-      // A fresh run means fresh results: the loop starts over.
-      reset_calibration_state()
-
-      // 5. The test inputs. Their generation depends only on the plan, the
-      // input-generator model, and the grounding guide — never the run
-      // config — so a re-run with all byte-unchanged (the fix-config-then-
-      // run-again recovery loop) reuses the cached inputs instead of
-      // re-paying one generation call per prompt. Any plan edit or new plan
-      // misses the cache.
-      const mint_data_guide = grounding_data_guide(grounding_sample)
+      // 4. Preflight passed. Mint the test inputs BEFORE committing to a
+      // run shape: the drive plan below compares them to the current batch
+      // to pick top-off vs fresh, and a minting failure here leaves the
+      // previous run's results intact. Their generation depends on the
+      // plan, the input generator's whole run config, and the grounding
+      // guide — never the task's own run config — so a re-run with all
+      // byte-unchanged (the fix-config-then-run-again recovery loop) reuses
+      // the cached inputs instead of re-paying one generation call per
+      // prompt. Any plan edit or new plan misses the cache.
+      const mint_data_guide = single_turn_data_guide()
       let inputs = reusable_minted_inputs(
         cached_minted_inputs,
         approved_prompts,
-        chosen_input_gen.model_name,
-        chosen_input_gen.model_provider,
         mint_data_guide,
+        input_gen_config_key,
       )
       if (inputs) {
         posthog.capture("eval_v2_minted_inputs_reused", {
@@ -2225,7 +2743,7 @@
         generation_phase = "minting_inputs"
         inputs = await mint_inputs_from_plan(
           approved_prompts,
-          chosen_input_gen,
+          chosen_input_config,
           mint_data_guide,
           new_copilot_abort_signal(),
         )
@@ -2236,24 +2754,70 @@
         if (inputs.length === approved_prompts.length) {
           cached_minted_inputs = {
             prompts_json: JSON.stringify(approved_prompts),
-            model_name: chosen_input_gen.model_name,
-            model_provider: chosen_input_gen.model_provider,
             data_guide: mint_data_guide,
+            run_config_json: input_gen_config_key,
             inputs,
           }
         }
       }
-      // Failed generations drop their input (the salvage posture): the
-      // driven count — the progress denominator — is what actually minted.
-      pipeline_total_cases = inputs.length
 
-      // 6. Remember the judge (the ONE JudgeConfig shape used by review and
+      // 5. The drive plan: TOP OFF the current batch — run only the
+      // missing slots, into the same batch tag, keeping the paid
+      // successes — when the batch ran these exact inputs under the same
+      // judge; otherwise a fresh batch under replace semantics.
+      const judge_unchanged = drive_lanes_unchanged({
+        judge,
+        batch_judge: review_judge,
+      })
+      const drive_plan = plan_drive({
+        items: inputs,
+        batch_items: judge_unchanged ? batch_inputs : null,
+        built_slots: built_by_case,
+        batch_tag: single_turn_batch_tag,
+        undeleted_batch_tags,
+      })
+      if (drive_plan.top_off) {
+        posthog.capture("eval_v2_drive_top_off", {
+          num_missing: drive_plan.items.length,
+        })
+      }
+
+      // 6. Commit. On a fresh run every undeleted previous batch is
+      // superseded from here (the pipeline deletes their runs once this
+      // one has produced replacements) and the slate resets; a top-off
+      // keeps the batch's results and bookkeeping — it only fills holes.
+      const previous_batch_tag = single_turn_batch_tag
+      const previous_batch_inputs = batch_inputs
+      const previous_built_by_case = built_by_case
+      // The judge/identity stamps roll back with the results: a
+      // nothing-driven run restores the previous batch, and the stamps
+      // must keep describing the verdicts on screen.
+      const previous_review_judge = review_judge
+      const previous_reviewed_identity = reviewed_identity
+      if (!drive_plan.top_off) {
+        trace_claims = []
+        trace_reviews = []
+        selected_trace_indices = []
+        batch_inputs = inputs
+        // Failed generations drop their input (the salvage posture): the
+        // batch's slot count is what actually minted, not the plan size.
+        built_by_case = new Array(inputs.length).fill(null)
+        driven_prompts_json = JSON.stringify(approved_prompts)
+      }
+      pipeline_total_cases = drive_plan.items.length
+      reset_pipeline_counters()
+      // A fresh run means fresh results — and a top-off adds some — so the
+      // loop starts over either way.
+      reset_calibration_state()
+      drive_committed = true
+
+      // 7. Remember the judge (the ONE JudgeConfig shape used by review and
       // save alike) and identity BEFORE the pipeline runs so save can
       // verify nothing changed under the results.
       review_judge = judge
       reviewed_identity = spec_text()
 
-      // 7. One SSE stream runs the whole pipeline: [run → judge] per input.
+      // 8. One SSE stream runs the whole pipeline: [run → judge] per input.
       // POST endpoint, so fetch + shared SSE reader (EventSource is
       // GET-only).
       generation_phase = "running_pipeline"
@@ -2265,11 +2829,14 @@
           Accept: "text/event-stream",
         },
         body: JSON.stringify({
-          inputs,
+          inputs: drive_plan.items,
           input_model_name: chosen_input_gen.model_name,
           input_provider: chosen_input_gen.model_provider,
           target_run_config_id,
-          replace_batch_tags: tags_to_replace,
+          // A top-off runs into the existing batch's tag; null lets the
+          // server mint a fresh one.
+          batch_tag: drive_plan.batch_tag,
+          replace_batch_tags: drive_plan.replace_batch_tags,
           judge,
         }),
         signal: new_copilot_abort_signal(),
@@ -2286,9 +2853,9 @@
         return
       }
 
-      // Fill by case_index as case_judged events arrive (cases complete
-      // out of order); compacted into trace_claims at batch end.
-      const built: (TraceClaims | null)[] = new Array(inputs.length).fill(null)
+      // Results fill the batch's slots as case_judged events arrive (cases
+      // complete out of order); a top-off's stream indices map back to
+      // their batch slots, so its results land beside the kept ones.
       let any_case_driven = false
       // Set by a batch_aborted frame: a config-scoped judge failure aborted
       // the batch server-side. Cases judged before it remain valid.
@@ -2325,25 +2892,34 @@
         } else if (event.type === "case_judged") {
           // Claims stay unbuilt here — they're built lazily (build_claims)
           // for the traces the review surfaces or the user opens. The
-          // per-run batch_tag makes the trace id unique across runs, so a
-          // stale claims build from a prior run can't pass the identity
-          // guard and corrupt the new run's trace at the same index.
-          built[event.case_index] = {
-            trace_id: `${single_turn_batch_tag}_case_${event.case_index}`,
-            leaf_run_id: event.leaf_run_id || null,
-            raw_input: event.raw_input,
-            raw_output: event.raw_output,
-            judge_score: event.judge_score,
-            judge_reasoning: event.judge_reasoning,
-            claims: null,
-            final_judgement: null,
-            claims_state: "unbuilt",
-            claims_error: null,
-            // The run's structured trace (tool calls included) powers the
-            // modal's chat rendering; null when the run recorded none.
-            trace: event.trace ?? null,
+          // per-batch tag + slot make the trace id unique across batches,
+          // so a stale claims build from a prior batch can't pass the
+          // identity guard and corrupt the trace at the same index; within
+          // a batch a top-off reuses its slot's id.
+          const slot = drive_plan.slot_of_stream_index[event.case_index]
+          if (slot === undefined) {
+            console.error(
+              `single_turn_pipeline: case_judged for unknown case_index ${event.case_index}`,
+            )
+          } else {
+            built_by_case[slot] = {
+              trace_id: `${single_turn_batch_tag}_case_${slot}`,
+              leaf_run_id: event.leaf_run_id || null,
+              raw_input: event.raw_input,
+              raw_output: event.raw_output,
+              judge_score: event.judge_score,
+              judge_reasoning: event.judge_reasoning,
+              overview: null,
+              claims: null,
+              claims_state: "unbuilt",
+              claims_error: null,
+              // The run's structured trace (tool calls included) powers
+              // the modal's chat rendering; null when the run recorded
+              // none.
+              trace: event.trace ?? null,
+            }
+            judged_case_count += 1
           }
-          judged_case_count += 1
         } else if (event.type === "case_failed") {
           pipeline_failed_count += 1
           // Keep the message: the stop banner aggregates these into the
@@ -2352,6 +2928,7 @@
           posthog.capture("eval_v2_pipeline_case_failed", {
             stage: event.stage,
             code: event.code,
+            error_type: event.error_type ?? null,
           })
         } else if (event.type === "batch_failed") {
           posthog.capture("eval_v2_pipeline_batch_failed", {
@@ -2382,18 +2959,26 @@
           // to the next run's replace_batch_tags (idempotent, so
           // re-passing an already-deleted tag is harmless).
           undeleted_batch_tags = undeleted_batch_tags.filter(
-            (t) => !tags_to_replace.includes(t),
+            (t) => !drive_plan.replace_batch_tags.includes(t),
           )
         }
       } else {
         // Nothing ran: no replacement runs, no deletions — keep pointing
-        // at the previous batch so save/cleanup still work.
+        // at the previous batch (its inputs, slots, and the judge/identity
+        // stamps describing its verdicts) so save/cleanup/top-off still
+        // work.
         single_turn_batch_tag = previous_batch_tag
+        batch_inputs = previous_batch_inputs
+        built_by_case = previous_built_by_case
+        review_judge = previous_review_judge
+        reviewed_identity = previous_reviewed_identity
       }
 
       // Compact survivors BEFORE any error/warning path: completed verdicts
       // are paid results and must never be discarded by a late failure.
-      const complete = built.filter((t): t is TraceClaims => t !== null)
+      // Live review entries win over the slots' drive-time copies, so a
+      // kept case's built claims survive the compaction.
+      const complete = compact_batch_slots(built_by_case, trace_claims)
       if (complete.length > 0) {
         trace_claims = complete
         trace_reviews = build_trace_reviews(complete)
@@ -2429,7 +3014,30 @@
       // advance to a fully-loaded review.
       start_claims_gate()
     } catch (e) {
-      if (is_abort_error(e)) return
+      if (is_abort_error(e)) {
+        // A user abort mid-stream leaves whatever cases completed as paid
+        // results on disk. Once the run was committed, compact them so
+        // they stay visible, and restore the stop banner when the batch is
+        // short — without it the retry (top-off) affordance is unreachable
+        // from the accepted-data screen. Pre-commit aborts touched nothing.
+        if (drive_committed) {
+          const complete = compact_batch_slots(built_by_case, trace_claims)
+          if (complete.length > 0) {
+            trace_claims = complete
+            trace_reviews = build_trace_reviews(complete)
+            selected_trace_indices = select_review_subset(complete)
+            const failed = approved_prompts.length - complete.length
+            if (failed > 0) {
+              drive_stop = {
+                survivors: complete.length,
+                failed,
+                dominant_error: dominant_failure_message(case_failure_messages),
+              }
+            }
+          }
+        }
+        return
+      }
       generation_error =
         e instanceof Error ? e.message : "Single-turn generation failed."
     } finally {
@@ -2446,24 +3054,123 @@
   }
 
   function on_continue_from_generate_step() {
-    // No plan → plan; otherwise (re)drive the approved plan. A re-drive
-    // passes the previous batch tags so their runs are deleted server-side.
+    // No plan → plan; otherwise open the settings dialog, whose submit is the
+    // re-drive. Retrying a failed drive is still a drive, so it goes through
+    // the single entrance: the same lanes and the same cost warning the first
+    // attempt passed. (A re-drive passes the previous batch tags so their runs
+    // are deleted server-side.)
     if (batch_plan === null) {
       on_plan_batch()
-    } else if (is_multi_turn) {
-      on_drive_multi_turn()
     } else {
-      void on_drive_single_turn()
+      void open_drive_settings()
     }
   }
 
   // Advance from the Refine step (3) into Generate (4). Both arms plan
   // immediately (planning needs no model choice); an existing plan renders
-  // for re-approval instead. Model choices are confirmed on the plan
-  // screen — run-immediately with defaults, or the settings link.
-  function on_advance_to_generate() {
+  // for re-approval instead. Model choices are confirmed one step later, in
+  // the Generation Settings dialog the plan's primary button opens.
+  async function on_advance_to_generate() {
     goto_step("generate")
-    if (batch_plan === null) on_plan_batch()
+    if (batch_plan !== null) return
+    await plan_or_offer_data_guide()
+  }
+
+  // Resolves once the Copilot connection check has an answer, so a plan the
+  // restore fires waits behind the same gate every clicked plan sits behind.
+  function copilot_connection_resolved(): Promise<boolean> {
+    return new Promise((resolve) => {
+      let settled = false
+      const unsubscribe = kilnCopilotConnected.subscribe((connected) => {
+        if (connected === null || settled) return
+        settled = true
+        resolve(connected)
+        queueMicrotask(() => unsubscribe())
+      })
+    })
+  }
+
+  // Step 4 without a plan. Multi-turn plans at once. Single-turn reads the
+  // guide first and then either plans under it, plans without it (the user
+  // continued without one), or shows the offer and leaves the plan to the
+  // user's choice: Continue Without fires it here; Set Up leaves for the
+  // setup chain, which returns to this step with the guide saved.
+  async function plan_or_offer_data_guide() {
+    if (is_multi_turn) {
+      on_plan_batch()
+      return
+    }
+    // A failed plan's error belongs to that attempt, not to this entry.
+    generation_error = null
+    await read_data_guide()
+    // Back during the read: the read was aborted with it, and a plan must
+    // not fire for a step the user has left.
+    if (current_step !== "generate" || data_guide_read === "reading") return
+    if (data_guide_read === "none" && !data_guide_skipped) return
+    on_plan_batch()
+  }
+
+  function skip_data_guide() {
+    data_guide_skipped = true
+    on_plan_batch()
+  }
+
+  // The setup chain returns here (breadcrumbs, and the saved screen's
+  // Continue), onto this step with the draft intact, and plans under the
+  // new guide. Same tab, like SDG: only View opens a new one.
+  function set_up_data_guide() {
+    goto(
+      with_data_guide_caller(
+        `/generate/${project_id}/${task_id}/data_guide_chooser`,
+        "builder",
+      ),
+    )
+  }
+
+  // The single-turn data-guide param, one expression for both the plan and
+  // the mint so the minted-input cache (keyed on it) cannot drift from what
+  // the plan was drafted under: the saved Data Guide when it is on, joined
+  // with the grounding sample.
+  function single_turn_data_guide(): string | null {
+    return join_data_guides(
+      use_data_guide ? data_guide_text : null,
+      grounding_data_guide(grounding_sample),
+    )
+  }
+
+  // Reads the task's saved Data Guide for Step 4. Best-effort: a blank guide
+  // is none, and a failed read plans without one. A guide found for the
+  // first time is on, as in synthetic data generation; a guide read again
+  // (Back, then Continue) keeps the choice the user last committed. Runs
+  // under the copilot abort signal, so Back cancels it like a plan request.
+  async function read_data_guide(): Promise<void> {
+    const had_guide = data_guide_text !== null
+    data_guide_read = "reading"
+    try {
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
+        {
+          params: { path: { project_id, task_id } },
+          signal: new_copilot_abort_signal(),
+        },
+      )
+      if (error) throw error
+      data_guide_text = data?.guide?.trim() ? data.guide : null
+      data_guide_read = data_guide_text === null ? "none" : "found"
+    } catch (e) {
+      if (is_abort_error(e)) {
+        data_guide_read = "unread"
+        return
+      }
+      console.warn("Could not read the Data Guide:", e)
+      data_guide_text = null
+      data_guide_read = "failed"
+    }
+    if (data_guide_text === null) {
+      use_data_guide = false
+    } else if (!had_guide) {
+      use_data_guide = true
+    }
   }
 
   // Same pattern for Review (5) → Save (6): land on Save with the request
@@ -2497,6 +3204,12 @@
   // ── Step 5 state — Claim/Evidence review.
   // Generated traces are distilled into claims (per-trace server claim builder)
   // that the reviewer agrees/disagrees with; the trace stays hidden in a modal.
+  // Step 5 opens on an entry screen instead of dropping the reviewer straight
+  // into grading, so the step states what it is for once before asking for
+  // anything. Per arrival, not persisted: a reviewer who returns mid-round has
+  // already read it, but one who reloads has lost the context with the page.
+  let review_intro_dismissed = false
+
   let trace_claims: TraceClaims[] = []
   let trace_reviews: TraceReview[] = []
   // Which traces the reviewer is asked to review (indices into trace_claims):
@@ -2504,22 +3217,36 @@
   // subset — unselected traces are not shown; they land in the train split
   // unrated.
   let selected_trace_indices: number[] = []
-  // Save gate (both arms): the human-rated golden answer key caps at 25% of
-  // the batch runs server-side, so the reviewer must rate at least N//4
-  // traces — reviewing more is welcome, fewer starves the answer key.
-  // Calibration rounds cap the demand at the round's actual subset size: a
-  // re-judge shortfall can surface fewer traces than the standard target,
-  // and the gate must never demand reviews of traces it didn't show.
-  $: review_target_count =
-    calibration_rounds_completed > 0
-      ? calibration_gate_target(
-          trace_claims.length,
-          selected_trace_indices.length,
-        )
-      : review_target(trace_claims.length)
+  // What the reviewer actually walks (see reviewable_subset). Every claims
+  // build is resolved before either gate opens a review, and an excluded trace
+  // is never shown and so never rebuilt, so this list is fixed for the whole
+  // walk: nothing vanishes from under a reviewer mid-review. The raw selection
+  // stays the progress bar's denominator, since a failed build is still a
+  // build that was waited on.
+  $: reviewable_trace_indices = reviewable_subset(
+    trace_claims,
+    selected_trace_indices,
+  )
+  // Save gate (both arms): the reviewer must rate at least review_target
+  // traces — N//4 of the batch, but never more than ten, because rating is
+  // human work that does not get cheaper as the batch grows. Reviewing more is
+  // welcome, fewer starves the answer key. Capped
+  // by what the round actually surfaced, every round: a re-judge shortfall or
+  // a failed claims build can leave fewer traces on screen than the standard
+  // target, and the gate must never demand reviews of traces it didn't show.
+  // This number also writes the step's "reviewing N of M" sentence, so the
+  // header, the gate and the review's own counter all read the same subset.
+  $: review_target_count = calibration_gate_target(
+    trace_claims.length,
+    reviewable_trace_indices.length,
+  )
   $: reviewed_count = reviewed_trace_count(trace_claims, trace_reviews)
+  // An empty subset has a target of zero, which would otherwise read as a met
+  // gate before the reviewer has graded anything.
   $: save_gate_met =
-    trace_claims.length > 0 && reviewed_count >= review_target_count
+    trace_claims.length > 0 &&
+    reviewable_trace_indices.length > 0 &&
+    reviewed_count >= review_target_count
   // The review CTA says what clicking it does: with any graded disagreement
   // a save enters a refine round, so the button reads Refine Judge (with a
   // tooltip naming the count). It flips back to Save the moment the last
@@ -2533,9 +3260,10 @@
   })
   // The arm's word for one reviewed item, for copy that counts them.
   $: judged_noun = is_multi_turn ? "conversation" : "example"
-  // The arm's words for the plan's rows and one unit of drive work — the
-  // step-4 surfaces (plan screen, confirms, stop banner) count in these.
-  $: plan_noun = is_multi_turn ? "scenarios" : "planned inputs"
+  // The plan's rows read as "items" on both arms (the plan surface labels them
+  // that way), so the errors and confirms about them use the same word. Only
+  // one unit of drive work still differs per arm.
+  const plan_noun = "items"
   $: case_noun = is_multi_turn ? "conversation" : "test run"
   // Bound out of the review component: true only while it shows its last
   // trace, which is where it renders the primary CTA. The save-without-
@@ -2583,6 +3311,20 @@
       claims_state: "building",
       claims_error: null,
     })
+    // TODO(eval-v2): remove — ClaimDebug capture context, deleted before GA.
+    // Derived from whichever wizard state is populated, never from an arm
+    // switch: a single-turn build never set a synthetic-user driver, so both
+    // the model and the turn count come out null on their own.
+    const su_lane = driven_su_driver ?? su_driver
+    const debug_context = {
+      task_model: drive_run_config_model,
+      synthetic_user_model: su_lane
+        ? `${su_lane.model_provider}/${su_lane.model_name}`
+        : null,
+      judge,
+      turns: su_lane ? driven_turns_per_case ?? drive_turns_per_case : null,
+      batch_tag: multi_turn_batch_tag ?? single_turn_batch_tag,
+    }
     try {
       const { data, error, response } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/eval_builder/build_claims",
@@ -2598,6 +3340,9 @@
             eval_rubric: judge.prompt,
             judge_score: tc.judge_score,
             judge_reasoning: tc.judge_reasoning,
+            // TODO(eval-v2): remove — ClaimDebug capture fields.
+            source_run_id: tc.leaf_run_id,
+            debug_context,
           },
         },
       )
@@ -2612,8 +3357,8 @@
       }
       const claims = (data.claims ?? []) as Claim[]
       patch_trace_claims(index, trace_id, {
+        overview: data.overview as Overview,
         claims,
-        final_judgement: data.final_judgement as FinalJudgement,
         claims_state: "built",
         claims_error: null,
       })
@@ -2672,8 +3417,8 @@
   // EVERY selected trace is RESOLVED — built or errored. Review then opens
   // fully loaded: Previous can revisit any earlier trace, so every selected
   // claim set must be resolved before the review opens, not just the first.
-  // Errored builds don't hold the door — they keep their in-review
-  // error+retry card.
+  // Errored builds don't hold the door: they resolve like any other, then
+  // drop out of the reviewed subset.
   let preparing_review = false
   let claims_gate_error: string | null = null
   // Gate start time for the claims-build duration telemetry event.
@@ -2738,6 +3483,9 @@
   // Cases without a fresh verdict last round — surfaced honestly above the
   // review; they keep stale results and sit the round out.
   let calibration_failed_count = 0
+  // Feedback the last refine declined to incorporate, as the notice to show
+  // over the round it produced — otherwise the reviewer's note looks ignored.
+  let calibration_declined_feedback_notice: string | null = null
   // Durable run ids of traces graded in ANY round — the fresh top-up must
   // never re-serve them as "never reviewed".
   let calibration_reviewed_keys = new Set<string>()
@@ -2759,6 +3507,7 @@
     calibration_error = null
     calibration_refine_error = null
     calibration_failed_count = 0
+    calibration_declined_feedback_notice = null
     calibration_reviewed_keys = new Set()
     calibration_pending_judge = null
     calibration_pending_disagreed = []
@@ -2809,6 +3558,9 @@
   async function refine_judge_for_calibration(
     judge: JudgeConfig,
   ): Promise<JudgeConfig> {
+    // A fresh refine answers the current grades: whatever the last one
+    // declined is no longer what the reviewer is about to see.
+    calibration_declined_feedback_notice = null
     const graded_traces = build_graded_traces(trace_claims, trace_reviews)
     const { signal, timed_out } = with_deadline(
       new_copilot_abort_signal(),
@@ -2844,16 +3596,32 @@
       )
     }
     const proposal = data as RefineJudgeProposal
-    const validation_error = validate_refined_judge_prompt(
-      proposal.refined_judge_prompt,
-    )
+    let refined_prompt = proposal.refined_judge_prompt
+    let validation_error = validate_refined_judge_prompt(refined_prompt)
+    if (validation_error) {
+      // A prompt the model wrapped in a code fence is good content in bad
+      // packaging: unwrap it and re-validate rather than fail the round.
+      const unwrapped = strip_wrapping_code_fence(refined_prompt)
+      validation_error = validate_refined_judge_prompt(unwrapped)
+      if (!validation_error) {
+        posthog.capture("eval_v2_judge_prompt_sanitized", {
+          site: "calibration_refine",
+        })
+        refined_prompt = unwrapped
+      }
+    }
     if (validation_error) {
       throw new CalibrationRefineError(
         "invalid_refined_prompt",
         "The refined judge prompt wasn't usable.",
       )
     }
-    return { ...judge, prompt: proposal.refined_judge_prompt }
+    // Feedback the model says it left out — carried into the re-review the
+    // refined judge produces, where the reviewer is looking for their note.
+    calibration_declined_feedback_notice = declined_feedback_notice(
+      proposal.not_incorporated_feedback,
+    )
+    return { ...judge, prompt: refined_prompt }
   }
 
   // Re-judge every driven case with the refined judge over the judge_traces
@@ -3071,7 +3839,8 @@
 
   // The round's claims gate: once every selected trace resolved (built or
   // errored), open the re-review. Same wait-for-all rule as the first-round
-  // gate; errored builds keep their in-review retry card.
+  // gate. The same exclusion applies to the round's subset, so a trace
+  // dropped in one round can never come back in a later one without claims.
   $: if (
     calibration_phase === "building_claims" &&
     selected_trace_indices.length > 0 &&
@@ -3139,12 +3908,10 @@
       return
     }
     if (trace_claims.length === 0) {
-      // Nothing to show (a Back aborted the pipeline) — re-drive.
-      if (is_multi_turn) {
-        on_drive_multi_turn()
-      } else {
-        void on_drive_single_turn()
-      }
+      // Nothing to show (a Back aborted the pipeline) — re-drive through the
+      // settings dialog, the drive's single entrance, so this run states its
+      // lanes and its cost like every other.
+      void open_drive_settings()
       return
     }
     // Claims are lazy on both arms — gate the advance on the selected
@@ -3175,7 +3942,7 @@
       // proposed). spec_text() applies the same precedence, so the saved
       // definition equals what generation/review saw.
       // The fallback filters to rendered fields like every other path, so
-      // classifier-authored example values can never reach the saved spec.
+      // seeded example values the form never showed can't reach the saved spec.
       const final_values =
         Object.keys(refined_property_values).length > 0
           ? refined_property_values
@@ -3224,6 +3991,14 @@
             "No simulated-user model was recorded. Go back to Step 4."
           return
         }
+        // The length those chains actually ran for, captured at the same
+        // commit — missing means no drive happened.
+        const saved_turns_per_case = driven_turns_per_case
+        if (saved_turns_per_case === null) {
+          save_error =
+            "No conversation length was recorded for the driven conversations. Go back to Step 4."
+          return
+        }
         // Carry the human's review through save: each reviewed trace maps to
         // its chain-leaf TaskRun (leaf_run_id from run_cases_batch); the
         // studio writes the golden rating + per-claim grades onto that leaf.
@@ -3241,8 +4016,8 @@
             leaf_run_id: tc.leaf_run_id as string,
             user_says_meets_spec: user_says_meets_spec(tc, review),
             feedback: disagreement_feedback(review),
-            // A trace can be reviewed on the blind verdict alone when its
-            // claims build failed — the rating stands, the grades don't.
+            // Claim grades ride along only where claims were built; a
+            // trace graded on the overall call alone has none to record.
             claim_review:
               tc.claims_state === "built"
                 ? build_claim_review_payload(tc, review)
@@ -3268,7 +4043,7 @@
                 drive_config: {
                   model_name: saved_su_driver.model_name,
                   model_provider: saved_su_driver.model_provider,
-                  turns: TURNS_PER_CASE,
+                  turns: saved_turns_per_case,
                 },
               },
             },
@@ -3338,8 +4113,8 @@
           leaf_run_id: tc.leaf_run_id as string,
           user_says_meets_spec: user_says_meets_spec(tc, review),
           feedback: disagreement_feedback(review),
-          // A trace can be reviewed on the blind verdict alone when its
-          // claims build failed — the rating stands, the grades don't.
+          // Claim grades ride along only where claims were built; a trace
+          // graded on the overall call alone has none to record.
           claim_review:
             tc.claims_state === "built"
               ? build_claim_review_payload(tc, review)
@@ -3353,9 +4128,9 @@
             name,
             definition: issue_description,
             properties: spec_properties,
-            // The pipeline judged final answers, so the saved eval must
-            // too (the server refuses a full-trace single-turn save).
-            evaluate_full_trace: false,
+            // The pipeline judges the transcript, so the saved eval must
+            // too, or the calibrated judge is not the judge that ships.
+            evaluate_full_trace: true,
             judge_info: save_judge,
             single_turn: {
               batch_tag: saved_batch_tag,
@@ -3435,12 +4210,12 @@
     // navigates away while the modal is still on screen.
     if (document.querySelector("dialog[open]")) return
     if (current_step === "describe") {
-      if (description.trim() && !classifying) {
+      if (description.trim()) {
         event.preventDefault()
-        classify_then_continue()
+        continue_from_describe()
       }
     } else if (current_step === "refine" && !refined_preview_loading) {
-      // Same validator gate as the Next button; the in-flight guard lives
+      // Same validator gate as the Continue button; the in-flight guard lives
       // in on_refine_submit itself.
       if (
         filename_string_short_validator(name) === null &&
@@ -3453,7 +4228,8 @@
       // Mirrors the step's own screen states: the keyboard fires whichever
       // forward primary is on screen, and nothing while a stage is running or
       // an error is holding the screen (those offer retry, not forward).
-      if (generation_loading || preparing_review) return
+      if (generation_loading || preparing_review || data_guide_offer_pending)
+        return
       if (show_plan_approval && batch_plan) {
         // The plan surface's own generate button belongs to the shared
         // component and has no keyboard path; only the continue-to-results
@@ -3473,7 +4249,7 @@
     } else if (current_step === "review") {
       // The gate/last-trace pair matches the Save button only within the review
       // component: the gate can be met several traces early, and the shortcut
-      // must not skip traces the reviewer still sees a Next button for. The
+      // must not skip traces the reviewer still sees a Continue button for. The
       // screen-level guards exclude the stale-results gate, the calibration
       // error screen, and in-flight calibration, where that component is
       // unmounted but its binds still hold their last values.
@@ -3490,8 +4266,18 @@
     }
   }
 
-  // Auto-load questions when entering Step 2
-  $: if (current_step === "clarify" && !question_set && !questions_loading) {
+  // Auto-load questions when entering Step 2, and regenerate them when a
+  // Continue processed text the current set wasn't authored against: those
+  // questions no longer fit the new spec. Gating on questions_source rather
+  // than the live description keeps navigation alone from regenerating.
+  // A failed load must halt here rather than auto-retry a paid call: the Retry
+  // button and the next Continue are the re-attempts.
+  $: if (
+    current_step === "clarify" &&
+    !questions_are_current(question_set_source, questions_source) &&
+    !questions_loading &&
+    !questions_error
+  ) {
     load_questions()
   }
 
@@ -3499,57 +4285,24 @@
   // ("Eval Builder"); the position + this name are the first subtitle line
   // ("Step N of TOTAL — <name>"), so the wizard's own chrome doesn't need a
   // separate step-indicator row. The done screen keeps its own title instead.
-  function step_name_for(step: BuilderStep): string {
+  // Only the steps the step line actually names: it renders "" for save and
+  // done, so those two have no name to give and the type says so.
+  function step_name_for(step: Exclude<BuilderStep, "save" | "done">): string {
     switch (step) {
       case "describe":
-        return "Describe your eval"
+        return "Describe Your Eval"
       case "clarify":
-        return "A few questions"
+        return "Answer a Few Questions"
       case "refine":
-        return "Check the details"
+        return "Check the Details"
       case "generate":
-        return "Create eval data"
+        return "Creating Eval"
       case "review":
         // Verdict-neutral on purpose: half of every batch passes by design,
-        // so a fault-presuming headline would blame agents that behaved —
-        // and the reviewer grades the AGENT's work, never the judge.
-        return "Grade the results"
-      case "save":
-        return "Save your eval"
-      case "done":
-        return "Eval Created"
-    }
-  }
-
-  // Per-step description, shown under the step line. Lifted to AppPage so the
-  // heading lives in the standard page header, matching v1.
-  function page_subtitle_for(step: BuilderStep): string | undefined {
-    switch (step) {
-      case "describe":
-        return "Describe a behaviour to enforce or avoid for your task. We'll build your eval from it."
-      case "clarify":
-        // The Questions component carries its own heading + explainer —
-        // a page-level subtitle here would say the same thing twice.
-        return undefined
-      case "refine":
-        return "We've drafted your eval from your answers. Edit anything that's off."
-      case "generate":
-        return is_multi_turn
-          ? "Kiln simulates a user talking to your agent to build your eval's test data."
-          : "Kiln plans test inputs, runs your task on each, and judges the results."
-      case "review":
-        // The mistake framing lives at the STEP level, where it's true of
-        // the batch (some conversations failed); each conversation's own
-        // verdict card says which way that one went. ~Half of every batch
-        // passes by design (balanced plan + stratified sample), so the
-        // per-conversation surface stays verdict-neutral.
-        return is_multi_turn
-          ? `A judge reviewed each test conversation in your eval data and flagged possible mistakes. Keep the real ones, dismiss the false alarms. You're reviewing ${review_target_count} of ${trace_claims.length}. Click a citation number to see the moment it happened.`
-          : `A judge reviewed each test run in your eval data and flagged possible mistakes. Keep the real ones, dismiss the false alarms. You're reviewing ${review_target_count} of ${trace_claims.length}. Click a citation number to see the moment it happened.`
-      case "save":
-        return "Saving your eval and its test data."
-      case "done":
-        return undefined
+        // so a fault-presuming headline would blame agents that behaved. The
+        // name points at the judge because that is what this step calibrates;
+        // each case's own verdict is still about the AGENT's work.
+        return "Validate the Judge"
     }
   }
 
@@ -3577,46 +4330,47 @@
       : `Step ${STEP_INDEX[current_step]} of ${TOTAL_STEPS}: ${step_name_for(
           current_step,
         )}`
-  $: page_subtitle = page_subtitle_for(current_step)
   $: page_max_w = page_max_w_for(current_step)
 
   // Total assistant turns expected across the whole batch — the denominator
   // for the smooth turn-level progress (cases run in parallel waves, so this
   // climbs steadily where the case count would sit still then jump). Uses
-  // the DRIVEN case count: salvage can drive fewer cases than the plan has.
-  $: multi_turn_total_turns = pipeline_total_cases * TURNS_PER_CASE
+  // the DRIVEN case count and the DRIVEN length: salvage can drive fewer cases
+  // than the plan has, and the bar must not restate itself against a length
+  // the running batch isn't using. This is the MOST turns the batch can spend,
+  // not the number it will: a conversation that ends early spends fewer.
+  $: multi_turn_total_turns =
+    pipeline_total_cases * (driven_turns_per_case ?? drive_turns_per_case)
 
   // Step 4 loading-stage title + caption for the pre-pipeline stages (the
   // pipeline stage has its own progress screen below). One phase machine,
   // arm-specific words for the arm-specific stages.
   $: generate_animation_title =
     generation_phase === "planning"
-      ? is_multi_turn
-        ? "Drafting Scenarios"
-        : "Planning Test Inputs"
+      ? "Planning Eval Dataset"
       : generation_phase === "authoring_judge"
         ? "Authoring Judge"
         : generation_phase === "preflight"
           ? "Checking Configuration"
           : generation_phase === "minting_inputs"
-            ? "Writing Test Inputs"
+            ? "Writing Eval Data"
             : "Creating Simulated Users"
   $: generate_animation_description =
     generation_phase === "planning"
       ? is_multi_turn
-        ? `Drafting a balanced set of ${NUM_CASES} scenarios for your eval.`
-        : `Drafting a balanced plan of ${NUM_CASES} test inputs for your eval.`
+        ? "Kiln is planning a diverse batch of conversations, tailored to your task and guidance."
+        : "Kiln is planning a diverse batch of eval data, tailored to your task and guidance."
       : generation_phase === "authoring_judge"
         ? "Authoring a judge rubric tailored to your eval."
         : generation_phase === "preflight"
           ? `Checking that your run config, the ${
               is_multi_turn
                 ? "model that plays the user"
-                : "model that writes the test inputs"
+                : "eval data generation model"
             }, and the judge all respond before creating your eval data.`
           : generation_phase === "minting_inputs"
-            ? `Writing ${planned_total} test inputs from the approved plan.`
-            : `Setting up ${planned_total} simulated users from the approved scenarios.`
+            ? `Writing ${planned_total} items from the approved plan.`
+            : `Setting up ${planned_total} simulated users from the approved plan.`
 
   // The long-wait line, on exactly the stages that run one long request with
   // no progress bar. Stages that show a bar let the bar carry the wait, and
@@ -3651,7 +4405,6 @@
   <AppPage
     title={page_title}
     subtitle={page_step_line}
-    sub_subtitle={page_subtitle ?? ""}
     breadcrumbs={[{ label: "Evals", href: `/specs/${project_id}/${task_id}` }]}
     no_y_padding
     action_buttons={reset_available
@@ -3673,60 +4426,59 @@
       />
     {:else}
       <div class="py-6">
-        {#if task_loading}
-          <!-- Same page-level loading block as the copilot check above. -->
+        {#if task_loading || data_guide_read === "reading"}
+          <!-- Same page-level loading block as the copilot check above. The
+               Step 4 entry read of the task's Data Guide holds the page the
+               same way: nothing on the step can render until the plan
+               knows its guide. -->
           <div class="w-full min-h-[50vh] flex justify-center items-center">
             <div class="loading loading-spinner loading-lg"></div>
           </div>
         {:else if task_error}
-          <Warning warning_color="error" warning_message={task_error} />
+          <div class="mt-2">
+            <Warning warning_color="error" warning_message={task_error} />
+          </div>
         {:else if current_step === "describe"}
           <!-- ── Step 1 — Describe ── -->
           <FormElement
             label="What should this eval check?"
-            description="Describe in plain language. We'll structure it for you."
+            description="Describe what to check in plain language. Kiln Pro writes the eval and generates the data to test it."
+            placeholder="e.g. The model should not hallucinate."
             id="description"
             inputType="textarea"
             height="medium"
             bind:value={description}
-            error_message={classify_error}
           />
 
-          <div class="flex justify-between mt-8">
-            <button class="btn btn-outline" on:click={back_to_task}
-              >Cancel</button
-            >
+          <div class="flex justify-end mt-8">
             <!-- FormContainer's compact submit spec (wide primary + keyboard
-                 hint), hand-rolled because this row isn't a FormContainer.
-                 The hint hides while the request is in flight, matching the
-                 shared container's submitting state. -->
+                 hint), hand-rolled because this row isn't a FormContainer. -->
             <button
               class="relative btn btn-primary min-w-64 px-12"
-              on:click={classify_then_continue}
-              disabled={!description.trim() || classifying}
+              on:click={continue_from_describe}
+              disabled={!description.trim()}
             >
-              {#if classifying}
-                <span class="loading loading-dots loading-sm"></span>
-                Classifying…
-              {:else}
-                Next
-                <span class="absolute opacity-80 right-4 text-xs font-light">
-                  {#if isMacOS()}
-                    <span class="tracking-widest">⌘↵</span>
-                  {:else}
-                    <span>ctrl ↵</span>
-                  {/if}
-                </span>
-              {/if}
+              Continue
+              <span class="absolute opacity-80 right-4 text-xs font-light">
+                {#if isMacOS()}
+                  <span class="tracking-widest">⌘↵</span>
+                {:else}
+                  <span>ctrl ↵</span>
+                {/if}
+              </span>
             </button>
           </div>
 
-          <div class="text-center mt-6 text-sm text-gray-500">
-            Prefer to set it up yourself?
+          <!-- Reuses the Data Guide preview's secondary-action row (an "or"
+               joining a demoted link) so the two screens read alike. -->
+          <div class="flex flex-row gap-1 mt-4 justify-end">
+            <span class="text-sm text-gray-500 px-1">or</span>
             <button
-              class="link link-hover text-primary"
-              on:click={create_manually}>Create manually</button
+              class="link underline text-sm text-gray-500"
+              on:click={create_manually}
             >
+              Create Manually
+            </button>
           </div>
         {:else if current_step === "clarify"}
           <!-- ── Step 2 — Clarify (uses v1's Questions component) ── -->
@@ -3736,7 +4488,17 @@
               description="Analyzing your criteria for areas that could use more clarity."
             />
           {:else if questions_error}
-            <Warning warning_color="error" warning_message={questions_error} />
+            <div class="mt-2">
+              <Warning
+                warning_color="error"
+                warning_message={questions_error}
+              />
+            </div>
+            <div class="text-center py-4 flex justify-center gap-2">
+              <button class="btn btn-primary" on:click={() => load_questions()}>
+                Retry
+              </button>
+            </div>
           {:else if question_set}
             <!-- name deliberately empty: hides the component's details link
                  (the wizard manages the eval's details itself, and the name
@@ -3752,7 +4514,7 @@
               bind:error={questions_form_error}
               bind:submitting={questions_submitting}
               warn_before_unload={false}
-              submit_label="Next"
+              submit_label="Continue"
             />
           {/if}
         {:else if current_step === "refine"}
@@ -3764,7 +4526,7 @@
             />
           {:else}
             {#if refine_warning}
-              <div class="mb-4">
+              <div class="mt-2 mb-4">
                 <Warning
                   warning_color="warning"
                   warning_message={refine_warning}
@@ -3793,18 +4555,13 @@
                 inputType="textarea"
                 height="large"
                 bind:value={refined_property_values.issue_description}
+                info_description={refine_info_description}
               />
-              {#if suggested_edits.issue_description?.reason_for_edit}
-                <div class="text-xs text-gray-500 italic mt-2">
-                  Refinement: {suggested_edits.issue_description
-                    .reason_for_edit}
-                </div>
-              {/if}
             </div>
 
             {#if refine_form_error}
               <!-- The Step 3 gate errors (e.g. a taken eval name). Without
-                   this region the Next button silently does nothing. -->
+                   this region the Continue button silently does nothing. -->
               <div class="mt-4">
                 <Warning
                   warning_color="error"
@@ -3826,7 +4583,7 @@
                   filename_string_short_validator(name) !== null ||
                   !(refined_property_values.issue_description ?? "").trim()}
               >
-                Next
+                Continue
                 <span class="absolute opacity-80 right-4 text-xs font-light">
                   {#if isMacOS()}
                     <span class="tracking-widest">⌘↵</span>
@@ -3839,16 +4596,26 @@
           {/if}
         {:else if current_step === "generate"}
           <!-- ── Step 4 — Generate ── -->
-          {#if fallback_run_config_name}
-            <Warning
-              warning_color="primary"
-              warning_icon="info"
-              warning_message={`Using run config ${fallback_run_config_name}. Set a default in task settings to silence this notice.`}
+          {#if data_guide_offer_shown}
+            <!-- SDG's offer, before the automatic plan fires: the plan is
+                 drafted under whatever the user decides here. -->
+            <DataGuideOffer
+              surface="builder"
+              on_set_up={set_up_data_guide}
+              on_skip={skip_data_guide}
             />
+          {:else if fallback_run_config_name}
+            <div class="mt-2">
+              <Warning
+                warning_color="primary"
+                warning_icon="info"
+                warning_message={`Using run config ${fallback_run_config_name}. Set a default in task settings to silence this notice.`}
+              />
+            </div>
           {/if}
           {#if generation_loading && !pipeline_running}
             <!-- Plan, SU generation, and input minting are each one long
-                 request/job (minutes at a 40-case batch) — the standard
+                 request/job (minutes at a full batch) — the standard
                  animation warning line sets the expectation, matching every
                  other long wait in the app. Multi-turn is building
                  conversations, so it uses the chat-bubble animation;
@@ -3868,7 +4635,7 @@
                 warning={generate_animation_warning}
               />
               {#if generation_phase === "minting_inputs"}
-                <div class="flex flex-col items-center mt-2">
+                <div class="flex flex-col items-center mt-6">
                   <progress
                     class="progress w-56 progress-success"
                     value={minting_done}
@@ -3896,7 +4663,7 @@
                 description="Simulating conversations with your agent and judging each one."
                 warning={null}
               />
-              <div class="flex flex-col items-center mt-2">
+              <div class="flex flex-col items-center mt-6">
                 <progress
                   class="progress w-56 progress-success"
                   value={multi_turn_turns_done}
@@ -3904,19 +4671,23 @@
                 ></progress>
                 <!-- Turns, not cases: cases finish in concurrency waves, so
                      the turn count is the one that actually moves while the
-                     batch runs. It's the only live count on this screen. -->
+                     batch runs. It's the only live count on this screen.
+                     The denominator is a ceiling, not a total: conversations
+                     that end early leave the bar short of full, so it can
+                     jump to done rather than creep there. -->
                 <div class="font-light text-xs text-center mt-1">
-                  {multi_turn_turns_done} of {multi_turn_total_turns} turns complete{#if pipeline_failed_count > 0},
+                  {multi_turn_turns_done} of up to {multi_turn_total_turns} turns
+                  complete{#if pipeline_failed_count > 0},
                     {pipeline_failed_count} failed{/if}
                 </div>
               </div>
             {:else}
               <AnalyzingAnimation
                 title="Creating Eval Data"
-                description="Running your task on each test input and judging the result."
+                description="Running your task on each item and judging the result."
                 warning={null}
               />
-              <div class="flex flex-col items-center mt-2">
+              <div class="flex flex-col items-center mt-6">
                 <progress
                   class="progress w-56 progress-success"
                   value={judged_case_count + pipeline_failed_count}
@@ -3937,10 +4708,10 @@
             <svelte:component
               this={is_multi_turn ? ConversationAnimation : AnalyzingAnimation}
               title="Preparing Review"
-              description={`Flagging possible mistakes in each ${judged_noun} for you to review.`}
+              description="Finding the examples where your judgment is most useful."
               warning={null}
             />
-            <div class="flex flex-col items-center mt-2">
+            <div class="flex flex-col items-center mt-6">
               <progress
                 class="progress w-56 progress-success"
                 value={selected_claims_resolved}
@@ -3958,10 +4729,12 @@
           {#if claims_gate_error}
             <!-- Config-class build failure — same error+retry surface as
                  the wizard's other loading stages. -->
-            <Warning
-              warning_color="error"
-              warning_message={claims_gate_error}
-            />
+            <div class="mt-2">
+              <Warning
+                warning_color="error"
+                warning_message={claims_gate_error}
+              />
+            </div>
             <div class="text-center py-4 flex justify-center gap-2">
               <button
                 class="btn btn-outline"
@@ -3969,7 +4742,7 @@
                   claims_gate_error = null
                 }}
               >
-                {is_multi_turn ? "Back to Scenarios" : "Back to Plan"}
+                Back to Plan
               </button>
               <button
                 class="btn btn-primary"
@@ -3979,18 +4752,26 @@
               </button>
             </div>
           {:else if generation_error}
-            <Warning warning_color="error" warning_message={generation_error} />
+            <div class="mt-2">
+              <Warning
+                warning_color="error"
+                warning_message={generation_error}
+              />
+            </div>
             <div class="text-center py-4 flex justify-center gap-2">
               {#if batch_plan !== null}
                 <!-- Drive failed after approval — let the user rework the plan
-                     instead of only retrying it verbatim. -->
+                     instead of only retrying it verbatim. Retry itself opens
+                     Generation Settings (the drive's single entrance) with the
+                     committed lanes and the cost of this batch, so the models
+                     can be changed on the way back in. -->
                 <button
                   class="btn btn-outline"
                   on:click={() => {
                     generation_error = null
                   }}
                 >
-                  {is_multi_turn ? "Back to Scenarios" : "Back to Plan"}
+                  Back to Plan
                 </button>
               {/if}
               <button
@@ -4008,7 +4789,7 @@
                    errors — same surface, message and actions scale with what
                    happened. trusted+markdown for the in-message /run
                    deeplink (renders target=_blank, wizard state survives). -->
-              <div class="mb-4">
+              <div class="mt-2 mb-4">
                 <Warning
                   warning_color={drive_stop.survivors > 0 &&
                   !drive_stop.aborted_error &&
@@ -4027,44 +4808,48 @@
               </div>
             {/if}
             <!-- Plan approval: the run starts only after the user approves
-                 the plan — the shared /generate batch-plan surface,
-                 relabelled per arm (scenarios / planned test inputs). The
-                 primary button runs immediately with the default model
-                 lanes; the settings link (slotted above the button) opens
-                 the same settings dialog to pick them first. -->
+                 the plan — the shared /generate batch-plan surface, on its
+                 own default header and regenerate labels so the two flows
+                 read alike. Only the subheader differs per arm, because the
+                 arms do different things to each item. The primary button
+                 opens Generation Settings rather than driving: that dialog
+                 is the single entrance, so every run passes its lanes and
+                 its cost warning. -->
             <KilnProBatchPlan
               plan={batch_plan}
+              header_label="Eval Dataset Proposal"
               summary_out_of_sync={batch_plan_edited}
-              header_label={is_multi_turn ? "Scenarios" : "Planned Test Inputs"}
               subheader={is_multi_turn
-                ? "Each scenario becomes one eval input. Edit any before starting."
-                : "Each plan line becomes one test input your task runs on. Edit any before starting."}
-              regenerate_label={is_multi_turn ? "New Scenarios" : "New Plan"}
-              on_generate_inputs={start_drive_with_defaults}
-              on_regenerate={on_new_plan_with_confirm}
+                ? "Here's the plan for your eval dataset. Kiln will run each item as a test conversation with your agent in the next step. Refine the plan if the coverage looks off."
+                : "Here's the plan for your eval dataset. Kiln will use this guidance to generate each item in the next step. Refine the plan if the coverage looks off."}
+              on_generate_inputs={open_drive_settings}
+              on_regenerate={open_new_plan_dialog}
               on_delete_prompt={on_delete_plan_prompt}
               hide_generate_button={has_data_accepted}
               generate_button_outline={has_driven_results &&
                 drive_stop !== null}
-              generate_button_label={is_multi_turn
-                ? `Create ${batch_plan.prompts.length} Eval Input${
-                    batch_plan.prompts.length === 1 ? "" : "s"
-                  }`
-                : `Run Task on ${batch_plan.prompts.length} Input${
-                    batch_plan.prompts.length === 1 ? "" : "s"
-                  }`}
+              generate_button_label={`Generate Dataset (${batch_plan.prompts.length} items)`}
+              items_label="Items"
+              expanded_description={false}
+              column_label="Item Guidance"
             >
-              <svelte:fragment slot="advanced">
-                {#if !has_data_accepted}
-                  <!-- v1 wizard idiom for a secondary action by the primary
-                       (see refine_spec's "or Save Refined Eval…" link). -->
-                  <div class="flex flex-row gap-1 items-baseline">
-                    <span class="text-sm text-gray-500">or</span>
+              <!-- The first plan fires without a form, so the proposal says
+                   what it was drafted under; View is the checkbox's own
+                   opener (a new tab, so the plan stays on screen). -->
+              <svelte:fragment slot="under_subheader">
+                {#if plan_drafted_with_data_guide}
+                  <div
+                    id="data_guide_plan_note"
+                    class="text-sm font-light text-gray-500"
+                  >
+                    Planned using your Data Guide.
                     <button
-                      class="link underline text-sm text-gray-500"
-                      on:click={open_drive_settings}
+                      type="button"
+                      class="link"
+                      on:click={() =>
+                        open_data_guide_in_new_tab(project_id, task_id)}
                     >
-                      choose which models to use
+                      View
                     </button>
                   </div>
                 {/if}
@@ -4093,7 +4878,7 @@
                     class="relative btn btn-primary min-w-64 px-12"
                     on:click={on_continue_with_survivors}
                   >
-                    Next
+                    Continue
                     <span
                       class="absolute opacity-80 right-4 text-xs font-light"
                     >
@@ -4107,7 +4892,7 @@
                 </div>
               </div>
             {/if}
-          {:else if !generation_loading && !generation_error && !preparing_review && !claims_gate_error}
+          {:else if !generation_loading && !generation_error && !preparing_review && !claims_gate_error && !data_guide_offer_pending}
             <div class="flex justify-end mt-8">
               {#if trace_claims.length > 0}
                 <!-- Generation already ran (navigated back into this step) —
@@ -4117,7 +4902,7 @@
                   class="relative btn btn-primary min-w-64 px-12"
                   on:click={continue_to_review}
                 >
-                  Next
+                  Continue
                   <span class="absolute opacity-80 right-4 text-xs font-light">
                     {#if isMacOS()}
                       <span class="tracking-widest">⌘↵</span>
@@ -4135,7 +4920,7 @@
                   class="relative btn btn-primary min-w-64 px-12"
                   on:click={on_plan_batch}
                 >
-                  {is_multi_turn ? "Draft Scenarios" : "Plan Test Inputs"}
+                  Plan Batch
                   <span class="absolute opacity-80 right-4 text-xs font-light">
                     {#if isMacOS()}
                       <span class="tracking-widest">⌘↵</span>
@@ -4156,10 +4941,12 @@
                  review exactly; only the explicit action discards. Derived
                  state, so this also covers browser Forward straight into
                  the review step. -->
-            <Warning
-              warning_color="warning"
-              warning_message="Your eval's description changed since this eval data was created and reviewed. The judge was built from the previous description, so the results below no longer match. Revert the description (Back) to continue reviewing, or discard the results and create your eval data again."
-            />
+            <div class="mt-2">
+              <Warning
+                warning_color="warning"
+                warning_message="Your eval's description changed since this eval data was created and reviewed. The judge was built from the previous description, so the results below no longer match. Revert the description (Back) to continue reviewing, or discard the results and create your eval data again."
+              />
+            </div>
             <div class="flex justify-center gap-2 py-4">
               <button class="btn btn-outline" on:click={() => history.back()}>
                 Back
@@ -4185,7 +4972,7 @@
               description="Re-checking your eval data with the improved judge."
               warning={null}
             />
-            <div class="flex flex-col items-center mt-2">
+            <div class="flex flex-col items-center mt-6">
               <progress
                 class="progress w-56 progress-success"
                 value={rejudged_done + rejudge_failed_live}
@@ -4202,10 +4989,10 @@
             <svelte:component
               this={is_multi_turn ? ConversationAnimation : AnalyzingAnimation}
               title="Preparing Review"
-              description={`Flagging possible mistakes in each ${judged_noun} for you to review.`}
+              description="Finding the examples where your judgment is most useful."
               warning={null}
             />
-            <div class="flex flex-col items-center mt-2">
+            <div class="flex flex-col items-center mt-6">
               <progress
                 class="progress w-56 progress-success"
                 value={selected_claims_resolved}
@@ -4223,10 +5010,12 @@
                  a failure that repeats every round (a case the re-check can
                  never complete) would otherwise leave Retry as the only
                  visible move. -->
-            <Warning
-              warning_color="error"
-              warning_message={`${calibration_error.trimEnd().replace(/\.$/, "")}. You can also go back to review and save without refining further.`}
-            />
+            <div class="mt-2">
+              <Warning
+                warning_color="error"
+                warning_message={`${calibration_error.trimEnd().replace(/\.$/, "")}. You can also go back to review and save without refining further.`}
+              />
+            </div>
             <div class="text-center py-4 flex justify-center gap-2">
               <button
                 class="btn btn-outline"
@@ -4247,15 +5036,27 @@
             <!-- Browser Forward can land here after results were cleared
                  (plan regenerated / drive restarted). Browser Back returns to
                  generation rather than showing an empty review. -->
-            <Warning
-              warning_color="warning"
-              warning_message="There is nothing to review yet. Create your eval data first."
-            />
+            <div class="mt-2">
+              <Warning
+                warning_color="warning"
+                warning_message="There is nothing to review yet. Create your eval data first."
+              />
+            </div>
+          {:else if reviewable_trace_indices.length === 0}
+            <!-- Every selected trace failed its claims build, so the subset
+                 emptied. Say so: an empty review would leave a save gate that
+                 can never be met and no explanation for it. -->
+            <div class="mt-2">
+              <Warning
+                warning_color="warning"
+                warning_message={`Couldn't analyze any of these ${judged_noun}s. Create your eval data again.`}
+              />
+            </div>
           {:else}
             {#if calibration_rounds_completed > 0 && rejudge_shortfall_notice(calibration_failed_count, case_noun)}
               <!-- Cases without a fresh verdict sat the round out — say so
                    instead of letting the smaller subset pass unremarked. -->
-              <div class="mb-4">
+              <div class="mt-2 mb-4">
                 <Warning
                   warning_color="primary"
                   warning_icon="info"
@@ -4266,27 +5067,48 @@
                 />
               </div>
             {/if}
+            {#if calibration_declined_feedback_notice}
+              <!-- Feedback the refine declined, said out loud over the round
+                   it produced — a note silently dropped reads as ignored. -->
+              <div class="mt-2 mb-4">
+                <Warning
+                  warning_color="primary"
+                  warning_icon="info"
+                  warning_message={calibration_declined_feedback_notice}
+                />
+              </div>
+            {/if}
             <!-- Keyed per round: a new round replaces the subset and resets
                  every grade, so the review component restarts on the new
                  selection instead of pointing at a stale index. -->
-            {#key calibration_rounds_completed}
-              <ClaimEvidenceReview
-                traces={trace_claims}
-                bind:verdicts={trace_reviews}
-                selected_indices={selected_trace_indices}
+            {#if !review_intro_dismissed}
+              <ReviewIntro
                 {judged_noun}
-                {on_open_trace}
-                on_save={on_advance_to_save}
-                save_disabled={!save_gate_met}
-                save_label={review_cta_state === "refine"
-                  ? "Refine Judge"
-                  : "Save"}
-                save_tooltip={review_cta_state === "refine"
-                  ? refine_judge_tooltip(review_disagreement_count, judged_noun)
-                  : null}
-                bind:on_last_trace={review_on_last_trace}
+                on_start={() => (review_intro_dismissed = true)}
               />
-            {/key}
+            {:else}
+              {#key calibration_rounds_completed}
+                <ClaimEvidenceReview
+                  traces={trace_claims}
+                  bind:verdicts={trace_reviews}
+                  selected_indices={reviewable_trace_indices}
+                  {judged_noun}
+                  {on_open_trace}
+                  on_save={on_advance_to_save}
+                  save_disabled={!save_gate_met}
+                  save_label={review_cta_state === "refine"
+                    ? "Refine Judge"
+                    : "Save"}
+                  save_tooltip={review_cta_state === "refine"
+                    ? refine_judge_tooltip(
+                        review_disagreement_count,
+                        judged_noun,
+                      )
+                    : null}
+                  bind:on_last_trace={review_on_last_trace}
+                />
+              {/key}
+            {/if}
             {#if calibration_refine_error}
               <!-- A failed refine attempt, reported inline under the review
                    actions. Rendered independently of the opt-out link below:
@@ -4302,7 +5124,7 @@
                    data-guide refine flow): saves immediately with the judge
                    the reviewer graded — no dialog. Only offered where the
                    primary CTA itself renders — a refine on the last trace —
-                   so it never sits under a Next button, where one unconfirmed
+                   so it never sits under a Continue button, where one unconfirmed
                    click would save mid-review. -->
               <div class="flex flex-col items-end mt-2">
                 <button
@@ -4319,11 +5141,13 @@
           <!-- ── Save (transition out of Step 5) ── -->
           {#if saving}
             <SavingAnimation
-              title="Creating Eval"
+              title="Saving Your Eval"
               description={save_animation_description}
             />
           {:else if save_error}
-            <Warning warning_color="error" warning_message={save_error} />
+            <div class="mt-2">
+              <Warning warning_color="error" warning_message={save_error} />
+            </div>
             <div class="text-center py-4">
               <button class="btn btn-primary" on:click={on_save}>Retry</button>
             </div>
@@ -4365,22 +5189,75 @@
   </AppPage>
 </div>
 
-<!-- Drive settings dialog (SDG's Generation Settings pattern): the primary
-     button runs immediately with the default lanes, so this opens only from
-     the settings link (pre-run model choice) or as fail-loud recovery when
-     a default lane can't be resolved. Its submit starts the run either way.
-     Model-only lanes — the user-simulator, input generator, and judge are
-     fixed-prompt internal roles, so no run-config extras. Lane filters: the
-     simulator and input generator want a data-gen model (SDG's settings);
-     judge needs structured output (v1 judge form's settings). With no
-     usable model, the dropdowns' own empty state links to provider settings
-     (same-tab, so the models list is fresh when the user returns) and
-     submit refuses to start. -->
-<Dialog bind:this={drive_settings_dialog} title="Advanced Settings">
+<!-- The Refine Plan dialog: /generate's batch form rows (count stepper +
+     guidance box) wrapped in a form this page owns, so the destructive
+     warning, the size and the steer are all settled by one click. The title
+     names the action, because that is all this dialog does: it re-plans, it
+     generates nothing. The guidance box starts EMPTY — a prefilled
+     template invites editing a prompt the user didn't write, and a
+     blank steer costs the planner nothing. That empty box is a valid
+     submission, so the guidance field is marked optional: without it the
+     default "just re-plan" path would fail validation and never submit. -->
+<Dialog
+  bind:this={new_plan_dialog}
+  title="New Dataset Plan"
+  on:close={discard_plan_steer_draft}
+>
   <FormContainer
-    submit_label={is_multi_turn
-      ? `Create ${planned_total} Eval Input${planned_total === 1 ? "" : "s"}`
-      : `Run Task on ${planned_total} Input${planned_total === 1 ? "" : "s"}`}
+    submit_label="Refine Plan"
+    bind:submitting={new_plan_submitting}
+    on:submit={submit_new_plan}
+    keyboard_submit={false}
+  >
+    <KilnProBatchForm
+      bind:count={eval_input_count}
+      count_max={NUM_CASES_MAX}
+      count_label="Item Count"
+      bind:guidance={plan_steer}
+      guidance_id="plan_steer"
+      guidance_optional={true}
+      warning_message={new_plan_warning}
+    >
+      <!-- SDG's checkbox after the rows, where SDG puts it. Single-turn
+           only: multi-turn never sends the guide. Renders nothing when the
+           task has no guide. -->
+      {#if !is_multi_turn}
+        <SynthDataGuide
+          {project_id}
+          {task_id}
+          data_guide={data_guide_text ?? ""}
+          bind:use_data_guide={use_data_guide_draft}
+        />
+      {/if}
+    </KilnProBatchForm>
+  </FormContainer>
+</Dialog>
+
+<!-- Generation Settings: the drive's single entrance. Every run passes
+     through here, which is what puts the lanes it will spend on and the
+     cost of spending them in front of the one button that starts it.
+     The input generator is the same run-config lane synthetic data
+     generation uses, so tools and skills are available to whatever writes
+     the eval data. It is given no task: the tool and skill pickers mirror
+     their selection into an app-wide store keyed by task id, and this lane's
+     tools belong to the eval it is building, not to the task. The
+     user-simulator and judge are fixed-prompt internal roles, so they stay
+     model-only. Each lane's explanation is pinned to its label as a tooltip
+     rather than set below it, so the lanes and a warning still read as a
+     short form. Lane filters: the input generator wants a data-gen model
+     with structured output (SDG's settings), plus tool support once tools
+     are chosen; judge needs structured output (v1 judge form's settings).
+     The simulator filters on nothing — it writes one plain-text message a
+     turn, with no schema and no tools, so any chat model can do it — and
+     recommends the fast, inexpensive models rather than the frontier ones
+     the other two want. A model that fails a filter is never cleared: it
+     moves into the dropdown's "Not Recommended" group and the lane explains
+     why. With no usable model, the empty state links to provider settings
+     (same-tab, so the models list is fresh when the user returns) and submit
+     refuses to start. -->
+<Dialog bind:this={drive_settings_dialog} title="Generation Settings">
+  <FormContainer
+    submit_label={`Generate Dataset (${planned_total} items)`}
     bind:submitting={drive_settings_submitting}
     error={drive_settings_error}
     on:submit={submit_drive_settings}
@@ -4388,32 +5265,61 @@
   >
     {#if is_multi_turn}
       <AvailableModelsDropdown
-        label="Model that plays the user"
-        description="Plays your agent's user in each test conversation."
+        label="Model that writes the user's messages"
+        info_description="Stands in for a real user in each test conversation. Your agent replies to it."
         bind:model={su_model_combined}
         bind:model_name={su_model_id}
         bind:provider_name={su_provider_id}
         settings={{
-          requires_data_gen: true,
-          suggested_mode: "data_gen",
+          suggested_mode: "synthetic_user",
         }}
       />
+      <!-- Conversation length, in the synthetic data dialog's stepper-row
+           shape: label left, its tooltip pinned to the right of the label,
+           the stepper on the row's right. Inside the multi-turn branch by
+           construction — a single-turn run has no conversation to length.
+           The stepper's bounds are the drive route's own, so the dialog can
+           only compose a request the route accepts, and the cost warning
+           below restates the spend as it moves. -->
+      <div class="flex flex-row items-center gap-4">
+        <div class="flex flex-row items-center grow font-medium text-sm">
+          <span>Max turns per conversation</span>
+          <span class="grow"></span>
+          <div class="text-gray-500">
+            <InfoTooltip
+              tooltip_text="One turn is one exchange: the user sends a message and your agent replies. A conversation stops early once the simulated user has what it came for, so this is a ceiling rather than a target. A higher ceiling tests deeper behavior and costs more."
+            />
+          </div>
+        </div>
+        <IncrementUi
+          bind:value={staged_turns_per_case}
+          min={MIN_TURNS_PER_CASE}
+          max={MAX_TURNS_PER_CASE}
+        />
+      </div>
     {:else}
-      <AvailableModelsDropdown
-        label="Model that writes the test inputs"
-        description="Writes one test input from each approved plan line; your task then runs on them."
+      <RunConfigComponent
+        bind:this={input_gen_config_component}
+        {project_id}
+        model_label="Eval Data Generation Model"
+        model_info_description="Writes one item from each approved plan line; your task then runs on them."
         bind:model={input_gen_model_combined}
-        bind:model_name={input_gen_model_id}
-        bind:provider_name={input_gen_provider_id}
-        settings={{
+        initial_run_config_properties={input_gen_run_config}
+        requires_structured_output={true}
+        hide_prompt_selector={true}
+        show_tools_selector_in_advanced={true}
+        show_name_field={false}
+        model_dropdown_settings={{
           requires_data_gen: true,
           suggested_mode: "data_gen",
         }}
       />
     {/if}
     <AvailableModelsDropdown
-      label="Model that judges the results"
-      description={`Reviews each ${judged_noun} against your eval's criteria and decides pass or fail.`}
+      label="Judge Model"
+      info_description={is_multi_turn
+        ? "Checks each conversation against your eval's criteria."
+        : "Checks each result against your eval's criteria."}
       bind:model={judge_model_combined}
       bind:model_name={judge_model_id}
       bind:provider_name={judge_provider_id}
@@ -4421,6 +5327,21 @@
         requires_structured_output: true,
         suggested_mode: "evals",
       }}
+    />
+    <!-- What the run costs, last child of the form so it sits directly above
+         the submit row (run_eval's placement). Multi-turn gets a red mark
+         rather than the usual amber one: every case there is a whole
+         conversation billed per turn on both sides, so the same item count
+         costs many times what it does single-turn, and this sits directly
+         above the button that commits the spend. Filled rather than bigger:
+         the ring mark is mostly empty at this size, so the error colour reads
+         amber next to a real amber one, and Warning styles its mark, never
+         its text. The form's gap spaces it like every lane above it, and the
+         default indent keeps its text on the lanes' label line. -->
+    <Warning
+      warning_color={is_multi_turn ? "error" : "warning"}
+      filled_icon={is_multi_turn}
+      warning_message={drive_cost_message}
     />
   </FormContainer>
 </Dialog>

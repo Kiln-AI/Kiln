@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from kiln_ai.datamodel.basemodel import KilnParentModel, ReadOnlyMutationError
+from kiln_ai.datamodel.datamodel_enums import EvalStatus, Priority
 from kiln_ai.datamodel.eval import (
     LEGACY_TRACE_FIELDS,
     SCORER_CODE_FILENAME,
@@ -42,6 +43,8 @@ from kiln_ai.datamodel.eval import (
     reference_data_keys,
     validate_scores_against_output_scores,
 )
+from kiln_ai.datamodel.spec import Spec
+from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import TaskOutput, TaskOutputRatingType
 from kiln_ai.datamodel.task_run import TaskRun
@@ -2342,7 +2345,6 @@ def test_eval_v2_with_eval_input_split():
     )
     assert eval.splits["test"] == EvalInputSplit(filter_id="all")
     assert eval.model_dump()["eval_set_filter_id"] is None
-    assert not hasattr(eval, "eval_input_filter_id")
 
 
 def test_eval_requires_a_test_split():
@@ -2912,15 +2914,53 @@ class TestEvalTaskInputFromTrace:
         assert result.task_input == "2+2?"
 
     def test_from_a_task_run_source(self, trace):
-        item = TaskRun(input="the dataset input", output=TaskOutput(output="old"))
+        item = TaskRun(
+            input="the dataset input", output=TaskOutput(output="the curated answer")
+        )
 
         result = EvalTaskInput.from_trace(trace, item)
 
         assert result.final_message == "what the model said"
-        assert result.reference_data is None
+        # A TaskRun-backed dataset item stores the curated answer as its output, so it
+        # is the ground truth the judge compares the trace against.
+        assert result.reference_data == {"reference_answer": "the curated answer"}
         # No separate statement of the input exists for a TaskRun-backed item, so the
         # trace's own input is what was actually scored.
         assert result.task_input == "what the model saw"
+
+    def test_a_task_run_scored_as_itself_has_no_reference(self, trace):
+        """Calibration scores the golden item as itself: a reference populated there
+        would be byte-identical to final_message, and every judge would pass."""
+        result = EvalTaskInput.from_trace(trace, trace)
+
+        assert result.final_message == "what the model said"
+        assert result.reference_data is None
+
+    def test_from_task_run_has_no_reference(self, trace):
+        """`from_task_run` is `from_trace(run, run)`, so one identity check covers it."""
+        assert EvalTaskInput.from_task_run(trace).reference_data is None
+
+    def test_an_equal_but_distinct_source_still_populates(self, trace):
+        """The carve-out is identity, not equality: a separate item that happens to
+        match the trace is still a real dataset item with a real reference answer."""
+        twin = trace.model_copy(deep=True)
+
+        assert EvalTaskInput.from_trace(trace, twin).reference_data == {
+            "reference_answer": "what the model said"
+        }
+
+    def test_existing_constructors_are_from_trace(self, trace):
+        """The two named constructors are the two shapes of `from_trace`."""
+        eval_input = EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="2+2?")),
+            reference={"answer": "4"},
+        )
+        assert EvalTaskInput.from_eval_input(
+            eval_input, trace
+        ) == EvalTaskInput.from_trace(trace, eval_input)
+        assert EvalTaskInput.from_task_run(trace) == EvalTaskInput.from_trace(
+            trace, trace
+        )
 
     def test_from_a_multi_turn_eval_input_source(self, trace):
         """The item's first message is the canonical input; the conversation
@@ -3158,7 +3198,8 @@ class TestCodeEvalPropertiesValidation:
     def test_valid_code(self):
         props = CodeEvalProperties(code=self.VALID_CODE)
         assert props.code == self.VALID_CODE
-        assert props.timeout_seconds == 30
+        # 180, not 30: the default has to cover nested LLM calls from score().
+        assert props.timeout_seconds == 180
 
     def test_custom_timeout(self):
         props = CodeEvalProperties(code=self.VALID_CODE, timeout_seconds=120)
@@ -3200,6 +3241,58 @@ class TestCodeEvalPropertiesValidation:
         props = CodeEvalProperties(code=code)
         assert props.code == code
 
+    def test_default_tool_allowlist_is_empty(self):
+        props = CodeEvalProperties(code=self.VALID_CODE)
+        assert props.tool_allowlist == []
+
+    def test_valid_tool_allowlist(self):
+        props = CodeEvalProperties(
+            code=self.VALID_CODE,
+            tool_allowlist=[
+                "kiln_tool::llm",
+                "kiln_tool::llm_judge",
+                "mcp::remote::server1::tool1",
+            ],
+        )
+        assert len(props.tool_allowlist) == 3
+
+    def test_tool_allowlist_rejects_skill_ids(self):
+        with pytest.raises(ValidationError, match="Skill tool IDs cannot"):
+            CodeEvalProperties(
+                code=self.VALID_CODE,
+                tool_allowlist=["kiln_tool::skill::some_skill"],
+            )
+
+    def test_tool_allowlist_rejects_unmanaged_ids(self):
+        with pytest.raises(ValidationError, match="Unmanaged tool IDs cannot"):
+            CodeEvalProperties(
+                code=self.VALID_CODE,
+                tool_allowlist=["kiln_unmanaged::some_tool"],
+            )
+
+    def test_tool_allowlist_rejects_duplicates(self):
+        with pytest.raises(ValidationError, match="Duplicate tool ID"):
+            CodeEvalProperties(
+                code=self.VALID_CODE,
+                tool_allowlist=["kiln_tool::llm", "kiln_tool::llm"],
+            )
+
+    def test_tool_allowlist_rejects_invalid_tool_id(self):
+        with pytest.raises(ValidationError, match="Invalid tool ID"):
+            CodeEvalProperties(
+                code=self.VALID_CODE,
+                tool_allowlist=["not_a_valid_tool_id"],
+            )
+
+    def test_tool_allowlist_allows_self_referential_code_tool_id(self):
+        # A code eval is not itself a tool, so the CodeTool self-reference check
+        # is intentionally omitted — any valid code tool ID is allowed.
+        props = CodeEvalProperties(
+            code=self.VALID_CODE,
+            tool_allowlist=["kiln_tool::code::123456789012"],
+        )
+        assert props.tool_allowlist == ["kiln_tool::code::123456789012"]
+
 
 # ── V1 Coexistence Regression Guards ─────────────────────────────────
 
@@ -3214,7 +3307,6 @@ class TestV1EvalRunCoexistence:
             scores={"accuracy": 1.0},
         )
         assert run.eval_input_id is None
-        assert run.reference_data is None
         assert run.skipped_reason is None
         assert run.skipped_detail is None
 
@@ -3257,7 +3349,6 @@ class TestV1EvalRunCoexistence:
         loaded = EvalRun.load_from_file(str(run.path))
         assert loaded.dataset_id == "ds1"
         assert loaded.eval_input_id is None
-        assert loaded.reference_data is None
         assert loaded.skipped_reason is None
         assert loaded.skipped_detail is None
         assert loaded.scores == {"acc": 0.8}
@@ -3322,6 +3413,26 @@ class TestV1EvalRunCoexistence:
         assert loaded.task_run_usage is not None
         assert loaded.task_run_usage.total_tokens == 7
         assert loaded.scores == {"accuracy": 1.0}
+
+    def test_retired_reference_data_key_loads_and_is_dropped(self):
+        """`reference_data` was declared on EvalRun on an unreleased branch and never
+        shipped, so it was deleted outright rather than deprecated. Dev-build files
+        that carry it must still load: EvalRun sets no `extra=` override, so pydantic's
+        default `extra="ignore"` drops the key rather than rejecting the record."""
+        run = EvalRun.model_validate(
+            {
+                "dataset_id": "ds1",
+                "task_run_config_id": "rc1",
+                "input": "What is 2+2?",
+                "output": "4",
+                "scores": {"accuracy": 1.0},
+                "reference_data": {"expected": "4"},
+            }
+        )
+
+        assert not hasattr(run, "reference_data")
+        assert "reference_data" not in run.model_dump()
+        assert run.scores == {"accuracy": 1.0}
 
 
 class TestV1EvalConfigCoexistence:
@@ -3717,6 +3828,38 @@ class TestValidateScoresAgainstOutputScores:
         )
         assert len(problems) == 1
 
+    @pytest.mark.parametrize(
+        "score_type",
+        [
+            TaskOutputRatingType.five_star,
+            TaskOutputRatingType.pass_fail,
+            TaskOutputRatingType.pass_fail_critical,
+        ],
+    )
+    @pytest.mark.parametrize(
+        "value", [float("nan"), float("inf"), float("-inf")], ids=["nan", "inf", "-inf"]
+    )
+    def test_non_finite_flagged(self, score_type, value):
+        """NaN compares False against every range bound, so it passed all range
+        checks; pydantic then serialized it as null, making the saved EvalRun file
+        fail Dict[str, float] validation on the next load."""
+        output_scores = [EvalOutputScore(name="metric", type=score_type)]
+        problems = validate_scores_against_output_scores(
+            {"metric": value}, output_scores
+        )
+        assert len(problems) == 1
+
+    def test_overlarge_int_flagged_not_raised(self):
+        """math.isfinite raises OverflowError on ints too large for float (10**400).
+        This validator is documented as never raising, so it must report a problem."""
+        output_scores = [
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.five_star)
+        ]
+        problems = validate_scores_against_output_scores(
+            {"quality": 10**400}, output_scores
+        )
+        assert len(problems) == 1
+
     def test_integer_scores_accepted(self):
         output_scores = [
             EvalOutputScore(name="quality", type=TaskOutputRatingType.five_star),
@@ -4032,6 +4175,93 @@ class TestEvalReferenceDataKeys:
         assert eval_obj.eval_reference_data_keys() == ["b", "a", "c"]
 
 
+class TestEvalPriorityStatusResolution:
+    """Priority/status live on the eval, falling back to the associated spec
+    for evals created before that (legacy files), then to defaults."""
+
+    def _make_eval(self, **kwargs) -> Eval:
+        return Eval(
+            name="Resolution Eval",
+            eval_set_filter_id="tag::tag1",
+            eval_configs_filter_id="tag::tag2",
+            output_scores=[
+                EvalOutputScore(name="score", type=TaskOutputRatingType.pass_fail)
+            ],
+            **kwargs,
+        )
+
+    def test_fields_default_to_none_and_resolve_to_defaults(self):
+        eval = self._make_eval()
+        assert eval.priority is None
+        assert eval.status is None
+        assert eval.resolved_priority() == Priority.p1
+        assert eval.resolved_status() == EvalStatus.active
+
+    def test_own_values_win(self, mock_task, tmp_path):
+        mock_task.path = tmp_path / "task.kiln"
+        mock_task.save_to_file()
+
+        eval = self._make_eval(
+            parent=mock_task, priority=Priority.p0, status=EvalStatus.deprecated
+        )
+        eval.save_to_file()
+        spec = Spec(
+            name="Backing Spec",
+            definition="definition",
+            properties=DesiredBehaviourProperties(
+                spec_type=SpecType.desired_behaviour,
+                desired_behaviour_description="be nice",
+            ),
+            priority=Priority.p3,
+            status=EvalStatus.archived,
+            eval_id=eval.id,
+            parent=mock_task,
+        )
+        spec.save_to_file()
+
+        assert eval.resolved_priority() == Priority.p0
+        assert eval.resolved_status() == EvalStatus.deprecated
+
+    def test_falls_back_to_spec(self, mock_task, tmp_path):
+        mock_task.path = tmp_path / "task.kiln"
+        mock_task.save_to_file()
+
+        eval = self._make_eval(parent=mock_task)
+        eval.save_to_file()
+        spec = Spec(
+            name="Backing Spec",
+            definition="definition",
+            properties=DesiredBehaviourProperties(
+                spec_type=SpecType.desired_behaviour,
+                desired_behaviour_description="be nice",
+            ),
+            priority=Priority.p2,
+            status=EvalStatus.future,
+            eval_id=eval.id,
+            parent=mock_task,
+        )
+        spec.save_to_file()
+
+        # Resolved via a task scan, and via an explicitly passed spec
+        assert eval.resolved_priority() == Priority.p2
+        assert eval.resolved_status() == EvalStatus.future
+        assert eval.resolved_priority(spec) == Priority.p2
+        assert eval.resolved_status(spec) == EvalStatus.future
+
+    def test_round_trips_through_file(self, mock_task, tmp_path):
+        mock_task.path = tmp_path / "task.kiln"
+        mock_task.save_to_file()
+
+        eval = self._make_eval(
+            parent=mock_task, priority=Priority.p2, status=EvalStatus.future
+        )
+        eval.save_to_file()
+
+        loaded = Eval.load_from_file(str(eval.path))
+        assert loaded.priority == Priority.p2
+        assert loaded.status == EvalStatus.future
+
+
 class TestEvalSplits:
     """The splits dict, and the one-way migration of the deprecated flat filter fields."""
 
@@ -4142,23 +4372,6 @@ class TestEvalSplits:
         reloaded = Eval.load_from_file(eval.path)
         assert getattr(reloaded.splits["test"], "weight") == 0.5
         assert getattr(reloaded.splits["train"], "weight") == 0.25
-
-    def test_both_legacy_test_filters_is_rejected(self, scores):
-        """The one conflict `splits` winning can't resolve: two legacy inputs, one split.
-
-        `splits` decides legacy-vs-`splits` disagreements, but both sides here are legacy
-        and name different backings, so nothing picks between them. Accepting one would
-        silently discard the other.
-        """
-        with pytest.raises(
-            ValidationError,
-            match="cannot set both eval_set_filter_id and eval_input_filter_id",
-        ):
-            self.build_eval(
-                scores,
-                eval_set_filter_id="tag::runs",
-                eval_input_filter_id="tag::inputs",
-            )
 
     def test_excluding_a_legacy_field_cannot_drop_a_split(self, scores):
         """With one home, no dump option can write a split nowhere at all.
@@ -4560,32 +4773,20 @@ class TestEvalSplits:
             "filter_id": "tag::train_x",
         }
 
-    def test_eval_input_backed_test_split_from_the_shim(self, saved_task, scores):
-        """The eval_input_filter_id shim: migrated into splits, and never written back."""
+    def test_eval_input_backed_test_split_stays_in_splits(self, saved_task, scores):
+        """An EvalInput-backed test split serializes into `splits`, never a legacy field."""
         eval = self.build_eval(
-            scores, parent=saved_task, eval_input_filter_id="tag::inputs"
+            scores,
+            parent=saved_task,
+            splits={"test": EvalInputSplit(filter_id="tag::inputs")},
         )
         assert eval.splits["test"] == EvalInputSplit(filter_id="tag::inputs")
 
         data = self.saved_json(eval)
-        assert "eval_input_filter_id" not in data
+        assert data["eval_set_filter_id"] is None
         assert data["splits"] == {
             "test": {"source": "eval_input", "filter_id": "tag::inputs"}
         }
-
-    def test_splits_wins_over_the_shim(self, scores):
-        """The shim follows the same precedence as the declared legacy fields.
-
-        It is a third legacy input for the test split, so input carrying both it and a
-        `splits["test"]` keeps the `splits` entry — otherwise the one input that skipped
-        the rule would be the one that could still clobber a split's extra fields.
-        """
-        eval = self.build_eval(
-            scores,
-            eval_input_filter_id="tag::from_shim",
-            splits={"test": EvalInputSplit(filter_id="tag::from_splits")},
-        )
-        assert eval.splits["test"] == EvalInputSplit(filter_id="tag::from_splits")
 
     @pytest.mark.parametrize("source", ["task_run", "eval_input"])
     def test_unknown_field_inside_a_split_survives_a_round_trip(
@@ -5325,3 +5526,21 @@ def test_live_eval_run_fields_are_not_marked_deprecated():
     schema_properties = EvalRun.model_json_schema()["properties"]
     for field_name in ("scored_run_id", "eval_usage", "scores", "intermediate_outputs"):
         assert "deprecated" not in schema_properties[field_name], field_name
+
+
+def test_eval_config_eval_requires_a_dataset_item():
+    """Judge calibration compares against human ratings, which only dataset
+    items carry — a calibration record claiming an EvalInput is domain-invalid
+    and must be rejected, not silently persisted."""
+    with pytest.raises(
+        ValidationError, match="eval_config_eval records must score a dataset item"
+    ):
+        EvalRun(
+            eval_config_eval=True,
+            task_run_config_id=None,
+            dataset_id=None,
+            eval_input_id="ei_1",
+            input="in",
+            output="out",
+            scores={"accuracy": 1.0},
+        )

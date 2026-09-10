@@ -16,7 +16,7 @@ summary: Eval, EvalConfig, EvalInput, EvalRun Pydantic schemas (V2 shape).
 - **Eval** gains two optional fields (`eval_input_filter_id`, `evaluation_data_type` made optional) and a mutual-exclusivity validator. `output_scores` and `current_config_id` unchanged (C.9).
 - **EvalConfig** gets a `v2` value in `EvalConfigType`, `model_name`/`model_provider` made optional, and `properties` becomes a union of the typed V2 discriminated union, legacy dict, or None. Parsing routed by an explicit `mode="before"` validator (A2.8).
 - **EvalInput** is a new `KilnParentedModel` child of `Task`, carrying `tags`, `reference`, and a discriminated `data` field with per-variant input naming (A1.1).
-- **EvalRun** gains `eval_input_id`, `reference_data`, and `skipped_reason` as additive optional fields. Legacy fields untouched (A2.6, A2.7, E.18).
+- **EvalRun** gains `eval_input_id` and `skipped_reason` as additive optional fields; it stores no reference data of its own (A2.7 is satisfied by the runtime `EvalTaskInput`). Legacy fields untouched (A2.6, A2.7, E.18).
 - **V2EvalConfigProperties** is a discriminated union on inner `type` field, hosting 7 V2.0 EvalConfigType properties classes plus `code_eval` (Phase 5).
 - V1/V2 read-coexistence patterns (parsing routing, validator bypass behavior, filter coexistence) are owned by `components/15_v1_v2_coexistence.md`. This file defines the schema shapes; `components/15` defines how they coexist at parse/load time.
 
@@ -444,7 +444,7 @@ No `criteria` field on EvalInput. Per-case variation is expressed through refere
 
 ## 5. EvalRun
 
-Alignment refs: **A2.6** (eval_input_id as orthogonal source field), **A2.7** (reference_data additive field), **C.runner.2** (validate_output_fields V2 bypass), **E.18** (skipped_reason).
+Alignment refs: **A2.6** (eval_input_id as orthogonal source field), **A2.7** (reference data — carried by the runtime `EvalTaskInput`, not persisted here), **C.runner.2** (validate_output_fields V2 bypass), **E.18** (skipped_reason).
 
 ### 5.1 Schema
 
@@ -464,7 +464,6 @@ class EvalRun(KilnParentedModel):
 
     # --- V2 additive fields ---
     eval_input_id: ID_TYPE | None = None     # NEW per A2.6 -- V2 EvalInput source
-    reference_data: dict[str, JsonValue] | None = None   # NEW per A2.7
     skipped_reason: str | None = None                      # NEW per E.18
     # Stored as str for back/forward-compat; set by convention to a SkippedReason value; unknown values tolerated on load.
     skipped_detail: str | None = None                    # NEW per E.18 -- case-specific detail (key name, expression, type)
@@ -489,7 +488,7 @@ def validate_input_source(self) -> Self:
 
 ### 5.3 Reference data (A2.7)
 
-V2 EvalRuns store structured reference data in `reference_data: dict[str, JsonValue] | None`. This is sourced from `EvalInput.reference` at run time by the V2 runner. The legacy `reference_answer: str | None` field is untouched -- V1 EvalRuns continue to use it. The existing `validate_reference_answer` validator stays as-is (gates only `reference_answer`, never `reference_data`).
+V2 EvalRuns store no reference data of their own. The reference a scorer saw is derived at scoring time from the item the record names (`dataset_id` / `eval_input_id`) and lives on `EvalTaskInput.reference_data`, the runtime bundle; a pointer-mode record must not carry a second copy of what it scored. The legacy `reference_answer: str | None` field is untouched -- V1 EvalRuns continue to use it, and the existing `validate_reference_answer` validator stays as-is.
 
 ### 5.4 Skip persistence (E.18)
 
@@ -589,7 +588,7 @@ Each alignment ref mapped to where its schema impact is specified above.
 | A2.1 | EvalConfig V2 shape (discriminated union) | 2.1, 2.3, 3.1, 3.2 |
 | A2.3 | `evaluation_data_type` per-config; Eval field optional | 1 (`evaluation_data_type`), 5.5 |
 | A2.6 | EvalRun `eval_input_id` orthogonal source | 5.1, 5.2 |
-| A2.7 | EvalRun `reference_data` additive field | 5.1, 5.3 |
+| A2.7 | Reference data on the runtime `EvalTaskInput`, not persisted on EvalRun | 5.3 |
 | A2.8 | EvalConfig properties parsing routing | 2.2 |
 | A2.9 | `eval_set_filter_id` optional + mutual exclusivity | 1 (`validate_filter_fields`) |
 | A2.11 | Adapter registry signature change | 2.5 |

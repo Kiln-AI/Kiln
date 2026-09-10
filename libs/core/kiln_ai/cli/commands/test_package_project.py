@@ -51,6 +51,7 @@ from .package_project import (
     create_export_directory,
     create_zip,
     export_documents,
+    export_eval_inputs,
     export_evals,
     export_skills,
     export_task,
@@ -2239,6 +2240,83 @@ class TestExportTaskRuns:
 
         dest_runs_dir = exported_task.path.parent / "runs"
         assert not dest_runs_dir.exists()
+
+
+class TestExportEvalInputs:
+    def test_copies_eval_inputs_directory(
+        self, temp_project_with_evals, tmp_path: Path
+    ):
+        from kiln_ai.datamodel.eval import (
+            EvalInput,
+            SingleTurnEvalInputData,
+            UserMessage,
+        )
+
+        source = temp_project_with_evals
+        eval_input = EvalInput(
+            parent=source["task"],
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="hello")),
+            reference={"expected": "HELLO"},
+            tags=["train_tag"],
+        )
+        eval_input.save_to_file()
+
+        _, exported_project = create_export_directory(source["project"])
+        exported_task, _ = export_task(
+            source["task"], source["run_config"], exported_project
+        )
+
+        export_eval_inputs(source["task"], exported_task)
+
+        dest_dir = exported_task.path.parent / "eval_inputs"
+        assert dest_dir.exists()
+        eval_input_files = list(dest_dir.rglob("*.kiln"))
+        assert len(eval_input_files) == 1
+        reloaded = EvalInput.load_from_file(eval_input_files[0])
+        assert reloaded.reference == {"expected": "HELLO"}
+        assert reloaded.tags == ["train_tag"]
+
+    def test_noop_when_no_eval_inputs_directory(self, temp_project, tmp_path: Path):
+        source = temp_project
+        _, exported_project = create_export_directory(source["project"])
+        exported_task, _ = export_task(
+            source["task"], source["run_config"], exported_project
+        )
+
+        export_eval_inputs(source["task"], exported_task)
+
+        dest_dir = exported_task.path.parent / "eval_inputs"
+        assert not dest_dir.exists()
+
+    def test_package_project_for_training_includes_eval_inputs(
+        self, temp_project_with_evals, tmp_path: Path
+    ):
+        from kiln_ai.datamodel.eval import (
+            EvalInput,
+            SingleTurnEvalInputData,
+            UserMessage,
+        )
+
+        source = temp_project_with_evals
+        eval_input = EvalInput(
+            parent=source["task"],
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="hello")),
+        )
+        eval_input.save_to_file()
+
+        output_path = tmp_path / "output" / "with_eval_inputs.zip"
+        package_project_for_training(
+            project=source["project"],
+            task_ids=[source["task"].id],
+            run_config_id=source["run_config"].id,
+            eval_ids=[],
+            output=output_path,
+        )
+
+        import zipfile as _zipfile
+
+        with _zipfile.ZipFile(output_path) as zf:
+            assert any("eval_inputs" in name for name in zf.namelist())
 
 
 # ──────────────────────────────────────────────────────────────────────

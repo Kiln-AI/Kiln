@@ -7,7 +7,36 @@ spec creation workflow.
 
 import logging
 import random
-from typing import TypeVar
+import time
+from typing import Any, TypeVar
+
+from fastapi import HTTPException
+from kiln_ai.adapters.adapter_registry import load_skills_for_task
+from kiln_ai.datamodel import ClaimReview, Feedback, FeedbackSource, Task, TaskRun
+from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
+from kiln_ai.datamodel.eval import (
+    EvalInput,
+    MultiTurnDriveConfig,
+    MultiTurnSyntheticEvalInputData,
+    SingleTurnEvalInputData,
+    UserMessage,
+)
+from kiln_ai.datamodel.run_config import as_kiln_agent_run_config
+from kiln_ai.datamodel.task_output import (
+    DataSource,
+    DataSourceType,
+    RequirementRating,
+    TaskOutput,
+    TaskOutputRating,
+)
+from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX
+from kiln_ai.synthetic_user.parser import (
+    SyntheticUserInfoParseError,
+    parse_synthetic_user_info,
+)
+from kiln_ai.tools.mcp_session_manager import mcp_session_scope
+from kiln_ai.tools.tool_registry import tool_from_id
+from kiln_ai.utils.config import Config
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     generate_batch_v1_copilot_generate_batch_post,
@@ -27,30 +56,10 @@ from app.desktop.studio_server.api_models.copilot_models import (
     SampleApi,
     SyntheticDataGenerationSessionConfigApi,
     TaskInfoApi,
+    TaskSkillInfoApi,
+    TaskToolInfoApi,
 )
 from app.desktop.studio_server.utils.response_utils import unwrap_response
-from fastapi import HTTPException
-from kiln_ai.datamodel import ClaimReview, Feedback, FeedbackSource, Task, TaskRun
-from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
-from kiln_ai.datamodel.eval import (
-    EvalInput,
-    MultiTurnDriveConfig,
-    MultiTurnSyntheticEvalInputData,
-    SingleTurnEvalInputData,
-    UserMessage,
-)
-from kiln_ai.datamodel.task_output import (
-    DataSource,
-    DataSourceType,
-    RequirementRating,
-    TaskOutput,
-    TaskOutputRating,
-)
-from kiln_ai.synthetic_user.parser import (
-    SyntheticUserInfoParseError,
-    parse_synthetic_user_info,
-)
-from kiln_ai.utils.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -82,19 +91,39 @@ NUM_TOPICS = 15
 # Dataset split — the 50/25/25 spec (train / eval / golden). Golden is the
 # human-rated answer key, filled from RATED items only (never padded with
 # unrated ones). On both arms the eval slice is EvalInput items — inputs the
-# runner executes fresh per run config — so only golden and train are stored
-# as TaskRuns. Both wizard arms split their batch runs the same way: golden
-# is capped at GOLDEN_TARGET_FRACTION of the batch (select_golden_runs) and
-# the remainder is all train. The legacy v1 manual flow's single-turn save
-# instead takes its reviewed examples as golden (structurally small, no cap
-# needed) and splits the generated pool train:eval at 2:1 (the 50:25). If
-# fewer than the target fraction are rated the answer key is simply smaller
-# (warned). One owner so the golden fraction can't drift between the
-# splitters.
+# runner executes fresh per run config — so golden, train and val are the
+# slices stored as TaskRuns. Both wizard arms split their batch runs the same
+# way: golden is capped at GOLDEN_TARGET_FRACTION of the batch
+# (select_golden_runs) and the remainder is dealt train:val
+# (deal_pool_train_val). The legacy v1 manual flow's single-turn save instead
+# takes its reviewed examples as golden (structurally small, no cap needed)
+# and splits the generated pool train:eval at 2:1 (the 50:25), minting no val
+# items at all. If fewer than the target fraction are rated the answer key is
+# simply smaller (warned). One owner so the golden fraction can't drift
+# between the splitters.
 TRAIN_SPLIT_WEIGHT = 2
 EVAL_SPLIT_WEIGHT = 1
 GOLDEN_SPLIT_WEIGHT = 1
 GOLDEN_TARGET_FRACTION = 0.25
+
+# The non-golden pool's train:val deal, from the agreed
+# train/val/test/golden = 40/25/25/10 scheme. Only the train:val ratio of that
+# scheme lives here: the test slice is EvalInput items minted separately and
+# golden is carved by select_golden_runs, so neither is in this pool to deal.
+# Kept apart from the *_SPLIT_WEIGHT constants above, which do the golden/eval
+# math and must not move when this ratio does. The same two weights drive the
+# dataset-generation allocator in
+# app/web_ui/src/lib/utils/eval_generation_splits.ts (TRAIN_SPLIT_WEIGHT /
+# VAL_SPLIT_WEIGHT there); the two must move together or generated data and
+# wizard-saved data land in the splits at different ratios.
+#
+# Known limitation of this dealing: val runs share their inputs with the test
+# slice (the same driven cases feed both), which is honest for judge
+# iteration but leaks eval inputs into any optimizer loop that trains against
+# val. Fixing that requires partitioning the input pool before the drive, a
+# design change rather than a ratio change.
+TRAIN_DEAL_WEIGHT = 40
+VAL_DEAL_WEIGHT = 25
 
 
 def spec_rating_key(spec_name: str) -> str:
@@ -125,6 +154,147 @@ def get_copilot_api_key() -> str:
     return api_key
 
 
+async def task_capabilities_for_task(
+    task: Task,
+) -> tuple[list[TaskToolInfoApi] | None, list[TaskSkillInfoApi] | None]:
+    """The tools and skills the task's DEFAULT run config gives the model.
+
+    Names and descriptions only: enough for the copilot prompts to reason about
+    what the task can do, without shipping tool parameter schemas or skill
+    bodies. Only the default run config is read — unioning across configs would
+    describe a capability surface no single run of the task actually has.
+
+    Returns (None, None) when the capabilities could not be collected (no
+    resolvable default run config, or the collection itself failed). Callers
+    must keep that distinct from ([], []), which means the task genuinely has
+    none.
+    """
+    started = time.monotonic()
+    try:
+        # Every tool resolved below shares one session per MCP server instead
+        # of dialing the server again per tool, and the scope closes those
+        # sessions on the way out.
+        async with mcp_session_scope():
+            tools, skills = await _collect_task_capabilities(task)
+    except Exception:
+        # Collection reads run configs and skills off disk, so one corrupt or
+        # forward-versioned file would otherwise fail a whole spec-building
+        # request. Falling back to uncollected keeps the caller working with
+        # the prompt it got before capabilities existed.
+        logger.warning(
+            "Could not collect capabilities for task %s; continuing without them",
+            task.id,
+            exc_info=True,
+        )
+        return None, None
+
+    # Resolving a tool can dial its MCP server, so these callers now make
+    # network calls they never used to. Logged rather than capped: the cost
+    # should be visible before anyone decides what to do about it.
+    logger.info(
+        "Collected capabilities for task %s in %.0f ms: %s tools, %s skills",
+        task.id,
+        (time.monotonic() - started) * 1000,
+        "uncollected" if tools is None else len(tools),
+        "uncollected" if skills is None else len(skills),
+    )
+    return tools, skills
+
+
+async def _collect_task_capabilities(
+    task: Task,
+) -> tuple[list[TaskToolInfoApi] | None, list[TaskSkillInfoApi] | None]:
+    """Read the default run config's capability surface. See the caller for the
+    None vs [] contract; failures propagate to it."""
+    if not task.default_run_config_id:
+        return None, None
+    default_run_config = next(
+        (
+            run_config
+            for run_config in task.run_configs(readonly=True)
+            if run_config.id == task.default_run_config_id
+        ),
+        None,
+    )
+    if default_run_config is None:
+        return None, None
+
+    properties = default_run_config.run_config_properties
+    if properties.type != "kiln_agent":
+        # Other config types (e.g. MCP) carry no tools_config and load no
+        # skills, so their capability surface is genuinely empty, not unknown.
+        return [], []
+
+    tools_config = as_kiln_agent_run_config(properties).tools_config
+    tool_ids = tools_config.tools if tools_config is not None else None
+
+    tools: list[TaskToolInfoApi] = []
+    for tool_id in tool_ids or []:
+        # Skills ride in the same tools list but are resolved by the adapter,
+        # and tool_from_id raises on them. They are collected below instead.
+        if tool_id.startswith(SKILL_TOOL_ID_PREFIX):
+            continue
+        try:
+            tool = tool_from_id(tool_id, task)
+            tools.append(
+                TaskToolInfoApi(
+                    name=await tool.name(),
+                    description=await tool.description(),
+                )
+            )
+        except Exception:
+            # A tool reference that no longer resolves (a removed MCP server, a
+            # deleted code tool) must not take down spec building; the rest of
+            # the surface is still worth describing.
+            logger.warning(
+                "Skipping tool %s for task %s: could not resolve it",
+                tool_id,
+                task.id,
+                exc_info=True,
+            )
+
+    # Sorted by name so the same task always produces the same payload — the
+    # skill loader returns an unordered map.
+    skills = [
+        TaskSkillInfoApi(name=skill.name, description=skill.description)
+        for skill in sorted(
+            load_skills_for_task(task, properties).values(), key=lambda s: s.name
+        )
+    ]
+    return tools, skills
+
+
+def capability_payload_fields(
+    task_tools: list[TaskToolInfoApi] | None,
+    task_skills: list[TaskSkillInfoApi] | None,
+) -> dict[str, Any]:
+    """The capability keys to merge into an outgoing copilot payload.
+
+    A None side is omitted entirely rather than sent as null: an absent key is
+    how the wire contract says "not collected", and omitting keeps the payload
+    identical to what a caller without capabilities has always sent.
+    """
+    fields: dict[str, Any] = {}
+    if task_tools is not None:
+        fields["task_tools"] = [tool.model_dump() for tool in task_tools]
+    if task_skills is not None:
+        fields["task_skills"] = [skill.model_dump() for skill in task_skills]
+    return fields
+
+
+def task_info_payload(task_info: TaskInfoApi) -> dict[str, Any]:
+    """target_task_info as the wire wants it, for every copilot call.
+
+    One owner for the capability-key omission so no call site sends an explicit
+    null where the contract expects the key to be absent.
+    """
+    payload = task_info.model_dump(exclude={"task_tools", "task_skills"})
+    payload.update(
+        capability_payload_fields(task_info.task_tools, task_info.task_skills)
+    )
+    return payload
+
+
 async def generate_copilot_examples(
     api_key: str,
     target_task_info: TaskInfoApi,
@@ -146,7 +316,7 @@ async def generate_copilot_examples(
 
     generate_input = GenerateBatchInput.from_dict(
         {
-            "target_task_info": target_task_info.model_dump(),
+            "target_task_info": task_info_payload(target_task_info),
             "sdg_session_config": sdg_session_config.model_dump(),
             "target_specification": spec_definition,
             "num_samples_per_topic": NUM_SAMPLES_PER_TOPIC,
@@ -628,18 +798,19 @@ def split_and_tag_batch_runs(
     reviewed_leaf_ids: set[str],
     train_tag: str,
     golden_tag: str,
+    val_tag: str,
     rng: random.Random | None = None,
     tagged_out: list[tuple[TaskRun, set[str]]] | None = None,
 ) -> None:
-    """Assign each batch run to exactly ONE split (golden XOR train).
+    """Assign each batch run to exactly ONE split (golden XOR train XOR val).
 
     Both arms' save writer: `leaves` are the multi-turn chain leaves or the
     single-turn pipeline's batch-tagged runs. Golden = the human-rated runs
-    (the answer key), capped at the target fraction; every remaining run is
-    train. The runs carry no eval slice — the eval set is EvalInput items
-    minted separately (from the driven cases or the generated inputs) and
-    re-run fresh at eval time, so reusing a golden run's input there is not
-    circular: golden validates the judge on the STORED result while the
+    (the answer key), capped at the target fraction; everything left over is
+    dealt train:val. The runs carry no eval slice — the eval set is EvalInput
+    items minted separately (from the driven cases or the generated inputs)
+    and re-run fresh at eval time, so reusing a golden run's input there is
+    not circular: golden validates the judge on the STORED result while the
     eval set scores NEW ones.
 
     `rng` is injected for deterministic tests. If `tagged_out` is provided,
@@ -650,11 +821,47 @@ def split_and_tag_batch_runs(
     """
     rng = rng or random.Random()
     golden, pool = select_golden_runs(leaves, reviewed_leaf_ids, rng)
+    train, val = deal_pool_train_val(pool, rng)
 
     tag_batch_runs(golden, golden_tag, tagged_out)
-    tag_batch_runs(pool, train_tag, tagged_out)
+    tag_batch_runs(train, train_tag, tagged_out)
+    tag_batch_runs(val, val_tag, tagged_out)
 
     warn_if_golden_below_target(len(golden), len(leaves))
+
+
+def deal_pool_train_val(pool: list[T], rng: random.Random) -> tuple[list[T], list[T]]:
+    """Deal the non-golden pool into (train, val) at TRAIN:VAL weights.
+
+    The pool must be re-shuffled here even though select_golden_runs shuffles:
+    it shuffles only the RATED runs and returns rated-leftovers ahead of the
+    unrated ones in disk order, so dealing that order by prefix would send
+    every over-cap rated run to the same bucket every time. Shuffling through
+    the injected rng keeps the deal random in production and reproducible
+    under a seeded rng. The input list is not mutated.
+
+    Sizes are apportioned by largest remainder so no run is dropped: both
+    shares are floored, and the at-most-one leftover seat goes to the larger
+    fractional remainder. The two remainders always sum to 0 or to
+    TRAIN + VAL, because the exact shares sum to the pool size; a leftover
+    seat exists exactly in the second case, where both are nonzero and sum to
+    an odd 65. So whenever there is a seat to award the remainders cannot be
+    equal, and the deal has no arbitrary tie-break to get wrong.
+    """
+    shuffled = list(pool)
+    rng.shuffle(shuffled)
+    size = len(shuffled)
+    total_weight = TRAIN_DEAL_WEIGHT + VAL_DEAL_WEIGHT
+    train_count = size * TRAIN_DEAL_WEIGHT // total_weight
+    val_count = size * VAL_DEAL_WEIGHT // total_weight
+    # The two floors leave at most one seat unassigned; largest remainder
+    # gives it to whichever bucket was rounded down harder. Val takes the
+    # rest of the pool, so only train's count has to move.
+    if train_count + val_count < size and (
+        size * TRAIN_DEAL_WEIGHT % total_weight > size * VAL_DEAL_WEIGHT % total_weight
+    ):
+        train_count += 1
+    return shuffled[:train_count], shuffled[train_count:]
 
 
 def select_golden_runs(
@@ -668,10 +875,11 @@ def select_golden_runs(
     runs only (the answer key is human-rated by definition). Under the
     pooled stratified review both arms rate ~25% of the batch, so golden is
     normally every reviewed run; a reviewer who grades extra runs beyond the
-    cap sends the extras to train with their ratings kept. Returns
-    (golden, remaining): remaining holds the rated runs beyond the cap plus
-    the unrated runs — the train slice. Only the golden slice is the answer
-    key the judge is calibrated against.
+    cap sends the extras back into the pool with their ratings kept, where
+    they can land in either dealt slice. Returns (golden, remaining):
+    remaining holds the rated runs beyond the cap plus the unrated runs — the
+    pool that deal_pool_train_val splits train:val. Only the golden slice is
+    the answer key the judge is calibrated against.
     """
     golden_target = (
         len(leaves)

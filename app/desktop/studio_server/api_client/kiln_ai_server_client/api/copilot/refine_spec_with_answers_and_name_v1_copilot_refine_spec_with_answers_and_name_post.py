@@ -8,6 +8,7 @@ from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
 from ...models.refine_spec_from_answers_and_name_output import RefineSpecFromAnswersAndNameOutput
 from ...models.submit_answers_request import SubmitAnswersRequest
+from ...models.unauthorized_response import UnauthorizedResponse
 from ...types import Response
 
 
@@ -32,11 +33,16 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | RefineSpecFromAnswersAndNameOutput | None:
+) -> HTTPValidationError | RefineSpecFromAnswersAndNameOutput | UnauthorizedResponse | None:
     if response.status_code == 200:
         response_200 = RefineSpecFromAnswersAndNameOutput.from_dict(response.json())
 
         return response_200
+
+    if response.status_code == 401:
+        response_401 = UnauthorizedResponse.from_dict(response.json())
+
+        return response_401
 
     if response.status_code == 422:
         response_422 = HTTPValidationError.from_dict(response.json())
@@ -51,7 +57,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | RefineSpecFromAnswersAndNameOutput]:
+) -> Response[HTTPValidationError | RefineSpecFromAnswersAndNameOutput | UnauthorizedResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -64,14 +70,14 @@ def sync_detailed(
     *,
     client: AuthenticatedClient,
     body: SubmitAnswersRequest,
-) -> Response[HTTPValidationError | RefineSpecFromAnswersAndNameOutput]:
+) -> Response[HTTPValidationError | RefineSpecFromAnswersAndNameOutput | UnauthorizedResponse]:
     """Refine Spec With Answers And Name
 
      Refine a specification with answers, also returning a suggested eval name.
 
-    Returns the task output directly (rather than a kiln-ai API model) so the
-    suggested_name field ships without waiting on the pinned kiln-ai
-    dependency. The refine_spec_with_answers route stays frozen for shipped
+    Returns the codegen'd refine-and-name task output directly (rather than a
+    kiln-ai API model) so the suggested_name field ships without waiting on the
+    pinned kiln-ai dependency. The plain refine route stays frozen for shipped
     clients.
 
     Args:
@@ -82,7 +88,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | RefineSpecFromAnswersAndNameOutput]
+        Response[HTTPValidationError | RefineSpecFromAnswersAndNameOutput | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -100,14 +106,14 @@ def sync(
     *,
     client: AuthenticatedClient,
     body: SubmitAnswersRequest,
-) -> HTTPValidationError | RefineSpecFromAnswersAndNameOutput | None:
+) -> HTTPValidationError | RefineSpecFromAnswersAndNameOutput | UnauthorizedResponse | None:
     """Refine Spec With Answers And Name
 
      Refine a specification with answers, also returning a suggested eval name.
 
-    Returns the task output directly (rather than a kiln-ai API model) so the
-    suggested_name field ships without waiting on the pinned kiln-ai
-    dependency. The refine_spec_with_answers route stays frozen for shipped
+    Returns the codegen'd refine-and-name task output directly (rather than a
+    kiln-ai API model) so the suggested_name field ships without waiting on the
+    pinned kiln-ai dependency. The plain refine route stays frozen for shipped
     clients.
 
     Args:
@@ -118,7 +124,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | RefineSpecFromAnswersAndNameOutput
+        HTTPValidationError | RefineSpecFromAnswersAndNameOutput | UnauthorizedResponse
     """
 
     return sync_detailed(
@@ -131,14 +137,14 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
     body: SubmitAnswersRequest,
-) -> Response[HTTPValidationError | RefineSpecFromAnswersAndNameOutput]:
+) -> Response[HTTPValidationError | RefineSpecFromAnswersAndNameOutput | UnauthorizedResponse]:
     """Refine Spec With Answers And Name
 
      Refine a specification with answers, also returning a suggested eval name.
 
-    Returns the task output directly (rather than a kiln-ai API model) so the
-    suggested_name field ships without waiting on the pinned kiln-ai
-    dependency. The refine_spec_with_answers route stays frozen for shipped
+    Returns the codegen'd refine-and-name task output directly (rather than a
+    kiln-ai API model) so the suggested_name field ships without waiting on the
+    pinned kiln-ai dependency. The plain refine route stays frozen for shipped
     clients.
 
     Args:
@@ -149,7 +155,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | RefineSpecFromAnswersAndNameOutput]
+        Response[HTTPValidationError | RefineSpecFromAnswersAndNameOutput | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -165,14 +171,14 @@ async def asyncio(
     *,
     client: AuthenticatedClient,
     body: SubmitAnswersRequest,
-) -> HTTPValidationError | RefineSpecFromAnswersAndNameOutput | None:
+) -> HTTPValidationError | RefineSpecFromAnswersAndNameOutput | UnauthorizedResponse | None:
     """Refine Spec With Answers And Name
 
      Refine a specification with answers, also returning a suggested eval name.
 
-    Returns the task output directly (rather than a kiln-ai API model) so the
-    suggested_name field ships without waiting on the pinned kiln-ai
-    dependency. The refine_spec_with_answers route stays frozen for shipped
+    Returns the codegen'd refine-and-name task output directly (rather than a
+    kiln-ai API model) so the suggested_name field ships without waiting on the
+    pinned kiln-ai dependency. The plain refine route stays frozen for shipped
     clients.
 
     Args:
@@ -183,7 +189,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | RefineSpecFromAnswersAndNameOutput
+        HTTPValidationError | RefineSpecFromAnswersAndNameOutput | UnauthorizedResponse
     """
 
     return (

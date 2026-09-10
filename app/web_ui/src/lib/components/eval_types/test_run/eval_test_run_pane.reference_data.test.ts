@@ -50,6 +50,15 @@ function makeRun(
 
 const run1 = makeRun("r1", "input one", "output one")
 
+// An llm_judge's mode is decided by its own signals in both flag states, so the
+// llm_judge cases below need a prompt that actually reads reference data.
+const REFERENCE_SIGNALS = {
+  prompt_template:
+    "Grade {{ final_message }} against {{ reference_data.reference_answer }}",
+  server_reference_keys: [] as string[],
+  prompt_unavailable: false,
+}
+
 // ---------------------------------------------------------------------------
 // Tests: EvalTestRunPane
 // ---------------------------------------------------------------------------
@@ -67,6 +76,7 @@ describe("EvalTestRunPane", () => {
           available_runs: [run1],
           selected_run: run1,
           runs_loading: false,
+          judge_reference_signals: REFERENCE_SIGNALS,
         },
       })
 
@@ -143,6 +153,7 @@ describe("EvalTestRunPane reference data visibility by eval type", () => {
         selected_run: run1,
         runs_loading: false,
         eval_config_type: "llm_judge",
+        judge_reference_signals: REFERENCE_SIGNALS,
       },
     })
     const refField = container.querySelector(
@@ -212,6 +223,7 @@ describe("EvalTestRunPane reference data visibility by eval type", () => {
         selected_run: run1,
         runs_loading: false,
         eval_config_type: "llm_judge",
+        judge_reference_signals: REFERENCE_SIGNALS,
         test_result: {
           scores: { accuracy: 1.0 },
           skipped_reason: null,

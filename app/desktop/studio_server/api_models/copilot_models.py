@@ -9,12 +9,42 @@ from typing_extensions import Self
 
 
 # Base models
+class TaskToolInfoApi(BaseModel):
+    """A tool the target task can call. Name and description only."""
+
+    name: str = Field(description="The tool's name, as the model sees it.")
+    description: str = Field(
+        description="What the tool does. Never its parameter schema."
+    )
+
+
+class TaskSkillInfoApi(BaseModel):
+    """A skill the target task can load. Name and description only."""
+
+    name: str = Field(description="The skill's name, as the model sees it.")
+    description: str = Field(description="What the skill does. Never the skill's body.")
+
+
 class TaskInfoApi(BaseModel):
     """Task information for copilot API calls."""
 
     task_prompt: str = Field(description="The task's prompt.")
     task_input_schema: str = Field(description="The task's input JSON schema.")
     task_output_schema: str = Field(description="The task's output JSON schema.")
+    # None and [] are different answers and must never be conflated: None means
+    # the capabilities were not collected, so the copilot prompts render nothing
+    # and stay exactly as they were before these fields existed; [] means the
+    # task genuinely has none, which is worth telling the model explicitly.
+    task_tools: list[TaskToolInfoApi] | None = Field(
+        default=None,
+        description="Tools available to the task. Omit if not collected; "
+        "send [] if the task has none.",
+    )
+    task_skills: list[TaskSkillInfoApi] | None = Field(
+        default=None,
+        description="Skills available to the task. Omit if not collected; "
+        "send [] if the task has none.",
+    )
 
 
 class TaskMetadataApi(BaseModel):
@@ -51,29 +81,37 @@ class SampleApi(BaseModel):
 
 
 class ClaimReviewApi(BaseModel):
-    """The reviewer's grades on one trace's claim/evidence distillation.
+    """The reviewer's grades on one trace's claim summary.
 
-    Mirrors the persisted ClaimReview shape (judge verdict + per-claim
-    agree/disagree with optional whys) so the save path can write it onto
-    the golden TaskRun and judge refinement can consume it later.
+    Mirrors the persisted ClaimReview shape (judge verdict, the overview,
+    every claim with its agree/disagree and optional why, and the reviewer's
+    overall call) so the save path can write it onto the golden TaskRun and
+    judge refinement can consume it later.
     """
 
     judge_score: Literal["pass", "fail"]
     judge_reasoning: str
+    overview: str
     claims: list[GradedClaim]
-    final_judgement: GradedClaim
+    human_verdict: Literal["pass", "fail"]
 
-    @model_validator(mode="after")
-    def validate_final_judgement_pinned(self) -> Self:
-        # Same invariant the persisted ClaimReview enforces; checking here
-        # turns a corrupt payload into a 422 before any model is written.
-        if self.final_judgement.expected_result != self.judge_score:
-            raise ValueError(
-                "final_judgement.expected_result must equal judge_score "
-                f"(got {self.final_judgement.expected_result!r} vs "
-                f"{self.judge_score!r})"
-            )
-        return self
+
+def verdicts_must_agree(
+    user_says_meets_spec: bool, claim_review: ClaimReviewApi | None
+) -> None:
+    """The golden rating and the stored review record the same overall call.
+
+    Both come from one derivation in the UI, so a mismatch is a corrupt
+    payload; reject it up front rather than write an answer key that
+    contradicts the review saved beside it.
+    """
+    if claim_review is None:
+        return
+    if (claim_review.human_verdict == "pass") != user_says_meets_spec:
+        raise ValueError(
+            "user_says_meets_spec must match claim_review.human_verdict "
+            f"(got {user_says_meets_spec!r} vs {claim_review.human_verdict!r})"
+        )
 
 
 class ReviewedExample(BaseModel):
@@ -90,11 +128,16 @@ class ReviewedExample(BaseModel):
     feedback: str
     claim_review: ClaimReviewApi | None = Field(
         default=None,
-        description="Per-claim grades from the claim/evidence review, when "
-        "the example was reviewed that way (v2 builder).",
+        description="Per-claim grades from the claim review, when the example "
+        "was reviewed that way (v2 builder).",
     )
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def validate_verdicts_agree(self) -> Self:
+        verdicts_must_agree(self.user_says_meets_spec, self.claim_review)
+        return self
 
 
 class ReviewedChainApi(BaseModel):
@@ -109,6 +152,11 @@ class ReviewedChainApi(BaseModel):
     user_says_meets_spec: bool
     feedback: str = ""
     claim_review: ClaimReviewApi | None = None
+
+    @model_validator(mode="after")
+    def validate_verdicts_agree(self) -> Self:
+        verdicts_must_agree(self.user_says_meets_spec, self.claim_review)
+        return self
 
 
 class DrivenSyntheticCaseApi(BaseModel):
@@ -157,7 +205,39 @@ class ExampleWithFeedbackApi(BaseModel):
     user_feedback: str | None = None
 
 
-class ClarifySpecApiInput(BaseModel):
+class TaskScopedCopilotInput(BaseModel):
+    """Base for copilot inputs the studio server can enrich from local storage.
+
+    The ids let the studio server load the task and fill in target_task_info's
+    capability fields before forwarding. They are studio-local identifiers and
+    are always stripped from the outgoing payload. Both are optional: a caller
+    that omits them gets the plain passthrough it always got.
+    """
+
+    project_id: str | None = Field(
+        default=None,
+        description="The project holding the target task. Pair with task_id to "
+        "have the server attach the task's tools and skills.",
+    )
+    task_id: str | None = Field(
+        default=None,
+        description="The target task. Pair with project_id to have the server "
+        "attach the task's tools and skills.",
+    )
+
+    @model_validator(mode="after")
+    def validate_ids_provided_together(self) -> Self:
+        # Half a pair can only be a caller bug. Silently skipping enrichment
+        # would ship a prompt quietly missing the task's capabilities, which
+        # is far harder to notice than a rejected request.
+        if (self.project_id is None) != (self.task_id is None):
+            raise ValueError(
+                "project_id and task_id must be provided together, or both omitted"
+            )
+        return self
+
+
+class ClarifySpecApiInput(TaskScopedCopilotInput):
     """Input for clarifying a spec with copilot."""
 
     target_task_info: TaskInfoApi
@@ -168,7 +248,7 @@ class ClarifySpecApiInput(BaseModel):
     num_exemplars: int = Field(default=10)
 
 
-class RefineSpecApiInput(BaseModel):
+class RefineSpecApiInput(TaskScopedCopilotInput):
     """Input for refining a spec based on feedback."""
 
     target_task_info: TaskInfoApi
@@ -211,7 +291,7 @@ class GenerateBatchApiOutput(BaseModel):
     data_by_topic: dict[str, list[SampleApi]]
 
 
-class SpecQuestionerApiInput(BaseModel):
+class SpecQuestionerApiInput(TaskScopedCopilotInput):
     target_task_info: TaskInfoApi = Field(
         ...,
         description="The task info including prompt, input schema, and output schema",

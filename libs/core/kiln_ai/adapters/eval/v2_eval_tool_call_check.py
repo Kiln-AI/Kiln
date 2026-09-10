@@ -54,7 +54,11 @@ class ToolCallCheckEval(BaseV2EvalBridge):
             if not tool_calls:
                 continue
             for tc in tool_calls:
-                func = tc.get("function", {})
+                # .get("function", {}) isn't enough: the default only covers an
+                # absent key, so a present-but-null value raises on the .get below.
+                func = tc.get("function") if isinstance(tc, dict) else None
+                if not isinstance(func, dict):
+                    func = {}
                 name = func.get("name", "")
                 args_str = func.get("arguments", "{}")
                 try:

@@ -14,7 +14,7 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from pydantic import BaseModel, ConfigDict, Field
 
-# The binary verdict vocabulary, shared by every judge_score/expected_result
+# The binary verdict vocabulary, shared by every judge_score and human_verdict
 # field on this API surface (mirrors the server contract's enum).
 JudgeScoreLiteral = Literal["pass", "fail"]
 
@@ -65,31 +65,52 @@ class CitationApi(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class OverviewApi(BaseModel):
+    """The neutral summary of the trace the reviewer reads before the claims.
+
+    Same shape as a claim: prose with inline [n] markers resolved through
+    `citations`. Markers restart at [1] here and in every claim.
+    """
+
+    text: str
+    citations: list[CitationApi]
+
+
 class ClaimApi(BaseModel):
-    """One atomic claim + its one-sentence evidence with [n] citation markers.
+    """One decision the judge made, written so the reviewer can vote on it.
 
-    `expected_result` is the verdict a reviewer's AGREE on this claim supports —
-    a direction bit, not a re-judging: claims pointing opposite the judge's
-    verdict are counter-evidence the reviewer can use to catch a bad judge.
+    `text` carries the claim, its evidence and its [n] markers in one string;
+    every marker resolves through `citations`. Grades have one direction:
+    agree means the judge got this decision right, disagree means it got it
+    wrong.
+
+    `is_verdict` marks the claim that states the overall pass/fail. The claim
+    builder may omit it, and only the LAST claim can be one, so the UI needs a
+    flag rather than a guess: it decides whether to derive the reviewer's
+    overall call from that claim's grade or to ask for it outright. The studio
+    sets the flag from the builder's own convention (the verdict claim opens
+    "It passes" or "It fails", and no other claim may) so the UI never
+    pattern-matches prose.
     """
 
-    claim: str
-    expected_result: JudgeScoreLiteral
-    evidence: str
+    text: str
     citations: list[CitationApi]
+    is_verdict: bool
 
 
-class FinalJudgementApi(BaseModel):
-    """The one overall verdict entry (top-level, not a claim in the list).
-
-    Its expected_result always equals the judge's verdict — the server pins it
-    deterministically, so the answer key can anchor to it.
+# TODO(eval-v2): remove — ClaimDebugContext is temporary ClaimDebug capture
+# scaffolding, deleted before the v2 builder ships GA.
+class ClaimDebugContext(BaseModel):
+    """The wizard settings that produced a captured trace, for offline
+    analysis. Every field is optional: the client fills in whatever state it
+    has, and a single-turn build naturally carries no synthetic-user lane.
     """
 
-    claim: str
-    expected_result: JudgeScoreLiteral
-    evidence: str
-    citations: list[CitationApi]
+    task_model: str | None = None
+    synthetic_user_model: str | None = None
+    judge: JudgeConfig | None = None
+    turns: int | None = None
+    batch_tag: str | None = None
 
 
 class BuildClaimsApiInput(BaseModel):
@@ -104,15 +125,20 @@ class BuildClaimsApiInput(BaseModel):
     eval_rubric: str
     judge_reasoning: str
     judge_score: JudgeScoreLiteral
+    # TODO(eval-v2): remove — the two fields below feed ClaimDebug capture and
+    # go away before GA. Both default to None so a client that sends only the
+    # five fields above behaves exactly as it did before.
+    source_run_id: str | None = None
+    debug_context: ClaimDebugContext | None = None
 
 
 class BuildClaimsApiOutput(BaseModel):
-    """Claims for one trace (importance-ordered, may be empty) + the one
-    final judgement. Trivial single-property evals can carry everything in
-    the final judgement alone."""
+    """The review card for one trace: the overview, then one to eight claims
+    in the order the reviewer reads them. The verdict claim, when the builder
+    wrote one, is the last claim and carries `is_verdict`."""
 
+    overview: OverviewApi
     claims: list[ClaimApi]
-    final_judgement: FinalJudgementApi
 
 
 # ── Run-config preflight ──────────────────────────────────────────────────
@@ -147,10 +173,10 @@ class PreflightModelApiOutput(BaseModel):
 class GradedTraceApi(BaseModel):
     """One human-reviewed trace's grades, shaped to feed judge refinement.
 
-    Mirrors the persisted ClaimReview (judge verdict + per-claim
-    agree/disagree with optional whys) plus a `trace_label` the refine model
-    cites in its change rationales. Only the claims the reviewer actually
-    graded appear — an absent claim is "not reviewed", never agreement.
+    Mirrors the persisted ClaimReview (judge verdict, the overview, every
+    claim with its agree/disagree and optional why, and the reviewer's
+    overall call) plus a `trace_label` the refine model cites in its change
+    rationales.
     """
 
     trace_label: str = Field(
@@ -159,8 +185,11 @@ class GradedTraceApi(BaseModel):
     )
     judge_score: JudgeScoreLiteral
     judge_reasoning: str
-    claims: list[GradedClaim]
-    final_judgement: GradedClaim
+    overview: str
+    # Never a subset: every claim on the card, graded. A card always carries
+    # at least one, and the refiner rejects an empty list.
+    claims: list[GradedClaim] = Field(min_length=1)
+    human_verdict: JudgeScoreLiteral
 
 
 class RefineJudgeApiInput(BaseModel):
@@ -198,9 +227,9 @@ class AuthorJudgeApiInput(BaseModel):
     """The spec + target-task prompt the judge author tailors its rubric to.
 
     One authoring path for both arms: same two inputs, prompt-only output —
-    the judge model stays the caller's choice. The rubric's trace framing
-    (conversation vs I/O pair) is derived server-side from the task's turn
-    mode, never client-sent.
+    the judge model stays the caller's choice. Both arms judge a transcript,
+    so the rubric is always authored against one; the framing is fixed
+    server-side rather than client-sent.
     """
 
     target_specification: str = Field(min_length=1)
@@ -270,9 +299,11 @@ class PipelineCaseJudgedEvent(BaseModel):
     """A case completed the [drive → judge] pipeline.
 
     raw_output is the canonical transcript rendering of the runner's REAL
-    trace (tool calls and system turns included) and raw_input is the
-    conversation's opening user message — the same text the judge saw and
-    the claim builder will see, so citations built later resolve against it.
+    trace (tool calls and system turns included) — the same text the judge saw
+    and the claim builder will see, so citations built later resolve against
+    it. raw_input is the conversation's opening user message on the multi-turn
+    stream; the single-turn stream keeps the run's own input string instead,
+    because that is what its saved eval reads back.
     """
 
     type: Literal["case_judged"] = "case_judged"
@@ -286,10 +317,10 @@ class PipelineCaseJudgedEvent(BaseModel):
     # The structured conversation behind raw_output, as raw chat-completion
     # message dicts: the runner's real trace on the multi-turn stream, the
     # run's own trace (tool calls included) on the single-turn one. The
-    # client renders it in the house chat UI. Nullable: legacy streams and
-    # runs whose adapter recorded no trace don't carry it. On the single-turn
-    # stream this is a UI echo only — the judge scores the I/O pair
-    # (final_answer), exactly what the saved eval judges.
+    # client renders it in the house chat UI. Both streams judge this
+    # conversation, exactly what the saved eval judges — a run whose adapter
+    # recorded no trace is judged on a two-message echo of its pair rather
+    # than on nothing. Nullable only for legacy streams that predate it.
     trace: list[dict[str, Any]] | None = None
 
 
@@ -305,6 +336,12 @@ class PipelineCaseFailedEvent(BaseModel):
     stage: Literal["drive", "run", "judge"]
     code: str
     message: str
+    # Exception class name behind a provider or unexpected failure, so clients
+    # can aggregate by type instead of parsing `message`. Always None on
+    # deterministic failures (invalid_input, missing_output, case_timeout,
+    # bad_synthetic_user_info): `code` already names those, and it does so even
+    # where an exception triggered them.
+    error_type: str | None = None
 
 
 class PipelineBatchCompletedEvent(BaseModel):

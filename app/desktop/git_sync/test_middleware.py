@@ -9,10 +9,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi import Request as FastAPIRequest
 from fastapi.testclient import TestClient
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
+from kiln_server.git_sync_decorators import no_write_lock, write_lock
+from kiln_server.server import make_app
 from starlette.responses import JSONResponse, StreamingResponse
 
 from app.desktop.git_sync.config import GitSyncProjectConfig
-from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from app.desktop.git_sync.errors import (
     CorruptRepoError,
     GitAuthError,
@@ -22,8 +24,6 @@ from app.desktop.git_sync.errors import (
 )
 from app.desktop.git_sync.middleware import GitSyncMiddleware
 from app.desktop.git_sync.registry import GitSyncRegistry
-from kiln_server.git_sync_decorators import no_write_lock, write_lock
-from kiln_server.server import make_app
 
 PROJECT_ID = "test_proj_123"
 PROJECT_PATH = "/tmp/test/project.kiln"
@@ -226,7 +226,7 @@ def test_mutating_request_commits_and_pushes(git_repos):
 
 
 def test_mutating_request_error_rolls_back(git_repos):
-    local_path, remote_path = git_repos
+    local_path, _remote_path = git_repos
     config = _auto_config(str(local_path))
 
     def post_endpoint_that_errors():

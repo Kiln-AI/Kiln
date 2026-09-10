@@ -18,6 +18,33 @@ ${sample.input}
 </example_input>`
 }
 
+// The single-turn data-guide param when the task has a saved Data Guide: the
+// guide first (it sets the frame: what realistic inputs to this task look
+// like), then the grounding sample (it shows the format), each under a plain
+// section header so the planner can tell the two apart. Blank text counts as
+// absent. With only one source that source is returned byte-identical and
+// untrimmed: a task with no guide sends the bare grounding sample, a task
+// with no runs the bare guide. The plan and the mint must both send this same
+// value: the minted-input cache is keyed on it, and a mint keyed differently
+// from its plan would never hit.
+export function join_data_guides(
+  data_guide: string | null,
+  grounding: string | null,
+): string | null {
+  const has_guide = data_guide !== null && data_guide.trim() !== ""
+  const has_grounding = grounding !== null && grounding.trim() !== ""
+  if (has_guide && has_grounding) {
+    return `Data Guide:
+${data_guide}
+
+Grounding Example:
+${grounding}`
+  }
+  if (has_guide) return data_guide
+  if (has_grounding) return grounding
+  return null
+}
+
 // Single-turn: each planned prompt mints ONE task input, run once locally
 // and judged against the specification.
 export function single_turn_plan_guidance(spec: string): string {
@@ -33,6 +60,21 @@ Balance the batch roughly 50/50 between:
 - inputs engineered to tempt the agent into violating it.
 
 Include boundary and ambiguous cases where the right behavior is debatable, and vary difficulty across the batch. Every input must stay realistic — written by an ordinary user pursuing their own goal, not a tester probing the spec.`
+}
+
+// The user's optional steer ("fewer refund scenarios") joined onto the arm's
+// base guidance. The base is APPENDED TO, never rewritten: it is a strict
+// prefix of the result, because the arm is identified by reading the start of
+// the guidance and a steer that displaced it would mis-route the whole batch.
+// A blank steer returns the base byte-identical, so an untouched box costs
+// the planner nothing.
+export function compose_plan_guidance(base: string, steer: string): string {
+  const trimmed = steer.trim()
+  if (!trimmed) return base
+  return `${base}
+
+The user has asked for this batch specifically:
+${trimmed}`
 }
 
 // Multi-turn: recasts each planned "input" as a conversation scenario.

@@ -8,6 +8,7 @@ from ...client import AuthenticatedClient, Client
 from ...models.generate_judge_prompt_api_input import GenerateJudgePromptApiInput
 from ...models.generate_judge_prompt_output import GenerateJudgePromptOutput
 from ...models.http_validation_error import HTTPValidationError
+from ...models.unauthorized_response import UnauthorizedResponse
 from ...types import Response
 
 
@@ -32,11 +33,16 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> GenerateJudgePromptOutput | HTTPValidationError | None:
+) -> GenerateJudgePromptOutput | HTTPValidationError | UnauthorizedResponse | None:
     if response.status_code == 200:
         response_200 = GenerateJudgePromptOutput.from_dict(response.json())
 
         return response_200
+
+    if response.status_code == 401:
+        response_401 = UnauthorizedResponse.from_dict(response.json())
+
+        return response_401
 
     if response.status_code == 422:
         response_422 = HTTPValidationError.from_dict(response.json())
@@ -51,7 +57,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[GenerateJudgePromptOutput | HTTPValidationError]:
+) -> Response[GenerateJudgePromptOutput | HTTPValidationError | UnauthorizedResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -64,7 +70,7 @@ def sync_detailed(
     *,
     client: AuthenticatedClient,
     body: GenerateJudgePromptApiInput,
-) -> Response[GenerateJudgePromptOutput | HTTPValidationError]:
+) -> Response[GenerateJudgePromptOutput | HTTPValidationError | UnauthorizedResponse]:
     """Generate Judge Prompt
 
      Author a judge prompt from a spec, for a declared trace shape.
@@ -84,7 +90,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[GenerateJudgePromptOutput | HTTPValidationError]
+        Response[GenerateJudgePromptOutput | HTTPValidationError | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -102,7 +108,7 @@ def sync(
     *,
     client: AuthenticatedClient,
     body: GenerateJudgePromptApiInput,
-) -> GenerateJudgePromptOutput | HTTPValidationError | None:
+) -> GenerateJudgePromptOutput | HTTPValidationError | UnauthorizedResponse | None:
     """Generate Judge Prompt
 
      Author a judge prompt from a spec, for a declared trace shape.
@@ -122,7 +128,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        GenerateJudgePromptOutput | HTTPValidationError
+        GenerateJudgePromptOutput | HTTPValidationError | UnauthorizedResponse
     """
 
     return sync_detailed(
@@ -135,7 +141,7 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
     body: GenerateJudgePromptApiInput,
-) -> Response[GenerateJudgePromptOutput | HTTPValidationError]:
+) -> Response[GenerateJudgePromptOutput | HTTPValidationError | UnauthorizedResponse]:
     """Generate Judge Prompt
 
      Author a judge prompt from a spec, for a declared trace shape.
@@ -155,7 +161,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[GenerateJudgePromptOutput | HTTPValidationError]
+        Response[GenerateJudgePromptOutput | HTTPValidationError | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -171,7 +177,7 @@ async def asyncio(
     *,
     client: AuthenticatedClient,
     body: GenerateJudgePromptApiInput,
-) -> GenerateJudgePromptOutput | HTTPValidationError | None:
+) -> GenerateJudgePromptOutput | HTTPValidationError | UnauthorizedResponse | None:
     """Generate Judge Prompt
 
      Author a judge prompt from a spec, for a declared trace shape.
@@ -191,7 +197,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        GenerateJudgePromptOutput | HTTPValidationError
+        GenerateJudgePromptOutput | HTTPValidationError | UnauthorizedResponse
     """
 
     return (

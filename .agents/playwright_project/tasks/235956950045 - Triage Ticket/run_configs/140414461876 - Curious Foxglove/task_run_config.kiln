@@ -1,0 +1,28 @@
+{
+  "v": 1,
+  "id": "140414461876",
+  "created_at": "2026-08-17T19:22:41.712875Z",
+  "created_by": "root",
+  "name": "Playbook with Prose Input",
+  "description": null,
+  "run_config_properties": {
+    "type": "kiln_agent",
+    "model_name": "deepseek_4_flash",
+    "model_provider_name": "openrouter",
+    "prompt_id": "id::281098421169",
+    "top_p": 1.0,
+    "temperature": 1.0,
+    "structured_output_mode": "json_schema",
+    "thinking_level": "high",
+    "tools_config": {
+      "tools": []
+    },
+    "input_transform": {
+      "type": "jinja",
+      "template": "Plan: {{ input.customer_plan | upper }}\nSubject: {{ input.subject }}\n\n--- ticket body ---\n{{ input.body }}\n--- end ---"
+    }
+  },
+  "prompt": null,
+  "starred": false,
+  "model_type": "task_run_config"
+}

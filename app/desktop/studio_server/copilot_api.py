@@ -9,6 +9,47 @@ from typing import Annotated
 
 import httpx
 import jsonschema
+from fastapi import FastAPI, File, HTTPException, Path, UploadFile
+from kiln_ai.datamodel import ClaimReview, Feedback, TaskRun
+from kiln_ai.datamodel.basemodel import FilenameStringShort
+from kiln_ai.datamodel.datamodel_enums import EvalStatus, Priority
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfig,
+    EvalConfigType,
+    EvalDataType,
+    EvalInput,
+    EvalInputSplit,
+    LlmJudgeProperties,
+    MultiTurnDriveConfig,
+    TaskRunSplit,
+)
+from kiln_ai.datamodel.json_schema import validate_schema
+from kiln_ai.datamodel.spec import (
+    Spec,
+    SpecStatus,
+    SyntheticDataGenerationSessionConfig,
+    SyntheticDataGenerationStepConfig,
+    TaskSample,
+)
+from kiln_ai.datamodel.spec_properties import SpecProperties
+from kiln_ai.datamodel.task_output import TaskOutputRating
+from kiln_ai.utils.name_generator import generate_memorable_name
+from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    agent_policy_require_approval,
+)
+from kiln_server.utils.spec_utils import (
+    generate_spec_eval_tags,
+    spec_eval_data_type,
+    spec_eval_output_score,
+    spec_eval_template,
+    tag_filter_id,
+)
+from pydantic import BaseModel, Field, field_validator, model_validator
+from typing_extensions import Self
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     clarify_spec_v1_copilot_clarify_spec_post,
     generate_batch_v1_copilot_generate_batch_post,
@@ -91,6 +132,8 @@ from app.desktop.studio_server.utils.copilot_utils import (
     persist_eval_slice,
     rate_reviewed_batch_runs,
     split_and_tag_batch_runs,
+    task_capabilities_for_task,
+    task_info_payload,
     unrate_reviewed_batch_runs,
     untag_batch_runs_for_eval,
 )
@@ -102,87 +145,51 @@ from app.desktop.studio_server.utils.response_utils import (
     upstream_route_missing,
     upstream_unreachable,
 )
-from fastapi import FastAPI, File, HTTPException, Path, UploadFile
-from kiln_ai.datamodel import ClaimReview, Feedback, TaskRun
-from kiln_ai.datamodel.basemodel import FilenameStringShort
-from kiln_ai.datamodel.datamodel_enums import Priority
-from kiln_ai.datamodel.eval import (
-    Eval,
-    EvalConfig,
-    EvalConfigType,
-    EvalDataType,
-    EvalInput,
-    EvalInputSplit,
-    LlmJudgeProperties,
-    MultiTurnDriveConfig,
-    TaskRunSplit,
-)
-from kiln_ai.datamodel.json_schema import validate_schema
-from kiln_ai.datamodel.spec import (
-    Spec,
-    SpecStatus,
-    SyntheticDataGenerationSessionConfig,
-    SyntheticDataGenerationStepConfig,
-    TaskSample,
-)
-from kiln_ai.datamodel.spec_properties import SpecProperties, SpecType
-from kiln_ai.datamodel.task_output import TaskOutputRating
-from kiln_ai.utils.name_generator import generate_memorable_name
-from kiln_server.task_api import task_from_id
-from kiln_server.utils.agent_checks.policy import (
-    ALLOW_AGENT,
-    agent_policy_require_approval,
-)
-from kiln_server.utils.spec_utils import (
-    generate_spec_eval_tags,
-    spec_eval_data_type,
-    spec_eval_output_score,
-    spec_eval_template,
-    tag_filter_id,
-)
 from libs.core.kiln_ai.datamodel.copilot_models.questions import (
     QuestionSet,
     RefineSpecApiOutput,
     SubmitAnswersRequest,
 )
-from pydantic import BaseModel, Field, field_validator, model_validator
-from typing_extensions import Self
 
 logger = logging.getLogger(__name__)
 
 
-class ClassifySpecDescriptionInput(BaseModel):
-    """Free-text description of an eval the user wants to build. The
-    endpoint maps it to a `SpecType` and pre-fills the property_values for
-    that type so the v2 builder can skip the template-carousel step
-    entirely.
+async def copilot_passthrough_payload(
+    input: ClarifySpecApiInput | RefineSpecApiInput | SpecQuestionerApiInput,
+) -> dict:
+    """The kiln_server payload for a copilot route that forwards a client body.
+
+    When the client names a project and task, the task's tools and skills are
+    read from local storage and attached to target_task_info so the copilot
+    prompts can see what the target task can actually do. A client that already
+    sent capabilities keeps them. The ids are always stripped: they identify
+    local storage and mean nothing to kiln_server.
     """
-
-    description: str = Field(
-        description="Free-text description of what the eval should check."
-    )
-    task_prompt: str | None = Field(
-        default=None,
-        description="Optional task prompt for context (improves classification "
-        "accuracy when the spec relates to a specific task).",
-    )
-
-
-class ClassifySpecDescriptionOutput(BaseModel):
-    """Classified spec type + suggested name + spec_type-specific property
-    values. Keys in `property_values` correspond to `FieldConfig.key`
-    entries in `spec_field_configs[spec_type]` (see
-    app/web_ui/src/routes/(app)/specs/[project_id]/[task_id]/select_template/spec_templates.ts).
-    """
-
-    spec_type: SpecType = Field(description="The classified spec type.")
-    suggested_name: str = Field(
-        description="A filename-safe name for the new spec, derived from the description."
-    )
-    property_values: dict[str, str] = Field(
-        description="Pre-filled property values for the chosen spec_type. "
-        "Keys correspond to the field_configs of that spec_type."
-    )
+    task_info = input.target_task_info
+    # Presence, not truthiness: the model already rejects a half-supplied pair,
+    # so an empty id is a real (bad) id and belongs in the lookup below.
+    if input.project_id is not None and input.task_id is not None:
+        # A bad id 404s here, which is the honest answer: the caller asked for
+        # this task's capabilities and we cannot produce them.
+        task = task_from_id(input.project_id, input.task_id)
+        task_tools, task_skills = await task_capabilities_for_task(task)
+        task_info = task_info.model_copy(
+            update={
+                "task_tools": (
+                    task_info.task_tools
+                    if task_info.task_tools is not None
+                    else task_tools
+                ),
+                "task_skills": (
+                    task_info.task_skills
+                    if task_info.task_skills is not None
+                    else task_skills
+                ),
+            }
+        )
+    payload = input.model_dump(exclude={"project_id", "task_id"})
+    payload["target_task_info"] = task_info_payload(task_info)
+    return payload
 
 
 class MultiTurnSaveInfo(BaseModel):
@@ -271,8 +278,8 @@ class CreateSpecWithCopilotRequest(BaseModel):
       generated inputs. Endpoint tags the existing runs with golden/train
       filter tags (writing the verdicts onto the golden ones) and mints one
       EvalInput per input as the eval slice; no new TaskRuns are created and
-      nothing is generated. `evaluate_full_trace` must be False — the
-      pipeline judged final answers, so the saved eval must too.
+      nothing is generated. `evaluate_full_trace` must be True — the
+      pipeline judged the transcript, so the saved eval must too.
 
     - **Multi-turn (wizard):** caller supplies `multi_turn` with a `batch_tag`
       pointing at chains already on disk (created earlier by the
@@ -336,15 +343,15 @@ class CreateSpecWithCopilotRequest(BaseModel):
                 "already on disk), or `sdg_session_config` (legacy: fresh "
                 "single-turn synthesis)."
             )
-        if self.multi_turn is not None and not self.evaluate_full_trace:
+        # One rule for both wizard arms: the pipeline judges the transcript, so
+        # the saved eval must too, or the calibrated judge is not the judge that
+        # ships. A single-turn run's transcript is its one exchange.
+        if (
+            self.multi_turn is not None or self.single_turn is not None
+        ) and not self.evaluate_full_trace:
             raise ValueError(
-                "Multi-turn save requires `evaluate_full_trace=True` — the eval "
-                "evaluates full conversation traces, not single I/O pairs."
-            )
-        if self.single_turn is not None and self.evaluate_full_trace:
-            raise ValueError(
-                "Single-turn save requires `evaluate_full_trace=False` — the "
-                "pipeline judged final answers, so the saved eval must too."
+                "A wizard save requires `evaluate_full_trace=True` — the "
+                "pipeline judged full traces, so the saved eval must too."
             )
         return self
 
@@ -648,6 +655,7 @@ def persist_spec_save(
     reviewed_leaf_ids: set[str],
     train_tag: str,
     golden_tag: str,
+    val_tag: str,
     spec_name: str,
     rng: random.Random,
 ) -> None:
@@ -656,9 +664,11 @@ def persist_spec_save(
 
     Both wizard arms ride the batch-runs path: `batch_leaves` are the runs
     already on disk (multi-turn chain leaves or single-turn pipeline runs)
-    to split and rate, and `batch_eval_inputs` is the arm's built eval
-    slice. The legacy v1 manual flow instead passes `single_turn_dataset`
-    (freshly generated runs plus its own eval slice) and empty batch args.
+    to split into golden / train / val and rate, and `batch_eval_inputs` is
+    the arm's built eval slice. The legacy v1 manual flow instead passes
+    `single_turn_dataset` (freshly generated runs plus its own eval slice)
+    and empty batch args, so it never reaches the split and mints no val
+    items.
 
     Owns three rollback ledgers: created models (Eval / EvalConfig / TaskRun /
     EvalInput / Spec), tagged batch runs, and rated batch runs. On any
@@ -696,7 +706,7 @@ def persist_spec_save(
 
         # Wizard arms: persist the eval slice (EvalInput items minted from
         # the driven cases or the generated inputs) and split the batch runs
-        # into disjoint golden/train slices, AFTER spec has saved so a
+        # into disjoint golden/train/val slices, AFTER spec has saved so a
         # failure here triggers the rollback below. tagged_leaves captures
         # only the tags this call added, so untagging on rollback preserves
         # any tags the run already had.
@@ -707,6 +717,7 @@ def persist_spec_save(
                 reviewed_leaf_ids,
                 train_tag,
                 golden_tag,
+                val_tag,
                 rng=rng,
                 tagged_out=tagged_leaves,
             )
@@ -739,24 +750,6 @@ def persist_spec_save(
 
 def connect_copilot_api(app: FastAPI):
     @app.post(
-        "/api/copilot/classify_spec_description",
-        tags=["Copilot"],
-        openapi_extra=agent_policy_require_approval(
-            "Classify a free-text spec description?"
-        ),
-    )
-    async def classify_spec_description(
-        input: ClassifySpecDescriptionInput,
-    ) -> ClassifySpecDescriptionOutput:
-        """Spec classification is not implemented; returns 501 so callers
-        can fall back to manual selection.
-        """
-        raise HTTPException(
-            status_code=501,
-            detail="Spec classification isn't implemented yet.",
-        )
-
-    @app.post(
         "/api/copilot/clarify_spec",
         tags=["Copilot"],
         openapi_extra=agent_policy_require_approval("Run Copilot spec clarification?"),
@@ -765,7 +758,9 @@ def connect_copilot_api(app: FastAPI):
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
-        clarify_input = ClarifySpecInput.from_dict(input.model_dump())
+        clarify_input = ClarifySpecInput.from_dict(
+            await copilot_passthrough_payload(input)
+        )
 
         detailed_result = (
             await clarify_spec_v1_copilot_clarify_spec_post.asyncio_detailed(
@@ -795,7 +790,9 @@ def connect_copilot_api(app: FastAPI):
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
-        refine_input = RefineSpecInput.from_dict(input.model_dump())
+        refine_input = RefineSpecInput.from_dict(
+            await copilot_passthrough_payload(input)
+        )
 
         detailed_result = (
             await refine_spec_v1_copilot_refine_spec_post.asyncio_detailed(
@@ -857,7 +854,9 @@ def connect_copilot_api(app: FastAPI):
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
-        questioner_input = SpecQuestionerApiInputServerApi.from_dict(input.model_dump())
+        questioner_input = SpecQuestionerApiInputServerApi.from_dict(
+            await copilot_passthrough_payload(input)
+        )
 
         detailed_result = (
             await question_spec_v1_copilot_question_spec_post.asyncio_detailed(
@@ -1161,17 +1160,19 @@ def connect_copilot_api(app: FastAPI):
                 "by case or spacing) already exists for this task.",
             )
 
-        # Generate tags and filter IDs. The shipped tag helper also mints a val
-        # tag, which neither arm uses: the wizard splits its data three ways
-        # (train / eval / golden) and mints no val items, so a val split would
-        # address a tag nothing carries. Deliberate on both arms.
+        # Generate tags and filter IDs. The wizard arms deal their non-golden
+        # batch runs train:val, so both tags address real items. The legacy v1
+        # arm mints no val items and leaves its val split empty (0 items, not
+        # an error) rather than giving the eval a different splits shape.
         tags = generate_spec_eval_tags(request.name)
-        eval_tag, train_tag, golden_tag = (
-            tags.eval_tag,
+        eval_tag, train_tag, val_tag, golden_tag = (
+            tags.test_tag,
             tags.train_tag,
+            tags.val_tag,
             tags.golden_tag,
         )
         train_set_filter_id = tag_filter_id(train_tag)
+        val_set_filter_id = tag_filter_id(val_tag)
         eval_configs_filter_id = tag_filter_id(golden_tag)
 
         # Extract spec_type from properties (discriminated union)
@@ -1199,7 +1200,8 @@ def connect_copilot_api(app: FastAPI):
         # Batch arms: find the existing runs up front so we 404 before
         # creating any models if the batch_tag matches nothing. The reviewed
         # run ids drive the split — only rated runs are eligible for golden
-        # (capped at the target fraction); the rest go to train, ratings kept.
+        # (capped at the target fraction); the rest are dealt train:val with
+        # their ratings kept.
         batch_leaves: list[TaskRun] = []
         reviewed_refs: list[ReviewedChainApi] = []
         reviewed_leaf_ids: set[str] = set()
@@ -1266,7 +1268,7 @@ def connect_copilot_api(app: FastAPI):
                 eval_tag,
             )
 
-        # 1. Create the Eval. Golden and train are TaskRun slices on both
+        # 1. Create the Eval. Golden, train and val are TaskRun slices on both
         # paths; the eval slice is EvalInput-tagged on both, re-run per run
         # config at eval time (multi-turn re-drives it, using the drive
         # config stamped on each item).
@@ -1276,12 +1278,17 @@ def connect_copilot_api(app: FastAPI):
             description=None,
             template=template,
             output_scores=output_scores,
-            # `splits` is the single home for both splits: the EvalInput-backed
-            # test split and the TaskRun-backed train split. The deprecated flat
-            # filter fields are never written.
+            # Priority and status live on the eval; the spec below mirrors
+            # them at creation so the spec file stays truthful.
+            priority=Priority.p1,
+            status=EvalStatus.active,
+            # `splits` is the single home for all three splits: the
+            # EvalInput-backed test split and the TaskRun-backed train and val
+            # splits. The deprecated flat filter fields are never written.
             splits={
                 "test": EvalInputSplit(filter_id=f"tag::{eval_tag}"),
                 "train": TaskRunSplit(filter_id=train_set_filter_id),
+                "val": TaskRunSplit(filter_id=val_set_filter_id),
             },
             eval_configs_filter_id=eval_configs_filter_id,
             template_properties=None,
@@ -1327,12 +1334,15 @@ def connect_copilot_api(app: FastAPI):
             task_output_schema = (
                 str(task.output_json_schema) if task.output_json_schema else ""
             )
+            task_tools, task_skills = await task_capabilities_for_task(task)
             all_examples = await generate_copilot_examples(
                 api_key=api_key,
                 target_task_info=TaskInfoApi(
                     task_prompt=request.task_prompt_with_example or "",
                     task_input_schema=task_input_schema,
                     task_output_schema=task_output_schema,
+                    task_tools=task_tools,
+                    task_skills=task_skills,
                 ),
                 sdg_session_config=request.sdg_session_config,
                 spec_definition=request.definition,
@@ -1405,6 +1415,7 @@ def connect_copilot_api(app: FastAPI):
             reviewed_leaf_ids=reviewed_leaf_ids,
             train_tag=train_tag,
             golden_tag=golden_tag,
+            val_tag=val_tag,
             spec_name=request.name,
             rng=rng,
         )

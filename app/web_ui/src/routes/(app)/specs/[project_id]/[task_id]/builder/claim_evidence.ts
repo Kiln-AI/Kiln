@@ -1,62 +1,73 @@
-// Claim/Evidence review — client mirror of the kiln_server buildClaimEvidence
-// task contract. Hand-mirrored because the task lives outside this repo's
+// Claim review — client mirror of the kiln_server buildClaimEvidence task
+// contract. Hand-mirrored because the task lives outside this repo's
 // generated API schema.
 //
 // The server task is PER-TRACE: one call distills one trace (raw_input +
-// raw_output) plus the judge's decision into atomic claim/evidence pairs plus
-// ONE top-level final judgement. The reviewer agrees/disagrees with each
-// without reading the whole trace. The UI holds N of these (one per generated
-// trace) and manages trace identity itself, since the server output carries
-// no id.
+// raw_output) plus the judge's decision into an Overview the reviewer reads
+// first and a short list of claims, each one decision the judge made, written
+// so the reviewer can agree or disagree with it from the card alone. The UI
+// holds N of these (one per generated trace) and manages trace identity
+// itself, since the server output carries no id.
 
 import type { components } from "$lib/api_schema"
 import type { TraceMessage } from "$lib/types"
 
 export type CitationSource = "input" | "output"
 
-// The verdict an AGREE on a claim supports. On the final judgement this
-// always equals the judge's verdict (the server pins it deterministically);
-// on other claims it's a direction bit — claims pointing opposite the judge
-// are counter-evidence for catching a wrong judge.
-export type ExpectedResult = "pass" | "fail"
+// The judge's binary verdict, and the reviewer's overall call in the same
+// vocabulary.
+export type JudgeScore = "pass" | "fail"
 
 // A start+end anchor into raw_input/raw_output. The parser highlights the span
 // from the first occurrence of `from` through the end of `to`. Snippets (not
 // long quotes) keep the model fast — it doesn't recite verbatim text.
 export type Citation = {
-  marker: number // the [n] referenced inline in evidence
+  marker: number // the [n] referenced inline in the text
   source: CitationSource
   from: string
   to: string
 }
 
+// One decision the judge made, written so the reviewer can vote on it from
+// the card alone. `text` carries the claim, its evidence and its inline [n]
+// markers in one string; every marker resolves via `citations`. Grades have
+// one direction on every claim: agree means the judge got this decision
+// right, disagree means it got it wrong.
+//
+// `is_verdict` marks the claim that states the overall pass/fail. The builder
+// may omit it; when present it is the LAST claim. The studio sets the flag
+// from the builder's own opener convention, so nothing here parses prose to
+// find the verdict.
 export type Claim = {
-  claim: string
-  expected_result: ExpectedResult
-  // One sentence with inline [n] markers; counter-points folded into a
-  // "…, though …" clause. Markers resolve via `citations`.
-  evidence: string
+  text: string
+  citations: Citation[]
+  is_verdict: boolean
+}
+
+// The neutral summary the reviewer reads before the claims. Same prose shape
+// as a claim: [n] markers restart at [1] here and in each claim.
+export type Overview = {
+  text: string
   citations: Citation[]
 }
 
-// The one overall verdict entry — top-level, no longer a claim in the list.
-// Structurally identical to Claim; kept as an alias so call sites read right.
-export type FinalJudgement = Claim
-
-// What buildClaimEvidence returns for a single trace. `claims` may be EMPTY
-// (trivial single-property evals) — the final judgement always exists.
+// What buildClaimEvidence returns for a single trace: the overview, then one
+// to eight claims in reading order.
 export type BuildClaimEvidenceOutput = {
+  overview: Overview
   claims: Claim[]
-  final_judgement: FinalJudgement
 }
 
-// What buildClaimEvidence takes for a single trace.
+// What buildClaimEvidence takes for a single trace. The studio adds
+// task_instruction itself (context for what the task is, never a rubric);
+// the UI sends the rest.
 export type BuildClaimEvidenceInput = {
+  task_instruction: string
   raw_input: string
   raw_output: string
   eval_rubric: string
   judge_reasoning: string
-  judge_score: ExpectedResult
+  judge_score: JudgeScore
 }
 
 // ── Client-side per-trace bundle ─────────────────────────────────────────
@@ -72,16 +83,16 @@ export type ClaimsBuildState = "unbuilt" | "building" | "built" | "error"
 // from run_cases_batch, or the single-turn pipeline's persisted run — that
 // the save path writes the golden rating onto and calibration rounds
 // re-judge through; null/"" when the runner emitted no id for a case.
-// claims/final_judgement are null until claims_state is "built".
+// overview/claims are null until claims_state is "built".
 export type TraceClaims = {
   trace_id: string
   leaf_run_id: string | null
   raw_input: string
   raw_output: string
-  judge_score: ExpectedResult
+  judge_score: JudgeScore
   judge_reasoning: string
+  overview: Overview | null
   claims: Claim[] | null
-  final_judgement: FinalJudgement | null
   claims_state: ClaimsBuildState
   claims_error: string | null
   // The run's structured trace. On multi-turn it is what the judge saw and
@@ -95,7 +106,7 @@ export type TraceClaims = {
 // ── Human review (UI output) ─────────────────────────────────────────────
 
 // Server claims carry no id, so verdicts are positional (index into
-// TraceClaims.claims). The final judgement gets its own slot.
+// TraceClaims.claims).
 export type ClaimVerdict = {
   agrees: boolean | null // null = not yet reviewed
   why: string // required when the human disagrees — feeds the refine loop
@@ -104,10 +115,81 @@ export type ClaimVerdict = {
 export type TraceReview = {
   trace_id: string
   claim_verdicts: ClaimVerdict[]
-  final_judgement_verdict: ClaimVerdict
+  // The reviewer's overall call, asked outright ONLY when no claim is the
+  // verdict (the builder omitted it, or the build failed). When a verdict
+  // claim exists the overall call is derived from its grade and this stays
+  // null. See human_verdict.
+  overall: JudgeScore | null
+}
+
+// ── Claim text ───────────────────────────────────────────────────────────
+//
+// Claim and overview prose carries inline [n] markers. The card turns each
+// marker that resolves to a citation into a chip that opens the trace at the
+// cited span. A marker with NO citation stays as plain text: the model quotes
+// bracketed digits out of traces (a numbered list, a log line), and a chip
+// that opens nothing reads as evidence that is not there.
+
+export type ClaimTextToken =
+  | { kind: "text"; value: string }
+  | { kind: "cite"; n: number; citation: Citation }
+
+export function tokenize_claim_text(
+  text: string,
+  citations: Citation[],
+): ClaimTextToken[] {
+  const out: ClaimTextToken[] = []
+  let pending = ""
+  const flush = () => {
+    if (pending) out.push({ kind: "text", value: pending })
+    pending = ""
+  }
+  const re = /\[(\d+)\]/g
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    pending += text.slice(last, m.index)
+    const n = Number(m[1])
+    const citation = citations.find((c) => c.marker === n)
+    if (citation) {
+      flush()
+      out.push({ kind: "cite", n, citation })
+    } else {
+      pending += m[0]
+    }
+    last = m.index + m[0].length
+  }
+  pending += text.slice(last)
+  flush()
+  return out
+}
+
+// The builder's "Note:" convention: a blank line, then a paragraph opening
+// "Note:", trailing the claim. It renders apart from the claim and muted. The
+// body is everything else — the "We suggest …" sentence included, since that
+// is part of the ask, not an aside.
+export function split_claim_note(text: string): {
+  body: string
+  note: string | null
+} {
+  const at = text.search(/\n[ \t]*\n[ \t]*(?=Note:)/)
+  if (at < 0) return { body: text, note: null }
+  return {
+    body: text.slice(0, at).trimEnd(),
+    note: text.slice(at).trimStart(),
+  }
 }
 
 // ── Citation resolution ──────────────────────────────────────────────────
+
+// A resolved citation: the whole [start, end) span, plus where the `from`
+// anchor alone ends. from_end lets a caller that cannot place the whole span
+// fall back to the anchor the model actually wrote, instead of nothing.
+export type CitationSpan = {
+  start: number
+  end: number
+  from_end: number
+}
 
 // Resolve a citation to a [start, end) span in its source text. Finds the
 // first occurrence of `from`, then the first `to` at/after it (so `to` can sit
@@ -122,29 +204,255 @@ export type TraceReview = {
 export function resolve_citation_span(
   text: string,
   citation: Pick<Citation, "from" | "to">,
-): { start: number; end: number } | null {
-  const start = text.indexOf(citation.from)
+): CitationSpan | null {
+  const haystack = fold_typography(text)
+  const from = fold_typography(citation.from)
+  const to = fold_typography(citation.to)
+  const start = haystack.indexOf(from)
   if (start < 0) return null
-  const to_at = text.indexOf(citation.to, start)
+  const to_at = haystack.indexOf(to, start)
   if (to_at < 0) return null
-  return { start, end: to_at + citation.to.length }
+  // The fold is 1:1 here, so the anchor's folded length is its raw length.
+  return { start, from_end: start + from.length, end: to_at + to.length }
 }
 
-// ── Structured-trace span mapping ────────────────────────────────────────
+// Curly punctuation folded to its straight form. Models retype anchors from
+// text they read, so a citation often carries ' where the output has ’ and the
+// anchor then misses. ONLY 1-code-unit-to-1-code-unit pairs belong here: the
+// folded string must stay the same length as the original, since the spans
+// resolved against it index the original text (they drive highlight slicing).
 //
-// The trace modal renders the structured conversation (TraceMessage[]) in the
+// Folding widens the match set rather than only rescuing misses: where the same
+// snippet appears in the text in both quote styles, the first match can land on
+// a different occurrence than before. Accepted — the variants are semantically
+// the same sentence, so either occurrence is an honest highlight.
+const TYPOGRAPHIC_FOLD: Record<string, string> = {
+  "‘": "'",
+  "’": "'",
+  "“": '"',
+  "”": '"',
+}
+
+// Derived from the map, never hand-written alongside it: a class listing a
+// character the map lacks would substitute the string "undefined" and shift
+// every offset after it, so the two cannot be allowed to drift.
+const TYPOGRAPHIC_FOLD_PATTERN = new RegExp(
+  `[${Object.keys(TYPOGRAPHIC_FOLD)
+    .map((c) => c.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&"))
+    .join("")}]`,
+  "g",
+)
+
+function fold_typography(text: string): string {
+  // `?? c` keeps an unmapped match length-preserving even if the two ever part.
+  return text.replace(TYPOGRAPHIC_FOLD_PATTERN, (c) => TYPOGRAPHIC_FOLD[c] ?? c)
+}
+
+// ── Fold with an offset map (anchoring a citation in a RE-RENDERED string) ──
+//
+// The fold above is strictly 1:1, which is what lets a span resolved against it
+// index the raw text. A field that PRETTY-PRINTS its content has no such
+// luxury: `{"a":1}` reaches the reviewer as `{\n  "a": 1\n}`, so anchors the
+// model retyped from the raw string miss the rendered one on whitespace alone,
+// and the field is stuck showing the raw blob to keep its mark.
+//
+// This generalizes the 1:1 fold: it still normalizes for matching, but it also
+// records where each folded character came from, so a span found in folded
+// space translates back into offsets that slice the ORIGINAL — here the
+// pretty-printed string the reviewer is actually looking at.
+//
+// The rules are a transform table over RUNS of the original: each run is
+// copied, swapped for a replacement, or dropped. Whitespace and typography are
+// the two we need today; a markdown-strip fold (drop the `**`, keep the word)
+// is the same shape and would be another rule rather than a second mechanism.
+
+export type FoldRule = {
+  // Matches ONE run to transform. Two things are required of it. It must not be
+  // able to match the EMPTY string: a zero-width match consumes nothing, so its
+  // replacement would be spurious characters in the folded string with no run
+  // behind them. And it must match its own matches ANCHORED — `^(?:pattern)$`
+  // against a run the pattern produced — because that is how the folder tells
+  // which rule fired. A pattern anchored internally (`^…` or `…$` of its own,
+  // or a lookaround reaching outside the run) breaks that and its runs are
+  // copied through untouched instead.
+  pattern: string
+  // What the run becomes in the folded string. "" drops it entirely.
+  replace: (run: string) => string
+}
+
+// A folded string plus where every character of it came from. map and map_end
+// are separate because a folded character can stand for a WIDER run than
+// itself: a span ending on a collapsed space has to stop past the whole run
+// that space swallowed, and one starting on it has to start at that run's first
+// character. Both arrays are folded.length long.
+export type FoldedText = {
+  folded: string
+  // map[i] = index in the ORIGINAL string where folded[i]'s run begins.
+  map: number[]
+  // map_end[i] = index in the ORIGINAL just past that run. map[i] + 1 for a
+  // character copied or swapped 1:1.
+  map_end: number[]
+}
+
+export function fold_with_offsets(text: string, rules: FoldRule[]): FoldedText {
+  const pattern = new RegExp(
+    rules.map((r) => `(?:${r.pattern})`).join("|"),
+    "g",
+  )
+  // Which rule produced a run is decided by re-testing the run against each
+  // rule, not by counting capture groups in the alternation: a rule that
+  // brought its own groups would shift that count and silently dispatch the
+  // wrong rule. Same left-to-right precedence the alternation itself uses.
+  const whole_run = rules.map((r) => new RegExp(`^(?:${r.pattern})$`))
+  let folded = ""
+  const map: number[] = []
+  const map_end: number[] = []
+  let cursor = 0
+  // Everything between two matched runs is carried over one character per
+  // character, so its offsets are its own.
+  const copy_verbatim = (until: number) => {
+    for (let i = cursor; i < until; i++) {
+      folded += text[i]
+      map.push(i)
+      map_end.push(i + 1)
+    }
+    cursor = until
+  }
+  for (const match of text.matchAll(pattern)) {
+    const at = match.index ?? 0
+    copy_verbatim(at)
+    const run = match[0]
+    // A zero-width match transformed nothing, so it produces nothing (see the
+    // FoldRule contract). Emitting a replacement here would inject characters
+    // the original never had and desync every offset after them.
+    if (!run) continue
+    const rule_index = whole_run.findIndex((re) => re.test(run))
+    // No rule owns up to its own run: the pattern breaks the anchored-match
+    // half of the contract. Copy the run through as ordinary text rather than
+    // indexing past the end of the table — a fold that skips one run still
+    // yields exact offsets, where a crash yields no citation at all.
+    if (rule_index < 0) {
+      copy_verbatim(at + run.length)
+      continue
+    }
+    const rule = rules[rule_index]
+    // By code UNIT, not code point: the maps are indexed the way the folded
+    // string is, and a replacement carrying a surrogate pair would otherwise
+    // add two characters against one entry and shift everything after it.
+    const into = rule.replace(run)
+    for (let k = 0; k < into.length; k++) {
+      folded += into[k]
+      map.push(at)
+      map_end.push(at + run.length)
+    }
+    cursor = at + run.length
+  }
+  copy_verbatim(text.length)
+  return { folded, map, map_end }
+}
+
+// Whitespace RUNS to a single space: `"a": 1,\n  "b"` and `"a": 1, "b"` fold
+// the same, which covers the difference pretty-printing makes between two
+// tokens that were already separated.
+export const WHITESPACE_TOLERANT_FOLD: FoldRule[] = [
+  { pattern: TYPOGRAPHIC_FOLD_PATTERN.source, replace: fold_typography },
+  { pattern: "\\s+", replace: () => " " },
+]
+
+// Whitespace runs dropped outright. Pretty-printing also SEPARATES tokens that
+// were flush — `{"a":1` becomes `{\n  "a": 1` — and no collapse can match a
+// space against nothing, so this is the wider second pass. It is not the first
+// because dropping whitespace lets a needle match across a word boundary; the
+// collapsing fold gets to answer while it can.
+export const WHITESPACE_FREE_FOLD: FoldRule[] = [
+  { pattern: TYPOGRAPHIC_FOLD_PATTERN.source, replace: fold_typography },
+  { pattern: "\\s+", replace: () => "" },
+]
+
+// resolve_citation_span's whitespace-tolerant twin, for anchoring a citation in
+// a re-rendered copy of the text it was written against. Same anchor semantics
+// (first `from`, then the first `to` at/after it), but the returned span slices
+// the string PASSED IN rather than the raw one. Null when either anchor is
+// absent, and when either carries no non-whitespace text to locate. Callers use
+// it to place the mark in a pretty-printed body; a miss is a real miss and they
+// fall back to the raw text.
+export function resolve_citation_span_whitespace_tolerant(
+  text: string,
+  citation: Pick<Citation, "from" | "to">,
+): CitationSpan | null {
+  return (
+    resolve_span_in_fold(text, citation, WHITESPACE_TOLERANT_FOLD) ??
+    resolve_span_in_fold(text, citation, WHITESPACE_FREE_FOLD)
+  )
+}
+
+function resolve_span_in_fold(
+  text: string,
+  citation: Pick<Citation, "from" | "to">,
+  rules: FoldRule[],
+): CitationSpan | null {
+  const haystack = fold_with_offsets(text, rules)
+  // The needle folds through the SAME rules, or the two would be normalized
+  // into different alphabets and never meet.
+  const from = fold_with_offsets(citation.from, rules).folded
+  const to = fold_with_offsets(citation.to, rules).folded
+  // An anchor with nothing but whitespace left in it — empty to begin with, or
+  // emptied by the fold that drops whitespace — matches at every position and
+  // covers none of them. That is not a resolution: reporting one hands the
+  // caller a span it reads as success, and it loses the raw mark it would
+  // otherwise have fallen back to.
+  if (!/\S/.test(from) || !/\S/.test(to)) return null
+  const start = haystack.folded.indexOf(from)
+  if (start < 0) return null
+  const to_at = haystack.folded.indexOf(to, start)
+  if (to_at < 0) return null
+  const end = to_at + to.length
+  return {
+    start: span_start(haystack, start),
+    // Mapped the same way the whole span's end is: a folded character can
+    // stand for a wider run, so the anchor's end is not start + from.length.
+    from_end: span_end(haystack, start + from.length - 1),
+    end: span_end(haystack, end - 1),
+  }
+}
+
+// Where a resolved span starts and ends in the original. A folded whitespace
+// character stands for a whole collapsed run, so a span that begins or ends on
+// one steps over it: carrying it along would put the line break and indent
+// pretty-printing inserted inside the <mark>, which on screen reads as a
+// rendering bug rather than a citation. The two are symmetric — an anchor with
+// a leading space is as ordinary as one with a trailing space.
+function span_start(haystack: FoldedText, first: number): number {
+  return /\s/.test(haystack.folded[first])
+    ? haystack.map_end[first]
+    : haystack.map[first]
+}
+
+function span_end(haystack: FoldedText, last: number): number {
+  return /\s/.test(haystack.folded[last])
+    ? haystack.map[last]
+    : haystack.map_end[last]
+}
+
+// ── Structured-trace span mapping (MULTI-TURN ONLY) ──────────────────────
+//
+// The trace modal renders a MULTI-TURN conversation (TraceMessage[]) in the
 // house chat UI, but citations resolve against raw_output — the server's
 // FLATTENED rendering of that trace. This maps a resolved [start, end) span in
 // raw_output back onto the trace: which message, which block kind, and the
 // offset within that block's text, so the chat UI can highlight the exact node.
 //
+// BOTH arms reach this now. A single-turn run is a conversation of one turn and
+// renders in the same chat surface, so its citations map through here too —
+// there is no second, arm-specific path any more.
+//
 // It works by re-computing the server flattener's block layout in TS. The port
-// mirrors libs/core .../eval_trace_formatter.py EXACTLY — the same per-message
-// block precedence (its lossy rule: content overwrites reasoning/tool blocks so
-// only ONE block is emitted per message), the same tool-call formatting, the
-// same tool-result .output unwrapping, and the same "\n\n" join keyed on the
-// raw trace index. Any drift would shift offsets, so the mapper verifies the
-// recomputed block against raw_output before trusting it (see below).
+// mirrors libs/core .../eval_trace_formatter.py EXACTLY — every block a message
+// carries (reasoning, then content, then tool calls), the same role labels
+// including the tool name on a result, the same tool-call formatting, the same
+// tool-result .output unwrapping, and the same "\n\n" join over emitted blocks.
+// Any drift would shift offsets, so the mapper verifies the recomputed block
+// against raw_output before trusting it (see below).
 
 export type TraceHighlightKind =
   | "content"
@@ -157,6 +465,10 @@ export type TraceHighlight = {
   kind: TraceHighlightKind
   start: number
   end: number
+  // True when only the citation's `from` anchor could be marked because its
+  // `to` anchor landed in a later turn. Callers surface it as a model-side
+  // citation defect; absent means the whole span is highlighted.
+  from_anchor_only?: boolean
 }
 
 // One emitted flattener block with its absolute span in the recomputed string.
@@ -214,41 +526,72 @@ function flattener_reasoning(message: TraceMessage): string | null {
   return null
 }
 
+// The synthetic tool that carries a structured answer back from the model.
+// Not a tool the user defined, so it is never listed as one. Mirrors
+// TASK_RESPONSE_TOOL_NAME in libs/core .../open_ai_types.py.
+const TASK_RESPONSE_TOOL_NAME = "task_response"
+
+// Mirror EvalTraceFormatter.structured_output_from_message: the arguments of
+// the last task_response call, which are the model's answer.
+function flattener_structured_output(message: TraceMessage): string | null {
+  if (!("tool_calls" in message) || !message.tool_calls) return null
+  const calls = message.tool_calls
+  if (!Array.isArray(calls)) return null
+  let args: string | null = null
+  for (const call of calls) {
+    const fn = "function" in call ? call.function : undefined
+    if (fn && fn.name === TASK_RESPONSE_TOOL_NAME) {
+      args = typeof fn.arguments === "string" ? fn.arguments : null
+    }
+  }
+  return args
+}
+
 // Mirror EvalTraceFormatter.formatted_tool_calls_from_message: one
-// "- Tool Name: …\n- Arguments: …" per call, concatenated with NO separator.
+// "- Tool Name: …\n- Arguments: …" per real call, joined by a blank line.
+// The task_response wrapper is excluded — it is reported as the answer.
 function flattener_tool_calls(message: TraceMessage): string | null {
   if (!("tool_calls" in message) || !message.tool_calls) return null
   const calls = message.tool_calls
   if (!Array.isArray(calls) || calls.length === 0) return null
-  let out = ""
-  for (const call of calls) {
-    const fn = "function" in call ? call.function : undefined
-    const name = fn && typeof fn.name === "string" ? fn.name : ""
-    const args = fn && typeof fn.arguments === "string" ? fn.arguments : ""
-    out += `- Tool Name: ${name}\n- Arguments: ${args}`
-  }
+  const parts = calls
+    .filter((call) => {
+      const fn = "function" in call ? call.function : undefined
+      return !fn || fn.name !== TASK_RESPONSE_TOOL_NAME
+    })
+    .map((call) => {
+      const fn = "function" in call ? call.function : undefined
+      const name = fn && typeof fn.name === "string" ? fn.name : ""
+      const args = fn && typeof fn.arguments === "string" ? fn.arguments : ""
+      return `- Tool Name: ${name}\n- Arguments: ${args}`
+    })
+  const out = parts.join("\n\n")
   return out.length > 0 ? out : null
 }
 
 // The name of the tool call a tool message answers (matched by tool_call_id),
 // searched across the whole trace — mirrors origin_tool_call_name_from_message.
-// Its presence is what lets a tool message emit a block at all.
-function has_origin_tool_call(
+// It names the result's role label; a result whose call cannot be found is
+// still emitted, unnamed, exactly as the formatter does.
+function origin_tool_call_name(
   message: TraceMessage,
   trace: TraceMessage[],
-): boolean {
+): string | null {
   const id =
     "tool_call_id" in message && typeof message.tool_call_id === "string"
       ? message.tool_call_id
       : null
-  if (!id) return false
+  if (!id) return null
   for (const m of trace) {
     if (!("tool_calls" in m) || !Array.isArray(m.tool_calls)) continue
     for (const call of m.tool_calls) {
-      if ("id" in call && call.id === id) return true
+      if ("id" in call && call.id === id) {
+        const fn = "function" in call ? call.function : undefined
+        return fn && typeof fn.name === "string" ? fn.name : null
+      }
     }
   }
-  return false
+  return null
 }
 
 type EmittedBlock = {
@@ -258,112 +601,217 @@ type EmittedBlock = {
   kind: TraceHighlightKind
 }
 
-// The single block one message flattens to (or null). Precedence mirrors the
-// formatter: a tool message emits its result ONLY when its origin call is
-// found; otherwise reasoning → tool_calls → content, where each present block
-// OVERWRITES the prior (the lossy rule — content wins when a message carries
-// both reasoning/tool calls and content).
-function emitted_block(
+// The blocks one message flattens to, in emit order. Mirrors the formatter: a
+// tool message emits its result (named when its originating call is found, and
+// still emitted when it is not); every other message emits each of reasoning,
+// content and tool calls that it carries. A message commonly carries more than
+// one — a model narrates while it calls a tool — which is why this returns a
+// list rather than a single block.
+function emitted_blocks(
   message: TraceMessage,
   trace: TraceMessage[],
-): EmittedBlock | null {
+): EmittedBlock[] {
   const role = trace_role(message)
   const content = flattener_content(message)
 
   if (role === "tool" && content) {
-    if (!has_origin_tool_call(message, trace)) return null
-    return {
-      role_label: role,
-      tag: `${role}_tool_message`,
-      content,
-      kind: "tool_result",
-    }
+    const name = origin_tool_call_name(message, trace)
+    return [
+      {
+        role_label: name ? `tool result from ${name}` : "tool result",
+        tag: `${role}_tool_message`,
+        content,
+        kind: "tool_result",
+      },
+    ]
   }
 
-  let block: EmittedBlock | null = null
+  const blocks: EmittedBlock[] = []
   const reasoning = flattener_reasoning(message)
   if (reasoning) {
-    block = {
+    blocks.push({
       role_label: `${role} reasoning`,
       tag: `${role}_reasoning_message`,
       content: reasoning,
       kind: "reasoning",
-    }
+    })
   }
-  const tool_calls = flattener_tool_calls(message)
-  if (tool_calls) {
-    block = {
-      role_label: `${role} requested tool calls`,
-      tag: `${role}_requested_tool_calls`,
-      content: tool_calls,
-      kind: "tool_calls",
-    }
-  }
+  // Content before tool calls, matching the formatter: the text is the
+  // narration introducing the call.
   if (content) {
-    block = {
+    blocks.push({
       role_label: role,
       tag: `${role}_message`,
       content,
       kind: "content",
-    }
+    })
   }
-  return block
+  // The structured answer renders as the answer, under the same tag a plain
+  // message uses — mirroring the formatter.
+  const structured_output = flattener_structured_output(message)
+  if (structured_output) {
+    blocks.push({
+      role_label: role,
+      tag: `${role}_message`,
+      content: structured_output,
+      kind: "content",
+    })
+  }
+  const tool_calls = flattener_tool_calls(message)
+  if (tool_calls) {
+    blocks.push({
+      role_label: `${role} requested tool calls`,
+      tag: `${role}_requested_tool_calls`,
+      content: tool_calls,
+      kind: "tool_calls",
+    })
+  }
+  return blocks
 }
 
 // Recompute the flattener's output string and record each block's absolute
-// span. The "\n\n" separator is keyed on the RAW trace index (matching the
-// formatter's `if index > 0`), not on emit order.
+// span. The "\n\n" separator is keyed on EMIT ORDER (matching the formatter's
+// join over emitted blocks), not on position in the trace.
 function flatten_output_blocks(trace: TraceMessage[]): FlattenedBlock[] {
   const blocks: FlattenedBlock[] = []
   let length = 0
   trace.forEach((message, index) => {
-    const block = emitted_block(message, trace)
-    if (!block) return
-    if (index > 0) length += 2 // "\n\n"
-    const header = `${block.role_label}:\n<${block.tag}>\n`
-    const content_start = length + header.length
-    const content_end = content_start + block.content.length
-    blocks.push({
-      trace_index: index,
-      kind: block.kind,
-      content_start,
-      content_end,
-      content: block.content,
-    })
-    // header + content + `\n</${tag}>`
-    length = content_end + `\n</${block.tag}>`.length
+    for (const block of emitted_blocks(message, trace)) {
+      if (blocks.length > 0) length += 2 // "\n\n"
+      const header = `${block.role_label}:\n<${block.tag}>\n`
+      const content_start = length + header.length
+      const content_end = content_start + block.content.length
+      blocks.push({
+        trace_index: index,
+        kind: block.kind,
+        content_start,
+        content_end,
+        content: block.content,
+      })
+      // header + content + `\n</${tag}>`
+      length = content_end + `\n</${block.tag}>`.length
+    }
   })
   return blocks
 }
 
 // Map a resolved [start, end) span in raw_output to the trace node it came
-// from. Returns null when the span doesn't sit cleanly inside one block's text
-// (e.g. it straddles the tag chrome or two messages), or when the recomputed
-// layout doesn't match raw_output byte-for-byte at that offset — a mismatch
-// means our port drifted from the server, so we surface NO highlight rather
-// than a wrong one.
+// from. Returns null when the span doesn't start inside a block's text (e.g.
+// it starts in the tag chrome), or when the recomputed layout doesn't match
+// raw_output byte-for-byte at that offset — a mismatch means our port drifted
+// from the server, so we surface NO highlight rather than a wrong one.
+//
+// A span whose `to` anchor landed in a LATER turn falls back to marking its
+// `from` anchor alone (from_anchor_only). A chat node can only carry a span
+// that lives inside it, and the model's own anchor is an honest partial
+// highlight where the whole span has no node to live in.
+//
+// Two raw_output shapes reach this: the flattened transcript above, and the
+// unflattened case where raw_output is one message's content verbatim. The
+// flattened walk runs first and the verbatim match is the fallback, so a
+// trace that fits neither still yields no highlight.
 export function map_output_span_to_trace(
+  trace: TraceMessage[],
+  raw_output: string,
+  span: { start: number; end: number; from_end?: number },
+): TraceHighlight | null {
+  return (
+    map_span_in_flattened_layout(trace, raw_output, span) ??
+    map_span_in_whole_message(trace, raw_output, span)
+  )
+}
+
+function map_span_in_flattened_layout(
+  trace: TraceMessage[],
+  raw_output: string,
+  span: { start: number; end: number; from_end?: number },
+): TraceHighlight | null {
+  for (const block of flatten_output_blocks(trace)) {
+    // The block holding the `from` anchor. Blocks are disjoint, so at most one
+    // matches and no other block could hold the whole span either.
+    if (span.start < block.content_start || span.start >= block.content_end) {
+      continue
+    }
+    // `to` resolved past this block, so scoping the search to the block leaves
+    // the anchor alone as the span worth marking.
+    const from_anchor_only = span.end > block.content_end
+    const end = from_anchor_only ? span.from_end : span.end
+    if (end === undefined || end < span.start || end > block.content_end) {
+      return null
+    }
+    if (
+      raw_output.slice(block.content_start, block.content_end) !== block.content
+    ) {
+      return null
+    }
+    return {
+      trace_index: block.trace_index,
+      kind: block.kind,
+      start: span.start - block.content_start,
+      end: end - block.content_start,
+      from_anchor_only,
+    }
+  }
+  return null
+}
+
+// Map a resolved [start, end) span in raw_input onto the conversation's
+// opening user message. On multi-turn the input IS that message — the server
+// derives raw_input from the first user message with non-empty string
+// content, verbatim — so an input citation has an exact home in the chat:
+// same string, same offsets. The pick mirrors the server's rule and the
+// byte-identity guard rejects a raw_input that did not come from this
+// trace's opening message (no highlight beats a wrong one).
+export function map_input_span_to_trace(
+  trace: TraceMessage[],
+  raw_input: string,
+  span: { start: number; end: number },
+): TraceHighlight | null {
+  const index = trace.findIndex(
+    (message) =>
+      trace_role(message) === "user" &&
+      "content" in message &&
+      typeof message.content === "string" &&
+      message.content.length > 0,
+  )
+  if (index < 0) return null
+  const message = trace[index]
+  const content =
+    "content" in message && typeof message.content === "string"
+      ? message.content
+      : ""
+  if (content !== raw_input) return null
+  if (span.start < 0 || span.end > raw_input.length) return null
+  return {
+    trace_index: index,
+    kind: "content",
+    start: span.start,
+    end: span.end,
+  }
+}
+
+// raw_output IS one message's content, with none of the flattener's role
+// headers or tags, so the span's offsets carry onto that message
+// unchanged. Requires exactly one byte-identical message — with two the
+// cited one is ambiguous, and we'd rather show no highlight than the wrong one.
+function map_span_in_whole_message(
   trace: TraceMessage[],
   raw_output: string,
   span: { start: number; end: number },
 ): TraceHighlight | null {
-  for (const block of flatten_output_blocks(trace)) {
-    if (span.start >= block.content_start && span.end <= block.content_end) {
-      if (
-        raw_output.slice(block.content_start, block.content_end) !==
-        block.content
-      ) {
-        return null
-      }
-      return {
-        trace_index: block.trace_index,
-        kind: block.kind,
-        start: span.start - block.content_start,
-        end: span.end - block.content_start,
-      }
-    }
+  const matches = trace
+    .map((message, index) => ({ message, index }))
+    .filter(
+      ({ message }) => "content" in message && message.content === raw_output,
+    )
+  if (matches.length !== 1) return null
+  if (span.start < 0 || span.end > raw_output.length) return null
+  return {
+    trace_index: matches[0].index,
+    kind: "content",
+    start: span.start,
+    end: span.end,
   }
-  return null
 }
 
 // ── Review-state helpers ─────────────────────────────────────────────────
@@ -373,8 +821,8 @@ export function build_trace_reviews(traces: TraceClaims[]): TraceReview[] {
   // when their claims arrive (empty_claim_verdicts).
   return traces.map((t) => ({
     trace_id: t.trace_id,
-    claim_verdicts: (t.claims ?? []).map(() => ({ agrees: null, why: "" })),
-    final_judgement_verdict: { agrees: null, why: "" },
+    claim_verdicts: empty_claim_verdicts(t.claims ?? []),
+    overall: null,
   }))
 }
 
@@ -383,35 +831,39 @@ export function empty_claim_verdicts(claims: Claim[]): ClaimVerdict[] {
   return claims.map(() => ({ agrees: null, why: "" }))
 }
 
-// The blind final-judgement card for a trace whose claims build FAILED. The
-// distilled claims never arrived, but the overall pass/fail call is still
-// answerable from the transcript: judge_score pins the verdict headline and
-// judge_reasoning is the only context (no citations — there are no built
-// claim spans to anchor, so the reviewer opens the full trace to decide).
-// Grading this lets an errored trace count as reviewed (is_trace_reviewed
-// needs only the final judgement) and reach the save gate on the blind
-// verdict alone — the sole recovery short of a paid re-drive.
-export function blind_final_judgement(trace: TraceClaims): FinalJudgement {
-  return {
-    claim: trace.judge_reasoning,
-    expected_result: trace.judge_score,
-    evidence: "",
-    citations: [],
-  }
+// Index of the claim carrying the overall verdict, or -1 when the builder
+// omitted it. At most one claim is flagged (the studio flags only the last).
+export function verdict_claim_index(
+  trace: Pick<TraceClaims, "claims">,
+): number {
+  return (trace.claims ?? []).findIndex((c) => c.is_verdict)
 }
 
-// A trace is reviewed once the final judgement has an agree/disagree and
-// every disagreement (on any claim) carries a reason. Sub-claim verdicts are
-// optional — we force only the overall call plus reasons for dissent.
+export function has_verdict_claim(trace: Pick<TraceClaims, "claims">): boolean {
+  return verdict_claim_index(trace) >= 0
+}
+
+// A trace is reviewed once every claim on screen has a grade, every
+// disagreement carries a reason, and the overall call is known: derived from
+// the verdict claim's grade when the builder wrote one, otherwise answered
+// outright. A failed build has no claims, so only the outright answer counts.
+// Unbuilt and in-flight traces are never reviewed: nothing was presented.
 export function is_trace_reviewed(
   trace: TraceClaims,
   review: TraceReview | undefined,
 ): boolean {
   if (!review) return false
-  if (review.final_judgement_verdict.agrees === null) return false
-  return [...review.claim_verdicts, review.final_judgement_verdict].every(
+  if (trace.claims_state === "error") return review.overall !== null
+  if (trace.claims_state !== "built") return false
+  const claims = trace.claims ?? []
+  // Slots are sized when the claims arrive; until then nothing is gradable.
+  if (review.claim_verdicts.length !== claims.length) return false
+  const graded = review.claim_verdicts.every((v) => v.agrees !== null)
+  const reasoned = review.claim_verdicts.every(
     (v) => v.agrees !== false || v.why.trim().length > 0,
   )
+  if (!graded || !reasoned) return false
+  return has_verdict_claim(trace) || review.overall !== null
 }
 
 export function reviewed_trace_count(
@@ -421,14 +873,52 @@ export function reviewed_trace_count(
   return traces.filter((t, i) => is_trace_reviewed(t, reviews[i])).length
 }
 
+// The reviewer's overall call on a trace. When the builder wrote a verdict
+// claim, its grade IS the call: agree keeps the judge's verdict, disagree
+// flips it. When it omitted one, the call is the Pass/Fail the reviewer
+// answered outright. Null while unanswered.
+export function human_verdict(
+  trace: TraceClaims,
+  review: TraceReview,
+): JudgeScore | null {
+  const at = verdict_claim_index(trace)
+  if (at < 0) return review.overall
+  const agrees = review.claim_verdicts[at]?.agrees ?? null
+  if (agrees === null) return null
+  if (agrees) return trace.judge_score
+  return trace.judge_score === "pass" ? "fail" : "pass"
+}
+
+// The reviewer's overall verdict as the golden rating's boolean. Callers gate
+// on is_trace_reviewed; an unanswered call is refused rather than guessed,
+// because a guessed rating poisons the answer key silently.
+export function user_says_meets_spec(
+  trace: TraceClaims,
+  review: TraceReview,
+): boolean {
+  const verdict = human_verdict(trace, review)
+  if (verdict === null) {
+    throw new Error(
+      "Cannot read the reviewer's verdict before the trace is graded.",
+    )
+  }
+  return verdict === "pass"
+}
+
 // ── Subset review (both arms) ────────────────────────────────────────────
 
-// How many traces the reviewer must rate: the human-rated golden answer key
-// is capped at 25% of the batch runs server-side, so rating N//4 fills it
-// exactly. Floor of 1 — a batch with no rated trace has no answer key.
+// How many traces the reviewer must rate. The human-rated golden answer key is
+// capped at 25% of the batch runs server-side, so N//4 is what would fill it
+// exactly — but rating is human work and does not get cheaper as the batch
+// grows, so it stops at REVIEW_TARGET_MAX. Past that the answer key is
+// deliberately smaller than the server would allow: the server never pads
+// golden with unrated items, so a short rated set simply yields a shorter key.
+// Floor of 1 — a batch with no rated trace has no answer key at all.
+const REVIEW_TARGET_MAX = 10
+
 export function review_target(total: number): number {
   if (total <= 0) return 0
-  return Math.max(1, Math.floor(total / 4))
+  return Math.min(REVIEW_TARGET_MAX, Math.max(1, Math.floor(total / 4)))
 }
 
 // The reviews the save gate demands during a calibration round: the standard
@@ -437,6 +927,26 @@ export function review_target(total: number): number {
 // demanding the full target then would deadlock the gate on traces the
 // reviewer was never shown. First-round subsets are sized to the target, so
 // this only ever bites mid-loop.
+// The subset the reviewer actually walks: the selected traces minus any whose
+// claims build FAILED. Such a trace carries no overview and no claims, so the
+// only grade it could take is the overall call answered from the raw
+// transcript, which is not the review this step is built around; it drops out
+// rather than becoming a transcript-reading exercise. Nothing is built to
+// replace it: the claims gate has already finished paying for the round's
+// builds. (The review component can still grade a trace that fails on screen
+// on its overall call; this filter is what keeps that off the wizard's path.)
+//
+// An excluded trace is an unselected one in every sense: never shown, so never
+// graded, so absent from the answer key and left to the train split unrated.
+// Pair it with calibration_gate_target so the save gate, the step header's
+// "reviewing N of M" and the review's own counter all read one number.
+export function reviewable_subset(
+  traces: Pick<TraceClaims, "claims_state">[],
+  selected: number[],
+): number[] {
+  return selected.filter((i) => traces[i]?.claims_state !== "error")
+}
+
 export function calibration_gate_target(
   total: number,
   subset_size: number,
@@ -552,65 +1062,49 @@ export type GradedClaim = components["schemas"]["GradedClaim"]
 export type ClaimReviewPayload = components["schemas"]["ClaimReviewApi"]
 
 function graded_claim(claim: Claim, verdict: ClaimVerdict): GradedClaim {
+  // An ungraded claim has no honest encoding; refuse rather than write one.
+  if (verdict.agrees === null) {
+    throw new Error("Cannot record a grade the reviewer never gave.")
+  }
   return {
-    claim: claim.claim,
-    evidence: claim.evidence,
-    expected_result: claim.expected_result,
+    text: claim.text,
     human_grade: verdict.agrees ? "agree" : "disagree",
     human_feedback: verdict.why.trim() || null,
   }
 }
 
-// Build the persisted per-claim grades for one reviewed trace. Only claims
-// the reviewer actually graded are included (sub-claim verdicts are
-// optional). Call only for a trace with BUILT claims: it throws otherwise,
-// and a trace reviewed on the blind verdict alone (a failed claims build)
-// carries no grades — the save path sends claim_review: null for those.
+// Build the persisted grades for one reviewed trace: the overview the
+// reviewer read, every claim with its grade, and the overall call. Every
+// claim is graded by the time this runs (the gate demands it), so the record
+// never has to encode "not reviewed". Throws unless the claims are built and
+// the trace is fully graded: an invented grade would contradict the golden
+// rating written beside it. Callers gate on is_trace_reviewed.
 export function build_claim_review_payload(
   trace: TraceClaims,
   review: TraceReview,
 ): ClaimReviewPayload {
-  if (!trace.final_judgement) {
+  if (trace.claims_state !== "built" || !trace.claims || !trace.overview) {
     throw new Error("Cannot build a claim review before claims are built.")
   }
-  // An ungraded overall call has no honest encoding: graded_claim would write
-  // it as "disagree" while user_says_meets_spec reads it as agreement, so the
-  // same record would contradict itself in the answer key. Callers gate on
-  // is_trace_reviewed; this refuses rather than guesses if one ever doesn't.
-  if (review.final_judgement_verdict.agrees === null) {
+  const verdict = human_verdict(trace, review)
+  if (!is_trace_reviewed(trace, review) || verdict === null) {
     throw new Error("Cannot build a claim review before the trace is graded.")
   }
   return {
     judge_score: trace.judge_score,
     judge_reasoning: trace.judge_reasoning,
-    claims: (trace.claims ?? [])
-      .map((claim, i) => ({ claim, verdict: review.claim_verdicts[i] }))
-      .filter(({ verdict }) => verdict && verdict.agrees !== null)
-      .map(({ claim, verdict }) => graded_claim(claim, verdict)),
-    final_judgement: graded_claim(
-      trace.final_judgement,
-      review.final_judgement_verdict,
+    overview: trace.overview.text,
+    claims: trace.claims.map((claim, i) =>
+      graded_claim(claim, review.claim_verdicts[i]),
     ),
+    human_verdict: verdict,
   }
 }
 
-// The reviewer's overall verdict on a trace: the judge's verdict (the final
-// judgement's expected_result is pinned to judge_score server-side), flipped
-// when the human disagrees with the final judgement.
-export function user_says_meets_spec(
-  trace: TraceClaims,
-  review: TraceReview,
-): boolean {
-  const judge_passes = trace.judge_score === "pass"
-  return review.final_judgement_verdict.agrees === false
-    ? !judge_passes
-    : judge_passes
-}
-
-// Concatenated disagree-whys across all claims (incl. the final judgement) —
-// the legacy free-text feedback field alongside the structured grades.
+// Concatenated disagree-whys across the claims — the legacy free-text
+// feedback field alongside the structured grades.
 export function disagreement_feedback(review: TraceReview): string {
-  return [...review.claim_verdicts, review.final_judgement_verdict]
+  return review.claim_verdicts
     .filter((v) => v.agrees === false && v.why.trim())
     .map((v) => v.why.trim())
     .join(" ")
@@ -633,11 +1127,11 @@ export type RefineJudgeProposal = {
 }
 
 // Build the graded-traces payload for the refine call from the in-session
-// review. Only reviewed traces with BUILT claims contribute (a half-reviewed
-// trace is no signal, and refinement grades reference the claim text — a
-// verdict-only review from a failed claims build has nothing to cite);
-// trace_label is the durable run id when present, else the client trace id
-// (opaque — the refine prompt tolerates that).
+// review. Only fully graded traces with BUILT claims contribute: a trace
+// graded on the overall call alone (a failed build) has no claim grade to
+// hand the refiner, and a half-graded trace is no signal. trace_label is the
+// durable run id when present, else the client trace id (opaque — the
+// refine prompt tolerates that).
 export function build_graded_traces(
   traces: TraceClaims[],
   reviews: TraceReview[],
@@ -647,8 +1141,8 @@ export function build_graded_traces(
     .filter(
       ({ trace, review }) =>
         review &&
-        is_trace_reviewed(trace, review) &&
-        trace.claims_state === "built",
+        trace.claims_state === "built" &&
+        is_trace_reviewed(trace, review),
     )
     .map(({ trace, review }) => ({
       trace_label: trace.leaf_run_id || trace.trace_id,
@@ -656,24 +1150,22 @@ export function build_graded_traces(
     }))
 }
 
-// How many graded traces carry a disagreement (on any claim or the final
-// judgement). This is the loop's entry predicate as a count, so the review
-// CTA flips to its refine label precisely when a save click would start a
-// calibration round, and the tooltip can name the number honestly.
+// How many graded traces carry a disagreement on any claim. This is the
+// loop's entry predicate as a count, so the review CTA flips to its refine
+// label precisely when a save click would start a calibration round, and
+// the tooltip can name the number honestly.
 export function grade_disagreement_count(
-  graded: Pick<ClaimReviewPayload, "claims" | "final_judgement">[],
+  graded: Pick<ClaimReviewPayload, "claims">[],
 ): number {
-  return graded.filter(
-    (t) =>
-      t.final_judgement.human_grade === "disagree" ||
-      t.claims.some((c) => c.human_grade === "disagree"),
+  return graded.filter((t) =>
+    t.claims.some((c) => c.human_grade === "disagree"),
   ).length
 }
 
 // Whether the reviewer pushed back anywhere in the graded set — the signal
 // that the judge needs refining before it ships.
 export function has_grade_disagreement(
-  graded: Pick<ClaimReviewPayload, "claims" | "final_judgement">[],
+  graded: Pick<ClaimReviewPayload, "claims">[],
 ): boolean {
   return grade_disagreement_count(graded) > 0
 }
@@ -690,15 +1182,13 @@ export function refine_judge_tooltip(
   return `You disagreed with the judge on ${num_disagreements} ${items}. Kiln will improve the judge from your feedback and re-check your eval data, then you'll review once more.`
 }
 
-// Indices of traces carrying any explicit disagreement (on a claim or the
-// final judgement) — the highest-priority stratum of the next round's subset.
+// Indices of traces carrying any explicit disagreement on a claim — the
+// highest-priority stratum of the next round's subset.
 export function disagreed_trace_indices(reviews: TraceReview[]): number[] {
   return reviews
     .map((review, i) => ({ review, i }))
     .filter(({ review }) =>
-      [...review.claim_verdicts, review.final_judgement_verdict].some(
-        (v) => v.agrees === false,
-      ),
+      review.claim_verdicts.some((v) => v.agrees === false),
     )
     .map(({ i }) => i)
 }
@@ -720,7 +1210,7 @@ export function disagreed_trace_indices(reviews: TraceReview[]): number[] {
 // drive time, re-echoed so citations and the trace modal stay anchored to
 // exactly what this round's judge saw.
 export type RejudgeCaseResult = {
-  judge_score: ExpectedResult
+  judge_score: JudgeScore
   judge_reasoning: string
   raw_input: string
   raw_output: string
@@ -761,8 +1251,8 @@ export function apply_rejudge_results(
       raw_input: result.raw_input,
       raw_output: result.raw_output,
       trace: result.trace ?? t.trace,
+      overview: null,
       claims: null,
-      final_judgement: null,
       claims_state: "unbuilt",
       claims_error: null,
     }
@@ -804,6 +1294,17 @@ export function rejudge_shortfall_notice(
   return `${failed} ${cases} couldn't be re-checked with the improved judge and kept their previous results. They were left out of this review round.`
 }
 
+// The notice for feedback the refine model declined to incorporate. The
+// reviewer would otherwise see their note apparently ignored with no reason,
+// so the model's own words are quoted back. Null when it declined nothing.
+export function declined_feedback_notice(
+  not_incorporated_feedback: string | null,
+): string | null {
+  const text = (not_incorporated_feedback ?? "").trim()
+  if (!text) return null
+  return `Some of your feedback was not applied this round: "${text}"`
+}
+
 // A judge prompt/rubric this long is almost certainly runaway model output,
 // not a rubric — reject it rather than persist it into the judge config.
 export const MAX_JUDGE_PROMPT_CHARS = 20000
@@ -834,15 +1335,15 @@ export function validate_refined_judge_prompt(prompt: string): string | null {
   return null
 }
 
-// ── The verdict card's reason line ────────────────────────────────────────
-
-// The reason under the verdict card's deterministic headline. The claim
-// builder's contract (kiln_server KIL-773) makes final_judgement.claim the
-// substantive one-line reason ONLY — no verdict phrasing, "" when the model
-// has nothing beyond the claims (including the server's synthesized
-// backstop) — so this renders it verbatim and the empty string is the
-// exact, non-heuristic signal for the card's evidence fallback. The old
-// prefix-strip and circular-reason detection died with that contract.
-export function final_judgement_reason(text: string): string {
-  return text.trim()
+// Strip a single code fence that WRAPS the whole prompt (opening fence with
+// an optional language tag on its own first line, closing fence alone on the
+// last), returning the inner text. A model that fence-wraps an otherwise-good
+// prompt is a recoverable presentation slip, not bad content, so unwrapping it
+// saves re-paying for the same answer. It recovers the wrapping ONLY: anything
+// else — interior or one-sided fences, a second wrapping pair, Jinja braces,
+// length — is left in place to fail validation as before.
+export function strip_wrapping_code_fence(prompt: string): string {
+  const text = (prompt ?? "").trim()
+  const wrapped = /^```[^\n`]*\n([\s\S]*)\n```$/.exec(text)
+  return wrapped ? wrapped[1] : prompt
 }

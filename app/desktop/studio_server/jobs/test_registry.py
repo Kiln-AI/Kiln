@@ -8,8 +8,8 @@ from pydantic import BaseModel
 
 from app.desktop.studio_server.jobs import error_log
 from app.desktop.studio_server.jobs.models import (
-    JobDerivedState,
     BackgroundJobStatus,
+    JobDerivedState,
     JobWorker,
 )
 from app.desktop.studio_server.jobs.registry import (

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import Mock
 
 from pydantic import BaseModel
 
 from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
+from kiln_ai.adapters.eval.sandbox_worker import execute_scorer_bridged
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
     EvalConfig,
@@ -16,6 +18,42 @@ from kiln_ai.datamodel.eval import (
     SkippedReason,
     V2EvalResult,
 )
+from kiln_ai.datamodel.project import Project
+from kiln_ai.tools.sandbox_bridge import NestedToolServer, run_bridged_child
+
+
+# ---------------------------------------------------------------------------
+# Code-eval scorer execution
+# ---------------------------------------------------------------------------
+def run_scorer(code: str, inputs: dict, timeout: float) -> dict:
+    """Run a scorer through the shared bridge and return its raw ``result`` message.
+
+    Preserves the call shape of the single-queue ``sandbox_worker.run_scorer`` that
+    the two-queue bridge replaced, so the worker's behavioural suite and its
+    benchmarks did not have to be rewritten around an async, server-carrying API.
+    Raises ``RuntimeError`` on timeout / crash, mirroring how ``CodeEvalAdapter``
+    maps those outcomes -- including its clean-exit wording, which comes from the
+    shared ``BridgeResult.crash_description``.
+    """
+    return asyncio.run(_run_scorer_async(code, inputs, timeout))
+
+
+async def _run_scorer_async(code: str, inputs: dict, timeout: float) -> dict:
+    server = NestedToolServer(
+        allowlist=[], project=Project(name="worker_test"), task=None, context=None
+    )
+    res = await run_bridged_child(
+        target=execute_scorer_bridged,
+        args=(code, inputs),
+        timeout_s=float(timeout),
+        server=server,
+    )
+    if res.timed_out:
+        raise RuntimeError(f"Code eval scorer timed out after {timeout}s")
+    if res.crashed:
+        raise RuntimeError(res.crash_description("Scorer"))
+    assert res.result_msg is not None
+    return res.result_msg
 
 
 # ---------------------------------------------------------------------------

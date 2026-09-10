@@ -8,12 +8,15 @@ ordering / per-case bookkeeping.
 """
 
 import asyncio
+import logging
 import re
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
+import litellm
 import pytest
 
+from kiln_ai.adapters.errors import KilnRunError, format_error_message
 from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
@@ -21,11 +24,17 @@ from kiln_ai.datamodel.datamodel_enums import (
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.datamodel.usage import Usage
 from kiln_ai.synthetic_user import runner as runner_mod
 from kiln_ai.synthetic_user.case import SyntheticUserCase
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
-from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
+from kiln_ai.synthetic_user.models import (
+    EARLY_STOP_SENTINEL,
+    TAG_SU_ENDED_CONVERSATION,
+    SyntheticUserDriverConfig,
+)
 from kiln_ai.synthetic_user.runner import (
+    NUM_CASES_MAX,
     BatchCompletedEvent,
     BatchEvent,
     BatchStartedEvent,
@@ -120,9 +129,10 @@ def _patch_su_driver(
             else list(replies_per_case)
         )
         instance = Mock(spec=SyntheticUserDriver)
-        # respond() returns (message, cost). Tests that don't care about
-        # cost get 0.0 — the runner adds it to total_cost regardless.
-        instance.respond = AsyncMock(side_effect=[(r, 0.0) for r in replies])
+        # respond() returns (message, Usage | None). Tests that don't care about
+        # the driver's spend hand back None — the shape a provider that reported
+        # nothing produces, which the runner totals as zero.
+        instance.respond = AsyncMock(side_effect=[(r, None) for r in replies])
         return instance
 
     monkeypatch.setattr(runner_mod, "SyntheticUserDriver", _ctor)
@@ -146,6 +156,12 @@ async def _collect(gen) -> list[BatchEvent]:
 
 
 # ───────────────────────── input validation ─────────────────────────
+
+
+def test_num_cases_max_is_pinned() -> None:
+    """Callers mirror this cap in their own bounds, so a change here is a
+    contract change for all of them — not a local tweak."""
+    assert NUM_CASES_MAX == 200
 
 
 @pytest.mark.asyncio
@@ -254,7 +270,7 @@ async def test_total_cost_sums_target_and_su_driver_spend(
     # at $0.01 → $0.01 SU per case.
     def _ctor(info, config):
         instance = Mock(spec=SyntheticUserDriver)
-        instance.respond = AsyncMock(side_effect=[("u2", 0.01)])
+        instance.respond = AsyncMock(side_effect=[("u2", Usage(cost=0.01))])
         return instance
 
     monkeypatch.setattr(runner_mod, "SyntheticUserDriver", _ctor)
@@ -328,6 +344,66 @@ async def test_leaf_is_tagged_with_synthetic_user_case_and_batch_tag(
     assert "synthetic_user_case" in leaf.tags
     assert "synthetic_user_batch:abc123" in leaf.tags
     leaf.save_to_file.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_leaf_is_tagged_when_the_su_ends_the_conversation_early(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch, caplog
+) -> None:
+    """The tag is the only durable record that this conversation is short because
+    the synthetic user finished, not because the drive broke — the eval runner's
+    completeness gate reads it back off disk long afterwards.
+    """
+    leaf = _fake_run("leaf")
+    _patch_adapter_for_task(monkeypatch, [leaf])
+    _patch_su_driver(monkeypatch, replies_per_case=[EARLY_STOP_SENTINEL])
+
+    with caplog.at_level(logging.WARNING, logger="kiln_ai.synthetic_user.runner"):
+        events = await _collect(
+            run_cases_batch(
+                cases=[_case()],
+                target_task=fake_task,
+                target_run_config=_target_run_config(),
+                su_driver_config=_su_driver_config(),
+                turns=3,
+                batch_tag="abc123",
+            )
+        )
+
+    completed = next(e for e in events if isinstance(e, CaseCompletedEvent))
+    assert completed.total_turns == 1
+    assert TAG_SU_ENDED_CONVERSATION in leaf.tags
+    # Ending on the very first turn leaves a single-turn conversation under a
+    # multi-turn batch. It is kept, but it is worth a line in the log.
+    assert any(
+        "ended on its first turn" in record.getMessage() for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_full_length_drive_is_not_tagged_as_ended_by_the_su(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch, caplog
+) -> None:
+    """A conversation that used its whole turn ceiling must not carry the tag, or
+    the tag would say nothing about any conversation."""
+    runs = [_fake_run("r1"), _fake_run("leaf")]
+    _patch_adapter_for_task(monkeypatch, runs)
+    _patch_su_driver(monkeypatch, replies_per_case=["keep going"])
+
+    with caplog.at_level(logging.WARNING, logger="kiln_ai.synthetic_user.runner"):
+        await _collect(
+            run_cases_batch(
+                cases=[_case()],
+                target_task=fake_task,
+                target_run_config=_target_run_config(),
+                su_driver_config=_su_driver_config(),
+                turns=2,
+                batch_tag="abc123",
+            )
+        )
+
+    assert TAG_SU_ENDED_CONVERSATION not in runs[-1].tags
+    assert caplog.records == []
 
 
 @pytest.mark.asyncio
@@ -450,7 +526,7 @@ async def test_malformed_blob_surfaces_as_case_failed(
 
     def _ctor(info, config):
         instance = Mock(spec=SyntheticUserDriver)
-        instance.respond = AsyncMock(return_value=("ok", 0.0))
+        instance.respond = AsyncMock(return_value=("ok", None))
         return instance
 
     _patch_su_driver_factory(monkeypatch, _ctor)
@@ -501,6 +577,38 @@ async def test_target_invoke_failure_surfaces_as_case_failed(
     assert failed.error_code == "unexpected_error"
     assert "RuntimeError" in failed.message
     assert "kaboom" in failed.message
+
+
+@pytest.mark.asyncio
+async def test_terminal_provider_error_names_its_class_on_the_event(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A provider error the shared classifier calls permanent carries its
+    exception class on the event, so failures can be counted by kind without
+    parsing the message."""
+    _patch_adapter_for_task(
+        monkeypatch,
+        litellm.BadRequestError(
+            message="max_tokens too large for this model",
+            model="gpt_5_5",
+            llm_provider="openrouter",
+        ),
+    )
+    _patch_su_driver(monkeypatch, replies_per_case=["x"])
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=1,
+        )
+    )
+
+    failed = next(e for e in events if isinstance(e, CaseFailedEvent))
+    assert failed.error_code == "unexpected_error"
+    assert failed.error_type == "BadRequestError"
 
 
 @pytest.mark.asyncio
@@ -574,7 +682,7 @@ async def test_su_failure_deletes_chain_including_just_persisted_run(
         instance = Mock(spec=SyntheticUserDriver)
         # Turn 1's SU reply succeeds; turn 2's SU call dies mid-case.
         instance.respond = AsyncMock(
-            side_effect=[("u2", 0.0), ValueError("su blew up")]
+            side_effect=[("u2", None), ValueError("su blew up")]
         )
         return instance
 
@@ -600,9 +708,9 @@ async def test_su_failure_deletes_chain_including_just_persisted_run(
 async def test_case_timeout_fails_case_and_deletes_partial_chain(
     fake_task: Mock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A drive that exceeds the per-case timeout fails with `case_timeout`,
-    its already-persisted turns are removed, and the batch still completes —
-    a hung provider call must not pin a concurrency slot forever."""
+    """A drive that exceeds a caller-set case_timeout_seconds fails with
+    `case_timeout`, its already-persisted turns are removed, and the batch
+    still completes — a caller's budget must free the slot it bounds."""
     turn_one = _fake_run("turn-1")
     calls = {"n": 0}
 
@@ -630,12 +738,93 @@ async def test_case_timeout_fails_case_and_deletes_partial_chain(
 
     failed = next(e for e in events if isinstance(e, CaseFailedEvent))
     assert failed.error_code == "case_timeout"
+    # A deterministic failure leaves error_type None even though a TimeoutError
+    # triggered it: error_code already names the budget firing.
+    assert failed.error_type is None
     turn_one.delete.assert_called_once()
     completed = next(e for e in events if isinstance(e, BatchCompletedEvent))
     assert completed.failed == 1
     assert completed.successful == 0
     # Timeouts are never retried — a retry would pin a worker for another
     # full drive budget. Two invokes = one attempt (turn 1 + the hang).
+    assert calls["n"] == 2
+
+
+@pytest.mark.asyncio
+async def test_no_case_timeout_by_default(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no caller-set case_timeout_seconds the drive is unbounded —
+    wait_for gets timeout=None. No budget may be derived from turn count:
+    a slow-but-healthy case must never be killed by the runner."""
+    captured_timeouts: list[float | None] = []
+    real_wait_for = asyncio.wait_for
+
+    async def spy_wait_for(awaitable: Any, timeout: float | None = None) -> Any:
+        captured_timeouts.append(timeout)
+        return await real_wait_for(awaitable, timeout)
+
+    monkeypatch.setattr(asyncio, "wait_for", spy_wait_for)
+    _patch_adapter_for_task(monkeypatch, [_fake_run("turn-1")])
+    _patch_su_driver(monkeypatch, replies_per_case=["x"])
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=1,
+        )
+    )
+
+    completed = next(e for e in events if isinstance(e, BatchCompletedEvent))
+    assert completed.successful == 1
+    # The drive's wait_for call is the only one made with timeout=None
+    # (the job runner's internal polling uses a small float).
+    assert captured_timeouts.count(None) == 1
+
+
+@pytest.mark.asyncio
+async def test_raw_provider_timeout_is_not_a_case_timeout(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no case budget set, an asyncio.TimeoutError surfacing raw from a
+    provider call is classified as unexpected_error with a named message —
+    never case_timeout (no budget exists to have fired), and never a crash
+    from formatting a None budget."""
+    turn_one = _fake_run("turn-1")
+    calls = {"n": 0}
+
+    async def invoke(**_kwargs: Any) -> Mock:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return turn_one
+        raise asyncio.TimeoutError()
+
+    _patch_adapter_for_task(monkeypatch, invoke)
+    _patch_su_driver(monkeypatch, replies_per_case=["x", "y"])
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=2,
+        )
+    )
+
+    failed = next(e for e in events if isinstance(e, CaseFailedEvent))
+    assert failed.error_code == "unexpected_error"
+    # A bare TimeoutError has no str(); the message must still say what
+    # happened instead of trailing off after the type name.
+    assert failed.message == "TimeoutError: The model provider request timed out."
+    # The same failure, structured: consumers group by class name instead of
+    # parsing the prose above.
+    assert failed.error_type == "TimeoutError"
+    turn_one.delete.assert_called_once()
+    # Raw timeouts are not classified transient: one attempt only.
     assert calls["n"] == 2
 
 
@@ -680,12 +869,27 @@ async def test_transient_error_exhausts_retries_then_fails_once(
     fake_task: Mock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Retries exhausted → exactly ONE case_failed (never one per attempt),
-    with the underlying error in the message."""
+    with the underlying error in the message and named on the event.
+
+    Runs a real transient provider error through the shared classifier, wrapped
+    the way the model adapter delivers it: both the KilnRunError wrapper and
+    the retryable wrapper hide the original, so message and error_type must
+    name the innermost provider error."""
     monkeypatch.setattr(runner_mod, "DRIVE_RETRY_DELAY_SECONDS", 0)
-    monkeypatch.setattr(
-        runner_mod, "is_retryable_error", lambda e: isinstance(e, RuntimeError)
-    )
-    invoke = _patch_adapter_for_task(monkeypatch, RuntimeError("flaky 502"))
+
+    def _raise_as_the_adapter_does(*args: Any, **kwargs: Any) -> None:
+        original = litellm.RateLimitError(
+            message="upstream rate limit",
+            model="gpt_5_5",
+            llm_provider="openrouter",
+        )
+        raise KilnRunError(
+            message=format_error_message(original),
+            partial_trace=None,
+            original=original,
+        ) from original
+
+    invoke = _patch_adapter_for_task(monkeypatch, _raise_as_the_adapter_does)
     _patch_su_driver(monkeypatch, replies_per_case=["x"])
 
     events = await _collect(
@@ -701,7 +905,8 @@ async def test_transient_error_exhausts_retries_then_fails_once(
     failed = [e for e in events if isinstance(e, CaseFailedEvent)]
     assert len(failed) == 1
     assert failed[0].error_code == "unexpected_error"
-    assert "flaky 502" in failed[0].message
+    assert "upstream rate limit" in failed[0].message
+    assert failed[0].error_type == "RateLimitError"
     # One invoke per attempt at turns=1: the first try plus the retries.
     assert invoke.call_count == 1 + runner_mod.DRIVE_MAX_RETRIES
 
@@ -774,7 +979,7 @@ async def test_retried_case_batch_total_includes_both_attempts_costs(
     # One SU call per attempt (turns=2), at $0.01.
     def _ctor(info, config):
         instance = Mock(spec=SyntheticUserDriver)
-        instance.respond = AsyncMock(side_effect=[("u2", 0.01)])
+        instance.respond = AsyncMock(side_effect=[("u2", Usage(cost=0.01))])
         return instance
 
     monkeypatch.setattr(runner_mod, "SyntheticUserDriver", _ctor)
@@ -824,7 +1029,7 @@ async def test_dead_case_failed_event_reports_all_attempts_spend(
 
     def _ctor(info, config):
         instance = Mock(spec=SyntheticUserDriver)
-        instance.respond = AsyncMock(side_effect=[("u2", 0.01)])
+        instance.respond = AsyncMock(side_effect=[("u2", Usage(cost=0.01))])
         return instance
 
     monkeypatch.setattr(runner_mod, "SyntheticUserDriver", _ctor)

@@ -1,12 +1,12 @@
-"""Tests for sandbox_worker -- multiprocessing scorer execution.
+"""Tests for the code-eval scorer worker -- multiprocessing scorer execution.
 
-These tests SPAWN child processes. Keep them fast. Scorer code is passed
-as a string so nothing local needs pickling.
+These tests SPAWN child processes via the shared bridge. Keep them fast. Scorer
+code is passed as a string so nothing local needs pickling.
 """
 
 import pytest
 
-from kiln_ai.adapters.eval.sandbox_worker import run_scorer
+from kiln_ai.adapters.eval.conftest import run_scorer
 
 
 def _inputs(output: str = "hello", **overrides: object) -> dict:
@@ -127,8 +127,9 @@ class TestAsyncScorer:
 class TestCapture:
     def test_stdout_captured(self):
         code = (
+            "import sys\n"
             "def score(output, trace, reference_data, task_input):\n"
-            "    print('debug info')\n"
+            "    sys.stdout.write('debug info')\n"
             "    return {'x': 1.0}\n"
         )
         result = run_scorer(code, _inputs(), timeout=10)
@@ -139,7 +140,7 @@ class TestCapture:
         code = (
             "import sys\n"
             "def score(output, trace, reference_data, task_input):\n"
-            "    print('err msg', file=sys.stderr)\n"
+            "    sys.stderr.write('err msg')\n"
             "    return {'x': 1.0}\n"
         )
         result = run_scorer(code, _inputs(), timeout=10)

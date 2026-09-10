@@ -21,11 +21,11 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.client import (
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     GenerateSyntheticUsersRequest,
     GenerateSyntheticUsersResponse,
-    GenerateV1SyntheticUserGeneratePostResponse401,
     GenerateV1SyntheticUserGeneratePostResponse500,
     GenerateV1SyntheticUserGeneratePostResponse502,
     HTTPValidationError,
     SyntheticUserCase,
+    UnauthorizedResponse,
     ValidationError,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
@@ -133,9 +133,12 @@ class SyntheticUserClient:
                 message=parsed.message,
                 status_code=status,
             )
-        if isinstance(parsed, GenerateV1SyntheticUserGeneratePostResponse401):
+        if isinstance(parsed, UnauthorizedResponse):
+            # The 401 comes from the server's API key dependency, which answers
+            # every route with one shared body: it carries no code to
+            # discriminate on, so the failure is always an auth failure.
             raise SyntheticUserRequestError(
-                code=_code_or_default(parsed.code, "unauthorized"),
+                code="unauthorized",
                 message=parsed.message,
                 status_code=status,
             )

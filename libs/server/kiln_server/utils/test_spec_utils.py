@@ -82,7 +82,9 @@ class TestSpecEvalTemplate:
     @pytest.mark.parametrize(
         "spec_type,expected_template",
         [
-            (SpecType.appropriate_tool_use, EvalTemplateId.tool_call),
+            # The legacy tool_call template is reserved for pre-spec LLM tool
+            # evals; new tool evals are scored by the tool_call_check judge.
+            (SpecType.appropriate_tool_use, None),
             (SpecType.reference_answer_accuracy, EvalTemplateId.rag),
             (SpecType.factual_correctness, EvalTemplateId.factual_correctness),
             (SpecType.toxicity, EvalTemplateId.toxicity),
@@ -117,44 +119,44 @@ class TestSpecEvalTemplate:
 
 class TestGenerateSpecEvalTags:
     def test_generates_correct_tags_for_simple_name(self):
-        eval_tag, train_tag, val_tag, golden_tag = generate_spec_eval_tags("Test Spec")
-        assert eval_tag == "eval_test_spec"
+        test_tag, train_tag, val_tag, golden_tag = generate_spec_eval_tags("Test Spec")
+        assert test_tag == "test_test_spec"
         assert train_tag == "train_test_spec"
         assert val_tag == "val_test_spec"
-        assert golden_tag == "eval_golden_test_spec"
+        assert golden_tag == "golden_test_spec"
 
     def test_handles_already_lowercase_name(self):
-        eval_tag, train_tag, val_tag, golden_tag = generate_spec_eval_tags("my spec")
-        assert eval_tag == "eval_my_spec"
+        test_tag, train_tag, val_tag, golden_tag = generate_spec_eval_tags("my spec")
+        assert test_tag == "test_my_spec"
         assert train_tag == "train_my_spec"
         assert val_tag == "val_my_spec"
-        assert golden_tag == "eval_golden_my_spec"
+        assert golden_tag == "golden_my_spec"
 
     def test_handles_uppercase_name(self):
-        eval_tag, train_tag, val_tag, golden_tag = generate_spec_eval_tags("MY SPEC")
-        assert eval_tag == "eval_my_spec"
+        test_tag, train_tag, val_tag, golden_tag = generate_spec_eval_tags("MY SPEC")
+        assert test_tag == "test_my_spec"
         assert train_tag == "train_my_spec"
         assert val_tag == "val_my_spec"
-        assert golden_tag == "eval_golden_my_spec"
+        assert golden_tag == "golden_my_spec"
 
     def test_handles_single_word_name(self):
-        eval_tag, train_tag, val_tag, golden_tag = generate_spec_eval_tags("Toxicity")
-        assert eval_tag == "eval_toxicity"
+        test_tag, train_tag, val_tag, golden_tag = generate_spec_eval_tags("Toxicity")
+        assert test_tag == "test_toxicity"
         assert train_tag == "train_toxicity"
         assert val_tag == "val_toxicity"
-        assert golden_tag == "eval_golden_toxicity"
+        assert golden_tag == "golden_toxicity"
 
-    def test_train_tag_uses_train_prefix(self):
-        """Train tag should use 'train_' prefix, not 'eval_train_'."""
-        _, train_tag, _, _ = generate_spec_eval_tags("Test")
-        assert train_tag.startswith("train_")
-        assert not train_tag.startswith("eval_train_")
+    def test_no_tag_uses_the_legacy_eval_prefix(self):
+        """The four tags share a suffix, so each needs its own distinct prefix.
 
-    def test_val_tag_uses_val_prefix(self):
-        """Val tag should use 'val_' prefix, not 'eval_val_'."""
-        _, _, val_tag, _ = generate_spec_eval_tags("Test")
-        assert val_tag.startswith("val_")
-        assert not val_tag.startswith("eval_val_")
+        The test set's tag was once "eval_"-prefixed. Renaming it is only safe while no
+        two tags collide: these are the filters that separate an eval's four datasets, so
+        a duplicate silently merges two of them instead of failing.
+        """
+        tags = generate_spec_eval_tags("Test")
+
+        assert not any(tag.startswith("eval_") for tag in tags)
+        assert len(set(tags)) == len(tags)
 
 
 class TestSpecEvalSplits:
@@ -163,12 +165,12 @@ class TestSpecEvalSplits:
 
     def test_splits_are_task_run_backed_tag_filters(self):
         splits = spec_eval_splits(
-            eval_tag="eval_test", train_tag="train_test", val_tag="val_test"
+            test_tag="test_test", train_tag="train_test", val_tag="val_test"
         )
 
         assert set(splits) == {"test", "train", "val"}
         assert all(isinstance(split, TaskRunSplit) for split in splits.values())
-        assert splits["test"].filter_id == "tag::eval_test"
+        assert splits["test"].filter_id == "tag::test_test"
         assert splits["train"].filter_id == "tag::train_test"
         assert splits["val"].filter_id == "tag::val_test"
 
@@ -183,14 +185,14 @@ class TestBuildSpecEval:
         )
 
         assert tags == SpecEvalTags(
-            eval_tag="eval_test_spec",
+            test_tag="test_test_spec",
             train_tag="train_test_spec",
             val_tag="val_test_spec",
-            golden_tag="eval_golden_test_spec",
+            golden_tag="golden_test_spec",
         )
         assert eval.name == "Test Spec"
         # Golden is not a split, so the split assertions below never cover it.
-        assert eval.eval_configs_filter_id == "tag::eval_golden_test_spec"
+        assert eval.eval_configs_filter_id == "tag::golden_test_spec"
 
     def test_splits_are_built_in_one_step(self, tmp_path):
         """All three splits are set, and stored in the one place splits live.
@@ -208,7 +210,7 @@ class TestBuildSpecEval:
         )
 
         assert eval.splits == {
-            "test": TaskRunSplit(filter_id="tag::eval_test_spec"),
+            "test": TaskRunSplit(filter_id="tag::test_test_spec"),
             "train": TaskRunSplit(filter_id="tag::train_test_spec"),
             "val": TaskRunSplit(filter_id="tag::val_test_spec"),
         }
@@ -216,7 +218,7 @@ class TestBuildSpecEval:
         assert dumped["eval_set_filter_id"] is None
         assert dumped["train_set_filter_id"] is None
         assert dumped["splits"] == {
-            "test": {"source": "task_run", "filter_id": "tag::eval_test_spec"},
+            "test": {"source": "task_run", "filter_id": "tag::test_test_spec"},
             "train": {"source": "task_run", "filter_id": "tag::train_test_spec"},
             "val": {"source": "task_run", "filter_id": "tag::val_test_spec"},
         }

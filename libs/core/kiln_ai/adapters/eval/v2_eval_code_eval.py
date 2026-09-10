@@ -1,15 +1,15 @@
 """V2 adapter for code_eval: runs user-authored Python scorer in a sandboxed subprocess."""
 
-import asyncio
+import math
 from threading import Lock
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
-from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
+from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 
 if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
     from kiln_ai.datamodel.task import RunConfigProperties
-from kiln_ai.adapters.eval.sandbox_worker import run_scorer
+from kiln_ai.adapters.eval.sandbox_worker import execute_scorer_bridged
 from kiln_ai.datamodel.eval import (
     CodeEvalProperties,
     EvalConfig,
@@ -17,11 +17,15 @@ from kiln_ai.datamodel.eval import (
     EvalTaskInput,
     V2EvalResult,
 )
+from kiln_ai.tools.base_tool import ToolCallContext
+from kiln_ai.tools.sandbox_bridge import (
+    NestedToolServer,
+    ToolCallLogEntry,
+    run_bridged_child,
+)
 
 _trust_lock = Lock()
 _trusted_projects: set[str] = set()
-
-_code_eval_execution_lock = asyncio.Lock()
 
 
 def add_code_trust(project_path: str) -> None:
@@ -58,6 +62,12 @@ class CodeEvalAdapter(BaseV2EvalBridge):
         super().__init__(eval_config, run_config, skills)
         assert isinstance(self.properties, CodeEvalProperties)
 
+        # Set by the test-pane endpoint, which is the one place a code judge's
+        # nested tool calls (including LLM calls, which cost money) have somewhere
+        # to be shown: the author is iterating on the code right there. An eval run
+        # leaves it None -- per-item logs have no home in the run UI yet.
+        self.tool_call_recorder: Callable[[ToolCallLogEntry], None] | None = None
+
     async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
         props = self.properties
         assert isinstance(props, CodeEvalProperties)
@@ -69,19 +79,42 @@ class CodeEvalAdapter(BaseV2EvalBridge):
             "task_input": eval_input.task_input,
         }
 
-        async with _code_eval_execution_lock:
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(
-                None, run_scorer, props.code, inputs, float(props.timeout_seconds)
+        server = NestedToolServer(
+            allowlist=props.tool_allowlist,
+            project=self.target_task.parent_project(),
+            task=self.target_task,
+            context=ToolCallContext(
+                allow_saving=False,
+                eval_output_schema=BaseEval.build_score_schema(
+                    self.eval, allow_float_scores=False
+                ),
+            ),
+            recorder=self.tool_call_recorder,
+        )
+
+        res = await run_bridged_child(
+            target=execute_scorer_bridged,
+            args=(props.code, inputs),
+            timeout_s=float(props.timeout_seconds),
+            server=server,
+        )
+
+        if res.timed_out:
+            raise RuntimeError(
+                f"Code eval scorer timed out after {props.timeout_seconds}s"
+            )
+        if res.crashed:
+            raise RuntimeError(res.crash_description("Scorer"))
+
+        result_msg = res.result_msg
+        assert result_msg is not None
+        if "error" in result_msg:
+            raise RuntimeError(
+                f"Code eval scorer failed: {result_msg['error']}\n"
+                f"{result_msg.get('traceback', '')}"
             )
 
-        if "error" in result:
-            tb = result.get("traceback", "")
-            msg = result["error"]
-            detail = f"{msg}\n{tb}".strip() if tb else msg
-            raise RuntimeError(f"Code eval scorer failed: {detail}")
-
-        raw_scores = result.get("ok")
+        raw_scores = result_msg["ok"]
         if not isinstance(raw_scores, dict):
             raise RuntimeError(
                 f"Scorer must return a dict, got {type(raw_scores).__name__}"
@@ -105,10 +138,22 @@ class CodeEvalAdapter(BaseV2EvalBridge):
                     f"Score '{key}' returned a bool. Use a float (e.g. 1.0 for pass, 0.0 for fail)."
                 )
             if isinstance(value, int):
-                value = float(value)
+                try:
+                    value = float(value)
+                except OverflowError:
+                    # An int too large for a float, e.g. 10**400.
+                    raise RuntimeError(
+                        f"Score '{key}' must be a finite number, got {value}"
+                    ) from None
             if not isinstance(value, float):
                 raise RuntimeError(
                     f"Score '{key}' must be a float, got {type(value).__name__}"
+                )
+            # Fail here, in the scorer's own error surface, rather than at EvalRun
+            # save time where the message loses the code eval context.
+            if not math.isfinite(value):
+                raise RuntimeError(
+                    f"Score '{key}' must be a finite number, got {value}"
                 )
             validated[key] = value
 

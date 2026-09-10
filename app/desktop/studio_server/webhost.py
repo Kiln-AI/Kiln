@@ -1,3 +1,4 @@
+import errno
 import mimetypes
 import os
 import sys
@@ -42,6 +43,17 @@ def add_no_cache_headers(response: Response):
 
 # File server that maps /foo/bar to /foo/bar.html (Starlette StaticFiles only does index.html)
 class HTMLStaticFiles(StaticFiles):
+    def lookup_path(self, path: str) -> tuple[str, os.stat_result | None]:
+        try:
+            return super().lookup_path(path)
+        except OSError as e:
+            # Windows raises EINVAL for names with "::" (our saved-prompt routes: "id::123").
+            # No file can exist there, so return StaticFiles' own miss sentinel and let the
+            # html fallback serve the route, exactly as a miss does on macOS and Linux.
+            if e.errno != errno.EINVAL:
+                raise
+            return "", None
+
     async def get_response(self, path: str, scope):
         # API paths must never be served web app content: StaticFiles in html mode
         # answers any miss with the web app's 404.html instead of raising, which

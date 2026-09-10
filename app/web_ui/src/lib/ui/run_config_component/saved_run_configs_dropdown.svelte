@@ -343,10 +343,13 @@
     }
     try {
       inline_action_loading = true
+      save_config_error = null
       const saved_run_config = await save_new_run_config()
       if (saved_run_config.id) {
         selected_run_config_id = saved_run_config.id
       }
+    } catch (e) {
+      save_config_error = createKilnError(e)
     } finally {
       inline_action_loading = false
     }
@@ -400,7 +403,7 @@
   }
 </script>
 
-<div>
+<div class="flex flex-col gap-2">
   <FormElement
     label={title}
     {description}
@@ -412,12 +415,12 @@
     {inline_action}
   />
   {#if save_config_error}
-    <div class="text-error text-sm text-right mt-2">
+    <div class="text-error text-sm text-right">
       {save_config_error.getMessage() || "An unknown error occurred"}
     </div>
   {/if}
   {#if set_default_error}
-    <div class="text-error text-sm text-right mt-2">
+    <div class="text-error text-sm text-right">
       {set_default_error.getMessage() || "An unknown error occurred"}
     </div>
   {/if}

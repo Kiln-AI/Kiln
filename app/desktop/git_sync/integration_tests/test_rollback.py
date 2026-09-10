@@ -26,7 +26,7 @@ class TestRollbackOnHandlerError:
 
     @pytest.mark.asyncio
     async def test_handler_error_no_commit(self, write_ctx, git_repos):
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
         pre_head = get_head_sync(local_path)
         pre_count = get_commit_count(local_path)
 
@@ -69,7 +69,6 @@ class TestRollbackOnHandlerError:
     @pytest.mark.asyncio
     async def test_handler_error_api_returns_error(self, api_ctx, git_repos):
         """API mode: error response returned to client."""
-        local_path, _ = git_repos
 
         def write_then_crash(p):
             (p / "doomed.txt").write_text("gone")
@@ -82,7 +81,7 @@ class TestRollbackOnHandlerError:
     @pytest.mark.asyncio
     async def test_next_write_succeeds_after_error(self, write_ctx, git_repos):
         """System recovers and next request works normally."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
 
         def crashing_write(p):
             (p / "crash.txt").write_text("boom")
@@ -104,7 +103,7 @@ class TestRollbackOnPushFailure:
 
     @pytest.mark.asyncio
     async def test_push_failure_rolls_back(self, write_ctx, git_repos):
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
         pre_head = get_head_sync(local_path)
 
         def failing_push(self):
@@ -149,7 +148,6 @@ class TestRollbackOnPushFailure:
     @pytest.mark.asyncio
     async def test_push_failure_api_returns_409(self, api_ctx, git_repos):
         """API mode: push failure returns 409 conflict."""
-        local_path, _ = git_repos
 
         def failing_push(self):
             raise pygit2.GitError("push rejected")
@@ -165,7 +163,7 @@ class TestRollbackOnPushFailure:
     @pytest.mark.asyncio
     async def test_next_write_succeeds_after_push_failure(self, write_ctx, git_repos):
         """System recovers after push failure."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
 
         def failing_push(self):
             raise pygit2.GitError("push rejected")
@@ -192,7 +190,7 @@ class TestRollbackAfterFailedRebase:
     async def test_rebase_then_push_fail_reflog(
         self, write_ctx, git_repos, second_clone
     ):
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
         pre_head = get_head_sync(local_path)
 
         push_call_count = 0
@@ -230,7 +228,7 @@ class TestRollbackAfterFailedRebase:
         self, write_ctx, git_repos, second_clone
     ):
         """After rollback, repo is fully clean (no conflict markers, no rebase)."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
 
         push_call_count = 0
 

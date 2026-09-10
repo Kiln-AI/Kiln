@@ -52,9 +52,7 @@ def task_and_run(tmp_path):
 
 def _graded_claim(**overrides) -> GradedClaim:
     values = {
-        "claim": "The agent stated a return window as fact.",
-        "evidence": "The reply gives a window of 30 days [1].",
-        "expected_result": "fail",
+        "text": "The agent stated a 30-day return window as fact [1].",
         "human_grade": "agree",
         "human_feedback": None,
     }
@@ -62,54 +60,68 @@ def _graded_claim(**overrides) -> GradedClaim:
     return GradedClaim(**values)
 
 
+def _review(**overrides) -> ClaimReview:
+    values = {
+        "judge_score": "fail",
+        "judge_reasoning": "Fabricated a policy.",
+        "overview": "The user asked about returns and the agent quoted a window.",
+        "claims": [_graded_claim()],
+        "human_verdict": "fail",
+    }
+    values.update(overrides)
+    return ClaimReview(**values)
+
+
 class TestClaimReviewModel:
     def test_create_claim_review(self):
-        review = ClaimReview(
-            judge_score="fail",
-            judge_reasoning="Fabricated a policy.",
-            claims=[_graded_claim()],
-            final_judgement=_graded_claim(
-                human_grade="disagree", human_feedback="Policy is real."
-            ),
+        review = _review(
+            claims=[
+                _graded_claim(),
+                _graded_claim(
+                    text="It fails because the window was never verified [1].",
+                    human_grade="disagree",
+                    human_feedback="Policy is real.",
+                ),
+            ],
+            human_verdict="pass",
         )
         assert review.judge_score == "fail"
-        assert review.claims[0].expected_result == "fail"
-        assert review.final_judgement.human_feedback == "Policy is real."
+        assert review.overview.startswith("The user asked")
+        assert review.claims[1].human_feedback == "Policy is real."
+        assert review.human_verdict == "pass"
         assert review.id is not None
 
-    def test_claims_may_be_empty(self):
-        review = ClaimReview(
-            judge_score="pass",
-            judge_reasoning="Fine.",
-            final_judgement=_graded_claim(expected_result="pass"),
-        )
-        assert review.claims == []
-
-    def test_rejects_invalid_grades(self):
+    def test_rejects_invalid_grades_and_verdicts(self):
         with pytest.raises(ValidationError):
             _graded_claim(human_grade="maybe")
         with pytest.raises(ValidationError):
-            _graded_claim(expected_result="unsure")
+            _review(human_verdict="unsure")
 
-    def test_rejects_final_judgement_not_pinned_to_verdict(self):
-        # Grades are interpreted relative to the judge's verdict; a review
-        # whose final judgement contradicts it is corrupt data.
-        with pytest.raises(ValidationError, match="must equal judge_score"):
+    def test_requires_the_overall_call_and_the_overview(self):
+        # The overall call is what the golden rating is built from, and the
+        # overview is what makes a stored review readable on its own; neither
+        # may be silently defaulted.
+        with pytest.raises(ValidationError):
             ClaimReview(
                 judge_score="fail",
                 judge_reasoning="Fabricated a policy.",
-                final_judgement=_graded_claim(expected_result="pass"),
+                overview="Summary.",
+                claims=[_graded_claim()],
+            )
+        with pytest.raises(ValidationError):
+            ClaimReview(
+                judge_score="fail",
+                judge_reasoning="Fabricated a policy.",
+                claims=[_graded_claim()],
+                human_verdict="fail",
             )
 
 
 class TestClaimReviewPersistence:
     def test_save_and_load_roundtrip(self, task_and_run):
         _, run = task_and_run
-        review = ClaimReview(
-            judge_score="fail",
-            judge_reasoning="Fabricated a policy.",
-            claims=[_graded_claim()],
-            final_judgement=_graded_claim(human_grade="disagree", human_feedback="why"),
+        review = _review(
+            claims=[_graded_claim(human_grade="disagree", human_feedback="why")],
             parent=run,
         )
         review.save_to_file()
@@ -117,23 +129,21 @@ class TestClaimReviewPersistence:
         assert review.path is not None and review.path.exists()
         loaded = ClaimReview.load_from_file(review.path)
         assert loaded.id == review.id
-        assert loaded.claims[0].claim == review.claims[0].claim
-        assert loaded.final_judgement.human_grade == "disagree"
+        assert loaded.overview == review.overview
+        assert loaded.claims[0].text == review.claims[0].text
+        assert loaded.claims[0].human_grade == "disagree"
+        assert loaded.human_verdict == "fail"
 
         with open(review.path) as f:
             data = json.load(f)
         assert data["judge_score"] == "fail"
-        assert data["final_judgement"]["human_feedback"] == "why"
+        assert data["human_verdict"] == "fail"
+        assert data["claims"][0]["human_feedback"] == "why"
 
     def test_accessor_on_task_run(self, task_and_run):
         _, run = task_and_run
         assert run.claim_reviews() == []
-        review = ClaimReview(
-            judge_score="pass",
-            judge_reasoning="Fine.",
-            final_judgement=_graded_claim(expected_result="pass"),
-            parent=run,
-        )
+        review = _review(judge_score="pass", human_verdict="pass", parent=run)
         review.save_to_file()
         reviews = run.claim_reviews(readonly=True)
         assert len(reviews) == 1

@@ -125,7 +125,7 @@ The **minimal valid example**, the **examples-gallery content**, and the **retur
 |---|---|---|
 | `output` | `str \| dict` | Model's final output (`TaskRun.output.output`) |
 | `trace` | `list[dict] \| None` | Full conversation trace (OpenAI format); `None` for final-answer-only runs |
-| `reference_data` | `dict[str, Any] \| None` | `EvalInput.reference` for this case |
+| `reference_data` | `dict[str, Any] \| None` | `EvalInput.reference` for an EvalInput-backed case; `{"reference_answer": <the item's stored output>}` for a TaskRun-backed dataset case; `None` when neither applies (no reference set, or a TaskRun scored as itself during judge calibration) |
 | `task_input` | `str \| dict` | Original task input |
 | `kiln` | `KilnEvalHelpers` | Helper library (trace navigation, tool-call extraction, scoring constructors, assertion helpers) |
 

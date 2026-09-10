@@ -1,10 +1,37 @@
 import asyncio
 import json
+import logging
 import re
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import litellm
 import pytest
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
+from kiln_ai.adapters.errors import KilnRunError
+from kiln_ai.datamodel import Project, Task, TaskOutput, TaskRun
+from kiln_ai.datamodel.datamodel_enums import (
+    ModelProviderName,
+    StructuredOutputMode,
+    TaskOutputRatingType,
+    TurnMode,
+)
+from kiln_ai.datamodel.eval import (
+    EvalConfigType,
+    EvalDataType,
+    LlmJudgeProperties,
+    SkippedReason,
+    V2EvalResult,
+)
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    ToolsRunConfig,
+)
+from kiln_ai.synthetic_user.runner import NUM_CASES_MAX
+from kiln_ai.utils.async_job_runner import RETRY_BACKOFF_FACTOR
+from kiln_server.custom_errors import connect_custom_errors
+from pydantic import ValidationError
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.build_claim_evidence_output import (
     BuildClaimEvidenceOutput,
 )
@@ -14,42 +41,33 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.generate_
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_judge_prompt_output import (
     RefineJudgePromptOutput,
 )
+from app.desktop.studio_server.api_models.copilot_models import (
+    TaskSkillInfoApi,
+    TaskToolInfoApi,
+)
 from app.desktop.studio_server.api_models.eval_builder_models import (
     BuildClaimsApiOutput,
     CitationApi,
     ClaimApi,
-    FinalJudgementApi,
     JudgeConfig,
+    OverviewApi,
 )
-from app.desktop.studio_server.eval_builder_api import connect_eval_builder_api
+from app.desktop.studio_server.eval_builder_api import (
+    JUDGE_MAX_RETRIES,
+    JUDGE_RETRY_DELAY_SECONDS,
+    SingleTurnPipelineRequest,
+    connect_eval_builder_api,
+    run_judge_with_retry,
+)
+
+# TODO(eval-v2): remove — ClaimDebug capture scaffolding, deleted before GA.
+from app.desktop.studio_server.utils.claim_debug_capture import ClaimDebug
 from app.desktop.studio_server.utils.eval_builder_utils import (
     JudgeVerdict,
     build_judge_prompt_template,
     build_transient_judge_eval_config,
     run_judge_for_trace,
 )
-from fastapi import FastAPI, HTTPException
-from fastapi.testclient import TestClient
-from kiln_ai.adapters.errors import KilnRunError
-from kiln_ai.datamodel import Project, Task
-from kiln_ai.datamodel.datamodel_enums import (
-    ModelProviderName,
-    StructuredOutputMode,
-    TaskOutputRatingType,
-)
-from kiln_ai.datamodel.run_config import (
-    KilnAgentRunConfigProperties,
-    ToolsRunConfig,
-)
-from kiln_ai.datamodel.eval import (
-    EvalConfigType,
-    EvalDataType,
-    LlmJudgeProperties,
-    SkippedReason,
-    V2EvalResult,
-)
-from kiln_ai.synthetic_user.runner import NUM_CASES_MAX
-from kiln_server.custom_errors import connect_custom_errors
 
 BUILD_CLAIMS_URL = "/api/projects/p1/tasks/t1/eval_builder/build_claims"
 
@@ -87,36 +105,44 @@ def _parse_sse(response_text: str) -> list[dict | str]:
     return events
 
 
-def _claim_with_citation() -> ClaimApi:
-    return ClaimApi(
-        claim="The agent stated a specific 30-day return window as fact.",
-        expected_result="fail",
-        evidence="The reply gives a window of 30 days from purchase [1].",
-        citations=[
-            CitationApi.model_validate(
-                {"marker": 1, "source": "output", "from": "30 days", "to": "purchase"}
-            )
-        ],
+def _citation(to: str = "purchase") -> CitationApi:
+    return CitationApi.model_validate(
+        {"marker": 1, "source": "output", "from": "30 days", "to": to}
     )
 
 
-def _final_judgement() -> FinalJudgementApi:
-    return FinalJudgementApi(
-        claim="Fails Eval: the agent fabricated an unverified policy.",
-        expected_result="fail",
-        evidence="It asserts a return window it never verified [1].",
-        citations=[
-            CitationApi.model_validate(
-                {"marker": 1, "source": "output", "from": "30 days", "to": "purchase"}
-            )
-        ],
+def _overview() -> OverviewApi:
+    return OverviewApi(
+        text="The user asked about returning opened electronics and the "
+        "agent quoted a 30-day window [1].",
+        citations=[_citation()],
+    )
+
+
+def _claim_with_citation() -> ClaimApi:
+    return ClaimApi(
+        text="The agent stated a specific 30-day return window as fact [1]. "
+        "Disagree if the window is documented policy.",
+        citations=[_citation()],
+        is_verdict=False,
+    )
+
+
+def _verdict_claim() -> ClaimApi:
+    return ClaimApi(
+        text="It fails because the agent asserted a return window it never "
+        "verified [1].",
+        citations=[_citation("full refund")],
+        is_verdict=True,
     )
 
 
 def _claims_output(claims: list[ClaimApi] | None = None) -> BuildClaimsApiOutput:
     return BuildClaimsApiOutput(
-        claims=claims if claims is not None else [_claim_with_citation()],
-        final_judgement=_final_judgement(),
+        overview=_overview(),
+        claims=claims
+        if claims is not None
+        else [_claim_with_citation(), _verdict_claim()],
     )
 
 
@@ -347,8 +373,43 @@ def build_claims_input():
     }
 
 
+@pytest.fixture
+def build_claims_task():
+    """The task the endpoint resolves for its instruction (the URL's ids name
+    no real task)."""
+    with patch(
+        "app.desktop.studio_server.eval_builder_api.task_from_id",
+        return_value=Mock(instruction="Answer questions about return policy."),
+    ) as task_from_id_mock:
+        yield task_from_id_mock
+
+
+def _sdk_card(claim_texts: list[str]) -> dict:
+    """What the SDK's to_dict() hands back: the wire card, citations under the
+    `from` key, no verdict flag (the studio adds it)."""
+    citation = {"marker": 1, "source": "output", "from": "30 days", "to": "purchase"}
+    return {
+        "overview": {
+            "text": "The agent quoted a 30-day window [1].",
+            "citations": [citation],
+        },
+        "claims": [{"text": text, "citations": [citation]} for text in claim_texts],
+    }
+
+
+def _sdk_response(card: dict) -> MagicMock:
+    mock_output = MagicMock(spec=BuildClaimEvidenceOutput)
+    mock_output.to_dict.return_value = card
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.parsed = mock_output
+    return mock_response
+
+
 class TestBuildClaims:
-    def test_build_claims_no_api_key(self, client, build_claims_input):
+    def test_build_claims_no_api_key(
+        self, client, build_claims_input, build_claims_task
+    ):
         with patch(
             "app.desktop.studio_server.utils.copilot_utils.Config.shared"
         ) as mock_config_shared:
@@ -358,67 +419,88 @@ class TestBuildClaims:
             assert response.status_code == 401
             assert "API key not configured" in response.json()["message"]
 
-    def test_build_claims_success(self, client, build_claims_input, mock_api_key):
-        mock_output = MagicMock(spec=BuildClaimEvidenceOutput)
-        # to_dict() mirrors the SDK: citations carry the wire key `from`.
-        mock_output.to_dict.return_value = {
-            "claims": [
-                {
-                    "claim": "The agent stated a specific 30-day return window as fact.",
-                    "expected_result": "fail",
-                    "evidence": "The reply gives a window of 30 days from purchase [1].",
-                    "citations": [
-                        {
-                            "marker": 1,
-                            "source": "output",
-                            "from": "30 days",
-                            "to": "purchase",
-                        }
-                    ],
-                },
-            ],
-            "final_judgement": {
-                "claim": "Fails Eval: the agent fabricated an unverified policy.",
-                "expected_result": "fail",
-                "evidence": "It asserts a return window it never verified [1].",
-                "citations": [
-                    {
-                        "marker": 1,
-                        "source": "output",
-                        "from": "30 days",
-                        "to": "full refund",
-                    }
-                ],
-            },
-        }
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.parsed = mock_output
-
+    def test_build_claims_success(
+        self, client, build_claims_input, mock_api_key, build_claims_task
+    ):
+        card = _sdk_card(
+            [
+                "The agent stated a 30-day window as fact [1].",
+                "It fails because the window was never verified [1].",
+            ]
+        )
         with patch(
             "app.desktop.studio_server.utils.eval_builder_utils.build_claim_evidence_v1_copilot_build_claim_evidence_post.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_response,
-        ):
+            return_value=_sdk_response(card),
+        ) as sdk_call:
             response = client.post(BUILD_CLAIMS_URL, json=build_claims_input)
             assert response.status_code == 200
             result = response.json()
-            assert len(result["claims"]) == 1
-            assert result["claims"][0]["expected_result"] == "fail"
-            assert result["final_judgement"]["expected_result"] == "fail"
 
-            # The regression that matters: serialized citation key must be `from`
-            # — on claims AND on the top-level final judgement.
-            citation = result["claims"][0]["citations"][0]
-            assert "from" in citation and "from_" not in citation
-            assert citation["from"] == "30 days"
-            assert citation["to"] == "purchase"
-            assert citation["source"] == "output"
-            fj_citation = result["final_judgement"]["citations"][0]
-            assert "from" in fj_citation and "from_" not in fj_citation
-            assert fj_citation["to"] == "full refund"
+            # The task's own instruction rides to the builder as context; the
+            # client never sends it.
+            body = sdk_call.call_args.kwargs["body"]
+            assert body.task_instruction == "Answer questions about return policy."
+            assert body.raw_input == build_claims_input["raw_input"]
 
-    def test_build_claims_no_response(self, client, build_claims_input, mock_api_key):
+            assert result["overview"]["text"] == card["overview"]["text"]
+            assert [c["text"] for c in result["claims"]] == [
+                c["text"] for c in card["claims"]
+            ]
+            # The verdict flag is the studio's: the last claim opens with the
+            # verdict phrasing, the first does not.
+            assert [c["is_verdict"] for c in result["claims"]] == [False, True]
+
+            # The regression that matters: the serialized citation key must be
+            # `from` on the overview AND on every claim.
+            for entry in [result["overview"], *result["claims"]]:
+                citation = entry["citations"][0]
+                assert "from" in citation and "from_" not in citation
+                assert citation["from"] == "30 days"
+                assert citation["source"] == "output"
+
+    @pytest.mark.parametrize(
+        "claim_texts,expected_flags",
+        [
+            # Verdict phrasing on a non-last claim never flags it; a last claim
+            # without the phrasing is an ordinary claim (the builder omitted
+            # the verdict).
+            (
+                ["It fails because of the window [1].", "The tone was polite [1]."],
+                [False, False],
+            ),
+            # Only the last claim is checked, and leading whitespace does not
+            # hide the opener.
+            (
+                ["The tone was polite [1].", "  It passes despite the window [1]."],
+                [False, True],
+            ),
+            # A one-claim card whose only claim is the verdict.
+            (["It passes [1]."], [True]),
+        ],
+    )
+    def test_build_claims_flags_only_the_last_verdict_claim(
+        self,
+        client,
+        build_claims_input,
+        mock_api_key,
+        build_claims_task,
+        claim_texts,
+        expected_flags,
+    ):
+        with patch(
+            "app.desktop.studio_server.utils.eval_builder_utils.build_claim_evidence_v1_copilot_build_claim_evidence_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=_sdk_response(_sdk_card(claim_texts)),
+        ):
+            response = client.post(BUILD_CLAIMS_URL, json=build_claims_input)
+            assert response.status_code == 200
+            flags = [c["is_verdict"] for c in response.json()["claims"]]
+            assert flags == expected_flags
+
+    def test_build_claims_no_response(
+        self, client, build_claims_input, mock_api_key, build_claims_task
+    ):
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.parsed = None
@@ -433,7 +515,7 @@ class TestBuildClaims:
             assert "Failed to build claims" in response.json()["message"]
 
     def test_build_claims_validation_error(
-        self, client, build_claims_input, mock_api_key
+        self, client, build_claims_input, mock_api_key, build_claims_task
     ):
         mock_response = MagicMock()
         mock_response.status_code = 422
@@ -461,10 +543,15 @@ def _task_mock(turn_mode=None, input_json_schema=None):
     from kiln_ai.datamodel.task import Task as KilnTask
 
     task = Mock(spec=KilnTask)
+    # spec= is built from the class, so pydantic fields aren't auto-mocked.
+    task.id = "task-1"
     task.name = "support_agent"
     task.instruction = "You are a customer support agent."
     task.turn_mode = turn_mode if turn_mode is not None else TurnMode.multiturn
     task.input_json_schema = input_json_schema
+    # No default run config, so capability collection yields nothing and routes
+    # that read it behave as they did before capabilities existed.
+    task.default_run_config_id = None
     return task
 
 
@@ -478,7 +565,7 @@ def author_judge_input():
 
 @pytest.fixture
 def author_judge_task():
-    """The route derives trace_type from the task — resolve it to a
+    """The route loads the task for its capability surface — resolve it to a
     multi-turn mock unless a test overrides the return value."""
     with patch(
         "app.desktop.studio_server.eval_builder_api.task_from_id",
@@ -520,12 +607,16 @@ class TestAuthorJudge:
             assert response.status_code == 200
             assert "fabrication fails" in response.json()["judge_prompt"]
 
-    def test_author_judge_multi_turn_task_authors_multi_turn(
-        self, client, author_judge_input, mock_api_key, author_judge_task
+    @pytest.mark.parametrize("turn_mode", [TurnMode.multiturn, TurnMode.single_turn])
+    def test_author_judge_authors_against_the_transcript_for_both_arms(
+        self, client, author_judge_input, mock_api_key, author_judge_task, turn_mode
     ):
-        """The SDK payload's trace_type follows the task's turn mode — the
-        rubric routing on kiln_server hangs entirely on this field, so a
-        multi-turn task must author the conversation rubric."""
+        """Both arms judge a transcript, so both must author the rubric that
+        knows what one looks like. The rubric routing on kiln_server hangs
+        entirely on this field: sending single_turn would author against a
+        bare input/output pair, and the judge would then meet role labels and
+        tool-call blocks its rubric never mentioned."""
+        author_judge_task.return_value = _task_mock(turn_mode)
         mock_output = MagicMock(spec=GenerateJudgePromptOutput)
         mock_output.judge_evaluation_prompt = "1. Check the transcript."
         mock_response = MagicMock()
@@ -543,17 +634,14 @@ class TestAuthorJudge:
         assert body.trace_type.value == "multi_turn"
         assert body.target_specification == author_judge_input["target_specification"]
 
-    def test_author_judge_single_turn_task_authors_single_turn(
+    def test_author_judge_omits_uncollected_capabilities(
         self, client, author_judge_input, mock_api_key, author_judge_task
     ):
-        """A single-turn task authors the I/O-pair rubric — derived from the
-        task server-side, so the framing can never disagree with the task
-        being judged."""
-        from kiln_ai.datamodel.datamodel_enums import TurnMode
-
-        author_judge_task.return_value = _task_mock(TurnMode.single_turn)
+        """A task with no capability surface to report leaves the keys out
+        entirely — the authored prompt stays exactly what it was before the
+        fields existed, rather than being told the task has no tools."""
         mock_output = MagicMock(spec=GenerateJudgePromptOutput)
-        mock_output.judge_evaluation_prompt = "1. Check the reply."
+        mock_output.judge_evaluation_prompt = "1. Check the transcript."
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.parsed = mock_output
@@ -565,8 +653,78 @@ class TestAuthorJudge:
         ) as mock_post:
             client.post(AUTHOR_JUDGE_URL, json=author_judge_input)
 
-        body = mock_post.call_args.kwargs["body"]
-        assert body.trace_type.value == "single_turn"
+        body_dict = mock_post.call_args.kwargs["body"].to_dict()
+        assert "task_tools" not in body_dict
+        assert "task_skills" not in body_dict
+
+    def test_author_judge_sends_the_tasks_capabilities(
+        self, client, author_judge_input, mock_api_key, author_judge_task
+    ):
+        """The rubric can only grade tool and skill use if the payload names
+        them, flat on this input (it has no task info block)."""
+        mock_output = MagicMock(spec=GenerateJudgePromptOutput)
+        mock_output.judge_evaluation_prompt = "1. Check the transcript."
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = mock_output
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.task_capabilities_for_task",
+                new_callable=AsyncMock,
+                return_value=(
+                    [
+                        TaskToolInfoApi(
+                            name="lookup_order", description="Find an order."
+                        )
+                    ],
+                    [TaskSkillInfoApi(name="refund-policy", description="Refunds.")],
+                ),
+            ),
+            patch(
+                "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ) as mock_post,
+        ):
+            client.post(AUTHOR_JUDGE_URL, json=author_judge_input)
+
+        body_dict = mock_post.call_args.kwargs["body"].to_dict()
+        assert body_dict["task_tools"] == [
+            {"name": "lookup_order", "description": "Find an order."}
+        ]
+        assert body_dict["task_skills"] == [
+            {"name": "refund-policy", "description": "Refunds."}
+        ]
+
+    def test_author_judge_reports_a_task_with_no_capabilities(
+        self, client, author_judge_input, mock_api_key, author_judge_task
+    ):
+        """[] is a real answer worth sending: the task genuinely has none, so
+        the rubric should not invent tool-use criteria."""
+        mock_output = MagicMock(spec=GenerateJudgePromptOutput)
+        mock_output.judge_evaluation_prompt = "1. Check the transcript."
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = mock_output
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.task_capabilities_for_task",
+                new_callable=AsyncMock,
+                return_value=([], []),
+            ),
+            patch(
+                "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ) as mock_post,
+        ):
+            client.post(AUTHOR_JUDGE_URL, json=author_judge_input)
+
+        body_dict = mock_post.call_args.kwargs["body"].to_dict()
+        assert body_dict["task_tools"] == []
+        assert body_dict["task_skills"] == []
 
     def test_author_judge_remote_error_surfaces_upstream_message(
         self, client, author_judge_input, mock_api_key, author_judge_task
@@ -629,22 +787,20 @@ def refine_judge_input():
                 "trace_label": "leaf-abc",
                 "judge_score": "fail",
                 "judge_reasoning": "Stated a return window as fact.",
+                "overview": "The user asked about returns and the agent quoted a window.",
                 "claims": [
                     {
-                        "claim": "The agent stated an unverified return window as fact.",
-                        "evidence": "The reply gives 30 days [1].",
-                        "expected_result": "fail",
+                        "text": "The agent stated an unverified return window as fact [1].",
                         "human_grade": "agree",
                         "human_feedback": None,
-                    }
+                    },
+                    {
+                        "text": "It fails because the window was never verified [1].",
+                        "human_grade": "disagree",
+                        "human_feedback": "The window is actually documented, so this should pass.",
+                    },
                 ],
-                "final_judgement": {
-                    "claim": "Fails Eval.",
-                    "evidence": "Asserts an unverified window [1].",
-                    "expected_result": "fail",
-                    "human_grade": "disagree",
-                    "human_feedback": "The window is actually documented, so this should pass.",
-                },
+                "human_verdict": "pass",
             }
         ],
     }
@@ -682,7 +838,7 @@ class TestRefineJudge:
             "app.desktop.studio_server.utils.eval_builder_utils.refine_judge_prompt_v1_copilot_refine_judge_prompt_post.asyncio_detailed",
             new_callable=AsyncMock,
             return_value=mock_response,
-        ):
+        ) as sdk_call:
             response = client.post(REFINE_JUDGE_URL, json=refine_judge_input)
             assert response.status_code == 200
             result = response.json()
@@ -690,6 +846,18 @@ class TestRefineJudge:
             assert len(result["changes"]) == 1
             assert result["changes"][0]["rationale"].startswith("trace leaf-abc")
             assert result["not_incorporated_feedback"] is None
+
+            # The graded card reaches the refiner whole: the overview, every
+            # claim with its grade (a blank why as an explicit null), and the
+            # reviewer's overall call.
+            sent = sdk_call.call_args.kwargs["body"].to_dict()["graded_traces"][0]
+            expected = refine_judge_input["graded_traces"][0]
+            assert sent["overview"] == expected["overview"]
+            assert sent["human_verdict"] == expected["human_verdict"]
+            assert [c["text"] for c in sent["claims"]] == [
+                c["text"] for c in expected["claims"]
+            ]
+            assert sent["claims"][0]["human_feedback"] is None
 
     def test_refine_judge_remote_error_surfaces_upstream_message(
         self, client, refine_judge_input, mock_api_key
@@ -734,6 +902,16 @@ class TestRefineJudge:
             REFINE_JUDGE_URL,
             json={"judge_prompt": "p", "graded_traces": []},
         )
+        assert response.status_code == 422
+
+    def test_refine_judge_rejects_a_trace_with_no_claims(
+        self, client, refine_judge_input, mock_api_key
+    ):
+        """A graded trace carries every claim on its card, never a subset, and
+        a card always has at least one; an empty list is a 422 here rather
+        than a rejection from the refiner."""
+        refine_judge_input["graded_traces"][0]["claims"] = []
+        response = client.post(REFINE_JUDGE_URL, json=refine_judge_input)
         assert response.status_code == 422
 
 
@@ -839,6 +1017,7 @@ def _fake_run_cases_batch(*, fail_case: int | None = None, events_per_case: int 
                     case_index=i,
                     error_code="unexpected_error",
                     message="drive blew up",
+                    error_type="RateLimitError",
                 )
                 failed += 1
                 continue
@@ -916,6 +1095,90 @@ def _events_of(events: list, type_name: str) -> list[dict]:
     return [e for e in events if isinstance(e, dict) and e.get("type") == type_name]
 
 
+class TestRunJudgeWithRetry:
+    """The judge lane's hand-rolled retry, which mirrors the shared runner's
+    posture. The streams cover the observable outcomes; these pin the waits."""
+
+    @pytest.mark.asyncio
+    async def test_transient_failures_back_off_exponentially(self):
+        judge = AsyncMock(
+            side_effect=[
+                _rate_limit_error(),
+                _rate_limit_error(),
+                JudgeVerdict("pass", "fine"),
+            ]
+        )
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+                new=judge,
+            ),
+            patch(
+                "app.desktop.studio_server.eval_builder_api.asyncio.sleep",
+                new_callable=AsyncMock,
+            ) as mock_sleep,
+            patch(
+                "app.desktop.studio_server.eval_builder_api.compute_retry_delay",
+                # Pin the jitter draw to the top of each backoff window.
+                side_effect=lambda base, attempt: base * RETRY_BACKOFF_FACTOR**attempt,
+            ) as mock_delay,
+        ):
+            verdict = await run_judge_with_retry("p1", "t1", "in", "out", "judge")
+
+        assert verdict.judge_score == "pass"
+        assert judge.await_count == 3
+        # Zero-indexed attempts: the first retry draws from the base window.
+        assert [call.args for call in mock_delay.call_args_list] == [
+            (JUDGE_RETRY_DELAY_SECONDS, 0),
+            (JUDGE_RETRY_DELAY_SECONDS, 1),
+        ]
+        assert [call.args[0] for call in mock_sleep.await_args_list] == [
+            JUDGE_RETRY_DELAY_SECONDS,
+            JUDGE_RETRY_DELAY_SECONDS * RETRY_BACKOFF_FACTOR,
+        ]
+
+    @pytest.mark.asyncio
+    async def test_retries_are_capped_and_the_last_error_raises(self):
+        judge = AsyncMock(side_effect=_rate_limit_error())
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+                new=judge,
+            ),
+            patch(
+                "app.desktop.studio_server.eval_builder_api.asyncio.sleep",
+                new_callable=AsyncMock,
+            ) as mock_sleep,
+        ):
+            with pytest.raises(litellm.RateLimitError):
+                await run_judge_with_retry("p1", "t1", "in", "out", "judge")
+
+        assert judge.await_count == JUDGE_MAX_RETRIES + 1
+        assert mock_sleep.await_count == JUDGE_MAX_RETRIES
+
+    @pytest.mark.asyncio
+    async def test_non_retryable_error_raises_without_waiting(self):
+        judge = AsyncMock(side_effect=ValueError("judge output unparseable"))
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+                new=judge,
+            ),
+            patch(
+                "app.desktop.studio_server.eval_builder_api.asyncio.sleep",
+                new_callable=AsyncMock,
+            ) as mock_sleep,
+        ):
+            with pytest.raises(ValueError, match="judge output unparseable"):
+                await run_judge_with_retry("p1", "t1", "in", "out", "judge")
+
+        assert judge.await_count == 1
+        mock_sleep.assert_not_awaited()
+
+
 class TestMultiTurnPipeline:
     def test_happy_path_full_stream(self, client, pipeline_request, pipeline_seams):
         resp = client.post(PIPELINE_URL, json=pipeline_request)
@@ -957,7 +1220,7 @@ class TestMultiTurnPipeline:
             # raw_input = the conversation's opening user message.
             assert e["raw_input"] == f"question {e['case_index']}"
             # No claims on the stream: they're built lazily via build_claims.
-            assert "claims" not in e and "final_judgement" not in e
+            assert "claims" not in e and "overview" not in e
             # The structured trace rides along (additive): the same real
             # trace the judge saw, so the client can render the chat UI and
             # remap citation spans instead of parsing the flattened string.
@@ -988,7 +1251,8 @@ class TestMultiTurnPipeline:
 
     def test_drive_failure_is_isolated(self, client, pipeline_request, pipeline_seams):
         """THE failure-isolation contract: a case dying in the drive stage
-        must not discard the other case's completed review."""
+        must not discard the other case's completed review. The runner's
+        error_type rides through onto the frame alongside the message."""
         with patch(
             "app.desktop.studio_server.eval_builder_api.run_cases_batch",
             new=_fake_run_cases_batch(fail_case=0),
@@ -1004,6 +1268,7 @@ class TestMultiTurnPipeline:
                 "stage": "drive",
                 "code": "unexpected_error",
                 "message": "drive blew up",
+                "error_type": "RateLimitError",
             }
         ]
         judged = _events_of(events, "case_judged")
@@ -1093,7 +1358,8 @@ class TestMultiTurnPipeline:
         self, client, pipeline_request, pipeline_seams
     ):
         """A KilnRunError-wrapped judge failure must put the ROOT provider
-        error on the wire, not the wrapper's genericized message."""
+        error on the wire — as the message and as error_type — not the
+        wrapper's genericized message or class."""
         root = litellm.BadRequestError(
             message="max_tokens too large for this model",
             model="claude_sonnet_4_6",
@@ -1121,6 +1387,7 @@ class TestMultiTurnPipeline:
             assert "max_tokens too large" in e["message"]
             assert "KilnRunError" not in e["message"]
             assert "unexpected error" not in e["message"]
+            assert e["error_type"] == "BadRequestError"
         assert events[-1] == "complete"
 
     def test_replace_batch_tags_deleted_after_successful_drive(
@@ -1253,6 +1520,14 @@ class TestMultiTurnPipeline:
         ]
         resp = client.post(PIPELINE_URL, json=pipeline_request)
         assert resp.status_code == 422
+
+    def test_accepts_batch_at_the_cap(self, client, pipeline_request, pipeline_seams):
+        """The cap is inclusive — a full-size batch clears validation and opens
+        the stream. Pairs with the over-cap test to pin both sides."""
+        pipeline_request["cases"] = [_pipeline_case(i) for i in range(NUM_CASES_MAX)]
+        resp = client.post(PIPELINE_URL, json=pipeline_request)
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
 
     def test_rejects_retired_spec_name_field(
         self, client, pipeline_request, pipeline_seams
@@ -1570,7 +1845,7 @@ class TestJudgeTraces:
             assert "<tool_tool_message>" in e["raw_output"]
             assert e["raw_input"] == f"question {e['case_index']}"
             # No claims on the stream: they're built lazily via build_claims.
-            assert "claims" not in e and "final_judgement" not in e
+            assert "claims" not in e and "overview" not in e
             # The structured trace rides along for chat rendering/citations.
             assert e["trace"] == _real_trace(e["case_index"])
 
@@ -1754,6 +2029,18 @@ class TestJudgeTraces:
         resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
         assert resp.status_code == 422
 
+    def test_accepts_batch_at_the_cap(
+        self, client, judge_traces_request, judge_traces_seams
+    ):
+        """The cap is inclusive — a full-size re-judge clears validation and
+        opens the stream. Pairs with the over-cap test to pin both sides."""
+        judge_traces_request["leaf_run_ids"] = [
+            f"leaf-{i}" for i in range(NUM_CASES_MAX)
+        ]
+        resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+
     def test_rejects_retired_spec_name_field(
         self, client, judge_traces_request, judge_traces_seams
     ):
@@ -1819,7 +2106,7 @@ class TestJudgeTracesSingleTurn:
     unit, but the judge scores the stored run's I/O pair — the final_answer
     reading its pipeline and its saved eval use — never the trace."""
 
-    def test_happy_path_judges_stored_io_pair(
+    def test_happy_path_judges_the_stored_trace(
         self, client, judge_traces_request, judge_traces_single_turn_seams
     ):
         resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
@@ -1837,7 +2124,10 @@ class TestJudgeTracesSingleTurn:
             # The frame echoes the STORED run's I/O pair verbatim — no
             # transcript flattening on this arm.
             assert e["raw_input"] == f"question {e['case_index']}"
-            assert e["raw_output"] == f"answer {e['case_index']}"
+            # The transcript, not the closing message: the judge sees what
+            # the agent did, so the answer is contained rather than equal.
+            assert f"answer {e['case_index']}" in e["raw_output"]
+            assert "assistant_message" in e["raw_output"]
             assert e["leaf_run_id"] == f"leaf-{e['case_index']}"
             assert e["total_cost"] == 0.0
             # The structured trace still rides along for the chat modal.
@@ -1850,9 +2140,13 @@ class TestJudgeTracesSingleTurn:
         # reading) — passing the trace here would silently flip the judge to
         # the full-trace reading the saved eval never uses.
         for call in judge_traces_single_turn_seams["judge"].call_args_list:
-            assert call.kwargs["trace"] is None
+            # The judge reads the trace (tool calls included) while raw_input
+            # stays the REQUEST's string, which is what the saved eval reads
+            # back from its own item.
+            assert call.kwargs["trace"] is not None
             assert call.args[2].startswith("question ")
-            assert call.args[3].startswith("answer ")
+            # The transcript carries the answer; it no longer IS the answer.
+            assert "answer " in call.args[3]
 
     def test_traceless_run_still_judges(
         self, client, judge_traces_request, judge_traces_single_turn_seams
@@ -1868,8 +2162,14 @@ class TestJudgeTracesSingleTurn:
         events = _parse_sse(resp.text)
         assert _events_of(events, "case_failed") == []
         judged = {e["case_index"]: e for e in _events_of(events, "case_judged")}
-        assert judged[0]["trace"] is None
-        assert judged[0]["raw_output"] == "answer 0"
+        # No stored trace, so the judge gets a two-message echo of the pair —
+        # lossless, because the pair is everything that happened.
+        assert judged[0]["trace"] == [
+            {"role": "user", "content": "question 0"},
+            {"role": "assistant", "content": "answer 0"},
+        ]
+        assert "answer 0" in judged[0]["raw_output"]
+        assert "assistant_message" in judged[0]["raw_output"]
 
     def test_outputless_run_fails_case_and_batch_continues(
         self, client, judge_traces_request, judge_traces_single_turn_seams
@@ -2050,7 +2350,8 @@ class TestSingleTurnPipeline:
         by_index = {e["case_index"]: e for e in judged}
         for i, input_text in enumerate(single_turn_request["inputs"]):
             assert by_index[i]["raw_input"] == input_text
-            assert by_index[i]["raw_output"] == f"answer {i}"
+            assert f"answer {i}" in by_index[i]["raw_output"]
+            assert "assistant_message" in by_index[i]["raw_output"]
             assert by_index[i]["leaf_run_id"] == f"run-{i}"
             assert by_index[i]["judge_score"] == "fail"
             assert by_index[i]["total_cost"] == 0.05
@@ -2069,7 +2370,7 @@ class TestSingleTurnPipeline:
         ]
         assert events[-1] == "complete"
 
-    def test_judge_scores_io_pair_not_trace(
+    def test_judge_reads_the_trace_and_keeps_the_request_input(
         self, client, single_turn_request, single_turn_seams
     ):
         """The judge must receive trace=None (final_answer parity with the
@@ -2079,7 +2380,10 @@ class TestSingleTurnPipeline:
         judge = single_turn_seams["judge"]
         assert judge.await_count == 2
         for call in judge.await_args_list:
-            assert call.kwargs["trace"] is None
+            # The judge reads the trace (tool calls included) while raw_input
+            # stays the REQUEST's string, which is what the saved eval reads
+            # back from its own item.
+            assert call.kwargs["trace"] is not None
 
     def test_runs_are_batch_tagged_and_saved(
         self, client, single_turn_request, single_turn_seams
@@ -2129,6 +2433,7 @@ class TestSingleTurnPipeline:
         assert failed[0]["case_index"] == 0
         assert failed[0]["stage"] == "run"
         assert "model exploded" in failed[0]["message"]
+        assert failed[0]["error_type"] == "ValueError"
 
         judged = _events_of(events, "case_judged")
         assert [e["case_index"] for e in judged] == [1]
@@ -2147,10 +2452,35 @@ class TestSingleTurnPipeline:
             _rate_limit_error(),
             recovered_run,
         ]
-        resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
+        # Zero the backoff base so the retry doesn't sleep a real jittered wait.
+        with patch(
+            "app.desktop.studio_server.eval_builder_api.RUN_RETRY_DELAY_SECONDS", 0
+        ):
+            resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
         events = _parse_sse(resp.text)
         assert len(_events_of(events, "case_failed")) == 0
         assert len(_events_of(events, "case_judged")) == 2
+
+    def test_exhausted_transient_run_error_names_its_class(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        """A transient failure that never recovers fails the case naming the
+        REAL provider error: the retryable wrapper hides it, so error_type
+        must come from the exception the wrapper was raised from."""
+        failing_input = single_turn_request["inputs"][0]
+        single_turn_seams["runs_by_input"][failing_input] = _rate_limit_error()
+        with patch(
+            "app.desktop.studio_server.eval_builder_api.RUN_RETRY_DELAY_SECONDS", 0
+        ):
+            resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
+        events = _parse_sse(resp.text)
+
+        failed = _events_of(events, "case_failed")
+        assert len(failed) == 1
+        assert failed[0]["stage"] == "run"
+        assert failed[0]["error_type"] == "RateLimitError"
+        assert "upstream rate limit" in failed[0]["message"]
+        assert [e["case_index"] for e in _events_of(events, "case_judged")] == [1]
 
     def test_judge_failure_is_isolated(
         self, client, single_turn_request, single_turn_seams
@@ -2277,14 +2607,21 @@ class TestSingleTurnPipeline:
         failed = _events_of(events, "case_failed")
         assert len(failed) == 1
         assert failed[0]["code"] == "missing_output"
+        # No exception underlies an empty output — nothing to name.
+        assert failed[0]["error_type"] is None
         bad_run.delete.assert_called_once()
         # Cost honesty: the discarded run's spend was real — banked into the
         # batch total alongside the surviving case's 0.05.
         assert _events_of(events, "batch_completed")[0]["total_cost"] == 0.1
 
-    def test_timeout_fails_case(self, client, single_turn_request, single_turn_seams):
-        """A run over budget fails with case_timeout and frees its slot;
-        the batch continues."""
+    def test_slow_run_completes_and_logs(
+        self, client, single_turn_request, single_turn_seams, monkeypatch, caplog
+    ):
+        """A run slower than the soft log threshold completes and is
+        judged, with the watchdog warning making the slowness visible in
+        logs. The single-turn path has no seam that could prove the absence
+        of a run budget; that property is pinned on the multi-turn runner's
+        wait_for (test_no_case_timeout_by_default)."""
         slow_input = single_turn_request["inputs"][0]
 
         def fake_adapter(task, run_config, base_adapter_config=None):
@@ -2298,10 +2635,11 @@ class TestSingleTurnPipeline:
             adapter.invoke = invoke
             return adapter
 
+        monkeypatch.setattr(
+            "kiln_ai.utils.slow_operation.DEFAULT_SLOW_LOG_THRESHOLD_SECONDS", 0.05
+        )
         with (
-            patch(
-                "app.desktop.studio_server.eval_builder_api.RUN_TIMEOUT_SECONDS", 0.05
-            ),
+            caplog.at_level(logging.WARNING, logger="kiln_ai.utils.slow_operation"),
             patch(
                 "app.desktop.studio_server.eval_builder_api.adapter_for_task",
                 side_effect=fake_adapter,
@@ -2309,10 +2647,14 @@ class TestSingleTurnPipeline:
         ):
             resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
         events = _parse_sse(resp.text)
-        failed = _events_of(events, "case_failed")
-        assert len(failed) == 1
-        assert failed[0]["code"] == "case_timeout"
-        assert [e["case_index"] for e in _events_of(events, "case_judged")] == [1]
+        assert _events_of(events, "case_failed") == []
+        assert sorted(e["case_index"] for e in _events_of(events, "case_judged")) == [
+            0,
+            1,
+        ]
+        slow_warnings = [r for r in caplog.records if "still running" in r.getMessage()]
+        assert len(slow_warnings) == 1
+        assert "case 0" in slow_warnings[0].getMessage()
 
     def test_multiturn_task_rejected(
         self, client, single_turn_request, single_turn_seams
@@ -2355,6 +2697,21 @@ class TestSingleTurnPipeline:
 
         unknown_field = {**single_turn_request, "cases": []}
         assert client.post(SINGLE_TURN_URL, json=unknown_field).status_code == 422
+
+    def test_inputs_bound_is_the_shared_batch_budget(self, single_turn_request):
+        """Both sides of the cap, checked on the model: at the cap the request
+        is valid, one over is not. Posting the at-cap body would drive a full
+        mocked batch for no added signal."""
+        at_cap = {
+            **single_turn_request,
+            "inputs": [f"input {i}" for i in range(NUM_CASES_MAX)],
+        }
+        parsed = SingleTurnPipelineRequest.model_validate(at_cap)
+        assert len(parsed.inputs) == NUM_CASES_MAX
+
+        over_cap = {**single_turn_request, "inputs": at_cap["inputs"] + ["one more"]}
+        with pytest.raises(ValidationError):
+            SingleTurnPipelineRequest.model_validate(over_cap)
 
 
 # ───────────────────────── preflight_model ─────────────────────────
@@ -2444,3 +2801,199 @@ class TestPreflightModel:
         resp = client.post(PREFLIGHT_URL, json=preflight_request)
         assert resp.status_code == 422
         mock_adapter_for_task.assert_not_called()
+
+
+# ───────────────────── ClaimDebug capture ────────────────────────────────
+#
+# TODO(eval-v2): remove — everything below this header is ClaimDebug capture
+# scaffolding, deleted before the v2 builder ships GA along with the module
+# it tests.
+
+
+def _real_task(tmp_path, turn_mode=TurnMode.single_turn) -> Task:
+    """A project + task saved on disk, so capture can resolve real paths."""
+    project = Project(name="Debug Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(
+        name="Debug Task",
+        instruction="Answer customer questions about return policy.",
+        turn_mode=turn_mode,
+        parent=project,
+    )
+    task.save_to_file()
+    return task
+
+
+def _real_run(task: Task, trace=None) -> TaskRun:
+    """A saved run under the task, optionally carrying a trace."""
+    run = TaskRun(
+        parent=task,
+        input="What's your return window?",
+        output=TaskOutput(output="30 days from purchase."),
+        trace=trace,
+    )
+    run.save_to_file()
+    return run
+
+
+def _capture_dir(task: Task):
+    assert task.path is not None
+    return task.path.parent / "eval_debug" / "claim_builds"
+
+
+@pytest.fixture
+def capture_seams():
+    """Patch the claim builder with the canned output and yield a context
+    manager that points capture's task resolution at a given task."""
+    with patch(
+        "app.desktop.studio_server.eval_builder_api.build_claims_for_trace",
+        new=AsyncMock(return_value=_claims_output()),
+    ):
+        yield lambda task: patch(
+            "app.desktop.studio_server.utils.claim_debug_capture.task_from_id",
+            return_value=task,
+        )
+
+
+@pytest.mark.usefixtures("build_claims_task")
+class TestClaimDebugCapture:
+    def test_capture_failure_still_returns_claims(
+        self, client, build_claims_input, capture_seams
+    ):
+        """Fail-open: an exploding capture must not fail the user's build."""
+        with patch(
+            "app.desktop.studio_server.utils.claim_debug_capture.task_from_id",
+            side_effect=RuntimeError("disk on fire"),
+        ):
+            resp = client.post(
+                BUILD_CLAIMS_URL,
+                json={**build_claims_input, "source_run_id": "run-1"},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json() == _claims_output().model_dump(mode="json", by_alias=True)
+
+    def test_traversal_run_id_writes_nothing(
+        self, client, build_claims_input, capture_seams, tmp_path
+    ):
+        """source_run_id lands in a filename, so a traversal-shaped id must not
+        write outside the capture directory (or anywhere at all)."""
+        task = _real_task(tmp_path)
+        before = sorted(p for p in tmp_path.rglob("*"))
+
+        with capture_seams(task):
+            resp = client.post(
+                BUILD_CLAIMS_URL,
+                json={**build_claims_input, "source_run_id": "../../../pwned"},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json() == _claims_output().model_dump(mode="json", by_alias=True)
+        # Nothing new anywhere under the project, not just inside eval_debug.
+        assert sorted(p for p in tmp_path.rglob("*")) == before
+        assert task.path is not None
+        assert not (task.path.parent / "eval_debug").exists()
+
+    def test_old_payload_writes_no_capture(
+        self, client, build_claims_input, capture_seams, tmp_path
+    ):
+        """A client sending only the original five fields behaves as before."""
+        task = _real_task(tmp_path)
+        with capture_seams(task) as task_from_id_mock:
+            resp = client.post(BUILD_CLAIMS_URL, json=build_claims_input)
+
+        assert resp.status_code == 200
+        assert resp.json() == _claims_output().model_dump(mode="json", by_alias=True)
+        # No run id means no capture at all: it bails before touching the task.
+        task_from_id_mock.assert_not_called()
+        assert task.path is not None
+        assert not (task.path.parent / "eval_debug").exists()
+
+    def test_capture_round_trips_and_appends(
+        self, client, build_claims_input, capture_seams, tmp_path
+    ):
+        task = _real_task(tmp_path, turn_mode=TurnMode.multiturn)
+        trace = [
+            {"role": "user", "content": "What's your return window?"},
+            {"role": "assistant", "content": "30 days from purchase."},
+        ]
+        run = _real_run(task, trace=trace)
+        payload = {
+            **build_claims_input,
+            "source_run_id": run.id,
+            "debug_context": {
+                "task_model": "gpt_5_5",
+                "synthetic_user_model": "openai/gpt_5_5",
+                "judge": {
+                    "prompt": "Judge whether the output fabricates policy.",
+                    "model_name": "claude_sonnet_4_6",
+                    "model_provider": "anthropic",
+                },
+                "turns": 5,
+                "batch_tag": "batch-abc",
+            },
+        }
+
+        with capture_seams(task):
+            assert client.post(BUILD_CLAIMS_URL, json=payload).status_code == 200
+
+        capture_path = _capture_dir(task) / f"{run.id}_1.json"
+        on_disk = json.loads(capture_path.read_text())
+        # json.loads + model_validate, the same way the datamodel loads runs
+        # off disk — see ClaimDebug's docstring.
+        record = ClaimDebug.model_validate(on_disk)
+
+        assert record.source_run_id == run.id
+        assert record.trace == run.trace
+        assert record.raw_input == build_claims_input["raw_input"]
+        assert record.eval_rubric == build_claims_input["eval_rubric"]
+        assert record.judge_score == "fail"
+        assert record.overview == _claims_output().overview
+        assert record.claims == _claims_output().claims
+        assert record.debug_context is not None
+        assert record.debug_context.turns == 5
+        assert record.debug_context.synthetic_user_model == "openai/gpt_5_5"
+        assert record.debug_context.judge is not None
+        assert record.debug_context.judge.model_name == "claude_sonnet_4_6"
+
+        # Citations must keep the `from` wire key on disk, not `from_`.
+        for entry in [on_disk["overview"], *on_disk["claims"]]:
+            citation = entry["citations"][0]
+            assert "from" in citation and "from_" not in citation
+
+        # A refine-round rebuild appends a new file rather than overwriting.
+        with capture_seams(task):
+            assert client.post(BUILD_CLAIMS_URL, json=payload).status_code == 200
+        assert (_capture_dir(task) / f"{run.id}_2.json").exists()
+        assert capture_path.exists()
+
+    def test_capture_with_no_synthetic_user_lane(
+        self, client, build_claims_input, capture_seams, tmp_path
+    ):
+        """A single-turn build populates no synthetic-user state, so those
+        context fields arrive None and the capture is written all the same."""
+        task = _real_task(tmp_path)
+        run = _real_run(task, trace=[{"role": "user", "content": "hi"}])
+        payload = {
+            **build_claims_input,
+            "source_run_id": run.id,
+            "debug_context": {
+                "task_model": "gpt_5_5",
+                "synthetic_user_model": None,
+                "judge": None,
+                "turns": None,
+                "batch_tag": "batch-single",
+            },
+        }
+
+        with capture_seams(task):
+            assert client.post(BUILD_CLAIMS_URL, json=payload).status_code == 200
+
+        record = ClaimDebug.model_validate(
+            json.loads((_capture_dir(task) / f"{run.id}_1.json").read_text())
+        )
+        assert record.debug_context is not None
+        assert record.debug_context.synthetic_user_model is None
+        assert record.debug_context.turns is None
+        assert record.debug_context.task_model == "gpt_5_5"
+        assert record.trace == run.trace

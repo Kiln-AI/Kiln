@@ -14,6 +14,7 @@ from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import Task
+from kiln_ai.datamodel.usage import Usage
 from kiln_ai.synthetic_user.models import (
     SyntheticUserDriverConfig,
     SyntheticUserInfo,
@@ -84,11 +85,20 @@ class SyntheticUserDriver:
 
     async def respond(
         self, conversation: list[ChatCompletionMessageParam]
-    ) -> tuple[str, float]:
-        """Return the SU's next message and the per-call cost.
+    ) -> tuple[str, Usage | None]:
+        """Return the SU's next message and the driver model's usage for the call.
 
         `conversation` is in the eval frame and must end on an `assistant`
         (target) turn. Drive-loop termination is the caller's concern.
+
+        The whole `Usage` rather than just its cost: the SU's TaskRun is never
+        persisted, so this in-memory value is the only place the driver model's
+        tokens ever exist. A cost alone can neither be split per model against an
+        invoice nor recomputed at a different price, and `cost / total_tokens`
+        over a figure whose tokens are the agent's is meaningless.
+
+        None when the provider reported nothing — distinct from a zeroed Usage,
+        which would read as a genuinely free call rather than an unmeasured one.
         """
         # 1) Filter to visible roles (drop system/tool if present).
         visible = [
@@ -133,12 +143,4 @@ class SyntheticUserDriver:
         if not isinstance(raw, str):
             raise RuntimeError("synthetic user returned non-string output")
 
-        # Per-call cost; defaults to 0.0 when the provider doesn't
-        # surface pricing.
-        cost = (
-            float(task_run.usage.cost)
-            if task_run.usage is not None and task_run.usage.cost is not None
-            else 0.0
-        )
-
-        return raw, cost
+        return raw, task_run.usage

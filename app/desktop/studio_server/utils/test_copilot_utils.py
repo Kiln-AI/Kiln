@@ -1,15 +1,48 @@
 """Tests for app/desktop/studio_server/utils/copilot_utils.py."""
 
+import logging
 import random
-from unittest.mock import patch
+from typing import ClassVar
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastapi import HTTPException
+from kiln_ai.datamodel import GradedClaim, Project, Task, TaskRun
+from kiln_ai.datamodel.datamodel_enums import (
+    FeedbackSource,
+    TaskOutputRatingType,
+    TurnMode,
+)
+from kiln_ai.datamodel.eval import MultiTurnDriveConfig
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.run_config import (
+    McpRunConfigProperties,
+    MCPToolReference,
+    ToolsRunConfig,
+)
+from kiln_ai.datamodel.task_output import (
+    DataSource,
+    DataSourceType,
+    TaskOutput,
+    TaskOutputRating,
+)
+from kiln_ai.run_context import (
+    clear_agent_run_id,
+    get_agent_run_id,
+    set_agent_run_id,
+)
+from mcp.types import ListToolsResult
+from mcp.types import Tool as MCPTool
+
 from app.desktop.studio_server.api_models.copilot_models import (
     ClaimReviewApi,
     DrivenSyntheticCaseApi,
     ReviewedChainApi,
     ReviewedExample,
     SampleApi,
+    TaskInfoApi,
+    TaskSkillInfoApi,
+    TaskToolInfoApi,
 )
 from app.desktop.studio_server.utils.copilot_utils import (
     GOLDEN_TARGET_FRACTION,
@@ -22,32 +55,21 @@ from app.desktop.studio_server.utils.copilot_utils import (
     create_single_turn_dataset,
     create_task_run_from_reviewed,
     create_task_run_from_sample,
+    deal_pool_train_val,
     delete_multi_turn_batch_chains,
     delete_single_turn_batch_runs,
     find_single_turn_batch_runs,
     get_copilot_api_key,
     persist_eval_slice,
-    tag_single_turn_drive_run,
     rate_reviewed_batch_runs,
     select_golden_runs,
     split_and_tag_batch_runs,
     split_pool_train_eval,
+    tag_single_turn_drive_run,
+    task_capabilities_for_task,
+    task_info_payload,
     unrate_reviewed_batch_runs,
     warn_if_golden_below_target,
-)
-from fastapi import HTTPException
-from kiln_ai.datamodel import GradedClaim, Project, Task, TaskRun
-from kiln_ai.datamodel.eval import MultiTurnDriveConfig
-from kiln_ai.datamodel.datamodel_enums import (
-    FeedbackSource,
-    TaskOutputRatingType,
-    TurnMode,
-)
-from kiln_ai.datamodel.task_output import (
-    DataSource,
-    DataSourceType,
-    TaskOutput,
-    TaskOutputRating,
 )
 
 
@@ -174,36 +196,36 @@ class TestWarnIfGoldenBelowTarget:
 class TestCreateTaskRunFromSample:
     def test_creates_task_run_with_correct_input(self):
         sample = SampleApi(input="test input", output="test output")
-        task_run = create_task_run_from_sample(sample, "eval_tag")
+        task_run = create_task_run_from_sample(sample, "some_tag")
         assert task_run.input == "test input"
 
     def test_creates_task_run_with_correct_output(self):
         sample = SampleApi(input="test input", output="test output")
-        task_run = create_task_run_from_sample(sample, "eval_tag")
+        task_run = create_task_run_from_sample(sample, "some_tag")
         assert task_run.output.output == "test output"
 
     def test_creates_task_run_with_tag(self):
         sample = SampleApi(input="test input", output="test output")
-        task_run = create_task_run_from_sample(sample, "eval_tag")
-        assert "eval_tag" in task_run.tags
+        task_run = create_task_run_from_sample(sample, "some_tag")
+        assert "some_tag" in task_run.tags
 
     def test_creates_task_run_with_extra_tags(self):
         sample = SampleApi(input="test input", output="test output")
         task_run = create_task_run_from_sample(
-            sample, "eval_tag", extra_tags=["session_123", "other_tag"]
+            sample, "some_tag", extra_tags=["session_123", "other_tag"]
         )
-        assert "eval_tag" in task_run.tags
+        assert "some_tag" in task_run.tags
         assert "session_123" in task_run.tags
         assert "other_tag" in task_run.tags
 
     def test_creates_task_run_without_extra_tags(self):
         sample = SampleApi(input="test input", output="test output")
-        task_run = create_task_run_from_sample(sample, "eval_tag", extra_tags=None)
-        assert task_run.tags == ["eval_tag"]
+        task_run = create_task_run_from_sample(sample, "some_tag", extra_tags=None)
+        assert task_run.tags == ["some_tag"]
 
     def test_creates_task_run_with_synthetic_data_source(self):
         sample = SampleApi(input="test input", output="test output")
-        task_run = create_task_run_from_sample(sample, "eval_tag")
+        task_run = create_task_run_from_sample(sample, "some_tag")
         assert task_run.input_source.type == DataSourceType.synthetic
         assert task_run.input_source.properties["model_name"] == KILN_COPILOT_MODEL_NAME
         assert (
@@ -525,22 +547,20 @@ def _claim_review_api(judge_score: str = "fail") -> ClaimReviewApi:
     return ClaimReviewApi(
         judge_score=judge_score,
         judge_reasoning="Stated an unverified policy as fact.",
+        overview="The user asked about returns and the agent quoted a window.",
         claims=[
             GradedClaim(
-                claim="The agent stated a specific return window as fact.",
-                evidence="The reply gives a window of 30 days [1].",
-                expected_result="fail",
+                text="The agent stated a specific return window as fact [1].",
+                human_grade="disagree",
+                human_feedback="The policy quoted is actually correct.",
+            ),
+            GradedClaim(
+                text="It fails because the window was never verified [1].",
                 human_grade="agree",
                 human_feedback=None,
-            )
+            ),
         ],
-        final_judgement=GradedClaim(
-            claim="Fails Eval: fabricated policy.",
-            evidence="Asserts a window it never verified [1].",
-            expected_result="fail",
-            human_grade="disagree",
-            human_feedback="The policy quoted is actually correct.",
-        ),
+        human_verdict=judge_score,
     )
 
 
@@ -607,11 +627,13 @@ class TestRateMultiTurnChainLeaves:
         reviews = leaves[0].claim_reviews()
         assert len(reviews) == 1
         assert reviews[0].judge_score == "fail"
-        assert reviews[0].final_judgement.human_grade == "disagree"
+        assert reviews[0].overview.startswith("The user asked")
+        assert reviews[0].claims[0].human_grade == "disagree"
         assert (
-            reviews[0].final_judgement.human_feedback
+            reviews[0].claims[0].human_feedback
             == "The policy quoted is actually correct."
         )
+        assert reviews[0].human_verdict == "fail"
 
         # Leaf 1: PASS rating, no feedback/claim-review children.
         rating = leaves[1].output.rating
@@ -733,8 +755,8 @@ class TestSavePendingChildren:
         reviews = run.claim_reviews()
         assert len(reviews) == 1
         assert reviews[0].judge_score == "fail"
-        assert len(reviews[0].claims) == 1
-        assert reviews[0].claims[0].human_grade == "agree"
+        assert [c.human_grade for c in reviews[0].claims] == ["disagree", "agree"]
+        assert reviews[0].human_verdict == "fail"
 
 
 def _make_su_leaves(task: Task, n: int) -> list[TaskRun]:
@@ -765,15 +787,47 @@ def _leaf_split(leaves: list[TaskRun]) -> dict[str, list[TaskRun]]:
     return {
         "eval": [x for x in leaves if "eval_tag" in (x.tags or [])],
         "train": [x for x in leaves if "train_tag" in (x.tags or [])],
+        "val": [x for x in leaves if "val_tag" in (x.tags or [])],
         "golden": [x for x in leaves if "golden_tag" in (x.tags or [])],
     }
 
 
+class TestDealPoolTrainVal:
+    """The non-golden pool is dealt train:val at 40:25 by largest remainder."""
+
+    @pytest.mark.parametrize(
+        "pool_size,expected_train,expected_val",
+        [
+            # 0 and 1 are the degenerate pools: 1 run's remainders are
+            # 40/65 vs 25/65, so the single seat goes to train.
+            (0, 0, 0),
+            (1, 1, 0),
+            (2, 1, 1),
+            # 30 * 40 // 65 = 18, 30 * 25 // 65 = 11, leftover seat to val
+            # (remainders 30 train vs 35 val) → the 18/12 the scheme wants.
+            (30, 18, 12),
+            # 65 divides exactly: no leftover seat to award.
+            (65, 40, 25),
+        ],
+    )
+    def test_counts_by_largest_remainder(self, pool_size, expected_train, expected_val):
+        pool = list(range(pool_size))
+        train, val = deal_pool_train_val(pool, random.Random(0))
+        assert (len(train), len(val)) == (expected_train, expected_val)
+        # Largest remainder drops nobody and duplicates nobody.
+        assert sorted(train + val) == pool
+
+    def test_does_not_mutate_input(self):
+        pool = list(range(30))
+        deal_pool_train_val(pool, random.Random(1))
+        assert pool == list(range(30))
+
+
 class TestSplitAndTagMultiTurnChains:
-    def test_all_reviewed_splits_golden_cap_rest_train(self, multiturn_task):
+    def test_all_reviewed_splits_golden_cap_rest_dealt(self, multiturn_task):
         # Mirrors the real UI: every chain reviewed before save. golden caps
-        # at 25%; every remaining chain is train (the eval slice is EvalInput
-        # items minted from the cases, not chains).
+        # at 25% of 8 = 2; the 6 left over are dealt train:val (the eval slice
+        # is EvalInput items minted from the cases, not chains).
         leaves = _make_su_leaves(multiturn_task, 8)
         reviewed_ids = {leaf.id for leaf in leaves}
 
@@ -782,13 +836,16 @@ class TestSplitAndTagMultiTurnChains:
             reviewed_ids,
             "train_tag",
             "golden_tag",
+            "val_tag",
             rng=random.Random(0),
         )
 
         buckets = _leaf_split(leaves)
         assert len(buckets["golden"]) == 2
         assert buckets["eval"] == []
-        assert len(buckets["train"]) == 6
+        # 6 * 40 // 65 = 3 train, 6 * 25 // 65 = 2 val, leftover seat to train.
+        assert len(buckets["train"]) == 4
+        assert len(buckets["val"]) == 2
         # Golden is a subset of the reviewed leaves (rated-only answer key).
         assert {x.id for x in buckets["golden"]} <= reviewed_ids
 
@@ -799,26 +856,29 @@ class TestSplitAndTagMultiTurnChains:
             {leaves[0].id},
             "train_tag",
             "golden_tag",
+            "val_tag",
             rng=random.Random(1),
         )
         for leaf in leaves:
-            split_tags = {"train_tag", "golden_tag"} & set(leaf.tags)
+            split_tags = {"train_tag", "golden_tag", "val_tag"} & set(leaf.tags)
             assert len(split_tags) == 1
 
     def test_golden_capped_even_when_all_reviewed(self, multiturn_task):
-        # 4 leaves all reviewed → golden caps at 1 (not 4); train is never
-        # starved to empty (the bug the cap fixes).
+        # 4 leaves all reviewed → golden caps at 1 (not 4); the dealt slices
+        # are never starved to empty (the bug the cap fixes).
         leaves = _make_su_leaves(multiturn_task, 4)
         split_and_tag_batch_runs(
             leaves,
             {leaf.id for leaf in leaves},
             "train_tag",
             "golden_tag",
+            "val_tag",
             rng=random.Random(7),
         )
         buckets = _leaf_split(leaves)
         assert len(buckets["golden"]) == 1
-        assert len(buckets["train"]) == 3
+        assert len(buckets["train"]) == 2
+        assert len(buckets["val"]) == 1
 
     def test_zero_rated_no_golden(self, multiturn_task):
         leaves = _make_su_leaves(multiturn_task, 3)
@@ -827,11 +887,35 @@ class TestSplitAndTagMultiTurnChains:
             set(),
             "train_tag",
             "golden_tag",
+            "val_tag",
             rng=random.Random(2),
         )
         buckets = _leaf_split(leaves)
         assert buckets["golden"] == []
-        assert len(buckets["train"]) == 3
+        assert len(buckets["train"]) == 2
+        assert len(buckets["val"]) == 1
+
+    def test_deal_is_driven_by_the_injected_rng(self, multiturn_task):
+        # The injected rng, and only it, decides who is held out: the same
+        # seed reproduces a save's val membership, a different seed does not.
+        # A deal that read the pool in order instead would pass the first
+        # assertion and fail the second.
+        def tagged_val_inputs(seed: int) -> set[str]:
+            leaves = _make_su_leaves(multiturn_task, 30)
+            split_and_tag_batch_runs(
+                leaves,
+                set(),
+                "train_tag",
+                "golden_tag",
+                "val_tag",
+                rng=random.Random(seed),
+            )
+            return {leaf.input for leaf in _leaf_split(leaves)["val"]}
+
+        first = tagged_val_inputs(11)
+        assert len(first) == 12  # 30 unreviewed → 18 train / 12 val
+        assert tagged_val_inputs(11) == first
+        assert tagged_val_inputs(999) != first
 
     def test_preserves_existing_runner_tags(self, multiturn_task):
         leaves = _make_su_leaves(multiturn_task, 4)
@@ -840,6 +924,7 @@ class TestSplitAndTagMultiTurnChains:
             {leaf.id for leaf in leaves},
             "train_tag",
             "golden_tag",
+            "val_tag",
             rng=random.Random(3),
         )
         for leaf in leaves:
@@ -854,12 +939,19 @@ class TestSplitAndTagMultiTurnChains:
             {leaf.id for leaf in leaves},
             "train_tag",
             "golden_tag",
+            "val_tag",
             rng=random.Random(4),
             tagged_out=tagged_out,
         )
-        # Every leaf was mutated exactly once (one split tag added each).
+        # Every leaf was mutated exactly once (one split tag added each), and
+        # val rides the same ledger as train so rollback reverses it too.
         assert len(tagged_out) == 4
         assert all(len(added) == 1 for _, added in tagged_out)
+        assert {tag for _, added in tagged_out for tag in added} == {
+            "golden_tag",
+            "train_tag",
+            "val_tag",
+        }
 
 
 # ───────────────── delete_multi_turn_batch_chains ─────────────────
@@ -1208,3 +1300,413 @@ class TestPersistEvalSlice:
         assert len(on_disk) == 2
         # Every persisted item is in the rollback ledger.
         assert saved_out == eval_inputs
+
+
+@pytest.fixture
+def project_and_task(tmp_path):
+    """An empty saved project + task — the starting point for the capability
+    tests, which build their own run config on top."""
+    project = Project(name="Capability Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(name="Capability Task", instruction="Do the thing.", parent=project)
+    task.save_to_file()
+    return project, task
+
+
+class TestTaskCapabilitiesForTask:
+    async def test_reads_tools_and_skills_from_default_run_config(
+        self, project_and_task, give_task_one_tool_and_skill
+    ):
+        project, task = project_and_task
+        give_task_one_tool_and_skill(project, task)
+
+        tools, skills = await task_capabilities_for_task(task)
+
+        assert tools == [
+            TaskToolInfoApi(
+                name="add", description="Add two numbers together and return the result"
+            )
+        ]
+        assert skills == [
+            TaskSkillInfoApi(
+                name="refund-policy", description="How and when refunds are issued."
+            )
+        ]
+
+    async def test_collection_is_logged_with_counts(
+        self, project_and_task, give_task_one_tool_and_skill, caplog
+    ):
+        """Resolving tools can dial MCP servers, so the cost of collection is
+        logged rather than capped — it has to be visible in the logs."""
+        project, task = project_and_task
+        give_task_one_tool_and_skill(project, task)
+
+        with caplog.at_level(logging.INFO):
+            await task_capabilities_for_task(task)
+
+        assert "1 tools, 1 skills" in caplog.text
+
+    async def test_tool_order_follows_the_run_config(
+        self, project_and_task, agent_run_config_properties, set_default_run_config
+    ):
+        """Tools are reported in the order the run config lists them, so the
+        payload matches the surface the model is actually given."""
+        _, task = project_and_task
+        set_default_run_config(
+            task,
+            agent_run_config_properties(
+                tools_config=ToolsRunConfig(
+                    tools=["kiln_tool::multiply_numbers", "kiln_tool::add_numbers"]
+                )
+            ),
+        )
+
+        tools, _ = await task_capabilities_for_task(task)
+
+        assert [tool.name for tool in tools or []] == ["multiply", "add"]
+
+    async def test_no_default_run_config_is_not_collected(self, project_and_task):
+        """No default config means the capabilities are unknown, not empty."""
+        _, task = project_and_task
+        assert await task_capabilities_for_task(task) == (None, None)
+
+    async def test_dangling_default_run_config_id_is_not_collected(
+        self, project_and_task
+    ):
+        _, task = project_and_task
+        task.default_run_config_id = "does-not-exist"
+        task.save_to_file()
+        assert await task_capabilities_for_task(task) == (None, None)
+
+    async def test_unreadable_storage_degrades_to_not_collected(
+        self, project_and_task, caplog
+    ):
+        """Collection reads run configs and skills off disk. A corrupt or
+        forward-versioned file must degrade to the un-enriched prompt rather
+        than failing the whole spec-building request."""
+        _, task = project_and_task
+        task.default_run_config_id = "rc-1"
+        with patch.object(
+            type(task), "run_configs", side_effect=ValueError("corrupt run_config.kiln")
+        ):
+            with caplog.at_level(logging.WARNING):
+                result = await task_capabilities_for_task(task)
+
+        assert result == (None, None)
+        assert "corrupt run_config.kiln" in caplog.text
+
+    async def test_non_agent_run_config_has_no_capabilities(
+        self, project_and_task, set_default_run_config
+    ):
+        """An MCP run config carries no tools_config and loads no skills, so
+        its surface is genuinely empty rather than uncollected."""
+        _, task = project_and_task
+        set_default_run_config(
+            task,
+            McpRunConfigProperties(
+                tool_reference=MCPToolReference(tool_id="mcp::local::server::do_thing")
+            ),
+        )
+        assert await task_capabilities_for_task(task) == ([], [])
+
+    async def test_agent_config_without_tools_config_has_no_capabilities(
+        self, project_and_task, agent_run_config_properties, set_default_run_config
+    ):
+        _, task = project_and_task
+        set_default_run_config(task, agent_run_config_properties())
+        assert await task_capabilities_for_task(task) == ([], [])
+
+    async def test_skill_only_config_reports_skills_and_no_tools(
+        self,
+        project_and_task,
+        save_skill,
+        agent_run_config_properties,
+        set_default_run_config,
+    ):
+        """Skill ids live in the same tools list but must never be resolved as
+        tools — tool_from_id rejects them."""
+        project, task = project_and_task
+        skill = save_skill(project, "escalation", "When to escalate.")
+        set_default_run_config(
+            task,
+            agent_run_config_properties(
+                tools_config=ToolsRunConfig(tools=[f"kiln_tool::skill::{skill.id}"])
+            ),
+        )
+
+        tools, skills = await task_capabilities_for_task(task)
+
+        assert tools == []
+        assert skills == [
+            TaskSkillInfoApi(name="escalation", description="When to escalate.")
+        ]
+
+    async def test_unresolvable_tool_is_skipped(
+        self,
+        project_and_task,
+        agent_run_config_properties,
+        set_default_run_config,
+        caplog,
+    ):
+        """A broken tool reference must not take down spec building; the rest
+        of the surface is still reported."""
+        _, task = project_and_task
+        set_default_run_config(
+            task,
+            agent_run_config_properties(
+                tools_config=ToolsRunConfig(
+                    tools=["mcp::local::gone::vanished", "kiln_tool::add_numbers"]
+                )
+            ),
+        )
+
+        with caplog.at_level(logging.WARNING):
+            tools, _ = await task_capabilities_for_task(task)
+
+        assert [tool.name for tool in tools or []] == ["add"]
+        assert "mcp::local::gone::vanished" in caplog.text
+
+    async def test_skills_are_sorted_by_name(
+        self,
+        project_and_task,
+        save_skill,
+        agent_run_config_properties,
+        set_default_run_config,
+    ):
+        """The skill loader returns an unordered map; sorting keeps the same
+        task producing the same payload every call."""
+        project, task = project_and_task
+        zebra = save_skill(project, "zebra", "Last alphabetically.")
+        alpha = save_skill(project, "alpha", "First alphabetically.")
+        set_default_run_config(
+            task,
+            agent_run_config_properties(
+                tools_config=ToolsRunConfig(
+                    tools=[
+                        f"kiln_tool::skill::{zebra.id}",
+                        f"kiln_tool::skill::{alpha.id}",
+                    ]
+                )
+            ),
+        )
+
+        _, skills = await task_capabilities_for_task(task)
+
+        assert [skill.name for skill in skills or []] == ["alpha", "zebra"]
+
+
+class TestTaskCapabilitiesRunContext:
+    """Collection runs inside one MCP session scope, so every tool on a server
+    resolves through one shared session instead of connecting per tool.
+
+    The scope's own semantics are covered in test_mcp_session_manager.py; these
+    assert the adoption — that collection is actually wrapped in one.
+    """
+
+    # The scope tears down through its own module, so that is where the
+    # manager is replaced. The tool resolves sessions through its own binding,
+    # patched separately where a test needs to serve one.
+    SCOPE_MANAGER_PATCH: ClassVar[str] = (
+        "kiln_ai.tools.mcp_session_manager.MCPSessionManager"
+    )
+    TOOL_MANAGER_PATCH: ClassVar[str] = (
+        "kiln_ai.tools.mcp_server_tool.MCPSessionManager"
+    )
+    RUN_ID_PATCH: ClassVar[str] = (
+        "kiln_ai.tools.mcp_session_manager.generate_agent_run_id"
+    )
+
+    @pytest.fixture(autouse=True)
+    def clear_context(self):
+        """No ambient run id, or collection would join a scope it should be
+        opening for itself."""
+        clear_agent_run_id()
+        yield
+        clear_agent_run_id()
+
+    @pytest.fixture
+    def task_with_two_mcp_tools(
+        self, project_and_task, agent_run_config_properties, set_default_run_config
+    ):
+        """A task whose default run config lists two tools from ONE MCP
+        server — the case that used to cost two connections."""
+        project, task = project_and_task
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={"server_url": "https://example.com", "is_archived": False},
+            parent=project,
+        )
+        server.save_to_file()
+        set_default_run_config(
+            task,
+            agent_run_config_properties(
+                tools_config=ToolsRunConfig(
+                    tools=[
+                        f"mcp::remote::{server.id}::alpha",
+                        f"mcp::remote::{server.id}::beta",
+                    ]
+                )
+            ),
+        )
+        return task, server
+
+    @pytest.fixture
+    def mcp_session_serving_alpha_and_beta(self):
+        """A warm session that answers list_tools with both of the server's
+        tools, the way one shared connection serves the whole collection."""
+        session = AsyncMock()
+        session.list_tools = AsyncMock(
+            return_value=ListToolsResult(
+                tools=[
+                    MCPTool(
+                        name="alpha",
+                        description="Alpha tool",
+                        inputSchema={"type": "object", "properties": {}},
+                    ),
+                    MCPTool(
+                        name="beta",
+                        description="Beta tool",
+                        inputSchema={"type": "object", "properties": {}},
+                    ),
+                ]
+            )
+        )
+        return session
+
+    async def test_same_server_tools_share_one_session(
+        self, task_with_two_mcp_tools, mcp_session_serving_alpha_and_beta
+    ):
+        """Both tools resolve through get_or_create_session under the same
+        (server, run id) scope, which the session manager serves from one
+        connection, and that same scope is the one torn down afterwards. The
+        per-call ephemeral client (a fresh connect + teardown per tool) is
+        never reached."""
+        task, server = task_with_two_mcp_tools
+        cleanup_mock = AsyncMock()
+
+        with (
+            patch(self.TOOL_MANAGER_PATCH) as mock_manager_cls,
+            patch(self.SCOPE_MANAGER_PATCH) as mock_scope_manager_cls,
+        ):
+            shared = mock_manager_cls.shared.return_value
+            shared.get_or_create_session = AsyncMock(
+                return_value=mcp_session_serving_alpha_and_beta
+            )
+            mock_scope_manager_cls.shared.return_value.cleanup_session = cleanup_mock
+            tools, _ = await task_capabilities_for_task(task)
+
+        assert tools == [
+            TaskToolInfoApi(name="alpha", description="Alpha tool"),
+            TaskToolInfoApi(name="beta", description="Beta tool"),
+        ]
+        session_calls = shared.get_or_create_session.call_args_list
+        assert session_calls
+        # Asserted as a set of scopes rather than a call count: how many times
+        # a warm session is asked for is an implementation detail, but every
+        # ask landing on ONE (server, run id) pair is the reuse itself.
+        scopes = {(call.args[0].id, call.args[1]) for call in session_calls}
+        assert len(scopes) == 1
+        scoped_server_id, scoped_run_id = next(iter(scopes))
+        assert scoped_server_id == server.id
+        shared.mcp_client.assert_not_called()
+        # The scope torn down must be the one the sessions live under, or they
+        # leak for the life of the process.
+        cleanup_mock.assert_called_once_with(scoped_run_id)
+        assert get_agent_run_id() is None
+
+    async def test_session_is_cleaned_up_when_collection_fails(
+        self, project_and_task, give_task_one_tool_and_skill, caplog
+    ):
+        """The scope still has to close on the failure path: the collection
+        may already have opened sessions before it failed, and the manager has
+        no reaper to catch them."""
+        project, task = project_and_task
+        give_task_one_tool_and_skill(project, task)
+        cleanup_mock = AsyncMock()
+
+        with (
+            patch(self.SCOPE_MANAGER_PATCH) as mock_scope_manager_cls,
+            patch(self.RUN_ID_PATCH, return_value="run_collection"),
+            patch.object(
+                type(task), "run_configs", side_effect=ValueError("corrupt file")
+            ),
+            caplog.at_level(logging.WARNING),
+        ):
+            mock_scope_manager_cls.shared.return_value.cleanup_session = cleanup_mock
+            assert await task_capabilities_for_task(task) == (None, None)
+
+        # The degrade came from the failing read, not from an earlier return
+        # that would never have opened a scope at all.
+        assert "corrupt file" in caplog.text
+        cleanup_mock.assert_called_once_with("run_collection")
+        assert get_agent_run_id() is None
+
+    async def test_a_callers_run_context_is_joined_not_torn_down(
+        self, task_with_two_mcp_tools, mcp_session_serving_alpha_and_beta
+    ):
+        """Inside an existing run context the tools resolve under the CALLER's
+        scope, and the sessions are the caller's to close: tearing them down
+        here would drop connections it still needs.
+
+        Guards against collection going back to minting a run id of its own
+        unconditionally, which is what the scope replaced.
+        """
+        task, server = task_with_two_mcp_tools
+        cleanup_mock = AsyncMock()
+        set_agent_run_id("caller_run_id")
+
+        with (
+            patch(self.TOOL_MANAGER_PATCH) as mock_manager_cls,
+            patch(self.SCOPE_MANAGER_PATCH) as mock_scope_manager_cls,
+        ):
+            shared = mock_manager_cls.shared.return_value
+            shared.get_or_create_session = AsyncMock(
+                return_value=mcp_session_serving_alpha_and_beta
+            )
+            mock_scope_manager_cls.shared.return_value.cleanup_session = cleanup_mock
+            await task_capabilities_for_task(task)
+
+        scopes = {
+            (call.args[0].id, call.args[1])
+            for call in shared.get_or_create_session.call_args_list
+        }
+        assert scopes == {(server.id, "caller_run_id")}
+        cleanup_mock.assert_not_called()
+        assert get_agent_run_id() == "caller_run_id"
+
+
+class TestTaskInfoPayload:
+    """The single owner of capability-key omission on the wire."""
+
+    BASE: ClassVar[dict] = {
+        "task_prompt": "p",
+        "task_input_schema": "in",
+        "task_output_schema": "out",
+    }
+
+    def test_uncollected_capabilities_are_omitted_not_nulled(self):
+        """None means not collected, which the contract reads as an absent
+        key — sending an explicit null would change a payload that must stay
+        exactly as it was before capabilities existed."""
+        assert task_info_payload(TaskInfoApi(**self.BASE)) == self.BASE
+
+    def test_empty_capabilities_are_sent(self):
+        """[] says the task genuinely has none, which is worth telling the
+        model, so it must survive onto the wire."""
+        payload = task_info_payload(
+            TaskInfoApi(**self.BASE, task_tools=[], task_skills=[])
+        )
+        assert payload == {**self.BASE, "task_tools": [], "task_skills": []}
+
+    def test_each_side_is_omitted_independently(self):
+        payload = task_info_payload(
+            TaskInfoApi(
+                **self.BASE,
+                task_tools=[TaskToolInfoApi(name="add", description="Adds.")],
+            )
+        )
+        assert payload == {
+            **self.BASE,
+            "task_tools": [{"name": "add", "description": "Adds."}],
+        }

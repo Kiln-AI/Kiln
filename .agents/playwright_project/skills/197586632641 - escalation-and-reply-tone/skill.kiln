@@ -1,0 +1,10 @@
+{
+  "v": 1,
+  "id": "197586632641",
+  "created_at": "2026-08-17T21:58:30.060796Z",
+  "created_by": "root",
+  "name": "escalation-and-reply-tone",
+  "description": "When a ticket must go to a human before any reply is sent, and how the first reply should read. Use when drafting a customer reply or setting needs_human_review.",
+  "is_archived": false,
+  "model_type": "skill"
+}

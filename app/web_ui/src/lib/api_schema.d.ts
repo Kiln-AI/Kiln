@@ -2026,6 +2026,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/eval_default_judge_types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Default Judge Types
+         * @description Map of eval ID to its default judge's type discriminator.
+         *
+         *     V2 configs report their properties type (e.g. "code_eval",
+         *     "llm_judge"); legacy configs report their config_type (e.g. "g_eval").
+         *     Evals with no default judge are omitted. Used by the evals list to
+         *     display each eval's type without fetching every config.
+         */
+        get: operations["get_eval_default_judge_types_api_projects__project_id__tasks__task_id__eval_default_judge_types_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/eval_inputs": {
         parameters: {
             query?: never;
@@ -2202,6 +2227,29 @@ export interface paths {
         put?: never;
         /** Test V2 Eval Config */
         post: operations["test_v2_eval_api_projects__project_id__tasks__task_id__evals__eval_id__test_v2_eval_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/test_v2_eval_draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test V2 Eval Config Draft
+         * @description Test a judge config for an eval that hasn't been created yet.
+         *
+         *     Builds a transient in-memory eval from the drafted output_scores so
+         *     the creation flow can test its judge before saving anything.
+         */
+        post: operations["test_v2_eval_draft_api_projects__project_id__tasks__task_id__test_v2_eval_draft_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3028,27 +3076,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/copilot/classify_spec_description": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Classify Spec Description
-         * @description Spec classification is not implemented; returns 501 so callers
-         *     can fall back to manual selection.
-         */
-        post: operations["classify_spec_description_api_copilot_classify_spec_description_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/copilot/clarify_spec": {
         parameters: {
             query?: never;
@@ -3297,7 +3324,8 @@ export interface paths {
          *       - case_driven     { case_index, leaf_run_id }
          *       - case_judged     { case_index, leaf_run_id, raw_input, raw_output,
          *                           judge_score, judge_reasoning, total_cost }
-         *       - case_failed     { case_index, stage, code, message }  (batch continues)
+         *       - case_failed     { case_index, stage, code, message, error_type }
+         *                           (batch continues)
          *       - batch_completed { judged, failed, batch_tag, total_cost }
          *       - batch_aborted   { error, stage }  (in place of batch_completed:
          *                           a config-scoped judge failure aborted the whole
@@ -3339,7 +3367,7 @@ export interface paths {
          *                           judge_score, judge_reasoning, total_cost,
          *                           trace }
          *       - case_failed     { case_index, stage: "run" | "judge", code,
-         *                           message }  (batch continues)
+         *                           message, error_type }  (batch continues)
          *       - batch_completed { judged, failed, batch_tag, total_cost }
          *       - batch_aborted   { error, stage }  (in place of batch_completed:
          *                           a config-scoped judge failure aborted the whole
@@ -3348,11 +3376,13 @@ export interface paths {
          *                           an orchestration-level crash ended the stream;
          *                           results already streamed remain valid)
          *     Terminated by `data: complete`. No turn frames appear on this stream
-         *     (each case is one run). raw_input/raw_output are the run's I/O
-         *     pair — what the judge scored and what the saved final_answer eval
-         *     will score; `trace` is the run's structured trace (tool calls
-         *     included), echoed for the UI. Claims are built afterwards, per
-         *     opened trace, via build_claims.
+         *     (each case is one run). raw_input is the run's own input string,
+         *     kept verbatim because the saved eval reads that same string back;
+         *     raw_output is the role-labelled transcript rendering, not the closing
+         *     message. `trace` is the run's structured trace (tool calls included)
+         *     and is what the judge scored, matching what the saved eval will
+         *     score. Claims are built afterwards, per opened trace, via
+         *     build_claims.
          */
         post: operations["single_turn_pipeline_api_projects__project_id__tasks__task_id__eval_builder_single_turn_pipeline_post"];
         delete?: never;
@@ -3377,16 +3407,17 @@ export interface paths {
          *     The judge calibration loop's re-score stream, both arms: after a
          *     refine produces a new judge prompt, this scores the SAME saved
          *     results again. Each run is reloaded from disk by id; multi-turn
-         *     judges the chain leaf's stored trace, single-turn judges the run's
-         *     stored I/O pair — either way the judge input matches what the saved
-         *     eval will judge. Nothing is driven and nothing is written.
+         *     judges the chain leaf's stored trace, single-turn the run's own —
+         *     either way the judge input matches what the saved eval will judge.
+         *     Nothing is driven and nothing is written.
          *
          *     Emits (all frames `type`-discriminated; errors carry {code, message}):
          *       - batch_started   { batch_tag: "", total_cases }
          *       - case_judged     { case_index, leaf_run_id, raw_input, raw_output,
          *                           judge_score, judge_reasoning, total_cost: 0,
          *                           trace }
-         *       - case_failed     { case_index, stage: "judge", code, message }
+         *       - case_failed     { case_index, stage: "judge", code, message,
+         *                           error_type }
          *                           (batch continues; a run that cannot be
          *                           reloaded fails with code trace_not_found,
          *                           missing_trace, or missing_output)
@@ -3474,10 +3505,10 @@ export interface paths {
          * Author Judge
          * @description Author a spec-tailored judge prompt for the review — both arms.
          *
-         *     Returns the PROMPT only — the judge model is the user's pick. The
-         *     rubric's framing follows the task's turn mode: full conversations
-         *     for multi-turn, one I/O pair for single-turn — derived here, not
-         *     client-sent, so it can never disagree with the task being judged.
+         *     Returns the PROMPT only — the judge model is the user's pick. Both
+         *     arms judge a transcript, so both rubrics are authored against one:
+         *     the rubric arrives knowing the role labels and tool-call blocks its
+         *     judge will meet, whatever the task's turn mode.
          *     Authoring is a REQUIRED step of the drive: an error here stops the
          *     drive on a retryable error client-side. There is no fallback judge.
          */
@@ -4522,16 +4553,16 @@ export interface components {
             spec_type: "appropriate_tool_use";
             /** Core Requirement */
             core_requirement: string;
-            /** Tool Id */
-            tool_id: string;
-            /** Tool Function Name */
-            tool_function_name: string;
             /** Tool Use Guidelines */
             tool_use_guidelines: string;
             /** Appropriate Tool Use Examples */
             appropriate_tool_use_examples: string;
             /** Inappropriate Tool Use Examples */
             inappropriate_tool_use_examples: string;
+            /** Tool Id */
+            tool_id?: string;
+            /** Tool Function Name */
+            tool_function_name?: string;
         };
         /** ArgMatch */
         ArgMatch: {
@@ -4557,9 +4588,9 @@ export interface components {
          * @description The spec + target-task prompt the judge author tailors its rubric to.
          *
          *     One authoring path for both arms: same two inputs, prompt-only output —
-         *     the judge model stays the caller's choice. The rubric's trace framing
-         *     (conversation vs I/O pair) is derived server-side from the task's turn
-         *     mode, never client-sent.
+         *     the judge model stays the caller's choice. Both arms judge a transcript,
+         *     so the rubric is always authored against one; the framing is fixed
+         *     server-side rather than client-sent.
          */
         AuthorJudgeApiInput: {
             /** Target Specification */
@@ -4803,17 +4834,20 @@ export interface components {
              * @enum {string}
              */
             judge_score: "pass" | "fail";
+            /** Source Run Id */
+            source_run_id?: string | null;
+            debug_context?: components["schemas"]["ClaimDebugContext"] | null;
         };
         /**
          * BuildClaimsApiOutput
-         * @description Claims for one trace (importance-ordered, may be empty) + the one
-         *     final judgement. Trivial single-property evals can carry everything in
-         *     the final judgement alone.
+         * @description The review card for one trace: the overview, then one to eight claims
+         *     in the order the reviewer reads them. The verdict claim, when the builder
+         *     wrote one, is the last claim and carries `is_verdict`.
          */
         BuildClaimsApiOutput: {
+            overview: components["schemas"]["OverviewApi"];
             /** Claims */
             claims: components["schemas"]["ClaimApi"][];
-            final_judgement: components["schemas"]["FinalJudgementApi"];
         };
         /**
          * BuildPromptRequest
@@ -5104,6 +5138,8 @@ export interface components {
             has_train_set: boolean;
             /** Model Is Supported */
             model_is_supported: boolean;
+            /** Unsupported Reason */
+            unsupported_reason?: string | null;
         };
         /**
          * CheckRunConfigResponse
@@ -5193,32 +5229,54 @@ export interface components {
         };
         /**
          * ClaimApi
-         * @description One atomic claim + its one-sentence evidence with [n] citation markers.
+         * @description One decision the judge made, written so the reviewer can vote on it.
          *
-         *     `expected_result` is the verdict a reviewer's AGREE on this claim supports —
-         *     a direction bit, not a re-judging: claims pointing opposite the judge's
-         *     verdict are counter-evidence the reviewer can use to catch a bad judge.
+         *     `text` carries the claim, its evidence and its [n] markers in one string;
+         *     every marker resolves through `citations`. Grades have one direction:
+         *     agree means the judge got this decision right, disagree means it got it
+         *     wrong.
+         *
+         *     `is_verdict` marks the claim that states the overall pass/fail. The claim
+         *     builder may omit it, and only the LAST claim can be one, so the UI needs a
+         *     flag rather than a guess: it decides whether to derive the reviewer's
+         *     overall call from that claim's grade or to ask for it outright. The studio
+         *     sets the flag from the builder's own convention (the verdict claim opens
+         *     "It passes" or "It fails", and no other claim may) so the UI never
+         *     pattern-matches prose.
          */
         ClaimApi: {
-            /** Claim */
-            claim: string;
-            /**
-             * Expected Result
-             * @enum {string}
-             */
-            expected_result: "pass" | "fail";
-            /** Evidence */
-            evidence: string;
+            /** Text */
+            text: string;
             /** Citations */
             citations: components["schemas"]["CitationApi"][];
+            /** Is Verdict */
+            is_verdict: boolean;
+        };
+        /**
+         * ClaimDebugContext
+         * @description The wizard settings that produced a captured trace, for offline
+         *     analysis. Every field is optional: the client fills in whatever state it
+         *     has, and a single-turn build naturally carries no synthetic-user lane.
+         */
+        ClaimDebugContext: {
+            /** Task Model */
+            task_model?: string | null;
+            /** Synthetic User Model */
+            synthetic_user_model?: string | null;
+            judge?: components["schemas"]["JudgeConfig"] | null;
+            /** Turns */
+            turns?: number | null;
+            /** Batch Tag */
+            batch_tag?: string | null;
         };
         /**
          * ClaimReviewApi
-         * @description The reviewer's grades on one trace's claim/evidence distillation.
+         * @description The reviewer's grades on one trace's claim summary.
          *
-         *     Mirrors the persisted ClaimReview shape (judge verdict + per-claim
-         *     agree/disagree with optional whys) so the save path can write it onto
-         *     the golden TaskRun and judge refinement can consume it later.
+         *     Mirrors the persisted ClaimReview shape (judge verdict, the overview,
+         *     every claim with its agree/disagree and optional why, and the reviewer's
+         *     overall call) so the save path can write it onto the golden TaskRun and
+         *     judge refinement can consume it later.
          */
         ClaimReviewApi: {
             /**
@@ -5228,15 +5286,31 @@ export interface components {
             judge_score: "pass" | "fail";
             /** Judge Reasoning */
             judge_reasoning: string;
+            /** Overview */
+            overview: string;
             /** Claims */
             claims: components["schemas"]["GradedClaim"][];
-            final_judgement: components["schemas"]["GradedClaim"];
+            /**
+             * Human Verdict
+             * @enum {string}
+             */
+            human_verdict: "pass" | "fail";
         };
         /**
          * ClarifySpecApiInput
          * @description Input for clarifying a spec with copilot.
          */
         ClarifySpecApiInput: {
+            /**
+             * Project Id
+             * @description The project holding the target task. Pair with task_id to have the server attach the task's tools and skills.
+             */
+            project_id?: string | null;
+            /**
+             * Task Id
+             * @description The target task. Pair with project_id to have the server attach the task's tools and skills.
+             */
+            task_id?: string | null;
             target_task_info: components["schemas"]["TaskInfoApi"];
             /** Target Specification */
             target_specification: string;
@@ -5261,48 +5335,6 @@ export interface components {
             examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
             judge_result: components["schemas"]["SyntheticDataGenerationStepConfigApi"];
             sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi"];
-        };
-        /**
-         * ClassifySpecDescriptionInput
-         * @description Free-text description of an eval the user wants to build. The
-         *     endpoint maps it to a `SpecType` and pre-fills the property_values for
-         *     that type so the v2 builder can skip the template-carousel step
-         *     entirely.
-         */
-        ClassifySpecDescriptionInput: {
-            /**
-             * Description
-             * @description Free-text description of what the eval should check.
-             */
-            description: string;
-            /**
-             * Task Prompt
-             * @description Optional task prompt for context (improves classification accuracy when the spec relates to a specific task).
-             */
-            task_prompt?: string | null;
-        };
-        /**
-         * ClassifySpecDescriptionOutput
-         * @description Classified spec type + suggested name + spec_type-specific property
-         *     values. Keys in `property_values` correspond to `FieldConfig.key`
-         *     entries in `spec_field_configs[spec_type]` (see
-         *     app/web_ui/src/routes/(app)/specs/[project_id]/[task_id]/select_template/spec_templates.ts).
-         */
-        ClassifySpecDescriptionOutput: {
-            /** @description The classified spec type. */
-            spec_type: components["schemas"]["SpecType"];
-            /**
-             * Suggested Name
-             * @description A filename-safe name for the new spec, derived from the description.
-             */
-            suggested_name: string;
-            /**
-             * Property Values
-             * @description Pre-filled property values for the chosen spec_type. Keys correspond to the field_configs of that spec_type.
-             */
-            property_values: {
-                [key: string]: string;
-            };
         };
         /** ClientVersionPolicy */
         ClientVersionPolicy: {
@@ -5384,9 +5416,14 @@ export interface components {
             reference_keys: string[];
             /**
              * Timeout Seconds
-             * @default 30
+             * @default 180
              */
             timeout_seconds: number;
+            /**
+             * Tool Allowlist
+             * @description Explicit per-tool allowlist of tools the scorer code may call.
+             */
+            tool_allowlist?: string[];
         };
         /** CodeToolArchiveRequest */
         CodeToolArchiveRequest: {
@@ -5727,14 +5764,14 @@ export interface components {
             template?: components["schemas"]["EvalTemplateId"] | null;
             /**
              * Output Scores
-             * @description The scores this evaluator should produce.
+             * @description The scores this evaluator should produce. When omitted, a pass/fail score named after the eval is generated.
              */
-            output_scores: components["schemas"]["EvalOutputScore"][];
+            output_scores?: components["schemas"]["EvalOutputScore"][] | null;
             /**
              * Eval Set Filter Id
-             * @description The dataset filter for the eval set.
+             * @description The dataset filter for the eval set. When omitted, tag-based eval/train/golden filters are generated from the eval name, matching what spec-backed evals get.
              */
-            eval_set_filter_id: string;
+            eval_set_filter_id?: string | null;
             /**
              * Eval Configs Filter Id
              * @description The dataset filter for comparing eval configs.
@@ -5749,6 +5786,16 @@ export interface components {
             } | null;
             /** @description The type of task output to evaluate. */
             evaluation_data_type: components["schemas"]["EvalDataType"];
+            /**
+             * @description The priority of the eval.
+             * @default 1
+             */
+            priority: components["schemas"]["Priority"];
+            /**
+             * @description The status of the eval.
+             * @default active
+             */
+            status: components["schemas"]["EvalStatus"];
         };
         /** CreateExtractorConfigRequest */
         CreateExtractorConfigRequest: {
@@ -5898,15 +5945,15 @@ export interface components {
              */
             system_prompt?: string | null;
             /**
+             * Judge Instructions
+             * @description User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from.
+             */
+            judge_instructions?: string[] | null;
+            /**
              * Name
              * @description The name of the eval config.
              */
             name?: string | null;
-            /**
-             * Reference Keys
-             * @description Reference data keys this judge needs (captured from test).
-             */
-            reference_keys?: string[];
         };
         /**
          * CreateMcpRunConfigRequest
@@ -6026,8 +6073,8 @@ export interface components {
          *       generated inputs. Endpoint tags the existing runs with golden/train
          *       filter tags (writing the verdicts onto the golden ones) and mints one
          *       EvalInput per input as the eval slice; no new TaskRuns are created and
-         *       nothing is generated. `evaluate_full_trace` must be False — the
-         *       pipeline judged final answers, so the saved eval must too.
+         *       nothing is generated. `evaluate_full_trace` must be True — the
+         *       pipeline judged the transcript, so the saved eval must too.
          *
          *     - **Multi-turn (wizard):** caller supplies `multi_turn` with a `batch_tag`
          *       pointing at chains already on disk (created earlier by the
@@ -6554,6 +6601,11 @@ export interface components {
             judge_prompt: string;
             /** System Prompt */
             system_prompt: string;
+            /**
+             * Reference Keys
+             * @description Reference data keys the server will require of a judge for this eval, derived the same way `create_llm_judge_config` derives them. Returned so the builder can offer a place to supply them when testing, rather than re-deriving the rule client-side from the prompt's text.
+             */
+            reference_keys?: string[];
         };
         /**
          * DeleteConfigResponse
@@ -6918,6 +6970,10 @@ export interface components {
              * @default false
              */
             favourite: boolean;
+            /** @description The priority of the eval. None on evals created before priority lived on evals; read through resolved_priority(), which falls back to the associated spec. */
+            priority?: components["schemas"]["Priority"] | null;
+            /** @description The status of the eval. None on evals created before status lived on evals; read through resolved_status(), which falls back to the associated spec. */
+            status?: components["schemas"]["EvalStatus"] | null;
             /**
              * Template Properties
              * @description Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.
@@ -7354,15 +7410,13 @@ export interface components {
          * @description The scores an eval produced for a single dataset item.
          *
          *     A run serves one of two purposes:
-         *     - eval_config_eval=False: evaluating a task run — the task was run with
-         *       task_run_config_id (which must be set) and the evaluator scored its output.
-         *     - eval_config_eval=True: evaluating the eval config itself — an existing
-         *       item's output was scored so the evaluator can be compared against human
-         *       ratings. task_run_config_id must be None.
-         *
-         *     Eval runs can be one of 2 types:
-         *     1) eval_config_eval=False (scoring): we were evaluating a task run config (a method of running the task). We take the item's input, run the task with the task_run_config, then run the evaluator on that output. task_run_config_id must be set.
-         *     2) eval_config_eval=True (calibration): we were evaluating an eval config (a method of evaluating the task). We used an existing human-rated dataset item's input/output, and ran the evaluator on it. task_run_config_id must be None.
+         *     - eval_config_eval=False (scoring): evaluating a task run config — the item's
+         *       input was run through the task with task_run_config_id (which must be set)
+         *       and the evaluator scored that output.
+         *     - eval_config_eval=True (calibration): evaluating the eval config itself — an
+         *       existing human-rated dataset item's input and output were scored so the
+         *       evaluator can be compared against those human ratings. task_run_config_id
+         *       must be None.
          *
          *     A record is described by two independent facts — whether it points at a TaskRun, and
          *     whether it was skipped — which `validate_record_mode` constrains to three legal
@@ -7479,13 +7533,6 @@ export interface components {
              */
             eval_input_id?: string | null;
             /**
-             * Reference Data
-             * @description Structured reference data from EvalInput.reference, used by V2 eval types.
-             */
-            reference_data?: {
-                [key: string]: components["schemas"]["JsonValue"];
-            } | null;
-            /**
              * Skipped Reason
              * @description If set, this run was skipped. Stored as str for back/forward-compat; conventionally a SkippedReason value.
              */
@@ -7547,10 +7594,18 @@ export interface components {
             task_run_usage: components["schemas"]["Usage"] | null;
         };
         /**
+         * EvalStatus
+         * @description Lifecycle status of an eval (and, historically, of a spec).
+         * @enum {string}
+         */
+        EvalStatus: "active" | "future" | "deprecated" | "archived";
+        /**
          * EvalTaskInput
          * @description The runtime data bundle passed to V2 evaluators.
          *
-         *     Assembled by the eval runner from an EvalInput and a task run result.
+         *     Assembled by the eval runner from the item being evaluated and the task run that
+         *     was scored. The item is either an EvalInput or a TaskRun drawn from the dataset;
+         *     which one it is determines where `reference_data` and `task_input` come from.
          */
         EvalTaskInput: {
             /**
@@ -7567,7 +7622,7 @@ export interface components {
             }[] | null;
             /**
              * Reference Data
-             * @description Reference/ground-truth data from EvalInput.reference.
+             * @description Ground-truth data for the item being evaluated, keyed by reference name. Taken from EvalInput.reference for an EvalInput-backed item; for a TaskRun-backed dataset item it is the item's own stored output under the key 'reference_answer', since that output is the curated answer. None when a TaskRun is scored as itself (judge calibration), where the item and the scored run are the same record.
              */
             reference_data?: {
                 [key: string]: components["schemas"]["JsonValue"];
@@ -8080,26 +8135,6 @@ export interface components {
             attachment: {
                 [key: string]: unknown;
             };
-        };
-        /**
-         * FinalJudgementApi
-         * @description The one overall verdict entry (top-level, not a claim in the list).
-         *
-         *     Its expected_result always equals the judge's verdict — the server pins it
-         *     deterministically, so the answer key can anchor to it.
-         */
-        FinalJudgementApi: {
-            /** Claim */
-            claim: string;
-            /**
-             * Expected Result
-             * @enum {string}
-             */
-            expected_result: "pass" | "fail";
-            /** Evidence */
-            evidence: string;
-            /** Citations */
-            citations: components["schemas"]["CitationApi"][];
         };
         /**
          * FineTuneParameter
@@ -8629,29 +8664,19 @@ export interface components {
         };
         /**
          * GradedClaim
-         * @description One claim/evidence pair with a human grade on it.
+         * @description One claim with a human grade on it.
          *
-         *     `expected_result` is the verdict an AGREE on the claim supports, so a
-         *     grade is meaningful relative to a judge's verdict: agreeing with a claim
-         *     that points opposite the judge is evidence the judge was wrong.
+         *     A claim is one decision the judge made, written so the reviewer can vote
+         *     on it from the card alone. Grades have one direction on every claim:
+         *     agree means the judge got that decision right, disagree means it got it
+         *     wrong. The claim text carries its own evidence and citation markers.
          */
         GradedClaim: {
             /**
-             * Claim
-             * @description The claim that was graded.
+             * Text
+             * @description The claim as shown to the reviewer.
              */
-            claim: string;
-            /**
-             * Evidence
-             * @description The one-sentence evidence backing the claim.
-             */
-            evidence: string;
-            /**
-             * Expected Result
-             * @description The verdict an AGREE on this claim supports.
-             * @enum {string}
-             */
-            expected_result: "pass" | "fail";
+            text: string;
             /**
              * Human Grade
              * @description The human's grade on this claim.
@@ -8668,10 +8693,10 @@ export interface components {
          * GradedTraceApi
          * @description One human-reviewed trace's grades, shaped to feed judge refinement.
          *
-         *     Mirrors the persisted ClaimReview (judge verdict + per-claim
-         *     agree/disagree with optional whys) plus a `trace_label` the refine model
-         *     cites in its change rationales. Only the claims the reviewer actually
-         *     graded appear — an absent claim is "not reviewed", never agreement.
+         *     Mirrors the persisted ClaimReview (judge verdict, the overview, every
+         *     claim with its agree/disagree and optional why, and the reviewer's
+         *     overall call) plus a `trace_label` the refine model cites in its change
+         *     rationales.
          */
         GradedTraceApi: {
             /**
@@ -8686,9 +8711,15 @@ export interface components {
             judge_score: "pass" | "fail";
             /** Judge Reasoning */
             judge_reasoning: string;
+            /** Overview */
+            overview: string;
             /** Claims */
             claims: components["schemas"]["GradedClaim"][];
-            final_judgement: components["schemas"]["GradedClaim"];
+            /**
+             * Human Verdict
+             * @enum {string}
+             */
+            human_verdict: "pass" | "fail";
         };
         /** GuidePreviewInput */
         GuidePreviewInput: {
@@ -9406,6 +9437,11 @@ export interface components {
              * @description Override the judge system prompt. Defaults to 'You are an evaluator.'
              */
             system_prompt?: string | null;
+            /**
+             * Judge Instructions
+             * @description User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from.
+             */
+            judge_instructions?: string[] | null;
         };
         /** LlmJudgeProperties */
         LlmJudgeProperties: {
@@ -9434,6 +9470,8 @@ export interface components {
              * @default false
              */
             g_eval: boolean;
+            /** Judge Instructions */
+            judge_instructions?: string[] | null;
         };
         /** LocalServerProperties */
         LocalServerProperties: {
@@ -9667,6 +9705,8 @@ export interface components {
             supports_logprobs: boolean;
             /** Suggested For Evals */
             suggested_for_evals: boolean;
+            /** Suggested For Synthetic User */
+            suggested_for_synthetic_user: boolean;
             /** Supports Function Calling */
             supports_function_calling: boolean;
             /** Uncensored */
@@ -9737,7 +9777,7 @@ export interface components {
             model_provider: string;
             /**
              * Turns
-             * @description Exact number of assistant turns per re-driven conversation (the drive loop has no early termination).
+             * @description Ceiling on the assistant turns per re-driven conversation.
              */
             turns: number;
         };
@@ -9776,7 +9816,7 @@ export interface components {
             }[];
             /**
              * Turns
-             * @description Exact number of assistant turns to produce per case. The drive loop has no early termination.
+             * @description Ceiling on the assistant turns produced per case.
              * @default 5
              */
             turns: number;
@@ -10023,6 +10063,19 @@ export interface components {
             results: components["schemas"]["OutputsBatchResultItem"][];
             /** Error Message */
             error_message?: string | null;
+        };
+        /**
+         * OverviewApi
+         * @description The neutral summary of the trace the reviewer reads before the claims.
+         *
+         *     Same shape as a claim: prose with inline [n] markers resolved through
+         *     `citations`. Markers restart at [1] here and in every claim.
+         */
+        OverviewApi: {
+            /** Text */
+            text: string;
+            /** Citations */
+            citations: components["schemas"]["CitationApi"][];
         };
         /**
          * ParseImportFileApiOutput
@@ -10913,6 +10966,16 @@ export interface components {
          * @description Input for refining a spec based on feedback.
          */
         RefineSpecApiInput: {
+            /**
+             * Project Id
+             * @description The project holding the target task. Pair with task_id to have the server attach the task's tools and skills.
+             */
+            project_id?: string | null;
+            /**
+             * Task Id
+             * @description The target task. Pair with project_id to have the server attach the task's tools and skills.
+             */
+            task_id?: string | null;
             target_task_info: components["schemas"]["TaskInfoApi"];
             target_specification: components["schemas"]["SpecApi"];
             /** Examples With Feedback */
@@ -11153,7 +11216,7 @@ export interface components {
             user_says_meets_spec: boolean;
             /** Feedback */
             feedback: string;
-            /** @description Per-claim grades from the claim/evidence review, when the example was reviewed that way (v2 builder). */
+            /** @description Per-claim grades from the claim review, when the example was reviewed that way (v2 builder). */
             claim_review?: components["schemas"]["ClaimReviewApi"] | null;
         };
         /** RunCasesBatchApiInput */
@@ -11177,7 +11240,7 @@ export interface components {
             }[];
             /**
              * Turns
-             * @description Exact number of assistant turns to produce per case. The drive loop has no early termination.
+             * @description Ceiling on the assistant turns produced per case.
              * @default 5
              */
             turns: number;
@@ -11525,6 +11588,36 @@ export interface components {
              */
             mean_score: number | null;
             /**
+             * Min Score
+             * @description The lowest score across all used runs. None when n_used == 0.
+             */
+            min_score?: number | null;
+            /**
+             * P25 Score
+             * @description The 25th-percentile score across all used runs. None when n_used == 0.
+             */
+            p25_score?: number | null;
+            /**
+             * Median Score
+             * @description The median (50th-percentile) score across all used runs. None when n_used == 0.
+             */
+            median_score?: number | null;
+            /**
+             * P75 Score
+             * @description The 75th-percentile score across all used runs. None when n_used == 0.
+             */
+            p75_score?: number | null;
+            /**
+             * P90 Score
+             * @description The 90th-percentile score across all used runs. None when n_used == 0.
+             */
+            p90_score?: number | null;
+            /**
+             * Max Score
+             * @description The highest score across all used runs. None when n_used == 0.
+             */
+            max_score?: number | null;
+            /**
              * N Used
              * @description Number of EvalRuns with all expected scores and not skipped.
              */
@@ -11852,7 +11945,7 @@ export interface components {
              * @description The status of the spec.
              * @default active
              */
-            status: components["schemas"]["SpecStatus"];
+            status: components["schemas"]["EvalStatus"];
             /**
              * Tags
              * @description The tags of the spec.
@@ -11914,7 +12007,7 @@ export interface components {
              * @description The status of the spec.
              * @default active
              */
-            status: components["schemas"]["SpecStatus"];
+            status: components["schemas"]["EvalStatus"];
             /**
              * Tags
              * @description The tags of the spec.
@@ -11932,6 +12025,16 @@ export interface components {
         /** SpecQuestionerApiInput */
         SpecQuestionerApiInput: {
             /**
+             * Project Id
+             * @description The project holding the target task. Pair with task_id to have the server attach the task's tools and skills.
+             */
+            project_id?: string | null;
+            /**
+             * Task Id
+             * @description The target task. Pair with project_id to have the server attach the task's tools and skills.
+             */
+            task_id?: string | null;
+            /**
              * target_task_info
              * @description The task info including prompt, input schema, and output schema
              */
@@ -11942,18 +12045,6 @@ export interface components {
              */
             target_specification: string;
         };
-        /**
-         * SpecStatus
-         * @description Defines the status of a spec.
-         * @enum {string}
-         */
-        SpecStatus: "active" | "future" | "deprecated" | "archived";
-        /**
-         * SpecType
-         * @description Defines the type of spec.
-         * @enum {string}
-         */
-        SpecType: "desired_behaviour" | "issue" | "tone" | "formatting" | "localization" | "appropriate_tool_use" | "reference_answer_accuracy" | "factual_correctness" | "hallucinations" | "completeness" | "toxicity" | "bias" | "maliciousness" | "nsfw" | "taboo" | "jailbreak" | "prompt_leakage";
         /**
          * SpecificationInput
          * @description The specification to refine.
@@ -12348,6 +12439,16 @@ export interface components {
              * @description The task's output JSON schema.
              */
             task_output_schema: string;
+            /**
+             * Task Tools
+             * @description Tools available to the task. Omit if not collected; send [] if the task has none.
+             */
+            task_tools?: components["schemas"]["TaskToolInfoApi"][] | null;
+            /**
+             * Task Skills
+             * @description Skills available to the task. Omit if not collected; send [] if the task has none.
+             */
+            task_skills?: components["schemas"]["TaskSkillInfoApi"][] | null;
         };
         /**
          * TaskMetadataApi
@@ -12888,6 +12989,22 @@ export interface components {
              */
             output: string;
         };
+        /**
+         * TaskSkillInfoApi
+         * @description A skill the target task can load. Name and description only.
+         */
+        TaskSkillInfoApi: {
+            /**
+             * Name
+             * @description The skill's name, as the model sees it.
+             */
+            name: string;
+            /**
+             * Description
+             * @description What the skill does. Never the skill's body.
+             */
+            description: string;
+        };
         /** TaskSummariesProject */
         TaskSummariesProject: {
             /** Id */
@@ -12940,6 +13057,22 @@ export interface components {
              * @description Why the task is incompatible, if applicable.
              */
             incompatibility_reason?: string | null;
+        };
+        /**
+         * TaskToolInfoApi
+         * @description A tool the target task can call. Name and description only.
+         */
+        TaskToolInfoApi: {
+            /**
+             * Name
+             * @description The tool's name, as the model sees it.
+             */
+            name: string;
+            /**
+             * Description
+             * @description What the tool does. Never its parameter schema.
+             */
+            description: string;
         };
         /**
          * TestAccessRequest
@@ -13064,6 +13197,27 @@ export interface components {
             duration_ms: number;
         };
         /**
+         * TestV2EvalDraftRequest
+         * @description Request to test-run a V2 eval config for an eval that doesn't exist yet.
+         *
+         *     Used by the creation flow, where the eval (and its scores) are still being
+         *     drafted; the server builds a transient in-memory eval from output_scores.
+         */
+        TestV2EvalDraftRequest: {
+            /**
+             * Properties
+             * @description The V2 eval config properties to test.
+             */
+            properties: components["schemas"]["LlmJudgeProperties"] | components["schemas"]["ExactMatchProperties"] | components["schemas"]["PatternMatchProperties"] | components["schemas"]["SetCheckProperties"] | components["schemas"]["ToolCallCheckProperties"] | components["schemas"]["ContainsProperties"] | components["schemas"]["StepCountCheckProperties"] | components["schemas"]["CodeEvalProperties"];
+            /**
+             * Output Scores
+             * @description The scores the drafted eval will declare; returned scores are validated against them.
+             */
+            output_scores: components["schemas"]["EvalOutputScore"][];
+            /** @description The input to evaluate. */
+            eval_input: components["schemas"]["EvalTaskInput"];
+        };
+        /**
          * TestV2EvalRequest
          * @description Request to test-run a V2 eval config without persisting.
          */
@@ -13097,6 +13251,11 @@ export interface components {
             intermediate_outputs?: {
                 [key: string]: string;
             } | null;
+            /**
+             * Tool Call Log
+             * @description Tools the scorer code called, in call order. Code evals only.
+             */
+            tool_call_log?: components["schemas"]["ToolCallLogEntryResponse"][];
         };
         /**
          * TestWriteAccessRequest
@@ -13142,7 +13301,11 @@ export interface components {
             /** Unacceptable Examples */
             unacceptable_examples?: string;
         };
-        /** ToolApiDescription */
+        /**
+         * ToolApiDescription
+         * @description A tool as shown in pickers: name is the user-facing display name,
+         *     function_name the callable name the model sees (they often coincide).
+         */
         ToolApiDescription: {
             /** Id */
             id: string;
@@ -13188,7 +13351,10 @@ export interface components {
             /** Requiresapproval */
             requiresApproval: boolean;
         };
-        /** ToolCallLogEntryResponse */
+        /**
+         * ToolCallLogEntryResponse
+         * @description One nested tool call a sandboxed run made, as reported to a test pane.
+         */
         ToolCallLogEntryResponse: {
             /** Tool Name */
             tool_name: string;
@@ -13252,7 +13418,7 @@ export interface components {
          * ToolSetType
          * @enum {string}
          */
-        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin" | "code";
+        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin" | "code" | "sandbox_code";
         /**
          * ToolsRunConfig
          * @description A config describing which tools are available to a task.
@@ -13396,6 +13562,10 @@ export interface components {
              * @description The updated description.
              */
             description?: string | null;
+            /** @description The updated priority. */
+            priority?: components["schemas"]["Priority"] | null;
+            /** @description The updated status. */
+            status?: components["schemas"]["EvalStatus"] | null;
             /**
              * Train Set Filter Id
              * @description The updated train set filter ID.
@@ -13483,7 +13653,7 @@ export interface components {
             /** @description The updated priority. */
             priority?: components["schemas"]["Priority"] | null;
             /** @description The updated status. */
-            status?: components["schemas"]["SpecStatus"] | null;
+            status?: components["schemas"]["EvalStatus"] | null;
             /**
              * Tags
              * @description The updated tags.
@@ -18501,6 +18671,42 @@ export interface operations {
             };
         };
     };
+    get_eval_default_judge_types_api_projects__project_id__tasks__task_id__eval_default_judge_types_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_eval_inputs_api_projects__project_id__tasks__task_id__eval_inputs_get: {
         parameters: {
             query?: {
@@ -18935,6 +19141,44 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TestV2EvalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestV2EvalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_v2_eval_draft_api_projects__project_id__tasks__task_id__test_v2_eval_draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestV2EvalDraftRequest"];
             };
         };
         responses: {
@@ -20808,39 +21052,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PublicPromptOptimizationJobResultResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    classify_spec_description_api_copilot_classify_spec_description_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ClassifySpecDescriptionInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ClassifySpecDescriptionOutput"];
                 };
             };
             /** @description Validation Error */

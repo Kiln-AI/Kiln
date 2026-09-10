@@ -51,6 +51,171 @@ export type DriveStop = {
   preflight?: PreflightFailure | null
 }
 
+// ── Conversation length ───────────────────────────────────────────────────
+
+// The range the multi-turn drive route accepts for its turn count
+// (multiturn_sdg_api's `turns` field is ge=1, le=20). Mirrored here so the
+// stepper and every restored value stay inside what the route will take.
+export const MIN_TURNS_PER_CASE = 1
+export const MAX_TURNS_PER_CASE = 20
+
+// The turn count a drive actually runs at. A saved draft can carry a value
+// from an older range (or no number at all), so every reader goes through
+// this instead of trusting the stored one — that way the quote, the request,
+// and the stamp can never describe a length the route would reject. A
+// non-numeric value falls back to the minimum, matching the stepper's own
+// blank-entry behavior.
+export function clamp_turns_per_case(turns: number): number {
+  if (!Number.isFinite(turns)) return MIN_TURNS_PER_CASE
+  return Math.min(
+    MAX_TURNS_PER_CASE,
+    Math.max(MIN_TURNS_PER_CASE, Math.round(turns)),
+  )
+}
+
+// The length a restored draft starts at. The clamp above exists to pull a
+// number from an older range back inside today's bounds, so only a genuine
+// number is worth clamping: a draft with no value on record — or one whose
+// stored value isn't a finite number at all — has expressed no choice, and
+// restoring it as the clamp's minimum would quietly hand the user a
+// one-turn run they never picked. Those restore the default instead.
+export function restore_turns_per_case(
+  stored: number | null | undefined,
+  fallback: number,
+): number {
+  if (typeof stored !== "number" || !Number.isFinite(stored)) return fallback
+  return clamp_turns_per_case(stored)
+}
+
+// ── Top-off drive planning ────────────────────────────────────────────────
+//
+// A retry after a partial drive must fill the batch, not replace it: the
+// completed cases are paid results, and re-driving them re-bills every one
+// while the previous batch's chains are deleted as superseded. The drive
+// plan below decides, before anything is spent, whether the next drive can
+// TOP OFF the current batch — drive only the missing slots, into the SAME
+// batch tag, so the new results land beside the kept ones and review/save
+// read one whole batch — or must start fresh (replace semantics).
+
+export type DrivePlan<T> = {
+  // What this drive sends the pipeline: every item on a fresh drive, only
+  // the missing slots' items on a top-off.
+  items: T[]
+  // Maps the stream's case_index (a position in `items`) back to its slot
+  // in the batch. Identity on a fresh drive.
+  slot_of_stream_index: number[]
+  // The batch tag to drive into: the current batch's tag on a top-off
+  // (retried cases join the same box); null lets the server mint one.
+  batch_tag: string | null
+  // Tags superseded by this drive. A top-off never lists its own batch —
+  // deleting the batch being topped off would destroy the paid successes
+  // being kept.
+  replace_batch_tags: string[]
+  top_off: boolean
+}
+
+export function missing_slot_indices<R>(
+  slots: readonly (R | null)[],
+): number[] {
+  return slots.flatMap((s, i) => (s === null ? [i] : []))
+}
+
+export function plan_drive<T, R>(args: {
+  // The item list resolved for this attempt (cases or inputs).
+  items: T[]
+  // The current batch's item list, or null when no batch exists.
+  batch_items: T[] | null
+  // The current batch's per-slot results (null = missing).
+  built_slots: readonly (R | null)[]
+  batch_tag: string | null
+  undeleted_batch_tags: string[]
+}): DrivePlan<T> {
+  const missing = missing_slot_indices(args.built_slots)
+  // Top-off requires an existing batch with something to keep AND something
+  // to fill, driven from byte-identical items — a changed plan or spec
+  // resolves different items, and mixing them into the old batch would put
+  // results the user never planned together under one tag. The slot/item
+  // length agreement is a hard requirement: a divergence would map missing
+  // slots onto the wrong (or no) items.
+  const can_top_off =
+    args.batch_tag !== null &&
+    args.batch_items !== null &&
+    args.built_slots.length === args.batch_items.length &&
+    missing.length > 0 &&
+    missing.length < args.built_slots.length &&
+    JSON.stringify(args.items) === JSON.stringify(args.batch_items)
+  if (!can_top_off) {
+    return {
+      items: args.items,
+      slot_of_stream_index: args.items.map((_, i) => i),
+      batch_tag: null,
+      replace_batch_tags: [...args.undeleted_batch_tags],
+      top_off: false,
+    }
+  }
+  return {
+    items: missing.map((i) => args.items[i]),
+    slot_of_stream_index: missing,
+    batch_tag: args.batch_tag,
+    replace_batch_tags: args.undeleted_batch_tags.filter(
+      (t) => t !== args.batch_tag,
+    ),
+    top_off: true,
+  }
+}
+
+// Whether the current batch was produced under the same drive settings this
+// attempt would run with. A changed judge — or, on multi-turn, a changed
+// synthetic-user model or conversation-length ceiling — forces a fresh batch
+// instead of a top-off: one review may not mix two judges' verdicts, and the
+// saved drive stamp must describe the settings every conversation in the
+// batch ran under. `su` and `turns` are omitted entirely on the single-turn
+// arm, which has neither a synthetic-user lane nor conversations to length.
+export function drive_lanes_unchanged(args: {
+  judge: unknown
+  batch_judge: unknown | null
+  su?: unknown
+  batch_su?: unknown | null
+  turns?: number
+  batch_turns?: number | null
+}): boolean {
+  if (args.batch_judge === null) return false
+  if (JSON.stringify(args.judge) !== JSON.stringify(args.batch_judge)) {
+    return false
+  }
+  if (args.su !== undefined) {
+    if (args.batch_su === null || args.batch_su === undefined) return false
+    if (JSON.stringify(args.su) !== JSON.stringify(args.batch_su)) return false
+  }
+  if (args.turns !== undefined) {
+    // `turns` is a ceiling, so a batch legitimately holds conversations of
+    // several lengths — the synthetic user can end one early. What has to
+    // match is the ceiling they all ran under, which is what the stamp
+    // records. Comparing the conversations' observed lengths instead would
+    // wrongly reject a top-off onto any batch where a conversation ended
+    // early.
+    if (args.batch_turns === null || args.batch_turns === undefined) {
+      return false
+    }
+    if (args.turns !== args.batch_turns) return false
+  }
+  return true
+}
+
+// Compact a batch's slots into the review list, preferring the live review
+// entry where one exists for the same trace: claims built (or any later
+// enrichment of) a kept case must survive a top-off's compaction — the
+// slots hold each case as its drive produced it, not as review evolved it.
+export function compact_batch_slots<T extends { trace_id: string }>(
+  slots: readonly (T | null)[],
+  current: readonly T[],
+): T[] {
+  const live = new Map(current.map((t) => [t.trace_id, t]))
+  return slots
+    .filter((t): t is T => t !== null)
+    .map((t) => live.get(t.trace_id) ?? t)
+}
+
 // The one failure the banner reports, chosen in the given (blame) order —
 // deterministic regardless of which lane's ping lost the race. All lanes
 // are checked concurrently, so with several dead lanes the user fixes them
@@ -129,7 +294,7 @@ export function drive_stop_banner(
       f.lane === "synthetic-user driver"
         ? "The model that plays the user"
         : f.lane === "input generator"
-          ? "The model that writes the test inputs"
+          ? "The eval data generation model"
           : "The judge model"
     const model_clause = f.model ? ` (${f.model})` : ""
     const requirement = f.provider
@@ -189,8 +354,11 @@ export function driven_data_confirm(
 // Regenerating the plan ALWAYS confirms — a plan alone costs minutes to
 // make. Three-tier wording: what you lose scales the message — plan only /
 // plan + row deletions / driven results. The first two tiers are SDG's
-// exact formulas. plan_noun is the arm's word for the plan's rows —
-// "scenarios" (multi-turn) or "planned inputs" (single-turn).
+// exact formulas, and take plan_noun — the word for the plan's rows, which
+// the eval builder passes as "items" on both arms so the confirm matches the
+// plan surface's own header. The driven tier names the ACTION instead: SDG's
+// formula puts the subject in front of a verb ("... will discard them"),
+// where a plural row noun reads as broken grammar.
 export function new_plan_confirm(state: {
   has_driven_results: boolean
   survivors: number
@@ -198,10 +366,10 @@ export function new_plan_confirm(state: {
   plan_edited: boolean
   plan_noun?: string
 }): string {
-  const plan_noun = state.plan_noun ?? "scenarios"
+  const plan_noun = state.plan_noun ?? "items"
   if (state.has_driven_results) {
     return driven_data_confirm(
-      `New ${plan_noun}`,
+      "A new batch plan",
       state.survivors,
       state.include_review_progress,
     )
@@ -209,6 +377,30 @@ export function new_plan_confirm(state: {
   return state.plan_edited
     ? `Are you sure you want to discard the current ${plan_noun}, including the ones you removed? This cannot be undone.`
     : `Are you sure you want to discard the current ${plan_noun}? This cannot be undone.`
+}
+
+// What the drive is about to spend, shown on the button that spends it. The
+// multi-turn arm bills per TURN (every case is a whole conversation), so it
+// states the multiplication rather than the case count alone; the single-turn
+// arm runs the task once per input and counts those.
+export function drive_cost_warning(args: {
+  is_multi_turn: boolean
+  count: number
+  turns_per_case: number
+}): string {
+  if (!args.is_multi_turn) {
+    return `This will run your task on ${args.count} item${
+      args.count === 1 ? "" : "s"
+    } and may use considerable credits.`
+  }
+  // Spelled out rather than "N x M": the multiplication told the reader the
+  // arithmetic but not what was being multiplied. "Up to", because the turn
+  // count is a cap the conversation can finish under, not a quota it fills.
+  return `This will run ${args.count} conversation${
+    args.count === 1 ? "" : "s"
+  } of up to ${args.turns_per_case} turn${
+    args.turns_per_case === 1 ? "" : "s"
+  } each. Running multi-turn data generation and evaluation can be expensive. Calculate your costs before proceeding.`
 }
 
 // ── The preparing-review gate ────────────────────────────────────────────

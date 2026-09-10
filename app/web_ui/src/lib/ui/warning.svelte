@@ -9,8 +9,19 @@
     | "gray"
     | undefined = undefined
   export let warning_icon: "exclaim" | "info" | "check" = "exclaim"
+  // Draw the exclaim mark as a solid disc rather than a ring. The ring is
+  // mostly empty at 20px, so little of it is actually coloured and a warning
+  // colour reads much weaker than it is. Use this where a warning has to
+  // outrank the ones next to it without growing.
+  export let filled_icon: boolean = false
   export let large_icon: boolean = false
-  export let tight: boolean = false
+  // Warning owns no outer margin: the container it sits in owns the spacing
+  // around it, so the same Warning reads the same in a form column, a dialog,
+  // or a table cell. The one exception is `outline`, a bordered callout that
+  // still carries its own bottom margin. The text indent is the one explicit variant: `inline`
+  // narrows the icon-to-text gap to 4px for a warning inside a prose column
+  // or a table cell; the default 16px matches a form's label-to-field rhythm.
+  export let inline: boolean = false
   export let trusted: boolean = false
   export let outline: boolean = false
   export let text_size: "xs" | "sm" | "base" | "lg" = "sm"
@@ -57,21 +68,27 @@
         return ""
     }
   }
+
+  // Held as reactive values rather than called from the markup. Svelte tracks
+  // the variables a template expression names, so calling get_color() there
+  // depends on the function, not on `color` — a caller whose colour resolves
+  // after mount (a prop that waits on a fetch, say) would keep the colour from
+  // its first render forever.
+  $: text_color_class = color ? get_color("text") : ""
+  $: border_color_class = color ? get_color("border") : ""
 </script>
 
 {#if warning_message}
   <div
     class="{text_size_class} text-gray-500 flex flex-row items-center {outline
-      ? `border-2 ${get_color('border')} rounded-lg px-4 py-2 mb-6`
-      : tight
-        ? ''
-        : 'mt-2'}"
+      ? `border-2 ${border_color_class} rounded-lg px-4 py-2 mb-6`
+      : ''}"
   >
     {#if warning_icon === "exclaim" || warning_icon === "info"}
       <svg
         class="{large_icon
           ? 'w-8 h-8'
-          : 'w-5 h-5'} flex-none transition-[width,height,transform] duration-500 ease-in-out {get_color()} {warning_icon ===
+          : 'w-5 h-5'} flex-none transition-[width,height,transform] duration-500 ease-in-out {text_color_class} {warning_icon ===
         'info'
           ? 'rotate-180'
           : 'rotate-0'}"
@@ -81,16 +98,25 @@
         id="Flat"
         xmlns="http://www.w3.org/2000/svg"
       >
-        <path
-          d="M128,20.00012a108,108,0,1,0,108,108A108.12217,108.12217,0,0,0,128,20.00012Zm0,192a84,84,0,1,1,84-84A84.0953,84.0953,0,0,1,128,212.00012Zm-12-80v-52a12,12,0,1,1,24,0v52a12,12,0,1,1-24,0Zm28,40a16,16,0,1,1-16-16A16.018,16.018,0,0,1,144,172.00012Z"
-        />
+        {#if filled_icon}
+          <!-- The same mark as a solid disc: the ring subpath is dropped and
+               evenodd knocks the bar and dot back out of the fill. -->
+          <path
+            fill-rule="evenodd"
+            d="M128,20.00012a108,108,0,1,0,108,108A108.12217,108.12217,0,0,0,128,20.00012ZM116,132v-52a12,12,0,1,1,24,0v52a12,12,0,1,1-24,0ZM144,172a16,16,0,1,1-16-16A16.018,16.018,0,0,1,144,172Z"
+          />
+        {:else}
+          <path
+            d="M128,20.00012a108,108,0,1,0,108,108A108.12217,108.12217,0,0,0,128,20.00012Zm0,192a84,84,0,1,1,84-84A84.0953,84.0953,0,0,1,128,212.00012Zm-12-80v-52a12,12,0,1,1,24,0v52a12,12,0,1,1-24,0Zm28,40a16,16,0,1,1-16-16A16.018,16.018,0,0,1,144,172.00012Z"
+          />
+        {/if}
       </svg>
     {:else if warning_icon === "check"}
       <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
       <svg
         class="{large_icon
           ? 'w-8 h-8'
-          : 'w-5 h-5'} transition-[width,height,transform] duration-500 ease-in-out flex-none {get_color()}"
+          : 'w-5 h-5'} transition-[width,height,transform] duration-500 ease-in-out flex-none {text_color_class}"
         viewBox="0 0 24 24"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
@@ -105,7 +131,7 @@
       </svg>
     {/if}
 
-    <div class="{tight ? 'pl-1' : 'pl-4'} flex flex-col gap-2">
+    <div class="{inline ? 'pl-1' : 'pl-4'} flex flex-col gap-2">
       {#if markdown && trusted}
         <MarkdownBlock markdown_text={warning_message} />
       {:else if trusted}

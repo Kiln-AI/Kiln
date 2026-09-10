@@ -106,3 +106,142 @@ describe("Trace component", () => {
     expect(collapses.length).toBe(0)
   })
 })
+
+describe("Trace component — auto_expand_indices", () => {
+  const trace: TraceType = [
+    systemMsg("you are helpful"),
+    userMsg("find the window"),
+    assistantMsg("Our return window is 30 days.", {
+      reasoning_content: "checking the docs",
+    }),
+    toolMsg('{"output": "30 days"}'),
+  ]
+
+  function expandedRoles(container: HTMLElement): string[] {
+    return [...container.querySelectorAll(".collapse")]
+      .filter(
+        (block) =>
+          block.querySelector<HTMLInputElement>("input[type=checkbox]")
+            ?.checked,
+      )
+      .map(
+        (block) =>
+          block.querySelector(".collapse-title span")?.textContent ?? "",
+      )
+  }
+
+  it("leaves every block collapsed when the prop is not passed", () => {
+    // The default is what every existing caller gets (the run page, the error
+    // trace view), so it has to stay the all-collapsed list they render today.
+    const { container } = render(Trace, { props: { trace } })
+    expect(expandedRoles(container)).toEqual([])
+    expect(container.textContent).not.toContain("Reasoning")
+  })
+
+  it("expands exactly the listed index and nothing else", () => {
+    const { container } = render(Trace, {
+      props: { trace, auto_expand_indices: [2] },
+    })
+    expect(expandedRoles(container)).toEqual(["Assistant"])
+    // Expanded means the content is really rendered, not just checked.
+    expect(container.textContent).toContain("Our return window is 30 days.")
+    expect(container.textContent).toContain("Reasoning")
+    // The unlisted rows are still one click away, not open.
+    expect(container.textContent).not.toContain("Tool Result")
+  })
+
+  it("picks one message of a role without opening its siblings", () => {
+    // The rule the review surface needs: two assistant messages, only the
+    // final one open. A role-keyed prop could not express this.
+    const two_answers: TraceType = [
+      assistantMsg("first pass"),
+      toolMsg('{"output": "30 days"}'),
+      assistantMsg("Our return window is 30 days."),
+    ]
+    const { container } = render(Trace, {
+      props: { trace: two_answers, auto_expand_indices: [2] },
+    })
+    const open = [...container.querySelectorAll(".collapse")].map(
+      (block) =>
+        !!block.querySelector<HTMLInputElement>("input[type=checkbox]")
+          ?.checked,
+    )
+    expect(open).toEqual([false, false, true])
+    expect(container.querySelector("pre")?.textContent).toContain(
+      "Our return window is 30 days.",
+    )
+  })
+
+  it("expands every listed index", () => {
+    const { container } = render(Trace, {
+      props: { trace, auto_expand_indices: [2, 3] },
+    })
+    expect(expandedRoles(container)).toEqual(["Assistant", "Tool"])
+    expect(container.textContent).toContain("Tool Result")
+  })
+
+  it("ignores an index that is not in the trace", () => {
+    const { container } = render(Trace, {
+      props: { trace, auto_expand_indices: [42] },
+    })
+    expect(expandedRoles(container)).toEqual([])
+  })
+
+  it("does not rebuild when the parent reassigns an equal trace", async () => {
+    // The expansion map is built ONCE. Parents reassign a structurally
+    // identical trace on unrelated state changes (the run page does on save),
+    // and rebuilding there would close every row the reader had opened.
+    const { container, component } = render(Trace, {
+      props: { trace, auto_expand_indices: [2] },
+    })
+    const tool_block = [...container.querySelectorAll(".collapse")].find(
+      (block) =>
+        block.querySelector(".collapse-title span")?.textContent === "Tool",
+    )!
+    await fireEvent.click(
+      tool_block.querySelector<HTMLInputElement>("input[type=checkbox]")!,
+    )
+    expect(expandedRoles(container)).toEqual(["Assistant", "Tool"])
+
+    // A new array holding the same messages, and a different index list.
+    await component.$set({
+      trace: [...trace] as TraceType,
+      auto_expand_indices: [0],
+    })
+    expect(expandedRoles(container)).toEqual(["Assistant", "Tool"])
+  })
+
+  it("keeps the reader's clicks while the trace stays the same", async () => {
+    // The rebuild is keyed on the trace, so an unrelated prop change must not
+    // slam a block the reader just opened back shut.
+    const { container, component } = render(Trace, {
+      props: { trace, auto_expand_indices: [2] },
+    })
+    const tool_block = [...container.querySelectorAll(".collapse")].find(
+      (block) =>
+        block.querySelector(".collapse-title span")?.textContent === "Tool",
+    )!
+    await fireEvent.click(
+      tool_block.querySelector<HTMLInputElement>("input[type=checkbox]")!,
+    )
+    expect(expandedRoles(container)).toEqual(["Assistant", "Tool"])
+
+    await component.$set({ project_id: "proj_1" })
+    expect(expandedRoles(container)).toEqual(["Assistant", "Tool"])
+  })
+
+  it("lets the reader collapse a block that started expanded", async () => {
+    const { container } = render(Trace, {
+      props: { trace, auto_expand_indices: [2] },
+    })
+    const assistant_block = [...container.querySelectorAll(".collapse")].find(
+      (block) =>
+        block.querySelector(".collapse-title span")?.textContent ===
+        "Assistant",
+    )!
+    await fireEvent.click(
+      assistant_block.querySelector<HTMLInputElement>("input[type=checkbox]")!,
+    )
+    expect(expandedRoles(container)).toEqual([])
+  })
+})

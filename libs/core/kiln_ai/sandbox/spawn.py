@@ -9,10 +9,12 @@ import threading
 import types
 
 _spawn_lock = threading.Lock()
-"""Process-global lock shared by code-evals (``run_scorer``) and code tools.
+"""Process-global lock shared by code-evals and code tools.
 
-Serializes the ``__main__`` stub-swap window around ``p.start()``,
-preventing the PyInstaller concurrent-spawn bug #7410.
+Both paths spawn through :func:`kiln_ai.tools.sandbox_bridge.run_bridged_child`,
+which calls :func:`start_process_with_light_main` below. Serializes the
+``__main__`` stub-swap window around ``p.start()``, preventing the PyInstaller
+concurrent-spawn bug #7410.
 """
 
 

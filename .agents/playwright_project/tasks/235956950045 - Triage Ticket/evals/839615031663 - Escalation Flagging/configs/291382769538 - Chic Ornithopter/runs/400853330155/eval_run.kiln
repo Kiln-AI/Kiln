@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "400853330155",
+  "created_at": "2026-08-17T21:33:28.690805Z",
+  "created_by": "root",
+  "dataset_id": "282639728982",
+  "task_run_config_id": "140414461876",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"Invoice needs our VAT number added\", \"body\": \"Our finance team cannot process invoice INV-20418 because it is missing our VAT registration number. Can you add it and reissue? I have added the number to our billing profile already.\", \"customer_plan\": \"pro\"}",
+  "output": "{\"team\": \"billing\", \"priority\": \"medium\", \"needs_human_review\": false, \"summary\": \"Reissue invoice INV-20418 with the customer's VAT number, which has already been added to their billing profile.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The ticket is a routine billing request: the customer wants their VAT number added to an invoice and the invoice reissued. It is not a billing dispute, security concern, privacy issue, or legal/regulatory threat.\n\n- **Team:** billing — correct.\n- **Priority:** medium — reasonable for a non-urgent invoicing request.\n- **Needs human review:** false — correct, because this is a routine billing update and does not require escalation.\n- **Summary:** accurate and useful for the next agent.\n\nThe model’s output matches the desired behaviour.\n\n**Verdict: Pass**",
+    "reasoning": "We need to answer with the schema: {\"escalation_flagging\": \"pass\" or \"fail\"}. Based on reasoning, it's pass."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 1131,
+    "output_tokens": 873,
+    "total_tokens": 2004,
+    "cost": 0.00040278000000000004,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 37994
+  },
+  "model_type": "eval_run"
+}

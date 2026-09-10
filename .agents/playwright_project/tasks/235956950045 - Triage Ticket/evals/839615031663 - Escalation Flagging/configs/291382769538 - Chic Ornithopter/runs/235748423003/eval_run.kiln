@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "235748423003",
+  "created_at": "2026-08-17T21:33:52.369387Z",
+  "created_by": "root",
+  "dataset_id": "219379828532",
+  "task_run_config_id": "177167545173",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"CSV export is missing the last three days\", \"body\": \"I pulled the usage export this morning and the file stops at Tuesday. The dashboard shows data through today, so the numbers do not match. Same result whether I export from the UI or the scheduled email.\", \"customer_plan\": \"free\"}",
+  "output": "{\"team\": \"billing\", \"priority\": \"urgent\", \"needs_human_review\": true, \"summary\": \"The customer reports that their CSV usage export is missing the last three days of data, and we need a human to review because this could indicate a data integrity or billing-related issue that requires careful handling before responding.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output does **not** exhibit the desired behaviour.\n\n- The ticket is a **normal bug report**: the CSV export is missing recent data while the dashboard shows it. There is no security or privacy incident, no cross-tenant data exposure, no suspicious login, no escalated billing dispute, and no legal/regulatory threat.\n- The model set `needs_human_review: true` because it speculated about “data integrity or billing-related issue.” That is not one of the criteria for mandatory human review. Urgency or data-quality concerns alone do not require a human before replying.\n- The correct flag should be `needs_human_review: false`.\n\n**Result: Fail**",
+    "reasoning": "We need to answer with the required JSON schema. The schema only has escalation_flagging, pass/fail. Based on analysis, it's fail. So output {\"escalation_flagging\": \"fail\"}."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 0.0
+  },
+  "task_run_usage": {
+    "input_tokens": 240,
+    "output_tokens": 1027,
+    "total_tokens": 1267,
+    "cost": 0.00032116,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 66171
+  },
+  "model_type": "eval_run"
+}

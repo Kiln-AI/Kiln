@@ -1,0 +1,53 @@
+# Plan Tiers and Response Targets
+
+Three plan tiers appear in tickets: free, pro, and enterprise. They change response
+targets and which channels are available. They do not change priority, and they do
+not change whether a ticket is escalated.
+
+## Free
+
+Email support only. First response within three business days. No phone support and
+no named contact. Free-tier customers are subject to the same escalation policy as
+everyone else: a data exposure or a security report from a free account is escalated
+exactly as an enterprise one is.
+
+## Pro
+
+Email and in-app chat. First response within one business day, and within four hours
+for tickets marked urgent. Pro customers can request a callback for urgent tickets
+but do not have a named contact.
+
+## Enterprise
+
+Email, chat, and a shared channel with a named account manager. First response within
+four business hours, and within one hour for urgent tickets. Enterprise customers
+have a quarterly review where recurring ticket themes are discussed.
+
+## What the targets mean for triage
+
+The response target is a commitment about the first reply, not about resolution. Do
+not promise a resolution time in a first reply. Say what has been understood, what is
+happening next, and who is doing it.
+
+An enterprise ticket that is genuinely low priority stays low priority. The tier
+shortens the clock on the first reply; it does not move the ticket up the queue ahead
+of a higher-priority ticket from a smaller customer.
+
+## Business hours
+
+Response targets are counted in business hours for pro and enterprise, and business
+days for free. Business hours are 09:00 to 18:00 in the customer's registered
+timezone, Monday to Friday, excluding public holidays in that region. A ticket that
+arrives at 17:30 on a Friday with a four-business-hour target is due at 12:30 on the
+following Monday.
+
+Enterprise customers with a signed 24/7 addendum are the one exception, and those
+accounts are flagged in the workspace record. Do not assume an enterprise account has
+one.
+
+## What happens when a target is missed
+
+A missed first-response target is recorded automatically and appears in the weekly
+support review. It is not escalated, and it does not change the ticket's priority.
+The correct response to a missed target is to reply, not to reprioritise the queue
+around the clock.
