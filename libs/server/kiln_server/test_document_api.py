@@ -30,6 +30,7 @@ from kiln_ai.datamodel.extraction import (
     OutputFormat,
 )
 from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.reranker import RerankerConfig, RerankerType
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
@@ -5541,3 +5542,588 @@ def test_get_rag_config_progress_has_no_write_lock(app):
 def test_search_rag_config_has_no_write_lock(app):
     endpoint = _find_endpoint_by_path(app, "/rag_configs/{rag_config_id}/search")
     assert getattr(endpoint, "_git_sync_no_write_lock", False) is True
+
+
+# ---- Tier-2 provenance wiring (Phase 4) ----
+
+
+async def test_create_embedding_config_with_valid_provenance(
+    client, mock_project, mock_embedding_config
+):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_embedding_config",
+            json={
+                "name": "Derived Embedding",
+                "model_provider_name": ModelProviderName.openai,
+                "model_name": EmbeddingModelName.openai_text_embedding_3_small,
+                "properties": {},
+                "provenance": {
+                    "origin": "human",
+                    "derived_from_ids": [mock_embedding_config.id],
+                    "notes": "Cloned from the seed embedding config.",
+                },
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["provenance"]["origin"] == "human"
+    assert result["provenance"]["derived_from_ids"] == [mock_embedding_config.id]
+
+    # Persisted on disk and returned on read.
+    loaded = EmbeddingConfig.from_id_and_parent_path(result["id"], mock_project.path)
+    assert loaded is not None
+    assert loaded.provenance is not None
+    assert loaded.provenance.derived_from_ids == [mock_embedding_config.id]
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        read = client.get(f"/api/projects/{mock_project.id}/embedding_configs")
+    derived = next(c for c in read.json() if c["id"] == result["id"])
+    assert derived["provenance"]["origin"] == "human"
+
+
+async def test_create_embedding_config_unknown_sibling_400(client, mock_project):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_embedding_config",
+            json={
+                "name": "Bad Lineage Embedding",
+                "model_provider_name": ModelProviderName.openai,
+                "model_name": EmbeddingModelName.openai_text_embedding_3_small,
+                "properties": {},
+                "provenance": {"origin": "human", "derived_from_ids": ["missing"]},
+            },
+        )
+
+    assert response.status_code == 400
+    assert "unknown sibling" in response.json()["message"]
+
+
+@pytest.mark.parametrize(
+    "provenance",
+    [
+        {"origin": "banana"},
+        {"origin": None},
+        {"derived_from_ids": ["a"]},  # origin missing
+        {"origin": "human", "derived_from_ids": ["a", "a"]},  # duplicate
+        {"origin": "human", "notes": "x" * 2001},  # over-length
+    ],
+)
+async def test_create_embedding_config_invalid_provenance_422(
+    client, mock_project, provenance
+):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_embedding_config",
+            json={
+                "name": "Bad Provenance Embedding",
+                "model_provider_name": ModelProviderName.openai,
+                "model_name": EmbeddingModelName.openai_text_embedding_3_small,
+                "properties": {},
+                "provenance": provenance,
+            },
+        )
+
+    assert response.status_code == 422
+
+
+async def test_read_embedding_config_forward_compat_provenance_does_not_500(
+    client, mock_project
+):
+    # An embedding config written by a newer client (unknown origin, over-length
+    # notes, dirty ids) must list via the API, returned as-is, never 500.
+    fc_config = EmbeddingConfig.model_validate(
+        {
+            "name": "future-embedding",
+            "model_provider_name": ModelProviderName.openai,
+            "model_name": EmbeddingModelName.openai_text_embedding_3_small,
+            "properties": {},
+            "provenance": {
+                "origin": "future_origin",
+                "derived_from_ids": ["dup", "dup"],
+                "notes": "y" * 3000,
+            },
+        },
+        context={"loading_from_file": True},
+    )
+    fc_config.parent = mock_project
+    fc_config.save_to_file()
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/embedding_configs")
+
+    assert response.status_code == 200
+    saved = next(c for c in response.json() if c["name"] == "future-embedding")
+    assert saved["provenance"]["origin"] == "future_origin"
+
+
+async def test_create_vector_store_config_with_valid_provenance(
+    client, mock_project, mock_vector_store_config_fts
+):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_vector_store_config",
+            json={
+                "name": "Derived Vector Store",
+                "store_type": "lancedb_fts",
+                "properties": {"similarity_top_k": 10},
+                "provenance": {
+                    "origin": "agent",
+                    "derived_from_ids": [mock_vector_store_config_fts.id],
+                },
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["provenance"]["origin"] == "agent"
+
+    loaded = VectorStoreConfig.from_id_and_parent_path(result["id"], mock_project.path)
+    assert loaded is not None
+    assert loaded.provenance is not None
+    assert loaded.provenance.derived_from_ids == [mock_vector_store_config_fts.id]
+
+
+async def test_create_vector_store_config_unknown_sibling_400(client, mock_project):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_vector_store_config",
+            json={
+                "name": "Bad Vector Store",
+                "store_type": "lancedb_fts",
+                "properties": {"similarity_top_k": 10},
+                "provenance": {"origin": "agent", "derived_from_ids": ["missing"]},
+            },
+        )
+
+    assert response.status_code == 400
+    assert "unknown sibling" in response.json()["message"]
+
+
+async def test_create_chunker_config_with_valid_provenance(
+    client, mock_project, mock_chunker_config
+):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "name": "Derived Chunker",
+                "chunker_type": "fixed_window",
+                "properties": {
+                    "chunker_type": "fixed_window",
+                    "chunk_size": 100,
+                    "chunk_overlap": 10,
+                },
+                "provenance": {
+                    "origin": "human",
+                    "derived_from_ids": [mock_chunker_config.id],
+                },
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["provenance"]["origin"] == "human"
+
+    loaded = ChunkerConfig.from_id_and_parent_path(
+        response.json()["id"], mock_project.path
+    )
+    assert loaded is not None
+    assert loaded.provenance is not None
+    assert loaded.provenance.derived_from_ids == [mock_chunker_config.id]
+
+
+async def test_create_chunker_config_unknown_sibling_400(client, mock_project):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "name": "Bad Chunker",
+                "chunker_type": "fixed_window",
+                "properties": {
+                    "chunker_type": "fixed_window",
+                    "chunk_size": 100,
+                    "chunk_overlap": 10,
+                },
+                "provenance": {"origin": "human", "derived_from_ids": ["missing"]},
+            },
+        )
+
+    assert response.status_code == 400
+    assert "unknown sibling" in response.json()["message"]
+
+
+async def test_create_reranker_config_with_valid_provenance(
+    client, mock_project, mock_reranker_config
+):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.built_in_reranker_models_from_provider"
+        ) as mock_reranker_models,
+    ):
+        mock_reranker_models.return_value = MagicMock()
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_reranker_config",
+            json={
+                "name": "Derived Reranker",
+                "top_n": 5,
+                "model_provider_name": ModelProviderName.together_ai,
+                "model_name": "rerank-xyz",
+                "properties": {"type": "cohere_compatible"},
+                "provenance": {
+                    "origin": "human",
+                    "derived_from_ids": [mock_reranker_config.id],
+                },
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["provenance"]["origin"] == "human"
+
+    loaded = RerankerConfig.from_id_and_parent_path(
+        response.json()["id"], mock_project.path
+    )
+    assert loaded is not None
+    assert loaded.provenance is not None
+    assert loaded.provenance.derived_from_ids == [mock_reranker_config.id]
+
+
+async def test_create_reranker_config_unknown_sibling_400(client, mock_project):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.built_in_reranker_models_from_provider"
+        ) as mock_reranker_models,
+    ):
+        mock_reranker_models.return_value = MagicMock()
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_reranker_config",
+            json={
+                "name": "Bad Reranker",
+                "top_n": 5,
+                "model_provider_name": ModelProviderName.together_ai,
+                "model_name": "rerank-xyz",
+                "properties": {"type": "cohere_compatible"},
+                "provenance": {"origin": "human", "derived_from_ids": ["missing"]},
+            },
+        )
+
+    assert response.status_code == 400
+    assert "unknown sibling" in response.json()["message"]
+
+
+async def test_create_extractor_config_with_valid_provenance(
+    client, mock_project, mock_extractor_config
+):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.built_in_models_from_provider"
+        ) as mock_built_in_models_from_provider,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_built_in_models_from_provider.return_value = MagicMock(
+            supports_doc_extraction=True
+        )
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_extractor_config",
+            json={
+                "name": "Derived Extractor",
+                "output_format": "text/plain",
+                "passthrough_mimetypes": ["text/plain"],
+                "model_provider_name": "gemini_api",
+                "model_name": "gemini-2.0-flash",
+                "properties": {
+                    "extractor_type": "litellm",
+                    "prompt_document": "test-prompt",
+                    "prompt_video": "test-video-prompt",
+                    "prompt_audio": "test-audio-prompt",
+                    "prompt_image": "test-image-prompt",
+                },
+                "provenance": {
+                    "origin": "agent",
+                    "derived_from_ids": [mock_extractor_config.id],
+                },
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["provenance"]["origin"] == "agent"
+
+    loaded = ExtractorConfig.from_id_and_parent_path(
+        response.json()["id"], mock_project.path
+    )
+    assert loaded is not None
+    assert loaded.provenance is not None
+    assert loaded.provenance.derived_from_ids == [mock_extractor_config.id]
+
+
+async def test_create_extractor_config_unknown_sibling_400(client, mock_project):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.built_in_models_from_provider"
+        ) as mock_built_in_models_from_provider,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_built_in_models_from_provider.return_value = MagicMock(
+            supports_doc_extraction=True
+        )
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_extractor_config",
+            json={
+                "name": "Bad Extractor",
+                "output_format": "text/plain",
+                "passthrough_mimetypes": ["text/plain"],
+                "model_provider_name": "gemini_api",
+                "model_name": "gemini-2.0-flash",
+                "properties": {
+                    "extractor_type": "litellm",
+                    "prompt_document": "test-prompt",
+                    "prompt_video": "test-video-prompt",
+                    "prompt_audio": "test-audio-prompt",
+                    "prompt_image": "test-image-prompt",
+                },
+                "provenance": {"origin": "agent", "derived_from_ids": ["missing"]},
+            },
+        )
+
+    assert response.status_code == 400
+    assert "unknown sibling" in response.json()["message"]
+
+
+def _rag_sibling(
+    project,
+    extractor_config,
+    chunker_config,
+    embedding_config,
+    vector_store_config,
+):
+    sibling = RagConfig(
+        parent=project,
+        name="Seed RAG Config",
+        tool_name="seed_search_tool",
+        tool_description="A seed search tool.",
+        extractor_config_id=extractor_config.id,
+        chunker_config_id=chunker_config.id,
+        embedding_config_id=embedding_config.id,
+        vector_store_config_id=vector_store_config.id,
+    )
+    sibling.save_to_file()
+    return sibling
+
+
+async def test_create_rag_config_with_valid_provenance(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_fts,
+):
+    sibling = _rag_sibling(
+        mock_project,
+        mock_extractor_config,
+        mock_chunker_config,
+        mock_embedding_config,
+        mock_vector_store_config_fts,
+    )
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/create_rag_config",
+            json={
+                "name": "Derived RAG Config",
+                "tool_name": "derived_search_tool",
+                "tool_description": "A derived search tool.",
+                "extractor_config_id": mock_extractor_config.id,
+                "chunker_config_id": mock_chunker_config.id,
+                "embedding_config_id": mock_embedding_config.id,
+                "vector_store_config_id": mock_vector_store_config_fts.id,
+                "reranker_config_id": None,
+                "provenance": {
+                    "origin": "human",
+                    "derived_from_ids": [sibling.id],
+                    "notes": "Cloned from the seed RAG config.",
+                },
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["provenance"]["derived_from_ids"] == [sibling.id]
+
+    loaded = RagConfig.from_id_and_parent_path(response.json()["id"], mock_project.path)
+    assert loaded is not None
+    assert loaded.provenance is not None
+    assert loaded.provenance.origin == "human"
+
+
+async def test_get_rag_config_reads_return_provenance(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_fts,
+):
+    # The list/detail reads map to RagConfigWithSubConfigs, so provenance must be
+    # carried through (not dropped) the way it is for the direct-datamodel POST response.
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Provenance RAG Config",
+        tool_name="provenance_search_tool",
+        tool_description="A search tool with provenance.",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
+        provenance=KilnArtifactProvenance(
+            origin="human",
+            notes="Persisted provenance to read back.",
+        ),
+    )
+    rag_config.save_to_file()
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        list_response = client.get(f"/api/projects/{mock_project.id}/rag_configs")
+        detail_response = client.get(
+            f"/api/projects/{mock_project.id}/rag_configs/{rag_config.id}"
+        )
+
+    assert list_response.status_code == 200, list_response.text
+    listed = next(item for item in list_response.json() if item["id"] == rag_config.id)
+    assert listed["provenance"] is not None
+    assert listed["provenance"]["origin"] == "human"
+    assert listed["provenance"]["notes"] == "Persisted provenance to read back."
+
+    assert detail_response.status_code == 200, detail_response.text
+    detail = detail_response.json()
+    assert detail["provenance"] is not None
+    assert detail["provenance"]["origin"] == "human"
+    assert detail["provenance"]["notes"] == "Persisted provenance to read back."
+
+
+async def test_create_rag_config_unknown_sibling_400(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_fts,
+):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/create_rag_config",
+            json={
+                "name": "Bad RAG Config",
+                "tool_name": "bad_search_tool",
+                "tool_description": "A bad search tool.",
+                "extractor_config_id": mock_extractor_config.id,
+                "chunker_config_id": mock_chunker_config.id,
+                "embedding_config_id": mock_embedding_config.id,
+                "vector_store_config_id": mock_vector_store_config_fts.id,
+                "reranker_config_id": None,
+                "provenance": {"origin": "human", "derived_from_ids": ["missing"]},
+            },
+        )
+
+    assert response.status_code == 400
+    assert "unknown sibling" in response.json()["message"]
+
+
+async def test_create_rag_config_invalid_origin_422(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_fts,
+):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/create_rag_config",
+            json={
+                "name": "Bad Origin RAG Config",
+                "tool_name": "bad_origin_search_tool",
+                "tool_description": "A bad-origin search tool.",
+                "extractor_config_id": mock_extractor_config.id,
+                "chunker_config_id": mock_chunker_config.id,
+                "embedding_config_id": mock_embedding_config.id,
+                "vector_store_config_id": mock_vector_store_config_fts.id,
+                "reranker_config_id": None,
+                "provenance": {"origin": "banana"},
+            },
+        )
+
+    assert response.status_code == 422
+
+
+def test_update_rag_config_model_has_no_provenance_field():
+    from kiln_server.document_api import UpdateRagConfigRequest
+
+    assert "provenance" not in UpdateRagConfigRequest.model_fields
+
+
+async def test_patch_rag_config_forward_compat_provenance_does_not_500(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_fts,
+):
+    # A RAG config whose stored provenance was lenient-loaded (unknown origin,
+    # over-length notes, dirty ids) must survive a metadata PATCH: the update path
+    # mutates in place and never re-validates provenance in create mode.
+    fc_config = RagConfig.model_validate(
+        {
+            "name": "future-rag",
+            "tool_name": "future_search_tool",
+            "tool_description": "From a newer client.",
+            "extractor_config_id": mock_extractor_config.id,
+            "chunker_config_id": mock_chunker_config.id,
+            "embedding_config_id": mock_embedding_config.id,
+            "vector_store_config_id": mock_vector_store_config_fts.id,
+            "provenance": {
+                "origin": "future_origin",
+                "derived_from_ids": ["dup", "dup"],
+                "notes": "y" * 3000,
+            },
+        },
+        context={"loading_from_file": True},
+    )
+    fc_config.parent = mock_project
+    fc_config.save_to_file()
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/rag_configs/{fc_config.id}",
+            json={"is_archived": True},
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["is_archived"] is True
+    assert response.json()["provenance"]["origin"] == "future_origin"
+
+    reloaded = RagConfig.from_id_and_parent_path(fc_config.id, mock_project.path)
+    assert reloaded is not None
+    assert reloaded.provenance is not None
+    assert reloaded.provenance.origin == "future_origin"
+    assert reloaded.provenance.notes == "y" * 3000

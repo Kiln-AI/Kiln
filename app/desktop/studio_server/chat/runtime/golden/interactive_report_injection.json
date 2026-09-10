@@ -1,0 +1,27 @@
+{
+  "scenario": "interactive_report_injection",
+  "bodies": [
+    {
+      "messages": [
+        {
+          "role": "user",
+          "content": "check status"
+        }
+      ]
+    },
+    {
+      "messages": [
+        {
+          "role": "tool",
+          "tool_call_id": "tc1",
+          "content": "4"
+        },
+        {
+          "role": "user",
+          "content": "<subagent_report id=\"sa_fixed\" agent_type=\"general\" status=\"completed\" title=\"Helper\">\nAll done.\n</subagent_report>"
+        }
+      ],
+      "trace_id": "tr-1"
+    }
+  ]
+}

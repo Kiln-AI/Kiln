@@ -14,3 +14,7 @@ def set_dev_env_vars() -> None:
     os.environ.setdefault("KILN_SKIP_REMOTE_MODEL_LIST", "true")
     os.environ["DEBUG_EVENT_LOOP"] = "true"
     os.environ["KILN_DEV_MODE"] = "true"
+    # Assistant forensic debug logging on by default in dev (unless explicitly set, e.g.
+    # KILN_CHAT_DEBUG_LOG=0) so the JSONL timeline already exists when an assistant issue
+    # needs investigating. See chat/debug_log.py.
+    os.environ.setdefault("KILN_CHAT_DEBUG_LOG", "1")

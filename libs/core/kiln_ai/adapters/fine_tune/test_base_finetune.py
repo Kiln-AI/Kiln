@@ -233,6 +233,54 @@ async def test_create_and_start_with_all_params(mock_dataset, basic_run_config):
     assert loaded_datamodel.model_dump_json() == datamodel.model_dump_json()
 
 
+async def test_create_and_start_threads_provenance(mock_dataset, basic_run_config):
+    from kiln_ai.datamodel.provenance import KilnArtifactProvenance
+
+    provenance = KilnArtifactProvenance(
+        origin="human",
+        derived_from_ids=["parent-finetune-id"],
+        notes="Cloned from the seed finetune.",
+    )
+    _, datamodel = await MockFinetune.create_and_start(
+        dataset=mock_dataset,
+        provider_id="openai",
+        provider_base_model_id="gpt-4o-mini-2024-07-18",
+        train_split_name="train",
+        parameters={"epochs": 10},
+        system_message="Test system message",
+        data_strategy=ChatStrategy.single_turn,
+        thinking_instructions=None,
+        run_config=basic_run_config,
+        provenance=provenance,
+    )
+
+    assert datamodel.provenance is not None
+    assert datamodel.provenance.origin == "human"
+    assert datamodel.provenance.derived_from_ids == ["parent-finetune-id"]
+
+    # Persisted to disk and reloads equal.
+    loaded = FinetuneModel.load_from_file(datamodel.path)
+    assert loaded.provenance is not None
+    assert loaded.provenance == provenance
+
+
+async def test_create_and_start_without_provenance_is_none(
+    mock_dataset, basic_run_config
+):
+    _, datamodel = await MockFinetune.create_and_start(
+        dataset=mock_dataset,
+        provider_id="openai",
+        provider_base_model_id="gpt-4o-mini-2024-07-18",
+        train_split_name="train",
+        parameters={"epochs": 10},
+        system_message="Test system message",
+        data_strategy=ChatStrategy.single_turn,
+        thinking_instructions=None,
+        run_config=basic_run_config,
+    )
+    assert datamodel.provenance is None
+
+
 async def test_create_and_start_with_run_config(mock_dataset):
     run_config = KilnAgentRunConfigProperties(
         model_name="gpt-4o-mini-2024-07-18",

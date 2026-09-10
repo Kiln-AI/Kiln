@@ -1,14 +1,47 @@
+/**
+ * UI-session state for the MAIN conversation (architecture §7).
+ *
+ * Phase 4 shrank this store to exactly the concerns the browser owns:
+ * which conversation is the main one, the composer / queued-message UX, the
+ * consent-dialog and approval-box state, history hydration, and the version
+ * banners. ALL streaming is delegated to `conversation_store.ts`'s
+ * `main_conversation_store` — the main conversation is a desktop-owned run
+ * observed over `/api/conversations` like any other, and this store merely
+ * renders what the observer sink reports (the old `streamChat` /
+ * `resumePendingToolCalls` request-driving machinery is gone).
+ *
+ * sessionStorage persists ONLY `{sessionId, rootId, ui prefs}` — the
+ * transcript ALWAYS rebuilds from hydrate+observe (functional spec §7 /
+ * architecture §7: this removes the persisted message-cache divergence
+ * class). Phase 5: both handles are SESSION ids (functional spec §4 —
+ * browser code never sees trace_id): `sessionId` is the live desktop handle
+ * and `rootId` the durable upstream one, replacing the old persisted leaf
+ * trace id in its desktop-restart-recovery role.
+ */
+
 import { writable, get, type Readable } from "svelte/store"
 import posthog from "posthog-js"
 import {
-  streamChat,
   chatGenerateId,
-  traceIdForNextChatRequest,
   type ChatMessage,
+  type ContextUsage,
+  type ToolCallsPendingItem,
   type ToolCallsPendingPayload,
+  type AutoModeConsentRequiredPayload,
 } from "./streaming_chat"
+import {
+  main_conversation_store,
+  type MainConversationStore,
+  type CreateAutoConversationRequest,
+  type DeclineAutoModeContext,
+} from "./conversation_store"
 import { sessionStorageStore } from "$lib/stores/local_storage_store"
-import { base_url } from "$lib/api_client"
+import {
+  hydrateSessionFromSnapshot,
+  stripInternalFraming,
+  userChatMessageFromContent,
+} from "./session_messages"
+import { base_url, client } from "$lib/api_client"
 import {
   getCurrentAppState,
   buildContextHeader,
@@ -17,11 +50,27 @@ import {
 import { chat_cost_disclaimer_acknowledged } from "$lib/stores"
 import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
 
-const CHAT_API_URL = `${base_url}/api/chat`
 const SESSION_STORAGE_KEY = "kiln_chat_session"
 
+/**
+ * The sessionStorage shape (functional spec §7): the conversation HANDLES
+ * plus ui prefs — never messages. `lastSentAppState` rides along so the
+ * app-context header's delta encoding stays stable across a refresh.
+ */
 export interface PersistedChatSession {
-  messages: ChatMessage[]
+  /** The main conversation's supervisor session id (in-memory server-side —
+   * dies with a desktop restart; `rootId` is the durable fallback). */
+  sessionId: string | null
+  /**
+   * The conversation's durable upstream session id (`session_meta.root_id`)
+   * — the desktop-restart recovery key, learned from the history row, the
+   * hydration snapshot, or a one-shot item fetch on the first persisted
+   * turn (phase 5: replaces the old persisted leaf `traceId`, which was the
+   * browser's last trace-id key). Null until the conversation first
+   * persists (or for legacy sessions without meta, whose row key already
+   * IS the only durable handle).
+   */
+  rootId: string | null
   collapsedPartKeys: Record<string, boolean>
   lastSentAppState: AppState | null
 }
@@ -31,12 +80,37 @@ export interface ToolApprovalWaiter {
 }
 
 export interface ChatSessionState extends PersistedChatSession {
+  messages: ChatMessage[]
+  /**
+   * Approximate context-window usage for the gauge (runtime-only now —
+   * rebuilt from the snapshot on hydrate; `null` before the first turn).
+   */
+  contextUsage: ContextUsage | null
   status: "ready" | "submitted" | "streaming"
-  abortController: AbortController | null
   toolApprovalWaiter: ToolApprovalWaiter | null
   toolApprovalPicks: Record<string, boolean | undefined>
   toolExecuting: boolean
   showActivityIndicator: boolean
+  /**
+   * The server is summarizing earlier messages (compaction) for this turn.
+   * Runtime-only — set by ``kiln_compaction_status`` and cleared on the
+   * first content event / turn end / reset.
+   */
+  compacting: boolean
+  /**
+   * A server-owned auto-mode burst is actively running. Decoupled from
+   * ``status`` (which tracks interactive turns) so the chat view can drive
+   * the SAME loading affordances during auto bursts while keeping the input
+   * usable for inject-on-send.
+   */
+  autoWorking: boolean
+  /**
+   * A transient upstream failure is being retried with backoff during an
+   * interactive turn (``kiln-chat-retry``): ``{ attempt, max }`` while
+   * retrying, else null. (Auto bursts surface the same affordance via the
+   * main conversation store's own `retry`.) Runtime-only.
+   */
+  retry: { attempt: number; max: number } | null
   /**
    * Preferred version from a server upgrade nudge (non-blocking), or null when
    * no nudge is active or the user dismissed it. Runtime-only, not persisted.
@@ -44,35 +118,107 @@ export interface ChatSessionState extends PersistedChatSession {
   upgradeNudgeVersion: string | null
   /**
    * True when the server rejected the request because the client is below the
-   * required minimum version (HTTP 426). Surfaced as a blocking banner above
-   * the composer rather than as a conversation message. Runtime-only.
+   * required minimum version (HTTP 426 / its error event). Surfaced as a
+   * blocking banner above the composer. Runtime-only.
    */
   versionRequired: boolean
+  /**
+   * A user message typed while it couldn't be delivered immediately, held
+   * client-side until it can — then auto-sent — or sent immediately via
+   * send-now. ``null`` when nothing is queued. A second send while one is
+   * queued appends to it. Runtime-only, not persisted.
+   *
+   * Mid-turn sends on a LIVE interactive run no longer queue here: they POST
+   * straight to the server inbox (the same transport sub-agent and cross-tab
+   * sends use) and the engine folds them into the run's next upstream round.
+   * This queue holds only the messages that can't ride a live run right now:
+   * an approval box open (the POST's optimistic working flip would close the
+   * box), a consent dialog resolving (the turn is already over server-side —
+   * a POST would seed a NEW turn racing the enable), no live session id yet,
+   * an auto burst in flight (flushed at the next observed round boundary),
+   * or a failed POST.
+   */
+  queuedMessage: string | null
 }
+
+/**
+ * Asked of the UI when the model requests auto mode. Returns ``true`` to enable
+ * (accept) or ``false`` to decline; the store then drives the conversation store.
+ */
+export type AutoModeConsentDecision = (
+  payload: AutoModeConsentRequiredPayload,
+) => Promise<boolean>
 
 export interface ChatSessionStore extends Readable<ChatSessionState> {
   sendMessage(text: string): Promise<boolean>
-  stop(): void
+  /**
+   * Send the currently queued message right now instead of waiting for the
+   * next flush point. Live interactive run: injects into the run's inbox
+   * (picked up at the next round boundary). Non-injectable interactive turn:
+   * stops it (the message then auto-sends on the ready transition). Auto
+   * mode: injects immediately, keeping auto mode running. No-op when nothing
+   * is queued.
+   */
+  sendQueuedNow(): void
+  /** Discard the queued message without sending it. */
+  clearQueued(): void
+  /**
+   * Stop the main run. ``cascade`` also kills every running sub-agent child
+   * (the user-facing Stop button); the interrupt-to-send-queued path omits it
+   * so injecting a message never tears down running sub-agents.
+   */
+  stop(opts?: { cascade?: boolean }): void
   retryLastRequest(): void
   reset(): void
-  loadSession(messages: ChatMessage[], continuationTraceId: string): void
+  loadSession(
+    messages: ChatMessage[],
+    /** The history row's conversation key (live session id / durable root
+     * id / legacy leaf) — resolved desktop-side; phase 5 replaced the old
+     * continuation trace id here. */
+    sessionKey: string,
+    contextUsage?: ContextUsage | null,
+    opts?: {
+      /** From the history row's sessions-list join: reflect the auto
+       * indicator immediately on re-attach (the old attach's behavior)
+       * instead of waiting for the observer's state marker. */
+      autoActive?: boolean
+      /** The session's durable root id (persisted as the restart-recovery
+       * key). */
+      rootId?: string | null
+    },
+  ): void
+  /**
+   * Reconnect the conversation after a hard refresh: sessionStorage holds
+   * only the handles now, so hydrate the transcript from the persisted
+   * snapshot and re-attach the observer (in-flight turns and pending
+   * approvals converge via replay + the state marker — functional spec §5).
+   * No-op when nothing is stored. Idempotent / safe to call on every load.
+   */
+  resyncOnLoad(): Promise<void>
   togglePartCollapsed(key: string, currentlyCollapsed: boolean): void
+  /** Surface an inline chat error (e.g. a failed manual auto-mode enable). */
+  pushInlineError(message: string): void
   applyToolApprovalRun(toolCallId: string): void
   applyToolApprovalSkip(toolCallId: string): void
   dismissUpgradeNudge(): void
   /** Fetch the server's version verdict and set the banner state up front. */
   checkVersionPolicy(): Promise<void>
   onConsentNeeded: (() => Promise<boolean>) | null
+  onAutoModeConsentNeeded: AutoModeConsentDecision | null
 }
 
 const EMPTY_PERSISTED: PersistedChatSession = {
-  messages: [],
+  sessionId: null,
+  rootId: null,
   collapsedPartKeys: {},
   lastSentAppState: null,
 }
 
 export function createChatSessionStore(
   sessionStorageKey?: string,
+  // The main conversation store (conversation_store.ts); injectable for
+  // tests exactly like the old auto store was.
+  conversationStore: MainConversationStore = main_conversation_store,
 ): ChatSessionStore {
   const persisted = sessionStorageKey
     ? sessionStorageStore<PersistedChatSession>(sessionStorageKey, {
@@ -81,262 +227,883 @@ export function createChatSessionStore(
     : writable<PersistedChatSession>({ ...EMPTY_PERSISTED })
 
   let status: ChatSessionState["status"] = "ready"
-  let abortController: AbortController | null = null
-  let continuationTraceId: string | undefined = undefined
+  // Synchronous in-flight guard for the armed-first-send enable (a second
+  // Enter during the requestEnable round-trip must not fire a second enable).
+  let armedEnablePending = false
+  // A consent dialog (accept/decline flow) is resolving: the turn is not
+  // over yet — queued sends hold, flushes wait (the old await-inside-the-
+  // stream ordering, preserved).
+  let consentFlowPending = false
+  // The open approval box's batch id (decisions must echo it back).
+  let approvalBatchId: string | null = null
+  // Own-echo dedupe (phase 4): content the user just sent from THIS tab —
+  // rendered locally at send time — matched against the run's user-message
+  // echo (by server message id when the 202 already returned, by stripped
+  // content otherwise) so it isn't appended twice. The echoed content
+  // carries the app-context header; other observers render it stripped.
+  const pendingOwnEchoes: { id?: string; content: string; localId: string }[] =
+    []
   let generation = 0
-  let toolApprovalResolver:
-    | ((decisions: Record<string, boolean>) => void)
-    | null = null
 
   const combined = writable<ChatSessionState>({
     ...get(persisted),
+    messages: [],
+    contextUsage: null,
     status,
-    abortController,
     toolApprovalWaiter: null,
     toolApprovalPicks: {},
     toolExecuting: false,
     showActivityIndicator: false,
+    compacting: false,
+    autoWorking: false,
+    retry: null,
     upgradeNudgeVersion: null,
     versionRequired: false,
+    queuedMessage: null,
   })
 
   // Intentionally never unsubscribed — this store is a module-level singleton
-  // that lives for the lifetime of the app. Do not use createChatSessionStore
-  // for short-lived contexts.
+  // that lives for the lifetime of the app.
   persisted.subscribe(($persisted) => {
     combined.update((s) => ({
       ...s,
-      messages: $persisted.messages,
+      sessionId: $persisted.sessionId,
+      rootId: $persisted.rootId,
       collapsedPartKeys: $persisted.collapsedPartKeys,
       lastSentAppState: $persisted.lastSentAppState,
     }))
   })
 
-  function setRuntimeState(
-    newStatus: ChatSessionState["status"],
-    newAbort: AbortController | null,
-  ) {
+  function setStatus(newStatus: ChatSessionState["status"]) {
     status = newStatus
-    abortController = newAbort
-    combined.update((s) => ({
-      ...s,
-      status,
-      abortController,
-    }))
+    combined.update((s) => ({ ...s, status }))
   }
 
   function updateMessages(updater: (messages: ChatMessage[]) => ChatMessage[]) {
-    persisted.update((p) => ({
-      ...p,
-      messages: updater(p.messages),
-    }))
+    combined.update((s) => ({ ...s, messages: updater(s.messages) }))
   }
 
   function updateLastAssistant(update: (draft: ChatMessage) => void) {
-    persisted.update((p) => {
-      const msgs = p.messages
+    combined.update((s) => {
+      const msgs = s.messages
       const last = msgs[msgs.length - 1]
       if (last?.role === "assistant") {
         const draft = { ...last, parts: last.parts ? [...last.parts] : [] }
         update(draft)
-        return { ...p, messages: [...msgs.slice(0, -1), draft] }
+        return { ...s, messages: [...msgs.slice(0, -1), draft] }
       }
-      return p
+      return s
     })
   }
 
   function removeErrors() {
-    persisted.update((p) => ({
-      ...p,
-      messages: p.messages.filter((m) => m.role !== "error"),
+    combined.update((s) => ({
+      ...s,
+      messages: s.messages.filter((m) => m.role !== "error"),
     }))
   }
 
-  function beginStreaming(text: string, isRetry = false) {
-    removeErrors()
-    const currentMessages = get(persisted).messages
-    const traceId =
-      traceIdForNextChatRequest(currentMessages) ?? continuationTraceId
-    const userMessage: ChatMessage = {
+  // Append an inline error message — the single error-surfacing mechanism
+  // shared by the observer stream and the enable-failure paths.
+  function pushInlineError(
+    message: string,
+    traceId?: string,
+    code?: string,
+  ): void {
+    const errorMsg: ChatMessage = {
       id: chatGenerateId(),
-      role: "user",
-      content: text,
+      role: "error",
+      content: message,
+      traceId,
+      errorCode: code,
     }
-    const assistantMessage: ChatMessage = {
-      id: chatGenerateId(),
-      role: "assistant",
-      parts: [],
-    }
-    updateMessages((msgs) => [...msgs, userMessage, assistantMessage])
+    updateMessages((msgs) => [...msgs, errorMsg])
+  }
 
+  // One item fetch in flight for the durable-key learn below.
+  let rootFetchInFlight = false
+
+  /**
+   * Learn the conversation's durable `root_id` once a turn has persisted
+   * (phase 5). A conversation opened from history already carries it (the
+   * row / hydration snapshot expose root_id); a conversation created FRESH
+   * in this tab only gains a root when its first snapshot persists — the
+   * same moment the old world persisted the leaf trace id — so the observer's
+   * turn-persisted signal triggers a one-shot `GET /api/conversations/{sid}`
+   * (the desktop stamps `root_id` from that first snapshot). Best-effort:
+   * on failure the next persisted turn retries; until it lands, a desktop
+   * restart falls back to History (the old world's only pre-trace recovery
+   * too).
+   */
+  async function maybeLearnRootId(): Promise<void> {
+    if (get(persisted).rootId || rootFetchInFlight) return
+    const sid = get(persisted).sessionId
+    if (!sid) return
+    // Stale-write guard (phase-5 CR MEDIUM 2): a New Chat / loadSession /
+    // resync can race this fetch — the fetched root then belongs to the OLD
+    // conversation, and stamping it onto the new handles would make the next
+    // send/resync silently adopt the old conversation. Both signals are
+    // checked on completion: the generation counter (bumped by every
+    // conversation switch) and the persisted sid itself. A skipped stamp is
+    // harmless — the next persisted turn retries.
+    const thisGeneration = generation
+    rootFetchInFlight = true
+    try {
+      const response = await fetch(
+        `${base_url}/api/conversations/${encodeURIComponent(sid)}`,
+      )
+      if (!response.ok) return
+      const item = (await response.json()) as { root_id?: string | null }
+      if (typeof item?.root_id === "string" && item.root_id) {
+        if (generation !== thisGeneration || get(persisted).sessionId !== sid) {
+          return
+        }
+        persisted.update((p) => ({ ...p, rootId: item.root_id ?? null }))
+      }
+    } catch {
+      /* desktop unreachable — retry on the next persisted turn */
+    } finally {
+      rootFetchInFlight = false
+    }
+  }
+
+  function setContextUsage(usage: ContextUsage) {
+    combined.update((s) => ({ ...s, contextUsage: usage }))
+  }
+
+  function setCompacting(compacting: boolean) {
+    combined.update((s) => ({ ...s, compacting }))
+  }
+
+  // Append a fresh empty assistant message so the next streamed burst renders
+  // into a new turn rather than the prior one.
+  function beginAssistantTurn() {
+    removeErrors()
+    updateMessages((msgs) => [
+      ...msgs,
+      { id: chatGenerateId(), role: "assistant", parts: [] },
+    ])
+    combined.update((s) => ({
+      ...s,
+      toolExecuting: false,
+      showActivityIndicator: false,
+      compacting: false,
+    }))
+  }
+
+  // Append an echoed user message, then a fresh assistant turn so the burst it
+  // triggers renders into a new turn. Idempotent by echo id (buffer replays on
+  // re-attach re-emit echoes the transcript already shows).
+  function appendEchoedUserMessage(content: string, echoId?: string) {
+    if (echoId && get(combined).messages.some((m) => m.echoId === echoId)) {
+      return
+    }
+    removeErrors()
+    // Reports arrive framed; other tabs' sends carry the app-context header —
+    // strip internal framing for display, exactly like hydration does.
+    updateMessages((msgs) => [
+      ...msgs,
+      userChatMessageFromContent(stripInternalFraming(content), echoId),
+    ])
+    beginAssistantTurn()
+  }
+
+  // The run echoed a user message. Three cases:
+  // - our own just-sent message (rendered locally already): attach the echo
+  //   id to the local bubble and skip the append;
+  // - an echo id the transcript already shows (replay): skip;
+  // - anything else (another tab's send, an injected report): render it.
+  function handleUserMessageEcho(content: string, echoId?: string) {
+    const stripped = stripInternalFraming(content)
+    const ownIdx = pendingOwnEchoes.findIndex(
+      (e) => (echoId && e.id === echoId) || e.content === stripped,
+    )
+    if (ownIdx >= 0) {
+      const own = pendingOwnEchoes.splice(ownIdx, 1)[0]
+      if (echoId) {
+        updateMessages((msgs) =>
+          msgs.map((m) => (m.id === own.localId ? { ...m, echoId } : m)),
+        )
+      }
+      return
+    }
+    appendEchoedUserMessage(content, echoId)
+  }
+
+  // ── Approval box (phase 4: parked batches) ─────────────────────────────────
+  //
+  // The run PARKS on gated tool calls (AWAITING_APPROVAL) instead of ending
+  // the stream; the box opens off the fetched batch and decisions resolve it.
+  // Keyed off both the `tool-calls-pending` event (also replayed to
+  // re-attaching tabs while parked) and the awaiting_approval state marker —
+  // idempotent by batch id, so refresh recovery and live parks share one path.
+  async function openApprovalBox(): Promise<void> {
+    const batch = await conversationStore.fetchApprovals()
+    if (!batch) return // already resolved (e.g. another tab decided)
+    if (approvalBatchId === batch.batchId && get(combined).toolApprovalWaiter) {
+      return
+    }
+    const approvalOnly = batch.items.filter((i) => i.requiresApproval)
+    if (approvalOnly.length === 0) {
+      // Nothing needs a human decision (defensive — the engine only parks
+      // when something does): unpark with an empty decision set.
+      approvalBatchId = null
+      void conversationStore.decide(batch.batchId, {})
+      return
+    }
+    approvalBatchId = batch.batchId
+    const picks: Record<string, boolean | undefined> = {}
+    for (const it of approvalOnly) {
+      picks[it.toolCallId] = undefined
+    }
+    combined.update((s) => ({
+      ...s,
+      toolApprovalWaiter: { payload: { items: approvalOnly } },
+      toolApprovalPicks: picks,
+    }))
+  }
+
+  function clearToolApprovalState(): void {
+    approvalBatchId = null
+    combined.update((s) => ({
+      ...s,
+      toolApprovalWaiter: null,
+      toolApprovalPicks: {},
+    }))
+  }
+
+  function maybeFinishToolApproval(): void {
+    const state = get(combined)
+    if (!state.toolApprovalWaiter || !approvalBatchId) return
+    const allDone = state.toolApprovalWaiter.payload.items.every(
+      (it) => state.toolApprovalPicks[it.toolCallId] !== undefined,
+    )
+    if (!allDone) return
+    const decisions: Record<string, boolean> = {}
+    for (const it of state.toolApprovalWaiter.payload.items) {
+      decisions[it.toolCallId] = state.toolApprovalPicks[it.toolCallId] ?? false
+    }
+    const batchId = approvalBatchId
+    clearToolApprovalState()
+    void conversationStore.decide(batchId, decisions).then((result) => {
+      // conflict = another tab decided first; the stream carries the
+      // resolution either way (functional spec §5) — stay quiet.
+      if (!result.ok && !result.conflict) {
+        pushInlineError(
+          `Couldn't submit the tool decisions: ${result.error ?? "unknown error"}`,
+        )
+      }
+    })
+  }
+
+  // ── Observer sink: the desktop-owned run drives this conversation ──────────
+
+  conversationStore.bind({
+    beginAssistantTurn,
+    onAssistantMessage: (update) => {
+      // First assistant content of an interactive turn: submitted → streaming
+      // (the same transition the old streamChat drove).
+      if (status === "submitted") setStatus("streaming")
+      updateLastAssistant(update)
+    },
+    onTurnPersisted: () => {
+      void maybeLearnRootId()
+    },
+    onContextUsage: setContextUsage,
+    onCompactionStatus: setCompacting,
+    onInlineError: (message, traceId, code) => {
+      // Blocking "client too old" rejection: banner above the composer, not a
+      // conversation message (the upstream 426 arrives as an error event on
+      // the observer now that the engine owns the POST).
+      if (code === CHAT_CLIENT_VERSION_TOO_OLD) {
+        combined.update((s) => ({ ...s, versionRequired: true }))
+        setStatus("ready")
+        return
+      }
+      pushInlineError(message, traceId, code)
+    },
+    onVersionNudge: (preferredVersion) => {
+      // Set unconditionally: repeated nudges collapse to a single banner, and
+      // a new server preference re-surfaces it even if dismissed.
+      combined.update((s) => ({ ...s, upgradeNudgeVersion: preferredVersion }))
+    },
+    onToolExecutionStart: () =>
+      combined.update((s) => ({ ...s, toolExecuting: true })),
+    onToolExecutionEnd: () => {
+      combined.update((s) => ({ ...s, toolExecuting: false }))
+      // Round boundary: flush a queued message so it rides the next request —
+      // auto mode dispatches here (status stays "ready" during bursts);
+      // interactive fallback-queued messages inject into the live run when
+      // it's injectable.
+      maybeFlush()
+    },
+    onShowActivityIndicator: (show) =>
+      combined.update((s) => ({ ...s, showActivityIndicator: show })),
+    onWorkingChange: (working) => {
+      const autoOn = get(conversationStore.autoModeOn)
+      combined.update((s) => ({ ...s, autoWorking: autoOn && working }))
+      if (!autoOn) {
+        if (working) {
+          // A turn is in flight (a send from this tab, another tab, or a
+          // resumed approval batch). If the approval box is open, the batch
+          // was just decided (possibly by another tab) — clear it.
+          if (get(combined).toolApprovalWaiter) clearToolApprovalState()
+          if (status === "ready") setStatus("submitted")
+          // The run just became live (e.g. an approval batch resolved and it
+          // resumed): a message queued while it wasn't injectable can ride
+          // the inbox now.
+          maybeFlush()
+        } else if (status !== "ready") {
+          // Authoritative not-working signal WITHOUT a settle hook: the
+          // on-subscribe marker of an idle/parked conversation, an approval
+          // park, a consent event, an observer error, or a failed dispatch.
+          // Reset the composer to ready — but deliberately do NOT flush the
+          // queued message here: flushing is the settle hooks' job
+          // (onInteractiveIdle / onAutoModeIdle), and a marker is not a
+          // settle. Without this reset, re-attaching to a conversation
+          // whose last turn ended in a terminal upstream error (no trace
+          // persisted) bricks the composer: the buffered user-message echo
+          // replays, marks the turn working, and no settle event ever
+          // follows (markers are silent by design).
+          setStatus("ready")
+          combined.update((s) => ({
+            ...s,
+            toolExecuting: false,
+            showActivityIndicator: false,
+            compacting: false,
+          }))
+        }
+      }
+    },
+    onUserMessage: handleUserMessageEcho,
+    // NOTE: retry ("retrying N/M…") is not mirrored here — the main
+    // conversation store's own `retry` readable carries it for both kinds
+    // (chat.svelte reads it first), so this store's `retry` field stays null.
+    // A burst ended but auto mode stays on: stop the working affordances; the
+    // green indicator persists (it binds to autoModeOn).
+    onAutoModeIdle: () => {
+      combined.update((s) => ({
+        ...s,
+        toolExecuting: false,
+        showActivityIndicator: false,
+        compacting: false,
+        autoWorking: false,
+      }))
+      maybeFlush()
+    },
+    // Auto mode turned off — drop any pending queued message (stopping clears
+    // the queue; the user can re-send if they still want it).
+    onAutoModeOff: () =>
+      combined.update((s) => ({
+        ...s,
+        toolExecuting: false,
+        showActivityIndicator: false,
+        compacting: false,
+        autoWorking: false,
+        queuedMessage: null,
+      })),
+    // An interactive turn settled — the old streamChat onFinish moment.
+    // Deliberately reasonless: idle_reason must never render for interactive
+    // conversations (the phase-1 rendering rule).
+    onInteractiveIdle: () => {
+      combined.update((s) => ({
+        ...s,
+        toolExecuting: false,
+        showActivityIndicator: false,
+        compacting: false,
+        retry: null,
+      }))
+      setStatus("ready")
+      maybeFlush()
+    },
+    // BUG 2 fix: the on-subscribe idle MARKER of a genuinely-idle, flag-off
+    // conversation whose LIVE idle event was missed (observer detached at the
+    // settle instant). Deliberately flush-ONLY — no status/turn reset here
+    // (onWorkingChange(false), which runs on the same marker, already reset
+    // the composer to ready; a marker is not a settle, so we must not re-run
+    // the full onInteractiveIdle semantics the refresh-brick fix suppresses).
+    // maybeFlush is a safe no-op when nothing is queued or a turn is active,
+    // and dispatchQueued clears the queue before sending, so this can never
+    // double-send alongside a real onInteractiveIdle.
+    onIdleMarker: () => {
+      maybeFlush()
+    },
+    onAwaitingApproval: () => {
+      // The run parked. The old stream ended here (status went ready with the
+      // box open); the observer stays attached.
+      setStatus("ready")
+      combined.update((s) => ({
+        ...s,
+        toolExecuting: false,
+        showActivityIndicator: false,
+        compacting: false,
+      }))
+      void openApprovalBox()
+    },
+    onToolCallsPending: () => {
+      void openApprovalBox()
+    },
+    onConsentRequired: (payload) => {
+      void handleAutoModeConsent(payload)
+    },
+  })
+
+  let onConsentNeeded: (() => Promise<boolean>) | null = null
+  let onAutoModeConsentNeeded: AutoModeConsentDecision | null = null
+
+  // The model called enable_auto_mode — or, since FR2, spawn_subagent while
+  // auto mode was off (spawning requires auto mode, so the spawn call takes
+  // the gating role) — and the consent control event arrived on the
+  // observer; the turn is over server-side. Ask the UI; accept flips the
+  // SAME conversation to auto mode (a gating spawn then executes as the
+  // first pending call), decline resumes interactively with the gating call
+  // resolved as declined.
+  async function handleAutoModeConsent(
+    payload: AutoModeConsentRequiredPayload,
+  ): Promise<void> {
+    consentFlowPending = true
+    try {
+      // Phase 5: the enable is keyed by the observed conversation's SESSION
+      // id — the consent event always arrives on the observer of a live
+      // record, so the sid is in hand (the old payload traceId died with
+      // the trace-keyed surface; the desktop record's own leaf is
+      // authoritative for the continuation).
+      const sid = get(conversationStore.sessionId)
+      // If auto mode is already on/armed — the user turned it on themselves
+      // while the model's enable call was streaming — accept silently.
+      const alreadyOn =
+        get(conversationStore.autoModeOn) || get(conversationStore.armed)
+      const accepted = alreadyOn
+        ? true
+        : onAutoModeConsentNeeded
+          ? await onAutoModeConsentNeeded(payload)
+          : false
+      const siblings = payload.siblingToolCalls.map((s) => ({
+        toolCallId: s.toolCallId,
+        toolName: s.toolName,
+        input:
+          s.input && typeof s.input === "object" && !Array.isArray(s.input)
+            ? (s.input as Record<string, unknown>)
+            : {},
+        requiresApproval: Boolean(s.requiresApproval),
+      }))
+      if (accepted) {
+        // Spawn trigger (FR2): there is no enable call to resolve — the
+        // gating SPAWN rides pending_tool_calls (first, ahead of its
+        // siblings) so the enable executes it and the burst continues under
+        // the auto policy. Enable trigger: the phase-5 shape, unchanged.
+        const seed: CreateAutoConversationRequest =
+          payload.trigger === "spawn_subagent"
+            ? {
+                kind: "auto",
+                session_id: sid ?? undefined,
+                pending_tool_calls: [
+                  {
+                    toolCallId: payload.gatingToolCallId,
+                    toolName: "spawn_subagent",
+                    // Echo the wire spawn input VERBATIM when it's in hand —
+                    // the typed SpawnConsentInfo rebuild is lossy (missing
+                    // fields coerce to "", unknown keys drop), which would
+                    // quietly corrupt accept if the spawn schema grows
+                    // fields. The rebuild stays as the fallback for payloads
+                    // without the raw object; {} for absent/malformed spawn.
+                    input:
+                      payload.spawn?.rawInput ??
+                      (payload.spawn
+                        ? {
+                            agent_type: payload.spawn.agentType,
+                            name: payload.spawn.name,
+                            prompt: payload.spawn.prompt,
+                          }
+                        : {}),
+                    requiresApproval: false,
+                  },
+                  ...siblings,
+                ],
+              }
+            : {
+                kind: "auto",
+                session_id: sid ?? undefined,
+                enable_tool_call_id: payload.gatingToolCallId,
+                pending_tool_calls: siblings,
+                reason: payload.reason,
+              }
+        // Surface enable failures (e.g. 429 "Too many auto runs") — the
+        // dialog has already closed, so the inline error is the only signal.
+        const result = await conversationStore.requestEnable(seed)
+        if (!result.ok) {
+          pushInlineError(
+            `Couldn't start auto mode: ${result.error ?? "unknown error"}`,
+          )
+        }
+      } else {
+        // Decline resolves the gating call — enable or spawn — as
+        // {"status": "declined"} and denies the siblings (FR2 refinement:
+        // the desktop resolves the gating spawn id server-side).
+        const ctx: DeclineAutoModeContext = {
+          gating_tool_call_id: payload.gatingToolCallId,
+          siblings,
+        }
+        await conversationStore.decline(ctx)
+      }
+    } finally {
+      consentFlowPending = false
+      maybeFlush()
+    }
+  }
+
+  // An interactive turn is "in flight" — sending must not start a NEW turn —
+  // while the observer reports a turn, a tool approval is open, or a consent
+  // flow is resolving. Auto mode is intentionally NOT consulted: messages
+  // sent during an auto burst inject at the next round boundary.
+  function interactiveTurnActive(): boolean {
+    if (status !== "ready") return true
+    if (get(combined).toolApprovalWaiter) return true
+    if (consentFlowPending) return true
+    return false
+  }
+
+  // The in-flight interactive run can accept a message RIGHT NOW via the
+  // server inbox (the engine folds it into the next upstream round). False
+  // while an approval box is open — POSTing then would flip `working` true
+  // and onWorkingChange would misread it as "batch decided elsewhere" and
+  // close the box — and while a consent flow resolves (the turn is already
+  // over server-side; a POST would seed a NEW turn racing the enable).
+  function liveRunInjectable(): boolean {
+    return (
+      status !== "ready" &&
+      !consentFlowPending &&
+      !get(combined).toolApprovalWaiter &&
+      !!get(conversationStore.sessionId)
+    )
+  }
+
+  // POST a message into the live run's inbox. On failure, restore it to the
+  // FRONT of the queue (same never-drop contract as dispatchQueued).
+  async function injectIntoLiveRun(text: string): Promise<void> {
+    const result = await conversationStore.sendMessage(text)
+    if (!result.ok) {
+      combined.update((s) => ({
+        ...s,
+        queuedMessage: s.queuedMessage ? `${text}\n\n${s.queuedMessage}` : text,
+      }))
+    }
+  }
+
+  // Hold a message client-side while a turn is in flight. A second send while
+  // one is queued appends (blank line between) so the coalesced text sends as
+  // one.
+  function enqueue(text: string): void {
+    combined.update((s) => ({
+      ...s,
+      queuedMessage: s.queuedMessage ? `${s.queuedMessage}\n\n${text}` : text,
+    }))
+  }
+
+  function clearQueued(): void {
+    combined.update((s) => ({ ...s, queuedMessage: null }))
+  }
+
+  // Dispatch a queued message: clear it, then send. If the send is rejected,
+  // restore it to the FRONT of whatever has queued since, so a failed/declined
+  // send never silently drops the user's typed text.
+  async function dispatchQueued(queued: string): Promise<void> {
+    clearQueued()
+    const sent = await actuallySend(queued)
+    if (!sent) {
+      combined.update((s) => ({
+        ...s,
+        queuedMessage: s.queuedMessage
+          ? `${queued}\n\n${s.queuedMessage}`
+          : queued,
+      }))
+    }
+  }
+
+  // Auto-send the queued message at the next safe point. Two transports:
+  // inject into the live run's inbox the moment it becomes injectable (e.g.
+  // an approval batch just resolved and the run resumed), or — once nothing
+  // is in flight — dispatch as a new turn (an interactive turn finishing, or
+  // in auto mode a round boundary / the burst going idle).
+  function maybeFlush(): void {
+    const queued = get(combined).queuedMessage
+    if (!queued) return
+    if (get(combined).versionRequired) return
+    if (interactiveTurnActive()) {
+      if (liveRunInjectable()) {
+        clearQueued()
+        void injectIntoLiveRun(queued)
+      }
+      return
+    }
+    void dispatchQueued(queued)
+  }
+
+  // Send the queued message right away instead of waiting for the turn to end.
+  function sendQueuedNow(): void {
+    const queued = get(combined).queuedMessage
+    if (!queued) return
+    if (get(combined).versionRequired) return
+    // Auto mode: inject immediately and keep auto mode running — the run picks
+    // the message up at its next round boundary.
+    if (get(conversationStore.autoModeOn) || get(conversationStore.armed)) {
+      void dispatchQueued(queued)
+      return
+    }
+    // Live interactive run that can take the message: inject it — no need to
+    // stop the turn (a queued message here means an earlier POST failed or
+    // the message queued while the run wasn't injectable).
+    if (liveRunInjectable()) {
+      clearQueued()
+      void injectIntoLiveRun(queued)
+      return
+    }
+    // Interactive turn in flight but not injectable: stop it. The resulting
+    // idle transition flushes the queued message via ``maybeFlush``.
+    if (status !== "ready") {
+      stop()
+      return
+    }
+    // An approval box (or a consent dialog) can be open while ``status`` is
+    // "ready" — that's an in-flight turn too; the message flushes when it
+    // resolves.
+    if (get(combined).toolApprovalWaiter || consentFlowPending) return
+    // Nothing in flight (e.g. the turn already finished/errored): just send.
+    void dispatchQueued(queued)
+  }
+
+  async function sendMessage(text: string): Promise<boolean> {
+    const trimmed = text.trim()
+    if (!trimmed) return false
+    // Coalesce into an existing queued message so rapid sends accumulate
+    // rather than racing each other out.
+    if (get(combined).queuedMessage !== null) {
+      enqueue(trimmed)
+      return true
+    }
+    // Auto mode with a burst running: hold the message and inject it at the
+    // run's next round boundary (or immediately via send-now). Auto idle /
+    // armed has no in-flight round, so dispatch now.
+    if (get(conversationStore.autoModeOn)) {
+      if (get(conversationStore.working)) {
+        enqueue(trimmed)
+        return true
+      }
+      return actuallySend(trimmed)
+    }
+    if (get(conversationStore.armed)) {
+      return actuallySend(trimmed)
+    }
+    // Interactive with a turn in flight: send straight into the live run's
+    // server inbox — the engine folds it into the next upstream round, so the
+    // message reaches the model mid-turn instead of waiting for the whole
+    // turn (possibly many rounds) to settle. No local render: the run echoes
+    // the message (streaming deltas target the LAST assistant bubble, so a
+    // locally appended user message would strand them). Falls back to the
+    // client-side queue when the run can't take it right now (approval box
+    // open, consent resolving, no session id) or the POST fails.
+    if (interactiveTurnActive()) {
+      if (liveRunInjectable()) {
+        const result = await conversationStore.sendMessage(trimmed)
+        if (result.ok) return true
+      }
+      enqueue(trimmed)
+      return true
+    }
+    return actuallySend(trimmed)
+  }
+
+  // Dispatch a message to its real transport: armed-first-send (creates the
+  // conversation in auto mode), inject-on-send (auto flag on), or a normal
+  // interactive turn via ensure + POST /{sid}/messages.
+  async function actuallySend(text: string): Promise<boolean> {
+    const trimmed = text.trim()
+    if (!trimmed) return false
+    const autoOn = get(conversationStore.autoModeOn)
+    const armed = get(conversationStore.armed)
+    const autoActive = autoOn || armed
+    if (!autoActive && status !== "ready") return false
+    if (!get(chat_cost_disclaimer_acknowledged)) {
+      if (!onConsentNeeded) return false
+      const approved = await onConsentNeeded()
+      if (!approved) return false
+      if (!autoActive && status !== "ready") return false
+    }
+    // Armed-first-send (Revision R2): auto mode was armed client-side on a
+    // brand-new conversation. The FIRST send creates the conversation via
+    // enable seeded with this message, so the very first turn runs in auto
+    // mode.
+    if (armed && !autoOn) {
+      return beginArmedAutoRun(trimmed)
+    }
+    // Inject-on-send (Revision R1): while the flag is on, a user message is
+    // injected into the server-owned run — it never stops auto mode and
+    // triggers no new consent. The run echoes the message + streams the burst
+    // on the observer (which is why nothing is rendered locally here).
+    if (autoOn) {
+      const result = await conversationStore.sendMessage(trimmed)
+      if (!result.ok) {
+        pushInlineError(
+          `Couldn't send the message: ${result.error ?? "unknown error"}`,
+        )
+        return false
+      }
+      return true
+    }
+    return beginInteractiveTurn(trimmed)
+  }
+
+  // Start an interactive turn: ensure the conversation exists (create/adopt —
+  // the replacement for the old conversation-per-request POST /api/chat),
+  // render the typed message locally, open a fresh assistant turn, and POST
+  // the message (the server starts the turn task; the observer streams it).
+  async function beginInteractiveTurn(
+    text: string,
+    isRetry = false,
+  ): Promise<boolean> {
+    removeErrors()
+    const currentMessages = get(combined).messages
+    // Phase 5: the conversation key is the persisted session handle — the
+    // live sid when the desktop still knows the record, else the durable
+    // root id (desktop-restart recovery). The old world derived a leaf
+    // trace id from the messages here (traceIdForNextChatRequest); the
+    // browser no longer holds trace ids at all (functional spec §4).
+    const sessionKey = get(persisted).sessionId ?? get(persisted).rootId
+
+    // Stale guard (same pattern as resyncOnLoad): reset()/loadSession() bump
+    // the generation, so if either ran while ensure() was in flight the
+    // ensured handle belongs to the conversation we ALREADY left — stamping
+    // it back would point the next send at the wrong conversation.
+    const ensureGeneration = generation
+    const ensured = await conversationStore.ensure(sessionKey)
+    if (ensureGeneration !== generation) return false
+    if (!ensured.ok || !ensured.sessionId) {
+      pushInlineError(
+        `Couldn't reach the assistant: ${ensured.error ?? "unknown error"}`,
+      )
+      return false
+    }
+    persisted.update((p) => ({ ...p, sessionId: ensured.sessionId ?? null }))
+
+    // The browser still composes the message content: the app-context header
+    // is prepended to the first message of a turn (architecture §7 note —
+    // the runtime just carries it).
     const currentAppState = getCurrentAppState()
     const header = buildContextHeader(
       currentAppState,
       get(persisted).lastSentAppState,
     )
-    let apiMessage = userMessage
-    if (header) {
-      apiMessage = { ...userMessage, content: header + "\n" + text }
-    }
-    persisted.update((p) => ({
-      ...p,
-      lastSentAppState: currentAppState,
-    }))
+    const apiContent = header ? header + "\n" + text : text
+    persisted.update((p) => ({ ...p, lastSentAppState: currentAppState }))
 
     posthog.capture("chat_message_sent", {
-      is_new_conversation: !traceId && !isRetry,
+      is_new_conversation: !sessionKey && !isRetry,
       message_length: text.length,
       has_app_context_header: !!header,
       message_count: currentMessages.length,
     })
-    if (!traceId && !isRetry) {
+    if (!sessionKey && !isRetry) {
       posthog.capture("chat_conversation_started")
     }
 
+    // Render the typed message immediately (zero-latency, like the old local
+    // append) and register it for own-echo dedupe; then a fresh assistant
+    // placeholder for the reply.
+    const localId = chatGenerateId()
+    updateMessages((msgs) => [
+      ...msgs,
+      { id: localId, role: "user", content: text },
+    ])
+    pendingOwnEchoes.push({ content: text, localId })
     combined.update((s) => ({
       ...s,
       toolExecuting: false,
       showActivityIndicator: false,
+      compacting: false,
     }))
-
-    const controller = new AbortController()
-    setRuntimeState("submitted", controller)
+    // beginTurn appends the assistant placeholder AND resets the observer's
+    // processor so the previous turn's parts aren't re-flushed into it.
+    conversationStore.beginTurn()
+    setStatus("submitted")
 
     const thisGeneration = ++generation
-
-    const isStale = () => thisGeneration !== generation
-
-    streamChat({
-      apiUrl: CHAT_API_URL,
-      messages: [apiMessage],
-      traceId,
-      onToolCallsPending: (payload) => {
-        if (isStale()) return Promise.resolve({})
-        return handleToolCallsPending(payload)
-      },
-      onToolExecutionStart: () => {
-        if (isStale()) return
-        combined.update((s) => ({
-          ...s,
-          toolExecuting: true,
-        }))
-      },
-      onToolExecutionEnd: () => {
-        if (isStale()) return
-        combined.update((s) => ({
-          ...s,
-          toolExecuting: false,
-        }))
-      },
-      onShowActivityIndicator: (show) => {
-        if (isStale()) return
-        combined.update((s) => ({
-          ...s,
-          showActivityIndicator: show,
-        }))
-      },
-      onAssistantMessage: (update) => {
-        if (isStale()) return
-        if (status !== "streaming") {
-          setRuntimeState("streaming", controller)
-        }
-        updateLastAssistant(update)
-      },
-      onChatTrace: (traceId) => {
-        if (isStale()) return
-        persisted.update((p) => {
-          const msgs = p.messages
-          const last = msgs[msgs.length - 1]
-          if (last?.role === "assistant") {
-            return {
-              ...p,
-              messages: [...msgs.slice(0, -1), { ...last, traceId }],
-            }
-          }
-          return p
-        })
-      },
-      onVersionNudge: (preferredVersion) => {
-        if (isStale()) return
-        // Set unconditionally: repeated nudges across tool rounds collapse to a
-        // single banner, and a new server preference re-surfaces it even if a
-        // prior nudge was dismissed.
-        combined.update((s) => ({
-          ...s,
-          upgradeNudgeVersion: preferredVersion,
-        }))
-      },
-      onInlineError: (message, traceId, code) => {
-        if (isStale()) return
-        // Blocking "client too old" rejection: show it as a banner above the
-        // composer (like the upgrade nudge) instead of a conversation message.
-        if (code === CHAT_CLIENT_VERSION_TOO_OLD) {
-          combined.update((s) => ({ ...s, versionRequired: true }))
-          setRuntimeState("ready", null)
-          return
-        }
-        const errorMsg: ChatMessage = {
-          id: chatGenerateId(),
-          role: "error",
-          content: message,
-          traceId,
-          errorCode: code,
-        }
-        updateMessages((msgs) => [...msgs, errorMsg])
-        setRuntimeState("ready", null)
-      },
-      onFinish: () => {
-        if (isStale()) return
-        combined.update((s) => ({
-          ...s,
-          toolExecuting: false,
-          showActivityIndicator: false,
-        }))
-        setRuntimeState("ready", null)
-      },
-      onError: (err) => {
-        if (isStale()) return
-        combined.update((s) => ({
-          ...s,
-          toolExecuting: false,
-          showActivityIndicator: false,
-        }))
-        const errorMsg: ChatMessage = {
-          id: chatGenerateId(),
-          role: "error",
-          content: err.message,
-        }
-        updateMessages((msgs) => [...msgs, errorMsg])
-        setRuntimeState("ready", null)
-      },
-      signal: controller.signal,
-    })
-  }
-
-  let onConsentNeeded: (() => Promise<boolean>) | null = null
-
-  async function sendMessage(text: string): Promise<boolean> {
-    const trimmed = text.trim()
-    if (!trimmed || status !== "ready") return false
-    if (!get(chat_cost_disclaimer_acknowledged)) {
-      if (!onConsentNeeded) return false
-      const approved = await onConsentNeeded()
-      if (!approved || status !== "ready") return false
+    const result = await conversationStore.sendMessage(apiContent)
+    if (!result.ok) {
+      if (thisGeneration !== generation) return false
+      pushInlineError(result.error ?? "Couldn't send the message.")
+      setStatus("ready")
+      return false
     }
-    beginStreaming(trimmed)
+    // Attach the server-minted id to the pending own-echo entry so the echo
+    // dedupes by id even if the content matcher misses.
+    const entry = pendingOwnEchoes.find((e) => e.localId === localId && !e.id)
+    if (entry && result.messageId) entry.id = result.messageId
     return true
   }
 
-  function stop(): void {
-    if (abortController) {
-      posthog.capture("chat_stopped")
-      abortController.abort()
+  // Armed-first-send (Revision R2): create the server-owned run seeded with
+  // the user's first message and NO trace_id. The server does not echo a
+  // seed's extra_messages, so the user message renders locally.
+  async function beginArmedAutoRun(text: string): Promise<boolean> {
+    if (armedEnablePending) return false
+    armedEnablePending = true
+    try {
+      return await beginArmedAutoRunInner(text)
+    } finally {
+      armedEnablePending = false
     }
+  }
+
+  async function beginArmedAutoRunInner(text: string): Promise<boolean> {
+    removeErrors()
+    const currentAppState = getCurrentAppState()
+    const header = buildContextHeader(
+      currentAppState,
+      get(persisted).lastSentAppState,
+    )
+    const userMessage: ChatMessage = {
+      id: chatGenerateId(),
+      role: "user",
+      content: text,
+    }
+    updateMessages((msgs) => [...msgs, userMessage])
+    persisted.update((p) => ({ ...p, lastSentAppState: currentAppState }))
+    const apiContent = header ? header + "\n" + text : text
+    const seed: CreateAutoConversationRequest = {
+      kind: "auto",
+      // Normally absent (arming is only reachable on a brand-new
+      // conversation); when an observed conversation DOES exist — the
+      // arm raced its creation — the sid keys the enable onto the SAME
+      // record instead of forking a parallel upstream conversation.
+      session_id: get(conversationStore.sessionId) ?? undefined,
+      extra_messages: [{ role: "user", content: apiContent }],
+    }
+    const result = await conversationStore.requestEnable(seed)
+    if (!result.ok) {
+      pushInlineError(
+        `Couldn't start auto mode: ${result.error ?? "unknown error"}`,
+      )
+      return false
+    }
+    // The enable attached (or confirmed) the conversation — persist its live
+    // handle so a refresh resyncs (beginInteractiveTurn does the same after
+    // ensure; the durable rootId follows on the first persisted turn).
+    const sid = get(conversationStore.sessionId)
+    if (sid) persisted.update((p) => ({ ...p, sessionId: sid }))
+    return true
+  }
+
+  function stop(opts?: { cascade?: boolean }): void {
+    // POST /{sid}/stop cancels the in-flight turn server-side; the idle state
+    // event settles the UI (status ready + queued flush) — replacing the old
+    // client-side stream abort.
+    posthog.capture("chat_stopped")
+    void conversationStore.stop(opts)
   }
 
   function retryLastRequest(): void {
     if (status !== "ready") return
-    const msgs = get(persisted).messages
+    const msgs = get(combined).messages
     let lastUserIdx = -1
     for (let i = msgs.length - 1; i >= 0; i--) {
       if (msgs[i].role === "user") {
@@ -347,94 +1114,158 @@ export function createChatSessionStore(
     if (lastUserIdx === -1) return
     posthog.capture("chat_retry")
     const userText = msgs[lastUserIdx].content ?? ""
-    persisted.update((p) => ({
-      ...p,
-      messages: p.messages.slice(0, lastUserIdx),
+    updateMessages((m) => m.slice(0, lastUserIdx))
+    void beginInteractiveTurn(userText, true)
+  }
+
+  function clearRuntimeAffordances() {
+    combined.update((s) => ({
+      ...s,
+      toolExecuting: false,
+      showActivityIndicator: false,
+      compacting: false,
+      autoWorking: false,
+      retry: null,
+      queuedMessage: null,
     }))
-    beginStreaming(userText, true)
   }
 
   function reset(): void {
-    if (abortController) {
-      abortController.abort()
-    }
+    generation++
+    // Stop observing (the run survives server-side; the user is starting a
+    // new conversation). Clears the stale "on" indicator.
+    conversationStore.detach()
     clearToolApprovalState()
-    continuationTraceId = undefined
+    pendingOwnEchoes.length = 0
+    persisted.set({ ...EMPTY_PERSISTED })
+    combined.update((s) => ({ ...s, messages: [], contextUsage: null }))
+    clearRuntimeAffordances()
+    setStatus("ready")
+  }
+
+  function loadSession(
+    messages: ChatMessage[],
+    sessionKey: string,
+    contextUsage: ContextUsage | null = null,
+    opts?: { autoActive?: boolean; rootId?: string | null },
+  ): void {
+    generation++
+    // Detach any prior conversation's observer before showing a different one.
+    conversationStore.detach()
+    clearToolApprovalState()
+    pendingOwnEchoes.length = 0
+    // Phase 5: `sessionKey` is the history row's id (live sid / durable
+    // root / legacy leaf — opaque to the browser); persist it immediately
+    // so the conversation is addressable even before ensure() resolves.
+    // `rootId` (from the row / hydration snapshot) is the durable recovery
+    // key that replaced the old persisted leaf trace id.
     persisted.set({
-      messages: [],
+      sessionId: sessionKey,
+      rootId: opts?.rootId ?? null,
       collapsedPartKeys: {},
       lastSentAppState: null,
     })
-    combined.update((s) => ({
-      ...s,
-      toolExecuting: false,
-      showActivityIndicator: false,
-    }))
-    setRuntimeState("ready", null)
+    combined.update((s) => ({ ...s, messages, contextUsage }))
+    clearRuntimeAffordances()
+    setStatus("ready")
+    // Re-attach the conversation's observer (create-or-adopt by key):
+    // in-flight turns replay into a fresh assistant turn, the state marker
+    // restores working/auto affordances, and a parked approval re-surfaces
+    // (replayed pending event → approvals fetch). Best-effort async — the
+    // hydrated transcript is already showing.
+    void conversationStore
+      .ensure(sessionKey, {
+        openInflightTurn: true,
+        assumeAutoOn: opts?.autoActive ?? false,
+      })
+      .then((r) => {
+        if (r.ok && r.sessionId) {
+          persisted.update((p) => ({ ...p, sessionId: r.sessionId ?? null }))
+        }
+      })
   }
 
-  function loadSession(messages: ChatMessage[], traceId: string): void {
-    if (abortController) {
-      abortController.abort()
-    }
-    clearToolApprovalState()
-    continuationTraceId = traceId
-    persisted.set({ messages, collapsedPartKeys: {}, lastSentAppState: null })
-    combined.update((s) => ({
-      ...s,
-      toolExecuting: false,
-      showActivityIndicator: false,
-    }))
-    setRuntimeState("ready", null)
-  }
+  // Reconnect after a hard refresh: sessionStorage holds only the handles, so
+  // hydrate the transcript from the persisted snapshot, then re-attach.
+  async function resyncOnLoad(): Promise<void> {
+    const { sessionId: storedSid, rootId: storedRoot } = get(persisted)
+    if (!storedSid && !storedRoot) return
+    const thisGeneration = ++generation
+    const isStale = () => thisGeneration !== generation
 
-  function handleToolCallsPending(
-    payload: ToolCallsPendingPayload,
-  ): Promise<Record<string, boolean>> {
-    const approvalOnly = payload.items.filter((i) => i.requiresApproval)
-    if (approvalOnly.length === 0) {
-      return Promise.resolve({})
-    }
-    return new Promise((resolve) => {
-      toolApprovalResolver = resolve
-      const picks: Record<string, boolean | undefined> = {}
-      for (const it of approvalOnly) {
-        picks[it.toolCallId] = undefined
+    // Prefer the live handle; a 404 means the desktop restarted or evicted
+    // the record — the durable root id still recovers the conversation
+    // (create-or-adopt resolves root→leaf desktop-side + rehydrates any
+    // parked approval from the trace tail). This replaces the old
+    // current_trace_id refresh: hydration below is keyed by the SAME
+    // conversation key and the desktop resolves the current leaf per
+    // request, so no leaf ever crosses the surface (functional spec §4).
+    let key = storedSid ?? storedRoot
+    let initialWorking: boolean | undefined
+    if (storedSid) {
+      try {
+        const response = await fetch(
+          `${base_url}/api/conversations/${encodeURIComponent(storedSid)}`,
+        )
+        if (response.ok) {
+          const item = (await response.json()) as {
+            state?: string
+            root_id?: string | null
+          }
+          initialWorking = item?.state === "running"
+          // Stale-write guard (CR MEDIUM 2's residual): a New Chat /
+          // loadSession racing this fetch replaced the persisted handles —
+          // stamping the OLD conversation's root onto them would make the
+          // next send silently adopt the old conversation.
+          if (!isStale() && typeof item?.root_id === "string" && item.root_id) {
+            // Upgrade the durable key opportunistically (e.g. the tab was
+            // refreshed before the first-turn root fetch landed).
+            persisted.update((p) => ({ ...p, rootId: item.root_id ?? null }))
+          }
+        } else if (storedRoot) {
+          // Dead live handle → recover by the durable key.
+          key = storedRoot
+        }
+      } catch {
+        /* desktop unreachable — hydration/ensure below degrade the same way */
       }
-      combined.update((s) => ({
-        ...s,
-        toolApprovalWaiter: { payload: { items: approvalOnly } },
-        toolApprovalPicks: picks,
-      }))
+    }
+    if (isStale() || !key) return
+
+    // Show the reconnecting affordance while we hydrate → attach so the
+    // conversation doesn't look empty/dead before liveness is known.
+    conversationStore.beginReconnect()
+    try {
+      const { data: snapshot, error } = await client.GET(
+        "/api/chat/sessions/{session_id}",
+        { params: { path: { session_id: key } } },
+      )
+      if (isStale()) return
+      if (!error && snapshot) {
+        const hydrated = hydrateSessionFromSnapshot(snapshot)
+        combined.update((s) => ({
+          ...s,
+          messages: hydrated.messages,
+          contextUsage: hydrated.contextUsage,
+        }))
+        if (hydrated.rootId) {
+          const rootId = hydrated.rootId
+          persisted.update((p) => ({ ...p, rootId }))
+        }
+      }
+    } catch {
+      /* hydration failed — still attach so live events come back */
+    }
+    if (isStale()) return
+    conversationStore.beginReconnect()
+    const ensured = await conversationStore.ensure(key, {
+      openInflightTurn: true,
+      initialWorking,
     })
-  }
-
-  function clearToolApprovalState(resolveWithEmpty = true): void {
-    if (resolveWithEmpty && toolApprovalResolver) {
-      toolApprovalResolver({})
+    if (isStale()) return
+    if (ensured.ok && ensured.sessionId) {
+      persisted.update((p) => ({ ...p, sessionId: ensured.sessionId ?? null }))
     }
-    toolApprovalResolver = null
-    combined.update((s) => ({
-      ...s,
-      toolApprovalWaiter: null,
-      toolApprovalPicks: {},
-    }))
-  }
-
-  function maybeFinishToolApproval(): void {
-    const state = get(combined)
-    if (!state.toolApprovalWaiter || !toolApprovalResolver) return
-    const allDone = state.toolApprovalWaiter.payload.items.every(
-      (it) => state.toolApprovalPicks[it.toolCallId] !== undefined,
-    )
-    if (!allDone) return
-    const decisions: Record<string, boolean> = {}
-    for (const it of state.toolApprovalWaiter.payload.items) {
-      decisions[it.toolCallId] = state.toolApprovalPicks[it.toolCallId] ?? false
-    }
-    const resolver = toolApprovalResolver
-    clearToolApprovalState(false)
-    resolver(decisions)
   }
 
   function toolNameForCallId(toolCallId: string): string | undefined {
@@ -504,11 +1335,15 @@ export function createChatSessionStore(
   return {
     subscribe: combined.subscribe,
     sendMessage,
+    sendQueuedNow,
+    clearQueued,
     stop,
     retryLastRequest,
     reset,
     loadSession,
+    resyncOnLoad,
     togglePartCollapsed,
+    pushInlineError: (message: string) => pushInlineError(message),
     applyToolApprovalRun,
     applyToolApprovalSkip,
     dismissUpgradeNudge,
@@ -518,6 +1353,12 @@ export function createChatSessionStore(
     },
     set onConsentNeeded(fn: (() => Promise<boolean>) | null) {
       onConsentNeeded = fn
+    },
+    get onAutoModeConsentNeeded() {
+      return onAutoModeConsentNeeded
+    },
+    set onAutoModeConsentNeeded(fn: AutoModeConsentDecision | null) {
+      onAutoModeConsentNeeded = fn
     },
   }
 }

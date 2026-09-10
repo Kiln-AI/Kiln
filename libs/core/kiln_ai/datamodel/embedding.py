@@ -5,6 +5,7 @@ from typing_extensions import TypedDict
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.chunk import ChunkedDocument
@@ -33,6 +34,10 @@ class EmbeddingConfig(KilnParentedModel):
     )
     properties: EmbeddingProperties = Field(
         description="Properties to be used to execute the embedding config.",
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Why this artifact exists and what it was derived from.",
     )
 
     # Workaround to return typed parent without importing Project

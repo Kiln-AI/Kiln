@@ -58,7 +58,12 @@
       if (!run_config_component) {
         throw new Error("Run configuration component is not loaded")
       }
-      const saved_run_config = await run_config_component.save_new_run_config()
+      // In clone mode, stamp lineage from the source run config; a plain create
+      // sends no clone source (fresh human-origin provenance).
+      const clone_source_id =
+        mode === "clone" ? source_run_config?.id ?? null : null
+      const saved_run_config =
+        await run_config_component.save_new_run_config(clone_source_id)
       new_run_config_created?.(saved_run_config)
       close() // Only close on success
     } catch (e) {

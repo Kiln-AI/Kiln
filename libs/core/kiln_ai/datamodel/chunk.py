@@ -24,6 +24,7 @@ from kiln_ai.datamodel.basemodel import (
     KilnParentModel,
 )
 from kiln_ai.datamodel.embedding import ChunkEmbeddings
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +109,10 @@ class ChunkerConfig(KilnParentedModel):
     ) = Field(
         description="Properties to be used to execute the chunker config. This is chunker_type specific and should serialize to a json dict.",
         discriminator="chunker_type",
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Why this artifact exists and what it was derived from.",
     )
 
     # Workaround to return typed parent without importing Project

@@ -1,4 +1,8 @@
-import type { TaskRunConfig, RunConfigProperties } from "$lib/types"
+import type {
+  TaskRunConfig,
+  RunConfigProperties,
+  KilnArtifactProvenance,
+} from "$lib/types"
 import { writable, get } from "svelte/store"
 import { client } from "$lib/api_client"
 import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
@@ -129,6 +133,7 @@ export async function save_new_task_run_config(
   task_id: string,
   run_config_properties: RunConfigProperties,
   name: string,
+  provenance: KilnArtifactProvenance | null = null,
 ): Promise<TaskRunConfig> {
   const { error, data } = await client.POST(
     "/api/projects/{project_id}/tasks/{task_id}/run_configs",
@@ -142,6 +147,7 @@ export async function save_new_task_run_config(
       body: {
         run_config_properties,
         name,
+        provenance,
       },
     },
   )

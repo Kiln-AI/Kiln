@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, AsyncGenerator, Callable, Literal
+from typing import Any, AsyncGenerator, Callable, Literal, TypeVar
 
 from pydantic import BaseModel, Field
 
 from .models import JobRecord
+
+_T = TypeVar("_T")
 
 
 class JobEvent(BaseModel):
@@ -19,6 +21,74 @@ class JobEvent(BaseModel):
         description="Event payload. For 'snapshot' and 'job' events this is the full "
         "job record(s); for 'deleted' it identifies the removed job."
     )
+
+
+class KeepalivePing:
+    """Sentinel yielded by `iter_with_keepalive` when a quiet window elapses.
+
+    A distinct type (not None / not a JobEvent) so callers can branch on it
+    with `isinstance(item, KeepalivePing)` and have type checkers narrow the
+    other branch to `JobEvent`.
+    """
+
+
+KEEPALIVE_PING = KeepalivePing()
+
+
+async def iter_with_keepalive(
+    subscription: AsyncGenerator[_T, None],
+    timeout_seconds: float,
+) -> AsyncGenerator[_T | KeepalivePing, None]:
+    """Yield each event from `subscription`, injecting `KEEPALIVE_PING` on quiet.
+
+    Why a feeder task instead of `asyncio.wait_for(subscription.__anext__(),
+    ...)`: `wait_for` cancels the in-flight awaitable on timeout. A bus
+    `subscribe()` generator is suspended at `yield await queue.get()`, so
+    cancelling its `__anext__()` throws CancelledError *into the generator*,
+    runs its `finally` (unsubscribe), and finalizes it — the next pull then
+    raises StopAsyncIteration and the stream ends after a single quiet window.
+    That would silently tear down a still-wanted subscription on a quiet
+    connection.
+
+    Instead, a single long-lived feeder task drains the subscription into a
+    local queue. The keepalive timeout wraps a fresh `local_queue.get()`, so a
+    timeout cancels only that throwaway get() — never the subscription. The
+    feeder pushes a `None` sentinel when the subscription ends so this generator
+    can break. Teardown cancels the feeder and closes the subscription.
+    """
+    local_queue: asyncio.Queue[_T | None] = asyncio.Queue()
+
+    async def _feed() -> None:
+        try:
+            async for event in subscription:
+                await local_queue.put(event)
+        finally:
+            # End-of-stream sentinel. Also reached if the feeder is cancelled
+            # during teardown — harmless, since the consumer is gone by then.
+            local_queue.put_nowait(None)
+
+    feeder = asyncio.create_task(_feed())
+    try:
+        while True:
+            try:
+                item = await asyncio.wait_for(
+                    local_queue.get(), timeout=timeout_seconds
+                )
+            except asyncio.TimeoutError:
+                # Cancels only the throwaway get() above; the feeder (and thus
+                # the subscription) is untouched and keeps draining.
+                yield KEEPALIVE_PING
+                continue
+            if item is None:
+                break
+            yield item
+    finally:
+        feeder.cancel()
+        try:
+            await feeder
+        except asyncio.CancelledError:
+            pass
+        await subscription.aclose()
 
 
 class _CloseSentinel:

@@ -16,6 +16,7 @@ from kiln_ai.adapters.remote_config import (
     refresh_model_list_background,
     should_skip_remote_model_list,
 )
+from kiln_ai.datamodel.skill_bundle import sweep_stale_skill_staging
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.logging import setup_litellm_logging
 
@@ -27,7 +28,10 @@ from app.desktop.git_sync.registry import GitSyncRegistry
 from app.desktop.log_config import log_config
 from app.desktop.studio_server.agent_api import connect_agent_api
 from app.desktop.studio_server.batch_plan_api import connect_batch_plan_api
-from app.desktop.studio_server.chat import connect_chat_api
+from app.desktop.studio_server.chat import (
+    connect_chat_api,
+    connect_conversations_api,
+)
 from app.desktop.studio_server.code_tool_api import connect_code_tool_api
 from app.desktop.studio_server.copilot_api import connect_copilot_api
 from app.desktop.studio_server.data_gen_api import connect_data_gen_api
@@ -111,6 +115,9 @@ async def lifespan(app: FastAPI):
     original_strict_mode = datamodel_strict_mode.strict_mode()
     datamodel_strict_mode.set_strict_mode(True)
 
+    # Clean up skill staging debris orphaned by a hard crash (best-effort)
+    sweep_stale_skill_staging(Config.shared().projects or [])
+
     try:
         await _start_background_syncs()
         yield
@@ -158,6 +165,7 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_agent_api(app)
     connect_dev_tools(app)
     connect_chat_api(app)
+    connect_conversations_api(app)
     connect_jobs_api(app)
     # Important: webhost must be last, it handles all other URLs
     connect_webhost(app)

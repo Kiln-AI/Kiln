@@ -1,11 +1,20 @@
 import asyncio
 import logging
+import random
 from dataclasses import dataclass
 from typing import AsyncGenerator, Awaitable, Callable, Generic, List, TypeVar
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+
+def jittered_backoff_delay(retry_delay: float, attempt: int) -> float:
+    """Delay before retrying a transient failure: exponential (delay, 2x, 4x, ...)
+    with ±50% jitter. Rate limits rarely clear on a fixed short gap, and concurrent
+    workers throttled at the same moment would otherwise retry in lockstep and
+    re-flood the provider."""
+    return retry_delay * (2**attempt) * random.uniform(0.5, 1.5)
 
 
 @dataclass
@@ -161,7 +170,9 @@ class AsyncJobRunner(Generic[T]):
                     if is_last_attempt:
                         logger.error("Job failed to complete", exc_info=e)
                         break
-                    await asyncio.sleep(self.retry_delay)
+                    await asyncio.sleep(
+                        jittered_backoff_delay(self.retry_delay, attempt)
+                    )
                 except Exception as e:
                     result = False
                     last_error = e

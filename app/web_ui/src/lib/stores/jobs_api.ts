@@ -10,6 +10,30 @@ export type JobErrorEntry = {
   error_message?: string
 } & Record<string, unknown>
 
+// Mirror of the backend EvalJobWorker.EvalJobProperties model. JobRecord
+// carries worker-published properties as an untyped dict on the wire (so the
+// core stays worker-agnostic); the frontend casts it per job type.
+export type EvalJobProperties = {
+  eval_name: string
+  run_config_name: string
+  run_config_model_name: string
+  run_config_model_provider: string
+  run_config_prompt_name: string
+  run_config_tools_count: number
+  run_config_skills_count: number
+  judge_name: string
+  judge_algorithm: string
+  judge_model_name: string
+  judge_model_provider: string
+}
+
+export function eval_job_properties(job: JobRecord): EvalJobProperties | null {
+  if (job.type !== "eval" || !job.properties) {
+    return null
+  }
+  return job.properties as EvalJobProperties
+}
+
 export type ListJobsQuery = {
   status?: BackgroundJobStatus
   type?: string
@@ -33,25 +57,6 @@ export async function list_jobs(
 export async function get_job(id: string): Promise<JobRecord> {
   const { data, error } = await client.GET("/api/jobs/{id}", {
     params: { path: { id } },
-  })
-  if (error) {
-    throw error
-  }
-  return data
-}
-
-export async function create_job(
-  type: string,
-  params: Record<string, unknown> = {},
-  metadata: Record<string, unknown> | null = null,
-  project_id: string | null = null,
-): Promise<
-  | components["schemas"]["CreateJobResponse"]
-  | components["schemas"]["JobRecord"]
-> {
-  const { data, error } = await client.POST("/api/jobs/{type}", {
-    params: { path: { type } },
-    body: { params, metadata, project_id },
   })
   if (error) {
     throw error

@@ -25,7 +25,6 @@ const mutationSpies = {
   resume_job: vi.fn(),
   cancel_job: vi.fn(),
   delete_job: vi.fn(),
-  create_job: vi.fn(),
 }
 vi.mock("./jobs_api", () => mutationSpies)
 
