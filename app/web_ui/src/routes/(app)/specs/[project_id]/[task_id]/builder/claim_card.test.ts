@@ -79,7 +79,7 @@ describe("ClaimCard — what a disagreement will do", () => {
   // click is worth: only a verdict (or a claim the builder tagged as a
   // possible judge error) refines the judge, and everything else is a note.
   const REFINES = "This will refine the judge."
-  const NOTE = "Saved as a note. This does not change the judge."
+  const NOTE = "Saved as a note. This does not refine the judge."
 
   function note_line(container: HTMLElement): string | null {
     const found = container.querySelector("[data-refine-consequence]")
