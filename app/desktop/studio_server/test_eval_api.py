@@ -7500,7 +7500,7 @@ def test_list_eval_inputs_empty(client, mock_task, mock_task_from_id):
     response = client.get("/api/projects/project1/tasks/task1/eval_inputs")
 
     assert response.status_code == 200
-    assert response.json() == []
+    assert response.json() == {"eval_inputs": [], "load_error_count": 0}
 
 
 def test_list_eval_inputs_all_and_filtered(client, mock_task, mock_task_from_id):
@@ -7509,7 +7509,13 @@ def test_list_eval_inputs_all_and_filtered(client, mock_task, mock_task_from_id)
 
     response = client.get("/api/projects/project1/tasks/task1/eval_inputs")
     assert response.status_code == 200
-    assert {item["id"] for item in response.json()} == {tagged.id, corpus_only.id}
+    result = response.json()
+    assert {item["id"] for item in result["eval_inputs"]} == {
+        tagged.id,
+        corpus_only.id,
+    }
+    # Every item read cleanly, so a caller has no reason to warn about a partial list.
+    assert result["load_error_count"] == 0
 
     response = client.get(
         "/api/projects/project1/tasks/task1/eval_inputs",
@@ -7517,15 +7523,84 @@ def test_list_eval_inputs_all_and_filtered(client, mock_task, mock_task_from_id)
     )
     assert response.status_code == 200
     result = response.json()
-    assert [item["id"] for item in result] == [tagged.id]
-    assert result[0]["reference"] == {"scenario": "s1", "expected_facts": ["fact one"]}
+    assert [item["id"] for item in result["eval_inputs"]] == [tagged.id]
+    assert result["eval_inputs"][0]["reference"] == {
+        "scenario": "s1",
+        "expected_facts": ["fact one"],
+    }
 
     response = client.get(
         "/api/projects/project1/tasks/task1/eval_inputs",
         params={"filter_id": "all"},
     )
     assert response.status_code == 200
-    assert len(response.json()) == 2
+    assert len(response.json()["eval_inputs"]) == 2
+
+
+def test_list_eval_inputs_partial_load(client, mock_task, mock_task_from_id, caplog):
+    """An item file this build can't parse is counted, not fatal: failing the whole list
+    would hide a readable corpus behind one bad file. The count is all the response
+    carries, so the log has to name the file that failed."""
+    readable = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    # An item written by a hypothetical newer Kiln: this build refuses to load it.
+    unreadable_dir = mock_task.path.parent / "eval_inputs" / "future_item"
+    unreadable_dir.mkdir(parents=True)
+    unreadable_file = unreadable_dir / EvalInput.base_filename()
+    unreadable_file.write_text(
+        json.dumps(
+            {
+                "v": readable.max_schema_version() + 1,
+                "id": "future_item",
+                "model_type": "eval_input",
+                "data": {"type": "single_turn", "user_message": {"text": "hi"}},
+            }
+        )
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.desktop.studio_server.eval_api"):
+        response = client.get("/api/projects/project1/tasks/task1/eval_inputs")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert [item["id"] for item in result["eval_inputs"]] == [readable.id]
+    assert result["load_error_count"] == 1
+    warning = next(
+        r for r in caplog.records if "Failed to load eval input file" in r.getMessage()
+    )
+    assert str(unreadable_file) in warning.getMessage()
+
+
+def test_list_eval_inputs_partial_load_still_filters(
+    client, mock_task, mock_task_from_id
+):
+    """The filter applies to what loaded, and the error count survives it: a caller
+    asking for one slice still needs to know the corpus was read incompletely."""
+    tagged = make_multi_turn_eval_input(mock_task, tags=["corpus", "nm_app_crit"])
+    make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    unreadable_dir = mock_task.path.parent / "eval_inputs" / "future_item"
+    unreadable_dir.mkdir(parents=True)
+    (unreadable_dir / EvalInput.base_filename()).write_text(
+        json.dumps(
+            {
+                "v": tagged.max_schema_version() + 1,
+                "id": "future_item",
+                "model_type": "eval_input",
+                "data": {"type": "single_turn", "user_message": {"text": "hi"}},
+            }
+        )
+    )
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/eval_inputs",
+        params={"filter_id": "tag::nm_app_crit"},
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert [item["id"] for item in result["eval_inputs"]] == [tagged.id]
+    assert result["load_error_count"] == 1
 
 
 def test_list_eval_inputs_invalid_filter(client, mock_task, mock_task_from_id):
@@ -7603,7 +7678,8 @@ def test_create_eval_input_multi_turn(client, mock_task, mock_task_from_id):
 def test_create_eval_input_multi_turn_requires_a_drive_config(
     client, mock_task, mock_task_from_id
 ):
-    """Without one the runner skips the item forever, and PATCH can't add it."""
+    """Without one the runner skips the item and PATCH can't add it, so it is never
+    runnable."""
     response = client.post(
         "/api/projects/project1/tasks/task1/eval_inputs",
         json={
@@ -7618,6 +7694,43 @@ def test_create_eval_input_multi_turn_requires_a_drive_config(
     assert response.status_code == 422
     body = response.json()
     assert "drive_config is required" in body["message"]
+    # Located on the field the caller sent, not reported against the whole item.
+    assert body["source_errors"][0]["loc"] == ["body", "data"]
+    assert mock_task.eval_inputs(readonly=True) == []
+
+
+@pytest.mark.parametrize(
+    "first_message",
+    [
+        pytest.param(None, id="omitted"),
+        pytest.param({"text": ""}, id="empty_text"),
+    ],
+)
+def test_create_eval_input_multi_turn_requires_a_first_message(
+    client, mock_task, mock_task_from_id, first_message
+):
+    """No seed text means the runner has nothing to open the conversation with, so it
+    skips the item, and `data` can't be edited to add one later."""
+    data = {
+        "type": "multi_turn_synthetic",
+        "synthetic_user_info": {"persona": "p", "goal": "g"},
+        "drive_config": {
+            "model_name": "llama_3_1_8b",
+            "model_provider": "groq",
+            "turns": 4,
+        },
+    }
+    if first_message is not None:
+        data["first_message"] = first_message
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/eval_inputs",
+        json={"data": data},
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert "first_message with non-empty text is required" in body["message"]
     # Located on the field the caller sent, not reported against the whole item.
     assert body["source_errors"][0]["loc"] == ["body", "data"]
     assert mock_task.eval_inputs(readonly=True) == []
@@ -7692,13 +7805,29 @@ def test_create_eval_input_single_turn_defaults(client, mock_task, mock_task_fro
 
 
 def test_create_eval_input_invalid_data(client, mock_task, mock_task_from_id):
-    # first_message present but missing its required text field
+    """A malformed submodel is rejected by the shape check, before any of the
+    eval-input rules get a look in. Everything else here is valid so the 422 can only
+    be about first_message's missing `text`, and the error points straight at it."""
     response = client.post(
         "/api/projects/project1/tasks/task1/eval_inputs",
-        json={"data": {"type": "multi_turn_synthetic", "first_message": {}}},
+        json={
+            "data": {
+                "type": "multi_turn_synthetic",
+                "first_message": {},
+                "synthetic_user_info": {"persona": "p", "goal": "g"},
+                "drive_config": {
+                    "model_name": "llama_3_1_8b",
+                    "model_provider": "groq",
+                    "turns": 4,
+                },
+            }
+        },
     )
 
     assert response.status_code == 422
+    body = response.json()
+    assert body["source_errors"][0]["loc"][-2:] == ["first_message", "text"]
+    assert mock_task.eval_inputs(readonly=True) == []
 
 
 def test_update_eval_input_tags(client, mock_task, mock_task_from_id):

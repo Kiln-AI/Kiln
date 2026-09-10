@@ -5729,7 +5729,7 @@ export interface components {
         CreateEvalInputRequest: {
             /**
              * Data
-             * @description The input data for this eval item.
+             * @description The input data for this eval item. A multi_turn_synthetic item must carry both a drive_config and a first_message with non-empty text: they are what make it re-drivable, and neither can be added after the item is created.
              */
             data: components["schemas"]["SingleTurnEvalInputData"] | components["schemas"]["MultiTurnSyntheticEvalInputData-Input"];
             /**
@@ -7205,6 +7205,22 @@ export interface components {
             filter_id: string;
         } & {
             [key: string]: unknown;
+        };
+        /**
+         * EvalInputsResponse
+         * @description A task's eval input items, plus how many item files this version of Kiln couldn't read.
+         */
+        EvalInputsResponse: {
+            /**
+             * Eval Inputs
+             * @description The eval input items which loaded successfully.
+             */
+            eval_inputs: components["schemas"]["EvalInput"][];
+            /**
+             * Load Error Count
+             * @description How many eval input files failed to load. Usually because they were written by a newer version of Kiln.
+             */
+            load_error_count: number;
         };
         /**
          * EvalItemSource
@@ -18730,7 +18746,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EvalInput"][];
+                    "application/json": components["schemas"]["EvalInputsResponse"];
                 };
             };
             /** @description Validation Error */

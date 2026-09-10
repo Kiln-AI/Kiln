@@ -772,9 +772,9 @@ def multi_turn_data_must_carry_a_drive_config(data: EvalInputData) -> EvalInputD
     A multi-turn item is only useful if it can be re-driven, and the drive
     settings live on the item alone: `data` is the immutable scenario, so no
     later PATCH can supply one. Without it the eval runner skips the item with
-    missing_drive_config every time it is collected, so accepting the create
-    would mint a permanently dead item. Reject it while the caller can still
-    fix it.
+    missing_drive_config, and nothing can lift that, so accepting the create
+    would mint a permanently unrunnable item. Reject it while the caller can
+    still fix it.
     """
     if isinstance(data, MultiTurnSyntheticEvalInputData) and data.drive_config is None:
         raise ValueError(
@@ -785,10 +785,40 @@ def multi_turn_data_must_carry_a_drive_config(data: EvalInputData) -> EvalInputD
     return data
 
 
+def multi_turn_data_must_carry_a_first_message(data: EvalInputData) -> EvalInputData:
+    """First-message rule for the eval-input create request.
+
+    The first message is the seed the synthetic user opens a re-driven
+    conversation with. With no seed text there is nothing to send, so the eval
+    runner skips the item with incompatible_input_shape instead of re-driving
+    it. Like the drive config this lives on `data`, which is immutable, so a
+    seedless item is permanently unrunnable and no PATCH can rescue it. Reject
+    it while the caller can still fix it.
+
+    The datamodel keeps `first_message` optional so items that already lack
+    one still load. That is a reason to keep reading them, not to mint more.
+    """
+    if isinstance(data, MultiTurnSyntheticEvalInputData) and not (
+        data.first_message and data.first_message.text
+    ):
+        raise ValueError(
+            "first_message with non-empty text is required for "
+            "multi_turn_synthetic eval inputs. It is the message the "
+            "synthetic user opens each re-driven conversation with, and "
+            "cannot be added after the item is created."
+        )
+    return data
+
+
 class CreateEvalInputRequest(BaseModel):
     """Request to create an eval input item."""
 
-    data: EvalInputData = Field(description="The input data for this eval item.")
+    data: EvalInputData = Field(
+        description="The input data for this eval item. A multi_turn_synthetic "
+        "item must carry both a drive_config and a first_message with non-empty "
+        "text: they are what make it re-drivable, and neither can be added "
+        "after the item is created."
+    )
     reference: dict[str, JsonValue] | None = Field(
         default=None,
         description="Optional reference data (ground truth) for this eval input, keyed by reference name.",
@@ -803,6 +833,9 @@ class CreateEvalInputRequest(BaseModel):
     )
     _data_must_carry_a_drive_config = field_validator("data")(
         multi_turn_data_must_carry_a_drive_config
+    )
+    _data_must_carry_a_first_message = field_validator("data")(
+        multi_turn_data_must_carry_a_first_message
     )
 
 
@@ -852,6 +885,17 @@ class EvalsResponse(BaseModel):
     evals: List[Eval] = Field(description="The evals which loaded successfully.")
     load_error_count: int = Field(
         description="How many eval files failed to load. Usually because they were written by a newer version of Kiln."
+    )
+
+
+class EvalInputsResponse(BaseModel):
+    """A task's eval input items, plus how many item files this version of Kiln couldn't read."""
+
+    eval_inputs: List[EvalInput] = Field(
+        description="The eval input items which loaded successfully."
+    )
+    load_error_count: int = Field(
+        description="How many eval input files failed to load. Usually because they were written by a newer version of Kiln."
     )
 
 
@@ -2009,17 +2053,32 @@ def connect_evals_api(app: FastAPI):
                 description="Optional eval-input filter to apply, e.g. 'all' or 'tag::my_tag' (the same IDs evals use as eval_input_filter_id)."
             ),
         ] = None,
-    ) -> list[EvalInput]:
+    ) -> EvalInputsResponse:
         """List a task's eval input items, optionally restricted to a filter."""
         task = task_from_id(project_id, task_id)
-        eval_inputs = task.eval_inputs(readonly=True)
-        if filter_id is None:
-            return eval_inputs
-        try:
-            filter = eval_input_filter_from_id(filter_id)
-        except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e))
-        return [eval_input for eval_input in eval_inputs if filter(eval_input)]
+        # Partial load: a project folder synced from a newer Kiln can contain an item
+        # this build can't parse. Return the readable items rather than failing the
+        # whole list, which would take the corpus away over one bad file.
+        eval_inputs, load_errors = EvalInput.all_children_of_parent_path_with_errors(
+            task.path, readonly=True
+        )
+        for load_error in load_errors:
+            # The response only carries a count, so log each failure with its path and
+            # reason - it is the only way to tell a corrupt file from a version mismatch.
+            logger.warning(
+                f"Failed to load eval input file {load_error.path}: {load_error.message}"
+            )
+        if filter_id is not None:
+            try:
+                filter = eval_input_filter_from_id(filter_id)
+            except ValueError as e:
+                raise HTTPException(status_code=422, detail=str(e))
+            eval_inputs = [
+                eval_input for eval_input in eval_inputs if filter(eval_input)
+            ]
+        return EvalInputsResponse(
+            eval_inputs=eval_inputs, load_error_count=len(load_errors)
+        )
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/eval_inputs/{eval_input_id}",
