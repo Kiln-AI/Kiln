@@ -24,15 +24,13 @@
     rankTooltipScores,
     MIN_RADAR_AXES,
   } from "$lib/utils/radar_chart_data"
-  import type {
-    ComparisonFeature,
-    RadarChartData,
-  } from "$lib/utils/radar_chart_data"
+  import type { RadarChartData } from "$lib/utils/radar_chart_data"
+  import type { ComparisonSection } from "$lib/utils/compare_metric_keys"
   import ChartNoData from "$lib/components/chart_no_data.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
   // Props
-  export let comparisonFeatures: ComparisonFeature[]
+  export let comparisonFeatures: ComparisonSection[]
   export let getModelValueRaw: (
     modelKey: string | null,
     dataKey: string,

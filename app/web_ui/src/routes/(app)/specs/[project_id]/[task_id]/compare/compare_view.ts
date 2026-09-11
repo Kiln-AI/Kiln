@@ -1,4 +1,5 @@
 import type { Eval, TaskOutputRatingType } from "$lib/types"
+import type { ComparisonSection } from "$lib/utils/compare_metric_keys"
 import { assertNever } from "$lib/utils/exhaustive"
 import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
 
@@ -7,16 +8,10 @@ import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_te
 // renamed for display. Pure functions, so the page's reactive statements stay short
 // and this is testable.
 
-export type ComparisonSection = {
-  category: string
-  eval_id: string
-  items: { label: string; key: string }[]
-}
-
 // Display names the user has given rows, by row key
 export type MetricLabels = Record<string, string>
 
-export type HiddenMetricInfo = {
+type HiddenMetricInfo = {
   key: string
   label: string
   // Name of the section the row belongs to, so "Overall Correct" from one eval can
@@ -169,7 +164,7 @@ export function buildScoreAxisMaxes(
 ): Record<string, number> {
   const maxes: Record<string, number> = {}
   for (const [evalId, evalData] of Object.entries(evalDataCache)) {
-    for (const score of evalData?.output_scores || []) {
+    for (const score of evalData.output_scores || []) {
       const max = scoreTypeMax(score.type)
       if (max !== null) {
         maxes[`${evalId}::${string_to_json_key(score.name)}`] = max

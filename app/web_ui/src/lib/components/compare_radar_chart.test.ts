@@ -437,7 +437,7 @@ describe("compare radar chart axes", () => {
     expect(axisNames(option)).not.toContain("Speed")
   })
 
-  it("leaves out a usage axis whose row is hidden in the comparison table", async () => {
+  it("only draws the usage rows it is given", async () => {
     const option = await captureOption(fixtures.three_configs)
     expect(axisNames(option)).not.toContain("Input Token Efficiency")
     expect(axisNames(option)).not.toContain("Output Token Efficiency")

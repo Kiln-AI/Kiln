@@ -5,15 +5,8 @@ import {
   USAGE_METRICS,
   isUsageMetricKey,
 } from "./compare_metric_keys"
+import type { ComparisonSection } from "./compare_metric_keys"
 import { getRunConfigModelDisplayName } from "./run_config_formatters"
-
-// A section of the comparison table: one eval's scores, or the usage section.
-export type ComparisonFeature = {
-  category: string
-  items: { label: string; key: string }[]
-  has_default_eval_config: boolean | undefined
-  eval_id: string
-}
 
 // Reads one run config's value for one row of the comparison table.
 export type RadarValueLookup = (
@@ -21,11 +14,11 @@ export type RadarValueLookup = (
   dataKey: string,
 ) => number | null
 
-export type RadarIndicator = { name: string; max: number }
+type RadarIndicator = { name: string; max: number }
 
-export type RadarSeriesDatum = { value: (number | null)[]; name: string }
+type RadarSeriesDatum = { value: (number | null)[]; name: string }
 
-export type TooltipScore = { label: string; value: number | null }
+type TooltipScore = { label: string; value: number | null }
 
 export type RadarChartData = {
   // Axes in plot order, already labelled.
@@ -52,8 +45,8 @@ export type RadarChartData = {
   hasData: boolean
 }
 
-export type RadarChartInput = {
-  comparisonFeatures: ComparisonFeature[]
+type RadarChartInput = {
+  comparisonFeatures: ComparisonSection[]
   plottedConfigs: TaskRunConfig[]
   selectedRunConfigIds: string[]
   getValue: RadarValueLookup
@@ -65,15 +58,15 @@ export type RadarChartInput = {
 
 // Fallback full-scale max when we don't know the score's type. Most eval scores are
 // normalized to 0-1, and we only use it when the data actually fits under it.
-export const DEFAULT_ABSOLUTE_MAX = 1
+const DEFAULT_ABSOLUTE_MAX = 1
 
 // Usage axes carry a 0-100 position score rather than a raw quantity, in both
 // scale modes.
-export const USAGE_AXIS_MAX = 100
+const USAGE_AXIS_MAX = 100
 
 // Above this many scores the tooltip lists only the weakest ones - the full set is
 // in the comparison table above.
-export const MAX_TOOLTIP_SCORES = 10
+const MAX_TOOLTIP_SCORES = 10
 
 // Below this many axes there's no shape to read, so there's no chart to draw
 export const MIN_RADAR_AXES = 3
@@ -86,7 +79,7 @@ export const MIN_RADAR_AXES = 3
 //
 // On the chart they're named for the direction that's better, since a bigger value
 // means less cost / less time / fewer tokens.
-export const USAGE_LABELS: Record<string, string> = Object.fromEntries(
+const USAGE_LABELS: Record<string, string> = Object.fromEntries(
   USAGE_METRICS.map((metric) => [metric.key, metric.axisLabel]),
 )
 
@@ -132,7 +125,7 @@ export function metricToScore(
  * The table's row keys, split into eval score axes and usage axes. Hiding a usage
  * row in the table removes it here too - one control, where the numbers are.
  */
-export function splitAxisKeys(comparisonFeatures: ComparisonFeature[]): {
+export function splitAxisKeys(comparisonFeatures: ComparisonSection[]): {
   scoreKeys: string[]
   usageKeys: string[]
 } {
@@ -158,7 +151,7 @@ export function plottedRunConfigs({
   selectedRunConfigIds,
   getValue,
 }: {
-  comparisonFeatures: ComparisonFeature[]
+  comparisonFeatures: ComparisonSection[]
   runConfigs: TaskRunConfig[]
   selectedRunConfigIds: string[]
   getValue: RadarValueLookup
@@ -219,7 +212,7 @@ export function axisMaxFor(
  * name, then the table's own label, then the raw key.
  */
 export function buildAxisLabels(
-  comparisonFeatures: ComparisonFeature[],
+  comparisonFeatures: ComparisonSection[],
   metricLabels: Record<string, string>,
 ): Record<string, string> {
   const tableLabels: Record<string, string> = {}
@@ -237,7 +230,7 @@ export function buildAxisLabels(
 }
 
 /** The series name of a run config, which is also its legend entry. */
-export function runConfigSeriesName(
+function runConfigSeriesName(
   config: TaskRunConfig,
   modelInfo: ProviderModels | null,
 ): string {
@@ -292,7 +285,7 @@ export function rankTooltipScores({
     .filter((key) => !isUsageMetricKey(key))
     .map((key) => {
       const value = getValue(key)
-      const max = axisMaxes[key] || 1
+      const max = axisMaxes[key] ?? 1
       return {
         label: axisLabels[key] ?? key,
         value,
@@ -403,7 +396,7 @@ export function buildRadarChartData(input: RadarChartInput): RadarChartData {
       const rawValue = getValue(config.id ?? null, key)
       if (rawValue === null) return null
       return isUsageMetricKey(key)
-        ? metricToScore(rawValue, usageValues[key] || [])
+        ? metricToScore(rawValue, usageValues[key])
         : rawValue
     }),
     name: seriesNames[index],

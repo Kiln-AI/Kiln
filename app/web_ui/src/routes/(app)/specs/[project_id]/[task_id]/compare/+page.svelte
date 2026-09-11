@@ -72,7 +72,7 @@
   // State management
   let columns = 2 // Start with 2 columns
   let selectedModels: (string | null)[] = [null, null] // Track selected model for each column
-  let hiddenEvalIds: string[] = [] // Sections hidden by the user: evals, or the cost section
+  let hiddenSectionIds: string[] = [] // Sections hidden by the user: evals, or the cost section
   let hiddenMetricKeys: string[] = [] // Individual rows hidden by the user, in any section
   let metricLabels: MetricLabels = {} // Display names the user has given rows, by row key
   let renamingMetricKey: string | null = null // Row whose name is being edited, if any
@@ -119,8 +119,9 @@
     selectedModels = new Array(columns).fill(null)
 
     // Hidden sections and rows can be restored before run configs are loaded - they
-    // are just IDs and keys. Row keys are "<section>::<metric>".
-    hiddenEvalIds = parseHiddenListParam(urlParams.get("hidden_evals"))
+    // are just IDs and keys. Row keys are "<section>::<metric>". The parameter names
+    // are older than the cost section and stay as they are, so links keep working.
+    hiddenSectionIds = parseHiddenListParam(urlParams.get("hidden_evals"))
     hiddenMetricKeys = parseHiddenListParam(
       urlParams.get("hidden_metrics"),
       (key) => key.includes("::"),
@@ -169,9 +170,9 @@
     )
     urlParams.set("models", modelIds.join(","))
 
-    // Update hidden evals (omit param when none are hidden to keep URL clean)
-    if (hiddenEvalIds.length > 0) {
-      urlParams.set("hidden_evals", hiddenEvalIds.join(","))
+    // Omit the param when nothing is hidden, to keep the URL clean
+    if (hiddenSectionIds.length > 0) {
+      urlParams.set("hidden_evals", hiddenSectionIds.join(","))
     } else {
       urlParams.delete("hidden_evals")
     }
@@ -200,7 +201,7 @@
     !isInitializing &&
     (columns ||
       selectedModels ||
-      hiddenEvalIds ||
+      hiddenSectionIds ||
       hiddenMetricKeys ||
       metricLabels)
   ) {
@@ -387,22 +388,22 @@
   // sections and rows are dropped. Hidden state and names are passed as arguments
   // (rather than read via closure) so that Svelte's reactive `$:` statements track
   // them as dependencies and re-run when they change.
-  $: labeledComparisonFeatures = applyMetricLabels(
-    comparisonFeatures,
-    metricLabels,
-  )
   $: labeledChartComparisonFeatures = applyMetricLabels(
     chartComparisonFeatures,
     metricLabels,
   )
   $: visibleComparisonFeatures = filterVisibleSections(
-    labeledComparisonFeatures,
-    hiddenEvalIds,
+    comparisonFeatures,
+    hiddenSectionIds,
     hiddenMetricKeys,
+  )
+  $: labeledComparisonFeatures = applyMetricLabels(
+    visibleComparisonFeatures,
+    metricLabels,
   )
   $: visibleChartComparisonFeatures = filterVisibleSections(
     labeledChartComparisonFeatures,
-    hiddenEvalIds,
+    hiddenSectionIds,
     hiddenMetricKeys,
   )
 
@@ -422,29 +423,32 @@
       .map((section) => section.eval_id),
   )
 
-  // Names of currently-hidden evals (used for the "show hidden" dropdown).
+  // Names of the currently-hidden sections (used for the "show hidden" dropdown).
   // chartComparisonFeatures is built from ALL run configs for the task and is a
   // superset of comparisonFeatures (which only covers selected models), so it
   // alone is enough to resolve display names.
-  $: hiddenEvalsInfo = hiddenEvalIds.map((evalId) => {
-    const feature = chartComparisonFeatures.find((s) => s.eval_id === evalId)
-    return { eval_id: evalId, category: feature?.category ?? "Unknown eval" }
+  $: hiddenSectionsInfo = hiddenSectionIds.map((sectionId) => {
+    const section = chartComparisonFeatures.find((s) => s.eval_id === sectionId)
+    return {
+      eval_id: sectionId,
+      category: section?.category ?? "Unknown section",
+    }
   })
 
   // Rows hidden one at a time, for the same dropdown
   $: hiddenMetricsInfo = listHiddenMetrics(
     labeledChartComparisonFeatures,
-    hiddenEvalIds,
+    hiddenSectionIds,
     hiddenMetricKeys,
   )
 
-  function hideEval(evalId: string) {
-    if (hiddenEvalIds.includes(evalId)) return
-    hiddenEvalIds = [...hiddenEvalIds, evalId]
+  function hideSection(sectionId: string) {
+    if (hiddenSectionIds.includes(sectionId)) return
+    hiddenSectionIds = [...hiddenSectionIds, sectionId]
   }
 
-  function showEval(evalId: string) {
-    hiddenEvalIds = hiddenEvalIds.filter((id) => id !== evalId)
+  function showSection(sectionId: string) {
+    hiddenSectionIds = hiddenSectionIds.filter((id) => id !== sectionId)
   }
 
   function hideMetric(key: string) {
@@ -456,8 +460,8 @@
     hiddenMetricKeys = hiddenMetricKeys.filter((k) => k !== key)
   }
 
-  function showAllHiddenEvals() {
-    hiddenEvalIds = []
+  function showAllHidden() {
+    hiddenSectionIds = []
     hiddenMetricKeys = []
   }
 
@@ -488,16 +492,16 @@
     node.select()
   }
 
-  $: hiddenCount = hiddenEvalsInfo.length + hiddenMetricsInfo.length
+  $: hiddenCount = hiddenSectionsInfo.length + hiddenMetricsInfo.length
 
-  $: hiddenEvalsMenuItems = [
-    ...(hiddenEvalsInfo.length > 0
+  $: hiddenMenuItems = [
+    ...(hiddenSectionsInfo.length > 0
       ? [
-          { label: "Show Eval", header: true },
-          ...hiddenEvalsInfo.map(
+          { label: "Show Section", header: true },
+          ...hiddenSectionsInfo.map(
             (info): FloatingMenuItem => ({
               label: info.category,
-              onclick: () => showEval(info.eval_id),
+              onclick: () => showSection(info.eval_id),
             }),
           ),
         ]
@@ -514,9 +518,7 @@
           ),
         ]
       : []),
-    ...(hiddenCount > 1
-      ? [{ label: "Show All", onclick: showAllHiddenEvals }]
-      : []),
+    ...(hiddenCount > 1 ? [{ label: "Show All", onclick: showAllHidden }] : []),
   ] as FloatingMenuItem[]
 
   // Reactively fetch eval templates for sections
@@ -930,8 +932,8 @@
         <!-- Table action buttons - positioned above table on the right -->
         <div class="flex justify-end gap-2 mb-4">
           {#if hiddenCount > 0}
-            <div class="hidden-evals-dropdown">
-              <FloatingMenu items={hiddenEvalsMenuItems} width="w-72">
+            <div class="hidden-rows-dropdown">
+              <FloatingMenu items={hiddenMenuItems} width="w-72">
                 <button
                   slot="trigger"
                   type="button"
@@ -1074,7 +1076,7 @@
 
           <!-- Comparison Data - only show if models are selected -->
           {#if validSelectedModels.length > 0}
-            {#each visibleComparisonFeatures as section}
+            {#each labeledComparisonFeatures as section}
               <!-- Section Header -->
               <div
                 class="bg-gray-50 px-6 py-3 border-b border-gray-200 flex items-center gap-2"
@@ -1086,7 +1088,7 @@
                 </h4>
                 <button
                   type="button"
-                  on:click={() => hideEval(section.eval_id)}
+                  on:click={() => hideSection(section.eval_id)}
                   class="w-6 h-6 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition-colors"
                   title={section.eval_id === COST_SECTION_ID
                     ? "Hide this section"
@@ -1459,8 +1461,8 @@
 />
 
 <style>
-  .hidden-evals-dropdown :global(ul.menu li > button),
-  .hidden-evals-dropdown :global(ul.menu li > a) {
+  .hidden-rows-dropdown :global(ul.menu li > button),
+  .hidden-rows-dropdown :global(ul.menu li > a) {
     font-size: 0.875rem;
     font-weight: 500;
     color: rgb(17 24 39);
@@ -1471,13 +1473,13 @@
      A metric row is two lines - name over section - laid out as a flex column, so
      its "+" goes on the name line rather than on the button, where it would land
      on a line of its own. */
-  .hidden-evals-dropdown
+  .hidden-rows-dropdown
     :global(
       ul.menu
         li:not(:first-child):not(:last-child:nth-child(n + 4))
         > button:not(:has(> span))::before
     ),
-  .hidden-evals-dropdown
+  .hidden-rows-dropdown
     :global(
       ul.menu
         li:not(:first-child):not(:last-child:nth-child(n + 4))
@@ -1491,19 +1493,19 @@
   }
 
   /* The section line of a metric row sits under its name, not under the "+" */
-  .hidden-evals-dropdown :global(ul.menu li > button > span + span) {
+  .hidden-rows-dropdown :global(ul.menu li > button > span + span) {
     padding-left: 0.95rem;
   }
 
   /* "Restore All" footer styling — gray-500. */
-  .hidden-evals-dropdown
+  .hidden-rows-dropdown
     :global(ul.menu li:last-child:nth-child(n + 4) > button) {
     color: rgb(107 114 128);
   }
 
   /* Divider before the "Show all hidden" footer. nth-child(n+4) ensures we
      only render it when the list has header + 2+ evals + show-all footer. */
-  .hidden-evals-dropdown :global(ul.menu li:last-child:nth-child(n + 4)) {
+  .hidden-rows-dropdown :global(ul.menu li:last-child:nth-child(n + 4)) {
     border-top: 1px solid rgb(209 213 219);
     margin-top: 0.5rem;
     padding-top: 0.5rem;

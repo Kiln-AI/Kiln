@@ -10,7 +10,8 @@ import {
   sharedAxisKeys,
   splitAxisKeys,
 } from "./radar_chart_data"
-import type { ComparisonFeature, RadarValueLookup } from "./radar_chart_data"
+import type { RadarValueLookup } from "./radar_chart_data"
+import type { ComparisonSection } from "./compare_metric_keys"
 import type { TaskRunConfig } from "$lib/types"
 
 function make_config(id: string, name: string): TaskRunConfig {
@@ -25,10 +26,9 @@ const FAST = make_config("rc_fast", "Fast Config")
 const THOROUGH = make_config("rc_thorough", "Thorough Config")
 const IDLE = make_config("rc_idle", "Idle Config")
 
-const EVAL_SECTION: ComparisonFeature = {
+const EVAL_SECTION: ComparisonSection = {
   category: "Ticket Quality",
   eval_id: "eval_1",
-  has_default_eval_config: true,
   items: [
     { label: "Pass Rate", key: "eval_1::pass_rate" },
     { label: "Overall Rating", key: "eval_1::overall_rating" },
@@ -36,10 +36,9 @@ const EVAL_SECTION: ComparisonFeature = {
   ],
 }
 
-const USAGE_SECTION: ComparisonFeature = {
+const USAGE_SECTION: ComparisonSection = {
   category: "Average Usage, Cost & Latency",
   eval_id: "kiln_cost_section",
-  has_default_eval_config: undefined,
   items: [
     { label: "Cost (USD)", key: "cost::mean_cost" },
     { label: "Latency", key: "cost::mean_total_llm_latency_ms" },
@@ -80,7 +79,7 @@ function lookup(values: ValueTable): RadarValueLookup {
 const getValue = lookup(VALUES)
 
 function chartData(overrides: {
-  comparisonFeatures?: ComparisonFeature[]
+  comparisonFeatures?: ComparisonSection[]
   plottedConfigs?: TaskRunConfig[]
   selectedRunConfigIds?: string[]
   getValue?: RadarValueLookup

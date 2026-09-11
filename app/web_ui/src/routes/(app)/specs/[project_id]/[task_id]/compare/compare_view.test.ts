@@ -9,8 +9,8 @@ import {
   parseMetricLabelsParam,
   scoreTypeMax,
   withMetricLabel,
-  type ComparisonSection,
 } from "./compare_view"
+import type { ComparisonSection } from "$lib/utils/compare_metric_keys"
 
 const injection: ComparisonSection = {
   category: "Injection Attribution (Code)",
