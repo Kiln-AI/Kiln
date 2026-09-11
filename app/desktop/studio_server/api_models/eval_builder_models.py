@@ -234,6 +234,12 @@ class AuthorJudgeApiInput(BaseModel):
 
     target_specification: str = Field(min_length=1)
     target_task_prompt: str
+    run_config_id: str | None = Field(
+        default=None,
+        description="The task run config the eval is written against. Its "
+        "tools and skills are what the rubric grades tool and skill use "
+        "over. Omit to use the task's default run config.",
+    )
 
 
 class AuthorJudgeApiOutput(BaseModel):

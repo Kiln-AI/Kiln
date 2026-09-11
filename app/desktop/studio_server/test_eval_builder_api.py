@@ -550,8 +550,10 @@ def _task_mock(turn_mode=None, input_json_schema=None):
     task.turn_mode = turn_mode if turn_mode is not None else TurnMode.multiturn
     task.input_json_schema = input_json_schema
     # No default run config, so capability collection yields nothing and routes
-    # that read it behave as they did before capabilities existed.
+    # that read it behave as they did before capabilities existed. The empty
+    # config list is what a caller-named config is looked up in.
     task.default_run_config_id = None
+    task.run_configs.return_value = []
     return task
 
 
@@ -696,6 +698,80 @@ class TestAuthorJudge:
         assert body_dict["task_skills"] == [
             {"name": "refund-policy", "description": "Refunds."}
         ]
+
+    def test_author_judge_reads_the_run_config_the_caller_named(
+        self, client, author_judge_input, mock_api_key, author_judge_task
+    ):
+        """The rubric grades the config the eval is written against, so the id
+        the caller sends is the one the capability read must use."""
+        mock_output = MagicMock(spec=GenerateJudgePromptOutput)
+        mock_output.judge_evaluation_prompt = "1. Check the transcript."
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = mock_output
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.task_capabilities_for_task",
+                new_callable=AsyncMock,
+                return_value=([], []),
+            ) as mock_capabilities,
+            patch(
+                "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
+        ):
+            client.post(
+                AUTHOR_JUDGE_URL,
+                json={**author_judge_input, "run_config_id": "rc-7"},
+            )
+
+        assert mock_capabilities.await_args.args[1] == "rc-7"
+
+    def test_author_judge_without_a_run_config_reads_the_default(
+        self, client, author_judge_input, mock_api_key, author_judge_task
+    ):
+        """No id sent means the task default, exactly as before the caller
+        could choose."""
+        mock_output = MagicMock(spec=GenerateJudgePromptOutput)
+        mock_output.judge_evaluation_prompt = "1. Check the transcript."
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = mock_output
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.task_capabilities_for_task",
+                new_callable=AsyncMock,
+                return_value=([], []),
+            ) as mock_capabilities,
+            patch(
+                "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
+        ):
+            client.post(AUTHOR_JUDGE_URL, json=author_judge_input)
+
+        assert mock_capabilities.await_args.args[1] is None
+
+    def test_author_judge_unresolvable_run_config_404s(
+        self, client, author_judge_input, mock_api_key, author_judge_task
+    ):
+        """An id that names no config on the task stops the request rather
+        than authoring a rubric against the default config's surface."""
+        with patch(
+            "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
+            new_callable=AsyncMock,
+        ) as mock_post:
+            response = client.post(
+                AUTHOR_JUDGE_URL,
+                json={**author_judge_input, "run_config_id": "no-such-config"},
+            )
+
+        assert response.status_code == 404
+        mock_post.assert_not_awaited()
 
     def test_author_judge_reports_a_task_with_no_capabilities(
         self, client, author_judge_input, mock_api_key, author_judge_task

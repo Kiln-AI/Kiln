@@ -4597,6 +4597,11 @@ export interface components {
             target_specification: string;
             /** Target Task Prompt */
             target_task_prompt: string;
+            /**
+             * Run Config Id
+             * @description The task run config the eval is written against. Its tools and skills are what the rubric grades tool and skill use over. Omit to use the task's default run config.
+             */
+            run_config_id?: string | null;
         };
         /**
          * AuthorJudgeApiOutput
@@ -5311,6 +5316,11 @@ export interface components {
              * @description The target task. Pair with project_id to have the server attach the task's tools and skills.
              */
             task_id?: string | null;
+            /**
+             * Run Config Id
+             * @description The task run config whose tools and skills to attach — the one this request is about, such as the run config an eval is being written against. Omit to use the task's default run config.
+             */
+            run_config_id?: string | null;
             target_task_info: components["schemas"]["TaskInfoApi"];
             /** Target Specification */
             target_specification: string;
@@ -6122,6 +6132,11 @@ export interface components {
             /** Task Prompt With Example */
             task_prompt_with_example?: string | null;
             task_sample?: components["schemas"]["TaskSample"] | null;
+            /**
+             * Run Config Id
+             * @description The task run config this spec is written against. Its tools and skills describe the target task when the legacy path generates examples. Omit to use the task's default run config.
+             */
+            run_config_id?: string | null;
         };
         /**
          * CreateTaskFromToolRequest
@@ -10992,6 +11007,11 @@ export interface components {
              * @description The target task. Pair with project_id to have the server attach the task's tools and skills.
              */
             task_id?: string | null;
+            /**
+             * Run Config Id
+             * @description The task run config whose tools and skills to attach — the one this request is about, such as the run config an eval is being written against. Omit to use the task's default run config.
+             */
+            run_config_id?: string | null;
             target_task_info: components["schemas"]["TaskInfoApi"];
             target_specification: components["schemas"]["SpecApi"];
             /** Examples With Feedback */
@@ -12050,6 +12070,11 @@ export interface components {
              * @description The target task. Pair with project_id to have the server attach the task's tools and skills.
              */
             task_id?: string | null;
+            /**
+             * Run Config Id
+             * @description The task run config whose tools and skills to attach — the one this request is about, such as the run config an eval is being written against. Omit to use the task's default run config.
+             */
+            run_config_id?: string | null;
             /**
              * target_task_info
              * @description The task info including prompt, input schema, and output schema
