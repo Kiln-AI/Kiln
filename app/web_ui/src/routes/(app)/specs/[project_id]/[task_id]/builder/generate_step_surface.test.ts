@@ -760,3 +760,57 @@ describe("Reset", () => {
     expect(reset).not.toContain("window.location.reload()")
   })
 })
+
+describe("the run config the eval is written against", () => {
+  // The signature's own return type closes at script indent, so the shared
+  // function_body helper would stop there; take the whole function instead.
+  const resolve = region(
+    "async function resolve_drive_run_config(",
+    "// ── Step 4 — both arms are plan-first over one pipeline shape.",
+  )
+
+  it("drives the config the entry page chose over the task default", () => {
+    // The questions, the judge and the generated data were all authored
+    // against that config, so driving the task default instead would produce
+    // eval data for a different agent than the one the eval describes.
+    const body = normalize(resolve)
+    expect(body).toContain(
+      "const chosen_config = chosen_by_user ?? default_match ?? run_configs[0]",
+    )
+    // The no-default notice names a config the user did not pick. An explicit
+    // choice is not a fallback, so it must not raise it.
+    expect(body).toContain(
+      "fallback_run_config_name = chosen_by_user || default_match ? null : chosen_config.name",
+    )
+  })
+
+  it("stops the drive when the chosen config is no longer on the task", () => {
+    // Driving the task default instead would generate eval data for an agent
+    // this eval does not describe, and say nothing about it.
+    const body = normalize(resolve)
+    expect(body).toContain("if (target_run_config_id && !chosen_by_user) {")
+    expect(body).toContain("return null")
+  })
+
+  it("keeps the choice across a reload", () => {
+    expect(
+      normalize(region("$: current_draft = draft_ready", "    : null")),
+    ).toContain("target_run_config_id,")
+    expect(
+      normalize(function_body("async function restore_draft() {")),
+    ).toContain("target_run_config_id = saved.target_run_config_id ?? null")
+  })
+
+  it("tells the copilot calls that read a config which one to read", () => {
+    // Server-side these calls read the config's tools and skills; without the
+    // id they read the task default and describe the wrong agent. Only the
+    // calls that read capabilities are wired — the save reads none, so
+    // sending it there would be a field the server accepts and discards.
+    expect(mentions("run_config_id: target_run_config_id")).toBe(2)
+    expect(
+      normalize(
+        region("async function on_save() {", "function back_to_task()"),
+      ),
+    ).not.toContain("run_config_id")
+  })
+})

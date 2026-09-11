@@ -210,7 +210,7 @@ class TaskScopedCopilotInput(BaseModel):
 
     The ids let the studio server load the task and fill in target_task_info's
     capability fields before forwarding. They are studio-local identifiers and
-    are always stripped from the outgoing payload. Both are optional: a caller
+    are always stripped from the outgoing payload. All are optional: a caller
     that omits them gets the plain passthrough it always got.
     """
 
@@ -224,6 +224,12 @@ class TaskScopedCopilotInput(BaseModel):
         description="The target task. Pair with project_id to have the server "
         "attach the task's tools and skills.",
     )
+    run_config_id: str | None = Field(
+        default=None,
+        description="The task run config whose tools and skills to attach — "
+        "the one this request is about, such as the run config an eval is "
+        "being written against. Omit to use the task's default run config.",
+    )
 
     @model_validator(mode="after")
     def validate_ids_provided_together(self) -> Self:
@@ -234,6 +240,11 @@ class TaskScopedCopilotInput(BaseModel):
             raise ValueError(
                 "project_id and task_id must be provided together, or both omitted"
             )
+        # Same reasoning one level down: a run config is only read once the
+        # task is, so an id sent without the task would be dropped, and the
+        # prompt would describe the wrong config's capabilities.
+        if self.run_config_id is not None and self.task_id is None:
+            raise ValueError("run_config_id requires project_id and task_id")
         return self
 
 

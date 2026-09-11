@@ -21,7 +21,9 @@ from kiln_ai.datamodel.eval import (
     LlmJudgeProperties,
     TaskRunSplit,
 )
+from kiln_ai.datamodel.run_config import ToolsRunConfig
 from kiln_ai.datamodel.spec_properties import SpecType
+from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_server.custom_errors import connect_custom_errors
 
@@ -614,6 +616,50 @@ class TestCreateSpecWithCopilot:
             },
             "task_prompt_with_example": "Test prompt",
         }
+
+    def test_create_spec_with_copilot_reads_the_named_run_config(
+        self, client, project_and_task, copilot_request_data
+    ):
+        """The legacy path generates examples against the target task's
+        capability surface, so it must read the config the spec was written
+        against rather than the task default."""
+        project, task = project_and_task
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.get_copilot_api_key",
+                return_value="test_key",
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.task_capabilities_for_task",
+                new_callable=AsyncMock,
+                return_value=([], []),
+            ) as mock_capabilities,
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_copilot_examples",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.create_single_turn_dataset",
+                return_value=SingleTurnDataset(),
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_memorable_name",
+                return_value="test-config-name",
+            ),
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json={**copilot_request_data, "run_config_id": "rc-9"},
+            )
+
+        assert response.status_code == 200
+        assert mock_capabilities.await_args.args[1] == "rc-9"
 
     def test_create_spec_with_copilot_success(
         self, client, project_and_task, copilot_request_data
@@ -1215,6 +1261,40 @@ class TestCreateSpecWithCopilotMultiTurn:
         unreviewed = runs_by_id[synthetic_chain_leaves[2].id]
         assert unreviewed.output.rating is None
         assert unreviewed.claim_reviews() == []
+
+    def test_multi_turn_save_reads_no_capabilities(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        """A wizard save tags runs already on disk and writes files; it
+        generates nothing, so it describes no task to the copilot and reads no
+        run config's tools or skills. Only the legacy generating path does."""
+        project, task = project_and_task
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_memorable_name",
+                return_value="multi-turn-judge",
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.task_capabilities_for_task",
+                new_callable=AsyncMock,
+            ) as mock_capabilities,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 200, response.text
+        mock_capabilities.assert_not_awaited()
 
     def test_multi_turn_save_writes_splits_natively_to_disk(
         self,
@@ -3000,6 +3080,100 @@ class TestPassthroughTaskCapabilities:
             "refund-policy"
         ]
         assert "project_id" not in body and "task_id" not in body
+
+    @pytest.fixture
+    def second_run_config(self, capable_task, agent_run_config_properties):
+        """A saved config on the same task that is NOT the default, giving the
+        task `multiply` and no skills."""
+        _, task = capable_task
+        run_config = TaskRunConfig(
+            name="other",
+            run_config_properties=agent_run_config_properties(
+                tools_config=ToolsRunConfig(tools=["kiln_tool::multiply_numbers"])
+            ),
+            parent=task,
+        )
+        run_config.save_to_file()
+        return run_config
+
+    def test_question_spec_reads_the_named_run_config(
+        self, client, capable_task, second_run_config, mock_api_key
+    ):
+        """The eval is written about one run config, so the prompts must see
+        that config's surface rather than the task's default. The id itself is
+        studio-local and never reaches kiln_server."""
+        project, task = capable_task
+        sdk_mock = AsyncMock(return_value=self._question_set_response())
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(_QUESTION_SPEC_FN, sdk_mock),
+        ):
+            response = client.post(
+                "/api/copilot/question_spec",
+                json={
+                    **self.QUESTION_SPEC_BODY,
+                    "project_id": str(project.id),
+                    "task_id": str(task.id),
+                    "run_config_id": str(second_run_config.id),
+                },
+            )
+
+        assert response.status_code == 200
+        body = sdk_mock.await_args.kwargs["body"].to_dict()
+        assert body["target_task_info"]["task_tools"] == [
+            {
+                "name": "multiply",
+                "description": "Multiply two numbers together and return the result",
+            }
+        ]
+        assert body["target_task_info"]["task_skills"] == []
+        assert "run_config_id" not in body
+
+    def test_question_spec_unresolvable_run_config_404s(
+        self, client, capable_task, mock_api_key
+    ):
+        """Fail loud rather than quietly describing the default config, which
+        is not the one the eval is being written against."""
+        project, task = capable_task
+        sdk_mock = AsyncMock(return_value=self._question_set_response())
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(_QUESTION_SPEC_FN, sdk_mock),
+        ):
+            response = client.post(
+                "/api/copilot/question_spec",
+                json={
+                    **self.QUESTION_SPEC_BODY,
+                    "project_id": str(project.id),
+                    "task_id": str(task.id),
+                    "run_config_id": "no-such-config",
+                },
+            )
+
+        assert response.status_code == 404
+        sdk_mock.assert_not_awaited()
+
+    def test_question_spec_rejects_a_run_config_without_its_task(
+        self, client, mock_api_key
+    ):
+        """A run config is only looked up once the task is, so an id sent
+        alone would be dropped and the prompt would describe the wrong
+        config."""
+        response = client.post(
+            "/api/copilot/question_spec",
+            json={**self.QUESTION_SPEC_BODY, "run_config_id": "rc-1"},
+        )
+
+        assert response.status_code == 422
+        assert "run_config_id requires" in response.json()["message"]
 
     def test_client_sent_capabilities_are_not_overwritten(
         self, client, capable_task, mock_api_key

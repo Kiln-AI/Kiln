@@ -227,6 +227,11 @@ export type BuilderDraft = {
   // written before this key restore that way — and the page falls back to its
   // default turn count.
   turns_per_case: number | null
+  // The run config the entry page chose for this eval. Persisted so a reload
+  // keeps evaluating the same thing; drafts written before the entry page
+  // asked restore this as null, which reads as "nothing chosen" and leaves
+  // the task default in charge.
+  target_run_config_id: string | null
 }
 
 export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
@@ -254,6 +259,7 @@ export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   input_gen_run_config: null,
   judge_model: null,
   turns_per_case: null,
+  target_run_config_id: null,
 }
 
 export function builder_draft_key(project_id: string, task_id: string): string {

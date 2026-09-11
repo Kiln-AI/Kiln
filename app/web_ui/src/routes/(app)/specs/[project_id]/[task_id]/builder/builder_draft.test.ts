@@ -124,6 +124,7 @@ const full_draft: BuilderDraft = {
   // Deliberately NOT the default 5: a fixture on the default couldn't tell a
   // restored choice from the fallback.
   turns_per_case: 8,
+  target_run_config_id: "run_config_1",
 }
 
 describe("draft round-trip", () => {

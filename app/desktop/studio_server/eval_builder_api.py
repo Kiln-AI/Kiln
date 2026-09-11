@@ -1606,8 +1606,11 @@ def connect_eval_builder_api(app: FastAPI):
         get_copilot_api_key()
         task = task_from_id(project_id, task_id)
         # The task is loaded for its tools and skills, so the rubric can grade
-        # tool and skill use instead of guessing at it.
-        task_tools, task_skills = await task_capabilities_for_task(task)
+        # tool and skill use instead of guessing at it. The caller names the
+        # run config the eval is about; without one the task default is read.
+        task_tools, task_skills = await task_capabilities_for_task(
+            task, input.run_config_id
+        )
         return await author_judge_prompt(
             target_specification=input.target_specification,
             target_task_prompt=input.target_task_prompt,

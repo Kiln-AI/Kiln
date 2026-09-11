@@ -22,6 +22,7 @@ from kiln_ai.datamodel.eval import (
     UserMessage,
 )
 from kiln_ai.datamodel.run_config import as_kiln_agent_run_config
+from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_output import (
     DataSource,
     DataSourceType,
@@ -156,13 +157,19 @@ def get_copilot_api_key() -> str:
 
 async def task_capabilities_for_task(
     task: Task,
+    run_config_id: str | None = None,
 ) -> tuple[list[TaskToolInfoApi] | None, list[TaskSkillInfoApi] | None]:
-    """The tools and skills the task's DEFAULT run config gives the model.
+    """The tools and skills one of the task's run configs gives the model.
+
+    `run_config_id` names the config the caller is asking about — the one an
+    eval is being written against, say. Without it the task's DEFAULT run
+    config is read. Exactly one config is read either way: unioning across
+    configs would describe a capability surface no single run of the task
+    actually has.
 
     Names and descriptions only: enough for the copilot prompts to reason about
     what the task can do, without shipping tool parameter schemas or skill
-    bodies. Only the default run config is read — unioning across configs would
-    describe a capability surface no single run of the task actually has.
+    bodies.
 
     Returns (None, None) when the capabilities could not be collected (no
     resolvable default run config, or the collection itself failed). Callers
@@ -175,7 +182,13 @@ async def task_capabilities_for_task(
         # of dialing the server again per tool, and the scope closes those
         # sessions on the way out.
         async with mcp_session_scope():
-            tools, skills = await _collect_task_capabilities(task)
+            tools, skills = await _collect_task_capabilities(task, run_config_id)
+    except HTTPException:
+        # A named run config that does not exist is the caller's mistake, not
+        # an unreadable capability surface. Degrading it to "uncollected"
+        # below would build the prompt against a config the caller never
+        # asked for, and say nothing about it.
+        raise
     except Exception:
         # Collection reads run configs and skills off disk, so one corrupt or
         # forward-versioned file would otherwise fail a whole spec-building
@@ -201,25 +214,58 @@ async def task_capabilities_for_task(
     return tools, skills
 
 
-async def _collect_task_capabilities(
-    task: Task,
-) -> tuple[list[TaskToolInfoApi] | None, list[TaskSkillInfoApi] | None]:
-    """Read the default run config's capability surface. See the caller for the
-    None vs [] contract; failures propagate to it."""
+def _capability_run_config(
+    task: Task, run_config_id: str | None
+) -> TaskRunConfig | None:
+    """The run config whose capabilities answer this request: the one the
+    caller named, or the task's default.
+
+    None means the default was asked for and none is resolvable, which the
+    caller reports as an uncollected surface. A named config that is not on
+    the task raises instead — see the caller.
+    """
+    if run_config_id is not None:
+        # Presence, not truthiness: an empty id is a real (bad) id and must
+        # not quietly fall back to the default config, whose tools and skills
+        # are not the ones the caller asked about.
+        run_config = next(
+            (
+                candidate
+                for candidate in task.run_configs(readonly=True)
+                if candidate.id == run_config_id
+            ),
+            None,
+        )
+        if run_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Task run config not found. ID: {run_config_id}",
+            )
+        return run_config
+
     if not task.default_run_config_id:
-        return None, None
-    default_run_config = next(
+        return None
+    return next(
         (
-            run_config
-            for run_config in task.run_configs(readonly=True)
-            if run_config.id == task.default_run_config_id
+            candidate
+            for candidate in task.run_configs(readonly=True)
+            if candidate.id == task.default_run_config_id
         ),
         None,
     )
-    if default_run_config is None:
+
+
+async def _collect_task_capabilities(
+    task: Task,
+    run_config_id: str | None,
+) -> tuple[list[TaskToolInfoApi] | None, list[TaskSkillInfoApi] | None]:
+    """Read one run config's capability surface. See the caller for the
+    None vs [] contract; failures propagate to it."""
+    run_config = _capability_run_config(task, run_config_id)
+    if run_config is None:
         return None, None
 
-    properties = default_run_config.run_config_properties
+    properties = run_config.run_config_properties
     if properties.type != "kiln_agent":
         # Other config types (e.g. MCP) carry no tools_config and load no
         # skills, so their capability surface is genuinely empty, not unknown.

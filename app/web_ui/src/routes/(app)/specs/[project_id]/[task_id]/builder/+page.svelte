@@ -417,6 +417,7 @@
         input_gen_run_config,
         judge_model,
         turns_per_case,
+        target_run_config_id,
       }
     : null
   $: if (current_draft && draft_store) {
@@ -528,6 +529,9 @@
         saved.turns_per_case,
         TURNS_PER_CASE,
       )
+      // Drafts written before the entry page asked for a config restore null,
+      // which reads as nothing chosen and keeps the task-default behaviour.
+      target_run_config_id = saved.target_run_config_id ?? null
       // Rebuild the shallow-routing chain up to the restored step (the
       // mount already seeded "describe") so the browser's Back walks the
       // wizard steps exactly as in the original session instead of
@@ -620,6 +624,12 @@
       // restored draft wins — someone resuming has typed more than a link can
       // carry — and before this point `description` is empty either way.
       const handed_over = $page.url.searchParams.get("description")
+      // The chosen run config travels with the description, and like it a
+      // restored draft wins — that session already picked one.
+      const handed_over_run_config = $page.url.searchParams.get("run_config_id")
+      if (handed_over_run_config && !target_run_config_id) {
+        target_run_config_id = handed_over_run_config
+      }
       if (handed_over && !description.trim()) {
         description = handed_over
         continue_from_describe()
@@ -735,6 +745,10 @@
         body: {
           project_id,
           task_id,
+          // The questions are asked about one run config's agent: its tools
+          // and skills are what the copilot has to reason about. Null means
+          // nothing was chosen and the server reads the task default.
+          run_config_id: target_run_config_id,
           // The task's real schemas, not blanks. A structured-output task
           // that reports no schema gets asked to invent the very field names
           // it already defines, and whatever the user answers then becomes
@@ -1220,9 +1234,17 @@
   // know which model the eval data was generated against.
   let fallback_run_config_name: string | null = null
 
-  // Resolve the target run config a drive runs on (both arms): prefer the
-  // task's default; if none set, fall back to the first available config so
-  // the user doesn't have to detour into task settings just to try v2.
+  // The run config chosen on the entry page: the thing this eval is written
+  // about. It wins over the task default everywhere the builder resolves a
+  // target, and rides the draft so a reload keeps the choice. Null means
+  // nothing was chosen (a direct link into the builder) and the task default
+  // applies as before.
+  let target_run_config_id: string | null = null
+
+  // Resolve the target run config a drive runs on (both arms): prefer the one
+  // the entry page chose; then the task's default; if neither, fall back to
+  // the first available config so the user doesn't have to detour into task
+  // settings just to try v2.
   // Returns null AFTER setting generation_error (task unrunnable or the
   // config isn't a Kiln agent one). Re-fetches the task first: the default
   // can change while the wizard is open — the stop banner's own recovery
@@ -1248,11 +1270,27 @@
         "Task has no run configs. Create one before creating eval data."
       return null
     }
+    // The entry page's choice wins: the whole eval was authored about that
+    // config. Only a builder entered without one falls back to the task
+    // default, and then to the first available config.
+    const chosen_by_user = target_run_config_id
+      ? run_configs.find((c) => c.id === target_run_config_id)
+      : undefined
+    // A choice that no longer resolves (the config was deleted while the
+    // wizard was open) stops the drive. Running the task default instead
+    // would generate eval data for an agent this eval does not describe, and
+    // say nothing about it.
+    if (target_run_config_id && !chosen_by_user) {
+      generation_error =
+        "The run config this eval was written against is no longer on the task. Start a new eval to pick another one."
+      return null
+    }
     const default_match = run_configs.find(
       (c) => c.id === task!.default_run_config_id,
     )
-    const chosen_config = default_match ?? run_configs[0]
-    fallback_run_config_name = default_match ? null : chosen_config.name
+    const chosen_config = chosen_by_user ?? default_match ?? run_configs[0]
+    fallback_run_config_name =
+      chosen_by_user || default_match ? null : chosen_config.name
     drive_run_config_name = chosen_config.name
     const rcp = chosen_config.run_config_properties
     if (!isKilnAgentRunConfig(rcp)) {
@@ -1572,6 +1610,9 @@
             body: {
               target_specification: spec,
               target_task_prompt: task_prompt,
+              // The rubric grades the agent this eval is about, so it is
+              // authored against that run config's tools and skills.
+              run_config_id: target_run_config_id,
             },
             signal,
           },
