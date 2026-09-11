@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
-  import type { ComponentType } from "svelte"
+  import { onMount, type ComponentType } from "svelte"
   import AppPage from "../../../../app_page.svelte"
   import OptionList from "$lib/ui/option_list.svelte"
   import type { OptionListItem } from "$lib/ui/option_list_types"
@@ -22,7 +22,17 @@
   import { getV2EvalTypeMetadata } from "$lib/utils/eval_types/registry"
   import type { V2EvalType } from "$lib/utils/eval_types/registry"
   import { getEvalTypeIconComponent } from "$lib/components/eval_types/eval_type_icon.svelte"
-  import type { SpecType } from "$lib/types"
+  import type { SpecType, Task, TaskRunConfig } from "$lib/types"
+  // The eval is authored against one run config: its prompt, tools and skills
+  // shape the questions, the generated data and the judge. Asked on the way
+  // into the builder so the choice is explicit instead of the task default
+  // applying silently once the wizard is already running.
+  import SavedRunConfigsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
+  import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
+  import FormContainer from "$lib/utils/form_container.svelte"
+  import { load_task } from "$lib/stores"
+  import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 
   import DesiredBehaviourIcon from "$lib/ui/icons/spec_types/desired_behaviour_icon.svelte"
   import IssueIcon from "$lib/ui/icons/spec_types/issue_icon.svelte"
@@ -123,6 +133,42 @@
   // template list stays the primary choice and this section is absent.
   let description = ""
 
+  // The run config the eval is written against, asked in a dialog on the way
+  // into the builder rather than as another field on this form: it is a
+  // confirmation of what the eval is about, not a second thing to fill in.
+  // The picker is the run page's, dropdown over component, so the same control
+  // chooses a config in both places and its model, tools and skills are
+  // visible while choosing. The dropdown opens on the last config used for
+  // this task, or the task default, exactly as it does on the run page.
+  let task: Task | null = null
+  let target_run_config_id: string | null = null
+  let run_config_dialog: Dialog | null = null
+  let run_config_component: RunConfigComponent | null = null
+  let run_config_submitting = false
+  let run_config_error: KilnError | null = null
+  let save_config_error: KilnError | null = null
+  let set_default_error: KilnError | null = null
+
+  onMount(async () => {
+    try {
+      task = await load_task(project_id, task_id)
+    } catch {
+      // No task means no picker. Continue then hands over without a config
+      // and the builder resolves the task default, which is what it did
+      // before this page asked at all.
+      task = null
+    }
+  })
+
+  // The dropdown's own save path, so its "Save current options" action and
+  // Continue below save the same way.
+  async function handle_save_new_run_config(): Promise<TaskRunConfig> {
+    if (!run_config_component) {
+      throw new Error("Run configuration component is not loaded")
+    }
+    return await run_config_component.save_new_run_config()
+  }
+
   // Without Copilot the page opens on the offer rather than the templates.
   // The Pro-vs-manual question is asked once, up front, instead of partway
   // through after a template is already chosen. Choosing manual reveals the
@@ -136,12 +182,62 @@
     goto("/specs/pro_auth")
   }
 
-  function continue_with_description() {
+  // The handover into the wizard. The chosen config travels beside the
+  // description; null means nothing was chosen and the builder resolves the
+  // task default.
+  function goto_builder(run_config_id: string | null) {
+    const text = description.trim()
+    const config_param = run_config_id
+      ? `&run_config_id=${encodeURIComponent(run_config_id)}`
+      : ""
+    goto(
+      `/specs/${project_id}/${task_id}/builder` +
+        `?description=${encodeURIComponent(text)}` +
+        config_param,
+    )
+  }
+
+  // Continue asks which run config the eval is about before it hands the
+  // description over. The description stays on the page, so closing the dialog
+  // loses nothing.
+  function open_run_config_dialog() {
+    if (!description.trim()) return
+    // A failure on a previous attempt is about that attempt, not this one.
+    run_config_error = null
+    // Without a task there is nothing to pick from, so opening would show an
+    // empty dialog. Hand over as this page did before it asked.
+    if (!task) {
+      goto_builder(null)
+      return
+    }
+    run_config_dialog?.show()
+  }
+
+  // Continue needs a SAVED config: the wizard, the drive and the saved eval all
+  // refer to it by id, and "Custom" is only in the picker's local state. An
+  // edited selection is therefore saved through the dropdown's own save path
+  // first, which names it the way saving from the run page does.
+  async function continue_with_description() {
     const text = description.trim()
     if (!text) return
-    goto(
-      `/specs/${project_id}/${task_id}/builder?description=${encodeURIComponent(text)}`,
-    )
+    run_config_error = null
+    run_config_submitting = true
+    try {
+      let run_config_id = target_run_config_id
+      if (!run_config_id || run_config_id === "custom") {
+        const saved = await handle_save_new_run_config()
+        run_config_id = saved.id ?? null
+        target_run_config_id = run_config_id
+      }
+      if (!run_config_id) {
+        throw new Error("The saved run config has no id.")
+      }
+      goto_builder(run_config_id)
+    } catch (e) {
+      run_config_error = createKilnError(e)
+    } finally {
+      run_config_submitting = false
+    }
   }
 </script>
 
@@ -207,7 +303,7 @@
               <button
                 class="btn btn-primary min-w-48"
                 disabled={!description.trim()}
-                on:click={continue_with_description}
+                on:click={open_run_config_dialog}
               >
                 Continue
               </button>
@@ -248,4 +344,43 @@
       </div>
     {/if}
   </AppPage>
+
+  <!-- The last stop before the wizard: the run page's own picker, trimmed to
+       the rows the builder's own generation lane shows. Everything else folds
+       into Advanced Options. -->
+  <Dialog
+    bind:this={run_config_dialog}
+    title="Choose the run config to evaluate"
+  >
+    <FormContainer
+      submit_label="Continue"
+      bind:submitting={run_config_submitting}
+      error={run_config_error}
+      on:submit={continue_with_description}
+      keyboard_submit={false}
+    >
+      {#if task}
+        <SavedRunConfigsDropdown
+          {project_id}
+          current_task={task}
+          bind:selected_run_config_id={target_run_config_id}
+          bind:save_config_error
+          bind:set_default_error
+          info_description="The run config this eval tests. Kiln uses its tools and skills to write the questions and the judge, then runs it to generate the eval data."
+          save_new_run_config={handle_save_new_run_config}
+        />
+        <RunConfigComponent
+          bind:this={run_config_component}
+          {project_id}
+          current_task={task}
+          bind:selected_run_config_id={target_run_config_id}
+          bind:set_default_error
+          requires_structured_output={!!task.output_json_schema}
+          show_name_field={false}
+          hide_prompt_selector={true}
+          show_tools_selector_in_advanced={true}
+        />
+      {/if}
+    </FormContainer>
+  </Dialog>
 </div>

@@ -699,11 +699,23 @@ class TestAuthorJudge:
             {"name": "refund-policy", "description": "Refunds."}
         ]
 
+    @pytest.mark.parametrize(
+        ("extra_body", "expected_run_config_id"),
+        [({"run_config_id": "rc-7"}, "rc-7"), ({}, None)],
+        ids=["named_config", "no_config"],
+    )
     def test_author_judge_reads_the_run_config_the_caller_named(
-        self, client, author_judge_input, mock_api_key, author_judge_task
+        self,
+        client,
+        author_judge_input,
+        mock_api_key,
+        author_judge_task,
+        extra_body,
+        expected_run_config_id,
     ):
         """The rubric grades the config the eval is written against, so the id
-        the caller sends is the one the capability read must use."""
+        the caller sends is the one the capability read must use. No id means
+        the task default, exactly as before the caller could choose."""
         mock_output = MagicMock(spec=GenerateJudgePromptOutput)
         mock_output.judge_evaluation_prompt = "1. Check the transcript."
         mock_response = MagicMock()
@@ -722,39 +734,12 @@ class TestAuthorJudge:
                 return_value=mock_response,
             ),
         ):
-            client.post(
-                AUTHOR_JUDGE_URL,
-                json={**author_judge_input, "run_config_id": "rc-7"},
+            response = client.post(
+                AUTHOR_JUDGE_URL, json={**author_judge_input, **extra_body}
             )
 
-        assert mock_capabilities.await_args.args[1] == "rc-7"
-
-    def test_author_judge_without_a_run_config_reads_the_default(
-        self, client, author_judge_input, mock_api_key, author_judge_task
-    ):
-        """No id sent means the task default, exactly as before the caller
-        could choose."""
-        mock_output = MagicMock(spec=GenerateJudgePromptOutput)
-        mock_output.judge_evaluation_prompt = "1. Check the transcript."
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.parsed = mock_output
-
-        with (
-            patch(
-                "app.desktop.studio_server.eval_builder_api.task_capabilities_for_task",
-                new_callable=AsyncMock,
-                return_value=([], []),
-            ) as mock_capabilities,
-            patch(
-                "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
-                new_callable=AsyncMock,
-                return_value=mock_response,
-            ),
-        ):
-            client.post(AUTHOR_JUDGE_URL, json=author_judge_input)
-
-        assert mock_capabilities.await_args.args[1] is None
+        assert response.status_code == 200
+        assert mock_capabilities.await_args.args[1] == expected_run_config_id
 
     def test_author_judge_unresolvable_run_config_404s(
         self, client, author_judge_input, mock_api_key, author_judge_task
