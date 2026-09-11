@@ -21,6 +21,7 @@
   import ClaimCard from "./claim_card.svelte"
   import ClaimText from "./claim_text.svelte"
   import ClaimTraceModal from "./claim_trace_modal.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
   // The nav row hand-rolls FormContainer's submit button, so it renders the
   // same keyboard hint using the same platform check.
@@ -59,9 +60,16 @@
   // where the primary action renders. Bound out (read-only for the parent) so
   // anything the parent stacks under that action appears only alongside it.
   export let on_last_trace = false
+  // The eval's own description, read-only. The review shows what each
+  // conversation did but never what the eval asks for, so a reviewer who
+  // forgot it can reread it here. Empty or null hides the control.
+  export let spec_text: string | null = null
 
   let current_index = 0
   let trace_modal: ClaimTraceModal | null = null
+  let spec_dialog: Dialog | null = null
+
+  $: has_spec_text = (spec_text ?? "").trim().length > 0
 
   // Names the judge, because the step header does. Claims are the decisions
   // the judge made, the verdict claim included, and the second sentence names
@@ -145,13 +153,26 @@
       >
         <div class="flex items-start justify-between gap-3">
           <span class="text-sm font-medium">Overview</span>
-          <button
-            id="view-full-trace"
-            class="btn btn-xs btn-ghost flex-none"
-            on:click={() => current && trace_modal?.open_trace(current)}
-          >
-            View Full Trace
-          </button>
+          <div class="flex items-center gap-1 flex-none">
+            {#if has_spec_text}
+              <!-- The eval text as a second escape hatch, beside the trace
+                   one: both open something the reviewer reads and closes. -->
+              <button
+                id="view-eval"
+                class="btn btn-xs btn-ghost"
+                on:click={() => spec_dialog?.show()}
+              >
+                View Eval Description
+              </button>
+            {/if}
+            <button
+              id="view-full-trace"
+              class="btn btn-xs btn-ghost"
+              on:click={() => current && trace_modal?.open_trace(current)}
+            >
+              View Full Trace
+            </button>
+          </div>
         </div>
         <p class="text-sm text-gray-600 mt-2 leading-relaxed">
           <ClaimText
@@ -162,9 +183,19 @@
         </p>
       </div>
     {:else}
-      <!-- Nothing built yet (or the build failed), so the escape hatch stands
-           alone: the trace is all there is to read. -->
-      <div class="flex items-center justify-end mb-4">
+      <!-- Nothing built yet (or the build failed), so the escape hatches stand
+           alone: the trace and the eval text are all there is to read. The
+           eval text matters most here, where nothing describes the run. -->
+      <div class="flex items-center justify-end gap-1 mb-4">
+        {#if has_spec_text}
+          <button
+            id="view-eval"
+            class="btn btn-xs btn-ghost"
+            on:click={() => spec_dialog?.show()}
+          >
+            View Eval Description
+          </button>
+        {/if}
         <button
           id="view-full-trace"
           class="btn btn-xs btn-ghost"
@@ -338,3 +369,22 @@
 <!-- One trace rendering for both arms: a single-turn run is a conversation of
      one turn, so the modal no longer needs to be told which arm it is on. -->
 <ClaimTraceModal bind:this={trace_modal} />
+
+<!-- One eval-level dialog, not one per conversation, so it lives outside the
+     per-conversation markup. Wide, because the description is multi-paragraph
+     prose that reads as a narrow ribbon at the default width. -->
+{#if has_spec_text}
+  <Dialog
+    bind:this={spec_dialog}
+    title="Eval Description"
+    width="wide"
+    action_buttons={[{ label: "Close", isCancel: true }]}
+  >
+    <p
+      id="spec-text"
+      class="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed"
+    >
+      {spec_text}
+    </p>
+  </Dialog>
+{/if}

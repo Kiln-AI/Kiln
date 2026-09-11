@@ -5119,6 +5119,7 @@
                   selected_indices={reviewable_trace_indices}
                   {judged_noun}
                   {on_open_trace}
+                  spec_text={current_spec_text}
                   on_save={on_advance_to_save}
                   save_disabled={!save_gate_met}
                   save_label={review_cta_state === "refine"
