@@ -637,6 +637,37 @@ describe("compare radar chart tooltip", () => {
   })
 })
 
+describe("compare radar chart redraws", () => {
+  it("keeps redrawing whether the prompt list is missing, arrives or goes away", async () => {
+    const { component } = renderChart({
+      ...fixtures.three_configs,
+      prompts: undefined as unknown as PromptResponse | null,
+    })
+    await tick()
+    const drawn = () => setOptionCalls.length
+    expect(drawn()).toBeGreaterThan(0)
+    expect(
+      setOptionCalls[setOptionCalls.length - 1].legend.formatter("Fast Config"),
+    ).not.toContain("Basic (Zero Shot)")
+
+    const afterFirstDraw = drawn()
+    await component.$set({ prompts: PROMPTS })
+    await tick()
+    expect(drawn()).toBeGreaterThan(afterFirstDraw)
+    expect(
+      setOptionCalls[setOptionCalls.length - 1].legend.formatter("Fast Config"),
+    ).toContain("Basic (Zero Shot)")
+
+    const afterPrompts = drawn()
+    await component.$set({
+      prompts: undefined as unknown as PromptResponse | null,
+      scoreAxisMaxes: {},
+    })
+    await tick()
+    expect(drawn()).toBeGreaterThan(afterPrompts)
+  })
+})
+
 describe("compare radar chart scale default", () => {
   it("defaults to full scale for a single run config and to relative scale for several", async () => {
     const one = renderChart(fixtures.single_config)

@@ -142,7 +142,10 @@ Cost, latency and token axes score each run config against the others, so they s
     }
   }
 
-  function buildLegendSubtext(config: TaskRunConfig): string {
+  function buildLegendSubtext(
+    config: TaskRunConfig,
+    promptList: PromptResponse | null,
+  ): string {
     const parts: string[] = []
     if (isMcpRunConfig(config.run_config_properties)) {
       const toolName =
@@ -151,7 +154,7 @@ Cost, latency and token axes score each run config against the others, so they s
     } else {
       const modelName =
         getRunConfigModelDisplayName(config, model_info) || "Unknown"
-      const promptName = getRunConfigPromptDisplayName(config, prompts)
+      const promptName = getRunConfigPromptDisplayName(config, promptList)
       parts.push(`{sub|Model: ${modelName}}`)
       if (promptName) parts.push(`{sub|Prompt: ${promptName}}`)
       const transformLabel = getRunConfigInputTransformSummaryLabel(config)
@@ -160,16 +163,23 @@ Cost, latency and token axes score each run config against the others, so they s
     return parts.join("\n")
   }
 
-  function buildLegendFormatter(data: RadarChartData): Record<string, string> {
+  function buildLegendFormatter(
+    data: RadarChartData,
+    promptList: PromptResponse | null,
+  ): Record<string, string> {
     const formatter: Record<string, string> = {}
     for (const [name, config] of Object.entries(data.configsBySeriesName)) {
-      formatter[name] = `${name}\n${buildLegendSubtext(config)}`
+      formatter[name] = `${name}\n${buildLegendSubtext(config, promptList)}`
     }
     return formatter
   }
 
   // Build full tooltip HTML for a run config (reused by chart tooltip and legend tooltip)
-  function buildRunConfigTooltip(name: string, data: RadarChartData): string {
+  function buildRunConfigTooltip(
+    name: string,
+    data: RadarChartData,
+    promptList: PromptResponse | null,
+  ): string {
     const config = data.configsBySeriesName[name]
 
     let html = `<div style="font-weight: bold; margin-bottom: 4px;">${escapeHtml(
@@ -184,7 +194,7 @@ Cost, latency and token axes score each run config against the others, so they s
         ? getRunConfigModelDisplayName(config, model_info) || "Unknown"
         : "Unknown"
       const promptName = config
-        ? getRunConfigPromptDisplayName(config, prompts)
+        ? getRunConfigPromptDisplayName(config, promptList)
         : null
       html += `<div>Model: ${escapeHtml(modelName)}</div>`
       if (promptName) {
@@ -226,16 +236,18 @@ Cost, latency and token axes score each run config against the others, so they s
     return html
   }
 
-  function updateChart() {
+  function updateChart(
+    data: RadarChartData,
+    promptList: PromptResponse | null,
+  ) {
     if (!chartInstance) return
 
-    if (!chartData.hasData) {
+    if (!data.hasData) {
       chartInstance.clear()
       return
     }
 
-    const data = chartData
-    const legendFormatter = buildLegendFormatter(data)
+    const legendFormatter = buildLegendFormatter(data, promptList)
 
     // A couple of configs don't need a legend column - centering the radar and
     // dropping the legend underneath buys a much larger plot.
@@ -258,7 +270,7 @@ Cost, latency and token axes score each run config against the others, so they s
           trigger: "item",
           confine: true,
           formatter: (params: { name: string }) =>
-            buildRunConfigTooltip(params.name, data),
+            buildRunConfigTooltip(params.name, data, promptList),
         },
         legend: {
           data: data.legend,
@@ -266,7 +278,7 @@ Cost, latency and token axes score each run config against the others, so they s
           tooltip: {
             show: true,
             formatter: (params: { name: string }) =>
-              buildRunConfigTooltip(params.name, data),
+              buildRunConfigTooltip(params.name, data, promptList),
           },
           textStyle: legendTextStyle,
           ...(compactLayout
@@ -334,9 +346,10 @@ Cost, latency and token axes score each run config against the others, so they s
   }
 
   // Redraw whenever the data changes. prompts reaches the chart only through the
-  // legend and tooltip text, so it is named here to make it a dependency too.
-  $: if (chartInstance && chartData && (prompts || prompts === null)) {
-    updateChart()
+  // legend and tooltip text, so it is an argument rather than something the chart
+  // reads for itself: a reactive statement depends on the identifiers it mentions.
+  $: if (chartInstance) {
+    updateChart(chartData, prompts)
   }
 
   // Svelte action to initialize chart when element is added to DOM
@@ -348,7 +361,7 @@ Cost, latency and token axes score each run config against the others, so they s
     })
     resizeObserver.observe(node)
 
-    updateChart()
+    updateChart(chartData, prompts)
 
     return {
       destroy() {
