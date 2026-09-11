@@ -1091,6 +1091,7 @@
                   title={section.eval_id === COST_SECTION_ID
                     ? "Hide this section"
                     : "Hide this eval"}
+                  aria-label="Hide {section.category}"
                 >
                   ✕
                 </button>
@@ -1150,13 +1151,17 @@
                     >
                       {#if renamingMetricKey === item.key}
                         <!-- Enter or leaving the field saves, Escape cancels, and an
-                             empty name restores the original -->
+                             empty name restores the original. The name is stored in
+                             the URL, so it is capped at a row heading's worth of
+                             characters. -->
                         <input
                           type="text"
                           class="input input-sm input-bordered w-full min-w-0 font-medium"
                           value={item.label}
                           placeholder={originalMetricLabels[item.key] ??
                             item.label}
+                          maxlength="60"
+                          aria-label="Rename {item.label}"
                           use:focusAndSelect
                           on:keydown={(e) => {
                             if (e.key === "Enter") {
@@ -1176,6 +1181,7 @@
                           on:click={() => startRename(item.key)}
                           class="w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition-colors"
                           title="Rename this metric"
+                          aria-label="Rename {item.label}"
                         >
                           ✎
                         </button>
@@ -1184,6 +1190,7 @@
                           on:click={() => hideMetric(item.key)}
                           class="w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition-colors"
                           title="Hide this metric"
+                          aria-label="Hide {item.label}"
                         >
                           ✕
                         </button>
