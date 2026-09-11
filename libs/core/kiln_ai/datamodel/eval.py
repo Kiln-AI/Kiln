@@ -42,6 +42,10 @@ from kiln_ai.datamodel.dataset_filters import DatasetFilterId, EvalInputFilterId
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.task_run import Usage
 from kiln_ai.datamodel.tool_id import ToolId, validate_tool_allowlist
+from kiln_ai.datamodel.world import (
+    WorldEpisode,
+    WorldReset,
+)
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 if TYPE_CHECKING:
@@ -663,6 +667,10 @@ class EvalInput(KilnParentedModel):
         default_factory=list,
         description="Tags for filtering eval inputs.",
     )
+    world_reset: WorldReset | None = Field(
+        default=None,
+        description="Reset this world with these keyword arguments before the run; the reset starts the episode the trace records. A run config that lists the world's tools runs the input in that episode; a run config listing the project's own version of a tool the world serves is refused. None runs against the project tools.",
+    )
 
     @model_validator(mode="after")
     def validate_tags(self) -> Self:
@@ -705,6 +713,10 @@ class EvalTaskInput(BaseModel):
     task_input: str | None = Field(
         default=None,
         description="The original task input text.",
+    )
+    world_episode: WorldEpisode | None = Field(
+        default=None,
+        description="The world episode the trace's world tools ran in, when the run used a world: the reset it started from, what the environment reported at reset, and the environment's final state. Judges reference it in their prompt template (e.g. {{ world_episode.final_state }}); code scorers receive it as the `world_episode` argument.",
     )
 
     @classmethod
@@ -764,6 +776,7 @@ class EvalTaskInput(BaseModel):
             trace=trace_data,
             reference_data=reference_data,
             task_input=task_input,
+            world_episode=trace.world_episode,
         )
 
     @classmethod

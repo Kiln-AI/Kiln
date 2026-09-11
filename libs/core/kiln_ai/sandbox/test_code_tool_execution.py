@@ -1270,8 +1270,8 @@ class TestRealBuiltInTools:
 
         for builtin_id in math_ids:
             tool_id = builtin_id.value
-            real_tool = tool_from_id_and_project(tool_id, project=project)
-            real_name = await real_tool.name()
+            project_tool = tool_from_id_and_project(tool_id, project=project)
+            real_name = await project_tool.name()
 
             ct = _make_code_tool(
                 'def run(x): return "ok"',
@@ -1653,3 +1653,8 @@ class TestUIExampleFilterAndTransform:
         assert not result.is_error, f"Expected success, got: {result.output}"
         parsed = json.loads(result.output)
         assert len(parsed) == 3
+
+
+# ---------------------------------------------------------------------------
+# Episode handoff
+# ---------------------------------------------------------------------------

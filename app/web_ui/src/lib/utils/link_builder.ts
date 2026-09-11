@@ -76,6 +76,8 @@ export function tool_set_type_label(type: ToolSetType): string {
       return "Built-in"
     case "sandbox_code":
       return "Sandbox Code"
+    case "world":
+      return "World"
     default:
       // Compile error here means a new ToolSetType needs a label above.
       return assertNever(type)

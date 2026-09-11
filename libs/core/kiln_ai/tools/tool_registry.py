@@ -8,12 +8,15 @@ from kiln_ai.datamodel.tool_id import (
     MCP_REMOTE_TOOL_ID_PREFIX,
     RAG_TOOL_ID_PREFIX,
     SKILL_TOOL_ID_PREFIX,
+    WORLD_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     code_tool_id_from_tool_id,
     kiln_task_server_id_from_tool_id,
     mcp_server_and_tool_name_from_id,
     rag_config_id_from_id,
+    world_and_tool_name_from_id,
 )
+from kiln_ai.run_context import EpisodeContext, get_episode
 from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallDefinition
 from kiln_ai.tools.built_in_tools.kiln_api_call_tool import KilnApiCallTool
 from kiln_ai.tools.built_in_tools.math_tools import (
@@ -37,7 +40,45 @@ def tool_from_id_and_project(
 
     This is the core resolution function. ``tool_from_id`` is a thin
     wrapper that derives the project from the task.
+
+    A world tool id (`kiln_tool::world::<world_id>::<tool_name>`)
+    resolves to the tool the world's environment serves, and only while an episode of
+    that world is active (set by the eval runner for one job). Project tool ids resolve
+    to the project tool whether or not an episode is active: a run config chooses the
+    environment's tools by listing their ids, never by substitution.
     """
+    if tool_id.startswith(WORLD_TOOL_ID_PREFIX):
+        return _world_tool(tool_id, get_episode())
+    return _resolve_project_tool(tool_id, project, task)
+
+
+def _world_tool(tool_id: str, episode_ctx: EpisodeContext | None) -> KilnToolInterface:
+    """The tool a world's environment serves under *tool_name*. Only meaningful while
+    an episode of that world is active."""
+    world_id, tool_name = world_and_tool_name_from_id(tool_id)
+    if episode_ctx is None or episode_ctx.world.id != world_id:
+        raise ValueError(
+            f"World tool {tool_id} can only be used while an episode of "
+            f"world {world_id} is active: run it from an eval whose inputs carry a "
+            "world_reset naming that world."
+        )
+    env_tool = episode_ctx.tools.get(tool_name)
+    if env_tool is None:
+        raise ValueError(
+            f"World '{episode_ctx.world.name}' does not serve a tool "
+            f"named '{tool_name}' (for {tool_id}); it serves "
+            f"{sorted(episode_ctx.tools)}"
+        )
+    from kiln_ai.tools.world_tool import OpenEnvToolProxy
+
+    return OpenEnvToolProxy(tool_id, env_tool, episode_ctx)
+
+
+def _resolve_project_tool(
+    tool_id: str,
+    project: Project | None,
+    task: Task | None,
+) -> KilnToolInterface:
     # Check built-in tools
     if tool_id in [member.value for member in KilnBuiltInToolId]:
         typed_tool_id = KilnBuiltInToolId(tool_id)
@@ -238,3 +279,41 @@ async def tool_definitions_from_ids(
 
 def is_mcp_tool_id(tool_id: str) -> bool:
     return tool_id.startswith((MCP_REMOTE_TOOL_ID_PREFIX, MCP_LOCAL_TOOL_ID_PREFIX))
+
+
+def project_tool_function_name(tool_id: str, project: Project | None) -> str | None:
+    """The function name a project tool presents to the model, read without contacting
+    anything: MCP names ride in the id, the rest are on disk. None for ids that are not
+    project tools (built-ins, skills, unmanaged, world) or that cannot be found."""
+    if project is None:
+        return None
+    try:
+        if is_mcp_tool_id(tool_id):
+            return mcp_server_and_tool_name_from_id(tool_id)[1]
+        if tool_id.startswith(KILN_TASK_TOOL_ID_PREFIX):
+            server_id = kiln_task_server_id_from_tool_id(tool_id)
+            server = next(
+                (
+                    s
+                    for s in project.external_tool_servers(readonly=True)
+                    if s.id == server_id
+                ),
+                None,
+            )
+            name = server.properties.get("name") if server is not None else None
+            return name if isinstance(name, str) else None
+        if tool_id.startswith(CODE_TOOL_ID_PREFIX):
+            from kiln_ai.datamodel.code_tool import CodeTool
+
+            code_tool = CodeTool.from_id_and_parent_path(
+                code_tool_id_from_tool_id(tool_id), project.path
+            )
+            return code_tool.tool_function_name if code_tool is not None else None
+        if tool_id.startswith(RAG_TOOL_ID_PREFIX):
+            rag_config = RagConfig.from_id_and_parent_path(
+                rag_config_id_from_id(tool_id), project.path
+            )
+            return rag_config.tool_name if rag_config is not None else None
+    except ValueError:
+        return None
+    return None

@@ -345,3 +345,87 @@ class TestAsyncScorerEndToEnd:
         assert result.scores == {"accuracy": 0.75}
         assert result.skipped_reason is None
         assert result.skipped_detail is None
+
+
+# ---------------------------------------------------------------------------
+# World instances
+# ---------------------------------------------------------------------------
+
+
+class TestEpisodeHandoff:
+    def _ctx(self):
+        from kiln_ai.datamodel.world import World, WorldEpisode, WorldReset
+        from kiln_ai.run_context import EpisodeContext
+
+        episode = WorldEpisode(
+            reset=WorldReset(world_id="w"),
+            episode_id="ep_x",
+            world_version="w@1",
+            final_state={"notes": ["a"]},
+        )
+        return EpisodeContext(
+            episode=episode, world=World(name="w"), session_manager=Mock()
+        )
+
+    async def test_scorer_receives_full_record_and_context(self):
+        from kiln_ai.run_context import reset_episode, set_episode
+
+        cfg = _make_config(
+            code="def score(output, world_episode):\n    return {'accuracy': 1.0}\n"
+        )
+        adapter = CodeEvalAdapter(cfg)
+        ctx = self._ctx()
+        token = set_episode(ctx)
+        try:
+            with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_bridge:
+                mock_bridge.return_value = BridgeResult(
+                    result_msg={"ok": {"accuracy": 1.0}}
+                )
+                await adapter.evaluate(_inp())
+        finally:
+            reset_episode(token)
+        _, kwargs = mock_bridge.call_args
+        inputs = kwargs["args"][1]
+        assert inputs["world_episode"]["episode_id"] == "ep_x"
+        assert inputs["world_episode"]["final_state"] == {"notes": ["a"]}
+        assert kwargs["server"]._context.episode is ctx.episode
+
+    async def test_no_context_passes_none(self):
+        adapter = CodeEvalAdapter(_make_config())
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_bridge:
+            mock_bridge.return_value = BridgeResult(
+                result_msg={"ok": {"accuracy": 1.0}}
+            )
+            await adapter.evaluate(_inp())
+        _, kwargs = mock_bridge.call_args
+        assert kwargs["args"][1]["world_episode"] is None
+        assert kwargs["server"]._context.episode is None
+
+    def test_worker_passes_world_episode_only_when_declared(self, tmp_path):
+        from kiln_ai.adapters.eval.conftest import run_scorer
+
+        record = {
+            "reset": {"world_id": "w", "reset_kwargs": {"fixture_id": "f"}},
+            "episode_id": "ep_w",
+            "world_version": "w@1",
+            "reset_metadata": {"frozen_time": "2026-07-14T00:00:00+00:00"},
+            "final_state": {"notes": []},
+        }
+        declared = (
+            "def score(output, world_episode):\n"
+            "    return {'id': world_episode['episode_id']}\n"
+        )
+        msg = run_scorer(
+            declared,
+            {"output": "o", "task_input": None, "world_episode": record},
+            10,
+        )
+        assert msg["ok"] == {"id": "ep_w"}
+
+        undeclared = "def score(output):\n    return {'ok': 1}\n"
+        msg = run_scorer(
+            undeclared,
+            {"output": "o", "task_input": None, "world_episode": record},
+            10,
+        )
+        assert msg["ok"] == {"ok": 1}

@@ -13,8 +13,8 @@ import {
 
 // Where each tool set type sits in a picker, lowest first, with null for a type no
 // agent picker offers by default: skills get their own picker
-// (skills_selector.svelte), and a picker that wants them says so with its own
-// set_order.
+// (skills_selector.svelte), world tools are listed in run configs but not offered
+// in the app yet, and a picker that wants either says so with its own set_order.
 //
 // Exhaustive on purpose. Anything a picker does not order is dropped silently, so a
 // ToolSetType added server-side has to be a type error here rather than a tool set
@@ -27,6 +27,7 @@ const AGENT_TOOL_SET_RANK: Record<ToolSetType, number | null> = {
   kiln_task: 4,
   mcp: 5,
   demo: 6,
+  world: null,
   skill: null,
 }
 
