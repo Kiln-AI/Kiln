@@ -726,17 +726,62 @@ describe("compare radar chart empty states", () => {
   })
 })
 
-describe("compare radar chart option shape", () => {
-  it("serialises every fixture with its three formatters invoked", async () => {
-    for (const props of Object.values(fixtures)) {
+const OPTION_KEYS = ["legend", "radar", "series", "tooltip"]
+
+// Paths of every value the predicate rejects, named so a failure says where.
+function offendingPaths(
+  value: unknown,
+  reject: (entry: unknown) => boolean,
+  path = "option",
+): string[] {
+  if (reject(value)) return [path]
+  if (Array.isArray(value)) {
+    return value.flatMap((entry, index) =>
+      offendingPaths(entry, reject, `${path}[${index}]`),
+    )
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>).flatMap(
+      ([key, entry]) => offendingPaths(entry, reject, `${path}.${key}`),
+    )
+  }
+  return []
+}
+
+describe.each(Object.entries(fixtures))(
+  "compare radar chart option shape (%s)",
+  (_name, props) => {
+    it("sets every part of the option, one value per axis, with no gaps", async () => {
       const option = await captureOption(props)
-      const serialised = serialise(option) as {
-        tooltip: { formatter: Record<string, string> }
-        legend: { formatter: Record<string, string> }
+
+      expect(Object.keys(option).sort()).toEqual(OPTION_KEYS)
+
+      const axisCount = option.radar.indicator.length
+      expect(axisCount).toBeGreaterThan(0)
+      for (const series of option.series) {
+        expect(series.data.length).toBeGreaterThan(0)
+        for (const datum of series.data) {
+          expect(datum.value).toHaveLength(axisCount)
+        }
       }
+
       const names = Array.from(new Set(option.legend.data))
-      expect(Object.keys(serialised.tooltip.formatter)).toEqual(names)
-      expect(Object.keys(serialised.legend.formatter)).toEqual(names)
-    }
-  })
-})
+      expect(names.length).toBeGreaterThan(0)
+      for (const name of names) {
+        expect(option.tooltip.formatter({ name })).not.toBe("")
+        expect(option.legend.formatter(name)).not.toBe("")
+        expect(option.legend.tooltip.formatter({ name })).not.toBe("")
+      }
+
+      // An undefined in an echarts option drops a setting without saying so, and a
+      // formatter left behind by serialise() is one the golden dump cannot see.
+      expect(offendingPaths(option, (entry) => entry === undefined)).toEqual([])
+      expect(
+        offendingPaths(
+          serialise(option),
+          (entry) => typeof entry === "function",
+        ),
+      ).toEqual([])
+    })
+  },
+)
