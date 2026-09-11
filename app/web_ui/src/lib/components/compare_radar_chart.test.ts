@@ -594,14 +594,14 @@ describe("compare radar chart tooltip", () => {
     expect(html).toContain("+2 more in the table above")
   })
 
-  it("currently interpolates the score label unescaped", async () => {
+  it("escapes the score label in the tooltip", async () => {
     const option = await captureOption({
       ...fixtures.three_configs,
       metricLabels: { "eval_1::pass_rate": "<b>Boom</b>" },
     })
-    expect(tooltipFor(option, "Fast Config")).toContain(
-      "<div><b>Boom</b>: 0.800</div>",
-    )
+    const html = tooltipFor(option, "Fast Config")
+    expect(html).toContain("<div>&lt;b&gt;Boom&lt;/b&gt;: 0.800</div>")
+    expect(html).not.toContain("<b>Boom</b>")
   })
 
   it("currently resolves two run configs sharing a name to the first of them", async () => {

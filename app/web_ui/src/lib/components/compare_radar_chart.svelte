@@ -11,6 +11,7 @@
     getRunConfigPromptDisplayName,
     getRunConfigInputTransformSummaryLabel,
   } from "$lib/utils/run_config_formatters"
+  import { escapeHtml } from "$lib/utils/escape_html"
   import { formatLatency } from "$lib/utils/formatters"
   import {
     COST_KEY,
@@ -178,11 +179,13 @@ Cost, latency and token axes score each run config against the others, so they s
       (c) => runConfigSeriesName(c, model_info) === name,
     )
 
-    let html = `<div style="font-weight: bold; margin-bottom: 4px;">${name}</div>`
+    let html = `<div style="font-weight: bold; margin-bottom: 4px;">${escapeHtml(
+      name,
+    )}</div>`
     if (config && isMcpRunConfig(config.run_config_properties)) {
       const toolName =
         config.run_config_properties.tool_reference.tool_name ?? "MCP Tool"
-      html += `<div>MCP Tool: ${toolName}</div>`
+      html += `<div>MCP Tool: ${escapeHtml(toolName)}</div>`
     } else {
       const modelName = config
         ? getRunConfigModelDisplayName(config, model_info) || "Unknown"
@@ -190,14 +193,14 @@ Cost, latency and token axes score each run config against the others, so they s
       const promptName = config
         ? getRunConfigPromptDisplayName(config, prompts)
         : null
-      html += `<div>Model: ${modelName}</div>`
+      html += `<div>Model: ${escapeHtml(modelName)}</div>`
       if (promptName) {
-        html += `<div>Prompt: ${promptName}</div>`
+        html += `<div>Prompt: ${escapeHtml(promptName)}</div>`
       }
       if (config) {
         const transformLabel = getRunConfigInputTransformSummaryLabel(config)
         if (transformLabel) {
-          html += `<div>Input Transform: ${transformLabel}</div>`
+          html += `<div>Input Transform: ${escapeHtml(transformLabel)}</div>`
         }
       }
     }
@@ -221,7 +224,7 @@ Cost, latency and token axes score each run config against the others, so they s
     }</div>`
     for (const score of scores) {
       const formatted = score.value === null ? "N/A" : score.value.toFixed(3)
-      html += `<div>${score.label}: ${formatted}</div>`
+      html += `<div>${escapeHtml(score.label)}: ${formatted}</div>`
     }
     if (trimmedCount > 0) {
       html += `<div style="color: #888; padding-top: 4px;">+${trimmedCount} more in the table above</div>`
