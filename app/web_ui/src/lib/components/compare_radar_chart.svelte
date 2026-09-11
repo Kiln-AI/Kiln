@@ -22,7 +22,6 @@
     buildRadarChartData,
     plottedRunConfigs,
     rankTooltipScores,
-    runConfigSeriesName,
     MIN_RADAR_AXES,
   } from "$lib/utils/radar_chart_data"
   import type {
@@ -162,22 +161,17 @@ Cost, latency and token axes score each run config against the others, so they s
     return parts.join("\n")
   }
 
-  function buildLegendFormatter(): Record<string, string> {
+  function buildLegendFormatter(data: RadarChartData): Record<string, string> {
     const formatter: Record<string, string> = {}
-    for (const configId of selectedRunConfigIds) {
-      const config = run_configs.find((c) => c.id === configId)
-      if (!config) continue
-      const displayName = runConfigSeriesName(config, model_info)
-      formatter[displayName] = `${displayName}\n${buildLegendSubtext(config)}`
+    for (const [name, config] of Object.entries(data.configsBySeriesName)) {
+      formatter[name] = `${name}\n${buildLegendSubtext(config)}`
     }
     return formatter
   }
 
   // Build full tooltip HTML for a run config (reused by chart tooltip and legend tooltip)
   function buildRunConfigTooltip(name: string, data: RadarChartData): string {
-    const config = run_configs.find(
-      (c) => runConfigSeriesName(c, model_info) === name,
-    )
+    const config = data.configsBySeriesName[name]
 
     let html = `<div style="font-weight: bold; margin-bottom: 4px;">${escapeHtml(
       name,
@@ -242,7 +236,7 @@ Cost, latency and token axes score each run config against the others, so they s
     }
 
     const data = chartData
-    const legendFormatter = buildLegendFormatter()
+    const legendFormatter = buildLegendFormatter(data)
 
     // A couple of configs don't need a legend column - centering the radar and
     // dropping the legend underneath buys a much larger plot.

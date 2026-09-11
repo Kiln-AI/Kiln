@@ -604,13 +604,17 @@ describe("compare radar chart tooltip", () => {
     expect(html).not.toContain("<b>Boom</b>")
   })
 
-  it("currently resolves two run configs sharing a name to the first of them", async () => {
+  it("keeps two run configs sharing a name apart", async () => {
     const option = await captureOption(fixtures.duplicate_names)
-    expect(option.legend.data).toEqual(["Fast Config", "Fast Config"])
-    expect(tooltipFor(option, "Fast Config")).toContain(
-      "<div>Mean Cost: $0.002000</div>",
-    )
-    expect(tooltipFor(option, "Fast Config")).not.toContain("$0.009000")
+    expect(option.legend.data).toEqual(["Fast Config (1)", "Fast Config (2)"])
+
+    const first = tooltipFor(option, "Fast Config (1)")
+    expect(first).toContain("<div>Mean Cost: $0.002000</div>")
+    expect(first).toContain("<div>Pass Rate: 0.800</div>")
+
+    const second = tooltipFor(option, "Fast Config (2)")
+    expect(second).toContain("<div>Mean Cost: $0.009000</div>")
+    expect(second).toContain("<div>Pass Rate: 0.500</div>")
   })
 })
 

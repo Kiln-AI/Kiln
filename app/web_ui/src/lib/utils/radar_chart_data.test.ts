@@ -6,6 +6,7 @@ import {
   metricToScore,
   plottedRunConfigs,
   rankTooltipScores,
+  runConfigSeriesNames,
   sharedAxisKeys,
   splitAxisKeys,
 } from "./radar_chart_data"
@@ -432,5 +433,23 @@ describe("buildRadarChartData", () => {
     const data = chartData({ comparisonFeatures: [USAGE_SECTION] })
     expect(data.hasData).toBe(false)
     expect(data.candidateAxisCount).toBe(3)
+  })
+})
+
+describe("runConfigSeriesNames", () => {
+  it("leaves a name that occurs once exactly as it is", () => {
+    expect(runConfigSeriesNames([FAST, THOROUGH], null)).toEqual([
+      "Fast Config",
+      "Thorough Config",
+    ])
+  })
+
+  it("numbers every occurrence of a name two run configs share", () => {
+    const twin = make_config("rc_twin", "Fast Config")
+    expect(runConfigSeriesNames([FAST, THOROUGH, twin], null)).toEqual([
+      "Fast Config (1)",
+      "Thorough Config",
+      "Fast Config (2)",
+    ])
   })
 })

@@ -33,6 +33,10 @@ export type RadarChartData = {
   // One entry per plotted run config, values in `keys` order.
   series: RadarSeriesDatum[]
   legend: string[]
+  // The run config behind each series name. Echarts hands a formatter the series
+  // name and nothing else, so this is how a tooltip gets back to the config that
+  // drew the shape - by identity, not by display name.
+  configsBySeriesName: Record<string, TaskRunConfig>
   axisMaxes: Record<string, number>
   keys: string[]
   // Candidate axes dropped because some plotted config had no result for them.
@@ -241,6 +245,28 @@ export function runConfigSeriesName(
 }
 
 /**
+ * Series name per run config, in plot order. Echarts keys a series by its name and
+ * two run configs can carry the same one, so every occurrence of a repeated name is
+ * numbered. A name that occurs once is left exactly as it is.
+ */
+export function runConfigSeriesNames(
+  configs: TaskRunConfig[],
+  modelInfo: ProviderModels | null,
+): string[] {
+  const names = configs.map((config) => runConfigSeriesName(config, modelInfo))
+  const totals: Record<string, number> = {}
+  for (const name of names) {
+    totals[name] = (totals[name] ?? 0) + 1
+  }
+  const seen: Record<string, number> = {}
+  return names.map((name) => {
+    if (totals[name] === 1) return name
+    seen[name] = (seen[name] ?? 0) + 1
+    return `${name} (${seen[name]})`
+  })
+}
+
+/**
  * The eval scores a tooltip should list, trimmed to the weakest `limit` of them.
  * The usage axes plot a relative score rather than their raw quantity, so ranking
  * them against pass rates would compare unlike things - they are left out.
@@ -309,6 +335,7 @@ export function buildRadarChartData(input: RadarChartInput): RadarChartData {
     indicators: [],
     series: [],
     legend: [],
+    configsBySeriesName: {},
     axisMaxes: {},
     keys: [],
     omittedKeyCount: 0,
@@ -361,8 +388,10 @@ export function buildRadarChartData(input: RadarChartInput): RadarChartData {
     max: axisMaxes[key],
   }))
 
+  const seriesNames = runConfigSeriesNames(plottedConfigs, modelInfo)
+
   // Every plotted config has a value for every key by construction above.
-  const series = plottedConfigs.map((config) => ({
+  const series = plottedConfigs.map((config, index) => ({
     value: keys.map((key) => {
       const rawValue = getValue(config.id ?? null, key)
       if (rawValue === null) return null
@@ -370,13 +399,19 @@ export function buildRadarChartData(input: RadarChartInput): RadarChartData {
         ? metricToScore(rawValue, usageValues[key] || [])
         : rawValue
     }),
-    name: runConfigSeriesName(config, modelInfo),
+    name: seriesNames[index],
   }))
+
+  const configsBySeriesName: Record<string, TaskRunConfig> = {}
+  plottedConfigs.forEach((config, index) => {
+    configsBySeriesName[seriesNames[index]] = config
+  })
 
   return {
     indicators,
     series,
     legend: series.map((datum) => datum.name),
+    configsBySeriesName,
     axisMaxes,
     keys,
     omittedKeyCount: omittedCount,
