@@ -42,9 +42,13 @@ export type RadarChartData = {
   // Candidate axes dropped because some plotted config had no result for them.
   omittedKeyCount: number
   axisLabels: Record<string, string>
-  // Axes the table could offer at all, before any filtering. Drives the "is there
-  // a chart worth drawing" gate, so it must not depend on the current selection.
+  // Rows the table is offering as axes, hidden ones already dropped upstream. Zero
+  // of them means there is nothing to put on a card at all.
   candidateAxisCount: number
+  // Whether the table has an eval section at all. A section keeps its place once
+  // every one of its rows is hidden, so this tells a task with no evals apart from
+  // one whose score rows are hidden - they need different advice.
+  hasEvalSections: boolean
   hasData: boolean
 }
 
@@ -341,6 +345,9 @@ export function buildRadarChartData(input: RadarChartInput): RadarChartData {
     omittedKeyCount: 0,
     axisLabels,
     candidateAxisCount: scoreKeys.length + usageKeys.length,
+    hasEvalSections: comparisonFeatures.some(
+      (feature) => feature.eval_id !== COST_SECTION_ID,
+    ),
     hasData: false,
   }
 
@@ -417,6 +424,7 @@ export function buildRadarChartData(input: RadarChartInput): RadarChartData {
     omittedKeyCount: omittedCount,
     axisLabels,
     candidateAxisCount: empty.candidateAxisCount,
+    hasEvalSections: empty.hasEvalSections,
     hasData: indicators.length > 0 && series.length > 0,
   }
 }

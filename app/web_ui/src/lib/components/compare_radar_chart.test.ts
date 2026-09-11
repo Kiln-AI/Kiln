@@ -645,7 +645,17 @@ describe("compare radar chart scale default", () => {
 })
 
 describe("compare radar chart empty states", () => {
-  it("draws nothing at all when fewer than three axes could exist", async () => {
+  it("draws nothing at all when the table has no rows left to offer", async () => {
+    const { container } = renderChart({
+      ...fixtures.three_configs,
+      comparisonFeatures: [],
+    })
+    await tick()
+    expect(container.textContent?.trim()).toBe("")
+    expect(setOptionCalls).toHaveLength(0)
+  })
+
+  it("keeps the card and its empty state when hidden rows leave two axes", async () => {
     const { container } = renderChart({
       ...fixtures.three_configs,
       comparisonFeatures: [
@@ -653,11 +663,15 @@ describe("compare radar chart empty states", () => {
       ],
     })
     await tick()
-    expect(container.textContent?.trim()).toBe("")
+    expect(container.textContent).toContain("Radar Chart")
+    expect(container.textContent).toContain("Not Enough Axes")
+    expect(container.textContent).toContain(
+      "A radar chart needs at least 3 axes. Show a hidden row, run the missing evals, or compare fewer run configurations.",
+    )
     expect(setOptionCalls).toHaveLength(0)
   })
 
-  it("shows the not enough shared axes state when the plotted configs share fewer than three", async () => {
+  it("shows the not enough axes state when the plotted configs share fewer than three", async () => {
     const { container } = renderChart({
       ...fixtures.three_configs,
       comparisonFeatures: [EVAL_SECTION],
@@ -671,20 +685,18 @@ describe("compare radar chart empty states", () => {
       }),
     })
     await tick()
-    expect(container.textContent).toContain("Not Enough Shared Axes")
+    expect(container.textContent).toContain("Not Enough Axes")
     expect(container.textContent).toContain(
-      "Fewer than 3 axes have a result for every selected run configuration.",
+      "A radar chart needs at least 3 axes. Show a hidden row, run the missing evals, or compare fewer run configurations.",
     )
-    expect(container.textContent).toContain(
-      "Not shown: 2 axes without results for every selected run config.",
-    )
+    expect(container.textContent).not.toContain("Not shown:")
     expect(setOptionCalls).toHaveLength(0)
   })
 
-  it("shows the plain no data state when no run config is selected", async () => {
+  it("asks for evals only when the table offers no eval section at all", async () => {
     const { container } = renderChart({
       ...fixtures.three_configs,
-      selectedRunConfigIds: [],
+      comparisonFeatures: [USAGE_SECTION],
     })
     await tick()
     expect(container.textContent).toContain("No Data Available")

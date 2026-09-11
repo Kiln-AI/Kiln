@@ -94,17 +94,18 @@ Cost, latency and token axes score each run config against the others, so they s
   $: omittedAxisCount = chartData.omittedKeyCount
 
   $: notShownNote =
-    omittedAxisCount > 0
+    chartData.hasData && omittedAxisCount > 0
       ? `Not shown: ${omittedAxisCount} ${
           omittedAxisCount === 1 ? "axis" : "axes"
         } without results for every selected run config. See the table above.`
       : null
 
-  // When there's nothing to draw, say which of the two reasons it is
-  $: noDataMessage =
-    omittedAxisCount > 0
-      ? `Fewer than ${MIN_RADAR_AXES} axes have a result for every selected run configuration. Run the missing evals, or compare fewer run configurations.`
-      : "Create and run evals to see a comparison chart."
+  // With no eval section there is nothing to show but the usage rows, and the way
+  // out is a new eval. With one, the axes are hidden or unshared, and the way out
+  // is one of three things the user can do from this page.
+  $: noDataMessage = chartData.hasEvalSections
+    ? `A radar chart needs at least ${MIN_RADAR_AXES} axes. Show a hidden row, run the missing evals, or compare fewer run configurations.`
+    : "Create and run evals to see a comparison chart."
 
   function setScale(useAbsolute: boolean) {
     absoluteScale = useAbsolute
@@ -359,10 +360,10 @@ Cost, latency and token axes score each run config against the others, so they s
   }
 </script>
 
-<!-- Radar charts don't really work with <3 items. Counts the usage axes too: they
-     are axes like any other, and a task with one or two eval scores still has a
-     chart worth drawing once cost, latency and tokens are on it. -->
-{#if chartData.candidateAxisCount >= MIN_RADAR_AXES}
+<!-- A table with no rows left has nothing to say about a radar chart, so the card
+     goes with it. One or two rows keep the card, where the empty state can say how
+     to get a third. -->
+{#if chartData.candidateAxisCount > 0}
   <div
     class="bg-white border border-gray-200 rounded-lg p-6 mb-6 h-full flex flex-col"
   >
@@ -406,8 +407,8 @@ Cost, latency and token axes score each run config against the others, so they s
       ></div>
     {:else}
       <ChartNoData
-        title={omittedAxisCount > 0
-          ? "Not Enough Shared Axes"
+        title={chartData.hasEvalSections
+          ? "Not Enough Axes"
           : "No Data Available"}
         message={noDataMessage}
       />
