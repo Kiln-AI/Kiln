@@ -35,6 +35,7 @@
     getRunConfigInputTransformSummaryLabel,
   } from "$lib/utils/run_config_formatters"
   import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
+  import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
   import { tagFromFilterId } from "../spec_utils"
@@ -45,6 +46,15 @@
   import RunEval from "$lib/components/run_eval.svelte"
   import FloatingMenu from "$lib/ui/floating_menu.svelte"
   import type { FloatingMenuItem } from "$lib/ui/floating_menu_types"
+  import {
+    applyMetricLabels,
+    filterVisibleSections,
+    listHiddenMetrics,
+    parseHiddenListParam,
+    parseMetricLabelsParam,
+    withMetricLabel,
+    type MetricLabels,
+  } from "./compare_view"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -58,7 +68,10 @@
   // State management
   let columns = 2 // Start with 2 columns
   let selectedModels: (string | null)[] = [null, null] // Track selected model for each column
-  let hiddenEvalIds: string[] = [] // Eval IDs hidden by the user (kiln_cost_section is never hideable)
+  let hiddenEvalIds: string[] = [] // Sections hidden by the user: evals, or the cost section
+  let hiddenMetricKeys: string[] = [] // Individual rows hidden by the user, in any section
+  let metricLabels: MetricLabels = {} // Display names the user has given rows, by row key
+  let renamingMetricKey: string | null = null // Row whose name is being edited, if any
 
   // Run configs state
   let loading_run_configs = true
@@ -101,19 +114,14 @@
     // Initialize selectedModels array with correct length
     selectedModels = new Array(columns).fill(null)
 
-    // Hidden evals can be restored before run configs are loaded - they are just IDs.
-    // Defensive: drop the cost section ID + dedupe in case a hand-edited URL is messy.
-    const urlHidden = urlParams.get("hidden_evals")
-    if (urlHidden) {
-      hiddenEvalIds = [
-        ...new Set(
-          urlHidden
-            .split(",")
-            .map((id) => id.trim())
-            .filter((id) => id.length > 0 && id !== "kiln_cost_section"),
-        ),
-      ]
-    }
+    // Hidden sections and rows can be restored before run configs are loaded - they
+    // are just IDs and keys. Row keys are "<section>::<metric>".
+    hiddenEvalIds = parseHiddenListParam(urlParams.get("hidden_evals"))
+    hiddenMetricKeys = parseHiddenListParam(
+      urlParams.get("hidden_metrics"),
+      (key) => key.includes("::"),
+    )
+    metricLabels = parseMetricLabelsParam(urlParams.get("metric_labels"))
   }
 
   // Restore model selections from URL after data is loaded
@@ -164,13 +172,34 @@
       urlParams.delete("hidden_evals")
     }
 
-    // Use replace to avoid creating new history entries
+    if (hiddenMetricKeys.length > 0) {
+      urlParams.set("hidden_metrics", hiddenMetricKeys.join(","))
+    } else {
+      urlParams.delete("hidden_metrics")
+    }
+
+    if (Object.keys(metricLabels).length > 0) {
+      urlParams.set("metric_labels", JSON.stringify(metricLabels))
+    } else {
+      urlParams.delete("metric_labels")
+    }
+
+    // Use replace to avoid creating new history entries. noScroll/keepFocus because
+    // this only ever records existing UI state in the URL - without them, hiding a
+    // row or adding a column jumps the page back to the top and drops focus.
     const newURL = `${$page.url.pathname}?${urlParams.toString()}`
-    goto(newURL, { replaceState: true })
+    goto(newURL, { replaceState: true, noScroll: true, keepFocus: true })
   }
 
   // Reactive statements to update URL when state changes
-  $: if (!isInitializing && (columns || selectedModels || hiddenEvalIds)) {
+  $: if (
+    !isInitializing &&
+    (columns ||
+      selectedModels ||
+      hiddenEvalIds ||
+      hiddenMetricKeys ||
+      metricLabels)
+  ) {
     updateURL()
   }
 
@@ -350,43 +379,62 @@
     eval_scores_cache,
   )
 
-  // Filter out user-hidden evals (cost section is never hideable). hiddenEvalIds is
-  // passed in as a parameter (rather than read via closure) so that Svelte's reactive
-  // `$:` statements track it as a dependency and re-run when it changes.
-  function filterVisibleFeatures<T extends { eval_id: string }>(
-    features: T[],
-    hidden: string[],
-  ): T[] {
-    if (hidden.length === 0) return features
-    return features.filter(
-      (section) =>
-        section.eval_id === "kiln_cost_section" ||
-        !hidden.includes(section.eval_id),
-    )
-  }
-
-  $: visibleComparisonFeatures = filterVisibleFeatures(
+  // The user's view of the sections: rows carry their display names, then hidden
+  // sections and rows are dropped. Hidden state and names are passed as arguments
+  // (rather than read via closure) so that Svelte's reactive `$:` statements track
+  // them as dependencies and re-run when they change.
+  $: labeledComparisonFeatures = applyMetricLabels(
     comparisonFeatures,
-    hiddenEvalIds,
+    metricLabels,
   )
-  $: visibleChartComparisonFeatures = filterVisibleFeatures(
+  $: labeledChartComparisonFeatures = applyMetricLabels(
     chartComparisonFeatures,
+    metricLabels,
+  )
+  $: visibleComparisonFeatures = filterVisibleSections(
+    labeledComparisonFeatures,
     hiddenEvalIds,
+    hiddenMetricKeys,
+  )
+  $: visibleChartComparisonFeatures = filterVisibleSections(
+    labeledChartComparisonFeatures,
+    hiddenEvalIds,
+    hiddenMetricKeys,
+  )
+
+  // Each row's own name, for the rename field's placeholder and so that typing it
+  // back in drops the override
+  $: originalMetricLabels = Object.fromEntries(
+    chartComparisonFeatures.flatMap((section) =>
+      section.items.map((item) => [item.key, item.label]),
+    ),
+  ) as Record<string, string>
+
+  // Sections whose eval produced no scores at all - as opposed to sections the user
+  // has emptied by hiding every row, which just render as their header
+  $: sectionsWithoutScores = new Set(
+    comparisonFeatures
+      .filter((section) => section.items.length === 0)
+      .map((section) => section.eval_id),
   )
 
   // Names of currently-hidden evals (used for the "show hidden" dropdown).
   // chartComparisonFeatures is built from ALL run configs for the task and is a
   // superset of comparisonFeatures (which only covers selected models), so it
   // alone is enough to resolve display names.
-  $: hiddenEvalsInfo = hiddenEvalIds
-    .filter((id) => id !== "kiln_cost_section")
-    .map((evalId) => {
-      const feature = chartComparisonFeatures.find((s) => s.eval_id === evalId)
-      return { eval_id: evalId, category: feature?.category ?? "Unknown eval" }
-    })
+  $: hiddenEvalsInfo = hiddenEvalIds.map((evalId) => {
+    const feature = chartComparisonFeatures.find((s) => s.eval_id === evalId)
+    return { eval_id: evalId, category: feature?.category ?? "Unknown eval" }
+  })
+
+  // Rows hidden one at a time, for the same dropdown
+  $: hiddenMetricsInfo = listHiddenMetrics(
+    labeledChartComparisonFeatures,
+    hiddenEvalIds,
+    hiddenMetricKeys,
+  )
 
   function hideEval(evalId: string) {
-    if (evalId === "kiln_cost_section") return
     if (hiddenEvalIds.includes(evalId)) return
     hiddenEvalIds = [...hiddenEvalIds, evalId]
   }
@@ -395,19 +443,74 @@
     hiddenEvalIds = hiddenEvalIds.filter((id) => id !== evalId)
   }
 
-  function showAllHiddenEvals() {
-    hiddenEvalIds = []
+  function hideMetric(key: string) {
+    if (hiddenMetricKeys.includes(key)) return
+    hiddenMetricKeys = [...hiddenMetricKeys, key]
   }
 
+  function showMetric(key: string) {
+    hiddenMetricKeys = hiddenMetricKeys.filter((k) => k !== key)
+  }
+
+  function showAllHiddenEvals() {
+    hiddenEvalIds = []
+    hiddenMetricKeys = []
+  }
+
+  function startRename(key: string) {
+    renamingMetricKey = key
+  }
+
+  function commitRename(key: string, name: string) {
+    // The field blurs as it unmounts after Enter or Escape - nothing more to do then
+    if (renamingMetricKey !== key) return
+    metricLabels = withMetricLabel(
+      metricLabels,
+      key,
+      name,
+      originalMetricLabels[key],
+    )
+    renamingMetricKey = null
+  }
+
+  function cancelRename() {
+    renamingMetricKey = null
+  }
+
+  // Focus the rename field as soon as it appears, with its text selected so that
+  // typing replaces the current name
+  function focusAndSelect(node: HTMLInputElement) {
+    node.focus()
+    node.select()
+  }
+
+  $: hiddenCount = hiddenEvalsInfo.length + hiddenMetricsInfo.length
+
   $: hiddenEvalsMenuItems = [
-    { label: "Show Eval", header: true },
-    ...hiddenEvalsInfo.map(
-      (info): FloatingMenuItem => ({
-        label: info.category,
-        onclick: () => showEval(info.eval_id),
-      }),
-    ),
-    ...(hiddenEvalsInfo.length > 1
+    ...(hiddenEvalsInfo.length > 0
+      ? [
+          { label: "Show Eval", header: true },
+          ...hiddenEvalsInfo.map(
+            (info): FloatingMenuItem => ({
+              label: info.category,
+              onclick: () => showEval(info.eval_id),
+            }),
+          ),
+        ]
+      : []),
+    ...(hiddenMetricsInfo.length > 0
+      ? [
+          { label: "Show Metric", header: true },
+          ...hiddenMetricsInfo.map(
+            (info): FloatingMenuItem => ({
+              label: info.label,
+              description: info.section,
+              onclick: () => showMetric(info.key),
+            }),
+          ),
+        ]
+      : []),
+    ...(hiddenCount > 1
       ? [{ label: "Show All", onclick: showAllHiddenEvals }]
       : []),
   ] as FloatingMenuItem[]
@@ -420,6 +523,35 @@
       }
     })
   }
+
+  // Full range of each score type. Custom scores are unbounded, so they get no
+  // absolute max and stay on data-relative scaling in the radar chart.
+  function score_type_max(score_type: string): number | null {
+    switch (score_type) {
+      case "five_star":
+        return 5
+      case "pass_fail":
+        return 1
+      case "pass_fail_critical":
+        return 1
+      default:
+        return null
+    }
+  }
+
+  // Absolute (full range) max per radar axis key, for the chart's "Full Scale" mode
+  $: scoreAxisMaxes = (() => {
+    const maxes: Record<string, number> = {}
+    for (const [eval_id, evalData] of Object.entries(eval_data_cache)) {
+      for (const score of evalData?.output_scores || []) {
+        const max = score_type_max(score.type)
+        if (max !== null) {
+          maxes[`${eval_id}::${string_to_json_key(score.name)}`] = max
+        }
+      }
+    }
+    return maxes
+  })()
 
   function generateComparisonFeatures(
     models: (string | null)[],
@@ -829,7 +961,7 @@
       {:else}
         <!-- Table action buttons - positioned above table on the right -->
         <div class="flex justify-end gap-2 mb-4">
-          {#if hiddenEvalsInfo.length > 0}
+          {#if hiddenCount > 0}
             <div class="hidden-evals-dropdown">
               <FloatingMenu items={hiddenEvalsMenuItems} width="w-72">
                 <button
@@ -837,7 +969,7 @@
                   type="button"
                   class="btn btn-sm btn-outline"
                 >
-                  Hidden Evals ({hiddenEvalsInfo.length})
+                  Hidden ({hiddenCount})
                 </button>
               </FloatingMenu>
             </div>
@@ -870,7 +1002,7 @@
           <!-- Model Selection Header Row -->
           <div
             class="grid border-b border-gray-200 bg-gray-50"
-            style="grid-template-columns: 200px repeat({columns}, 1fr);"
+            style="grid-template-columns: 240px repeat({columns}, 1fr);"
           >
             <div class="px-6 py-4 font-semibold text-gray-900"></div>
             {#each Array(columns) as _, i}
@@ -977,28 +1109,31 @@
             {#each visibleComparisonFeatures as section}
               <!-- Section Header -->
               <div
-                class="bg-gray-50 px-6 py-3 border-b border-gray-200 flex items-center justify-between gap-2"
+                class="bg-gray-50 px-6 py-3 border-b border-gray-200 flex items-center gap-2"
               >
                 <h4
                   class="text-sm font-semibold text-gray-900 uppercase tracking-wide"
                 >
                   {section.category}
                 </h4>
-                {#if section.eval_id !== "kiln_cost_section"}
-                  <button
-                    on:click={() => hideEval(section.eval_id)}
-                    class="w-6 h-6 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition-colors"
-                    title="Hide this eval"
-                  >
-                    ✕
-                  </button>
-                {/if}
+                <button
+                  type="button"
+                  on:click={() => hideEval(section.eval_id)}
+                  class="w-6 h-6 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition-colors"
+                  title={section.eval_id === "kiln_cost_section"
+                    ? "Hide this section"
+                    : "Hide this eval"}
+                >
+                  ✕
+                </button>
               </div>
 
-              {#if section.items.length == 0}
+              <!-- A section the user has emptied by hiding every row is not an error
+                   state - it just has nothing left to show below its header. -->
+              {#if sectionsWithoutScores.has(section.eval_id)}
                 <div
                   class="grid gap-4 border-b border-gray-100 last:border-b-0"
-                  style="grid-template-columns: 200px repeat(1, 1fr);"
+                  style="grid-template-columns: 240px repeat(1, 1fr);"
                 >
                   <!-- Empty section for visual consistency -->
                   <div
@@ -1038,14 +1173,53 @@
               {#if section.items.length > 0}
                 <div
                   class="grid"
-                  style="grid-template-columns: 200px repeat({columns}, 1fr);"
+                  style="grid-template-columns: 240px repeat({columns}, 1fr);"
                 >
                   {#each section.items as item, item_index}
                     <!-- Feature Label -->
                     <div
-                      class="px-6 py-4 bg-gray-50 font-medium text-gray-700 flex items-center border-b border-gray-100"
+                      class="px-6 py-4 bg-gray-50 font-medium text-gray-700 flex items-center gap-2 border-b border-gray-100"
                     >
-                      {item.label}
+                      {#if renamingMetricKey === item.key}
+                        <!-- Enter or leaving the field saves, Escape cancels, and an
+                             empty name restores the original -->
+                        <input
+                          type="text"
+                          class="input input-sm input-bordered w-full min-w-0 font-medium"
+                          value={item.label}
+                          placeholder={originalMetricLabels[item.key] ??
+                            item.label}
+                          use:focusAndSelect
+                          on:keydown={(e) => {
+                            if (e.key === "Enter") {
+                              commitRename(item.key, e.currentTarget.value)
+                            } else if (e.key === "Escape") {
+                              cancelRename()
+                            }
+                          }}
+                          on:blur={(e) =>
+                            commitRename(item.key, e.currentTarget.value)}
+                        />
+                      {:else}
+                        {item.label}
+                        <!-- Both always visible, matching the section's hide button -->
+                        <button
+                          type="button"
+                          on:click={() => startRename(item.key)}
+                          class="w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition-colors"
+                          title="Rename this metric"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          type="button"
+                          on:click={() => hideMetric(item.key)}
+                          class="w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition-colors"
+                          title="Hide this metric"
+                        >
+                          ✕
+                        </button>
+                      {/if}
                     </div>
 
                     <!-- Model Values -->
@@ -1259,6 +1433,8 @@
               run_configs={current_task_run_configs || []}
               model_info={$model_info}
               selectedRunConfigIds={validSelectedModels}
+              {scoreAxisMaxes}
+              {metricLabels}
               prompts={$prompts_by_task_composite_id[
                 get_task_composite_id(project_id, task_id)
               ] || null}
@@ -1315,18 +1491,33 @@
     color: rgb(17 24 39);
   }
 
-  /* Render a gray "+" prefix on eval rows only. Excludes the header
-     (first-child) and the "Restore All" footer (last-child at position 4+). */
+  /* Render a gray "+" prefix on eval and metric rows only. Excludes the headers
+     (a span, not a button) and the "Show All" footer (last-child at position 4+).
+     A metric row is two lines - name over section - laid out as a flex column, so
+     its "+" goes on the name line rather than on the button, where it would land
+     on a line of its own. */
   .hidden-evals-dropdown
     :global(
       ul.menu
         li:not(:first-child):not(:last-child:nth-child(n + 4))
-        > button::before
+        > button:not(:has(> span))::before
+    ),
+  .hidden-evals-dropdown
+    :global(
+      ul.menu
+        li:not(:first-child):not(:last-child:nth-child(n + 4))
+        > button
+        > span:first-child::before
     ) {
     content: "+";
     color: rgb(107 114 128);
     margin-right: 0.375rem;
     font-weight: 400;
+  }
+
+  /* The section line of a metric row sits under its name, not under the "+" */
+  .hidden-evals-dropdown :global(ul.menu li > button > span + span) {
+    padding-left: 0.95rem;
   }
 
   /* "Restore All" footer styling — gray-500. */
