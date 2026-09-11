@@ -152,13 +152,21 @@ function next_button(getByText: (t: string) => HTMLElement) {
   return getByText("Continue") as HTMLButtonElement
 }
 
-// The trace modal, picked out of the mounted dialogs by its title.
-function trace_dialog(container: HTMLElement): HTMLDialogElement {
+// A mounted dialog, picked out by its title. Several are on the page at once,
+// so the title is what tells them apart.
+function dialog_titled(
+  container: HTMLElement,
+  title: string,
+): HTMLDialogElement {
   const found = [...container.querySelectorAll("dialog")].find(
-    (d) => d.querySelector("h3")?.textContent?.trim() === "Trace",
+    (d) => d.querySelector("h3")?.textContent?.trim() === title,
   )
-  if (!found) throw new Error("no trace dialog rendered")
+  if (!found) throw new Error(`no dialog titled ${title} rendered`)
   return found
+}
+
+function trace_dialog(container: HTMLElement): HTMLDialogElement {
+  return dialog_titled(container, "Trace")
 }
 
 // The span the trace modal highlighted for the citation just clicked — only
@@ -210,6 +218,119 @@ describe("ClaimEvidenceReview — overview and claims", () => {
     expect(cited_text(trace_dialog(container))).toBe(
       "return window on a mattress?",
     )
+  })
+})
+
+// Two paragraphs and a run of spaces: enough shape that a rendering which
+// collapsed whitespace would read differently from the text as written.
+const SPEC_TEXT =
+  "The agent must not guess at policy details.\n\nIt may state  only the facts it was given."
+
+const SPEC_DIALOG_TITLE = "Eval Description"
+
+function spec_dialog(container: HTMLElement): HTMLDialogElement {
+  return dialog_titled(container, SPEC_DIALOG_TITLE)
+}
+
+describe("ClaimEvidenceReview — the eval text", () => {
+  it("opens the eval's description read-only from the overview header", async () => {
+    const { container } = render_review([built_trace("t0")], {
+      spec_text: SPEC_TEXT,
+    })
+
+    // Beside the trace button, in the overview header, not in the page body.
+    const header = by_id(container, "review-overview")
+    const button = by_id<HTMLButtonElement>(header, "view-eval")
+    expect(button.textContent?.trim()).toBe("View Eval Description")
+    expect(
+      button.compareDocumentPosition(by_id(header, "view-full-trace")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+
+    const dialog = spec_dialog(container)
+    expect(dialog.open).toBe(false)
+
+    await fireEvent.click(button)
+    expect(dialog.open).toBe(true)
+    // The text verbatim. textContent reads the same either way, so the
+    // whitespace-pre-wrap class is what actually keeps the line breaks and
+    // runs of spaces on screen.
+    const paragraph = by_id(dialog, "spec-text")
+    expect(paragraph.textContent?.trim()).toBe(SPEC_TEXT)
+    expect(paragraph.className).toContain("whitespace-pre-wrap")
+    // Read-only: the description is shown, never edited here.
+    expect(dialog.querySelector("input, textarea")).toBeNull()
+  })
+
+  it("keeps the eval text reachable while claims build and after they fail", async () => {
+    // Every trace starts with no overview and builds lazily, and a failed
+    // build never gets one. The eval text matters most in those states, where
+    // nothing on screen describes the conversation.
+    const unbuilt: TraceClaims = {
+      ...built_trace("t0"),
+      overview: null,
+      claims: null,
+      claims_state: "unbuilt",
+    }
+    for (const trace of [unbuilt, errored_trace()]) {
+      const { container } = render_review([trace], { spec_text: SPEC_TEXT })
+      expect(container.querySelector("#review-overview")).toBeNull()
+
+      const button = by_id<HTMLButtonElement>(container, "view-eval")
+      expect(
+        button.compareDocumentPosition(by_id(container, "view-full-trace")) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+
+      await fireEvent.click(button)
+      const dialog = spec_dialog(container)
+      expect(dialog.open).toBe(true)
+      expect(by_id(dialog, "spec-text").textContent?.trim()).toBe(SPEC_TEXT)
+      cleanup()
+    }
+  })
+
+  it("reopens the same dialog after moving to the next conversation", async () => {
+    // One eval-level dialog for the whole review: advancing does not tear it
+    // down and rebuild it, so the text is one click away on every trace.
+    const { container, getByText } = render_review(
+      [built_trace("t0"), built_trace("t1")],
+      { spec_text: SPEC_TEXT },
+    )
+
+    await fireEvent.click(by_id(container, "view-eval"))
+    const opened = spec_dialog(container)
+    expect(opened.open).toBe(true)
+    // jsdom cannot submit the dialog's close form, so close it directly.
+    opened.open = false
+
+    await agree_all(container, 2)
+    await fireEvent.click(next_button(getByText))
+    expect(container.textContent).toContain("2 of 2")
+
+    await fireEvent.click(by_id(container, "view-eval"))
+    const reopened = spec_dialog(container)
+    // The same node, not a fresh one mounted for this conversation.
+    expect(reopened).toBe(opened)
+    expect(reopened.open).toBe(true)
+    expect(by_id(reopened, "spec-text").textContent?.trim()).toBe(SPEC_TEXT)
+  })
+
+  it("leaves the overview header alone when there is no eval text", () => {
+    for (const spec_text of [null, "", "   "]) {
+      const { container } = render_review([built_trace("t0")], { spec_text })
+      const header = by_id(container, "review-overview")
+
+      expect(header.querySelector("#view-eval")).toBeNull()
+      expect(header.querySelector("#view-full-trace")).not.toBeNull()
+      // Nothing left mounted either: no dialog carrying the eval title.
+      expect(
+        [...container.querySelectorAll("dialog h3")].some(
+          (h) => h.textContent?.trim() === "Eval Description",
+        ),
+      ).toBe(false)
+      cleanup()
+    }
   })
 })
 
