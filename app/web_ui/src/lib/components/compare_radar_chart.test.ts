@@ -451,7 +451,7 @@ describe("compare radar chart axes", () => {
     const { container } = renderChart(fixtures.missing_result)
     await tick()
     expect(container.textContent).toContain(
-      "Not shown: 1 score without results for every selected run config. See the table above.",
+      "Not shown: 1 axis without results for every selected run config. See the table above.",
     )
   })
 })
@@ -676,7 +676,7 @@ describe("compare radar chart empty states", () => {
       "The selected run configurations share fewer than 3 scores with results.",
     )
     expect(container.textContent).toContain(
-      "Not shown: 2 scores without results for every selected run config.",
+      "Not shown: 2 axes without results for every selected run config.",
     )
     expect(setOptionCalls).toHaveLength(0)
   })

@@ -96,7 +96,7 @@ Cost, latency and token axes score each run config against the others, so they s
   $: notShownNote =
     omittedAxisCount > 0
       ? `Not shown: ${omittedAxisCount} ${
-          omittedAxisCount === 1 ? "score" : "scores"
+          omittedAxisCount === 1 ? "axis" : "axes"
         } without results for every selected run config. See the table above.`
       : null
 
