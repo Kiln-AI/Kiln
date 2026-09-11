@@ -12,16 +12,22 @@
     getRunConfigInputTransformSummaryLabel,
   } from "$lib/utils/run_config_formatters"
   import { formatLatency } from "$lib/utils/formatters"
+  import {
+    buildRadarChartData,
+    plottedRunConfigs,
+    rankTooltipScores,
+    runConfigSeriesName,
+    COST_KEY,
+    LATENCY_KEY,
+    TOTAL_TOKENS_KEY,
+    MIN_RADAR_AXES,
+  } from "$lib/utils/radar_chart_data"
+  import type {
+    ComparisonFeature,
+    RadarChartData,
+  } from "$lib/utils/radar_chart_data"
   import ChartNoData from "$lib/components/chart_no_data.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-
-  // Type for comparison features (same as parent page)
-  type ComparisonFeature = {
-    category: string
-    items: { label: string; key: string }[]
-    has_default_eval_config: boolean | undefined
-    eval_id: string
-  }
 
   // Props
   export let comparisonFeatures: ComparisonFeature[]
@@ -38,7 +44,7 @@
   // fall back to the data-relative max.
   export let scoreAxisMaxes: Record<string, number> = {}
   // Display names the user has given rows in the table, by key. They win over the
-  // usage axis names below too, so a renamed cost row is renamed on its axis.
+  // usage axis names too, so a renamed cost row is renamed on its axis.
   export let metricLabels: Record<string, string> = {}
 
   // Axis scaling mode. Relative scales each axis to the best value across the selected
@@ -48,25 +54,6 @@
   // picks a mode, after which their choice sticks.
   let absoluteScale = false
   let userChoseScale = false
-  $: if (!userChoseScale) {
-    absoluteScale = plottedConfigCount <= 1
-  }
-
-  function setScale(useAbsolute: boolean) {
-    absoluteScale = useAbsolute
-    userChoseScale = true
-  }
-
-  // Fallback full-scale max when we don't know the score's type. Most eval scores are
-  // normalized to 0-1, and we only use it when the data actually fits under it.
-  const DEFAULT_ABSOLUTE_MAX = 1
-
-  // Above this many scores the tooltip lists only the weakest ones - the full set is
-  // in the comparison table above.
-  const MAX_TOOLTIP_SCORES = 10
-
-  // Below this many axes there's no shape to read, so there's no chart to draw
-  const MIN_RADAR_AXES = 3
 
   const SCALE_TOOLTIP = `**Relative**: each axis is scaled to the highest value across the selected run configs. Best for spotting differences between configs.
 
@@ -77,119 +64,49 @@ Cost, latency and token axes score each run config against the others, so they s
   // Chart instance
   let chartInstance: echarts.ECharts | null = null
 
-  const COST_KEY = "cost::mean_cost"
-  const LATENCY_KEY = "cost::mean_total_llm_latency_ms"
+  // Held apart from chartData rather than read back out of it: the scale default
+  // below depends on how many configs are plotted, and chartData depends on the
+  // scale. One source, two readers, no cycle.
+  $: plottedConfigs = plottedRunConfigs({
+    comparisonFeatures,
+    runConfigs: run_configs,
+    selectedRunConfigIds,
+    getValue: getModelValueRaw,
+  })
 
-  // Cost, latency and token counts are lower-is-better raw quantities with no
-  // absolute range, so they're scored by position within the selected run configs
-  // (metricToScore) on a shared 0-100 axis. That's a comparison, which means these
-  // axes only carry information when there are at least two configs to compare - and
-  // it's why they stay relative even in Full Scale mode.
-  //
-  // On the chart they're named for the direction that's better, since a bigger value
-  // means less cost / less time / fewer tokens.
-  const USAGE_LABELS: Record<string, string> = {
-    [COST_KEY]: "Cost Efficiency",
-    [LATENCY_KEY]: "Speed",
-    "cost::mean_total_tokens": "Token Efficiency",
-    "cost::mean_input_tokens": "Input Token Efficiency",
-    "cost::mean_output_tokens": "Output Token Efficiency",
+  $: if (!userChoseScale) {
+    absoluteScale = plottedConfigs.length <= 1
   }
 
-  function isLowerIsBetterMetric(key: string): boolean {
-    return key.startsWith("cost::")
-  }
+  $: chartData = buildRadarChartData({
+    comparisonFeatures,
+    plottedConfigs,
+    selectedRunConfigIds,
+    getValue: getModelValueRaw,
+    modelInfo: model_info,
+    scoreAxisMaxes,
+    metricLabels,
+    absoluteScale,
+  })
 
-  // Position of a lower-is-better value within the selected configs, as a 0-100
-  // score. Ties (or a single config) land at 50: no better, no worse.
-  export function metricToScore(
-    cost: number,
-    costs: number[],
-    {
-      padding = 10, // keep endpoints away from 0/100
-      relFull = 0.7, // when (hi-lo)/|hi| reaches this, use full spread (k=1)
-    }: {
-      padding?: number
-      relFull?: number
-    } = {},
-  ): number {
-    const lo = Math.min(...costs)
-    const hi = Math.max(...costs)
+  $: omittedAxisCount = chartData.omittedKeyCount
 
-    const range = hi - lo
-    if (range <= 0) return 50
+  $: notShownNote =
+    omittedAxisCount > 0
+      ? `Not shown: ${omittedAxisCount} ${
+          omittedAxisCount === 1 ? "score" : "scores"
+        } without results for every selected run config. See the table above.`
+      : null
 
-    // 1) range-based normalized position
-    const t = (cost - lo) / range
+  // When there's nothing to draw, say which of the two reasons it is
+  $: noDataMessage =
+    omittedAxisCount > 0
+      ? `The selected run configurations share fewer than ${MIN_RADAR_AXES} scores with results. Run the missing evals, or compare fewer run configurations.`
+      : "Create and run evals to see a comparison chart."
 
-    // 2) raw padded linear score (lower cost = higher score)
-    const raw = padding + (1 - t) * (100 - 2 * padding)
-
-    // 3) compress based on range relative to magnitude ("scale from zero")
-    const scale = Math.max(Math.abs(hi), 1e-12)
-    const relRange = range / scale // e.g. 0.02..0.03 => 0.01/0.03 ≈ 0.33
-    const k = Math.max(0, Math.min(1, relRange / relFull)) // small relRange -> k<1 -> compress
-
-    // 4) mix toward midpoint
-    const score = 50 + k * (raw - 50)
-
-    return Math.max(0, Math.min(100, score))
-  }
-
-  // Eval score keys (the cost section is excluded - its metrics come back as usage
-  // axes below, on their own terms)
-  $: dataKeys = comparisonFeatures
-    .filter((f) => f.eval_id !== "kiln_cost_section")
-    .flatMap((f) => f.items.map((item) => item.key))
-
-  // Usage axes come from the cost section of the table, so hiding a row there with
-  // its x removes the axis here too - one control, where the numbers are.
-  $: visibleUsageKeys = comparisonFeatures
-    .filter((f) => f.eval_id === "kiln_cost_section")
-    .flatMap((f) => f.items.map((item) => item.key))
-
-  // Run configs that will actually be drawn: selected, and with at least one eval
-  // result. A config with nothing to show shouldn't make the chart behave as though
-  // there's something to compare against. Computed here rather than read back out of
-  // generateChartData() so that the scale default below doesn't depend on a value
-  // that itself depends on the scale.
-  $: plottedConfigCount = selectedRunConfigIds.filter(
-    (configId) =>
-      run_configs.some((c) => c.id === configId) &&
-      dataKeys.some((key) => getModelValueRaw(configId, key) !== null),
-  ).length
-
-  $: notShownNote = (() => {
-    const parts: string[] = []
-    if (noResultAxisCount > 0) {
-      parts.push(
-        `${noResultAxisCount} ${
-          noResultAxisCount === 1 ? "score" : "scores"
-        } without results for every selected run config`,
-      )
-    }
-    if (parts.length === 0) return null
-    return `Not shown: ${parts.join(", ")}. See the table above.`
-  })()
-
-  // Get labels for radar indicators
-  function getKeyLabel(dataKey: string): string {
-    if (metricLabels[dataKey]) return metricLabels[dataKey]
-    if (USAGE_LABELS[dataKey]) return USAGE_LABELS[dataKey]
-    for (const feature of comparisonFeatures) {
-      const item = feature.items.find((i) => i.key === dataKey)
-      if (item) return item.label
-    }
-    return dataKey
-  }
-
-  // Get simple display name for the series (used as the internal name/key)
-  function getSeriesDisplayName(config: TaskRunConfig): string {
-    if (config.name) return config.name
-    if (isMcpRunConfig(config.run_config_properties)) {
-      return config.run_config_properties.tool_reference.tool_name ?? "MCP Tool"
-    }
-    return getRunConfigModelDisplayName(config, model_info) ?? "Unknown"
+  function setScale(useAbsolute: boolean) {
+    absoluteScale = useAbsolute
+    userChoseScale = true
   }
 
   // The raw quantity behind a usage axis, in its own units
@@ -210,7 +127,7 @@ Cost, latency and token axes score each run config against the others, so they s
       config?.id ? getModelValueRaw(config.id, key) : null
     const meanCost = raw(COST_KEY)
     const meanLatency = raw(LATENCY_KEY)
-    const meanTotalTokens = raw("cost::mean_total_tokens")
+    const meanTotalTokens = raw(TOTAL_TOKENS_KEY)
     return {
       cost: meanCost === null ? null : formatUsageValue(COST_KEY, meanCost),
       latency:
@@ -220,7 +137,7 @@ Cost, latency and token axes score each run config against the others, so they s
       totalTokens:
         meanTotalTokens === null
           ? null
-          : formatUsageValue("cost::mean_total_tokens", meanTotalTokens),
+          : formatUsageValue(TOTAL_TOKENS_KEY, meanTotalTokens),
     }
   }
 
@@ -247,19 +164,17 @@ Cost, latency and token axes score each run config against the others, so they s
     for (const configId of selectedRunConfigIds) {
       const config = run_configs.find((c) => c.id === configId)
       if (!config) continue
-      const displayName = getSeriesDisplayName(config)
+      const displayName = runConfigSeriesName(config, model_info)
       formatter[displayName] = `${displayName}\n${buildLegendSubtext(config)}`
     }
     return formatter
   }
 
   // Build full tooltip HTML for a run config (reused by chart tooltip and legend tooltip)
-  function buildRunConfigTooltip(
-    name: string,
-    axisMaxes: Record<string, number>,
-    keys: string[],
-  ): string {
-    const config = run_configs.find((c) => getSeriesDisplayName(c) === name)
+  function buildRunConfigTooltip(name: string, data: RadarChartData): string {
+    const config = run_configs.find(
+      (c) => runConfigSeriesName(c, model_info) === name,
+    )
 
     let html = `<div style="font-weight: bold; margin-bottom: 4px;">${name}</div>`
     if (config && isMcpRunConfig(config.run_config_properties)) {
@@ -292,213 +207,41 @@ Cost, latency and token axes score each run config against the others, so they s
       html += `<div>Mean Total Tokens: ${usage.totalTokens}</div>`
     }
 
-    // Eval scores only. The usage axes plot a relative score rather than their raw
-    // quantity, so ranking them against pass rates would compare unlike things -
-    // their real values are listed above instead.
-    const scores = keys
-      .filter((key) => !isLowerIsBetterMetric(key))
-      .map((key) => {
-        const value = config?.id ? getModelValueRaw(config.id, key) : null
-        const max = axisMaxes[key] || 1
-        return {
-          label: getKeyLabel(key),
-          value,
-          // Rank by position on the axis, so scores with different ranges (0-1 vs
-          // 1-5) are comparable. Missing values sort first: "didn't run" is worth
-          // surfacing.
-          position: value === null ? -1 : value / max,
-        }
-      })
-
-    const trimmed = scores.length > MAX_TOOLTIP_SCORES
-    const shown = trimmed
-      ? [...scores]
-          .sort((a, b) => a.position - b.position)
-          .slice(0, MAX_TOOLTIP_SCORES)
-      : scores
+    const { scores, trimmedCount } = rankTooltipScores({
+      keys: data.keys,
+      axisMaxes: data.axisMaxes,
+      axisLabels: data.axisLabels,
+      getValue: (key) => (config?.id ? getModelValueRaw(config.id, key) : null),
+    })
 
     html += `<div style="font-weight: bold; margin-bottom: 4px; padding-top: 8px;">${
-      trimmed ? "Lowest Scores" : "Values"
+      trimmedCount > 0 ? "Lowest Scores" : "Values"
     }</div>`
-    for (const score of shown) {
+    for (const score of scores) {
       const formatted = score.value === null ? "N/A" : score.value.toFixed(3)
       html += `<div>${score.label}: ${formatted}</div>`
     }
-    if (trimmed) {
-      html += `<div style="color: #888; padding-top: 4px;">+${
-        scores.length - shown.length
-      } more in the table above</div>`
+    if (trimmedCount > 0) {
+      html += `<div style="color: #888; padding-top: 4px;">+${trimmedCount} more in the table above</div>`
     }
 
     return html
   }
 
-  // Axis max in "Full Scale" mode: the score's own range when we know it, otherwise
-  // the normalized 0-1 default. Never returns a max below the data, so nothing is
-  // clipped for unbounded (custom) scores or unrecognized score types.
-  function absoluteAxisMax(
-    key: string,
-    rawMax: number,
-    paddedMax: number,
-  ): number {
-    const knownMax = scoreAxisMaxes[key]
-    if (knownMax !== undefined && knownMax >= rawMax) {
-      return knownMax
-    }
-    return rawMax <= DEFAULT_ABSOLUTE_MAX ? DEFAULT_ABSOLUTE_MAX : paddedMax
-  }
-
-  function generateChartData(): {
-    indicators: { name: string; max: number }[]
-    series: { value: (number | null)[]; name: string }[]
-    legend: string[]
-    axisMaxes: Record<string, number>
-    keys: string[]
-    noResultKeyCount: number
-  } {
-    const indicators: { name: string; max: number }[] = []
-    const series: { value: (number | null)[]; name: string }[] = []
-    const legend: string[] = []
-    const axisMaxes: Record<string, number> = {}
-    const empty = {
-      indicators,
-      series,
-      legend,
-      axisMaxes,
-      keys: [] as string[],
-    }
-
-    if (dataKeys.length === 0 || selectedRunConfigIds.length === 0) {
-      return { ...empty, noResultKeyCount: 0 }
-    }
-
-    // Run configs with at least one result. One with nothing to plot is left out
-    // entirely rather than emptying every axis. Same rule as the module-level
-    // plottedConfigCount, which the scale default reads.
-    const plottedConfigs = selectedRunConfigIds
-      .map((configId) => run_configs.find((c) => c.id === configId))
-      .filter((config): config is TaskRunConfig => !!config)
-      .filter((config) =>
-        dataKeys.some(
-          (key) => getModelValueRaw(config.id ?? null, key) !== null,
-        ),
-      )
-
-    const candidateKeys = [...dataKeys, ...visibleUsageKeys]
-
-    // Only scores every plotted config has a result for. ECharts draws a missing
-    // radar value at the center of the chart (radarLayout's getValueMissingPoint),
-    // which is indistinguishable from scoring zero - so an axis one config hasn't
-    // been evaluated on can't be drawn honestly at all. It's left out, and counted
-    // under the chart title instead.
-    const keys = candidateKeys.filter((key) =>
-      plottedConfigs.every(
-        (config) => getModelValueRaw(config.id ?? null, key) !== null,
-      ),
-    )
-    const noResultKeyCount = candidateKeys.length - keys.length
-
-    if (keys.length < MIN_RADAR_AXES) {
-      return { ...empty, noResultKeyCount }
-    }
-
-    // Every value on a usage axis, so each can be scored by its position among them
-    const usageValues: Record<string, number[]> = {}
-    for (const key of keys) {
-      if (!isLowerIsBetterMetric(key)) continue
-      usageValues[key] = plottedConfigs
-        .map((config) => getModelValueRaw(config.id ?? null, key))
-        .filter((value): value is number => value !== null)
-    }
-
-    // Calculate max values for each data key across the plotted run configs
-    for (const key of keys) {
-      if (isLowerIsBetterMetric(key)) {
-        // Already a 0-100 score, in both scale modes
-        axisMaxes[key] = 100
-        continue
-      }
-      let max = 0
-      for (const config of plottedConfigs) {
-        const value = getModelValueRaw(config.id ?? null, key)
-        if (value !== null && value > max) {
-          max = value
-        }
-      }
-      // Add 10% padding to max for better visualization
-      const paddedMax = max > 0 ? max * 1.1 : 1
-      axisMaxes[key] = absoluteScale
-        ? absoluteAxisMax(key, max, paddedMax)
-        : paddedMax
-    }
-
-    for (const key of keys) {
-      indicators.push({
-        name: getKeyLabel(key),
-        max: axisMaxes[key],
-      })
-    }
-
-    // Build series data for each plotted run config. Every one of them has a value
-    // for every key by construction above.
-    for (const config of plottedConfigs) {
-      const values = keys.map((key) => {
-        const rawValue = getModelValueRaw(config.id ?? null, key)
-        if (rawValue === null) return null
-        return isLowerIsBetterMetric(key)
-          ? metricToScore(rawValue, usageValues[key] || [])
-          : rawValue
-      })
-      const name = getSeriesDisplayName(config)
-      legend.push(name)
-      series.push({ value: values, name })
-    }
-
-    return { indicators, series, legend, axisMaxes, keys, noResultKeyCount }
-  }
-
-  // Check if there's data to display (reactive - references every input that can
-  // change what generateChartData() returns)
-  $: chartSummary = (() => {
-    // visibleUsageKeys is referenced so this re-runs when a usage row is hidden
-    if (
-      !dataKeys ||
-      dataKeys.length === 0 ||
-      !selectedRunConfigIds ||
-      !visibleUsageKeys
-    ) {
-      return { hasData: false, noResultKeyCount: 0 }
-    }
-    const { indicators, series, noResultKeyCount } = generateChartData()
-    return {
-      hasData: indicators.length > 0 && series.length > 0,
-      noResultKeyCount,
-    }
-  })()
-  $: hasData = chartSummary.hasData
-  $: noResultAxisCount = chartSummary.noResultKeyCount
-
-  // When there's nothing to draw, say which of the two reasons it is
-  $: noDataMessage =
-    noResultAxisCount > 0
-      ? `The selected run configurations share fewer than ${MIN_RADAR_AXES} scores with results. Run the missing evals, or compare fewer run configurations.`
-      : "Create and run evals to see a comparison chart."
-
   function updateChart() {
     if (!chartInstance) return
 
-    if (!hasData) {
+    if (!chartData.hasData) {
       chartInstance.clear()
       return
     }
 
-    const { indicators, series, legend, axisMaxes, keys } = generateChartData()
-
+    const data = chartData
     const legendFormatter = buildLegendFormatter()
 
     // A couple of configs don't need a legend column - centering the radar and
     // dropping the legend underneath buys a much larger plot.
-    const compactLayout = series.length <= 2
+    const compactLayout = data.series.length <= 2
 
     const legendTextStyle = {
       lineHeight: 16,
@@ -517,15 +260,15 @@ Cost, latency and token axes score each run config against the others, so they s
           trigger: "item",
           confine: true,
           formatter: (params: { name: string }) =>
-            buildRunConfigTooltip(params.name, axisMaxes, keys),
+            buildRunConfigTooltip(params.name, data),
         },
         legend: {
-          data: legend,
+          data: data.legend,
           formatter: (name: string) => legendFormatter[name] || name,
           tooltip: {
             show: true,
             formatter: (params: { name: string }) =>
-              buildRunConfigTooltip(params.name, axisMaxes, keys),
+              buildRunConfigTooltip(params.name, data),
           },
           textStyle: legendTextStyle,
           ...(compactLayout
@@ -543,7 +286,7 @@ Cost, latency and token axes score each run config against the others, so they s
               }),
         },
         radar: {
-          indicator: indicators,
+          indicator: data.indicators,
           center: compactLayout ? ["50%", "46%"] : ["32%", "50%"],
           radius: compactLayout ? "62%" : "85%",
           axisName: {
@@ -574,13 +317,15 @@ Cost, latency and token axes score each run config against the others, so they s
           {
             name: "Eval Scores",
             type: "radar",
-            data: series,
+            data: data.series,
             lineStyle: {
               width: 2,
             },
             symbolSize: 6,
             // Filling one shape makes it readable. Filling several makes mud.
-            ...(series.length === 1 ? { areaStyle: { opacity: 0.2 } } : {}),
+            ...(data.series.length === 1
+              ? { areaStyle: { opacity: 0.2 } }
+              : {}),
           },
         ],
       },
@@ -588,22 +333,9 @@ Cost, latency and token axes score each run config against the others, so they s
     )
   }
 
-  // Named so the reactive block below re-runs when the scaling mode is toggled
-  $: axisScaleMode = absoluteScale ? "absolute" : "relative"
-
-  // Update chart when data changes (model_info and prompts may load async). Every
-  // input that changes what's drawn has to be referenced here, or the chart keeps
-  // showing the previous render.
-  $: if (
-    chartInstance &&
-    comparisonFeatures &&
-    selectedRunConfigIds &&
-    axisScaleMode &&
-    scoreAxisMaxes &&
-    visibleUsageKeys &&
-    (model_info || model_info === null) &&
-    (prompts || prompts === null)
-  ) {
+  // Redraw whenever the data changes. prompts reaches the chart only through the
+  // legend and tooltip text, so it is named here to make it a dependency too.
+  $: if (chartInstance && chartData && (prompts || prompts === null)) {
     updateChart()
   }
 
@@ -631,7 +363,7 @@ Cost, latency and token axes score each run config against the others, so they s
 <!-- Radar charts don't really work with <3 items. Counts the usage axes too: they
      are axes like any other, and a task with one or two eval scores still has a
      chart worth drawing once cost, latency and tokens are on it. -->
-{#if dataKeys.length + visibleUsageKeys.length >= MIN_RADAR_AXES}
+{#if chartData.candidateAxisCount >= MIN_RADAR_AXES}
   <div
     class="bg-white border border-gray-200 rounded-lg p-6 mb-6 h-full flex flex-col"
   >
@@ -668,14 +400,14 @@ Cost, latency and token axes score each run config against the others, so they s
         <InfoTooltip tooltip_text={SCALE_TOOLTIP} position="bottom" />
       </div>
     </div>
-    {#if hasData}
+    {#if chartData.hasData}
       <div
         use:initChart
         class="w-full flex-1 min-h-[500px] xl:min-h-[620px]"
       ></div>
     {:else}
       <ChartNoData
-        title={noResultAxisCount > 0
+        title={omittedAxisCount > 0
           ? "Not Enough Shared Scores"
           : "No Data Available"}
         message={noDataMessage}
