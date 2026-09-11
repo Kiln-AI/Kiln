@@ -223,7 +223,7 @@ Cost, latency and token axes score each run config against the others, so they s
     })
 
     html += `<div style="font-weight: bold; margin-bottom: 4px; padding-top: 8px;">${
-      trimmedCount > 0 ? "Lowest Scores" : "Values"
+      trimmedCount > 0 ? "Lowest Scores" : "Scores"
     }</div>`
     for (const score of scores) {
       const formatted = score.value === null ? "N/A" : score.value.toFixed(3)
@@ -384,8 +384,8 @@ Cost, latency and token axes score each run config against the others, so they s
       <div class="flex-grow">
         <div class="text-xl font-bold">Radar Chart</div>
         <div class="text-sm text-gray-500 {notShownNote ? '' : 'mb-4'}">
-          Compare the evaluation scores of the run configurations selected
-          above.
+          Compare the run configurations selected above across their eval score,
+          cost, speed and token axes.
         </div>
         {#if notShownNote}
           <div class="text-xs text-gray-400 mt-1 mb-4">{notShownNote}</div>

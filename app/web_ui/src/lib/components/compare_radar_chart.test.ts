@@ -592,7 +592,7 @@ describe("compare radar chart tooltip", () => {
     expect(html).toContain("<div>Mean Cost: $0.002000</div>")
     expect(html).toContain("<div>Mean Latency: 1.2s</div>")
     expect(html).toContain("<div>Mean Total Tokens: 900 tokens</div>")
-    expect(html).toContain(">Values</div>")
+    expect(html).toContain(">Scores</div>")
     expect(html).toContain("<div>Pass Rate: 0.800</div>")
     expect(html).toContain("<div>Custom Depth: 2.000</div>")
     expect(html).not.toContain("Cost Efficiency:")

@@ -16,4 +16,11 @@ describe("escapeHtml", () => {
       "&quot; onmouseover=&quot;alert(1)",
     )
   })
+
+  it("escapes an apostrophe, which closes a single-quoted attribute", () => {
+    expect(escapeHtml("' onmouseover='alert(1)")).toBe(
+      "&#39; onmouseover=&#39;alert(1)",
+    )
+    expect(escapeHtml("Bob's Eval")).toBe("Bob&#39;s Eval")
+  })
 })
