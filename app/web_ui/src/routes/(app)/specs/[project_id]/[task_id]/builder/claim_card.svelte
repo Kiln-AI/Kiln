@@ -10,6 +10,8 @@
   // (human_verdict in claim_evidence.ts). The card never names the judge or
   // its score: everything on it is the builder's text, the verdict claim's
   // "It passes" / "It fails" included.
+  import { onDestroy } from "svelte"
+  import Warning from "$lib/ui/warning.svelte"
   import ClaimText from "./claim_text.svelte"
   import {
     split_claim_note,
@@ -42,6 +44,79 @@
   }
 
   $: needs_reason = verdict.agrees === false && !verdict.why.trim()
+
+  // Hint under the reason box. A one-line reason rarely gives judge refinement
+  // enough to act on, so the card nudges for more while the reviewer is still
+  // typing. Length is the trimmed length; the tier changes only after a pause
+  // so it never flips mid-keystroke, but it clears at once when the reason is
+  // long enough or emptied. Length never gates saving: only an empty reason
+  // does, and that stays the review's job.
+  //
+  // Both thresholds are the first trimmed length of their tier: under 20 reads
+  // as a fragment, 60 and up is left alone.
+  const BRIEF_REASON_MIN = 20
+  const FULL_REASON_MIN = 60
+  const REASON_HINT_DELAY_MS = 500
+
+  type ReasonHint = "short" | "brief"
+  const REASON_HINTS: Record<ReasonHint, string> = {
+    short: "Likely too short to help improve the judge. What did it get wrong?",
+    brief: "More details here would help the judge improve faster.",
+  }
+
+  let reason_hint: ReasonHint | null = null
+  let hint_timer: ReturnType<typeof setTimeout> | null = null
+  // The verdict the hint on screen belongs to, and the reason text it was
+  // scheduled for. Both guard the reactive run below, which fires far more
+  // often than the reviewer types.
+  let hinted_verdict: ClaimVerdict | null = null
+  let hinted_why: string | null = null
+
+  function hint_for(why: string): ReasonHint | null {
+    const length = why.trim().length
+    if (length === 0 || length >= FULL_REASON_MIN) return null
+    return length < BRIEF_REASON_MIN ? "short" : "brief"
+  }
+
+  // Runs on every keystroke, and on every other change to the verdict too:
+  // Svelte treats the object as new whenever the parent writes it back.
+  $: sync_reason_hint(verdict)
+
+  function sync_reason_hint(next_verdict: ClaimVerdict) {
+    // A different verdict object means a different claim in the card, so drop
+    // the old claim's hint at once rather than leaving it over new text.
+    if (next_verdict !== hinted_verdict) {
+      hinted_verdict = next_verdict
+      hinted_why = null
+      clear_hint_timer()
+      reason_hint = null
+    }
+    update_reason_hint(next_verdict.why)
+  }
+
+  function update_reason_hint(why: string) {
+    // Only a change to the reason restarts the pause. Writebacks and unrelated
+    // parent renders carry the same text and must leave the timer alone.
+    if (why === hinted_why) return
+    hinted_why = why
+    clear_hint_timer()
+    const next = hint_for(why)
+    if (next === null) {
+      reason_hint = null
+      return
+    }
+    hint_timer = setTimeout(() => {
+      reason_hint = next
+      hint_timer = null
+    }, REASON_HINT_DELAY_MS)
+  }
+
+  function clear_hint_timer() {
+    if (hint_timer) clearTimeout(hint_timer)
+    hint_timer = null
+  }
+
+  onDestroy(clear_hint_timer)
 </script>
 
 <!-- House card chrome (card card-bordered shadow-md); claim cards are not
@@ -90,15 +165,34 @@
   {/if}
 
   {#if verdict.agrees === false}
+    <label for="claim-why-{index}" class="block text-sm font-medium mt-3 mb-1">
+      What do you disagree with? What should the judge have done instead?
+    </label>
     <textarea
       id="claim-why-{index}"
-      class="textarea textarea-bordered textarea-sm w-full mt-3 {needs_reason
+      class="textarea textarea-bordered textarea-sm w-full {needs_reason
         ? 'textarea-error'
         : ''}"
-      placeholder="Why is this wrong? Your reason helps improve the eval."
+      placeholder="This is wrong because…"
+      aria-describedby="claim-why-hint-{index}"
       bind:value={verdict.why}
       bind:this={why_input}
       rows="2"
     ></textarea>
+    <!-- Fixed height whether or not a hint is showing, so the card never
+         shifts as the reviewer types. Announced politely so it reads out
+         without taking focus; the icon and the words carry the meaning, the
+         colour only ranks it. There is deliberately no "long enough" state. -->
+    <div id="claim-why-hint-{index}" class="h-5 mt-1" aria-live="polite">
+      {#if reason_hint}
+        <Warning
+          warning_color={reason_hint === "short" ? "warning" : "gray"}
+          warning_icon="exclaim"
+          inline
+          text_size="xs"
+          warning_message={REASON_HINTS[reason_hint]}
+        />
+      {/if}
+    </div>
   {/if}
 </div>
