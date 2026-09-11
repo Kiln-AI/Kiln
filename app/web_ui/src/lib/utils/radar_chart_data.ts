@@ -1,5 +1,10 @@
 import type { ProviderModels, TaskRunConfig } from "$lib/types"
 import { isMcpRunConfig } from "$lib/types"
+import {
+  COST_SECTION_ID,
+  USAGE_METRICS,
+  isUsageMetricKey,
+} from "./compare_metric_keys"
 import { getRunConfigModelDisplayName } from "./run_config_formatters"
 
 // A section of the comparison table: one eval's scores, or the usage section.
@@ -50,14 +55,6 @@ export type RadarChartInput = {
   absoluteScale: boolean
 }
 
-// The comparison table's usage section. Its rows become usage axes rather than
-// eval score axes.
-export const COST_SECTION_ID = "kiln_cost_section"
-
-export const COST_KEY = "cost::mean_cost"
-export const LATENCY_KEY = "cost::mean_total_llm_latency_ms"
-export const TOTAL_TOKENS_KEY = "cost::mean_total_tokens"
-
 // Fallback full-scale max when we don't know the score's type. Most eval scores are
 // normalized to 0-1, and we only use it when the data actually fits under it.
 export const DEFAULT_ABSOLUTE_MAX = 1
@@ -81,17 +78,9 @@ export const MIN_RADAR_AXES = 3
 //
 // On the chart they're named for the direction that's better, since a bigger value
 // means less cost / less time / fewer tokens.
-export const USAGE_LABELS: Record<string, string> = {
-  [COST_KEY]: "Cost Efficiency",
-  [LATENCY_KEY]: "Speed",
-  [TOTAL_TOKENS_KEY]: "Token Efficiency",
-  "cost::mean_input_tokens": "Input Token Efficiency",
-  "cost::mean_output_tokens": "Output Token Efficiency",
-}
-
-export function isLowerIsBetterMetric(key: string): boolean {
-  return key.startsWith("cost::")
-}
+export const USAGE_LABELS: Record<string, string> = Object.fromEntries(
+  USAGE_METRICS.map((metric) => [metric.key, metric.axisLabel]),
+)
 
 /**
  * Position of a lower-is-better value within the selected configs, as a 0-100
@@ -270,7 +259,7 @@ export function rankTooltipScores({
   limit?: number
 }): { scores: TooltipScore[]; trimmedCount: number } {
   const ranked = keys
-    .filter((key) => !isLowerIsBetterMetric(key))
+    .filter((key) => !isUsageMetricKey(key))
     .map((key) => {
       const value = getValue(key)
       const max = axisMaxes[key] || 1
@@ -345,7 +334,7 @@ export function buildRadarChartData(input: RadarChartInput): RadarChartData {
   // Every value on a usage axis, so each can be scored by its position among them
   const usageValues: Record<string, number[]> = {}
   for (const key of keys) {
-    if (!isLowerIsBetterMetric(key)) continue
+    if (!isUsageMetricKey(key)) continue
     usageValues[key] = plottedConfigs
       .map((config) => getValue(config.id ?? null, key))
       .filter((value): value is number => value !== null)
@@ -353,7 +342,7 @@ export function buildRadarChartData(input: RadarChartInput): RadarChartData {
 
   const axisMaxes: Record<string, number> = {}
   for (const key of keys) {
-    if (isLowerIsBetterMetric(key)) {
+    if (isUsageMetricKey(key)) {
       axisMaxes[key] = USAGE_AXIS_MAX
       continue
     }
@@ -377,7 +366,7 @@ export function buildRadarChartData(input: RadarChartInput): RadarChartData {
     value: keys.map((key) => {
       const rawValue = getValue(config.id ?? null, key)
       if (rawValue === null) return null
-      return isLowerIsBetterMetric(key)
+      return isUsageMetricKey(key)
         ? metricToScore(rawValue, usageValues[key] || [])
         : rawValue
     }),

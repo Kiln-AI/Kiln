@@ -13,13 +13,15 @@
   } from "$lib/utils/run_config_formatters"
   import { formatLatency } from "$lib/utils/formatters"
   import {
+    COST_KEY,
+    LATENCY_KEY,
+    TOTAL_TOKENS_KEY,
+  } from "$lib/utils/compare_metric_keys"
+  import {
     buildRadarChartData,
     plottedRunConfigs,
     rankTooltipScores,
     runConfigSeriesName,
-    COST_KEY,
-    LATENCY_KEY,
-    TOTAL_TOKENS_KEY,
     MIN_RADAR_AXES,
   } from "$lib/utils/radar_chart_data"
   import type {

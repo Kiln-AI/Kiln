@@ -47,6 +47,10 @@
   import FloatingMenu from "$lib/ui/floating_menu.svelte"
   import type { FloatingMenuItem } from "$lib/ui/floating_menu_types"
   import {
+    COST_SECTION_ID,
+    USAGE_METRICS,
+  } from "$lib/utils/compare_metric_keys"
+  import {
     applyMetricLabels,
     filterVisibleSections,
     listHiddenMetrics,
@@ -518,7 +522,7 @@
   // Reactively fetch eval templates for sections
   $: {
     comparisonFeatures.forEach((section) => {
-      if (section.eval_id !== "kiln_cost_section") {
+      if (section.eval_id !== COST_SECTION_ID) {
         fetch_eval_data(section.eval_id)
       }
     })
@@ -611,19 +615,13 @@
     })
 
     // Add Cost section (always last)
-    const costItems = [
-      { label: "Input Tokens", key: "cost::mean_input_tokens" },
-      { label: "Output Tokens", key: "cost::mean_output_tokens" },
-      { label: "Total Tokens", key: "cost::mean_total_tokens" },
-      { label: "Cost (USD)", key: "cost::mean_cost" },
-      { label: "Latency", key: "cost::mean_total_llm_latency_ms" },
-    ]
+    const costItems = USAGE_METRICS.map(({ label, key }) => ({ label, key }))
 
     features.push({
       category: "Average Usage, Cost & Latency",
       items: costItems,
       has_default_eval_config: undefined,
-      eval_id: "kiln_cost_section",
+      eval_id: COST_SECTION_ID,
       spec_id: null,
     })
 
@@ -732,11 +730,7 @@
     modelKey: string | null,
     evalID: string | null,
   ): { n_excluded: number; n_used: number } {
-    if (
-      evalID === "kiln_cost_section" ||
-      !modelKey ||
-      !eval_scores_cache[modelKey]
-    )
+    if (evalID === COST_SECTION_ID || !modelKey || !eval_scores_cache[modelKey])
       return { n_excluded: 0, n_used: 0 }
 
     const evalScores = eval_scores_cache[modelKey]
@@ -757,7 +751,7 @@
     modelKey: string | null,
     evalID: string | null,
   ): number {
-    if (evalID === "kiln_cost_section") return 1.0
+    if (evalID === COST_SECTION_ID) return 1.0
     if (!modelKey || !eval_scores_cache[modelKey]) return 0.0
 
     const evalScores = eval_scores_cache[modelKey]
@@ -779,7 +773,7 @@
     modelKey: string | null,
     evalID: string | null,
   ): string | null | undefined {
-    if (evalID === "kiln_cost_section") return null
+    if (evalID === COST_SECTION_ID) return null
     if (!modelKey || !eval_scores_cache[modelKey]) return null
 
     const evalScores = eval_scores_cache[modelKey]
@@ -1120,7 +1114,7 @@
                   type="button"
                   on:click={() => hideEval(section.eval_id)}
                   class="w-6 h-6 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition-colors"
-                  title={section.eval_id === "kiln_cost_section"
+                  title={section.eval_id === COST_SECTION_ID
                     ? "Hide this section"
                     : "Hide this eval"}
                 >
