@@ -801,9 +801,16 @@ describe("the run config the eval is written against", () => {
     ).toContain("target_run_config_id = saved.target_run_config_id ?? null")
   })
 
-  it("tells the copilot calls which config to read", () => {
+  it("tells the copilot calls that read a config which one to read", () => {
     // Server-side these calls read the config's tools and skills; without the
-    // id they read the task default and describe the wrong agent.
-    expect(mentions("run_config_id: target_run_config_id")).toBe(4)
+    // id they read the task default and describe the wrong agent. Only the
+    // calls that read capabilities are wired — the save reads none, so
+    // sending it there would be a field the server accepts and discards.
+    expect(mentions("run_config_id: target_run_config_id")).toBe(2)
+    expect(
+      normalize(
+        region("async function on_save() {", "function back_to_task()"),
+      ),
+    ).not.toContain("run_config_id")
   })
 })

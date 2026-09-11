@@ -6134,7 +6134,7 @@ export interface components {
             task_sample?: components["schemas"]["TaskSample"] | null;
             /**
              * Run Config Id
-             * @description The task run config this spec is written against. Its tools and skills describe the target task when the legacy path generates examples. Omit to use the task's default run config.
+             * @description Legacy `sdg_session_config` path only: the run config whose tools and skills describe the target task while examples are generated. Omit to use the task's default run config. The wizard arms generate nothing here, so they read no capabilities and this field does not apply to them.
              */
             run_config_id?: string | null;
         };

@@ -4069,7 +4069,6 @@
               properties: spec_properties,
               evaluate_full_trace: true,
               judge_info: save_judge,
-              run_config_id: target_run_config_id,
               multi_turn: {
                 batch_tag: saved_batch_tag,
                 reviewed_chains,
@@ -4169,7 +4168,6 @@
             // too, or the calibrated judge is not the judge that ships.
             evaluate_full_trace: true,
             judge_info: save_judge,
-            run_config_id: target_run_config_id,
             single_turn: {
               batch_tag: saved_batch_tag,
               reviewed_runs,

@@ -1262,6 +1262,40 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert unreviewed.output.rating is None
         assert unreviewed.claim_reviews() == []
 
+    def test_multi_turn_save_reads_no_capabilities(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        """A wizard save tags runs already on disk and writes files; it
+        generates nothing, so it describes no task to the copilot and reads no
+        run config's tools or skills. Only the legacy generating path does."""
+        project, task = project_and_task
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_memorable_name",
+                return_value="multi-turn-judge",
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.task_capabilities_for_task",
+                new_callable=AsyncMock,
+            ) as mock_capabilities,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 200, response.text
+        mock_capabilities.assert_not_awaited()
+
     def test_multi_turn_save_writes_splits_natively_to_disk(
         self,
         client,

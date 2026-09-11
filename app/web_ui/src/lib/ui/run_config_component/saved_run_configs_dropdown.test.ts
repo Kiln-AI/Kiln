@@ -13,7 +13,9 @@ import { last_used_run_config_store } from "$lib/stores/last_used_run_config_sto
 import type { ProviderModels, Task, TaskRunConfig } from "$lib/types"
 
 vi.mock("$app/navigation", () => ({ goto: vi.fn() }))
-// The prompt list is fetched on mount and is not what these tests are about.
+// The control loads prompts and run configs on mount. Both are stubbed to
+// no-ops so the test drives the stores directly and reaches no network — the
+// stores themselves are the real ones, seeded below.
 vi.mock("$lib/stores/prompts_store", async () => {
   const { writable } = await import("svelte/store")
   return {
@@ -21,6 +23,10 @@ vi.mock("$lib/stores/prompts_store", async () => {
     prompts_by_task_composite_id: writable({}),
   }
 })
+vi.mock("$lib/stores/run_configs_store", async (import_original) => ({
+  ...(await import_original<Record<string, unknown>>()),
+  load_task_run_configs: vi.fn(),
+}))
 
 const SavedRunConfigsDropdownHarness = (
   await import("./__tests__/info_description_harness.svelte")
@@ -50,7 +56,7 @@ function saved_config(id: string): TaskRunConfig {
 
 beforeEach(() => {
   cleanup()
-  // Set, so the mount's model-info load is a no-op rather than a fetch.
+  // Set, so the mount's model-info load returns early rather than fetching.
   model_info.set({ models: [] } as unknown as ProviderModels)
   // No saved configs yet: the options below arrive after the first render,
   // which is the moment the default copy used to overwrite the caller's.
