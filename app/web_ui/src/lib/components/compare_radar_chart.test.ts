@@ -31,6 +31,7 @@ type RadarOption = {
     indicator: Indicator[]
     center: string[]
     radius: string
+    axisName: { width: number }
   }
   series: {
     name: string
@@ -529,8 +530,26 @@ describe("compare radar chart legend", () => {
     expect(option.legend.orient).toBe("vertical")
     expect(option.legend.left).toBe("60%")
     expect(option.legend.top).toBe("middle")
-    expect(option.radar.center).toEqual(["32%", "50%"])
-    expect(option.radar.radius).toBe("85%")
+    expect(option.radar.center).toEqual(["36%", "50%"])
+    expect(option.radar.radius).toBe("70%")
+  })
+
+  it("leaves the left-hand axis names room on the card", async () => {
+    // The plot is at its widest on a 1280px screen, where the card takes its
+    // larger minimum height and echarts sizes the radius from that height.
+    const cardWidth = 928
+    const cardHeight = 620
+    const nameGap = 15
+    for (const props of [fixtures.three_configs, fixtures.two_configs]) {
+      const option = await captureOption(props)
+      const centreX = (parseFloat(option.radar.center[0]) / 100) * cardWidth
+      const radius =
+        (parseFloat(option.radar.radius) / 100) *
+        (Math.min(cardWidth, cardHeight) / 2)
+      expect(centreX - radius).toBeGreaterThan(
+        option.radar.axisName.width + nameGap,
+      )
+    }
   })
 
   it("lays the legend under the chart for two or fewer run configs", async () => {

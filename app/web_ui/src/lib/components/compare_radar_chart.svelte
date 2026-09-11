@@ -287,13 +287,15 @@ Cost, latency and token axes score each run config against the others, so they s
         },
         radar: {
           indicator: data.indicators,
-          center: compactLayout ? ["50%", "46%"] : ["32%", "50%"],
-          radius: compactLayout ? "62%" : "85%",
+          center: compactLayout ? ["50%", "46%"] : ["36%", "50%"],
+          radius: compactLayout ? "62%" : "70%",
           axisName: {
             color: "#666",
             fontSize: 12,
-            // Wrap long score names instead of letting neighbours collide
-            width: 110,
+            // Axis names are drawn outside the plot and wrap rather than collide
+            // with their neighbours, so the centre and radius above have to leave
+            // this much room, plus the name gap, at either edge of the card.
+            width: 90,
             overflow: "break",
             lineHeight: 14,
           },
