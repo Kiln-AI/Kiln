@@ -16,7 +16,7 @@ from kiln_ai.datamodel import (
 )
 from kiln_ai.datamodel.eval_splits import ItemSource
 from kiln_ai.datamodel.task_run import EvalItemSource, eval_item_key
-from kiln_ai.datamodel.world import Episode
+from kiln_ai.datamodel.world import WorldEpisode, WorldReset
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 KEY: TraceKey = ("eval_input", "item1", "rc1", "")
@@ -53,7 +53,7 @@ def save_run(
     eval_source: EvalItemSource | None = None,
     output: str = "generated",
     trace: list[ChatCompletionMessageParam] | None = None,
-    episode: Episode | None = None,
+    world_episode: WorldEpisode | None = None,
 ) -> TaskRun:
     run = TaskRun(
         parent=task,
@@ -61,7 +61,7 @@ def save_run(
         output=TaskOutput(output=output, source=output_source(run_config_id)),
         eval_source=eval_source,
         trace=trace,
-        episode=episode,
+        world_episode=world_episode,
     )
     run.save_to_file()
     return run
@@ -83,16 +83,18 @@ def save_trace(
         eval_source=EvalItemSource(source_type=source_type, source_id=source_id),
         output=output,
         trace=trace,
-        episode=episode_for(source_id, world_version),
+        world_episode=episode_for(source_id, world_version),
     )
 
 
-def episode_for(source_id: str, world_version: str | None) -> Episode | None:
+def episode_for(source_id: str, world_version: str | None) -> WorldEpisode | None:
     """A world run's episode record, carrying the version the trace key is read from."""
     if not world_version:
         return None
-    return Episode(
-        episode_id=f"ep_{source_id}", world_id="w1", world_version=world_version
+    return WorldEpisode(
+        reset=WorldReset(world_id="w1"),
+        episode_id=f"ep_{source_id}",
+        world_version=world_version,
     )
 
 
@@ -157,7 +159,7 @@ class Generator:
                         source_type=source_type,
                         source_id=source_id,
                     ),
-                    episode=episode_for(source_id, world_version),
+                    world_episode=episode_for(source_id, world_version),
                 )
             return save_trace(
                 self.task,
@@ -728,7 +730,7 @@ def test_stored_world_version_separates_traces(task):
     fixture_a = save_run(
         task,
         eval_source=EvalItemSource(source_type="eval_input", source_id="item1"),
-        episode=episode_for("item1", "syn1:a"),
+        world_episode=episode_for("item1", "syn1:a"),
         output="from fixture a",
     )
     index = TraceIndex(task)

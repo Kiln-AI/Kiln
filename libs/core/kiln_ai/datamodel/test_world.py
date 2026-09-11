@@ -25,9 +25,9 @@ from kiln_ai.datamodel.tool_id import (
     world_and_tool_name_from_id,
 )
 from kiln_ai.datamodel.world import (
-    Episode,
     OpenEnvTool,
     World,
+    WorldEpisode,
     WorldReset,
 )
 
@@ -181,56 +181,61 @@ class TestEnvironmentAndInstance:
         )
         assert ei.world_reset is None
 
-    def _instance(self, **overrides: Any) -> Episode:
+    def _episode(self, **overrides: Any) -> WorldEpisode:
         base: dict[str, Any] = dict(
+            reset=WorldReset(world_id="w1", reset_kwargs={"fixture_id": "f1"}),
             episode_id="ep_1",
-            world_id="w1",
-            reset_kwargs={"fixture_id": "f1"},
-            metadata={"fixture_id": "f1", "frozen_time": NOW.isoformat()},
+            world_version="acme@1.0.0",
+            reset_metadata={"fixture_id": "f1", "frozen_time": NOW.isoformat()},
         )
         base.update(overrides)
-        return Episode(**base)
+        return WorldEpisode(**base)
 
-    def test_instance_defaults(self):
-        inst = self._instance()
-        assert inst.state is None
-        assert set(Episode.model_fields) == {
+    def test_episode_defaults(self):
+        ep = self._episode()
+        assert ep.final_state is None
+        assert list(WorldEpisode.model_fields) == [
+            "reset",
             "episode_id",
-            "world_id",
             "world_version",
-            "reset_kwargs",
-            "metadata",
-            "state",
-        }
+            "reset_metadata",
+            "final_state",
+        ]
 
-    def test_state_round_trip(self):
-        inst = self._instance(state={"notes": ["a", "b"], "step_count": 2})
-        again = Episode.model_validate_json(inst.model_dump_json())
-        assert again.state == {"notes": ["a", "b"], "step_count": 2}
+    def test_final_state_round_trip(self):
+        ep = self._episode(final_state={"notes": ["a", "b"], "step_count": 2})
+        again = WorldEpisode.model_validate_json(ep.model_dump_json())
+        assert again.final_state == {"notes": ["a", "b"], "step_count": 2}
+        assert again.reset == WorldReset(
+            world_id="w1", reset_kwargs={"fixture_id": "f1"}
+        )
 
     def test_sandbox_dict_is_plain_json(self):
-        d = self._instance(state={"notes": []}).to_sandbox_dict()
+        d = self._episode(final_state={"notes": []}).to_sandbox_dict()
         assert set(d) == {
+            "reset",
             "episode_id",
-            "world_id",
             "world_version",
-            "reset_kwargs",
-            "metadata",
-            "state",
+            "reset_metadata",
+            "final_state",
         }
-        assert d["reset_kwargs"] == {"fixture_id": "f1"}
-        assert d["metadata"] == {"fixture_id": "f1", "frozen_time": NOW.isoformat()}
-        assert d["state"] == {"notes": []}
+        assert d["reset"] == {"world_id": "w1", "reset_kwargs": {"fixture_id": "f1"}}
+        assert d["reset_metadata"] == {
+            "fixture_id": "f1",
+            "frozen_time": NOW.isoformat(),
+        }
+        assert d["world_version"] == "acme@1.0.0"
+        assert d["final_state"] == {"notes": []}
         json.dumps(d)  # JSON-serializable
 
     def test_eval_task_input_carries_the_full_episode(self):
-        inst = self._instance(state={"big": list(range(100))})
+        ep = self._episode(final_state={"big": list(range(100))})
         defs = EvalTaskInput.model_json_schema().get("$defs", {})
-        assert "state" in defs["Episode"]["properties"]
-        assert "EpisodeInfo" not in defs
-        assert inst.to_sandbox_dict()["state"] == {"big": list(range(100))}
+        assert "final_state" in defs["WorldEpisode"]["properties"]
+        assert "Episode" not in defs
+        assert ep.to_sandbox_dict()["final_state"] == {"big": list(range(100))}
 
-    def test_task_run_persists_instance_and_variant(self, project):
+    def test_task_run_persists_world_episode(self, project):
         task = Task(name="t", instruction="i", parent=project)
         task.save_to_file()
         run = TaskRun(
@@ -249,21 +254,21 @@ class TestEnvironmentAndInstance:
                 ),
             ),
             eval_source=EvalItemSource(source_type="eval_input", source_id="i1"),
-            episode=self._instance(state={"notes": ["a"]}, world_version="acme@1.0.0"),
+            world_episode=self._episode(final_state={"notes": ["a"]}),
         )
         run.save_to_file()
         assert run.path is not None
         loaded = TaskRun.load_from_file(run.path)
         assert loaded.eval_source is not None
-        assert loaded.episode is not None
-        assert loaded.episode.world_version == "acme@1.0.0"
-        assert loaded.episode.episode_id == "ep_1"
-        assert loaded.episode.state == {"notes": ["a"]}
+        assert loaded.world_episode is not None
+        assert loaded.world_episode.world_version == "acme@1.0.0"
+        assert loaded.world_episode.episode_id == "ep_1"
+        assert loaded.world_episode.final_state == {"notes": ["a"]}
         eti = EvalTaskInput.from_task_run(loaded)
-        assert eti.episode is not None
-        assert eti.episode.reset_kwargs == {"fixture_id": "f1"}
+        assert eti.world_episode is not None
+        assert eti.world_episode.reset.reset_kwargs == {"fixture_id": "f1"}
 
-    def test_from_trace_without_instance(self, project):
+    def test_from_trace_without_world_episode(self, project):
         task = Task(name="t", instruction="i", parent=project)
         run = TaskRun(
             parent=task,
@@ -275,4 +280,4 @@ class TestEnvironmentAndInstance:
                 ),
             ),
         )
-        assert EvalTaskInput.from_task_run(run).episode is None
+        assert EvalTaskInput.from_task_run(run).world_episode is None

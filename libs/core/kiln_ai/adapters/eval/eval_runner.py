@@ -1048,16 +1048,16 @@ class EvalRunner:
                 await target.session_manager.release(episode)
                 raise
             # End the episode before anyone grades: the session manager records what graders will
-            # need (state, rewards, validity) and the trace persists it, so a
+            # need (the final state) and the trace persists it, so a
             # concurrent judge reusing this generation sees the settled record.
             ended = await target.session_manager.end_episode(episode)
-            run.episode = ended
+            run.world_episode = ended
             async with self._save_context():
                 run.save_to_file()
             return run
 
         trace, _ = await self._trace_index.get_or_create(generation.key, generate)
-        episode = trace.episode
+        episode = trace.world_episode
         if episode is None:
             raise ValueError(
                 f"Eval trace {trace.id} was generated for a world but "
@@ -1169,7 +1169,7 @@ class EvalRunner:
         )
         episode_ctx = get_episode()
         if episode_ctx is not None:
-            trace.episode = episode_ctx.episode
+            trace.world_episode = episode_ctx.episode
         async with self._save_context():
             trace.save_to_file()
         return trace
@@ -1427,7 +1427,7 @@ class EvalRunner:
         )
         episode_ctx = get_episode()
         if episode_ctx is not None:
-            run.episode = episode_ctx.episode
+            run.world_episode = episode_ctx.episode
         # The drive runs with allow_saving=False, so nothing touched disk before
         # this fully-stamped run — no crash window in which a driven conversation
         # could persist without eval_source and pass for a curated dataset row.

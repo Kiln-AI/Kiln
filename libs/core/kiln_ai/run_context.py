@@ -14,9 +14,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.world import (
-        Episode,
         OpenEnvTool,
         World,
+        WorldEpisode,
     )
     from kiln_ai.worlds.session_manager import WorldSessionManager
 
@@ -46,7 +46,7 @@ class EpisodeContext:
     tools the environment serves (by function name), resolved once per job.
     """
 
-    episode: "Episode"
+    episode: "WorldEpisode"
     world: "World"
     session_manager: "WorldSessionManager"
     tools: dict[str, "OpenEnvTool"] = field(default_factory=dict)

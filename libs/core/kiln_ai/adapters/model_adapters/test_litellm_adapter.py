@@ -3369,7 +3369,7 @@ class TestEmptyResponseErrors:
 async def test_process_tool_calls_passes_episode_context(config, mock_task):
     """The active episode reaches every tool through ToolCallContext."""
     from kiln_ai.datamodel.tool_id import ToolId
-    from kiln_ai.datamodel.world import Episode
+    from kiln_ai.datamodel.world import WorldEpisode, WorldReset
     from kiln_ai.run_context import (
         EpisodeContext,
         reset_episode,
@@ -3414,7 +3414,9 @@ async def test_process_tool_calls_passes_episode_context(config, mock_task):
     call = ChatCompletionMessageToolCall(
         id="call_1", type="function", function=Function(name="rec", arguments="{}")
     )
-    instance = Episode(episode_id="ep_ctx", world_id="w")
+    instance = WorldEpisode(
+        reset=WorldReset(world_id="w"), episode_id="ep_ctx", world_version="w@1"
+    )
     token = set_episode(
         EpisodeContext(episode=instance, world=Mock(), session_manager=Mock())
     )

@@ -11,7 +11,7 @@ code. The environment's reported name and version key the traces generated again
 An eval input carries a `WorldReset`: the world plus `reset_kwargs`, the keyword
 arguments of the environment's `reset`. An **episode** is one reset-to-close run on a session of
 that environment: the state one eval job acts on. Its outcome is recorded on the trace
-as `Episode`, never stored as a project artifact.
+as `WorldEpisode`, never stored as a project artifact.
 
 A run config chooses the environment's tools explicitly, by listing them as
 `kiln_tool::world::<world_id>::<tool_name>`; nothing is substituted for the project's tools
@@ -27,7 +27,7 @@ tool-call checks read the same.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field, JsonValue
 
@@ -73,31 +73,29 @@ class WorldReset(BaseModel):
     )
 
 
-class Episode(BaseModel):
+class WorldEpisode(BaseModel):
     """One reset-to-close run on a world's environment, recorded on the trace of the
     task run that used it. The world's tools ran inside the episode; any other tools
     in the run config ran as themselves, outside the world.
 
-    Persisted on `TaskRun.episode` so graders (including judges added later, which
-    reuse the same trace) can read what the run left behind. The live session is closed
-    at finalize; `state` is the durable record.
+    Persisted on `TaskRun.world_episode` so graders (including judges added later,
+    which reuse the same trace) can read what the run left behind. The live session is
+    closed when the episode ends; `final_state` is the durable record.
     """
 
+    reset: WorldReset = Field(
+        description="The world and reset() keyword arguments this episode was started from: the input's world_reset."
+    )
     episode_id: str = Field(min_length=1)
-    world_id: str = Field(min_length=1)
-    world_version: str | None = Field(
-        default=None,
+    world_version: str = Field(
+        min_length=1,
         description="The environment's name@version as its server reported it when the episode started: what produced this state. Kiln trusts a version to be immutable.",
     )
-    reset_kwargs: dict[str, JsonValue] = Field(
+    reset_metadata: dict[str, JsonValue] = Field(
         default_factory=dict,
-        description="The reset() keyword arguments this episode was started from.",
+        description="What the environment reported in the observation metadata when the episode was reset: facts about the starting state that judges may want, such as the scenario it started from or the clock it runs on.",
     )
-    metadata: dict[str, JsonValue] = Field(
-        default_factory=dict,
-        description="What the environment reported in its reset observation's metadata: facts about the episode's starting state that judges may want, such as the scenario it started from or the clock it runs on.",
-    )
-    state: dict[str, JsonValue] | None = Field(
+    final_state: dict[str, JsonValue] | None = Field(
         default=None,
         description="The environment's state() after generation, read when the episode ends. Whatever the environment chooses to report: a diff against its starting state, counters, an episode summary.",
     )
@@ -105,12 +103,14 @@ class Episode(BaseModel):
     def to_sandbox_dict(self) -> dict[str, JsonValue]:
         """The stdlib-only shape handed to sandboxed tools and code scorers."""
         return {
+            "reset": {
+                "world_id": self.reset.world_id,
+                "reset_kwargs": self.reset.reset_kwargs,
+            },
             "episode_id": self.episode_id,
-            "world_id": self.world_id,
             "world_version": self.world_version,
-            "reset_kwargs": self.reset_kwargs,
-            "metadata": self.metadata,
-            "state": self.state,
+            "reset_metadata": self.reset_metadata,
+            "final_state": self.final_state,
         }
 
 
@@ -119,6 +119,10 @@ class World(KilnParentedModel):
 
     name: FilenameString = Field(description="User-facing display name.")
     description: str | None = Field(default=None)
+    kind: Literal["openenv"] = Field(
+        default="openenv",
+        description="The kind of environment behind env_url. Only OpenEnv today.",
+    )
     env_url: str | None = Field(
         default=None,
         description="Base URL of the running OpenEnv server for this world (e.g. http://127.0.0.1:8004). Kiln connects to it; it never starts one.",

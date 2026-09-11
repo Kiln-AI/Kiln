@@ -38,9 +38,10 @@ from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 
 from kiln_ai.datamodel.world import (
-    Episode,
     OpenEnvTool,
     World,
+    WorldEpisode,
+    WorldReset,
 )
 from kiln_ai.run_context import generate_episode_id
 
@@ -80,15 +81,15 @@ class WorldSessionManager(Protocol):
 
     async def start_episode(
         self, world: World, reset_kwargs: dict[str, JsonValue]
-    ) -> Episode: ...
+    ) -> WorldEpisode: ...
 
     async def call_tool(
-        self, episode: Episode, tool_name: str, arguments: dict[str, Any]
+        self, episode: WorldEpisode, tool_name: str, arguments: dict[str, Any]
     ) -> ToolCallOutcome: ...
 
-    async def end_episode(self, episode: Episode) -> Episode: ...
+    async def end_episode(self, episode: WorldEpisode) -> WorldEpisode: ...
 
-    async def release(self, episode: Episode) -> None: ...
+    async def release(self, episode: WorldEpisode) -> None: ...
 
     async def shutdown(self) -> None: ...
 
@@ -159,7 +160,7 @@ class OpenEnvSessionManager:
 
     async def start_episode(
         self, world: World, reset_kwargs: dict[str, JsonValue]
-    ) -> Episode:
+    ) -> WorldEpisode:
         if world.id is None:
             raise ValueError("World must be saved before starting an episode")
         server = await self._server_for(world)
@@ -171,26 +172,25 @@ class OpenEnvSessionManager:
                 {"type": "reset", "data": {**reset_kwargs, "episode_id": episode_id}},
             )
         except BaseException:
-            await self._close_quietly(ws)
+            await self._end_session(ws)
             raise
         self._sessions[episode_id] = _Session(episode_id=episode_id, ws=ws)
 
-        metadata: dict[str, JsonValue] = {}
+        reset_metadata: dict[str, JsonValue] = {}
         reported = data.get("metadata")
         if not isinstance(reported, dict):
             reported = (data.get("observation") or {}).get("metadata")
         if isinstance(reported, dict):
-            metadata.update({str(k): v for k, v in reported.items()})
-        return Episode(
+            reset_metadata.update({str(k): v for k, v in reported.items()})
+        return WorldEpisode(
+            reset=WorldReset(world_id=world.id, reset_kwargs=reset_kwargs),
             episode_id=episode_id,
-            world_id=world.id,
             world_version=server.world_version,
-            reset_kwargs=reset_kwargs,
-            metadata=metadata,
+            reset_metadata=reset_metadata,
         )
 
     async def call_tool(
-        self, episode: Episode, tool_name: str, arguments: dict[str, Any]
+        self, episode: WorldEpisode, tool_name: str, arguments: dict[str, Any]
     ) -> ToolCallOutcome:
         session = self._sessions.get(episode.episode_id)
         if session is None:
@@ -228,7 +228,7 @@ class OpenEnvSessionManager:
             done=done,
         )
 
-    async def end_episode(self, episode: Episode) -> Episode:
+    async def end_episode(self, episode: WorldEpisode) -> WorldEpisode:
         session = self._sessions.pop(episode.episode_id, None)
         if session is None:
             return episode
@@ -240,18 +240,18 @@ class OpenEnvSessionManager:
                 await self._end_session(session.ws)
         finally:
             await self._close_quietly(session.ws)
-        return episode.model_copy(update={"state": state})
+        return episode.model_copy(update={"final_state": state})
 
-    async def release(self, episode: Episode) -> None:
+    async def release(self, episode: WorldEpisode) -> None:
         session = self._sessions.pop(episode.episode_id, None)
         if session is not None:
-            await self._close_quietly(session.ws)
+            await self._end_session(session.ws)
 
     async def shutdown(self) -> None:
-        for session in list(self._sessions.values()):
-            await self._close_quietly(session.ws)
+        sessions = list(self._sessions.values())
         self._sessions.clear()
         self._servers.clear()
+        await asyncio.gather(*(self._end_session(s.ws) for s in sessions))
 
     # ---- servers ----
 
@@ -356,12 +356,16 @@ class OpenEnvSessionManager:
 
     async def _end_session(self, ws: ClientConnection) -> None:
         """Tell the environment the session is over and let it close the socket, so
-        its handler sees a clean close rather than an abnormal disconnect."""
+        its handler sees a clean close rather than an abnormal disconnect. Every path
+        that drops a session goes through here, including failures and shutdown; the
+        socket is closed regardless."""
         try:
             await self._send(ws, {"type": "close"})
             await asyncio.wait_for(ws.wait_closed(), timeout=5)
         except (ConnectionClosed, asyncio.TimeoutError, OSError):
             pass
+        finally:
+            await self._close_quietly(ws)
 
     async def _close_quietly(self, ws: ClientConnection) -> None:
         try:

@@ -77,7 +77,7 @@ class CodeEvalAdapter(BaseV2EvalBridge):
         # scorer through these inputs, never through EvalTaskInput, which is an API
         # request body.
         episode_ctx = get_episode()
-        episode: dict[str, Any] | None = (
+        world_episode: dict[str, Any] | None = (
             episode_ctx.episode.to_sandbox_dict() if episode_ctx is not None else None
         )
 
@@ -86,7 +86,7 @@ class CodeEvalAdapter(BaseV2EvalBridge):
             "trace": eval_input.trace,
             "reference_data": eval_input.reference_data,
             "task_input": eval_input.task_input,
-            "episode": episode,
+            "world_episode": world_episode,
         }
 
         server = NestedToolServer(

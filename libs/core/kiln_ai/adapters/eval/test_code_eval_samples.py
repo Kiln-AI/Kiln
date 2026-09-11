@@ -203,7 +203,6 @@ def _default_code_single(key: str, returns_line: str, passing: str, low: str) ->
         "        output: The model's final output string.\n"
         "        trace: List of message dicts from the conversation.\n"
         "        task_input: The original task input string.\n"
-        "        episode: Dict describing the episode the run acted on, or None. Declare it to inspect state: 'path' for a local copy (e.g. sqlite3.connect(f\"{episode['path']}/fixture.db\")), 'changes' for what a hosted launcher recorded.\n"
         "\n"
         "    Return dictionary:\n"
         f"        {returns_line}\n"
@@ -229,7 +228,6 @@ def _default_code_single_ref_data(
         "        trace: List of message dicts from the conversation.\n"
         "        reference_data: Dict of expected data, or None. Dataset items supply their stored output as 'reference_answer'.\n"
         "        task_input: The original task input string.\n"
-        "        episode: Dict describing the episode the run acted on, or None. Declare it to inspect state: 'path' for a local copy (e.g. sqlite3.connect(f\"{episode['path']}/fixture.db\")), 'changes' for what a hosted launcher recorded.\n"
         "\n"
         "    Return dictionary:\n"
         f"        {returns_line}\n"
@@ -283,7 +281,6 @@ def score(output, trace, task_input):
         output: The model's final output string.
         trace: List of message dicts from the conversation.
         task_input: The original task input string.
-        episode: Dict describing the episode the run acted on, or None. Declare it to inspect state: 'path' for a local copy (e.g. sqlite3.connect(f"{episode['path']}/fixture.db")), 'changes' for what a hosted launcher recorded.
 
     Return dictionary:
         - accuracy: return 0.0 for Fail or 1.0 for Pass
@@ -307,7 +304,6 @@ def score(output, trace, reference_data, task_input):
         trace: List of message dicts from the conversation.
         reference_data: Dict of expected data, or None. Dataset items supply their stored output as 'reference_answer'.
         task_input: The original task input string.
-        episode: Dict describing the episode the run acted on, or None. Declare it to inspect state: 'path' for a local copy (e.g. sqlite3.connect(f"{episode['path']}/fixture.db")), 'changes' for what a hosted launcher recorded.
 
     Return dictionary:
         - accuracy: return 0.0 for Fail or 1.0 for Pass

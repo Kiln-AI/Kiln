@@ -58,21 +58,22 @@ class TestRemoteSessions:
         assert version == f"{ENV_NAME}@1.0.0"
         assert await session_manager.world_version(remote_world, {"x": 1}) == version
 
-    async def test_start_episode_reports_reset_metadata(
-        self, session_manager, remote_world
-    ):
+    async def test_start_episode_records_the_reset(self, session_manager, remote_world):
         episode = await session_manager.start_episode(
             remote_world, {"fixture_id": "boxr", "frozen_time": "2026-07-14"}
         )
-        assert episode.world_id == remote_world.id
+        assert episode.reset.world_id == remote_world.id
         assert episode.world_version == f"{ENV_NAME}@1.0.0"
-        assert episode.reset_kwargs == {
+        assert episode.reset.reset_kwargs == {
             "fixture_id": "boxr",
             "frozen_time": "2026-07-14",
         }
         # Only what the environment reported: no Kiln-added keys.
-        assert episode.metadata == {"fixture_id": "boxr", "frozen_time": "2026-07-14"}
-        assert episode.state is None
+        assert episode.reset_metadata == {
+            "fixture_id": "boxr",
+            "frozen_time": "2026-07-14",
+        }
+        assert episode.final_state is None
 
     async def test_call_tool_and_end_episode(self, session_manager, remote_world):
         episode = await session_manager.start_episode(remote_world, {"fixture_id": "a"})
@@ -91,17 +92,16 @@ class TestRemoteSessions:
         assert session.rewards == [1.0, 0.0, -1.0] and session.done is True
 
         final = await session_manager.end_episode(episode)
-        assert final.state is not None
-        assert final.state["notes"] == ["hi"]
-        assert final.state["step_count"] == 4
-        assert final.state["episode_id"] == episode.episode_id
+        assert final.final_state is not None
+        assert final.final_state["notes"] == ["hi"]
+        assert final.final_state["step_count"] == 4
+        assert final.final_state["episode_id"] == episode.episode_id
         assert set(final.model_dump()) == {
+            "reset",
             "episode_id",
-            "world_id",
             "world_version",
-            "reset_kwargs",
-            "metadata",
-            "state",
+            "reset_metadata",
+            "final_state",
         }
         # The session is gone: tools cannot be called after end_episode, and a second
         # end_episode is a no-op.
@@ -117,8 +117,8 @@ class TestRemoteSessions:
         await session_manager.call_tool(two, "append_note", {"note": "again"})
         f1 = await session_manager.end_episode(one)
         f2 = await session_manager.end_episode(two)
-        assert f1.state and f1.state["notes"] == ["from one"]
-        assert f2.state and f2.state["notes"] == ["from two", "again"]
+        assert f1.final_state and f1.final_state["notes"] == ["from one"]
+        assert f2.final_state and f2.final_state["notes"] == ["from two", "again"]
         assert f1.episode_id != f2.episode_id
 
     async def test_release_drops_session(self, session_manager, remote_world):

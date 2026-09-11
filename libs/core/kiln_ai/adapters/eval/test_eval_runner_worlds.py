@@ -275,7 +275,7 @@ class RecordingJudge(BaseV2EvalBridge):
         RecordingJudge.seen.append(eval_input)
         ctx = get_episode()
         if ctx is not None:
-            RecordingJudge.states[eval_input.task_input or ""] = ctx.episode.state
+            RecordingJudge.states[eval_input.task_input or ""] = ctx.episode.final_state
         return V2EvalResult(scores={"accuracy": 1.0})
 
 
@@ -322,9 +322,9 @@ def _traces(task):
 
 
 STATE_SCORER = (
-    "def score(output, episode):\n"
-    "    notes = episode['state']['notes']\n"
-    "    ok = len(notes) == 1 and episode['state']['step_count'] == 1\n"
+    "def score(output, world_episode):\n"
+    "    notes = world_episode['final_state']['notes']\n"
+    "    ok = len(notes) == 1 and world_episode['final_state']['step_count'] == 1\n"
     "    return {'accuracy': 1.0 if ok else 0.0}\n"
 )
 
@@ -345,39 +345,43 @@ async def test_full_run_isolates_and_records_instances(
 
     traces = {t.eval_source.source_id: t for t in _traces(task)}
     assert set(traces) == {a.id, b.id}
-    ep_a, ep_b = traces[a.id].episode, traces[b.id].episode
+    ep_a, ep_b = traces[a.id].world_episode, traces[b.id].world_episode
     assert ep_a is not None and ep_b is not None
     # The trace records the environment's function name; the run config records the
     # world tool id it was chosen by.
     assert traces[a.id].trace[1]["tool_calls"][0]["function"]["name"] == "append_note"
     assert run_config.run_config_properties.tools_config.tools == [syn_tool_id]
     assert ep_a.episode_id != ep_b.episode_id
-    assert ep_a.reset_kwargs == {"fixture_id": "a", "frozen_time": CLOCK_A}
-    assert ep_b.reset_kwargs == {"fixture_id": "b", "frozen_time": CLOCK_B}
-    assert ep_a.metadata["fixture_id"] == "a"
-    assert ep_a.metadata["frozen_time"] == CLOCK_A
-    assert ep_b.metadata["frozen_time"] == CLOCK_B
-    assert "env_name" not in ep_a.metadata
+    assert ep_a.reset.world_id == world.id and ep_b.reset.world_id == world.id
+    assert ep_a.reset.reset_kwargs == {"fixture_id": "a", "frozen_time": CLOCK_A}
+    assert ep_b.reset.reset_kwargs == {"fixture_id": "b", "frozen_time": CLOCK_B}
+    assert ep_a.reset_metadata["fixture_id"] == "a"
+    assert ep_a.reset_metadata["frozen_time"] == CLOCK_A
+    assert ep_b.reset_metadata["frozen_time"] == CLOCK_B
+    assert "env_name" not in ep_a.reset_metadata
     # Each episode holds only its own run's note.
-    assert ep_a.state["notes"] == ["note for a"]
-    assert ep_b.state["notes"] == ["note for b"]
+    assert ep_a.final_state["notes"] == ["note for a"]
+    assert ep_b.final_state["notes"] == ["note for b"]
     # Variant on the trace key separates configs.
     # Same world, same reported version: the world_version is identical and readable;
     # the inputs'
     # own ids keep their traces apart.
-    assert traces[a.id].episode.world_version == traces[b.id].episode.world_version
-    assert traces[a.id].episode.world_version == f"{ENV_NAME}@1.0.0"
+    assert (
+        traces[a.id].world_episode.world_version
+        == traces[b.id].world_episode.world_version
+    )
+    assert traces[a.id].world_episode.world_version == f"{ENV_NAME}@1.0.0"
     # Sessions are closed once the episode is ended.
     assert session_manager._sessions == {}
 
-    # The judge saw ids and facts but not the state record, and the context let
-    # it read the settled state.
+    # The judge saw the full episode record, and the context let it read the settled
+    # state.
     by_input = {s.task_input: s for s in RecordingJudge.seen}
-    info = by_input["note for a"].episode
+    info = by_input["note for a"].world_episode
     assert info is not None
-    assert info.reset_kwargs == {"fixture_id": "a", "frozen_time": CLOCK_A}
-    assert info.metadata["fixture_id"] == "a"
-    assert info.state["notes"] == ["note for a"]
+    assert info.reset.reset_kwargs == {"fixture_id": "a", "frozen_time": CLOCK_A}
+    assert info.reset_metadata["fixture_id"] == "a"
+    assert info.final_state["notes"] == ["note for a"]
     assert RecordingJudge.states["note for a"]["notes"] == ["note for a"]
 
     # Every job scored.
@@ -405,10 +409,10 @@ async def test_project_run_config_runs_project_tools_without_an_environment(
     assert generator.outputs[none.id] == "real"
     start_episode.assert_not_called()
     (trace,) = _traces(task)
-    assert trace.episode is None
-    assert trace.episode is None
+    assert trace.world_episode is None
+    assert trace.world_episode is None
     (seen,) = RecordingJudge.seen
-    assert seen.episode is None
+    assert seen.world_episode is None
     assert cfg.runs(readonly=True)[0].scores == {"accuracy": 1.0}
 
 
@@ -463,8 +467,8 @@ async def test_unserved_project_tools_ignore_the_environment(
     start_episode.assert_not_called()
     traces = _traces(task)
     assert len(traces) == 1
-    assert traces[0].episode is None
-    assert traces[0].episode is None
+    assert traces[0].world_episode is None
+    assert traces[0].world_episode is None
     assert not session_manager._sessions
 
 
@@ -521,7 +525,9 @@ async def test_later_judge_reuses_trace_and_instance(
     assert len(generator.outputs) == 1
     assert launched == set()
     assert len(second.runs(readonly=True)) == 1
-    assert RecordingJudge.seen[-1].episode.episode_id == (trace.episode.episode_id)
+    assert RecordingJudge.seen[-1].world_episode.episode_id == (
+        trace.world_episode.episode_id
+    )
     assert RecordingJudge.states["look"]["notes"] == ["look"]
 
 
@@ -552,8 +558,8 @@ async def test_changed_environment_version_regenerates_the_trace(
             await _drain(_runner([second], run_config, session_manager))
     traces = _traces(task)
     assert len(traces) == 2
-    assert len({t.episode.world_version for t in traces}) == 2
-    assert len({t.episode.episode_id for t in traces}) == 2
+    assert len({t.world_episode.world_version for t in traces}) == 2
+    assert len({t.world_episode.episode_id for t in traces}) == 2
 
 
 async def test_missing_world_is_an_error_not_a_skip(
@@ -650,7 +656,7 @@ async def test_concurrent_judges_share_one_generation_and_instance(
         assert run.skipped_reason is None, cfg.name
         assert run.scores == {"accuracy": 1.0}, cfg.name
     (trace,) = _traces(task)
-    assert trace.episode.state["notes"] == ["look"]
+    assert trace.world_episode.final_state["notes"] == ["look"]
     assert session_manager._sessions == {}
 
 
@@ -684,8 +690,8 @@ async def test_multi_turn_drive_shares_one_instance_across_turns(
         eval_,
         CodeEvalProperties(
             code=(
-                "def score(output, episode):\n"
-                "    notes = episode['state']['notes']\n"
+                "def score(output, world_episode):\n"
+                "    notes = world_episode['final_state']['notes']\n"
                 "    return {'accuracy': 1.0 if notes == ['first note', 'second note'] else 0.0}\n"
             ),
             timeout_seconds=30,
@@ -737,11 +743,11 @@ async def test_multi_turn_drive_shares_one_instance_across_turns(
     traces = _traces(task)
     assert len(traces) == 1
     trace = traces[0]
-    assert trace.episode is not None
-    assert trace.episode.episode_id == seen_instances[0]
-    assert trace.episode.state["notes"] == ["first note", "second note"]
-    assert trace.episode.state["step_count"] == 2
-    assert trace.episode.world_version == f"{ENV_NAME}@1.0.0"
+    assert trace.world_episode is not None
+    assert trace.world_episode.episode_id == seen_instances[0]
+    assert trace.world_episode.final_state["notes"] == ["first note", "second note"]
+    assert trace.world_episode.final_state["step_count"] == 2
+    assert trace.world_episode.world_version == f"{ENV_NAME}@1.0.0"
     run = cfg.runs(readonly=True)[0]
     assert run.skipped_reason is None
     assert run.scores == {"accuracy": 1.0}
@@ -800,9 +806,9 @@ async def test_end_episode_settles_record_before_grading(
         await _drain(_runner([scorer], run_config, session_manager))
 
     (trace,) = _traces(task)
-    assert trace.episode is not None
-    assert trace.episode.state["notes"] == ["note"]
-    assert trace.episode.state["step_count"] == 1
+    assert trace.world_episode is not None
+    assert trace.world_episode.final_state["notes"] == ["note"]
+    assert trace.world_episode.final_state["step_count"] == 1
 
     scorer_run = scorer.runs(readonly=True)[0]
     assert scorer_run.skipped_reason is None
@@ -815,9 +821,9 @@ async def test_end_episode_settles_record_before_grading(
     judge_run = judge.runs(readonly=True)[0]
     assert judge_run.skipped_reason is None
     (seen,) = RecordingJudge.seen
-    assert seen.episode is not None
-    assert seen.episode.episode_id == trace.episode.episode_id
-    assert seen.episode.state["notes"] == ["note"]
+    assert seen.world_episode is not None
+    assert seen.world_episode.episode_id == trace.world_episode.episode_id
+    assert seen.world_episode.final_state["notes"] == ["note"]
 
 
 async def test_project_versions_of_served_tools_are_refused(
@@ -864,8 +870,8 @@ async def test_project_tools_the_world_does_not_serve_are_allowed(
         await _drain(_runner([cfg], run_config, session_manager))
     assert generator.outputs["ei_a"] == "real-write"
     (trace,) = _traces(task)
-    assert trace.episode is not None
-    assert trace.episode.state["notes"] == []
+    assert trace.world_episode is not None
+    assert trace.world_episode.final_state["notes"] == []
 
 
 async def test_tool_error_reaches_the_model_and_ends_the_episode(
@@ -881,5 +887,5 @@ async def test_tool_error_reaches_the_model_and_ends_the_episode(
     assert generator.outputs["ei_a"] == "boom"
     assert generator.errors["ei_a"] == "boom"
     (trace,) = _traces(task)
-    assert trace.episode.state["notes"] == []
-    assert trace.episode.state["step_count"] == 1
+    assert trace.world_episode.final_state["notes"] == []
+    assert trace.world_episode.final_state["step_count"] == 1

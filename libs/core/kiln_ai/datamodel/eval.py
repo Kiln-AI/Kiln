@@ -43,7 +43,7 @@ from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.task_run import Usage
 from kiln_ai.datamodel.tool_id import ToolId, validate_tool_allowlist
 from kiln_ai.datamodel.world import (
-    Episode,
+    WorldEpisode,
     WorldReset,
 )
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -714,9 +714,9 @@ class EvalTaskInput(BaseModel):
         default=None,
         description="The original task input text.",
     )
-    episode: Episode | None = Field(
+    world_episode: WorldEpisode | None = Field(
         default=None,
-        description="The world episode the trace's world tools ran in, when the run used a world: its reset kwargs, what the environment reported at reset, and the environment's final state. Judges reference it in their prompt template (e.g. {{ episode.state }}); code scorers receive it as the `episode` argument.",
+        description="The world episode the trace's world tools ran in, when the run used a world: the reset it started from, what the environment reported at reset, and the environment's final state. Judges reference it in their prompt template (e.g. {{ world_episode.final_state }}); code scorers receive it as the `world_episode` argument.",
     )
 
     @classmethod
@@ -776,7 +776,7 @@ class EvalTaskInput(BaseModel):
             trace=trace_data,
             reference_data=reference_data,
             task_input=task_input,
-            episode=trace.episode,
+            world_episode=trace.world_episode,
         )
 
     @classmethod

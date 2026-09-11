@@ -8,7 +8,7 @@ from kiln_ai.datamodel.json_schema import validate_schema_dict
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId, ToolId
 
 if TYPE_CHECKING:
-    from kiln_ai.datamodel.world import Episode
+    from kiln_ai.datamodel.world import WorldEpisode
 
 
 class ToolFunction(TypedDict):
@@ -43,9 +43,9 @@ class ToolCallContext:
     """The episode the calling run is executing against, if any.
 
     Populated from the run context by every caller that builds a context (adapter,
-    Kiln task tool, code-eval server). Code-eval scorers receive it as the `episode`
+    Kiln task tool, code-eval server). Code-eval scorers receive it as the `world_episode`
     argument of `score()`; sandboxed tools do not see it."""
-    episode: "Episode | None" = None
+    episode: "WorldEpisode | None" = None
 
 
 class ToolCallResult(BaseModel):

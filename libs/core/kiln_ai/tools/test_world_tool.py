@@ -14,9 +14,10 @@ from kiln_ai.datamodel.tool_id import (
     build_world_tool_id,
 )
 from kiln_ai.datamodel.world import (
-    Episode,
     OpenEnvTool,
     World,
+    WorldEpisode,
+    WorldReset,
 )
 from kiln_ai.run_context import (
     EpisodeContext,
@@ -91,7 +92,11 @@ def session_manager():
 
 def _context(world, session_manager):
     return EpisodeContext(
-        episode=Episode(episode_id="ep_test", world_id=world.id),
+        episode=WorldEpisode(
+            reset=WorldReset(world_id=world.id),
+            episode_id="ep_test",
+            world_version="w@1",
+        ),
         world=world,
         session_manager=session_manager,  # type: ignore[arg-type]
         tools={

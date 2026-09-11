@@ -37,7 +37,7 @@ is a dict key: an id-less item and an id-less run config would produce one
 other's traces. `trace_key()` is where that impossibility is enforced.
 
 `world_version` separates generations of the same item under the same run config made in
-different versions of a world. It is read from the run's `episode` record, and is `""` for
+different versions of a world. It is read from the run's `world_episode` record, and is `""` for
 runs without one, so ordinary traces keep matching the jobs that produced them."""
 
 
@@ -75,7 +75,7 @@ def _stored_trace_key(run: TaskRun) -> TraceKey | None:
     return trace_key(
         eval_item_key(run.eval_source),
         run_config_id,
-        run.episode.world_version if run.episode is not None else None,
+        run.world_episode.world_version if run.world_episode is not None else None,
     )
 
 
