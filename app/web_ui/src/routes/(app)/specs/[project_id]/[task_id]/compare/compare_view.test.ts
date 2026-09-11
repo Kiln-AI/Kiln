@@ -1,10 +1,13 @@
 import { describe, it, expect } from "vitest"
+import type { Eval } from "$lib/types"
 import {
   applyMetricLabels,
+  buildScoreAxisMaxes,
   filterVisibleSections,
   listHiddenMetrics,
   parseHiddenListParam,
   parseMetricLabelsParam,
+  scoreTypeMax,
   withMetricLabel,
   type ComparisonSection,
 } from "./compare_view"
@@ -223,5 +226,67 @@ describe("withMetricLabel", () => {
     const existing = { [key]: "Injection OK" }
     withMetricLabel(existing, key, "", "Overall Correct")
     expect(existing).toEqual({ [key]: "Injection OK" })
+  })
+})
+
+describe("scoreTypeMax", () => {
+  it("gives each bounded rating type its own full range", () => {
+    expect(scoreTypeMax("five_star")).toBe(5)
+    expect(scoreTypeMax("pass_fail")).toBe(1)
+    expect(scoreTypeMax("pass_fail_critical")).toBe(1)
+  })
+
+  it("gives an unbounded custom score no range", () => {
+    expect(scoreTypeMax("custom")).toBeNull()
+  })
+})
+
+function make_eval(
+  scores: { name: string; type: Eval["output_scores"][number]["type"] }[],
+): Eval {
+  return {
+    output_scores: scores.map((score) => ({ ...score, instruction: null })),
+  } as unknown as Eval
+}
+
+describe("buildScoreAxisMaxes", () => {
+  it("keys each max by the comparison table's eval id and score key", () => {
+    expect(
+      buildScoreAxisMaxes({
+        eval_1: make_eval([{ name: "Overall Correct", type: "pass_fail" }]),
+      }),
+    ).toEqual({ "eval_1::overall_correct": 1 })
+  })
+
+  it("takes the max from the score's own rating type", () => {
+    expect(
+      buildScoreAxisMaxes({
+        eval_1: make_eval([
+          { name: "Overall Rating", type: "five_star" },
+          { name: "Attack Missed", type: "pass_fail_critical" },
+        ]),
+        eval_2: make_eval([{ name: "Tone", type: "pass_fail" }]),
+      }),
+    ).toEqual({
+      "eval_1::overall_rating": 5,
+      "eval_1::attack_missed": 1,
+      "eval_2::tone": 1,
+    })
+  })
+
+  it("leaves out a custom score, so its axis stays data-relative", () => {
+    expect(
+      buildScoreAxisMaxes({
+        eval_1: make_eval([
+          { name: "Depth", type: "custom" },
+          { name: "Overall Correct", type: "pass_fail" },
+        ]),
+      }),
+    ).toEqual({ "eval_1::overall_correct": 1 })
+  })
+
+  it("contributes nothing for an eval with no output scores, or an empty cache", () => {
+    expect(buildScoreAxisMaxes({ eval_1: make_eval([]) })).toEqual({})
+    expect(buildScoreAxisMaxes({})).toEqual({})
   })
 })

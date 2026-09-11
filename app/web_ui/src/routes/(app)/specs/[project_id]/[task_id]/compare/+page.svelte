@@ -35,7 +35,6 @@
     getRunConfigInputTransformSummaryLabel,
   } from "$lib/utils/run_config_formatters"
   import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
-  import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
   import { tagFromFilterId } from "../spec_utils"
@@ -52,6 +51,7 @@
   } from "$lib/utils/compare_metric_keys"
   import {
     applyMetricLabels,
+    buildScoreAxisMaxes,
     filterVisibleSections,
     listHiddenMetrics,
     parseHiddenListParam,
@@ -528,34 +528,8 @@
     })
   }
 
-  // Full range of each score type. Custom scores are unbounded, so they get no
-  // absolute max and stay on data-relative scaling in the radar chart.
-  function score_type_max(score_type: string): number | null {
-    switch (score_type) {
-      case "five_star":
-        return 5
-      case "pass_fail":
-        return 1
-      case "pass_fail_critical":
-        return 1
-      default:
-        return null
-    }
-  }
-
   // Absolute (full range) max per radar axis key, for the chart's "Full Scale" mode
-  $: scoreAxisMaxes = (() => {
-    const maxes: Record<string, number> = {}
-    for (const [eval_id, evalData] of Object.entries(eval_data_cache)) {
-      for (const score of evalData?.output_scores || []) {
-        const max = score_type_max(score.type)
-        if (max !== null) {
-          maxes[`${eval_id}::${string_to_json_key(score.name)}`] = max
-        }
-      }
-    }
-    return maxes
-  })()
+  $: scoreAxisMaxes = buildScoreAxisMaxes(eval_data_cache)
 
   function generateComparisonFeatures(
     models: (string | null)[],
