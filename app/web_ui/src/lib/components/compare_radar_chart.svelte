@@ -103,7 +103,7 @@ Cost, latency and token axes score each run config against the others, so they s
   // When there's nothing to draw, say which of the two reasons it is
   $: noDataMessage =
     omittedAxisCount > 0
-      ? `The selected run configurations share fewer than ${MIN_RADAR_AXES} scores with results. Run the missing evals, or compare fewer run configurations.`
+      ? `Fewer than ${MIN_RADAR_AXES} axes have a result for every selected run configuration. Run the missing evals, or compare fewer run configurations.`
       : "Create and run evals to see a comparison chart."
 
   function setScale(useAbsolute: boolean) {
@@ -407,7 +407,7 @@ Cost, latency and token axes score each run config against the others, so they s
     {:else}
       <ChartNoData
         title={omittedAxisCount > 0
-          ? "Not Enough Shared Scores"
+          ? "Not Enough Shared Axes"
           : "No Data Available"}
         message={noDataMessage}
       />

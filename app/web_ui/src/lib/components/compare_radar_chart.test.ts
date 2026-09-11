@@ -657,7 +657,7 @@ describe("compare radar chart empty states", () => {
     expect(setOptionCalls).toHaveLength(0)
   })
 
-  it("shows the not enough shared scores state when the plotted configs share fewer than three", async () => {
+  it("shows the not enough shared axes state when the plotted configs share fewer than three", async () => {
     const { container } = renderChart({
       ...fixtures.three_configs,
       comparisonFeatures: [EVAL_SECTION],
@@ -671,9 +671,9 @@ describe("compare radar chart empty states", () => {
       }),
     })
     await tick()
-    expect(container.textContent).toContain("Not Enough Shared Scores")
+    expect(container.textContent).toContain("Not Enough Shared Axes")
     expect(container.textContent).toContain(
-      "The selected run configurations share fewer than 3 scores with results.",
+      "Fewer than 3 axes have a result for every selected run configuration.",
     )
     expect(container.textContent).toContain(
       "Not shown: 2 axes without results for every selected run config.",
