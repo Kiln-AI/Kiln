@@ -40,12 +40,12 @@ from kiln_ai.datamodel.datamodel_enums import (
 )
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, EvalInputFilterId
 from kiln_ai.datamodel.json_schema import string_to_json_key
-from kiln_ai.datamodel.synthetic_world import (
-    SyntheticEnvironment,
-    SyntheticInstanceInfo,
-)
 from kiln_ai.datamodel.task_run import Usage
 from kiln_ai.datamodel.tool_id import ToolId, validate_tool_allowlist
+from kiln_ai.datamodel.world import (
+    Episode,
+    WorldReset,
+)
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 if TYPE_CHECKING:
@@ -531,8 +531,6 @@ class SkippedReason(str, Enum):
     incompatible_input_shape = "incompatible_input_shape"
     code_eval_not_trusted = "code_eval_not_trusted"
     type_not_available = "type_not_available"
-    synthetic_instance_unavailable = "synthetic_instance_unavailable"
-    synthetic_instance_invalid = "synthetic_instance_invalid"
 
 
 class V2EvalResult(BaseModel):
@@ -669,9 +667,9 @@ class EvalInput(KilnParentedModel):
         default_factory=list,
         description="Tags for filtering eval inputs.",
     )
-    synthetic_environment: SyntheticEnvironment | None = Field(
+    world_reset: WorldReset | None = Field(
         default=None,
-        description="When set, this input runs against a synthetic world instance created from the named fixture, and the run config's bound tools are replaced by the world's synthetic tools. None runs against the real tools.",
+        description="Reset this world with these keyword arguments before the run; the reset starts the episode the trace records. A run config that lists the world's tools runs the input in that episode; a run config listing the project's own version of a tool the world serves is refused. None runs against the project tools.",
     )
 
     @model_validator(mode="after")
@@ -716,9 +714,9 @@ class EvalTaskInput(BaseModel):
         default=None,
         description="The original task input text.",
     )
-    synthetic_instance: SyntheticInstanceInfo | None = Field(
+    episode: Episode | None = Field(
         default=None,
-        description="Identity and clock of the synthetic world instance the trace ran against, when it ran against one. No filesystem paths: this model travels in API request bodies. Code-eval scorers receive the full record separately.",
+        description="The world episode the trace's world tools ran in, when the run used a world: its reset kwargs, what the environment reported at reset, and the environment's final state. Judges reference it in their prompt template (e.g. {{ episode.state }}); code scorers receive it as the `episode` argument.",
     )
 
     @classmethod
@@ -778,11 +776,7 @@ class EvalTaskInput(BaseModel):
             trace=trace_data,
             reference_data=reference_data,
             task_input=task_input,
-            synthetic_instance=SyntheticInstanceInfo.from_instance(
-                trace.synthetic_instance
-            )
-            if trace.synthetic_instance is not None
-            else None,
+            episode=trace.episode,
         )
 
     @classmethod

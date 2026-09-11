@@ -13,11 +13,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from kiln_ai.datamodel.synthetic_world import (
-        SyntheticInstance,
-        SyntheticTool,
-        SyntheticWorld,
+    from kiln_ai.datamodel.world import (
+        Episode,
+        OpenEnvTool,
+        World,
     )
+    from kiln_ai.worlds.session_manager import WorldSessionManager
 
 _agent_run_id: ContextVar[str | None] = ContextVar("agent_run_id", default=None)
 
@@ -39,19 +40,16 @@ def generate_agent_run_id() -> str:
 
 
 @dataclass(frozen=True)
-class SyntheticInstanceContext:
-    """The synthetic instance an eval job is running against, plus what the registry
-    needs to swap tools: the world and its bindings, resolved once per job.
-
-    `state_unavailable` marks a reused trace whose instance copy has been evicted:
-    tools are still swapped (nothing should generate), but graders that need the
-    state must skip rather than read a path that no longer exists.
+class EpisodeContext:
+    """The episode an eval job is running against, plus what the registry
+    needs to swap tools: the world, the session manager that holds the live session, and the
+    tools the environment serves (by function name), resolved once per job.
     """
 
-    instance: "SyntheticInstance"
-    world: "SyntheticWorld"
-    bindings: dict[str, "SyntheticTool"] = field(default_factory=dict)
-    state_unavailable: bool = False
+    episode: "Episode"
+    world: "World"
+    session_manager: "WorldSessionManager"
+    tools: dict[str, "OpenEnvTool"] = field(default_factory=dict)
 
 
 # Set by the eval runner for the duration of one job (generation and grading), and
@@ -60,24 +58,22 @@ class SyntheticInstanceContext:
 # share a context. Request handlers and other tasks copy the *server's* context at
 # creation, so they never observe a job's value; that is why the registry override
 # below can never leak into API, chat, or export code paths.
-_synthetic_instance: ContextVar["SyntheticInstanceContext | None"] = ContextVar(
-    "synthetic_instance", default=None
-)
+_episode: ContextVar["EpisodeContext | None"] = ContextVar("episode", default=None)
 
 
-def get_synthetic_instance() -> "SyntheticInstanceContext | None":
-    return _synthetic_instance.get()
+def get_episode() -> "EpisodeContext | None":
+    return _episode.get()
 
 
-def set_synthetic_instance(
-    ctx: "SyntheticInstanceContext | None",
-) -> Token["SyntheticInstanceContext | None"]:
-    return _synthetic_instance.set(ctx)
+def set_episode(
+    ctx: "EpisodeContext | None",
+) -> Token["EpisodeContext | None"]:
+    return _episode.set(ctx)
 
 
-def reset_synthetic_instance(token: Token["SyntheticInstanceContext | None"]) -> None:
-    _synthetic_instance.reset(token)
+def reset_episode(token: Token["EpisodeContext | None"]) -> None:
+    _episode.reset(token)
 
 
-def generate_synthetic_instance_id() -> str:
-    return f"inst_{uuid.uuid4().hex[:16]}"
+def generate_episode_id() -> str:
+    return f"ep_{uuid.uuid4().hex[:16]}"

@@ -21,8 +21,6 @@ import sys
 import types
 from typing import Any, Protocol
 
-from kiln_ai.sandbox.synthetic_env import synthetic_instance_from_env
-
 # ---------------------------------------------------------------------------
 # Typed exceptions
 # ---------------------------------------------------------------------------
@@ -139,10 +137,6 @@ def build_tools_modules(
 
     kiln_mod.tools = tools_mod  # type: ignore[attr-defined]
     kiln_mod.async_tools = async_tools_mod  # type: ignore[attr-defined]
-    # The active synthetic world instance, if the run has one. Read from the
-    # environment the child entry point exported, so it works the same for tools
-    # and scorers and never needs the bridge.
-    kiln_mod.synthetic_instance = synthetic_instance_from_env  # type: ignore[attr-defined]
 
     return kiln_mod, tools_mod, async_tools_mod
 

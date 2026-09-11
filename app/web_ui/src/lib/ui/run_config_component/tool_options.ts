@@ -26,7 +26,8 @@ const AGENT_TOOL_SET_RANK: Record<ToolSetType, number | null> = {
   search: 3,
   kiln_task: 4,
   mcp: 5,
-  demo: 6,
+  world: 6,
+  demo: 7,
   skill: null,
 }
 

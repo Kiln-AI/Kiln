@@ -995,3 +995,75 @@ class TestValidateUniqueAllowlistToolNames:
                 ],
                 project,
             )
+
+
+class TestProjectToolFunctionName:
+    """The offline name lookup the eval runner uses to compare a run config's real
+    tools with the tools a world serves."""
+
+    @pytest.fixture
+    def project(self, tmp_path):
+        project = Project(name="names_proj", path=tmp_path / "project.kiln")
+        project.save_to_file()
+        return project
+
+    def test_mcp_names_ride_in_the_id(self, project):
+        from kiln_ai.tools.tool_registry import project_tool_function_name
+
+        assert (
+            project_tool_function_name("mcp::remote::srv1::lookup", project) == "lookup"
+        )
+        assert (
+            project_tool_function_name("mcp::local::srv1::search", project) == "search"
+        )
+
+    def test_code_tool_name_from_disk(self, project):
+        from kiln_ai.datamodel.code_tool import CodeTool
+        from kiln_ai.datamodel.tool_id import build_code_tool_id
+        from kiln_ai.tools.tool_registry import project_tool_function_name
+
+        ct = CodeTool(
+            name="real",
+            parent=project,
+            tool_function_name="append_note",
+            tool_description="d",
+            parameters_schema={"type": "object", "properties": {}},
+            code="def run():\n    return 'x'\n",
+        )
+        ct.save_to_file()
+        assert (
+            project_tool_function_name(build_code_tool_id(ct.id), project)
+            == "append_note"
+        )
+        assert project_tool_function_name("kiln_tool::code::missing", project) is None
+
+    def test_kiln_task_name_from_server_record(self, project):
+        from kiln_ai.datamodel.tool_id import build_kiln_task_tool_id
+        from kiln_ai.tools.tool_registry import project_tool_function_name
+
+        server = ExternalToolServer(
+            name="task server",
+            parent=project,
+            type=ToolServerType.kiln_task,
+            properties={
+                "name": "summarize",
+                "description": "d",
+                "task_id": "t1",
+                "run_config_id": "rc1",
+                "is_archived": False,
+            },
+        )
+        server.save_to_file()
+        assert (
+            project_tool_function_name(build_kiln_task_tool_id(server.id), project)
+            == "summarize"
+        )
+
+    def test_non_project_ids_and_no_project(self, project):
+        from kiln_ai.tools.tool_registry import project_tool_function_name
+
+        assert project_tool_function_name("kiln_tool::add_numbers", project) is None
+        assert project_tool_function_name("kiln_tool::skill::s1", project) is None
+        assert project_tool_function_name("kiln_tool::world::w::x", project) is None
+        assert project_tool_function_name("mcp::remote::srv1::lookup", None) is None
+        assert project_tool_function_name("mcp::remote::broken", project) is None

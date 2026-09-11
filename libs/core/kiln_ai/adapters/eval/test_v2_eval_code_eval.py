@@ -348,49 +348,33 @@ class TestAsyncScorerEndToEnd:
 
 
 # ---------------------------------------------------------------------------
-# Synthetic world instances
+# World instances
 # ---------------------------------------------------------------------------
 
 
-class TestSyntheticInstanceHandoff:
-    def _ctx(self, tmp_path, state_unavailable=False):
-        from kiln_ai.datamodel.synthetic_world import SyntheticInstance
-        from kiln_ai.run_context import SyntheticInstanceContext
+class TestEpisodeHandoff:
+    def _ctx(self):
+        from kiln_ai.datamodel.world import Episode, World
+        from kiln_ai.run_context import EpisodeContext
 
-        instance = SyntheticInstance(
-            instance_id="inst_x",
+        instance = Episode(
+            episode_id="ep_x",
             world_id="w",
-            path=str(tmp_path / "inst"),
-            source_path=str(tmp_path / "fixture"),
+            state={"notes": ["a"]},
         )
-        return SyntheticInstanceContext(
-            instance=instance, world=Mock(), state_unavailable=state_unavailable
+        return EpisodeContext(
+            episode=instance, world=World(name="w"), session_manager=Mock()
         )
 
-    def test_scorer_declares(self):
-        declares = CodeEvalAdapter._scorer_declares
-        assert declares(
-            "def score(output, synthetic_instance):\n    pass\n", "synthetic_instance"
-        )
-        assert declares(
-            "def score(output, *, synthetic_instance=None):\n    pass\n",
-            "synthetic_instance",
-        )
-        assert not declares("def score(output):\n    pass\n", "synthetic_instance")
-        assert not declares(
-            "def other(synthetic_instance):\n    pass\n", "synthetic_instance"
-        )
-        assert not declares("def score(:\n", "synthetic_instance")
-
-    async def test_scorer_receives_full_record_and_context(self, tmp_path):
-        from kiln_ai.run_context import reset_synthetic_instance, set_synthetic_instance
+    async def test_scorer_receives_full_record_and_context(self):
+        from kiln_ai.run_context import reset_episode, set_episode
 
         cfg = _make_config(
-            code="def score(output, synthetic_instance):\n    return {'accuracy': 1.0}\n"
+            code="def score(output, episode):\n    return {'accuracy': 1.0}\n"
         )
         adapter = CodeEvalAdapter(cfg)
-        ctx = self._ctx(tmp_path)
-        token = set_synthetic_instance(ctx)
+        ctx = self._ctx()
+        token = set_episode(ctx)
         try:
             with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_bridge:
                 mock_bridge.return_value = BridgeResult(
@@ -398,12 +382,12 @@ class TestSyntheticInstanceHandoff:
                 )
                 await adapter.evaluate(_inp())
         finally:
-            reset_synthetic_instance(token)
+            reset_episode(token)
         _, kwargs = mock_bridge.call_args
         inputs = kwargs["args"][1]
-        assert inputs["synthetic_instance"]["instance_id"] == "inst_x"
-        assert inputs["synthetic_instance"]["path"] == str(tmp_path / "inst")
-        assert kwargs["server"]._context.synthetic_instance is ctx.instance
+        assert inputs["episode"]["episode_id"] == "ep_x"
+        assert inputs["episode"]["state"] == {"notes": ["a"]}
+        assert kwargs["server"]._context.episode is ctx.episode
 
     async def test_no_context_passes_none(self):
         adapter = CodeEvalAdapter(_make_config())
@@ -413,71 +397,33 @@ class TestSyntheticInstanceHandoff:
             )
             await adapter.evaluate(_inp())
         _, kwargs = mock_bridge.call_args
-        assert kwargs["args"][1]["synthetic_instance"] is None
-        assert kwargs["server"]._context.synthetic_instance is None
+        assert kwargs["args"][1]["episode"] is None
+        assert kwargs["server"]._context.episode is None
 
-    async def test_evicted_state_skips_scorer_that_reads_it(self, tmp_path):
-        from kiln_ai.datamodel.eval import SkippedReason
-        from kiln_ai.run_context import reset_synthetic_instance, set_synthetic_instance
-
-        cfg = _make_config(
-            code="def score(output, synthetic_instance):\n    return {'accuracy': 1.0}\n"
-        )
-        adapter = CodeEvalAdapter(cfg)
-        token = set_synthetic_instance(self._ctx(tmp_path, state_unavailable=True))
-        try:
-            with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_bridge:
-                result = await adapter.evaluate(_inp())
-        finally:
-            reset_synthetic_instance(token)
-        assert result.skipped_reason == SkippedReason.synthetic_instance_unavailable
-        assert "inst_x" in (result.skipped_detail or "")
-        mock_bridge.assert_not_called()
-
-    async def test_evicted_state_still_runs_trace_only_scorer(self, tmp_path):
-        from kiln_ai.run_context import reset_synthetic_instance, set_synthetic_instance
-
-        adapter = CodeEvalAdapter(_make_config())
-        token = set_synthetic_instance(self._ctx(tmp_path, state_unavailable=True))
-        try:
-            with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_bridge:
-                mock_bridge.return_value = BridgeResult(
-                    result_msg={"ok": {"accuracy": 1.0}}
-                )
-                result = await adapter.evaluate(_inp())
-        finally:
-            reset_synthetic_instance(token)
-        assert result.scores == {"accuracy": 1.0}
-
-    def test_worker_passes_synthetic_instance_only_when_declared(self, tmp_path):
+    def test_worker_passes_episode_only_when_declared(self, tmp_path):
         from kiln_ai.adapters.eval.conftest import run_scorer
 
         record = {
-            "instance_id": "inst_w",
+            "episode_id": "ep_w",
             "world_id": "w",
-            "config": {"fixture_id": "f"},
-            "path": str(tmp_path),
-            "source_path": str(tmp_path),
+            "reset_kwargs": {"fixture_id": "f"},
             "metadata": {"frozen_time": "2026-07-14T00:00:00+00:00"},
-            "world_lib_path": None,
+            "state": {"notes": []},
         }
         declared = (
-            "import os\n"
-            "def score(output, synthetic_instance):\n"
-            "    return {'id': synthetic_instance['instance_id'],"
-            " 'env': os.environ.get('KILN_SYNTHETIC_INSTANCE_ID')}\n"
+            "def score(output, episode):\n    return {'id': episode['episode_id']}\n"
         )
         msg = run_scorer(
             declared,
-            {"output": "o", "task_input": None, "synthetic_instance": record},
+            {"output": "o", "task_input": None, "episode": record},
             10,
         )
-        assert msg["ok"] == {"id": "inst_w", "env": "inst_w"}
+        assert msg["ok"] == {"id": "ep_w"}
 
         undeclared = "def score(output):\n    return {'ok': 1}\n"
         msg = run_scorer(
             undeclared,
-            {"output": "o", "task_input": None, "synthetic_instance": record},
+            {"output": "o", "task_input": None, "episode": record},
             10,
         )
         assert msg["ok"] == {"ok": 1}

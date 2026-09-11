@@ -18,8 +18,8 @@ Tool IDs can be one of:
 - A local MCP tool: mcp::local::<server_id>::<tool_name>
 - A Kiln task tool: kiln_task::<server_id>
 - An SDK / adapter-injected unmanaged tool: kiln_unmanaged::<id> (single slug, not from the registry)
-- A synthetic world tool: kiln_tool::synthetic::<world_id>::<tool_id> (never listed in a run config;
-  the registry substitutes it for the real tool it replaces while a synthetic instance is active)
+- A world tool: kiln_tool::world::<world_id>::<tool_name>, a tool the world's OpenEnv
+  environment serves, usable only while an episode of that world is active
 - More coming soon like kiln_project_tool::rag::RAG_CONFIG_ID
 """
 
@@ -43,7 +43,7 @@ KILN_TASK_TOOL_ID_PREFIX = "kiln_task::"
 SKILL_TOOL_ID_PREFIX = "kiln_tool::skill::"
 KILN_UNMANAGED_TOOL_ID_PREFIX = "kiln_unmanaged::"
 CODE_TOOL_ID_PREFIX = "kiln_tool::code::"
-SYNTHETIC_TOOL_ID_PREFIX = "kiln_tool::synthetic::"
+WORLD_TOOL_ID_PREFIX = "kiln_tool::world::"
 
 
 def kiln_unmanaged_tool_slug_from_id(id: str) -> str:
@@ -141,9 +141,9 @@ def _check_tool_id(id: str) -> str:
         kiln_unmanaged_tool_slug_from_id(id)
         return id
 
-    # Synthetic world tools must have format: kiln_tool::synthetic::<world_id>::<tool_id>
-    if id.startswith(SYNTHETIC_TOOL_ID_PREFIX):
-        synthetic_world_and_tool_ids_from_id(id)
+    # World tools must have format: kiln_tool::world::<world_id>::<tool_name>
+    if id.startswith(WORLD_TOOL_ID_PREFIX):
+        world_and_tool_name_from_id(id)
         return id
 
     raise ValueError(f"Invalid tool ID: {id}")
@@ -224,27 +224,27 @@ def code_tool_id_from_tool_id(tool_id: str) -> str:
     return parts[2]
 
 
-def build_synthetic_tool_id(world_id: ID_TYPE, synthetic_tool_id: ID_TYPE) -> str:
-    """Construct the tool ID for a synthetic world tool."""
-    return f"{SYNTHETIC_TOOL_ID_PREFIX}{world_id}::{synthetic_tool_id}"
+def build_world_tool_id(world_id: ID_TYPE, tool_name: str) -> str:
+    """Construct the tool ID for a tool a world's environment serves."""
+    return f"{WORLD_TOOL_ID_PREFIX}{world_id}::{tool_name}"
 
 
-def synthetic_world_and_tool_ids_from_id(tool_id: str) -> tuple[str, str]:
-    """Extract ``(world_id, synthetic_tool_id)`` from a synthetic world tool ID.
+def world_and_tool_name_from_id(tool_id: str) -> tuple[str, str]:
+    """Extract ``(world_id, tool_name)`` from a world tool ID.
 
-    Four segments, unlike every other ``kiln_tool::`` form, because a synthetic tool
-    is only meaningful inside the world that owns it.
+    Four segments, unlike every other ``kiln_tool::`` form, because a world tool
+    is only meaningful inside the world that serves it.
     """
     parts = tool_id.split("::")
     if (
-        not tool_id.startswith(SYNTHETIC_TOOL_ID_PREFIX)
+        not tool_id.startswith(WORLD_TOOL_ID_PREFIX)
         or len(parts) != 4
         or not parts[2]
         or not parts[3]
     ):
         raise ValueError(
-            f"Invalid synthetic tool ID: {tool_id}. Expected format: "
-            "'kiln_tool::synthetic::<world_id>::<tool_id>'."
+            f"Invalid world tool ID: {tool_id}. Expected format: "
+            "'kiln_tool::world::<world_id>::<tool_name>'."
         )
     return parts[2], parts[3]
 
@@ -301,12 +301,6 @@ def validate_tool_allowlist(
             raise ValueError(
                 f"Unmanaged tool IDs cannot be used in tool_allowlist: {tool_id}. "
                 "Unmanaged tools are SDK-injected and not resolvable by the registry."
-            )
-        if tool_id.startswith(SYNTHETIC_TOOL_ID_PREFIX):
-            raise ValueError(
-                f"Synthetic tool IDs cannot be used in tool_allowlist: {tool_id}. "
-                "Reference the real tool instead; the registry substitutes the synthetic "
-                "tool while a synthetic instance is active."
             )
         if tool_id in seen:
             raise ValueError(f"Duplicate tool ID in tool_allowlist: {tool_id}")

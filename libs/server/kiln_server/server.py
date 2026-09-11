@@ -102,8 +102,8 @@ tags_metadata = [
         "description": "Create, test, and manage user-authored Python code tools.",
     },
     {
-        "name": "Synthetic Worlds",
-        "description": "Manage synthetic worlds: replicas of an agent's tool set, their fixtures, and the synthetic tools that stand in for real ones during evals.",
+        "name": "Worlds",
+        "description": "Manage worlds: pointers to running OpenEnv environments that play an agent's tool set, and the tools they serve.",
     },
     {
         "name": "Tools & MCP",

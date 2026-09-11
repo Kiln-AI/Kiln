@@ -1,7 +1,16 @@
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, AsyncGenerator, Callable, Dict, List, Literal, Set, Tuple
+from typing import (
+    Any,
+    AsyncGenerator,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Literal,
+    Set,
+    Tuple,
+)
 
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
 from kiln_ai.adapters.chat.chat_formatter import (
@@ -47,24 +56,28 @@ from kiln_ai.datamodel.eval_splits import (
     eval_run_item_key,
     item_key,
 )
+from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     as_kiln_agent_run_config,
 )
-from kiln_ai.datamodel.synthetic_world import (
-    SyntheticEnvironment,
-    SyntheticInstance,
-    SyntheticWorld,
-    synthetic_fingerprint,
-)
 from kiln_ai.datamodel.task import Task, TaskRunConfig
 from kiln_ai.datamodel.task_run import EvalItemSource, TaskRun, Usage
+from kiln_ai.datamodel.tool_id import (
+    WORLD_TOOL_ID_PREFIX,
+    world_and_tool_name_from_id,
+)
 from kiln_ai.datamodel.usage import MessageUsage
+from kiln_ai.datamodel.world import (
+    OpenEnvTool,
+    World,
+    WorldReset,
+)
 from kiln_ai.run_context import (
-    SyntheticInstanceContext,
-    get_synthetic_instance,
-    reset_synthetic_instance,
-    set_synthetic_instance,
+    EpisodeContext,
+    get_episode,
+    reset_episode,
+    set_episode,
 )
 from kiln_ai.synthetic_user import drive_case_for_eval
 from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
@@ -72,14 +85,15 @@ from kiln_ai.synthetic_user.models import (
     TAG_SU_ENDED_CONVERSATION,
     SyntheticUserDriverConfig,
 )
-from kiln_ai.synthetic_worlds.launcher import (
-    SyntheticWorldLauncher,
-    launcher_for_world,
-)
+from kiln_ai.tools.tool_registry import project_tool_function_name
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam, serialize_trace
 from kiln_ai.utils.slow_operation import log_if_slow
+from kiln_ai.worlds.session_manager import (
+    WorldSessionManager,
+    shared_session_manager,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -236,15 +250,15 @@ def _splits_a_turn_into_two_messages(
 
 
 @dataclass(frozen=True)
-class _SyntheticTarget:
-    """A resolved synthetic environment: what a job needs to launch instances and to
+class _WorldTarget:
+    """A resolved world: what a job needs to launch episodes and to
     key its traces."""
 
-    world: SyntheticWorld
-    launcher: SyntheticWorldLauncher
-    config: dict[str, Any]
-    bindings: dict[str, Any]
-    variant: str
+    world: World
+    session_manager: WorldSessionManager
+    reset_kwargs: dict[str, Any]
+    tools: dict[str, OpenEnvTool]
+    world_version: str
 
 
 @dataclass(frozen=True)
@@ -262,12 +276,82 @@ class _Skip:
     detail: str
 
 
-def _synthetic_environment_of(job: EvalJob) -> SyntheticEnvironment | None:
-    """The synthetic environment a job's item declares, if it is an EvalInput with one."""
+def _world_reset_of(job: EvalJob) -> WorldReset | None:
+    """The world reset a job's item declares, if it is an EvalInput with one."""
     item = getattr(job, "item", None)
     if isinstance(item, EvalInput):
-        return item.synthetic_environment
+        return item.world_reset
     return None
+
+
+def _run_config_tool_ids(run_config: TaskRunConfig) -> list[str]:
+    tools_config = getattr(run_config.run_config_properties, "tools_config", None)
+    return list(tools_config.tools) if tools_config is not None else []
+
+
+def _uses_world(
+    run_config: TaskRunConfig,
+    item: EvalInput | TaskRun,
+    world_reset: WorldReset | None,
+) -> bool:
+    """Whether this job runs in the input's world: only when the run config
+    lists that world's tools. A run config with no world tools runs the input
+    against project tools and never launches an episode, world or not. World
+    tools without an world_reset, or from a different world, are an error rather than
+    a silent run against the wrong tools. (Real versions of the world's own tools are
+    refused separately, once the world's tools are known.)"""
+    world_tool_ids = [
+        t
+        for t in _run_config_tool_ids(run_config)
+        if t.startswith(WORLD_TOOL_ID_PREFIX)
+    ]
+    if not world_tool_ids:
+        return False
+    item_label = f"eval input {item.id}"
+    if world_reset is None:
+        raise ValueError(
+            f"Run config '{run_config.name}' lists world tools "
+            f"({', '.join(world_tool_ids)}) but {item_label} has no "
+            "world_reset. Use a run config with project tools for this "
+            "input, or give the input a world_reset."
+        )
+    worlds = {world_and_tool_name_from_id(t)[0] for t in world_tool_ids}
+    if worlds != {world_reset.world_id}:
+        raise ValueError(
+            f"{item_label} runs in world {world_reset.world_id}, but run "
+            f"config '{run_config.name}' lists tools from world(s) "
+            f"{sorted(worlds - {world_reset.world_id})}. A job runs in one world."
+        )
+    return True
+
+
+def _check_project_versions_of_served_tools(
+    run_config: TaskRunConfig,
+    item: EvalInput | TaskRun,
+    world_reset: WorldReset,
+    world: World,
+    served: Iterable[str],
+    project: Project | None,
+) -> None:
+    """An input with a world may not meet the project's own version of any
+    tool its world serves: a run config listing one is refused before anything runs. Project tools
+    the world does not serve are fine. Names are compared offline."""
+    served_names = set(served)
+    clashes = [
+        f"{tool_id} ({name})"
+        for tool_id in _run_config_tool_ids(run_config)
+        if not tool_id.startswith(WORLD_TOOL_ID_PREFIX)
+        for name in [project_tool_function_name(tool_id, project)]
+        if name is not None and name in served_names
+    ]
+    if clashes:
+        raise ValueError(
+            f"eval input {item.id} runs in world '{world.name}', but "
+            f"run config '{run_config.name}' lists the project's own version of tools the "
+            f"world serves: {', '.join(clashes)}. List the world's tools "
+            f"(kiln_tool::world::{world.id}::<tool_name>) instead, or use an "
+            "input without a world_reset to run against the project tools."
+        )
 
 
 def no_golden_set_message(eval: Eval) -> str:
@@ -304,7 +388,7 @@ class EvalRunner:
         eval_run_type: Literal["eval_config_eval", "task_run_eval"],
         split: ResolvedSplit | None = None,
         save_context: SaveContext | None = None,
-        synthetic_launcher: SyntheticWorldLauncher | None = None,
+        world_session_manager: WorldSessionManager | None = None,
     ):
         if len(eval_configs) == 0:
             raise ValueError("Eval runner requires at least one eval config")
@@ -371,15 +455,9 @@ class EvalRunner:
         # visible to the next, whether that next job is running concurrently under a
         # different eval config or is this job's own retry (functional spec 4.2, 4.3).
         self._trace_index = TraceIndex(self.task, vet=self._build_trace_vet())
-        # A launcher passed in overrides the world's own (tests point the cache at
-        # tmp_path); otherwise each world's `launcher` name selects one.
-        self._synthetic_launcher_override = synthetic_launcher
-        # Instances found unchanged during this run. Released only after every job has
-        # finished: a concurrent judge of the same trace may still be reading one, and
-        # its record predates the `unchanged` re-save.
-        self._unchanged_instances: List[
-            tuple[SyntheticWorldLauncher, SyntheticInstance]
-        ] = []
+        # A session manager passed in replaces the process-wide OpenEnv session manager (tests use a
+        # fake, or point the real one at a temporary cache).
+        self._world_session_manager_override = world_session_manager
 
     def _build_trace_vet(self) -> Callable[[TraceKey, TaskRun], str | None] | None:
         """The completeness check the trace index applies to reuse candidates, or None
@@ -683,20 +761,14 @@ class EvalRunner:
         """
         jobs = self.collect_tasks()
 
-        if any(_synthetic_environment_of(job) is not None for job in jobs):
-            await self._prune_synthetic_instances()
-
         runner = AsyncJobRunner(
             concurrency=concurrency,
             jobs=jobs,
             run_job_fn=self.run_job,
             max_retries=2,
         )
-        try:
-            async for progress in runner.run():
-                yield progress
-        finally:
-            await self._drop_unchanged_instances()
+        async for progress in runner.run():
+            yield progress
 
     async def run_job(self, job: EvalJob) -> bool:
         try:
@@ -839,32 +911,44 @@ class EvalRunner:
             and job.type == "task_run_eval"
         )
 
-        # Synthetic world lane. After the type skip (a skipped item must never create
-        # an instance) and before either generation lane, so single-turn and multi-turn
-        # inputs share one lifecycle: the multi-turn drive runs with the instance in
+        # World lane. After the type skip (a skipped item must never create
+        # an episode) and before either generation lane, so single-turn and multi-turn
+        # inputs share one lifecycle: the multi-turn drive runs with the episode in
         # context for every turn, and the leaf trace records it.
-        environment = _synthetic_environment_of(job)
-        if environment is not None:
-            if job.task_run_config is None:
-                raise ValueError("A task_run_eval job requires a run config")
-            target = await self._resolve_synthetic_target(environment)
+        world_reset = _world_reset_of(job)
+        uses_world = job.task_run_config is not None and _uses_world(
+            job.task_run_config, job.item, world_reset
+        )
+        if world_reset is not None and job.task_run_config is not None:
+            # Checked whether or not the job uses the world: a project-tools run config is
+            # exactly what an input's world reset must keep it away from.
+            target = await self._resolve_world_target(world_reset)
+            _check_project_versions_of_served_tools(
+                job.task_run_config,
+                job.item,
+                world_reset,
+                target.world,
+                target.tools,
+                self.task.parent_project(),
+            )
+        if uses_world:
+            assert world_reset is not None and job.task_run_config is not None
+            target = await self._resolve_world_target(world_reset)
             if is_multi_turn_input:
                 assert isinstance(job.item, EvalInput)
                 assert isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
                 generation = self._multi_turn_generation(
-                    job, job.item, job.item.data, variant=target.variant
+                    job, job.item, job.item.data, world_version=target.world_version
                 )
             else:
                 generation = self._single_turn_generation(
-                    job, evaluator, variant=target.variant
+                    job, evaluator, world_version=target.world_version
                 )
             if isinstance(generation, _Skip):
                 return await self._persist_skip(
                     job, generation.reason, generation.detail
                 )
-            return await self._run_v2_job_in_synthetic_world(
-                job, evaluator, target, generation
-            )
+            return await self._run_v2_job_in_world(job, evaluator, target, generation)
 
         if is_multi_turn_input:
             # Multi-turn synthetic input: re-drive the conversation fresh
@@ -923,80 +1007,68 @@ class EvalRunner:
         result = await evaluator.evaluate(eval_task_input)
         return await self._persist_judgment(job, trace, result)
 
-    async def _run_v2_job_in_synthetic_world(
+    async def _run_v2_job_in_world(
         self,
         job: EvalJob,
         evaluator: BaseV2EvalBridge,
-        target: "_SyntheticTarget",
+        target: "_WorldTarget",
         generation: "_Generation",
     ) -> bool:
-        """One job against a synthetic world instance, for either generation lane.
+        """One job against a episode, for either generation lane.
 
         Generation runs under the trace index's per-key lock with a freshly launched
-        instance in context, so racing judges of one item share a single generation and
-        a single instance, and every turn of a multi-turn drive sees the same instance.
-        The launcher finalizes the instance before the lock is released. Grading then
-        runs with the context rebuilt from whatever the trace recorded — the same
-        record for a reused trace — so scorers read the state the generation actually
-        left. The context is reset in `finally` both times: worker tasks are reused
-        across jobs.
+        episode in context, so racing judges of one item share a single generation and
+        a single episode, and every turn of a multi-turn drive sees the same episode.
+        The session manager ends the episode (reads the environment's state and closes
+        the session) before the lock is released, and the trace persists the settled
+        record. Grading then runs with the context rebuilt from whatever the trace
+        recorded — the same record for a reused trace — so scorers read the state the
+        generation actually left. The context is reset in `finally` both times: worker
+        tasks are reused across jobs.
         """
 
         async def generate() -> TaskRun:
-            instance = await target.launcher.launch(target.world, target.config)
-            token = set_synthetic_instance(
-                SyntheticInstanceContext(
-                    instance=instance, world=target.world, bindings=target.bindings
+            episode = await target.session_manager.start_episode(
+                target.world, target.reset_kwargs
+            )
+            token = set_episode(
+                EpisodeContext(
+                    episode=episode,
+                    world=target.world,
+                    session_manager=target.session_manager,
+                    tools=target.tools,
                 )
             )
             try:
-                run = await generation.generate()
-            finally:
-                reset_synthetic_instance(token)
-            # Finalize before anyone grades: the launcher records what graders will
-            # need (unchanged, changes, validity) and the trace persists it, so a
+                try:
+                    run = await generation.generate()
+                finally:
+                    reset_episode(token)
+            except BaseException:
+                await target.session_manager.release(episode)
+                raise
+            # End the episode before anyone grades: the session manager records what graders will
+            # need (state, rewards, validity) and the trace persists it, so a
             # concurrent judge reusing this generation sees the settled record.
-            finalized = await target.launcher.finalize(instance)
-            if finalized != instance:
-                run.synthetic_instance = finalized
-                async with self._save_context():
-                    run.save_to_file()
-            if finalized.unchanged:
-                self._unchanged_instances.append((target.launcher, finalized))
+            ended = await target.session_manager.end_episode(episode)
+            run.episode = ended
+            async with self._save_context():
+                run.save_to_file()
             return run
 
         trace, _ = await self._trace_index.get_or_create(generation.key, generate)
-        instance = trace.synthetic_instance
-        if instance is None:
+        episode = trace.episode
+        if episode is None:
             raise ValueError(
-                f"Eval trace {trace.id} was generated for a synthetic environment but "
-                "records no synthetic instance"
+                f"Eval trace {trace.id} was generated for a world but "
+                "records no episode"
             )
-        if target.world.strict and not instance.valid:
-            return await self._persist_skip(
-                job,
-                SkippedReason.synthetic_instance_invalid,
-                f"Synthetic instance {instance.instance_id} was judged invalid by its "
-                f"launcher: {instance.invalid_reason or 'no reason given'}",
-            )
-        state_unavailable = (
-            instance.path is not None
-            and not instance.unchanged
-            and not Path(instance.path).is_dir()
-        )
-        if state_unavailable:
-            logger.warning(
-                "Synthetic instance %s for trace %s has been evicted; graders that "
-                "need its state will be skipped rather than regenerating",
-                instance.instance_id,
-                trace.id,
-            )
-        token = set_synthetic_instance(
-            SyntheticInstanceContext(
-                instance=instance,
+        token = set_episode(
+            EpisodeContext(
+                episode=episode,
                 world=target.world,
-                bindings=target.bindings,
-                state_unavailable=state_unavailable,
+                session_manager=target.session_manager,
+                tools=target.tools,
             )
         )
         try:
@@ -1004,85 +1076,51 @@ class EvalRunner:
             result = await evaluator.evaluate(eval_task_input)
             return await self._persist_judgment(job, trace, result)
         finally:
-            reset_synthetic_instance(token)
+            reset_episode(token)
 
-    async def _resolve_synthetic_target(
-        self, environment: SyntheticEnvironment
-    ) -> "_SyntheticTarget":
-        """The world an input names, its launcher, and the trace variant — or an error:
-        never a silent fallback. The launch config is the launcher's to validate, which
-        it does at launch."""
+    async def _resolve_world_target(self, world_reset: WorldReset) -> "_WorldTarget":
+        """The world an input names, the tools its environment serves, and the trace
+        world_version — or an error: never a silent fallback. The launch config is the
+        environment's to validate, which it does at reset."""
         project = self.task.parent_project()
         if project is None:
-            raise ValueError(
-                "Synthetic environments require the task to belong to a project"
-            )
-        world = SyntheticWorld.from_id_and_parent_path(
-            environment.world_id, project.path
-        )
+            raise ValueError("World resets require the task to belong to a project")
+        world = World.from_id_and_parent_path(world_reset.world_id, project.path)
         if world is None:
             raise ValueError(
-                f"Synthetic world {environment.world_id} not found in project {project.id}"
+                f"World {world_reset.world_id} not found in project {project.id}"
             )
-        launcher = self._synthetic_launcher_override or launcher_for_world(world)
-        return _SyntheticTarget(
+        session_manager = (
+            self._world_session_manager_override or shared_session_manager()
+        )
+        tools = {tool.name: tool for tool in await session_manager.list_tools(world)}
+        return _WorldTarget(
             world=world,
-            launcher=launcher,
-            config=environment.config,
-            bindings=world.bindings(),
-            variant=synthetic_fingerprint(
-                world.id or "",
-                environment.config,
-                await launcher.content_version(world, environment.config),
+            session_manager=session_manager,
+            reset_kwargs=world_reset.reset_kwargs,
+            tools=tools,
+            # The input's id stands for its contents (including world_reset), and the
+            # run config's id for the tools, so the only thing the trace key still
+            # needs is the environment's version: it lives on a server, not in the
+            # project, and a bump must not reuse traces made against the old code.
+            world_version=await session_manager.world_version(
+                world, world_reset.reset_kwargs
             ),
         )
 
     def _single_turn_generation(
-        self, job: EvalJob, evaluator: BaseV2EvalBridge, variant: str | None = None
+        self,
+        job: EvalJob,
+        evaluator: BaseV2EvalBridge,
+        world_version: str | None = None,
     ) -> "_Generation":
         if job.task_run_config is None:
             raise ValueError("A task_run_eval job requires a run config")
-        key = trace_key(item_key(job.item), job.task_run_config.id, variant)
+        key = trace_key(item_key(job.item), job.task_run_config.id, world_version)
         return _Generation(
             key=key,
             generate=lambda: self._generate_and_persist(job, evaluator, key),
         )
-
-    async def _drop_unchanged_instances(self) -> None:
-        pending, self._unchanged_instances = self._unchanged_instances, []
-        for launcher, instance in pending:
-            try:
-                await launcher.release(instance)
-            except Exception as e:
-                logger.warning(
-                    "Releasing unchanged synthetic instance %s failed: %s",
-                    instance.instance_id,
-                    e,
-                )
-
-    async def _prune_synthetic_instances(self) -> None:
-        live = [
-            run.synthetic_instance
-            for run in self.task.runs(readonly=True, include_eval_generated=True)
-            if run.synthetic_instance is not None
-        ]
-        project = self.task.parent_project()
-        worlds = project.synthetic_worlds(readonly=True) if project else []
-        launchers: dict[str, SyntheticWorldLauncher] = {}
-        for world in worlds:
-            try:
-                launchers[world.launcher] = self._synthetic_launcher_override or (
-                    launchers.get(world.launcher) or launcher_for_world(world)
-                )
-            except Exception as e:
-                logger.warning("No launcher for world %s: %s", world.name, e)
-        for launcher in launchers.values():
-            try:
-                await launcher.prune(live)
-            except Exception as e:
-                logger.warning(
-                    "Pruning synthetic instances failed: %s", e, exc_info=True
-                )
 
     async def _resolve_trace(
         self, job: EvalJob, evaluator: BaseV2EvalBridge
@@ -1112,7 +1150,7 @@ class EvalRunner:
         under exactly the key the index filed it under. A run that disagrees is never
         found again, and the eval regenerates it on every future run.
         """
-        source_type, source_id, run_config_id, variant = key
+        source_type, source_id, run_config_id, _ = key
         trace = await evaluator.run_task(job.item, run_config_id=run_config_id)
         if trace.id is None:
             # `run_task` builds its adapter with allow_saving=False, and every adapter
@@ -1126,11 +1164,12 @@ class EvalRunner:
             # row — the contamination Task.runs()' default-exclude exists to prevent.
             trace.id = generate_model_id()
         trace.eval_source = EvalItemSource(
-            source_type=source_type, source_id=source_id, variant=variant or None
+            source_type=source_type,
+            source_id=source_id,
         )
-        synthetic_ctx = get_synthetic_instance()
-        if synthetic_ctx is not None:
-            trace.synthetic_instance = synthetic_ctx.instance
+        episode_ctx = get_episode()
+        if episode_ctx is not None:
+            trace.episode = episode_ctx.episode
         async with self._save_context():
             trace.save_to_file()
         return trace
@@ -1222,7 +1261,7 @@ class EvalRunner:
         job: EvalJob,
         eval_input: EvalInput,
         data: MultiTurnSyntheticEvalInputData,
-        variant: str | None = None,
+        world_version: str | None = None,
     ) -> "_Generation | _Skip":
         """The generation for a task_run_eval over a multi-turn synthetic input, or the
         skip that stands in for it.
@@ -1269,7 +1308,7 @@ class EvalRunner:
                 f"drive config: {drive_config.model_provider}"
             ) from e
 
-        key = trace_key(item_key(eval_input), job.task_run_config.id, variant)
+        key = trace_key(item_key(eval_input), job.task_run_config.id, world_version)
 
         async def drive_and_persist() -> TaskRun:
             # No app-level timeout on the re-drive: it terminates
@@ -1348,7 +1387,7 @@ class EvalRunner:
         completeness gate that needs it runs again on every later reuse of this
         file, when the drive that produced it is long gone.
         """
-        source_type, source_id, run_config_id, variant = key
+        source_type, source_id, run_config_id, _ = key
         leaf = drive_result.chain[-1]
         if leaf.output.source is None:
             # Fail before anything is saved: a run without an output source can't
@@ -1381,13 +1420,14 @@ class EvalRunner:
             cumulative_usage=leaf.cumulative_usage
             or MessageUsage.from_trace(leaf.trace),
             eval_source=EvalItemSource(
-                source_type=source_type, source_id=source_id, variant=variant or None
+                source_type=source_type,
+                source_id=source_id,
             ),
             tags=[TAG_SU_ENDED_CONVERSATION] if ended_by_su else [],
         )
-        synthetic_ctx = get_synthetic_instance()
-        if synthetic_ctx is not None:
-            run.synthetic_instance = synthetic_ctx.instance
+        episode_ctx = get_episode()
+        if episode_ctx is not None:
+            run.episode = episode_ctx.episode
         # The drive runs with allow_saving=False, so nothing touched disk before
         # this fully-stamped run — no crash window in which a driven conversation
         # could persist without eval_source and pass for a curated dataset row.

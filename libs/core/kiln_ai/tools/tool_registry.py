@@ -8,15 +8,15 @@ from kiln_ai.datamodel.tool_id import (
     MCP_REMOTE_TOOL_ID_PREFIX,
     RAG_TOOL_ID_PREFIX,
     SKILL_TOOL_ID_PREFIX,
-    SYNTHETIC_TOOL_ID_PREFIX,
+    WORLD_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     code_tool_id_from_tool_id,
     kiln_task_server_id_from_tool_id,
     mcp_server_and_tool_name_from_id,
     rag_config_id_from_id,
-    synthetic_world_and_tool_ids_from_id,
+    world_and_tool_name_from_id,
 )
-from kiln_ai.run_context import get_synthetic_instance
+from kiln_ai.run_context import EpisodeContext, get_episode
 from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallDefinition
 from kiln_ai.tools.built_in_tools.kiln_api_call_tool import KilnApiCallTool
 from kiln_ai.tools.built_in_tools.math_tools import (
@@ -31,10 +31,6 @@ from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
-class SyntheticWorldStrictError(ValueError):
-    """A strict synthetic world was asked for a tool it does not replace."""
-
-
 def tool_from_id_and_project(
     tool_id: str,
     project: Project | None = None,
@@ -45,59 +41,44 @@ def tool_from_id_and_project(
     This is the core resolution function. ``tool_from_id`` is a thin
     wrapper that derives the project from the task.
 
-    While a synthetic world instance is active (set by the eval runner for one job), a
-    tool id the world binds resolves to the world's synthetic tool, presented under the
-    real id. Every path that turns ids into tools comes through here — the adapter,
-    sub-agents, nested sandbox calls, code-eval servers — so this is the one place the
-    swap needs to happen. The context is job-task-local, so no request handler or
-    other caller can observe it.
+    A world tool id (`kiln_tool::world::<world_id>::<tool_name>`)
+    resolves to the tool the world's environment serves, and only while an episode of
+    that world is active (set by the eval runner for one job). Project tool ids resolve
+    to the project tool whether or not an episode is active: a run config chooses the
+    environment's tools by listing their ids, never by substitution.
     """
-    synthetic_ctx = get_synthetic_instance()
-    if synthetic_ctx is not None:
-        binding = synthetic_ctx.bindings.get(tool_id)
-        if binding is not None:
-            if project is None:
-                raise ValueError(
-                    f"Unable to resolve synthetic tool for {tool_id}: requires a parent project/task."
-                )
-            from kiln_ai.tools.synthetic_tool import SyntheticToolProxy
+    if tool_id.startswith(WORLD_TOOL_ID_PREFIX):
+        return _world_tool(tool_id, get_episode())
+    return _resolve_project_tool(tool_id, project, task)
 
-            return SyntheticToolProxy(tool_id, binding, project, task)
-        if synthetic_ctx.world.replaces_server_of(tool_id):
-            # The instance serves the whole server: same tool names, its own address.
-            if synthetic_ctx.instance.connection is None:
-                raise ValueError(
-                    f"Synthetic world '{synthetic_ctx.world.name}' replaces tool server "
-                    f"{synthetic_ctx.world.replaces_tool_server_id}, but instance "
-                    f"{synthetic_ctx.instance.instance_id} has no connection to serve it"
-                )
-            if project is None:
-                raise ValueError(
-                    f"Unable to resolve synthetic server tool for {tool_id}: requires a parent project/task."
-                )
-            server_id, tool_name = mcp_server_and_tool_name_from_id(tool_id)
-            real_server = next(
-                (s for s in project.external_tool_servers() if s.id == server_id),
-                None,
-            )
-            from kiln_ai.tools.synthetic_tool import SyntheticServerToolProxy
 
-            return SyntheticServerToolProxy(
-                tool_id,
-                tool_name,
-                synthetic_ctx.instance,
-                real_server.name if real_server is not None else server_id,
-            )
-        if (
-            synthetic_ctx.world.strict
-            and tool_id not in [member.value for member in KilnBuiltInToolId]
-            and not tool_id.startswith(SYNTHETIC_TOOL_ID_PREFIX)
-        ):
-            raise SyntheticWorldStrictError(
-                f"Synthetic world '{synthetic_ctx.world.name}' is strict and does not "
-                f"replace tool {tool_id}. Bind it or remove it from the run config."
-            )
+def _world_tool(tool_id: str, episode_ctx: EpisodeContext | None) -> KilnToolInterface:
+    """The tool a world's environment serves under *tool_name*. Only meaningful while
+    an episode of that world is active."""
+    world_id, tool_name = world_and_tool_name_from_id(tool_id)
+    if episode_ctx is None or episode_ctx.world.id != world_id:
+        raise ValueError(
+            f"World tool {tool_id} can only be used while an episode of "
+            f"world {world_id} is active: run it from an eval whose inputs carry a "
+            "world_reset naming that world."
+        )
+    env_tool = episode_ctx.tools.get(tool_name)
+    if env_tool is None:
+        raise ValueError(
+            f"World '{episode_ctx.world.name}' does not serve a tool "
+            f"named '{tool_name}' (for {tool_id}); it serves "
+            f"{sorted(episode_ctx.tools)}"
+        )
+    from kiln_ai.tools.world_tool import OpenEnvToolProxy
 
+    return OpenEnvToolProxy(tool_id, env_tool, episode_ctx)
+
+
+def _resolve_project_tool(
+    tool_id: str,
+    project: Project | None,
+    task: Task | None,
+) -> KilnToolInterface:
     # Check built-in tools
     if tool_id in [member.value for member in KilnBuiltInToolId]:
         typed_tool_id = KilnBuiltInToolId(tool_id)
@@ -222,34 +203,6 @@ def tool_from_id_and_project(
 
         return PythonCodeTool(code_tool, project, task)
 
-    elif tool_id.startswith(SYNTHETIC_TOOL_ID_PREFIX):
-        # Direct resolution, for tests and world tooling. Runs the synthetic tool under
-        # its own id; the eval-time swap above is what presents it under the real id.
-        if project is None:
-            raise ValueError(
-                f"Unable to resolve tool from id: {tool_id}. Requires a parent project/task."
-            )
-        world_id, synthetic_tool_id = synthetic_world_and_tool_ids_from_id(tool_id)
-
-        from kiln_ai.datamodel.synthetic_world import SyntheticTool, SyntheticWorld
-
-        world = SyntheticWorld.from_id_and_parent_path(world_id, project.path)
-        if world is None:
-            raise ValueError(
-                f"Synthetic world not found: {world_id} in project {project.id} for tool {tool_id}"
-            )
-        synthetic_tool = SyntheticTool.from_id_and_parent_path(
-            synthetic_tool_id, world.path
-        )
-        if synthetic_tool is None:
-            raise ValueError(
-                f"Synthetic tool not found: {synthetic_tool_id} in world {world_id} for tool {tool_id}"
-            )
-
-        from kiln_ai.tools.code_tool import PythonCodeTool
-
-        return PythonCodeTool(synthetic_tool, project, task)
-
     elif tool_id.startswith(SKILL_TOOL_ID_PREFIX):
         raise ValueError(
             f"Skill tool IDs are resolved by the adapter, not tool_from_id: {tool_id}"
@@ -326,3 +279,41 @@ async def tool_definitions_from_ids(
 
 def is_mcp_tool_id(tool_id: str) -> bool:
     return tool_id.startswith((MCP_REMOTE_TOOL_ID_PREFIX, MCP_LOCAL_TOOL_ID_PREFIX))
+
+
+def project_tool_function_name(tool_id: str, project: Project | None) -> str | None:
+    """The function name a project tool presents to the model, read without contacting
+    anything: MCP names ride in the id, the rest are on disk. None for ids that are not
+    project tools (built-ins, skills, unmanaged, world) or that cannot be found."""
+    if project is None:
+        return None
+    try:
+        if is_mcp_tool_id(tool_id):
+            return mcp_server_and_tool_name_from_id(tool_id)[1]
+        if tool_id.startswith(KILN_TASK_TOOL_ID_PREFIX):
+            server_id = kiln_task_server_id_from_tool_id(tool_id)
+            server = next(
+                (
+                    s
+                    for s in project.external_tool_servers(readonly=True)
+                    if s.id == server_id
+                ),
+                None,
+            )
+            name = server.properties.get("name") if server is not None else None
+            return name if isinstance(name, str) else None
+        if tool_id.startswith(CODE_TOOL_ID_PREFIX):
+            from kiln_ai.datamodel.code_tool import CodeTool
+
+            code_tool = CodeTool.from_id_and_parent_path(
+                code_tool_id_from_tool_id(tool_id), project.path
+            )
+            return code_tool.tool_function_name if code_tool is not None else None
+        if tool_id.startswith(RAG_TOOL_ID_PREFIX):
+            rag_config = RagConfig.from_id_and_parent_path(
+                rag_config_id_from_id(tool_id), project.path
+            )
+            return rag_config.tool_name if rag_config is not None else None
+    except ValueError:
+        return None
+    return None

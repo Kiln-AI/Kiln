@@ -3366,14 +3366,14 @@ class TestEmptyResponseErrors:
                     )
 
 
-async def test_process_tool_calls_passes_synthetic_instance_context(config, mock_task):
-    """The active synthetic instance reaches every tool through ToolCallContext."""
-    from kiln_ai.datamodel.synthetic_world import SyntheticInstance
+async def test_process_tool_calls_passes_episode_context(config, mock_task):
+    """The active episode reaches every tool through ToolCallContext."""
     from kiln_ai.datamodel.tool_id import ToolId
+    from kiln_ai.datamodel.world import Episode
     from kiln_ai.run_context import (
-        SyntheticInstanceContext,
-        reset_synthetic_instance,
-        set_synthetic_instance,
+        EpisodeContext,
+        reset_episode,
+        set_episode,
     )
     from kiln_ai.tools.base_tool import (
         KilnToolInterface,
@@ -3414,23 +3414,18 @@ async def test_process_tool_calls_passes_synthetic_instance_context(config, mock
     call = ChatCompletionMessageToolCall(
         id="call_1", type="function", function=Function(name="rec", arguments="{}")
     )
-    instance = SyntheticInstance(
-        instance_id="inst_ctx",
-        world_id="w",
-        path="/inst",
-        source_path="/fixture",
-    )
-    token = set_synthetic_instance(
-        SyntheticInstanceContext(instance=instance, world=Mock())
+    instance = Episode(episode_id="ep_ctx", world_id="w")
+    token = set_episode(
+        EpisodeContext(episode=instance, world=Mock(), session_manager=Mock())
     )
     try:
         with patch.object(adapter, "available_tools", return_value=[RecordingTool()]):
             await adapter.process_tool_calls([call])
     finally:
-        reset_synthetic_instance(token)
+        reset_episode(token)
 
     with patch.object(adapter, "available_tools", return_value=[RecordingTool()]):
         await adapter.process_tool_calls([call])
 
-    assert seen[0] is not None and seen[0].synthetic_instance is instance
-    assert seen[1] is not None and seen[1].synthetic_instance is None
+    assert seen[0] is not None and seen[0].episode is instance
+    assert seen[1] is not None and seen[1].episode is None
