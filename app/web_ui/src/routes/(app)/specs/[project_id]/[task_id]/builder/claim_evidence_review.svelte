@@ -5,10 +5,10 @@
   // screen is the builder's text: the judge's score and reasoning never
   // render here, since the reviewer's calls are what calibrate the judge.
   //
-  // The overall pass/fail call is derived from the verdict claim's grade when
-  // the builder wrote one (it is always the last claim). When the builder
-  // omitted it, a Pass/Fail row after the claims asks the call outright. Next
-  // is gated on the whole trace being graded (is_trace_reviewed).
+  // The overall pass/fail call is the verdict claim's grade — the builder
+  // writes the verdict as the last claim, and a case without one is not put in
+  // front of the reviewer at all (reviewable_subset). Next is gated on the
+  // whole trace being graded (is_trace_reviewed).
   //
   // Subset review: `selected_indices` is the judge-stratified sample the
   // reviewer grades (sized to the golden answer key) — the review shows
@@ -28,10 +28,8 @@
   // same keyboard hint using the same platform check.
   import { isMacOS } from "$lib/utils/platform"
   import {
-    has_verdict_claim,
     is_trace_reviewed,
     type Citation,
-    type JudgeScore,
     type TraceClaims,
     type TraceReview,
   } from "./claim_evidence"
@@ -100,21 +98,8 @@
   // Keep original indices, since verdicts are positional.
   $: visible = (current?.claims ?? []).map((claim, index) => ({ claim, index }))
 
-  // The overall call is asked outright only when nothing on screen records
-  // it: the builder omitted the verdict claim, or the build failed and there
-  // are no claims at all. Never while the claims are still on their way.
-  $: asks_overall =
-    !!current &&
-    (current.claims_state === "error" ||
-      (current.claims_state === "built" && !has_verdict_claim(current)))
-
   function open_citation(citation: Citation) {
     if (current) trace_modal?.open_citation(current, citation)
-  }
-
-  function set_overall(value: JudgeScore) {
-    // Assigned through `verdicts` so the change reaches the parent's binding.
-    if (verdicts[current_index]) verdicts[current_index].overall = value
   }
 
   // Previous/Next walk the selected sequence.
@@ -229,39 +214,6 @@
             on_cite={open_citation}
           />
         {/each}
-      </div>
-    {/if}
-
-    {#if asks_overall}
-      <!-- The overall call, asked outright and last: no claim on screen
-           records pass or fail, so the reviewer answers it here, from the
-           claims above or from the transcript when there are none. It is
-           shaped exactly like a claim — a titled header with its two answers
-           beside it, in the same selection style — because it asks the same
-           kind of question. -->
-      <div id="review-overall">
-        <SettingsHeader title="Does this {judged_noun} pass?">
-          <svelte:fragment slot="actions">
-            <button
-              id="overall-pass"
-              class="btn btn-sm {current_verdicts.overall === 'pass'
-                ? 'btn-secondary'
-                : 'btn-outline'}"
-              on:click={() => set_overall("pass")}
-            >
-              Pass
-            </button>
-            <button
-              id="overall-fail"
-              class="btn btn-sm {current_verdicts.overall === 'fail'
-                ? 'btn-secondary'
-                : 'btn-outline'}"
-              on:click={() => set_overall("fail")}
-            >
-              Fail
-            </button>
-          </svelte:fragment>
-        </SettingsHeader>
       </div>
     {/if}
   {/if}

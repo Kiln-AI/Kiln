@@ -109,6 +109,7 @@
     flipped_indices,
     grade_disagreement_count,
     has_grade_disagreement,
+    has_verdict_claim,
     is_trace_reviewed,
     plan_save_action,
     refine_judge_tooltip,
@@ -3487,6 +3488,15 @@
       num_errored: selected_trace_indices.filter(
         (i) => trace_claims[i]?.claims_state === "error",
       ).length,
+      // Built, but the builder broke its own contract and wrote no verdict
+      // claim, so there is nothing on screen that records the pass/fail call.
+      // Excluded from the walk the same way a failed build is, and counted
+      // here for the same reason: it is a prompt slip worth seeing.
+      num_no_verdict: selected_trace_indices.filter(
+        (i) =>
+          trace_claims[i]?.claims_state === "built" &&
+          !has_verdict_claim(trace_claims[i]),
+      ).length,
     })
     // PUSH review (both arms): Back must return to the plan screen.
     goto_step("review")
@@ -3883,6 +3893,18 @@
     selected_trace_indices.length > 0 &&
     selected_claims_resolved === selected_trace_indices.length
   ) {
+    posthog.capture("eval_v2_claims_build_completed", {
+      duration_ms: Date.now() - claims_gate_started_ms,
+      num_selected: selected_trace_indices.length,
+      num_errored: selected_trace_indices.filter(
+        (i) => trace_claims[i]?.claims_state === "error",
+      ).length,
+      num_no_verdict: selected_trace_indices.filter(
+        (i) =>
+          trace_claims[i]?.claims_state === "built" &&
+          !has_verdict_claim(trace_claims[i]),
+      ).length,
+    })
     calibration_phase = "idle"
   }
 
@@ -4053,12 +4075,9 @@
             leaf_run_id: tc.leaf_run_id as string,
             user_says_meets_spec: user_says_meets_spec(tc, review),
             feedback: disagreement_feedback(review),
-            // Claim grades ride along only where claims were built; a
-            // trace graded on the overall call alone has none to record.
-            claim_review:
-              tc.claims_state === "built"
-                ? build_claim_review_payload(tc, review)
-                : null,
+            // Gated on is_trace_reviewed above, which demands built claims,
+            // so a reviewed trace always has grades to record.
+            claim_review: build_claim_review_payload(tc, review),
           }))
         const { data, error } = await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
@@ -4150,12 +4169,9 @@
           leaf_run_id: tc.leaf_run_id as string,
           user_says_meets_spec: user_says_meets_spec(tc, review),
           feedback: disagreement_feedback(review),
-          // Claim grades ride along only where claims were built; a trace
-          // graded on the overall call alone has none to record.
-          claim_review:
-            tc.claims_state === "built"
-              ? build_claim_review_payload(tc, review)
-              : null,
+          // Gated on is_trace_reviewed above, which demands built claims, so
+          // a reviewed trace always has grades to record.
+          claim_review: build_claim_review_payload(tc, review),
         }))
       const { data, error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
@@ -5064,15 +5080,35 @@
               />
             </div>
           {:else if reviewable_trace_indices.length === 0}
-            <!-- Every selected trace failed its claims build, so the subset
-                 emptied. Say so: an empty review would leave a save gate that
-                 can never be met and no explanation for it. -->
+            <!-- The subset emptied: every selected case either failed its
+                 claims build or came back without a verdict claim, so there is
+                 nothing to grade. Say both causes, because the reviewer cannot
+                 tell them apart from here. An empty review would otherwise
+                 leave a save gate that can never be met and no explanation.
+                 On a calibration round the grades from the previous round are
+                 still good, so the same opt-out the review offers is offered
+                 here: discarding the batch must not be the only way out. -->
             <div class="mt-2">
               <Warning
                 warning_color="warning"
-                warning_message={`Couldn't analyze any of these ${judged_noun}s. Create your eval data again.`}
+                warning_message={`None of these ${judged_noun}s could be reviewed. Analyzing them either failed or produced no verdict to check.${
+                  calibration_rounds_completed > 0
+                    ? ""
+                    : " Create your eval data again."
+                }`}
               />
             </div>
+            {#if calibration_rounds_completed > 0}
+              <div class="flex flex-col items-end mt-2">
+                <button
+                  type="button"
+                  class="link underline text-sm text-gray-500"
+                  on:click={save_without_refining}
+                >
+                  Save Without Refining Further
+                </button>
+              </div>
+            {/if}
           {:else}
             {#if calibration_rounds_completed > 0 && rejudge_shortfall_notice(calibration_failed_count, case_noun)}
               <!-- Cases without a fresh verdict sat the round out — say so

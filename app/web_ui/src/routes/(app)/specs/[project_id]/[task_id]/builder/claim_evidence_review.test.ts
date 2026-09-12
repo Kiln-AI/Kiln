@@ -364,8 +364,8 @@ describe("ClaimEvidenceReview — Next gating", () => {
   })
 })
 
-describe("ClaimEvidenceReview — the overall call", () => {
-  it("derives the call from the verdict claim's grade, so no Pass/Fail row is asked", async () => {
+describe("ClaimEvidenceReview — the pass/fail call", () => {
+  it("derives the call from the verdict claim's grade, and asks no Pass/Fail row", async () => {
     for (const judge_score of ["fail", "pass"] as const) {
       const traces = [built_trace("t0", { judge_score })]
       const { container, verdicts } = render_review(traces)
@@ -400,35 +400,6 @@ describe("ClaimEvidenceReview — the overall call", () => {
       })
       cleanup()
     }
-  })
-
-  it("asks Pass/Fail after the claims only when the builder wrote no verdict claim", async () => {
-    const traces = [built_trace("t0", { verdict: false }), built_trace("t1")]
-    const { container, getByText, verdicts } = render_review(traces)
-
-    const overall = by_id(container, "review-overall")
-    expect(overall.textContent).toContain("Does this conversation pass?")
-    // After the claims, not before them.
-    expect(
-      by_id(container, "claim-card-1").compareDocumentPosition(overall) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy()
-
-    // Every claim graded is not enough: the call itself is still missing.
-    await agree_all(container, 2)
-    expect(next_button(getByText).disabled).toBe(true)
-    expect(is_trace_reviewed(traces[0], verdicts[0])).toBe(false)
-
-    await fireEvent.click(by_id(container, "overall-pass"))
-    expect(by_id(container, "overall-pass").className).toContain(
-      "btn-secondary",
-    )
-    expect(verdicts[0].overall).toBe("pass")
-    expect(user_says_meets_spec(traces[0], verdicts[0])).toBe(true)
-    expect(next_button(getByText).disabled).toBe(false)
-    expect(
-      build_claim_review_payload(traces[0], verdicts[0]).human_verdict,
-    ).toBe("pass")
   })
 })
 

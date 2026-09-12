@@ -846,4 +846,30 @@ describe("progress screens carry their counts in the animation's strings", () =>
     // The old count line under the bar is gone from every progress screen.
     expect(normalized).not.toContain('class="font-light text-xs text-center')
   })
+
+  it("counts the cases dropped from the review on both claims gates", () => {
+    // A case the builder wrote without a verdict claim is excluded from the
+    // review; a prompt that starts dropping verdicts has to be visible.
+    expect(normalized.split("num_no_verdict:").length - 1).toBe(2)
+  })
+})
+
+// ── The empty review subset ────────────────────────────────────────────────
+describe("a review with nothing to grade is not a dead end", () => {
+  it("names both causes and offers the save on a calibration round", () => {
+    expect(normalized).toContain(
+      "None of these ${judged_noun}s could be reviewed. Analyzing them either failed or produced no verdict to check.",
+    )
+    // First round: create the data again. Later rounds: that would throw away
+    // grades the reviewer already gave, so the opt-out is offered instead.
+    expect(normalized).toContain(
+      'calibration_rounds_completed > 0 ? "" : " Create your eval data again."',
+    )
+    const branch = region(
+      "{:else if reviewable_trace_indices.length === 0}",
+      "{:else}",
+    )
+    expect(normalize(branch)).toContain("Save Without Refining Further")
+    expect(normalize(branch)).toContain("on:click={save_without_refining}")
+  })
 })
