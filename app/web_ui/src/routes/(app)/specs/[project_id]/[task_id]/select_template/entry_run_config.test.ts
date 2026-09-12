@@ -119,3 +119,13 @@ describe("continuing into the builder", () => {
     )
   })
 })
+
+// The folded template list names what it holds rather than telling the reader
+// to look. Pinned because it is the only thing identifying that section.
+describe("the template picker's disclosure", () => {
+  it("is titled after its contents", () => {
+    expect(normalize(page_source)).toContain(
+      '<Collapse title="LLM Judge Templates"',
+    )
+  })
+})
