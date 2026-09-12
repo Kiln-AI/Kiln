@@ -14,6 +14,7 @@ import {
   plan_drive,
   resolved_selected_count,
   restore_turns_per_case,
+  with_failures,
   MAX_TURNS_PER_CASE,
   MIN_TURNS_PER_CASE,
   type DriveStop,
@@ -791,6 +792,26 @@ describe("drive_cost_warning", () => {
       drive_cost_warning({ is_multi_turn: true, count: 1, turns_per_case: 1 }),
     ).toBe(
       "This will run 1 conversation of up to 1 turn each. Running multi-turn data generation and evaluation can be expensive. Calculate your costs before proceeding.",
+    )
+  })
+})
+
+describe("with_failures — the failure clause on a progress description", () => {
+  it("says nothing when nothing failed", () => {
+    expect(with_failures("12 of 40 judged.", 0)).toBe("12 of 40 judged.")
+  })
+
+  it("folds the count into the sentence it qualifies", () => {
+    // One sentence, not two: the clause reads as part of the count, and the
+    // sentence's own full stop moves to the end rather than being doubled.
+    expect(with_failures("12 of 40 judged.", 2)).toBe(
+      "12 of 40 judged, 2 failed.",
+    )
+  })
+
+  it("works on a sentence that does not end in a full stop", () => {
+    expect(with_failures("12 of 40 judged", 1)).toBe(
+      "12 of 40 judged, 1 failed.",
     )
   })
 })

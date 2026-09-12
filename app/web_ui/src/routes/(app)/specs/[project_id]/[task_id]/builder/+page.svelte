@@ -143,6 +143,7 @@
     plan_drive,
     resolved_selected_count,
     restore_turns_per_case,
+    with_failures,
     MAX_TURNS_PER_CASE,
     MIN_TURNS_PER_CASE,
     type DriveStop,
@@ -3271,8 +3272,8 @@
   // by what the round actually surfaced, every round: a re-judge shortfall or
   // a failed claims build can leave fewer traces on screen than the standard
   // target, and the gate must never demand reviews of traces it didn't show.
-  // This number also writes the step's "reviewing N of M" sentence, so the
-  // header, the gate and the review's own counter all read the same subset.
+  // The review's own "Case N of M" header counts the same subset, so the gate
+  // and what the reviewer sees can never disagree about how many there are.
   $: review_target_count = calibration_gate_target(
     trace_claims.length,
     reviewable_trace_indices.length,
@@ -4285,7 +4286,7 @@
     } else if (current_step === "review") {
       // The gate/last-trace pair matches the Save button only within the review
       // component: the gate can be met several traces early, and the shortcut
-      // must not skip traces the reviewer still sees a Continue button for. The
+      // must not skip traces the reviewer still sees a Next button for. The
       // screen-level guards exclude the stale-results gate, the calibration
       // error screen, and in-flight calibration, where that component is
       // unmounted but its binds still hold their last values.
@@ -4405,7 +4406,7 @@
                 : "eval data generation model"
             }, and the judge all respond before creating your eval data.`
           : generation_phase === "minting_inputs"
-            ? `Writing ${planned_total} items from the approved plan.`
+            ? `Writing ${planned_total} items from the approved plan. ${minting_done} of ${minting_total} written.`
             : `Setting up ${planned_total} simulated users from the approved plan.`
 
   // The long-wait line, on exactly the stages that run one long request with
@@ -4677,16 +4678,13 @@
                     value={minting_done}
                     max={minting_total}
                   ></progress>
-                  <div class="font-light text-xs text-center mt-1">
-                    {minting_done} of {minting_total} inputs written
-                  </div>
                 </div>
               {/if}
             {/if}
           {/if}
           {#if pipeline_running}
             <!-- The drive stage: the arm's animation plus the house
-                 batch-progress readout (slim bar + tiny count line,
+                 batch-progress readout (bar plus its count caption,
                  mirroring /generate's batch generation). Multi-turn's bar
                  tracks TURNS for smooth motion (cases complete in
                  concurrency waves), so its count line LEADS with turns;
@@ -4694,9 +4692,17 @@
                  finished cases directly. The title stays static: the live
                  counts belong to the readout under the bar. -->
             {#if is_multi_turn}
+              <!-- Turns, not cases: cases finish in concurrency waves, so the
+                   turn count is the one that actually moves while the batch
+                   runs. The denominator is a ceiling, not a total:
+                   conversations that end early leave the bar short of full, so
+                   it can jump to done rather than creep there. -->
               <ConversationAnimation
                 title="Creating Eval Data"
-                description="Simulating conversations with your agent and judging each one."
+                description={with_failures(
+                  `Simulating conversations with your agent and judging each one. ${multi_turn_turns_done} of up to ${multi_turn_total_turns} turns complete.`,
+                  pipeline_failed_count,
+                )}
                 warning={null}
               />
               <div class="flex flex-col items-center mt-6">
@@ -4705,22 +4711,14 @@
                   value={multi_turn_turns_done}
                   max={multi_turn_total_turns}
                 ></progress>
-                <!-- Turns, not cases: cases finish in concurrency waves, so
-                     the turn count is the one that actually moves while the
-                     batch runs. It's the only live count on this screen.
-                     The denominator is a ceiling, not a total: conversations
-                     that end early leave the bar short of full, so it can
-                     jump to done rather than creep there. -->
-                <div class="font-light text-xs text-center mt-1">
-                  {multi_turn_turns_done} of up to {multi_turn_total_turns} turns
-                  complete{#if pipeline_failed_count > 0},
-                    {pipeline_failed_count} failed{/if}
-                </div>
               </div>
             {:else}
               <AnalyzingAnimation
                 title="Creating Eval Data"
-                description="Running your task on each item and judging the result."
+                description={with_failures(
+                  `Running your task on each item and judging the result. ${judged_case_count} of ${pipeline_total_cases} judged.`,
+                  pipeline_failed_count,
+                )}
                 warning={null}
               />
               <div class="flex flex-col items-center mt-6">
@@ -4729,10 +4727,6 @@
                   value={judged_case_count + pipeline_failed_count}
                   max={pipeline_total_cases}
                 ></progress>
-                <div class="font-light text-xs text-center mt-1">
-                  {judged_case_count} of {pipeline_total_cases} judged{#if pipeline_failed_count > 0},
-                    {pipeline_failed_count} failed{/if}
-                </div>
               </div>
             {/if}
           {/if}
@@ -4743,7 +4737,7 @@
                  selected claim set must be resolved up front. -->
             <svelte:component
               this={is_multi_turn ? ConversationAnimation : AnalyzingAnimation}
-              title="Preparing Review"
+              title={`Preparing Review (${selected_claims_resolved}/${selected_trace_indices.length})`}
               description="Finding the examples where your judgment is most useful."
               warning={null}
             />
@@ -4753,10 +4747,6 @@
                 value={selected_claims_resolved}
                 max={selected_trace_indices.length}
               ></progress>
-              <div class="font-light text-xs text-center mt-1">
-                Preparing review: {selected_claims_resolved} of {selected_trace_indices.length}
-                ready
-              </div>
             </div>
           {/if}
           <!-- The two failure surfaces are one chain so only ever one can
@@ -4773,7 +4763,7 @@
             </div>
             <div class="text-center py-4 flex justify-center gap-2">
               <button
-                class="btn btn-outline"
+                class="btn"
                 on:click={() => {
                   claims_gate_error = null
                 }}
@@ -4802,7 +4792,7 @@
                      committed lanes and the cost of this batch, so the models
                      can be changed on the way back in. -->
                 <button
-                  class="btn btn-outline"
+                  class="btn"
                   on:click={() => {
                     generation_error = null
                   }}
@@ -4984,7 +4974,7 @@
               />
             </div>
             <div class="flex justify-center gap-2 py-4">
-              <button class="btn btn-outline" on:click={() => history.back()}>
+              <button class="btn" on:click={() => history.back()}>
                 Back
               </button>
               <button class="btn btn-primary" on:click={discard_stale_results}>
@@ -5005,7 +4995,10 @@
             <svelte:component
               this={is_multi_turn ? ConversationAnimation : AnalyzingAnimation}
               title="Re-checking Eval Data"
-              description="Re-checking your eval data with the improved judge."
+              description={with_failures(
+                `Re-checking your eval data with the improved judge. ${rejudged_done} of ${rejudge_total} re-checked.`,
+                rejudge_failed_live,
+              )}
               warning={null}
             />
             <div class="flex flex-col items-center mt-6">
@@ -5014,17 +5007,13 @@
                 value={rejudged_done + rejudge_failed_live}
                 max={rejudge_total}
               ></progress>
-              <div class="font-light text-xs text-center mt-1">
-                {rejudged_done} of {rejudge_total} re-checked{#if rejudge_failed_live > 0},
-                  {rejudge_failed_live} failed{/if}
-              </div>
             </div>
           {:else if calibration_phase === "building_claims"}
             <!-- Same wait-for-all claims gate as the first round, held on the
                  review step: the re-review opens fully loaded. -->
             <svelte:component
               this={is_multi_turn ? ConversationAnimation : AnalyzingAnimation}
-              title="Preparing Review"
+              title={`Preparing Review (${selected_claims_resolved}/${selected_trace_indices.length})`}
               description="Finding the examples where your judgment is most useful."
               warning={null}
             />
@@ -5034,10 +5023,6 @@
                 value={selected_claims_resolved}
                 max={selected_trace_indices.length}
               ></progress>
-              <div class="font-light text-xs text-center mt-1">
-                Preparing review: {selected_claims_resolved} of {selected_trace_indices.length}
-                ready
-              </div>
             </div>
           {:else if calibration_error}
             <!-- Retryable re-judge failure — the grades that fed the refine
@@ -5054,7 +5039,7 @@
             </div>
             <div class="text-center py-4 flex justify-center gap-2">
               <button
-                class="btn btn-outline"
+                class="btn"
                 on:click={() => {
                   calibration_error = null
                 }}
@@ -5141,8 +5126,11 @@
                    editing grades can drop the save gate (a fresh disagreement
                    without a reason yet), and the failure must not vanish
                    while the user is reacting to it. -->
-              <div class="text-sm text-center text-error mt-2">
-                {calibration_refine_error}
+              <div class="mt-2">
+                <Warning
+                  warning_color="error"
+                  warning_message={calibration_refine_error}
+                />
               </div>
             {/if}
             {#if review_cta_state === "refine" && save_gate_met && review_on_last_trace}

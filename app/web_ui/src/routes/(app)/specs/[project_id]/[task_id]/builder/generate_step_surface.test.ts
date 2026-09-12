@@ -814,3 +814,36 @@ describe("the run config the eval is written against", () => {
     ).not.toContain("run_config_id")
   })
 })
+
+// ── The review-preparation and drive progress screens ──────────────────────
+//
+// A progress screen is the animation control and its two strings: the counts
+// ride in them, not in a line of their own under the bar. These pin where each
+// count lives, because the difference is invisible to a render test that only
+// reads text.
+describe("progress screens carry their counts in the animation's strings", () => {
+  it("titles the claims gate with its count, on both the first round and a later one", () => {
+    const titled =
+      normalized.split(
+        "title={`Preparing Review (${selected_claims_resolved}/${selected_trace_indices.length})`}",
+      ).length - 1
+    // Once for the first-round gate, once for the calibration round's.
+    expect(titled).toBe(2)
+    // And the description under it says what the screen is doing, with no
+    // count in it.
+    expect(normalized).toContain(
+      'description="Finding the examples where your judgment is most useful."',
+    )
+  })
+
+  it("puts the drive counts in the description and keeps no count line", () => {
+    expect(normalized).toContain(
+      "${multi_turn_turns_done} of up to ${multi_turn_total_turns} turns complete.",
+    )
+    expect(normalized).toContain(
+      "${judged_case_count} of ${pipeline_total_cases} judged.",
+    )
+    // The old count line under the bar is gone from every progress screen.
+    expect(normalized).not.toContain('class="font-light text-xs text-center')
+  })
+})

@@ -106,16 +106,6 @@ function built_trace(
   }
 }
 
-function errored_trace(): TraceClaims {
-  return {
-    ...built_trace("err_0"),
-    overview: null,
-    claims: null,
-    claims_state: "error",
-    claims_error: "Copilot request failed.",
-  }
-}
-
 function by_id<T extends HTMLElement>(container: HTMLElement, id: string): T {
   const found = container.querySelector<T>(`#${id}`)
   if (!found) throw new Error(`no element with id ${id}`)
@@ -149,7 +139,7 @@ async function agree_all(container: HTMLElement, count: number) {
 }
 
 function next_button(getByText: (t: string) => HTMLElement) {
-  return getByText("Continue") as HTMLButtonElement
+  return getByText("Next") as HTMLButtonElement
 }
 
 // A mounted dialog, picked out by its title. Several are on the page at once,
@@ -241,7 +231,7 @@ describe("ClaimEvidenceReview — the eval text", () => {
     // Beside the trace button, in the overview header, not in the page body.
     const header = by_id(container, "review-overview")
     const button = by_id<HTMLButtonElement>(header, "view-eval")
-    expect(button.textContent?.trim()).toBe("View Eval Description")
+    expect(button.textContent?.trim()).toBe("Eval Description")
     expect(
       button.compareDocumentPosition(by_id(header, "view-full-trace")) &
         Node.DOCUMENT_POSITION_FOLLOWING,
@@ -252,42 +242,42 @@ describe("ClaimEvidenceReview — the eval text", () => {
 
     await fireEvent.click(button)
     expect(dialog.open).toBe(true)
-    // The text verbatim. textContent reads the same either way, so the
-    // whitespace-pre-wrap class is what actually keeps the line breaks and
-    // runs of spaces on screen.
-    const paragraph = by_id(dialog, "spec-text")
-    expect(paragraph.textContent?.trim()).toBe(SPEC_TEXT)
-    expect(paragraph.className).toContain("whitespace-pre-wrap")
+    // The text verbatim, on the house read-only surface. Output prints into a
+    // pre, which is what keeps the line breaks and runs of spaces on screen.
+    const shown = by_id(dialog, "spec-text")
+    expect(shown.textContent?.trim()).toBe(SPEC_TEXT)
+    expect(shown.querySelector("pre")?.className).toContain(
+      "whitespace-pre-wrap",
+    )
     // Read-only: the description is shown, never edited here.
     expect(dialog.querySelector("input, textarea")).toBeNull()
   })
 
-  it("keeps the eval text reachable while claims build and after they fail", async () => {
-    // Every trace starts with no overview and builds lazily, and a failed
-    // build never gets one. The eval text matters most in those states, where
-    // nothing on screen describes the conversation.
+  it("keeps the eval text reachable while the claims are still building", async () => {
+    // Every trace starts with no overview and builds lazily. The eval text
+    // matters most in that state, where nothing on screen describes the
+    // conversation yet.
     const unbuilt: TraceClaims = {
       ...built_trace("t0"),
       overview: null,
       claims: null,
       claims_state: "unbuilt",
     }
-    for (const trace of [unbuilt, errored_trace()]) {
-      const { container } = render_review([trace], { spec_text: SPEC_TEXT })
-      expect(container.querySelector("#review-overview")).toBeNull()
+    const { container } = render_review([unbuilt], { spec_text: SPEC_TEXT })
+    // The Overview section renders in every state, so the escape hatches
+    // never lose their header: only the body under it changes.
+    expect(container.querySelector("#review-overview")).not.toBeNull()
 
-      const button = by_id<HTMLButtonElement>(container, "view-eval")
-      expect(
-        button.compareDocumentPosition(by_id(container, "view-full-trace")) &
-          Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy()
+    const button = by_id<HTMLButtonElement>(container, "view-eval")
+    expect(
+      button.compareDocumentPosition(by_id(container, "view-full-trace")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
 
-      await fireEvent.click(button)
-      const dialog = spec_dialog(container)
-      expect(dialog.open).toBe(true)
-      expect(by_id(dialog, "spec-text").textContent?.trim()).toBe(SPEC_TEXT)
-      cleanup()
-    }
+    await fireEvent.click(button)
+    const dialog = spec_dialog(container)
+    expect(dialog.open).toBe(true)
+    expect(by_id(dialog, "spec-text").textContent?.trim()).toBe(SPEC_TEXT)
   })
 
   it("reopens the same dialog after moving to the next conversation", async () => {
@@ -334,17 +324,18 @@ describe("ClaimEvidenceReview — the eval text", () => {
   })
 })
 
-describe("ClaimEvidenceReview — Continue gating", () => {
-  it("needs Agree or Disagree on every claim before Continue opens", async () => {
+describe("ClaimEvidenceReview — Next gating", () => {
+  it("needs Agree or Disagree on every claim before Next opens", async () => {
     const { container, getByText } = render_review([
       built_trace("t0"),
       built_trace("t1"),
     ])
 
     expect(next_button(getByText).disabled).toBe(true)
-    // Continue carries the step-4 forward spec (wide primary) but no keyboard
-    // hint: on this screen the shortcut fires Save, never Continue.
-    expect(next_button(getByText).className).toContain("min-w-64")
+    // Next is the screen's one primary, sized like Previous beside it, and
+    // carries no keyboard hint: the shortcut fires Save, never Next.
+    expect(next_button(getByText).className).toContain("btn-primary")
+    expect(next_button(getByText).className).not.toContain("min-w-64")
 
     await fireEvent.click(by_id(container, "claim-agree-0"))
     expect(next_button(getByText).disabled).toBe(true)
@@ -352,7 +343,7 @@ describe("ClaimEvidenceReview — Continue gating", () => {
     expect(next_button(getByText).disabled).toBe(false)
   })
 
-  it("holds Continue until a Disagree carries a reason", async () => {
+  it("holds Next until a Disagree carries a reason", async () => {
     const { container, getByText, verdicts } = render_review([
       built_trace("t0"),
       built_trace("t1"),
@@ -429,7 +420,9 @@ describe("ClaimEvidenceReview — the overall call", () => {
     expect(is_trace_reviewed(traces[0], verdicts[0])).toBe(false)
 
     await fireEvent.click(by_id(container, "overall-pass"))
-    expect(by_id(container, "overall-pass").className).toContain("btn-success")
+    expect(by_id(container, "overall-pass").className).toContain(
+      "btn-secondary",
+    )
     expect(verdicts[0].overall).toBe("pass")
     expect(user_says_meets_spec(traces[0], verdicts[0])).toBe(true)
     expect(next_button(getByText).disabled).toBe(false)
@@ -439,58 +432,29 @@ describe("ClaimEvidenceReview — the overall call", () => {
   })
 })
 
-describe("ClaimEvidenceReview — failed claims build", () => {
-  it("keeps Retry and asks the overall call so the trace still counts as reviewed", async () => {
-    const on_open_trace = vi.fn()
-    const traces = [errored_trace()]
-    const { container, getByText, verdicts } = render_review(traces, {
-      on_open_trace,
-    })
-
-    expect(container.textContent).toContain("Copilot request failed.")
-    expect(container.querySelector("#review-overview")).toBeNull()
-    expect(container.querySelector("#claim-card-0")).toBeNull()
-    // The trace is still reachable, and the call is answerable from it.
-    expect(container.querySelector("#view-full-trace")).not.toBeNull()
-    expect(is_trace_reviewed(traces[0], verdicts[0])).toBe(false)
-
-    await fireEvent.click(by_id(container, "overall-fail"))
-    expect(verdicts[0].overall).toBe("fail")
-    expect(is_trace_reviewed(traces[0], verdicts[0])).toBe(true)
-    expect(user_says_meets_spec(traces[0], verdicts[0])).toBe(false)
-
-    // Retry re-requests the build for this trace (the mount already
-    // reported it once).
-    await fireEvent.click(getByText("Retry Analysis"))
-    expect(on_open_trace).toHaveBeenLastCalledWith(0)
-    expect(on_open_trace.mock.calls.length).toBeGreaterThanOrEqual(2)
-  })
-})
-
 describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
-  it("holds the Save slot disabled until the gate is met, never a dead Continue", async () => {
+  it("holds the Save slot disabled until the gate is met, never a dead Next", async () => {
     const traces = [built_trace("only")]
 
-    // Gate not met: the same Save button holds the slot, disabled and
-    // explaining itself. No Continue — there's nothing left to advance to.
+    // Gate not met: the same Save button holds the slot, simply disabled, the
+    // way every other form in the app holds a submit. No Next — there's
+    // nothing left to advance to.
     const gated = render_review(traces, { save_disabled: true })
     const blocked = gated.getByText("Save") as HTMLButtonElement
     expect(blocked.disabled).toBe(true)
-    expect(gated.queryByText("Continue")).toBeNull()
-    expect(
-      gated.container.querySelector(".tooltip")?.getAttribute("data-tip"),
-    ).toContain("Finish grading")
+    expect(gated.queryByText("Next")).toBeNull()
+    expect(gated.container.querySelector(".tooltip")).toBeNull()
     cleanup()
 
     // Gate met on the last conversation: the same slot, now enabled.
     const open = render_review(traces, { save_disabled: false })
     const live = open.getByText("Save") as HTMLButtonElement
     expect(live.disabled).toBe(false)
-    expect(open.queryByText("Continue")).toBeNull()
-    // The slot keeps one width across that flip, so it doesn't resize as the
-    // gate completes.
-    expect(live.className).toContain("min-w-64")
-    expect(blocked.className).toContain("min-w-64")
+    expect(open.queryByText("Next")).toBeNull()
+    // The slot keeps one size across that flip, so it doesn't resize as the
+    // gate completes — and that size is the same button Previous is.
+    expect(live.className).toBe(blocked.className)
+    expect(live.className).not.toContain("min-w-64")
   })
 
   it("renders the parent-owned refine label and its tooltip", () => {
@@ -666,10 +630,10 @@ describe("the trace modal — multi-turn", () => {
     expect(text).toContain(traces[0].raw_output)
   })
 
-  it("keeps the panels raw, in the tints the shipped modal uses", async () => {
-    // The no-conversation fallback: its Input panel is neutral base-100 raw
-    // text, not a tinted, content-typed rendering. A JSON input reads here
-    // as it shipped.
+  it("shows the raw panels on the house read-only surface", async () => {
+    // The no-conversation fallback: each panel is an Output, so the trace
+    // reads the way every other read-only block in the app does, and a JSON
+    // input is printed rather than shown as a typed rendering.
     const raw_input = '{"question": "return window?"}'
     const traces = [{ ...echoing_trace(), raw_input, trace: null }]
     const { container } = render_review(traces)
@@ -677,12 +641,14 @@ describe("the trace modal — multi-turn", () => {
     const dialog = trace_dialog(container)
 
     const panel = [...dialog.querySelectorAll("div")].find((d) =>
-      d.className.includes("bg-base-100"),
+      d.className.includes("bg-base-200"),
     )
     expect(panel).not.toBeUndefined()
-    expect(panel?.className).toContain("whitespace-pre-wrap")
-    expect(panel?.textContent?.trim()).toBe(raw_input)
-    expect(panel?.querySelector("pre")).toBeNull()
+    const printed = panel?.querySelector("pre")
+    expect(printed?.className).toContain("whitespace-pre-wrap")
+    expect(printed?.textContent?.trim()).toBe(
+      JSON.stringify(JSON.parse(raw_input), null, 2),
+    )
   })
 
   it("marks an input citation on the opening user bubble", async () => {
@@ -709,5 +675,29 @@ describe("the trace modal — multi-turn", () => {
     const mark = dialog.querySelector("mark")
     expect(mark?.textContent).toBe("30 days")
     expect(mark?.hasAttribute("data-highlight-target")).toBe(true)
+  })
+})
+
+// The step header states the reviewer's position in the graded sequence: it is
+// the review's only progress readout, so it must count the subset the reviewer
+// actually walks rather than the whole batch.
+describe("ClaimEvidenceReview — the case header", () => {
+  it("counts the position within the selected subset", async () => {
+    const traces = [
+      built_trace("t0"),
+      built_trace("t1"),
+      built_trace("t2"),
+      built_trace("t3"),
+    ]
+    // Two of the four are shown, and they are not the first two.
+    const { container, getByText } = render_review(traces, {
+      selected_indices: [1, 3],
+    })
+    const header = () => container.querySelector("h2")!.textContent
+
+    expect(header()).toBe("Case 1 of 2")
+    await agree_all(container, 2)
+    await fireEvent.click(getByText("Next"))
+    expect(header()).toBe("Case 2 of 2")
   })
 })

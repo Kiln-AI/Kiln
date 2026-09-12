@@ -1,17 +1,19 @@
 <script lang="ts">
   // One claim in the claim review: one decision the judge made, written so
-  // the reviewer can vote on it from the card. The text carries its own
+  // the reviewer can vote on it where they read it. The text carries its own
   // evidence, with [n] chips that open the trace at the cited span. The
   // reviewer answers Agree (the judge got this decision right) or Disagree
   // (it got it wrong); a disagreement needs a reason, which feeds judge
-  // refinement. Every claim renders through this one card, the verdict claim
-  // included: the builder writes the verdict as an ordinary last claim, and
-  // the review derives the reviewer's overall call from its grade
-  // (human_verdict in claim_evidence.ts). The card never names the judge or
-  // its score: everything on it is the builder's text, the verdict claim's
-  // "It passes" / "It fails" included.
+  // refinement. Every claim renders through this one component, the verdict
+  // claim included: the builder writes the verdict as an ordinary last claim,
+  // and the review derives the reviewer's overall call from its grade
+  // (human_verdict in claim_evidence.ts). Nothing here names the judge or
+  // its score: everything on screen is the builder's text, the verdict
+  // claim's "It passes" / "It fails" included.
   import { onDestroy } from "svelte"
+  import SettingsHeader from "$lib/ui/settings_header.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import FormElement from "$lib/utils/form_element.svelte"
   import ClaimText from "./claim_text.svelte"
   import {
     split_claim_note,
@@ -27,8 +29,6 @@
   export let verdict: ClaimVerdict
   export let on_cite: (citation: Citation) => void = () => {}
 
-  let why_input: HTMLTextAreaElement | null = null
-
   // The trailing "Note:" paragraph renders apart from the claim, muted; the
   // body is everything else.
   $: split = split_claim_note(claim.text)
@@ -40,13 +40,21 @@
     // ride the agree grade into the persisted review and judge refinement.
     if (value) verdict.why = ""
     verdict = verdict
-    if (!value) setTimeout(() => why_input?.focus(), 0)
+    // The reason box is inside FormElement, which exposes no element ref, so
+    // the focus goes through the id this component owns and gives the field.
+    if (!value)
+      setTimeout(() => document.getElementById(why_id(index))?.focus(), 0)
   }
 
-  $: needs_reason = verdict.agrees === false && !verdict.why.trim()
+  // The reason field and the hint that describes it, named once so the field,
+  // its label and the aria wiring cannot drift apart.
+  const why_id = (i: number) => `claim-why-${i}`
+  const why_hint_id = (i: number) => `claim-why-hint-${i}`
+  const WHY_LABEL =
+    "What do you disagree with? What should the judge have done instead?"
 
   // Hint under the reason box. A one-line reason rarely gives judge refinement
-  // enough to act on, so the card nudges for more while the reviewer is still
+  // enough to act on, so the hint nudges for more while the reviewer is still
   // typing. Length is the trimmed length; the tier changes only after a pause
   // so it never flips mid-keystroke, but it clears at once when the reason is
   // long enough or emptied. Length never gates saving: only an empty reason
@@ -83,7 +91,7 @@
   $: sync_reason_hint(verdict)
 
   function sync_reason_hint(next_verdict: ClaimVerdict) {
-    // A different verdict object means a different claim in the card, so drop
+    // A different verdict object means a different claim on screen, so drop
     // the old claim's hint at once rather than leaving it over new text.
     if (next_verdict !== hinted_verdict) {
       hinted_verdict = next_verdict
@@ -119,26 +127,25 @@
   onDestroy(clear_hint_timer)
 </script>
 
-<!-- House card chrome (card card-bordered shadow-md); claim cards are not
-     click targets, so no hover treatment. -->
-<div
-  id="claim-card-{index}"
-  class="card card-bordered shadow-md p-4 bg-base-100 border-base-300"
->
-  <div class="flex items-start justify-between gap-3">
-    <p class="text-sm min-w-0 leading-relaxed">
-      <span class="font-medium text-gray-500 mr-1.5">#{index + 1}</span
-      ><ClaimText text={split.body} citations={claim.citations} {on_cite} />
-    </p>
+<!-- No card: a claim is not a click target or a list item. It is a titled
+     section like every other read-and-answer block in the app — the header
+     carries its number and its two answers, the text sits under the rule at
+     full width. The claim owns the gaps between its own parts; the list above
+     owns the gap between claims. -->
+<div id="claim-card-{index}" class="flex flex-col gap-3">
+  <SettingsHeader title="Claim #{index + 1}">
     <!-- Agree / Disagree, in the words the payload stores, so nothing is
-         translated between the click and the record. The selected side takes
-         the same success/error styling as the Pass/Fail pair elsewhere in the
-         builder; the label holds still so the stack stays scannable. -->
-    <div class="flex gap-2 flex-none">
+         translated between the click and the record. The selection style is
+         the app's Rating and Feedback one, with one departure: an unmade
+         choice is a full-contrast outline button, and a made one is filled
+         secondary. The sibling keeps btn-outline on the chosen side and dims
+         the other, which in this theme leaves the two states almost
+         identical. -->
+    <svelte:fragment slot="actions">
       <button
         id="claim-agree-{index}"
         class="btn btn-sm {verdict.agrees === true
-          ? 'btn-success'
+          ? 'btn-secondary'
           : 'btn-outline'}"
         on:click={() => set_agrees(true)}
       >
@@ -147,49 +154,51 @@
       <button
         id="claim-disagree-{index}"
         class="btn btn-sm {verdict.agrees === false
-          ? 'btn-error'
+          ? 'btn-secondary'
           : 'btn-outline'}"
         on:click={() => set_agrees(false)}
       >
         Disagree
       </button>
-    </div>
-  </div>
+    </svelte:fragment>
+  </SettingsHeader>
+
+  <p class="text-sm leading-relaxed">
+    <ClaimText text={split.body} citations={claim.citations} {on_cite} />
+  </p>
 
   {#if split.note !== null}
     <!-- The builder's aside, muted so it reads as context rather than as part
          of the decision being voted on. -->
-    <p class="text-sm text-gray-500 mt-2 leading-relaxed" data-claim-note>
+    <p class="text-sm text-gray-500 leading-relaxed" data-claim-note>
       <ClaimText text={split.note} citations={claim.citations} {on_cite} />
     </p>
   {/if}
 
   {#if verdict.agrees === false}
-    <label for="claim-why-{index}" class="block text-sm font-medium mt-3 mb-1">
-      What do you disagree with? What should the judge have done instead?
-    </label>
-    <textarea
-      id="claim-why-{index}"
-      class="textarea textarea-bordered textarea-sm w-full {needs_reason
-        ? 'textarea-error'
-        : ''}"
+    <!-- A null validator, because an empty reason is not a form error to
+         spell out: the control's own required treatment already says it, and
+         the default validator would overwrite the placeholder with the
+         message. -->
+    <FormElement
+      id={why_id(index)}
+      inputType="textarea"
+      label={WHY_LABEL}
       placeholder="This is wrong because…"
-      aria-describedby="claim-why-hint-{index}"
+      aria_describedby={why_hint_id(index)}
+      validator={() => null}
       bind:value={verdict.why}
-      bind:this={why_input}
-      rows="2"
-    ></textarea>
-    <!-- Fixed height whether or not a hint is showing, so the card never
+    />
+    <!-- Fixed height whether or not a hint is showing, so the claim never
          shifts as the reviewer types. Announced politely so it reads out
          without taking focus; the icon and the words carry the meaning, the
          colour only ranks it. There is deliberately no "long enough" state. -->
-    <div id="claim-why-hint-{index}" class="h-5 mt-1" aria-live="polite">
+    <div id={why_hint_id(index)} class="h-5" aria-live="polite">
       {#if reason_hint}
         <Warning
           warning_color={reason_hint === "short" ? "warning" : "gray"}
           warning_icon="exclaim"
           inline
-          text_size="xs"
           warning_message={REASON_HINTS[reason_hint]}
         />
       {/if}
