@@ -403,15 +403,15 @@ describe("ClaimEvidenceReview — the pass/fail call", () => {
   })
 })
 
-describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
-  it("holds the Save slot disabled until the gate is met, never a dead Next", async () => {
+describe("ClaimEvidenceReview — the forward action on the last conversation", () => {
+  it("holds the slot disabled until the gate is met, never a dead Next", async () => {
     const traces = [built_trace("only")]
 
-    // Gate not met: the same Save button holds the slot, simply disabled, the
-    // way every other form in the app holds a submit. No Next — there's
-    // nothing left to advance to.
+    // Gate not met: the same button holds the slot, simply disabled, the way
+    // every other form in the app holds a submit. No Next — there's nothing
+    // left to advance to.
     const gated = render_review(traces, { save_disabled: true })
-    const blocked = gated.getByText("Save") as HTMLButtonElement
+    const blocked = by_id<HTMLButtonElement>(gated.container, "review-continue")
     expect(blocked.disabled).toBe(true)
     expect(gated.queryByText("Next")).toBeNull()
     expect(gated.container.querySelector(".tooltip")).toBeNull()
@@ -419,7 +419,7 @@ describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
 
     // Gate met on the last conversation: the same slot, now enabled.
     const open = render_review(traces, { save_disabled: false })
-    const live = open.getByText("Save") as HTMLButtonElement
+    const live = by_id<HTMLButtonElement>(open.container, "review-continue")
     expect(live.disabled).toBe(false)
     expect(open.queryByText("Next")).toBeNull()
     // The slot keeps one size across that flip, so it doesn't resize as the
@@ -428,33 +428,29 @@ describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
     expect(live.className).not.toContain("min-w-64")
   })
 
-  it("renders the parent-owned refine label and its tooltip", () => {
-    // The parent flips these props when graded disagreements exist (see
-    // review_cta_refines in the wizard); the component just renders them.
-    const tip =
-      "You disagreed with the judge on 1 conversation. Kiln will improve the judge from your feedback and re-check your eval data, then you'll review once more."
-    const { getByText, queryByText, container } = render_review(
-      [built_trace("only")],
-      {
-        save_disabled: false,
-        save_label: "Refine Judge",
-        save_tooltip: tip,
-      },
+  it("reads Continue on the last case", () => {
+    // The label used to flip between Save and Refine Judge with the grades.
+    // It no longer does: what the click leads to is settled in the dialog it
+    // opens, so the button carries one word.
+    const { container } = render_review([built_trace("only")], {
+      save_disabled: false,
+    })
+    expect(by_id(container, "review-continue").textContent?.trim()).toContain(
+      "Continue",
     )
-    expect(getByText("Refine Judge")).toBeTruthy()
-    expect(queryByText("Save")).toBeNull()
-    expect(container.querySelector(".tooltip")?.getAttribute("data-tip")).toBe(
-      tip,
-    )
+  })
+
+  it("reports the forward action to the parent, which decides what it means", async () => {
+    const on_save = vi.fn()
+    const { container } = render_review([built_trace("only")], {
+      save_disabled: false,
+      on_save,
+    })
+    await fireEvent.click(by_id(container, "review-continue"))
+    expect(on_save).toHaveBeenCalledTimes(1)
   })
 })
 
-// ── The trace modal, opened from the review ──────────────────────────────
-
-// A single-turn trace whose structured trace ECHOES the raws: its user turn IS
-// raw_input and its assistant turn IS raw_output. This is what a single-turn
-// run records, and it is the shape the duplicate-input pin leans on: any panel
-// rendered above the conversation would print the opening message twice.
 function echoing_trace(citation?: Citation): TraceClaims {
   return {
     ...built_trace("echo_0", { verdict: false }),

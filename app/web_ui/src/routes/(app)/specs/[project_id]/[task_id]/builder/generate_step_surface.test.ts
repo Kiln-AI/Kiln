@@ -869,7 +869,83 @@ describe("a review with nothing to grade is not a dead end", () => {
       "{:else if reviewable_trace_indices.length === 0}",
       "{:else}",
     )
-    expect(normalize(branch)).toContain("Save Without Refining Further")
+    expect(normalize(branch)).toContain("Save Without Improving")
     expect(normalize(branch)).toContain("on:click={save_without_refining}")
+  })
+})
+
+// ── The forward action on the last case ───────────────────────────────────
+//
+// The reviewer's feedback can either improve the judge or be kept as-is. The
+// wizard asks rather than deciding, and the dialog's secondary is the only way
+// out of the refine loop, so these strings and both wirings are contractual.
+describe("the improve-judge dialog", () => {
+  // One action button's own object literal, from its label to the brace that
+  // closes it. Asserting over the whole dialog cannot tell the two buttons
+  // apart: swap their bodies and every string is still somewhere in the
+  // region. This is what makes a swap fail.
+  function action_button(label: string): string {
+    const dialog = region('title="Improve Judge with Feedback?"', "</Dialog>")
+    const at = dialog.indexOf(`label: "${label}"`)
+    if (at < 0) throw new Error(`no action button labelled ${label}`)
+    const end = dialog.indexOf("\n    },", at)
+    if (end < 0) throw new Error(`unterminated action button ${label}`)
+    return normalize(dialog.slice(at, end))
+  }
+
+  it("asks before refining, in the words the reviewer was promised", () => {
+    const d = normalize(
+      region('title="Improve Judge with Feedback?"', "</Dialog>"),
+    )
+    expect(d).toContain(
+      "You disagreed with the judge and gave feedback, which we can use to improve your Judge.",
+    )
+    expect(d).toContain('label: "Improve Judge"')
+    expect(d).toContain('label: "Save Without Improving"')
+  })
+
+  it("wires each button to the path it names, and only that path", () => {
+    const improve = action_button("Improve Judge")
+    expect(improve).toContain("isPrimary: true")
+    expect(improve).toContain("run_calibration_round()")
+    expect(improve).not.toContain("save_without_refining()")
+
+    const save = action_button("Save Without Improving")
+    expect(save).toContain("save_without_refining()")
+    expect(save).not.toContain("run_calibration_round()")
+    expect(save).not.toContain("isPrimary")
+  })
+
+  it("is what the keyboard shortcut reaches too", () => {
+    // The shortcut fires the review's forward action rather than the save, so
+    // a round with feedback is asked about however the reviewer triggers it.
+    const keys = normalize(
+      region("function handle_global_keydown(", "function step_name_for("),
+    )
+    expect(keys).toContain("save_gate_met && review_on_last_trace")
+    expect(keys).toContain("on_advance_to_save()")
+    expect(keys).not.toContain("on_save()")
+  })
+
+  it("opens only where the review asks to go forward with feedback", () => {
+    // The dialog replaces the automatic refine: the decision point is the
+    // same one, so it is opened from the same branch that used to calibrate.
+    const advance = normalize(
+      region("function on_advance_to_save()", 'goto_step("save")'),
+    )
+    expect(advance).toContain('decision.action === "calibrate"')
+    expect(advance).toContain("improve_judge_dialog?.show()")
+  })
+
+  it("keeps no second exit beside the review's own action", () => {
+    // The dialog's secondary is the only way past a review that has feedback;
+    // the quiet link that used to sit under the review is gone. The empty-
+    // subset screen keeps its own exit, because there is no review to go
+    // forward from there at all.
+    const review = normalize(
+      region("<ClaimEvidenceReview", '{:else if current_step === "save"}'),
+    )
+    expect(review).not.toContain("Save Without Improving")
+    expect(normalized).not.toContain("Save Without Refining Further")
   })
 })

@@ -112,9 +112,7 @@
     has_verdict_claim,
     is_trace_reviewed,
     plan_save_action,
-    refine_judge_tooltip,
     rejudge_shortfall_notice,
-    review_cta,
     reviewable_subset,
     reviewed_trace_count,
     select_calibration_subset,
@@ -3225,7 +3223,11 @@
       has_disagreement: has_grade_disagreement(graded),
     })
     if (decision.action === "calibrate") {
-      void run_calibration_round()
+      // The reviewer gave feedback the judge could learn from. Improving it
+      // costs a model call and a re-review, so it is offered rather than
+      // taken: the dialog's two buttons are the two ways forward, and its
+      // secondary is the only exit from the loop.
+      improve_judge_dialog?.show()
       return
     }
     // Converged: zero disagreement, so the judge whose verdicts were just
@@ -3286,17 +3288,12 @@
     trace_claims.length > 0 &&
     reviewable_trace_indices.length > 0 &&
     reviewed_count >= review_target_count
-  // The review CTA says what clicking it does: with any graded disagreement
-  // a save enters a refine round, so the button reads Refine Judge (with a
-  // tooltip naming the count). It flips back to Save the moment the last
-  // disagreement clears — the convergence signal. Uses the loop's exact entry
-  // predicate, so label and behavior can't drift apart.
+  // How many graded disagreements the round carries. The forward action reads
+  // the same either way; this decides whether clicking it asks the reviewer
+  // what to do with that feedback or simply saves.
   $: review_disagreement_count = grade_disagreement_count(
     build_graded_traces(trace_claims, trace_reviews),
   )
-  $: review_cta_state = review_cta({
-    num_disagreements: review_disagreement_count,
-  })
   // The arm's word for one reviewed item, for copy that counts them.
   $: judged_noun = is_multi_turn ? "conversation" : "example"
   // The plan's rows read as "items" on both arms (the plan surface labels them
@@ -3305,8 +3302,8 @@
   const plan_noun = "items"
   $: case_noun = is_multi_turn ? "conversation" : "test run"
   // Bound out of the review component: true only while it shows its last
-  // trace, which is where it renders the primary CTA. The save-without-
-  // refining link stacks under that CTA, so it follows this flag.
+  // trace, which is where it renders the forward action. Anything the page
+  // stacks under that action follows this flag.
   let review_on_last_trace = false
 
   // ── Lazy claims (multi-turn). The pipeline stream stops at the judge;
@@ -3317,6 +3314,8 @@
   // Guarded patch: a re-drive replaces trace_claims while builds are in
   // flight — the trace_id check stops a stale response landing on the new
   // batch's trace at the same index.
+  let improve_judge_dialog: Dialog | null = null
+
   function patch_trace_claims(
     index: number,
     trace_id: string,
@@ -3514,8 +3513,8 @@
   // grade the result — round after round. Both arms re-judge their driven
   // runs by durable id (judge_traces) and re-open a smart-picked subset.
   // Save happens only when a review carries zero disagreement (the judge
-  // that ships is the one whose verdicts were graded) or when the user opts
-  // out via the save-without-refining link under the review CTA.
+  // that ships is the one whose verdicts were graded) or when the reviewer
+  // takes Save Without Improving in the dialog Continue opens.
   type CalibrationPhase = "idle" | "refining" | "rejudging" | "building_claims"
   let calibration_phase: CalibrationPhase = "idle"
   // Completed refine+re-judge rounds this batch — round tags, the gate
@@ -3525,8 +3524,9 @@
   // the re-check without re-paying the refine call.
   let calibration_error: string | null = null
   // Refine-attempt failure (request died, timeout, unusable prompt): shown
-  // inline under the review actions. The CTA stays Refine Judge and re-fires
-  // the refine; the save-without-refining link remains the way out.
+  // inline under the review actions. Continue re-opens the dialog, so
+  // Improve Judge re-fires the refine and Save Without Improving is still
+  // the way out.
   let calibration_refine_error: string | null = null
   // Cases without a fresh verdict last round — surfaced honestly above the
   // review; they keep stale results and sit the round out.
@@ -3777,8 +3777,8 @@
       // There is no judge to refine FROM — the review on screen was never
       // pinned to one. Report it on the inline refine surface (the same
       // sentence save uses for the same missing judge) rather than returning
-      // quietly, which would leave the CTA doing nothing however often it is
-      // clicked.
+      // quietly, which would leave Improve Judge doing nothing however often
+      // it is clicked.
       calibration_refine_error =
         "No judge was configured. Go back and re-run the review."
       return
@@ -3872,10 +3872,10 @@
           reason: e.reason,
         })
         // Surface the failure inline under the review actions. The grades
-        // stay editable underneath it, so clicking Refine Judge again starts
-        // a fresh attempt from whatever the grades say at that moment.
-        // Bare message, data-guide idiom: the Refine Judge CTA above it and
-        // the bail link below already say what the user can do.
+        // stay editable underneath it, so re-opening the dialog and choosing
+        // Improve Judge starts a fresh attempt from whatever the grades say at
+        // that moment. Bare message, data-guide idiom: the dialog's two
+        // buttons already say what the user can do.
         calibration_refine_error = e.message
         return
       }
@@ -3908,9 +3908,10 @@
     calibration_phase = "idle"
   }
 
-  // The loop's opt-out (the link under the review CTA): save immediately
-  // with the judge whose verdicts the reviewer actually graded — the latest
-  // refined one once a round has run — grades carried as-is.
+  // The loop's opt-out (the dialog's Save Without Improving, and the same
+  // exit on the empty-review screen): save immediately with the judge whose
+  // verdicts the reviewer actually graded — the latest refined one once a
+  // round has run — grades carried as-is.
   function save_without_refining() {
     posthog.capture("eval_v2_judge_calibration_opted_out", {
       is_multi_turn,
@@ -5050,7 +5051,7 @@
             <div class="mt-2">
               <Warning
                 warning_color="error"
-                warning_message={`${calibration_error.trimEnd().replace(/\.$/, "")}. You can also go back to review and save without refining further.`}
+                warning_message={`${calibration_error.trimEnd().replace(/\.$/, "")}. You can also go back to review and choose Save Without Improving.`}
               />
             </div>
             <div class="text-center py-4 flex justify-center gap-2">
@@ -5105,7 +5106,7 @@
                   class="link underline text-sm text-gray-500"
                   on:click={save_without_refining}
                 >
-                  Save Without Refining Further
+                  Save Without Improving
                 </button>
               </div>
             {/if}
@@ -5143,47 +5144,20 @@
                   spec_text={current_spec_text}
                   on_save={on_advance_to_save}
                   save_disabled={!save_gate_met}
-                  save_label={review_cta_state === "refine"
-                    ? "Refine Judge"
-                    : "Save"}
-                  save_tooltip={review_cta_state === "refine"
-                    ? refine_judge_tooltip(
-                        review_disagreement_count,
-                        judged_noun,
-                      )
-                    : null}
                   bind:on_last_trace={review_on_last_trace}
                 />
               {/key}
             {/if}
             {#if calibration_refine_error}
               <!-- A failed refine attempt, reported inline under the review
-                   actions. Rendered independently of the opt-out link below:
-                   editing grades can drop the save gate (a fresh disagreement
-                   without a reason yet), and the failure must not vanish
-                   while the user is reacting to it. -->
+                   actions: editing grades can drop the save gate (a fresh
+                   disagreement without a reason yet), and the failure must not
+                   vanish while the user is reacting to it. -->
               <div class="mt-2">
                 <Warning
                   warning_color="error"
                   warning_message={calibration_refine_error}
                 />
-              </div>
-            {/if}
-            {#if review_cta_state === "refine" && save_gate_met && review_on_last_trace}
-              <!-- The loop's opt-out, in the wizard's quiet-link idiom (the
-                   data-guide refine flow): saves immediately with the judge
-                   the reviewer graded — no dialog. Only offered where the
-                   primary CTA itself renders — a refine on the last trace —
-                   so it never sits under a Continue button, where one unconfirmed
-                   click would save mid-review. -->
-              <div class="flex flex-col items-end mt-2">
-                <button
-                  type="button"
-                  class="link underline text-sm text-gray-500"
-                  on:click={save_without_refining}
-                >
-                  Save Without Refining Further
-                </button>
               </div>
             {/if}
           {/if}
@@ -5391,4 +5365,37 @@
       warning_message={drive_cost_message}
     />
   </FormContainer>
+</Dialog>
+
+<!-- The forward action's fork on the last case: the reviewer disagreed with
+     the judge somewhere and said why, and that feedback can either improve the
+     judge or be kept as-is. Both are legitimate, so both are buttons, and the
+     wizard does not decide for them. Improving costs a model call and a
+     re-review; saving is final. Nothing here is destructive, so neither button
+     is an error button. -->
+<Dialog
+  bind:this={improve_judge_dialog}
+  title="Improve Judge with Feedback?"
+  action_buttons={[
+    {
+      label: "Save Without Improving",
+      action: () => {
+        save_without_refining()
+        return true
+      },
+    },
+    {
+      label: "Improve Judge",
+      isPrimary: true,
+      action: () => {
+        void run_calibration_round()
+        return true
+      },
+    },
+  ]}
+>
+  <p class="text-sm text-gray-500">
+    You disagreed with the judge and gave feedback, which we can use to improve
+    your Judge.
+  </p>
 </Dialog>

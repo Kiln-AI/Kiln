@@ -1155,9 +1155,9 @@ export function build_graded_traces(
 }
 
 // How many graded traces carry a disagreement on any claim. This is the
-// loop's entry predicate as a count, so the review CTA flips to its refine
-// label precisely when a save click would start a calibration round, and
-// the tooltip can name the number honestly.
+// loop's entry predicate as a count: the forward action asks whether to
+// improve the judge precisely when a click would otherwise start a
+// calibration round.
 export function grade_disagreement_count(
   graded: Pick<ClaimReviewPayload, "claims">[],
 ): number {
@@ -1172,18 +1172,6 @@ export function has_grade_disagreement(
   graded: Pick<ClaimReviewPayload, "claims">[],
 ): boolean {
   return grade_disagreement_count(graded) > 0
-}
-
-// The refine CTA's tooltip: says what the click actually starts (a refine
-// round, not a save) and what it costs the reviewer (one more review).
-// judged_noun is the arm's word for one reviewed item — the wizard reviews
-// conversations in multi-turn and examples in single-turn.
-export function refine_judge_tooltip(
-  num_disagreements: number,
-  judged_noun: string,
-): string {
-  const items = num_disagreements === 1 ? judged_noun : `${judged_noun}s`
-  return `You disagreed with the judge on ${num_disagreements} ${items}. Kiln will improve the judge from your feedback and re-check your eval data, then you'll review once more.`
 }
 
 // Indices of traces carrying any explicit disagreement on a claim — the
@@ -1273,17 +1261,6 @@ export function plan_save_action(args: {
   has_disagreement: boolean
 }): SaveAction {
   return args.has_disagreement ? { action: "calibrate" } : { action: "save" }
-}
-
-// Which primary action the review CTA offers. Any disagreement enters a
-// refine round; a review with zero disagreements saves — clearing the last
-// disagreement flips the CTA back, which doubles as the convergence signal.
-// The way out of the loop with disagreement remaining is the explicit
-// save-without-refining link, not this CTA.
-export type ReviewCta = "save" | "refine"
-
-export function review_cta(args: { num_disagreements: number }): ReviewCta {
-  return args.num_disagreements === 0 ? "save" : "refine"
 }
 
 // The honest shortfall notice when some cases couldn't be re-checked: they

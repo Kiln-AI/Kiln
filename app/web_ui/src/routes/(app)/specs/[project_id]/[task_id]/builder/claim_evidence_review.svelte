@@ -42,16 +42,14 @@
   // Called with the trace index being shown — the parent builds its claims
   // if needed. Also the retry hook for a failed build.
   export let on_open_trace: (index: number) => void = () => {}
+  // Called when the reviewer takes the forward action on the last case. What
+  // happens next — a refine round or a straight save — is the parent's call,
+  // and it asks the reviewer in a dialog when there is feedback to act on.
   export let on_save: () => void = () => {}
-  // The review gate, computed by the parent (enough traces reviewed). Drives
-  // the Save button's VISIBILITY (not just its enabled state): Save is hidden
-  // until the gate is met, then takes the forward slot on the last conversation.
+  // The review gate, computed by the parent (enough traces reviewed). Holds
+  // the forward action on the last conversation disabled until enough of the
+  // batch has been graded, the way every other form in the app holds a submit.
   export let save_disabled = true
-  // The primary action's label and optional tooltip, parent-owned so the
-  // button can say what the click actually does (a review with disagreements
-  // enters a judge-refine round instead of saving).
-  export let save_label = "Save"
-  export let save_tooltip: string | null = null
   // What the judge judged, in the caller's vocabulary: "conversation" for
   // multi-turn, "example" for single-turn.
   export let judged_noun = "example"
@@ -237,43 +235,28 @@
         disabled={!current_reviewed}>Next</button
       >
     {:else if !save_disabled}
-      <!-- Last case, gate met: the same slot holds the save. The label is
-           parent-owned (Save vs Refine Judge) so it never promises a save that
-           a calibration round would intercept. The keyboard hint rides only
-           this enabled variant, because the shortcut fires the save action and
-           only once the gate is met. -->
-      {#if save_tooltip}
-        <div class="tooltip tooltip-left" data-tip={save_tooltip}>
-          <button class="btn btn-primary" on:click={on_save}>
-            {save_label}
-            <span class="opacity-80 ml-2 text-xs font-light">
-              {#if isMacOS()}
-                <span class="tracking-widest">⌘↵</span>
-              {:else}
-                <span>ctrl ↵</span>
-              {/if}
-            </span>
-          </button>
-        </div>
-      {:else}
-        <button class="btn btn-primary" on:click={on_save}>
-          {save_label}
-          <span class="opacity-80 ml-2 text-xs font-light">
-            {#if isMacOS()}
-              <span class="tracking-widest">⌘↵</span>
-            {:else}
-              <span>ctrl ↵</span>
-            {/if}
-          </span>
-        </button>
-      {/if}
+      <!-- Last case, gate met. One label whatever the review found: what the
+           click does is settled in the dialog it opens, not in the word on the
+           button. The keyboard hint rides only this enabled variant, because
+           the shortcut fires the same action and only once the gate is met —
+           the house form shows the same hint on its own submit. -->
+      <button id="review-continue" class="btn btn-primary" on:click={on_save}>
+        Continue
+        <span class="opacity-80 ml-2 text-xs font-light">
+          {#if isMacOS()}
+            <span class="tracking-widest">⌘↵</span>
+          {:else}
+            <span>ctrl ↵</span>
+          {/if}
+        </span>
+      </button>
     {:else}
-      <!-- Last case, gate not met: the same save action, simply disabled. A
-           "Next" here would point at nothing, so the slot stays the save
-           action throughout. No keyboard hint: the shortcut is gated on the
-           same rule as this button. -->
-      <button class="btn btn-primary" disabled>
-        {save_label}
+      <!-- Last case, gate not met: the same action, simply disabled. A "Next"
+           here would point at nothing, so the slot stays this action
+           throughout. No keyboard hint: the shortcut is gated on the same rule
+           as this button. -->
+      <button id="review-continue" class="btn btn-primary" disabled>
+        Continue
       </button>
     {/if}
   </div>

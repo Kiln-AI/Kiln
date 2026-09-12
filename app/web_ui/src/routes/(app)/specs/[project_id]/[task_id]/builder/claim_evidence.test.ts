@@ -19,9 +19,7 @@ import {
   map_output_span_to_trace,
   MAX_JUDGE_PROMPT_CHARS,
   plan_save_action,
-  refine_judge_tooltip,
   rejudge_shortfall_notice,
-  review_cta,
   resolve_citation_span,
   resolve_citation_span_whitespace_tolerant,
   review_target,
@@ -1332,7 +1330,7 @@ describe("calibration_gate_target — save gate during rounds", () => {
 
   it("caps the demand at the subset size on a re-judge shortfall", () => {
     // The gate must never demand reviews of traces the round didn't show —
-    // otherwise a large shortfall makes the Save CTA unreachable.
+    // otherwise a large shortfall makes the save unreachable.
     expect(calibration_gate_target(40, 3)).toBe(3)
     expect(calibration_gate_target(40, 1)).toBe(1)
   })
@@ -1455,19 +1453,6 @@ describe("has_grade_disagreement / disagreed_trace_indices", () => {
   })
 })
 
-describe("review_cta — primary action after a review", () => {
-  it("offers a refine round whenever disagreements remain", () => {
-    expect(review_cta({ num_disagreements: 1 })).toBe("refine")
-    expect(review_cta({ num_disagreements: 9 })).toBe("refine")
-  })
-
-  it("offers the plain save the moment disagreements clear", () => {
-    // Zero disagreements is the convergence signal, whether it's the first
-    // pass or the tail of a long refine loop.
-    expect(review_cta({ num_disagreements: 0 })).toBe("save")
-  })
-})
-
 describe("rejudge_shortfall_notice", () => {
   it("silent when every case re-judged", () => {
     expect(rejudge_shortfall_notice(0, "conversation")).toBeNull()
@@ -1488,10 +1473,10 @@ describe("rejudge_shortfall_notice", () => {
   })
 })
 
-describe("review CTA — grade_disagreement_count / refine_judge_tooltip", () => {
+describe("grade_disagreement_count — the refine trigger as a count", () => {
   it("counts traces carrying a disagreement, matching the loop's predicate", () => {
-    // The label flips to Refine Judge exactly when the count is non-zero —
-    // the same condition under which a save click starts a refine round.
+    // Continue opens the improve-judge dialog exactly when the count is
+    // non-zero — the same condition under which a round would start.
     expect(grade_disagreement_count([])).toBe(0)
     expect(grade_disagreement_count([graded("agree")])).toBe(0)
     const set = [
@@ -1503,33 +1488,11 @@ describe("review CTA — grade_disagreement_count / refine_judge_tooltip", () =>
   })
 
   it("flips back to zero the moment the last disagreement clears", () => {
-    // Convergence signal: an all-agree set counts zero, so the CTA returns
-    // to the save label reactively.
+    // Convergence signal: an all-agree set counts zero, so Continue stops
+    // asking about the judge and saves.
     expect(
       grade_disagreement_count([graded("agree"), graded("agree", "agree")]),
     ).toBe(0)
-  })
-
-  it("tooltip names the count, singular and plural, without em-dashes", () => {
-    expect(refine_judge_tooltip(1, "conversation")).toContain(
-      "disagreed with the judge on 1 conversation.",
-    )
-    expect(refine_judge_tooltip(3, "conversation")).toContain(
-      "disagreed with the judge on 3 conversations.",
-    )
-    expect(refine_judge_tooltip(3, "conversation")).toContain(
-      "improve the judge from your feedback and re-check your eval data, then you'll review once more.",
-    )
-    expect(refine_judge_tooltip(1, "conversation")).not.toMatch(/—/)
-  })
-
-  it("tooltip speaks each arm's noun", () => {
-    expect(refine_judge_tooltip(1, "example")).toContain(
-      "disagreed with the judge on 1 example.",
-    )
-    expect(refine_judge_tooltip(2, "example")).toContain(
-      "disagreed with the judge on 2 examples.",
-    )
   })
 })
 
