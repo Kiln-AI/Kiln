@@ -4,6 +4,8 @@ On top of DaisyUI’s CSS controls like btn, we have svelte controls you can use
 
 Use existing controls wherever possible to ensure consistent visual design.
 
+Use the control, or say in your plan which control you looked at and why it does not fit. A screen that is built from Tailwind classes copied off a house control is not using the control, and it will drift.
+
 ### App Specific Svelte Controls
 
 The following controls are commonly used in our design language:
@@ -16,9 +18,15 @@ The following controls are commonly used in our design language:
 - `intro.svelte` - used for empty screens before data is added. Teaches user about concept, and has buttons guiding them to an action.
 - `dialog.svelte` a modal dialog with close button, title, area for content, and action buttons.
 - `edit_dialog.svelte` a dialog for editing properties like name/description. Has save/cancel buttons.
-- `collapse.svelte` a collapsible section, often titled "Advanced Options" to hide optional controls
 - `float.svelte` - a low-level wrapper for `@floating-ui/dom` positioning. Prefer higher-level components (`floating_menu.svelte`, `info_tooltip.svelte`) when they fit your use case.
 - `floating_menu.svelte` / `table_action_menu.svelte` - floating dropdown menus using `@floating-ui/dom`. Use instead of DaisyUI's `dropdown-content` class, which breaks inside tables, dialogs, and scroll areas. `table_action_menu.svelte` is a convenience wrapper that includes the "..." ellipsis button with hover-to-open; `floating_menu.svelte` is the generic version with a trigger slot.
+- `settings_header.svelte` - a header-only element (title, optional subtitle, bottom rule). The title for any read-only section or any section of a form.
+- `output.svelte` - renders any read-only text or JSON, with copy and pretty-printing. The body for any read-only content: plans, overviews, summaries, traces, descriptions.
+- `see_all_dialog.svelte` - `Dialog` + `Output` for read-only content behind a button.
+- `kiln_section.svelte` - a `SettingsHeader` over a list of `settings_item.svelte` rows; use for settings-style pages.
+- `run/rating.svelte` - the Rating and Feedback selection buttons (`btn btn-sm btn-outline`, `btn-secondary` when selected). The selection-button style for the whole app; copy its classes when a control cannot use it directly.
+- `run_config_component/` - the model, tools and skills pickers. Never rebuild a picker.
+- `collapse.svelte` - the only expander. Never write `aria-expanded`, a chevron with `rotate-180`, or a `{#if expanded}` block by hand.
 
 Read the control's code to better understand it and its parameters. Optionally search for an existing use of the control to see it in use.
 

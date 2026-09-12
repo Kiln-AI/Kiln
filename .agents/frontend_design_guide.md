@@ -36,6 +36,26 @@ Our colors are named, a Daisy UI convention. For example the color “primary”
   - `bg-base-100` - white. Typically don’t set a background color and inherit this.
   - `bg-base-200` - light grey background for cards/blocks/table-headers
 
+### Layout and containers
+
+- We almost never draw a box. Content sits directly on the page, grouped by headers and spacing, the way the Edit Task form and the Run page do. Do not invent rounded, bordered, tinted or shadowed containers to group content.
+- The only boxes we draw are the documented ones: a table's frame (see `tables_style.md`), a card for a clickable or list item (see `card_style.md`), a `Warning` for a message, and `collapse.svelte` for hidden content. If none of those is the element, it is not a box.
+- Read-only content (a plan, a summary, an overview, a trace, a description) renders with `settings_header.svelte` for its title and `output.svelte` for its body. Not a tinted div.
+- Every screen that asks the user for input is a form. Use `form_container.svelte` and `form_element.svelte` for the whole thing: section headers, labels, fields, help text, the submit row. Do not write `<label>`, `<textarea>` or `<input>` by hand, and do not restate FormElement's label classes on a hand-written label.
+- One title per screen: the page title comes from `app_page.svelte`. Inside the page, use `settings_header.svelte` for section titles. Do not add a second `text-2xl font-bold` heading inside the body.
+- A progress or waiting screen is the house animation control (`analyzing_animation.svelte` or `conversation_animation.svelte`) with its own title and description props, nothing else. If a count must be shown, it goes in the description string, not in an extra line under the animation with its own weight and size.
+
+### Buttons
+
+- The default button is the plain grey `btn`. Use it for Previous, Cancel, Close, secondary actions, and anything that is not the one primary action.
+- `btn-outline` is for special cases only. `btn-outline btn-primary` is the one sanctioned use: picking one of several equal options.
+- `btn-ghost` is not a house button. Buttons that sit on a tinted surface must still read as buttons; if a button is the same colour as what it sits on, it is the wrong button.
+- Selection buttons (agree/disagree, pass/fail, yes/no) use the Rating and Feedback style: `btn btn-sm btn-outline`, and `btn-secondary` when selected. Never `btn-success` or `btn-error` for a choice. Red and green are for errors and status, not for disagreement.
+- Two buttons side by side are the same size. Never a small `btn-sm` next to a `btn-primary min-w-64`.
+- Pairs are named as pairs: "Previous" and "Next", never "Previous" and "Continue". A disabled Previous is hidden, not greyed.
+- Button labels are the action, not the verb "View": "Full Trace", "Eval Description", "Eval". The one accepted exception today is "View Eval" on a success screen, where nothing else reads right.
+- One primary button per screen. (Already in this guide; restated because it was not followed.)
+
 ### Fonts
 
 - You should never set a font-face, it’s an app wide standard non-serif font
@@ -45,3 +65,5 @@ Our colors are named, a Daisy UI convention. For example the color “primary”
   - font-light: stylish light text often used for subtitles
   - font-bold: usually not needed, use medium
 - You may set font size using daisyUI sizes: text-xs, text-sm, text-lg, text-xl, text-2xl
+- Use `font-medium` for every header inside the page, `font-normal` for body, `font-light` for subtitles and captions. Do not mix a bold title, a light-grey caption and a normal-weight count on the same screen.
+- Never set a font size or weight on a shared control from the call site. `Warning`, `Intro`, the animations and the headers own their type. If a control's default looks wrong on your screen, the screen is wrong, not the control.
