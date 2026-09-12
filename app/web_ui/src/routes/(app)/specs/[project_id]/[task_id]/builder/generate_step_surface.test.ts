@@ -809,7 +809,7 @@ describe("the run config the eval is written against", () => {
     expect(mentions("run_config_id: target_run_config_id")).toBe(2)
     expect(
       normalize(
-        region("async function on_save() {", "function back_to_task()"),
+        region("async function on_save() {", "function create_manually()"),
       ),
     ).not.toContain("run_config_id")
   })
@@ -947,5 +947,70 @@ describe("the improve-judge dialog", () => {
     )
     expect(review).not.toContain("Save Without Improving")
     expect(normalized).not.toContain("Save Without Refining Further")
+  })
+})
+
+// ── The save's success screen ─────────────────────────────────────────────
+describe("the eval-created screen", () => {
+  it("finishes on the house success control rather than a redirect", () => {
+    const done = normalize(region('title="Eval Created"', "/>"))
+    expect(done).toContain(
+      'subtitle="You\'ve created a new eval, including an eval dataset and aligned judge!"',
+    )
+    expect(done).toContain('button_text={created_eval_href ? "View Eval"')
+    // A save with no id has no eval page to offer, so it points at the list.
+    expect(done).toContain(
+      "link={created_eval_href ?? `/specs/${project_id}/${task_id}`}",
+    )
+  })
+
+  it("suppresses the leave guards by state, not by a latch", () => {
+    // A latch that is only ever set stays set: a wizard that somehow returned
+    // to a live step would be unguarded. The guard reads where the wizard is,
+    // so it comes back on by itself.
+    expect(normalized).toContain(
+      '$: leave_guard_suppressed = resetting || current_step === "done"',
+    )
+    expect(normalized).not.toContain("leave_guard_suppressed = true")
+  })
+
+  it("makes the finished state terminal", () => {
+    // The wizard stays mounted behind the success screen, so Back would
+    // otherwise land on the graded review with its save gate met — one click
+    // from a second Spec with the same batch tag, or a paid round on an eval
+    // that already shipped.
+    const sync = normalize(
+      region("function sync_step_from_history(", "abort_copilot_request()"),
+    )
+    expect(sync).toContain("if (saved_eval_created) {")
+    expect(sync).toContain("goto(finished_destination)")
+
+    // And the state those two actions would need is dropped on the way in, so
+    // a bug that got past the guard still has nothing to act on.
+    const finish = normalize(
+      region("function finish_on_done_screen(", 'replace_step("done")'),
+    )
+    expect(finish).toContain("saved_eval_created = true")
+    expect(finish).toContain("trace_claims = []")
+    expect(finish).toContain("trace_reviews = []")
+  })
+
+  it("finishes both save branches the same way, after the draft is cleared", () => {
+    // Multi-turn and single-turn each end in their own save; both must land
+    // on the same screen, and neither may do it while a draft still points at
+    // the work that just shipped.
+    expect(normalized.split("finish_on_done_screen(saved.id)").length - 1).toBe(
+      2,
+    )
+    const save_body = normalize(
+      region("async function on_save() {", "function create_manually()"),
+    )
+    // The clear is awaited before the flip, on both paths.
+    expect(
+      save_body.split("await clear_builder_draft(").length - 1,
+    ).toBeGreaterThanOrEqual(2)
+    const [first, second] = save_body.split("finish_on_done_screen(saved.id)")
+    expect(first).toContain("await clear_builder_draft(")
+    expect(second).toContain("await clear_builder_draft(")
   })
 })

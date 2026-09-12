@@ -1,5 +1,6 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
+  import Completed from "$lib/ui/completed.svelte"
   import { page } from "$app/stores"
   import { onMount, onDestroy, tick } from "svelte"
   import { agentInfo } from "$lib/agent"
@@ -301,6 +302,14 @@
   // request so a cancelled loading step doesn't leave a stuck spinner.
   function sync_step_from_history(step: BuilderStep | undefined) {
     if (!step || step === current_step) return
+    // Finished: every earlier step is behind a history entry, and all of them
+    // are about making the eval that now exists. Back leaves the wizard
+    // instead of re-entering it. This is what the save's redirect used to do
+    // by unmounting the page.
+    if (saved_eval_created) {
+      goto(finished_destination)
+      return
+    }
     abort_copilot_request()
     // Navigating away also cancels the preparing-review gate's ownership of
     // the advance: in-flight claim builds keep running (they belong to the
@@ -361,8 +370,12 @@
   // same — guard those too. In-wizard steps use shallow routing
   // (pushState/replaceState), which doesn't run beforeNavigate, so step
   // Back/Forward stays free; this fires only when the ROUTE changes.
-  // The save-success redirect suppresses it: the work is persisted.
-  let leave_guard_suppressed = false
+  // Suppressed on the two exits where the work is safe: the finished screen
+  // (the eval is saved and the draft cleared) and the reset's reload (the
+  // reset is itself persisted). Derived rather than latched, so a wizard that
+  // is somehow back on a live step is guarded again.
+  let resetting = false
+  $: leave_guard_suppressed = resetting || current_step === "done"
   beforeNavigate((nav) => {
     if (leave_guard_suppressed || !warn_before_unload) return
     // "leave" = real unload (reload/close) — the beforeunload handler owns
@@ -456,11 +469,12 @@
       console.error("Failed to persist the reset draft:", e)
     }
     // The reset is persisted — suppress both guards for the navigation.
+    // Cleared by nothing: the page is about to be replaced wholesale.
     // Start over where eval creation starts, on the Setup and Eval Type
     // page, rather than reloading this URL: it can carry the description
     // that page handed over, which a reload would apply again and walk
     // straight back into Step 2.
-    leave_guard_suppressed = true
+    resetting = true
     window.location.href = `/specs/${project_id}/${task_id}/select_template`
   }
 
@@ -3213,10 +3227,48 @@
   // Same pattern for Review (5) → Save (6): land on Save with the request
   // already in flight; only show the in-step button on error as retry.
   // Both arms first route through the calibration loop: a review with
-  // disagreement enters a refine+re-check round instead of saving, round
-  // after round, until the grades converge (or the user opts out via the
-  // save-without-refining link under the CTA). A judge the reviewer said was
-  // wrong never ships without them seeing it re-checked.
+  // disagreement asks whether to improve the judge before saving, and a yes
+  // runs a refine+re-check round, round after round, until the grades
+  // converge or the reviewer takes the dialog's other button. A judge the
+  // reviewer said was wrong never ships without them seeing it re-checked.
+  let improve_judge_dialog: Dialog | null = null
+
+  // True once a save has succeeded. The wizard has nothing left to do, and
+  // every exit from the done screen leaves the route.
+  let saved_eval_created = false
+
+  // Where the success screen's button goes, and the marker that the wizard has
+  // finished. The eval's own page when the save returned an id, the evals list
+  // when it did not — a button that promises one eval must not land on a 404.
+  let created_eval_href: string | null = null
+
+  // The save is done, and this state is terminal. Holding the reviewer on a
+  // success screen instead of redirecting means the wizard is still mounted,
+  // with a graded review and a met save gate sitting in memory behind a
+  // history entry Back can reach. Both of the things that review could still
+  // do — save again, or start a paid refine round — would act on an eval that
+  // already shipped, so the state they need is dropped here. What survives is
+  // the link and the fact that a save happened.
+  function finish_on_done_screen(saved_id: string | null | undefined) {
+    created_eval_href = saved_id
+      ? `/specs/${project_id}/${task_id}/${saved_id}`
+      : null
+    saved_eval_created = true
+    // Nothing left for a second save or a second round to act on. Belt and
+    // braces beside the history guard below: a bug that got back to the
+    // review would find no traces to grade and no gate to meet.
+    trace_claims = []
+    trace_reviews = []
+    multi_turn_batch_tag = null
+    driven_prompts_json = null
+    replace_step("done")
+  }
+
+  // The page the wizard leaves for once it is finished. The eval itself when
+  // there is one, its list when the save returned no id.
+  $: finished_destination =
+    created_eval_href ?? `/specs/${project_id}/${task_id}`
+
   function on_advance_to_save() {
     const graded = build_graded_traces(trace_claims, trace_reviews)
     const decision = plan_save_action({
@@ -3314,8 +3366,6 @@
   // Guarded patch: a re-drive replaces trace_claims while builds are in
   // flight — the trace_id check stops a stale response landing on the new
   // batch's trace at the same index.
-  let improve_judge_dialog: Dialog | null = null
-
   function patch_trace_claims(
     index: number,
     trace_id: string,
@@ -4132,12 +4182,7 @@
             undeleted_batch_tags,
           ),
         )
-        if (saved.id) {
-          leave_guard_suppressed = true
-          goto(`/specs/${project_id}/${task_id}/${saved.id}`)
-        } else {
-          replace_step("done")
-        }
+        finish_on_done_screen(saved.id)
         return
       }
 
@@ -4223,12 +4268,7 @@
           undeleted_batch_tags,
         ),
       )
-      if (saved.id) {
-        leave_guard_suppressed = true
-        goto(`/specs/${project_id}/${task_id}/${saved.id}`)
-      } else {
-        replace_step("done")
-      }
+      finish_on_done_screen(saved.id)
       return
     } catch (e) {
       if (is_abort_error(e)) return
@@ -4236,11 +4276,6 @@
     } finally {
       saving = false
     }
-  }
-
-  // ── Navigation helpers
-  function back_to_task() {
-    goto(`/specs/${project_id}/${task_id}`)
   }
 
   // Escape hatch from Step 1 to the legacy manual builder (template carousel),
@@ -5177,36 +5212,17 @@
             </div>
           {/if}
         {:else if current_step === "done"}
-          <!-- Fallback: save succeeded but no eval_id/spec_id to redirect to.
-               Centered completion card, same idiom as the git-import done
-               screen. -->
-          <div class="flex flex-col items-center py-8 gap-4">
-            <div class="text-success">
-              <svg
-                class="w-16 h-16"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M16 9L10 15.5L7.5 13M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </div>
-            <h2 class="text-xl font-medium">Eval Created</h2>
-            <p class="text-sm text-gray-500 text-center max-w-md">
-              Your eval is ready to run.
-            </p>
-            <div class="flex flex-row gap-4 mt-4">
-              <button class="btn btn-primary btn-wide" on:click={back_to_task}>
-                Back to Evals
-              </button>
-            </div>
-          </div>
+          <!-- The save's success screen, the same control every other create
+               flow in the app finishes on. "View Eval" is the one place the
+               guide allows the word: on a success screen nothing else reads
+               right. A save that returned no id has no eval page to offer, so
+               the button goes to the list instead of promising one. -->
+          <Completed
+            title="Eval Created"
+            subtitle="You've created a new eval, including an eval dataset and aligned judge!"
+            link={created_eval_href ?? `/specs/${project_id}/${task_id}`}
+            button_text={created_eval_href ? "View Eval" : "Back to Evals"}
+          />
         {/if}
       </div>
     {/if}
