@@ -9,11 +9,6 @@
     | "gray"
     | undefined = undefined
   export let warning_icon: "exclaim" | "info" | "check" = "exclaim"
-  // Draw the exclaim mark as a solid disc rather than a ring. The ring is
-  // mostly empty at 20px, so little of it is actually coloured and a warning
-  // colour reads much weaker than it is. Use this where a warning has to
-  // outrank the ones next to it without growing.
-  export let filled_icon: boolean = false
   export let large_icon: boolean = false
   // Warning owns no outer margin: the container it sits in owns the spacing
   // around it, so the same Warning reads the same in a form column, a dialog,
@@ -98,18 +93,9 @@
         id="Flat"
         xmlns="http://www.w3.org/2000/svg"
       >
-        {#if filled_icon}
-          <!-- The same mark as a solid disc: the ring subpath is dropped and
-               evenodd knocks the bar and dot back out of the fill. -->
-          <path
-            fill-rule="evenodd"
-            d="M128,20.00012a108,108,0,1,0,108,108A108.12217,108.12217,0,0,0,128,20.00012ZM116,132v-52a12,12,0,1,1,24,0v52a12,12,0,1,1-24,0ZM144,172a16,16,0,1,1-16-16A16.018,16.018,0,0,1,144,172Z"
-          />
-        {:else}
-          <path
-            d="M128,20.00012a108,108,0,1,0,108,108A108.12217,108.12217,0,0,0,128,20.00012Zm0,192a84,84,0,1,1,84-84A84.0953,84.0953,0,0,1,128,212.00012Zm-12-80v-52a12,12,0,1,1,24,0v52a12,12,0,1,1-24,0Zm28,40a16,16,0,1,1-16-16A16.018,16.018,0,0,1,144,172.00012Z"
-          />
-        {/if}
+        <path
+          d="M128,20.00012a108,108,0,1,0,108,108A108.12217,108.12217,0,0,0,128,20.00012Zm0,192a84,84,0,1,1,84-84A84.0953,84.0953,0,0,1,128,212.00012Zm-12-80v-52a12,12,0,1,1,24,0v52a12,12,0,1,1-24,0Zm28,40a16,16,0,1,1-16-16A16.018,16.018,0,0,1,144,172.00012Z"
+        />
       </svg>
     {:else if warning_icon === "check"}
       <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->

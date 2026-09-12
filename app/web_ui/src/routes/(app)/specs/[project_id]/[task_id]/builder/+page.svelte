@@ -5359,14 +5359,11 @@
          rather than the usual amber one: every case there is a whole
          conversation billed per turn on both sides, so the same item count
          costs many times what it does single-turn, and this sits directly
-         above the button that commits the spend. Filled rather than bigger:
-         the ring mark is mostly empty at this size, so the error colour reads
-         amber next to a real amber one, and Warning styles its mark, never
-         its text. The form's gap spaces it like every lane above it, and the
-         default indent keeps its text on the lanes' label line. -->
+         above the button that commits the spend. The form's gap spaces it
+         like every lane above it, and the default indent keeps its text on
+         the lanes' label line. -->
     <Warning
       warning_color={is_multi_turn ? "error" : "warning"}
-      filled_icon={is_multi_turn}
       warning_message={drive_cost_message}
     />
   </FormContainer>
