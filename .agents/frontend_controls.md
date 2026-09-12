@@ -24,7 +24,7 @@ The following controls are commonly used in our design language:
 - `output.svelte` - renders any read-only text or JSON, with copy and pretty-printing. The body for any read-only content: plans, overviews, summaries, traces, descriptions.
 - `see_all_dialog.svelte` - `Dialog` + `Output` for read-only content behind a button.
 - `kiln_section.svelte` - a `SettingsHeader` over a list of `settings_item.svelte` rows; use for settings-style pages.
-- `run/rating.svelte` - the Rating and Feedback selection buttons (`btn btn-sm btn-outline`, `btn-secondary` when selected). The selection-button style for the whole app; copy its classes when a control cannot use it directly.
+- `run/rating.svelte` - the Rating and Feedback selection buttons (unchosen `btn btn-sm btn-outline` at full contrast, chosen filled `btn btn-sm btn-secondary`). The selection-button style for the whole app; copy its classes when a control cannot use it directly.
 - `run_config_component/` - the model, tools and skills pickers. Never rebuild a picker.
 - `collapse.svelte` - the only expander. Never write `aria-expanded`, a chevron with `rotate-180`, or a `{#if expanded}` block by hand.
 

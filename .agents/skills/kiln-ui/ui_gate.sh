@@ -57,9 +57,29 @@ case "$MODE" in
 esac
 [ -f "$TMP/shared.tsv" ] || : > "$TMP/shared.tsv"
 
-# comments and script-only lines are not markup; drop lines that are clearly comments
+# Comment lines are not markup. Single-line markers are dropped by prefix; lines INSIDE a
+# multi-line <!-- --> or /* */ block are found by scanning the whole file at the reviewed
+# revision, so a prose comment that mentions "btn-outline" on its third line is not a hit.
 CODE="$TMP/code.tsv"
-grep -vE $'\t[[:space:]]*(//|<!--|\\*|/\\*|--)' "$LINES" > "$CODE" || true
+comment_lines() {  # <file> -> prints "file:line" for every line inside a block comment
+  local f=$1 src
+  case "$MODE" in
+    range) src=$(git -C "$REPO" show "${RANGE##*..}:$f" 2>/dev/null) ;;
+    *)     src=$(cat "$([ "$MODE" = files ] && echo "$f" || echo "$REPO/$f")" 2>/dev/null) ;;
+  esac
+  printf '%s\n' "$src" | awk -v f="$f" '
+    { line=$0; n=NR; inblk_before=inblk
+      while (1) {
+        if (!inblk) { o1=index(line,"<!--"); o2=index(line,"/*"); o=(o1&&o2)?(o1<o2?o1:o2):(o1?o1:o2)
+                      if (!o) break; inblk=(o==o1)?1:2; line=substr(line,o+ (inblk==1?4:2)) ; started=1 }
+        else { c=index(line,(inblk==1)?"-->":"*/"); if (!c) break; inblk=0; line=substr(line,c+ ((inblk==1)?3:2)) }
+      }
+      if (inblk_before || (inblk && started)) print f ":" n
+      started=0
+    }'
+}
+cut -d: -f1 "$LINES" | sort -u | while read -r f; do comment_lines "$f"; done | sort -u > "$TMP/comment_lines.txt"
+grep -vE $'\t[[:space:]]*(//|<!--|\\*|/\\*|--)' "$LINES" | grep -vF -f <(sed 's/$/\t/' "$TMP/comment_lines.txt" | sed 's/^/^/' | sed 's/\^//' ) > "$CODE" || true
 
 # ---- rules --------------------------------------------------------------------------------
 # R <sev> <rule> <grep -E pattern> [exclude pattern]

@@ -31,7 +31,7 @@ Kiln screens are built from a small set of shared controls and DaisyUI classes. 
 | `Collapse` | `lib/ui/collapse.svelte` | Anything that expands. The only expander. |
 | `PropertyList` | `lib/ui/property_list.svelte` | Name/value pairs with tooltips and links. |
 | `InfoTooltip` | `lib/ui/info_tooltip.svelte` | An "i" with a tooltip. Never a hover div. |
-| Rating buttons | `routes/(app)/run/rating.svelte` (see "Rating and Feedback" in `lib/ui/run_sidebar.svelte`) | Any pick-one selection: agree/disagree, pass/fail. `btn btn-sm btn-outline`, `btn-secondary` when selected. Never `btn-success`/`btn-error`. |
+| Rating buttons | `routes/(app)/run/rating.svelte` (see "Rating and Feedback" in `lib/ui/run_sidebar.svelte`) | Any pick-one selection: agree/disagree, pass/fail. unchosen `btn btn-sm btn-outline` at full contrast, chosen filled `btn btn-sm btn-secondary`. Never `btn-success`/`btn-error`. |
 | `RunConfigComponent`, `SavedRunConfigsDropdown`, `AvailableModelsDropdown` | `lib/ui/run_config_component/` | Model, tools, skills and run-config pickers. Never rebuilt. |
 | Animations | `lib/ui/animations/analyzing_animation.svelte`, `conversation_animation.svelte`, `refining_animation.svelte` | Progress and waiting screens. Title and description props only; counts go in the description string. |
 | `FloatingMenu`, `TableActionMenu` | `lib/ui/floating_menu.svelte`, `table_action_menu.svelte` | Dropdown menus. |
@@ -55,7 +55,8 @@ Write a component plan before the first edit (in the PR description, or a `COMPO
 Rules:
 - No custom row without a justification that names the control you tried and the prop it lacks. "Looks better" is not a justification. "The control has no prop for X" is; propose the prop as a separate shared-control change (section 4).
 - Every WARN and FAIL the gate reports (section 5) must map to a row.
-- Name ONE sibling screen the new screen must read like. The handback ships a side-by-side with it.
+- One row per screen for vertical rhythm: which container owns the gap between sections and the one or two values used (the house form runs on 24 between fields; use one gap inside a block). Children carry no margins. The handback carries the measured distances next to the sibling's.
+- Name ONE sibling screen the new screen must read like. The handback ships a side-by-side with it. Some reference screens predate a control (the Edit Task form's section heads are hand-rolled); match the control, and record the difference as known.
 - If the task did not name the sibling, pick the nearest of the three reference screens and say so in the plan.
 
 ## 3. Build rules
@@ -71,7 +72,7 @@ Rules:
 
 ## 4. Shared controls are a separate change
 
-Any diff under `lib/ui/`, `lib/components/`, `lib/utils/form_*`, `app_page.svelte`, or the shared synthetic-data components (`generate/[project_id]/[task_id]/kiln_pro_*.svelte`) is a change to every screen that uses the control. It is never folded into a feature change. It needs its own stated decision ("Warning gains prop X because Y"), its own commit, the list of call sites touched, and a review by the control's owner. The gate's `SHARED_CONTROL_TOUCHED` hit is not a false positive; it is the reminder that the decision must be written down.
+Any diff under `lib/ui/`, `lib/components/`, `lib/utils/form_*`, `app_page.svelte`, or the shared synthetic-data components (`generate/[project_id]/[task_id]/kiln_pro_*.svelte`) is a change to every screen that uses the control. It is never folded into a feature change. It needs its own stated decision ("Warning gains prop X because Y"), its own commit, the list of call sites touched, and a review by the control's owner. The gate's `SHARED_CONTROL_TOUCHED` hit is not a false positive; it is the reminder that the decision must be written down. Expect the first unit on a screen that was built from custom CSS to need several: every hand-rolled element was a control that lacked something (an actions slot, a slot for rich content, an aria attribute). Each is its own additive commit with a test that the existing render path is unchanged; never widen a control from a call site.
 
 ## 5. Gate, on the diff (required)
 
@@ -81,6 +82,7 @@ bash .agents/skills/kiln-ui/ui_gate.sh --worktree                 # before commi
 bash .agents/skills/kiln-ui/ui_gate.sh --files <file>...           # audit whole files
 ```
 
+- The gate skips comment lines, including the inside of multi-line comments, so prose that mentions a class name is not a hit.
 - Exit 1 = FAIL hits. Fix them, or justify each by file:line in the component plan (a justification is a row, not a comment in the code).
 - WARN hits must appear as rows in the plan. INFO hits are listed in the handback.
 - Do not add allowlist lines for the screen you are building. `ui_gate_allow.txt` is for house idioms already shipped on a reference screen.
@@ -108,5 +110,6 @@ The PR description or handback carries, in this order:
 3. A side-by-side screenshot: the new screen next to its named sibling, same window width.
 4. The list of shared controls touched (or "none"), each with the stated decision that authorised it.
 5. Test counts and the usual checks.
+6. An independent screenshot review: a fresh session that gets only the owner's spec (verbatim), the guides and the screenshots, and returns a per-line verdict plus a ranked critique. It must not see the plan or the walk notes. Its findings are fixed or answered before the handback is sent. Builders who have stared at a screen for an hour miss a dimmed button; a fresh reader does not.
 
 A reviewer reads 1, 2 and 4 before opening 3. A change whose gate output is missing or whose plan has an unjustified custom row is not ready for review.
