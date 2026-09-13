@@ -236,6 +236,32 @@ class TestDesktopApp:
             menu_calls = mock_kiln_menu_item.call_args_list
             assert menu_calls[0][1]["default"] is False
 
+    @patch("app.desktop.desktop.sys.platform", "linux")
+    def test_run_tray_linux_icon_scaling(
+        self, mock_tk_root, mock_image, mock_kiln_tray, mock_kiln_menu_item
+    ):
+        """Test run_tray scales the tray icon down on Linux."""
+        app = DesktopApp(port=TEST_PORT)
+
+        with patch.object(app, "resource_path", return_value="taskbar.png"):
+            app.run_tray()
+
+            mock_image.resize.assert_called_once()
+            args, _ = mock_image.resize.call_args
+            assert args[0] == (24, 24)
+
+    @patch("app.desktop.desktop.sys.platform", "win32")
+    def test_run_tray_windows_no_icon_scaling(
+        self, mock_tk_root, mock_image, mock_kiln_tray, mock_kiln_menu_item
+    ):
+        """Test run_tray does not scale the tray icon on Windows."""
+        app = DesktopApp(port=TEST_PORT)
+
+        with patch.object(app, "resource_path", return_value="taskbar.png"):
+            app.run_tray()
+
+            mock_image.resize.assert_not_called()
+
     def test_close_splash_with_pyi_splash(self, mock_tk_root):
         """Test close_splash when pyi_splash is available."""
         app = DesktopApp(port=TEST_PORT)
