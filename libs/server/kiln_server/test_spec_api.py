@@ -1542,16 +1542,16 @@ class TestResolveAvailableSpecName:
         assert result.was_taken is False
 
     def test_collision_gets_the_first_free_suffix(self):
-        result = resolve_available_spec_name("policy_adherence", ["policy_adherence"])
-        assert result.name == "policy_adherence_2"
+        result = resolve_available_spec_name("Policy Adherence", ["Policy Adherence"])
+        assert result.name == "Policy Adherence 2"
         assert result.was_taken is True
 
     def test_suffix_walks_past_taken_variants(self):
         result = resolve_available_spec_name(
-            "policy_adherence",
-            ["policy_adherence", "policy_adherence_2", "policy_adherence_3"],
+            "Policy Adherence",
+            ["Policy Adherence", "Policy Adherence 2", "Policy Adherence 3"],
         )
-        assert result.name == "policy_adherence_4"
+        assert result.name == "Policy Adherence 4"
         assert result.was_taken is True
 
     def test_collision_is_tag_derived_not_string_equality(self):
@@ -1563,18 +1563,33 @@ class TestResolveAvailableSpecName:
         assert result.was_taken is True
 
     def test_suffix_trims_to_the_short_name_limit(self):
-        # 32-char candidate whose trim cut lands EXACTLY on a "_": the base
-        # is trimmed so base + "_2" still fits, and the trailing-underscore
-        # strip is what keeps the join from fabricating a forbidden "__".
-        long_name = "a" * 29 + "_bb"  # 32 chars; [:30] ends with "_"
+        # 32-char candidate whose trim cut lands EXACTLY on a space: the base
+        # is trimmed so base + " 2" still fits, and the trailing-space strip
+        # is what keeps the join from fabricating a forbidden double space.
+        long_name = "a" * 29 + " bb"  # 32 chars; [:30] ends with " "
         result = resolve_available_spec_name(long_name, [long_name])
         assert result.was_taken is True
-        assert result.name == "a" * 29 + "_2"
+        assert result.name == "a" * 29 + " 2"
         assert len(result.name) <= 32
-        assert "__" not in result.name
+        assert "  " not in result.name
+
+    def test_suffix_trim_also_drops_a_trailing_underscore(self):
+        # Same cut landing on a "_": stripping it keeps a "_ 2" seam out of
+        # the name, which the validator allows but reads as a typo.
+        long_name = "a" * 29 + "_bb"  # 32 chars; [:30] ends with "_"
+        result = resolve_available_spec_name(long_name, [long_name])
+        assert result.name == "a" * 29 + " 2"
+
+    def test_old_underscore_suffixed_names_still_collide(self):
+        # Evals named before the space suffix share the tag namespace with
+        # the new form, so the walk skips them rather than duplicating.
+        result = resolve_available_spec_name(
+            "Policy Adherence", ["policy_adherence", "policy_adherence_2"]
+        )
+        assert result.name == "Policy Adherence 3"
 
     def test_exhausted_search_refuses(self):
-        taken = ["name"] + [f"name_{i}" for i in range(2, 100)]
+        taken = ["name"] + [f"name {i}" for i in range(2, 100)]
         with pytest.raises(HTTPException) as exc:
             resolve_available_spec_name("name", taken)
         assert exc.value.status_code == 409
@@ -1609,7 +1624,7 @@ def test_available_spec_name_route(client, project_and_task):
         spec.save_to_file()
         response = client.get(url, params={"name": "policy_adherence"})
         assert response.status_code == 200
-        assert response.json() == {"name": "policy_adherence_2", "was_taken": True}
+        assert response.json() == {"name": "policy_adherence 2", "was_taken": True}
 
 
 def test_available_spec_name_route_rejects_invalid_candidate(client, project_and_task):
