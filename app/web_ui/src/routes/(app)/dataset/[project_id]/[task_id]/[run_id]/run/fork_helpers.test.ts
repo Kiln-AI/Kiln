@@ -16,7 +16,7 @@ function systemMsg(content: string): TraceMessage {
 }
 
 describe("compute_forkable_run_ids", () => {
-  it("maps each non-turn-1 user message to its chain entry run id for a clean 3-turn chain", () => {
+  it("maps each non-turn-1 chain entry onto the assistant before its turn start for a clean 3-turn chain", () => {
     const trace: Trace = [
       systemMsg("s"),
       userMsg("u1"),
@@ -27,19 +27,42 @@ describe("compute_forkable_run_ids", () => {
       assistantMsg("a3"),
     ]
     const chain: RunChainEntry[] = [
-      { run_id: "run-1", turn_index: 1 },
-      { run_id: "run-2", turn_index: 2 },
-      { run_id: "run-3", turn_index: 3 },
+      { run_id: "run-1", turn_index: 1, trace_start_index: 0 },
+      { run_id: "run-2", turn_index: 2, trace_start_index: 3 },
+      { run_id: "run-3", turn_index: 3, trace_start_index: 5 },
     ]
     const result = compute_forkable_run_ids(trace, chain)
     // The fork affordance sits on the assistant message that precedes each
-    // forkable user turn: turn 2 (run-2) maps onto assistant a1 (index 2) and
-    // turn 3 (run-3) maps onto assistant a2 (index 4). The leaf's trailing
+    // forkable turn's start: turn 2 (run-2) maps onto assistant a1 (index 2)
+    // and turn 3 (run-3) maps onto assistant a2 (index 4). The leaf's trailing
     // assistant a3 (index 6) is not forkable.
     expect(result).toEqual([null, null, "run-2", null, "run-3", null, null])
   })
 
-  it("suffix-aligns a broken chain — only the trailing user blocks are mapped", () => {
+  it("uses the turn boundary, not user-message counting, for a chain-of-thought root", () => {
+    // A CoT root turn contains TWO user messages (the real input and the
+    // final-answer prompt); the server anchors turn 2 after the full 5-message
+    // root trace.
+    const trace: Trace = [
+      systemMsg("s"),
+      userMsg("u1 + thinking instructions"),
+      assistantMsg("thinking"),
+      userMsg("final answer prompt"),
+      assistantMsg("a1"),
+      userMsg("u2"),
+      assistantMsg("a2"),
+    ]
+    const chain: RunChainEntry[] = [
+      { run_id: "run-1", turn_index: 1, trace_start_index: 0 },
+      { run_id: "run-2", turn_index: 2, trace_start_index: 5 },
+    ]
+    const result = compute_forkable_run_ids(trace, chain)
+    // run-2 maps onto a1 (index 4) — the root's final answer, not the
+    // mid-turn thinking assistant.
+    expect(result).toEqual([null, null, null, null, "run-2", null, null])
+  })
+
+  it("does not map the first entry of a broken chain (parent missing, boundary unknown)", () => {
     const trace: Trace = [
       systemMsg("s"),
       userMsg("u1"),
@@ -49,10 +72,14 @@ describe("compute_forkable_run_ids", () => {
       userMsg("u3"),
       assistantMsg("a3"),
     ]
-    // The chain is broken above turn 3, so we only have the leaf.
-    const chain: RunChainEntry[] = [{ run_id: "run-3", turn_index: 3 }]
+    // The chain is broken above the last two runs: the suffix root's boundary
+    // is unknown (and its parent is gone, so it can't be forked); the leaf is
+    // still anchored to its turn start.
+    const chain: RunChainEntry[] = [
+      { run_id: "run-2", turn_index: 1, trace_start_index: null },
+      { run_id: "run-3", turn_index: 2, trace_start_index: 5 },
+    ]
     const result = compute_forkable_run_ids(trace, chain)
-    // run-3 maps onto the assistant (index 4) preceding the leaf user turn.
     expect(result).toEqual([null, null, null, null, "run-3", null, null])
   })
 
@@ -62,16 +89,21 @@ describe("compute_forkable_run_ids", () => {
     expect(result).toEqual([null, null, null])
   })
 
-  it("returns all nulls for a trace with no user messages", () => {
-    const trace: Trace = [systemMsg("s"), assistantMsg("a1")]
-    const chain: RunChainEntry[] = [{ run_id: "run-x", turn_index: 1 }]
+  it("ignores a turn start pointing outside the trace", () => {
+    const trace: Trace = [systemMsg("s"), userMsg("u1"), assistantMsg("a1")]
+    const chain: RunChainEntry[] = [
+      { run_id: "run-1", turn_index: 1, trace_start_index: 0 },
+      { run_id: "run-2", turn_index: 2, trace_start_index: 3 },
+    ]
     const result = compute_forkable_run_ids(trace, chain)
-    expect(result).toEqual([null, null])
+    expect(result).toEqual([null, null, null])
   })
 
   it("skips turn 1 even when chain includes it (single-turn chain)", () => {
     const trace: Trace = [systemMsg("s"), userMsg("u1"), assistantMsg("a1")]
-    const chain: RunChainEntry[] = [{ run_id: "run-1", turn_index: 1 }]
+    const chain: RunChainEntry[] = [
+      { run_id: "run-1", turn_index: 1, trace_start_index: 0 },
+    ]
     const result = compute_forkable_run_ids(trace, chain)
     expect(result).toEqual([null, null, null])
   })
@@ -79,9 +111,9 @@ describe("compute_forkable_run_ids", () => {
 
 describe("fork_target_from_assistant_block", () => {
   const chain: RunChainEntry[] = [
-    { run_id: "run-1", turn_index: 1 },
-    { run_id: "run-2", turn_index: 2 },
-    { run_id: "run-3", turn_index: 3 },
+    { run_id: "run-1", turn_index: 1, trace_start_index: 0 },
+    { run_id: "run-2", turn_index: 2, trace_start_index: 3 },
+    { run_id: "run-3", turn_index: 3, trace_start_index: 5 },
   ]
 
   it("returns the parent run id and an empty prefill for an interior assistant click", () => {

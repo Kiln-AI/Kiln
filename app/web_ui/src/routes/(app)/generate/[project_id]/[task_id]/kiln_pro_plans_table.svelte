@@ -7,6 +7,10 @@
   // When provided, each row shows its status (e.g. what became of the prompt
   // once inputs were generated). Parallel to `prompts`.
   export let statuses: string[] | null = null
+  // Header for the first column. The default names /generate's rows, which
+  // really are generation prompts; surfaces whose rows are something else
+  // (e.g. per-item guidance) override it.
+  export let column_label = "Prompt"
 
   $: reserved_width = (statuses ? 140 : 0) + (on_delete ? 40 : 0)
 </script>
@@ -14,9 +18,10 @@
 <table class="table table-fixed">
   <thead>
     <tr>
-      <!-- Header text intentionally blank; the panel title labels the column.
-           Status is 140 and the action menu 40, matching the samples table. -->
-      <th style="width: calc(100% - {reserved_width}px)">Prompt</th>
+      <!-- The first column's header is caller-named (column_label); the rest
+           are fixed: status is 140 and the action menu 40, matching the
+           samples table. -->
+      <th style="width: calc(100% - {reserved_width}px)">{column_label}</th>
       {#if statuses}
         <th style="width: 140px">Status</th>
       {/if}

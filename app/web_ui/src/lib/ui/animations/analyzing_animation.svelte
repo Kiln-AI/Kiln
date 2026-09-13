@@ -784,7 +784,7 @@
         warning_color="warning"
         warning_icon="exclaim"
         text_size="base"
-        tight
+        inline={true}
       />
     </div>
   {/if}

@@ -12,7 +12,10 @@ import { render, cleanup, fireEvent } from "@testing-library/svelte"
 import ChatTrace from "./chat_trace.svelte"
 import type { Trace as TraceType, TraceMessage } from "$lib/types"
 
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
 
 // jsdom's <dialog> doesn't keep the `open` flag in sync with
 // showModal()/close() reliably (and didn't implement them at all before
@@ -89,6 +92,20 @@ function makeToolCall(
     type: "function" as const,
     function: { name, arguments: JSON.stringify(args) },
   }
+}
+
+// A highlight that only expands and scrolls to a bubble looks exactly like a
+// broken citation, so every such case has to log. Tests that reach one stub
+// console.warn (the warning is expected output, not suite noise) and read the
+// reason code back from the message.
+function stub_warn() {
+  return vi.spyOn(console, "warn").mockImplementation(() => {})
+}
+
+function warned_no_mark(warn: ReturnType<typeof stub_warn>): boolean {
+  return warn.mock.calls.some((call) =>
+    String(call[0]).includes("no_mark_drawn"),
+  )
 }
 
 describe("ChatTrace component — layout & roles", () => {
@@ -335,6 +352,230 @@ describe("ChatTrace component — layout & roles", () => {
   })
 })
 
+describe("ChatTrace component — JSON content rendering", () => {
+  // Output renders into a <pre> with hljs spans; ChatMarkdown renders a
+  // .chat-markdown wrapper. Which one a bubble used is the assertion here.
+  function contentEl(container: HTMLElement): HTMLElement {
+    return container.querySelector(
+      "[data-testid='chat-msg-content'], [data-testid='chat-msg-user']",
+    ) as HTMLElement
+  }
+  function expectJsonRender(container: HTMLElement, expected_text: string) {
+    const el = contentEl(container)
+    const pre = el.querySelector("pre")
+    expect(pre).not.toBeNull()
+    expect(el.querySelector(".chat-markdown")).toBeNull()
+    expect(pre?.textContent).toBe(expected_text)
+    // Syntax highlighting applied, matching the other JSON surfaces.
+    expect(pre?.innerHTML).toContain("hljs-")
+  }
+  function expectMarkdownRender(container: HTMLElement) {
+    const el = contentEl(container)
+    expect(el.querySelector(".chat-markdown")).not.toBeNull()
+    expect(el.querySelector("pre")).toBeNull()
+  }
+
+  it("renders a pretty-printed JSON object as a highlighted code block", () => {
+    const raw = '{\n  "answer": "yes",\n  "score": 3\n}'
+    const { container } = render(ChatTrace, {
+      props: { trace: [assistantMsg(raw)] as TraceType },
+    })
+    expectJsonRender(container, raw)
+  })
+
+  it("pretty-prints a minified JSON object", () => {
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: [assistantMsg('{"answer":"yes","score":3}')] as TraceType,
+      },
+    })
+    expectJsonRender(container, '{\n  "answer": "yes",\n  "score": 3\n}')
+  })
+
+  it("renders a JSON array as a highlighted code block", () => {
+    const { container } = render(ChatTrace, {
+      props: { trace: [assistantMsg("[1,2,3]")] as TraceType },
+    })
+    expectJsonRender(container, "[\n  1,\n  2,\n  3\n]")
+  })
+
+  it("renders a bare JSON number as a highlighted code block", () => {
+    const { container } = render(ChatTrace, {
+      props: { trace: [assistantMsg("42")] as TraceType },
+    })
+    expectJsonRender(container, "42")
+  })
+
+  it("keeps a quoted JSON string scalar on the markdown path", () => {
+    const { container } = render(ChatTrace, {
+      props: { trace: [assistantMsg('"just some text"')] as TraceType },
+    })
+    expectMarkdownRender(container)
+  })
+
+  it("keeps plain prose on the markdown path", () => {
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: [assistantMsg("**bold** and a list:\n- one")] as TraceType,
+      },
+    })
+    expectMarkdownRender(container)
+    expect(container.querySelector("strong")?.textContent).toBe("bold")
+  })
+
+  it("keeps prose with an inline JSON snippet on the markdown path", () => {
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: [
+          assistantMsg('The tool returned {"ok": true} which means success.'),
+        ] as TraceType,
+      },
+    })
+    expectMarkdownRender(container)
+  })
+
+  it("falls back to markdown for malformed / truncated JSON", () => {
+    const { container } = render(ChatTrace, {
+      props: { trace: [assistantMsg('{"answer": "yes", "sco')] as TraceType },
+    })
+    expectMarkdownRender(container)
+  })
+
+  it("renders JSON in user bubbles too", () => {
+    const { container } = render(ChatTrace, {
+      props: { trace: [userMsg('{"city":"Paris"}')] as TraceType },
+    })
+    expectJsonRender(container, '{\n  "city": "Paris"\n}')
+  })
+
+  it("renders JSON reasoning through Output, matching the legacy trace view", async () => {
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: [
+          assistantMsg("done", { reasoning_content: '{"plan":["a","b"]}' }),
+        ] as TraceType,
+      },
+    })
+    await fireEvent.click(
+      container.querySelector(
+        "[data-testid='chat-msg-thinking'] button",
+      ) as HTMLElement,
+    )
+    const thinking = container.querySelector(
+      "[data-testid='chat-msg-thinking']",
+    ) as HTMLElement
+    const pre = thinking.querySelector("pre")
+    expect(pre).not.toBeNull()
+    expect(thinking.querySelector(".chat-markdown")).toBeNull()
+    expect(pre?.textContent).toBe('{\n  "plan": [\n    "a",\n    "b"\n  ]\n}')
+  })
+
+  it("keeps prose reasoning on the markdown path", async () => {
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: [
+          assistantMsg("done", { reasoning_content: "**weighing** options" }),
+        ] as TraceType,
+      },
+    })
+    await fireEvent.click(
+      container.querySelector(
+        "[data-testid='chat-msg-thinking'] button",
+      ) as HTMLElement,
+    )
+    const thinking = container.querySelector(
+      "[data-testid='chat-msg-thinking']",
+    ) as HTMLElement
+    expect(thinking.querySelector(".chat-markdown")).not.toBeNull()
+    expect(thinking.querySelector("pre")).toBeNull()
+  })
+
+  // The user tint identifies the sender, so it survives both content shapes:
+  // the JSON panel mounts transparent rather than repainting the bubble.
+  it.each([
+    ["prose", "hello there"],
+    ["JSON", '{"city":"Paris"}'],
+  ])("keeps the user tint for %s turns", (_label, content) => {
+    const { container } = render(ChatTrace, {
+      props: { trace: [userMsg(content)] as TraceType },
+    })
+    const bubble = container.querySelector(
+      "[data-testid='chat-msg-user'] > div",
+    ) as HTMLElement
+    expect(bubble.className).toContain("bg-primary/10")
+    // The mounted Output must not paint its own panel over the tint.
+    expect(
+      bubble.querySelector("[class*='bg-base-200'], [class*='bg-white']"),
+    ).toBeNull()
+  })
+
+  it("does not route tool results through the content JSON branch", async () => {
+    const trace: TraceType = [
+      assistantMsg(null, { tool_calls: [makeToolCall("c1", "lookup")] }),
+      toolMsg('{"output": {"temp_c": 21}}', "c1"),
+    ]
+    const { container } = render(ChatTrace, { props: { trace } })
+    await fireEvent.click(
+      container.querySelector(
+        "[data-testid='chat-msg-toolcall'] button",
+      ) as HTMLElement,
+    )
+    // The tool result keeps mounting Output from inside the tool-call bubble,
+    // pretty-printed, exactly as before.
+    const toolCall = container.querySelector(
+      "[data-testid='chat-tool-call']",
+    ) as HTMLElement
+    const pres = [...toolCall.querySelectorAll("pre")].map((p) => p.textContent)
+    expect(pres).toContain('{\n  "temp_c": 21\n}')
+  })
+
+  it("renders a JSON bubble via Output when a DIFFERENT message is cited", () => {
+    const trace: TraceType = [
+      assistantMsg("some prose to cite"),
+      assistantMsg('{"answer": "yes"}'),
+    ]
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: {
+          trace_index: 0,
+          kind: "content" as const,
+          start: 0,
+          end: 4,
+        },
+      },
+    })
+    const bubbles = [
+      ...container.querySelectorAll("[data-testid='chat-msg-content']"),
+    ]
+    expect(bubbles.length).toBe(2)
+    expect(
+      bubbles[0].querySelector("mark[data-highlight-target]"),
+    ).not.toBeNull()
+    const pre = bubbles[1].querySelector("pre")
+    expect(pre).not.toBeNull()
+    expect(pre?.textContent).toBe('{\n  "answer": "yes"\n}')
+  })
+
+  it("citation highlight still wins over the JSON path", () => {
+    const raw = '{"answer": "yes"}'
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: [assistantMsg(raw)] as TraceType,
+        highlight: {
+          trace_index: 0,
+          kind: "content" as const,
+          start: 0,
+          end: 5,
+        },
+      },
+    })
+    const el = contentEl(container)
+    expect(el.querySelector("mark[data-highlight-target]")).not.toBeNull()
+    expect(el.querySelector("pre")).toBeNull()
+  })
+})
+
 describe("ChatTrace component — thinking", () => {
   it("starts with thinking collapsed", () => {
     const trace: TraceType = [
@@ -408,6 +649,184 @@ describe("ChatTrace component — thinking", () => {
     expect(
       container.querySelector("[data-testid='chat-msg-thinking']"),
     ).toBeNull()
+  })
+})
+
+describe("ChatTrace component — citations inside a tool call", () => {
+  // The flattened block a tool-call citation's offsets index, exactly as the
+  // server renders it: `- Tool Name: {name}\n- Arguments: {args}`.
+  const ARGS = '{"a": 135.0, "b": 0.15}'
+  const PREFIX = `- Tool Name: multiply\n- Arguments: `
+
+  function toolCallTrace(): TraceType {
+    return [
+      userMsg("Work out the refund."),
+      assistantMsg(null, {
+        tool_calls: [makeToolCallRaw("c1", "multiply", ARGS)],
+      }),
+      toolMsg('{"output": "20.25"}', "c1"),
+    ]
+  }
+
+  function makeToolCallRaw(id: string, name: string, args: string) {
+    return {
+      id,
+      type: "function" as const,
+      function: { name, arguments: args },
+    }
+  }
+
+  it("marks the cited arguments without disturbing the JSON rendering", () => {
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: toolCallTrace(),
+        highlight: {
+          trace_index: 1,
+          kind: "tool_calls",
+          start: PREFIX.length,
+          end: PREFIX.length + ARGS.length,
+        },
+      },
+    })
+
+    const marks = container.querySelectorAll("mark")
+    expect(marks.length).toBeGreaterThan(0)
+    // The JSON is still pretty-printed and syntax-highlighted, which is the
+    // point: a cited call looks like an uncited one, plus the mark.
+    const card = container.querySelector("[data-testid='chat-tool-call']")
+    expect(card?.querySelector(".hljs-attr")).not.toBeNull()
+    expect(card?.textContent).toContain('"a"')
+  })
+
+  it("marks a single value when only that value is cited", () => {
+    const value_start = PREFIX.length + ARGS.indexOf("0.15")
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: toolCallTrace(),
+        highlight: {
+          trace_index: 1,
+          kind: "tool_calls",
+          start: value_start,
+          end: value_start + "0.15".length,
+        },
+      },
+    })
+    const marked = [...container.querySelectorAll("mark")]
+      .map((m) => m.textContent)
+      .join("")
+    expect(marked).toBe("0.15")
+  })
+
+  it("draws no mark when the citation covers the tool NAME, which the card does not show as text", () => {
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: toolCallTrace(),
+        highlight: {
+          trace_index: 1,
+          kind: "tool_calls",
+          start: 0,
+          end: "- Tool Name: multiply".length,
+        },
+      },
+    })
+    expect(container.querySelectorAll("mark").length).toBe(0)
+  })
+
+  it("keeps a cited tool RESULT's formatting instead of falling back to raw text", () => {
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: toolCallTrace(),
+        highlight: {
+          trace_index: 2,
+          kind: "tool_result",
+          start: 0,
+          end: "20.25".length,
+        },
+      },
+    })
+    const marked = [...container.querySelectorAll("mark")]
+      .map((m) => m.textContent)
+      .join("")
+    expect(marked).toBe("20.25")
+    // Rendered through Output, not as a plain-text fallback.
+    expect(container.querySelector(".hljs-number")).not.toBeNull()
+  })
+})
+
+describe("ChatTrace component — structured output", () => {
+  // A structured-output task returns its answer as arguments to the internal
+  // `task_response` tool. The message shape here is copied from a real run:
+  // no content, one tool call, the answer as its JSON arguments.
+  const ANSWER =
+    '{"category": "refund_status", "priority": "normal", "summary": "Refund status for order #987654."}'
+
+  function structuredOutputTrace(): TraceType {
+    return [
+      userMsg("Hi, my order number is #987654. When will my refund arrive?"),
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: "toolu_01",
+            type: "function" as const,
+            function: { name: "task_response", arguments: ANSWER },
+          },
+        ],
+      } as TraceMessage,
+    ]
+  }
+
+  it("renders the answer as Output, not as a tool call the agent chose to make", () => {
+    const { container } = render(ChatTrace, {
+      props: { trace: structuredOutputTrace() },
+    })
+
+    expect(
+      container.querySelector("[data-testid='chat-msg-structured-output']"),
+    ).not.toBeNull()
+    // The user never wrote a `task_response` tool, so it must not be presented
+    // as one — neither the name nor the tool-call chrome may appear.
+    expect(container.textContent).not.toContain("task_response")
+    expect(container.textContent).not.toContain("Toolcall:")
+    expect(
+      container.querySelector("[data-testid='chat-msg-toolcall']"),
+    ).toBeNull()
+    expect(container.textContent).toContain("refund_status")
+  })
+
+  it("still renders a real tool call as a tool call in the same message", () => {
+    // Guards the unwrap from over-reaching: only `task_response` is plumbing.
+    const trace: TraceType = [
+      userMsg("Work out the refund."),
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: "c1",
+            type: "function" as const,
+            function: { name: "multiply", arguments: '{"a": 135, "b": 0.15}' },
+          },
+          {
+            id: "toolu_01",
+            type: "function" as const,
+            function: { name: "task_response", arguments: ANSWER },
+          },
+        ],
+      } as TraceMessage,
+    ]
+    const { container } = render(ChatTrace, { props: { trace } })
+
+    const toolcalls = container.querySelectorAll(
+      "[data-testid='chat-msg-toolcall']",
+    )
+    expect(toolcalls.length).toBe(1)
+    expect(container.textContent).toContain("multiply")
+    expect(
+      container.querySelector("[data-testid='chat-msg-structured-output']"),
+    ).not.toBeNull()
+    expect(container.textContent).not.toContain("task_response")
   })
 })
 
@@ -637,6 +1056,267 @@ describe("ChatTrace component — fork affordance", () => {
       "[data-testid='chat-msg-user'], [data-testid='chat-msg-assistant']",
     )
     expect(bubbles.length).toBe(2)
+  })
+})
+
+describe("ChatTrace component — citation highlight", () => {
+  it("renders unchanged (markdown, no <mark>) when highlight is null", () => {
+    const trace: TraceType = [assistantMsg("**bold answer**")]
+    const { container } = render(ChatTrace, {
+      props: { trace, highlight: null },
+    })
+    // The dataset run page shares this component with no highlight: markdown
+    // still renders and nothing is marked.
+    expect(container.querySelector("strong")?.textContent).toBe("bold answer")
+    expect(container.querySelector("mark")).toBeNull()
+    expect(container.querySelector("[data-highlight-target]")).toBeNull()
+  })
+
+  it("wraps the cited span in <mark> in the matching content node", () => {
+    const trace: TraceType = [
+      userMsg("What is the return window?"),
+      assistantMsg("Our return window is 30 days."),
+    ]
+    // Offsets index the raw content "Our return window is 30 days." — mark
+    // "return window".
+    const content = "Our return window is 30 days."
+    const start = content.indexOf("return window")
+    const end = start + "return window".length
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: { trace_index: 1, kind: "content", start, end },
+      },
+    })
+    const contentNode = container.querySelector(
+      "[data-testid='chat-msg-content']",
+    ) as HTMLElement
+    const mark = contentNode.querySelector("mark")
+    expect(mark).not.toBeNull()
+    expect(mark?.textContent).toBe("return window")
+    // The marked node is the scroll target.
+    expect(mark?.hasAttribute("data-highlight-target")).toBe(true)
+  })
+
+  it("auto-expands and marks a reasoning highlight", () => {
+    const reasoning = "Let me think about policy."
+    const trace: TraceType = [
+      assistantMsg(null, { reasoning_content: reasoning }),
+    ]
+    const start = reasoning.indexOf("think")
+    const end = start + "think about policy".length
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: { trace_index: 0, kind: "reasoning", start, end },
+      },
+    })
+    // The thinking bubble expands itself so the cited moment is visible.
+    const mark = container.querySelector(
+      "[data-testid='chat-msg-thinking'] mark",
+    )
+    expect(mark?.textContent).toBe("think about policy")
+  })
+
+  it("marks the cited span in a user bubble", () => {
+    // Input citations map onto the opening user message on multi-turn, so
+    // the user bubble must be able to carry a mark like assistant content.
+    const content = "I want to return my order from last week."
+    const trace: TraceType = [userMsg(content), assistantMsg("Happy to help.")]
+    const start = content.indexOf("return my order")
+    const end = start + "return my order".length
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: { trace_index: 0, kind: "content", start, end },
+      },
+    })
+    const userNode = container.querySelector(
+      "[data-testid='chat-msg-user']",
+    ) as HTMLElement
+    const mark = userNode.querySelector("mark")
+    expect(mark).not.toBeNull()
+    expect(mark?.textContent).toBe("return my order")
+    expect(mark?.hasAttribute("data-highlight-target")).toBe(true)
+  })
+
+  it("marks the cited span inside a tool result and targets the mark, not the bubble", () => {
+    const output =
+      "line one\nThe skill file loaded fine_tuning.md successfully.\nline three"
+    const trace: TraceType = [
+      assistantMsg(null, {
+        tool_calls: [makeToolCall("call_1", "load_skill")],
+      }),
+      toolMsg(JSON.stringify({ output }), "call_1"),
+      assistantMsg("Done."),
+    ]
+    const start = output.indexOf("loaded fine_tuning.md")
+    const end = start + "loaded fine_tuning.md".length
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: { trace_index: 1, kind: "tool_result", start, end },
+      },
+    })
+    // The owning tool-call bubble auto-expands and the exact span is marked
+    // in the raw result text (pretty-print is dropped for the marked node).
+    const toolCall = container.querySelector(
+      "[data-testid='chat-tool-call']",
+    ) as HTMLElement
+    expect(toolCall).not.toBeNull()
+    const mark = toolCall.querySelector("mark")
+    expect(mark).not.toBeNull()
+    expect(mark?.textContent).toBe("loaded fine_tuning.md")
+    // The mark is the one scroll target; the bubble no longer is.
+    const targets = container.querySelectorAll("[data-highlight-target]")
+    expect(targets.length).toBe(1)
+    expect(targets[0].tagName).toBe("MARK")
+  })
+
+  it("falls back to the bubble target when the displayed result diverges from the cited text", () => {
+    // isError envelope without an output field: the chat displays the
+    // unwrapped error while citation offsets index the raw JSON — a mark in
+    // either string would be misplaced, so the bubble stays the target.
+    const warn = stub_warn()
+    const content = JSON.stringify({ isError: true, error: "boom" })
+    const trace: TraceType = [
+      assistantMsg(null, {
+        tool_calls: [makeToolCall("call_1", "load_skill")],
+      }),
+      toolMsg(content, "call_1"),
+    ]
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: { trace_index: 1, kind: "tool_result", start: 0, end: 4 },
+      },
+    })
+    expect(container.querySelector("mark")).toBeNull()
+    const target = container.querySelector("[data-highlight-target]")
+    expect(target).not.toBeNull()
+    expect(target?.tagName).not.toBe("MARK")
+    expect(warned_no_mark(warn)).toBe(true)
+  })
+
+  it("marks an isError envelope that still carries a string output", () => {
+    // `output` wins over `isError` in both the flattener and the display,
+    // so the mark must be sliced from the output string, not suppressed.
+    const output = "partial data before the failure"
+    const content = JSON.stringify({ isError: true, output })
+    const trace: TraceType = [
+      assistantMsg(null, {
+        tool_calls: [makeToolCall("call_1", "load_skill")],
+      }),
+      toolMsg(content, "call_1"),
+    ]
+    const start = output.indexOf("before the failure")
+    const end = start + "before the failure".length
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: { trace_index: 1, kind: "tool_result", start, end },
+      },
+    })
+    const mark = container.querySelector("mark")
+    expect(mark?.textContent).toBe("before the failure")
+  })
+
+  it("marks a plain non-JSON tool result", () => {
+    // The commonest shape after the Kiln envelope: the content IS the raw
+    // text the citation offsets index.
+    const warn = stub_warn()
+    const content = "HTTP 200\nbody: return window is 30 days"
+    const trace: TraceType = [
+      assistantMsg(null, {
+        tool_calls: [makeToolCall("call_1", "fetch_policy")],
+      }),
+      toolMsg(content, "call_1"),
+    ]
+    const start = content.indexOf("30 days")
+    const end = start + "30 days".length
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: { trace_index: 1, kind: "tool_result", start, end },
+      },
+    })
+    const mark = container.querySelector("mark")
+    expect(mark?.textContent).toBe("30 days")
+    // A citation that really is marked has nothing to report.
+    expect(warned_no_mark(warn)).toBe(false)
+  })
+
+  it("suppresses the mark when the envelope's output is not a string", () => {
+    // The display pretty-prints the object while the offsets could only
+    // index a raw string — no mark can be honest, so the bubble stays the
+    // target.
+    const warn = stub_warn()
+    const content = JSON.stringify({ output: { rows: [1, 2, 3] } })
+    const trace: TraceType = [
+      assistantMsg(null, {
+        tool_calls: [makeToolCall("call_1", "query_db")],
+      }),
+      toolMsg(content, "call_1"),
+    ]
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: { trace_index: 1, kind: "tool_result", start: 0, end: 4 },
+      },
+    })
+    expect(container.querySelector("mark")).toBeNull()
+    expect(
+      container.querySelector("[data-highlight-target]")?.tagName,
+    ).not.toBe("MARK")
+    expect(warned_no_mark(warn)).toBe(true)
+  })
+
+  it("falls back to the bubble when duplicate call ids point the display at a different message", () => {
+    // Two tool messages share one call id (a retried call): the bubble
+    // renders the LAST result, but the citation names the FIRST message's
+    // trace index — slicing the displayed text would mark the wrong bytes.
+    const warn = stub_warn()
+    const first = "attempt one: timed out"
+    const second = "attempt two: return window is 30 days"
+    const trace: TraceType = [
+      assistantMsg(null, {
+        tool_calls: [makeToolCall("call_1", "fetch_policy")],
+      }),
+      toolMsg(JSON.stringify({ output: first }), "call_1"),
+      toolMsg(JSON.stringify({ output: second }), "call_1"),
+    ]
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        // trace_index 1 = the FIRST tool message.
+        highlight: { trace_index: 1, kind: "tool_result", start: 0, end: 7 },
+      },
+    })
+    expect(container.querySelector("mark")).toBeNull()
+    const target = container.querySelector("[data-highlight-target]")
+    expect(target).not.toBeNull()
+    expect(target?.tagName).not.toBe("MARK")
+    expect(warned_no_mark(warn)).toBe(true)
+  })
+
+  it("logs a tool-call citation, which lands on the whole bubble", () => {
+    // A tool CALL renders through a component rather than plain text, so the
+    // bubble only expands and scrolls — the one highlight kind that never
+    // marks, whatever the result beside it looks like.
+    const warn = stub_warn()
+    const trace: TraceType = [
+      assistantMsg(null, {
+        tool_calls: [makeToolCall("call_1", "load_skill")],
+      }),
+    ]
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: { trace_index: 0, kind: "tool_calls", start: 0, end: 9 },
+      },
+    })
+    expect(container.querySelector("mark")).toBeNull()
+    expect(warned_no_mark(warn)).toBe(true)
   })
 })
 

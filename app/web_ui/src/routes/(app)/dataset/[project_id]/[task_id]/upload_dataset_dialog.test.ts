@@ -27,10 +27,9 @@ describe("UploadDatasetDialog", () => {
     current_task.set(null)
   })
 
-  it("renders single-turn help when current_task is single-turn", () => {
-    current_task.set({ turn_mode: "single_turn" } as AnyTask)
+  it("renders single-turn help when turn_mode is single_turn", () => {
     const { container } = render(UploadDatasetDialog, {
-      props: { onImportCompleted: NOOP },
+      props: { onImportCompleted: NOOP, turn_mode: "single_turn" },
     })
 
     const titleNode = container.querySelector("h3")
@@ -49,10 +48,9 @@ describe("UploadDatasetDialog", () => {
     expect(downloadLink).toBeNull()
   })
 
-  it("renders multiturn help when current_task is multiturn", () => {
-    current_task.set({ turn_mode: "multiturn" } as AnyTask)
+  it("renders multiturn help when turn_mode is multiturn", () => {
     const { container } = render(UploadDatasetDialog, {
-      props: { onImportCompleted: NOOP },
+      props: { onImportCompleted: NOOP, turn_mode: "multiturn" },
     })
 
     const titleNode = container.querySelector("h3")
@@ -76,9 +74,27 @@ describe("UploadDatasetDialog", () => {
     expect(downloadLink?.textContent).toContain("Download sample CSV")
   })
 
-  it("falls back to single-turn title and help when current_task is null", () => {
+  it("uses the route's turn_mode prop, ignoring a mismatched current_task store", () => {
+    // The global store holds a different task than the route: the docs must
+    // follow the prop (the route's task), not the stale store.
+    current_task.set({ turn_mode: "single_turn" } as AnyTask)
     const { container } = render(UploadDatasetDialog, {
-      props: { onImportCompleted: NOOP },
+      props: { onImportCompleted: NOOP, turn_mode: "multiturn" },
+    })
+
+    const titleNode = container.querySelector("h3")
+    expect(titleNode?.textContent?.trim()).toBe("Add Multiturn CSV to Dataset")
+
+    const codeNodes = Array.from(container.querySelectorAll("code")).map(
+      (n) => n.textContent,
+    )
+    expect(codeNodes).toContain("trace")
+    expect(codeNodes).not.toContain("input")
+  })
+
+  it("falls back to single-turn help when turn_mode is null", () => {
+    const { container } = render(UploadDatasetDialog, {
+      props: { onImportCompleted: NOOP, turn_mode: null },
     })
 
     const titleNode = container.querySelector("h3")
