@@ -58,13 +58,44 @@ class OpenEnvToolProxy(KilnToolInterface):
             self._ctx.episode, self._tool.name, dict(kwargs)
         )
         if outcome.error is not None:
+            output = render_tool_error(
+                outcome.error_code, outcome.error, outcome.error_details
+            )
+            if outcome.error_code and outcome.error_code not in WORLD_FAILURE_CODES:
+                # The modelled product answering with an error of its own, which is an
+                # ordinary answer: the real system's client would return the same body.
+                return ToolCallResult(output=output)
             return ToolCallResult(
-                output=outcome.error, is_error=True, error_message=outcome.error
+                output=output, is_error=True, error_message=outcome.error
             )
         output = render_tool_result(outcome.result)
         if isinstance(outcome.result, dict) and outcome.result.get("is_error") is True:
             return ToolCallResult(output=output, is_error=True, error_message=output)
         return ToolCallResult(output=output)
+
+
+WORLD_FAILURE_CODES: frozenset[str] = frozenset(
+    {"internal", "unknown_tool", "invalid_arguments", "world_gap"}
+)
+"""Error codes that mean the world itself failed, not the product it models.
+
+Everything else is the modelled system speaking: an error the real system would also
+return, which the real tool returns as an ordinary result. Keeping the two apart is what
+lets one trace be compared against another taken against the real system."""
+
+
+def render_tool_error(code: str | None, message: str, details: Any) -> str:
+    """The text the model sees for an environment's tool error.
+
+    A coded error renders as `{"error": {"code", "message", "details"}}`, always all
+    three keys so the shape is stable whether or not there are details; an environment
+    that reports no code renders the message alone."""
+    if not code:
+        return message
+    return json.dumps(
+        {"error": {"code": code, "message": message, "details": details}},
+        ensure_ascii=False,
+    )
 
 
 def render_tool_result(result: Any) -> str:
@@ -73,9 +104,10 @@ def render_tool_result(result: Any) -> str:
     A FastMCP call result (`{"content": [...], "structured_content", "data", "is_error"}`)
     renders its native `data` when present, else its text content blocks; bare
     MCP-style content blocks are flattened to their text; anything else that is not
-    already a string is serialized as JSON."""
+    already a string is serialized as JSON. `None` renders as `null`, the same text a
+    tool that serializes its own result would show for an empty body."""
     if result is None:
-        return ""
+        return "null"
     if isinstance(result, str):
         return result
     if isinstance(result, dict) and isinstance(result.get("content"), list):

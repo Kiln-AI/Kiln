@@ -17,7 +17,7 @@ what OpenEnv already exposes:
     world_version   the environment's reported name and version
     start_episode     open a `/ws` session and `reset(**reset_kwargs)`
     call_tool         `step(CallToolAction)`; each observation's reward is kept in memory
-    end_episode       `state`, then close the session
+    end_episode       `state`, the control-tool snapshots, then close the session
     release           close the session
 
 One session per episode; sessions are closed by `end_episode`, so the record on the
@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -58,12 +59,26 @@ class OpenEnvError(RuntimeError):
 
 @dataclass(frozen=True)
 class ToolCallOutcome:
-    """What one `step(CallToolAction)` came back with."""
+    """What one `step(CallToolAction)` came back with.
+
+    An environment that reports an error as a dict (`{"code", "message", "details"}`)
+    has all three read: `error` stays the human-readable message, and the code and
+    details ride alongside so the tool proxy can tell the world's own failure from the
+    modelled product answering with an error of its own."""
 
     result: Any
     error: str | None
     reward: float | None
     done: bool
+    error_code: str | None = None
+    error_details: Any = None
+
+
+DEFAULT_SETTLE_CALLS: tuple[tuple[str, str], ...] = (
+    ("changes", "controller_changes"),
+    ("state_digest", "controller_digest"),
+)
+"""(final_state key, control tool name); each is stepped with arguments {}."""
 
 
 class WorldSessionManager(Protocol):
@@ -86,6 +101,15 @@ class WorldSessionManager(Protocol):
     async def call_tool(
         self, episode: WorldEpisode, tool_name: str, arguments: dict[str, Any]
     ) -> ToolCallOutcome: ...
+
+    async def call_control_tool(
+        self, episode: WorldEpisode, tool_name: str, arguments: dict[str, Any]
+    ) -> ToolCallOutcome:
+        """Step a tool the environment does not list (a control tool) on the episode's
+        live session. Raises RuntimeError when the episode has no live session, and
+        OpenEnvError on a transport or protocol failure; an env-level error is returned
+        in the outcome, never raised."""
+        ...
 
     async def end_episode(self, episode: WorldEpisode) -> WorldEpisode: ...
 
@@ -121,8 +145,13 @@ class _Session:
 class OpenEnvSessionManager:
     """Drives sessions on running OpenEnv environments."""
 
-    def __init__(self, step_timeout_s: float = STEP_TIMEOUT_S) -> None:
+    def __init__(
+        self,
+        step_timeout_s: float = STEP_TIMEOUT_S,
+        settle_calls: Sequence[tuple[str, str]] = DEFAULT_SETTLE_CALLS,
+    ) -> None:
         self._step_timeout_s = step_timeout_s
+        self._settle_calls = tuple(settle_calls)
         self._servers: dict[str, _EnvServer] = {}
         self._server_locks: dict[str, asyncio.Lock] = {}
         self._sessions: dict[str, _Session] = {}
@@ -176,12 +205,20 @@ class OpenEnvSessionManager:
             raise
         self._sessions[episode_id] = _Session(episode_id=episode_id, ws=ws)
 
+        # Lowest to highest precedence: an environment that reports its facts in the
+        # observation's result (Seahaven's shape) has them read, and the metadata an
+        # environment also reports wins on any key they share.
+        observation = data.get("observation")
+        if not isinstance(observation, dict):
+            observation = {}
         reset_metadata: dict[str, JsonValue] = {}
-        reported = data.get("metadata")
-        if not isinstance(reported, dict):
-            reported = (data.get("observation") or {}).get("metadata")
-        if isinstance(reported, dict):
-            reset_metadata.update({str(k): v for k, v in reported.items()})
+        for source in (
+            observation.get("result"),
+            observation.get("metadata"),
+            data.get("metadata"),
+        ):
+            if isinstance(source, dict):
+                reset_metadata.update({str(k): v for k, v in source.items()})
         return WorldEpisode(
             reset=WorldReset(world_id=world.id, reset_kwargs=reset_kwargs),
             episode_id=episode_id,
@@ -192,32 +229,72 @@ class OpenEnvSessionManager:
     async def call_tool(
         self, episode: WorldEpisode, tool_name: str, arguments: dict[str, Any]
     ) -> ToolCallOutcome:
+        session = self._live_session(episode)
+        async with session.lock:
+            return await self._step_call_tool(
+                session, tool_name, arguments, record=True
+            )
+
+    async def call_control_tool(
+        self, episode: WorldEpisode, tool_name: str, arguments: dict[str, Any]
+    ) -> ToolCallOutcome:
+        """A tool the environment does not list, stepped on the episode's live session.
+
+        Kiln and the harness read an environment's own snapshot of itself this way. It
+        is the same wire call as `call_tool` and differs only in what it means at the
+        seam and in bookkeeping: Kiln's own probes never count as the agent's reward or
+        end its episode."""
+        session = self._live_session(episode)
+        async with session.lock:
+            return await self._step_call_tool(
+                session, tool_name, arguments, record=False
+            )
+
+    def _live_session(self, episode: WorldEpisode) -> _Session:
         session = self._sessions.get(episode.episode_id)
         if session is None:
             raise RuntimeError(
                 f"Episode {episode.episode_id} has no live session; tools "
                 "can only be called during generation"
             )
-        async with session.lock:
-            data = await self._request(
-                session.ws,
-                {
-                    "type": "step",
-                    "data": {
-                        "type": "call_tool",
-                        "tool_name": tool_name,
-                        "arguments": arguments,
-                    },
+        return session
+
+    async def _step_call_tool(
+        self,
+        session: _Session,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        record: bool,
+    ) -> ToolCallOutcome:
+        """One `step(CallToolAction)` on a session whose lock the caller holds.
+
+        `record` keeps the reward and `done` on the session; control calls pass False."""
+        data = await self._request(
+            session.ws,
+            {
+                "type": "step",
+                "data": {
+                    "type": "call_tool",
+                    "tool_name": tool_name,
+                    "arguments": arguments,
                 },
-            )
-            reward = data.get("reward")
+            },
+        )
+        reward = data.get("reward")
+        done = bool(data.get("done", False))
+        if record:
             if isinstance(reward, (int, float)) and not isinstance(reward, bool):
                 session.rewards.append(float(reward))
-            done = bool(data.get("done", False))
             session.done = session.done or done
         observation = data.get("observation") or {}
         error = observation.get("error")
+        error_code: str | None = None
+        error_details: Any = None
         if isinstance(error, dict):
+            code = error.get("code")
+            error_code = str(code) if code else None
+            error_details = error.get("details")
             error = str(error.get("message") or error)
         elif error is not None:
             error = str(error)
@@ -226,6 +303,8 @@ class OpenEnvSessionManager:
             error=error,
             reward=float(reward) if isinstance(reward, (int, float)) else None,
             done=done,
+            error_code=error_code,
+            error_details=error_details,
         )
 
     async def end_episode(self, episode: WorldEpisode) -> WorldEpisode:
@@ -237,10 +316,54 @@ class OpenEnvSessionManager:
             async with session.lock:
                 data = await self._request(session.ws, {"type": "state"})
                 state = {str(k): v for k, v in data.items()}
+                await self._settle(episode, session, state)
                 await self._end_session(session.ws)
         finally:
             await self._close_quietly(session.ws)
         return episode.model_copy(update={"final_state": state})
+
+    async def _settle(
+        self, episode: WorldEpisode, session: _Session, state: dict[str, JsonValue]
+    ) -> None:
+        """Ask the environment for the snapshots graders read, on the session that is
+        about to close.
+
+        After `state`, not before: an environment may count a tool call as a step, so
+        settling first would make every `final_state.step_count` two more than the agent
+        took. Control tools are read-only, so the snapshot is the same either way.
+
+        An environment that does not serve a control tool answers `unknown_tool`, or an
+        error with no code at all if it does not use that error shape; either way the
+        key is simply absent, which is what keeps environments that know nothing of this
+        working. Any other coded error is a real fault in an environment that does serve
+        the tool: it is recorded in `final_state` and settling stops there, so the
+        generation is still saved with the evidence in it rather than scoring as
+        'the agent wrote nothing'."""
+        for key, tool_name in self._settle_calls:
+            outcome = await self._step_call_tool(session, tool_name, {}, record=False)
+            if outcome.error is None:
+                state[key] = outcome.result
+            elif outcome.error_code in (None, "unknown_tool"):
+                logger.debug(
+                    "world %s: no %s (%s)",
+                    episode.episode_id,
+                    tool_name,
+                    outcome.error,
+                )
+            else:
+                logger.warning(
+                    "world %s: '%s' failed while settling: %s: %s",
+                    episode.episode_id,
+                    tool_name,
+                    outcome.error_code,
+                    outcome.error,
+                )
+                state["settle_error"] = {
+                    "tool": tool_name,
+                    "code": outcome.error_code,
+                    "message": outcome.error,
+                }
+                return
 
     async def release(self, episode: WorldEpisode) -> None:
         session = self._sessions.pop(episode.episode_id, None)

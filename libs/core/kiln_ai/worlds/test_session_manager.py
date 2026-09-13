@@ -1,6 +1,8 @@
 """Tests for the OpenEnv session manager against the test environment server. Kiln only
 connects to a running server named by `env_url`; it never starts one."""
 
+import hashlib
+
 import pytest
 
 from kiln_ai.datamodel.project import Project
@@ -11,6 +13,7 @@ from kiln_ai.worlds.session_manager import (
 )
 from kiln_ai.worlds.testing import (
     ENV_NAME,
+    ControlledCounterEnv,
     free_port,
     serve_in_thread,
 )
@@ -33,6 +36,20 @@ def server_url():
 @pytest.fixture
 def remote_world(project, server_url):
     w = World(name="remote", parent=project, env_url=server_url)
+    w.save_to_file()
+    return w
+
+
+@pytest.fixture
+def controlled_url():
+    with serve_in_thread(env_factory=ControlledCounterEnv) as base_url:
+        yield base_url
+
+
+@pytest.fixture
+def controlled_world(project, controlled_url):
+    """A world whose environment speaks coded errors and serves control tools."""
+    w = World(name="controlled", parent=project, env_url=controlled_url)
     w.save_to_file()
     return w
 
@@ -85,6 +102,7 @@ class TestRemoteSessions:
         boom = await session_manager.call_tool(episode, "explode", {})
         assert boom.result is None and boom.error == "boom"
         assert boom.reward == -1.0 and boom.done is True
+        assert boom.error_code is None and boom.error_details is None
         missing = await session_manager.call_tool(episode, "nope", {})
         assert missing.error == "no tool 'nope'"
         # Rewards and done are tracked on the live session only.
@@ -96,6 +114,9 @@ class TestRemoteSessions:
         assert final.final_state["notes"] == ["hi"]
         assert final.final_state["step_count"] == 4
         assert final.final_state["episode_id"] == episode.episode_id
+        # This environment serves no control tools, so the settle keys are absent.
+        assert "changes" not in final.final_state
+        assert "state_digest" not in final.final_state
         assert set(final.model_dump()) == {
             "reset",
             "episode_id",
@@ -108,6 +129,139 @@ class TestRemoteSessions:
         with pytest.raises(RuntimeError, match="no live session"):
             await session_manager.call_tool(episode, "append_note", {"note": "late"})
         assert await session_manager.end_episode(final) is final
+
+    async def test_reference_server_end_to_end_without_control_tools(
+        self, session_manager, remote_world
+    ):
+        """An environment that knows nothing of control tools is unaffected: its
+        final_state is exactly what its own `state` reported."""
+        tools = await session_manager.list_tools(remote_world)
+        assert [t.name for t in tools] == ["append_note", "read_notes", "explode"]
+        episode = await session_manager.start_episode(remote_world, {"fixture_id": "a"})
+        await session_manager.call_tool(episode, "append_note", {"note": "hi"})
+        final = await session_manager.end_episode(episode)
+        assert final.final_state == {
+            "episode_id": episode.episode_id,
+            "step_count": 1,
+            "notes": ["hi"],
+            "fixture_id": "a",
+        }
+        assert session_manager._sessions == {}
+
+    async def test_coded_error_is_forwarded(self, session_manager, controlled_world):
+        episode = await session_manager.start_episode(controlled_world, {})
+        outcome = await session_manager.call_tool(episode, "fail_coded", {})
+        assert outcome.error == "bad note"
+        assert outcome.error_code == "invalid_input"
+        assert outcome.error_details == {"field": "note"}
+
+    async def test_reset_result_fills_and_metadata_wins(
+        self, session_manager, controlled_world
+    ):
+        episode = await session_manager.start_episode(
+            controlled_world, {"fixture_id": "a", "frozen_time": "2026-07-14"}
+        )
+        # `tools` exists only in the observation's result; `fixture_id` is in both, and
+        # the metadata's value wins.
+        assert episode.reset_metadata["tools"] == len(ControlledCounterEnv.TOOLS)
+        assert episode.reset_metadata["fixture_id"] == "a"
+        assert episode.reset_metadata["frozen_time"] == "2026-07-14"
+
+    async def test_end_episode_settles_changes_and_digest(
+        self, session_manager, controlled_world
+    ):
+        episode = await session_manager.start_episode(controlled_world, {})
+        await session_manager.call_tool(episode, "append_note", {"note": "hi"})
+        final = await session_manager.end_episode(episode)
+        assert final.final_state["changes"] == [
+            {
+                "table": "notes",
+                "op": "insert",
+                "key": {"n": 0},
+                "before": None,
+                "after": {"n": 0, "note": "hi"},
+            }
+        ]
+        assert final.final_state["state_digest"] == hashlib.sha256(b"hi").hexdigest()
+        # Settling happens after `state`, so step_count is still the agent's own.
+        assert final.final_state["step_count"] == 1
+        assert final.final_state["notes"] == ["hi"]
+
+    async def test_settle_calls_are_configurable(self, controlled_world):
+        async def settled(**kwargs):
+            session_manager = OpenEnvSessionManager(**kwargs)
+            try:
+                episode = await session_manager.start_episode(controlled_world, {})
+                await session_manager.call_tool(episode, "append_note", {"note": "hi"})
+                return (await session_manager.end_episode(episode)).final_state
+            finally:
+                await session_manager.shutdown()
+
+        none = await settled(settle_calls=())
+        assert "changes" not in none and "state_digest" not in none
+
+        renamed = await settled(settle_calls=(("digest", "controller_digest"),))
+        assert renamed["digest"] == hashlib.sha256(b"hi").hexdigest()
+        assert "changes" not in renamed and "state_digest" not in renamed
+
+    async def test_settle_records_a_coded_failure(
+        self, session_manager, controlled_world
+    ):
+        """A control tool that is served and broken is evidence, not an exception: the
+        episode still ends and the generation is still saved."""
+        episode = await session_manager.start_episode(controlled_world, {})
+        await session_manager.call_tool(episode, "append_note", {"note": "poison"})
+        final = await session_manager.end_episode(episode)
+        assert final.final_state["settle_error"] == {
+            "tool": "controller_changes",
+            "code": "db_error",
+            "message": "diff failed",
+        }
+        # Settling stopped at the failure, so neither key was written.
+        assert "changes" not in final.final_state
+        assert "state_digest" not in final.final_state
+        assert final.final_state["step_count"] == 1
+        assert final.final_state["notes"] == ["poison"]
+        assert session_manager._sessions == {}
+
+    async def test_settle_stops_at_the_first_failure(self, controlled_world):
+        session_manager = OpenEnvSessionManager(
+            settle_calls=(
+                ("digest", "controller_digest"),
+                ("changes", "controller_changes"),
+            )
+        )
+        try:
+            episode = await session_manager.start_episode(controlled_world, {})
+            await session_manager.call_tool(episode, "append_note", {"note": "poison"})
+            final = await session_manager.end_episode(episode)
+        finally:
+            await session_manager.shutdown()
+        # The digest was taken before the failing call, so only `changes` is missing.
+        assert final.final_state["digest"] == hashlib.sha256(b"poison").hexdigest()
+        assert "changes" not in final.final_state
+        assert final.final_state["settle_error"]["tool"] == "controller_changes"
+
+    async def test_call_control_tool_on_a_live_session(
+        self, session_manager, controlled_world, remote_world
+    ):
+        episode = await session_manager.start_episode(controlled_world, {})
+        await session_manager.call_tool(episode, "append_note", {"note": "hi"})
+        outcome = await session_manager.call_control_tool(
+            episode, "controller_digest", {}
+        )
+        assert outcome.result == hashlib.sha256(b"hi").hexdigest()
+        # A control call is not the agent's: no reward is recorded for it.
+        assert session_manager._sessions[episode.episode_id].rewards == [1.0]
+        await session_manager.end_episode(episode)
+        with pytest.raises(RuntimeError, match="no live session"):
+            await session_manager.call_control_tool(episode, "controller_digest", {})
+
+        # An environment that serves no such tool answers, rather than raising.
+        other = await session_manager.start_episode(remote_world, {})
+        absent = await session_manager.call_control_tool(other, "controller_digest", {})
+        assert absent.error == "no tool 'controller_digest'"
+        assert absent.error_code is None
 
     async def test_sessions_are_isolated(self, session_manager, remote_world):
         one = await session_manager.start_episode(remote_world, {"fixture_id": "one"})

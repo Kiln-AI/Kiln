@@ -516,8 +516,14 @@ async def test_conformance_under_kiln_session_manager(tmp_path, toy_world, froze
                 episode, "finish_item", {"item_id": "nope"}
             )
             assert failed.error == "no item nope" and failed.result is None
+            assert failed.error_code == "not_found"
+            assert failed.error_details == {"id": "nope"}
 
+            # This server serves control tools, so ending the episode settles the
+            # world's own account of what the episode changed into the record.
             ended = await session_manager.end_episode(episode)
+            changes = ended.final_state.pop("changes")
+            digest = ended.final_state.pop("state_digest")
             assert ended.final_state == {
                 "episode_id": episode.episode_id,
                 "step_count": 2,
@@ -525,6 +531,10 @@ async def test_conformance_under_kiln_session_manager(tmp_path, toy_world, froze
                 "now": FIXED_NOW,
                 "world": "toy",
             }
+            assert [(c["table"], c["op"], c["after"]["name"]) for c in changes] == [
+                ("items", "insert", "from kiln")
+            ]
+            assert len(digest) == 64 and all(c in "0123456789abcdef" for c in digest)
             await session_manager.release(ended)
         finally:
             await session_manager.shutdown()
