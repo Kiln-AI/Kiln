@@ -3,14 +3,15 @@
 #
 # Usage:
 #   ui_gate.sh --range <git-range> [--repo <path>]   # added lines of a diff (the unit's landing check)
-#   ui_gate.sh --files <file>...                       # whole files (calibration, audits)
-#   ui_gate.sh --worktree [--repo <path>]              # added lines of the uncommitted diff
+#   ui_gate.sh --files <file>...                       # whole .svelte files (calibration, audits)
+#   ui_gate.sh --worktree [--repo <path>]              # added lines of the uncommitted diff, plus untracked files
 #
 # Output: one line per hit  SEV<TAB>RULE<TAB>file:line<TAB>snippet, then a summary.
 # SEV: FAIL = the unit does not land unless the component plan justifies the hit by
 #      file:line; WARN = must appear as a row in the component plan; INFO = listed only.
 # Exit 1 when any FAIL hit remains. Allowlist: ui_gate_allow.txt beside this script (one regex per
-# line, matched against "file<TAB>snippet"), for house idioms that are not defects.
+# line, matched against "file<TAB>snippet", optionally prefixed "RULE_NAME:" to scope it to that one
+# rule), for house idioms that are not defects.
 #
 # Rules are tuned on the eval builder route and calibrated on the rest of app/web_ui/src/routes
 # (43k lines): the reference screens (run page, edit task, synthetic data) run at 0 FAIL.
@@ -28,17 +29,22 @@ while [ $# -gt 0 ]; do
     *) echo "unknown arg $1" >&2; exit 2;;
   esac
 done
-[ -z "$MODE" ] && { sed -n 2,16p "$0"; exit 2; }
+[ -z "$MODE" ] && { sed -n 2,17p "$0"; exit 2; }
 
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 LINES="$TMP/lines.tsv"   # file:line<TAB>content
 
 # ---- collect the lines under review -------------------------------------------------------
 svelte_only() { grep -E '^app/web_ui/src/.*\.svelte:' | grep -vE '\.test\.|/__tests__/|_mock|/dev/|/preview/'; }
+# Untracked files are invisible to `git diff`, so a brand-new component would otherwise review as
+# zero lines. Worktree mode scans each of them whole, the way --files does.
+untracked_files() { git -C "$REPO" ls-files --others --exclude-standard -- 'app/web_ui/src'; }
 case "$MODE" in
   files)
     for f in "${FILES[@]}"; do
       case "$f" in *.test.*|*/__tests__/*) continue;; esac
+      # Only markup is reviewable: a guide or a script carries <label> examples that are not screens.
+      case "$f" in *.svelte) ;; *) echo "skipped, not a .svelte file: $f" >&2; continue;; esac
       awk -v f="$f" '{ print f ":" NR "\t" $0 }' "$f"
     done > "$LINES" ;;
   range|worktree)
@@ -50,36 +56,49 @@ case "$MODE" in
       /^\+/ { print file ":" ln "\t" substr($0,2); ln++; next }
       /^-/ { next }
       { ln++ }' | svelte_only > "$LINES"
+    if [ "$MODE" = worktree ]; then
+      untracked_files | grep -E '\.svelte$' | grep -vE '\.test\.|/__tests__/|_mock|/dev/|/preview/' \
+        | while read -r f; do awk -v f="$f" '{ print f ":" NR "\t" $0 }' "$REPO/$f"; done >> "$LINES"
+    fi
     # shared controls touched: any file in the diff under the shared dirs (lib/ui, lib/components, the form
     # controls, app_page, and the SDG kiln_pro_* components the builder shares), added OR removed lines
-    "${D[@]}" --name-only -- 'app/web_ui/src' | grep -E '^app/web_ui/src/(lib/ui/|lib/components/|lib/utils/form_|routes/\(app\)/app_page\.svelte|routes/\(app\)/generate/\[project_id\]/\[task_id\]/kiln_pro_)' \
+    { "${D[@]}" --name-only -- 'app/web_ui/src'; [ "$MODE" = worktree ] && untracked_files; } \
+      | grep -E '^app/web_ui/src/(lib/ui/|lib/components/|lib/utils/form_|routes/\(app\)/app_page\.svelte|routes/\(app\)/generate/\[project_id\]/\[task_id\]/kiln_pro_)' \
       | grep -vE '\.test\.|/__tests__/' | sed 's/^/FAIL\tSHARED_CONTROL_TOUCHED\t/; s/$/:0\tshared control edited: must be a separate named decision in the brief/' > "$TMP/shared.tsv" ;;
 esac
 [ -f "$TMP/shared.tsv" ] || : > "$TMP/shared.tsv"
 
-# Comment lines are not markup. Single-line markers are dropped by prefix; lines INSIDE a
-# multi-line <!-- --> or /* */ block are found by scanning the whole file at the reviewed
-# revision, so a prose comment that mentions "btn-outline" on its third line is not a hit.
+# Comment text is not markup. Comment SPANS (<!-- -->, /* */, on one line or across several) are
+# cut out of each reviewed line by scanning the whole file at the reviewed revision, so prose that
+# mentions "btn-outline" is not a hit while markup before or after the comment on the same line
+# still is. Single-line markers (// and --) are dropped by prefix.
 CODE="$TMP/code.tsv"
-comment_lines() {  # <file> -> prints "file:line" for every line inside a block comment
+code_spans() {  # <file> -> prints "file:line<TAB>the line with every comment span removed"
   local f=$1 src
   case "$MODE" in
     range) src=$(git -C "$REPO" show "${RANGE##*..}:$f" 2>/dev/null) ;;
     *)     src=$(cat "$([ "$MODE" = files ] && echo "$f" || echo "$REPO/$f")" 2>/dev/null) ;;
   esac
+  [ -z "$src" ] && return 0
   printf '%s\n' "$src" | awk -v f="$f" '
-    { line=$0; n=NR; inblk_before=inblk
+    { rest=$0; out=""
       while (1) {
-        if (!inblk) { o1=index(line,"<!--"); o2=index(line,"/*"); o=(o1&&o2)?(o1<o2?o1:o2):(o1?o1:o2)
-                      if (!o) break; inblk=(o==o1)?1:2; line=substr(line,o+ (inblk==1?4:2)) ; started=1 }
-        else { c=index(line,(inblk==1)?"-->":"*/"); if (!c) break; inblk=0; line=substr(line,c+ ((inblk==1)?3:2)) }
+        if (!inblk) { o1=index(rest,"<!--"); o2=index(rest,"/*"); o=(o1&&o2)?(o1<o2?o1:o2):(o1?o1:o2)
+                      if (!o) { out=out rest; break }
+                      inblk=(o==o1)?1:2; out=out substr(rest,1,o-1); rest=substr(rest,o+ (inblk==1?4:2)) }
+        else { c=index(rest,(inblk==1)?"-->":"*/"); if (!c) { rest=""; break }
+               rest=substr(rest,c+ ((inblk==1)?3:2)); inblk=0 }
       }
-      if (inblk_before || (inblk && started)) print f ":" n
-      started=0
+      print f ":" NR "\t" out
     }'
 }
-cut -d: -f1 "$LINES" | sort -u | while read -r f; do comment_lines "$f"; done | sort -u > "$TMP/comment_lines.txt"
-grep -vE $'\t[[:space:]]*(//|<!--|\\*|/\\*|--)' "$LINES" | grep -vF -f <(sed 's/$/\t/' "$TMP/comment_lines.txt" | sed 's/^/^/' | sed 's/\^//' ) > "$CODE" || true
+cut -d: -f1 "$LINES" | sort -u | while read -r f; do code_spans "$f"; done > "$TMP/spans.tsv"
+# Replace each reviewed line with its comment-free text; a line that is all comment drops out.
+awk -F'\t' 'NR==FNR { c=$0; sub(/^[^\t]*\t/,"",c); span[$1]=c; seen[$1]=1; next }
+     { c=$0; sub(/^[^\t]*\t/,"",c); if (seen[$1]) c=span[$1]
+       if (c ~ /^[[:space:]]*$/) next
+       print $1 "\t" c }' "$TMP/spans.tsv" "$LINES" \
+  | grep -vE $'\t[[:space:]]*(//|\\*|--)' > "$CODE" || true
 
 # ---- rules --------------------------------------------------------------------------------
 # R <sev> <rule> <grep -E pattern> [exclude pattern]
@@ -120,7 +139,10 @@ R WARN NON_GUIDE_TEXT_COLOR '\btext-(gray|slate|zinc|neutral)-(300|400|600|700|8
 R WARN NON_GUIDE_BG '\bbg-(gray|slate|zinc|neutral|yellow|amber|red|green|blue)-[0-9]+\b|\bbg-(primary|secondary|success|error|warning|info)/[0-9]+\b' '<mark|MARK_CLASS'
 # 13. Arbitrary values (house idioms allowlisted below).
 R INFO ARBITRARY_VALUE '\[[0-9.]+(px|rem|vh|vw|%)\]|\[min\(|\[calc\(' 'max-w-\[(1400|900|300|340)px\]|min-h-\[50vh\]|max-h-\[(70|80)vh\]|min-h-\[calc\(100vh|w-\[70%\]|max-w-\[70%\]'
-} | { if [ -f "$ALLOW" ]; then grep -vE -f <(grep -vE '^\s*(#|$)' "$ALLOW" | sed 's/^/\t[A-Z_]+\t.*/'); else cat; fi; } \
+# An allow line prefixed "RULE_NAME:" only silences that rule; a bare line silences every rule.
+} | { if [ -f "$ALLOW" ]; then grep -vE -f <(grep -vE '^\s*(#|$)' "$ALLOW" \
+        | awk -v t="\t" '/^[A-Z_]+:/ { r=$0; sub(/:.*/,"",r); p=$0; sub(/^[A-Z_]+:/,"",p); print t r t ".*" p; next }
+                          { print t "[A-Z_]+" t ".*" $0 }'); else cat; fi; } \
   | sort -t$'\t' -k1,1 -k2,2 -k3,3 | uniq > "$TMP/hits.tsv"
 
 cat "$TMP/hits.tsv"

@@ -78,11 +78,11 @@ Any diff under `lib/ui/`, `lib/components/`, `lib/utils/form_*`, `app_page.svelt
 
 ```
 bash .agents/skills/kiln-ui/ui_gate.sh --range <base>..<tip>     # the branch's commits
-bash .agents/skills/kiln-ui/ui_gate.sh --worktree                 # before committing
-bash .agents/skills/kiln-ui/ui_gate.sh --files <file>...           # audit whole files
+bash .agents/skills/kiln-ui/ui_gate.sh --worktree                 # before committing, untracked files included
+bash .agents/skills/kiln-ui/ui_gate.sh --files <file>...           # audit whole .svelte files
 ```
 
-- The gate skips comment lines, including the inside of multi-line comments, so prose that mentions a class name is not a hit.
+- The gate skips comment spans, including multi-line ones, so prose that mentions a class name is not a hit. Markup before or after a comment on the same line is still reviewed.
 - Exit 1 = FAIL hits. Fix them, or justify each by file:line in the component plan (a justification is a row, not a comment in the code).
 - WARN hits must appear as rows in the plan. INFO hits are listed in the handback.
 - Do not add allowlist lines for the screen you are building. `ui_gate_allow.txt` is for house idioms already shipped on a reference screen.
