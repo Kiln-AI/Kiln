@@ -31,11 +31,11 @@ Kiln screens are built from a small set of shared controls and DaisyUI classes. 
 | `Collapse` | `lib/ui/collapse.svelte` | Anything that expands. The only expander. |
 | `PropertyList` | `lib/ui/property_list.svelte` | Name/value pairs with tooltips and links. |
 | `InfoTooltip` | `lib/ui/info_tooltip.svelte` | An "i" with a tooltip. Never a hover div. |
-| Rating buttons | `routes/(app)/run/rating.svelte` (see "Rating and Feedback" in `lib/ui/run_sidebar.svelte`) | Any pick-one selection: agree/disagree, pass/fail. unchosen `btn btn-sm btn-outline` at full contrast, chosen filled `btn btn-sm btn-secondary`. Never `btn-success`/`btn-error`. |
+| Rating buttons | `routes/(app)/run/rating.svelte` (see "Rating and Feedback" in `lib/ui/run_sidebar.svelte`) | Any pick-one selection: agree/disagree, pass/fail, yes/no. unchosen `btn btn-sm btn-outline` at full contrast, chosen filled `btn btn-sm btn-secondary`. The second sanctioned use of `btn-outline`. Never `btn-success`/`btn-error`. |
 | `RunConfigComponent`, `SavedRunConfigsDropdown`, `AvailableModelsDropdown` | `lib/ui/run_config_component/` | Model, tools, skills and run-config pickers. Never rebuilt. |
 | Animations | `lib/ui/animations/analyzing_animation.svelte`, `conversation_animation.svelte`, `refining_animation.svelte` | Progress and waiting screens. Title and description props only; counts go in the description string. |
 | `FloatingMenu`, `TableActionMenu` | `lib/ui/floating_menu.svelte`, `table_action_menu.svelte` | Dropdown menus. |
-| DaisyUI `btn` | | The grey default button for every secondary action. `btn-primary` once per screen. `btn-outline btn-primary` for pick-one-of-many. Nothing else. |
+| DaisyUI `btn` | | The grey default button for every secondary action. `btn-primary` once per screen. `btn-outline` has exactly two sanctioned uses: `btn-outline btn-primary` for picking one of several equal options, and the Rating buttons recipe above. Nothing else. |
 
 Reference screens (what "looks like Kiln" means): the Edit Task form (`routes/(app)/settings/edit_task/[project_id]/[task_id]/`), the Run page (`routes/(app)/run/+page.svelte`, including Rating and Feedback in `lib/ui/run_sidebar.svelte`), and the synthetic data flow (`routes/(app)/generate/[project_id]/[task_id]/synth_kiln_pro.svelte`). Do not take "house" from the nearest screen on your branch; take it from these.
 
@@ -65,7 +65,7 @@ Rules:
 - Never write `aria-expanded`, a chevron with `rotate-180`, or an `{#if expanded}` block. Collapse owns disclosure.
 - Never draw a box: no `rounded*` + `border`/`bg-*` + padding on a div. The documented card string (`card card-bordered border-base-300 shadow-md`) is for clickable or list items only. A table frame is `rounded-lg border` and nothing else.
 - Never set `text_size`, `filled_icon`, `font-*` or `text-*` on a shared control from the call site.
-- Never use `btn-success`/`btn-error` for a choice; never `btn-ghost`; `btn-outline` only as `btn-outline btn-primary` for pick-one.
+- Never use `btn-success`/`btn-error` for a choice; never `btn-ghost`. `btn-outline` has exactly two sanctioned uses: `btn-outline btn-primary` for picking one of several equal options, and the Rating and Feedback recipe (unchosen `btn btn-sm btn-outline`, chosen `btn btn-sm btn-secondary`) for agree/disagree, pass/fail, yes/no.
 - Button labels: no "View". Pairs are Previous/Next. One `btn-primary` per screen. Side-by-side buttons are the same size.
 - Fonts: `font-medium` headers, `font-normal` body, `font-light` subtitles. Text colours: base or `text-gray-500`. Backgrounds: none or `bg-base-200`.
 - Copy: short declarative sentences, no em-dashes, Title Case for step and dialog titles.

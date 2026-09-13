@@ -48,9 +48,9 @@ Our colors are named, a Daisy UI convention. For example the color “primary”
 ### Buttons
 
 - The default button is the plain grey `btn`. Use it for Previous, Cancel, Close, secondary actions, and anything that is not the one primary action.
-- `btn-outline` is for special cases only. `btn-outline btn-primary` is the one sanctioned use: picking one of several equal options.
+- `btn-outline` has exactly two sanctioned uses: `btn-outline btn-primary` for picking one of several equal options, and the selection recipe below. Nowhere else.
 - `btn-ghost` is not a house button. Buttons that sit on a tinted surface must still read as buttons; if a button is the same colour as what it sits on, it is the wrong button.
-- Selection buttons (agree/disagree, pass/fail, yes/no) use the Rating and Feedback style: unchosen is `btn btn-sm btn-outline` at full contrast, chosen is filled `btn btn-sm btn-secondary` (drop `btn-outline`; the outline-plus-secondary form renders transparent and cannot be told from unchosen). Never `btn-success` or `btn-error` for a choice. Red and green are for errors and status, not for disagreement.
+- Selection buttons (agree/disagree, pass/fail, yes/no) are the second sanctioned use. They follow the Rating and Feedback style: unchosen is `btn btn-sm btn-outline` at full contrast, chosen is filled `btn btn-sm btn-secondary` (drop `btn-outline`; the outline-plus-secondary form renders transparent and cannot be told from unchosen). Never `btn-success` or `btn-error` for a choice. Red and green are for errors and status, not for disagreement.
 - Two buttons side by side are the same size. Never a small `btn-sm` next to a `btn-primary min-w-64`.
 - Pairs are named as pairs: "Previous" and "Next", never "Previous" and "Continue". A disabled Previous is hidden, not greyed.
 - Button labels are the action, not the verb "View": "Full Trace", "Eval Description", "Eval". The one accepted exception today is "View Eval" on a success screen, where nothing else reads right.
