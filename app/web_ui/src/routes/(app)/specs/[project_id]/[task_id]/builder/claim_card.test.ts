@@ -42,7 +42,9 @@ describe("ClaimCard — Agree / Disagree", () => {
 
     await fireEvent.click(by_id(container, "claim-agree-2"))
     expect(verdict.agrees).toBe(true)
-    expect(by_id(container, "claim-agree-2").className).toContain("btn-success")
+    expect(by_id(container, "claim-agree-2").className).toContain(
+      "btn-secondary",
+    )
     expect(container.querySelector("#claim-why-2")).toBeNull()
   })
 
@@ -55,17 +57,22 @@ describe("ClaimCard — Agree / Disagree", () => {
     await fireEvent.click(by_id(container, "claim-disagree-0"))
     expect(verdict.agrees).toBe(false)
     expect(by_id(container, "claim-disagree-0").className).toContain(
-      "btn-error",
+      "btn-secondary",
     )
     const why = by_id<HTMLTextAreaElement>(container, "claim-why-0")
     expect(why.placeholder).toBe("This is wrong because…")
-    // Required: flagged as an error until a reason is typed.
-    expect(why.className).toContain("textarea-error")
+    // Required, and flagged as an error once the reviewer has touched the
+    // field and left it empty. A box that has only just opened is not marked:
+    // the form control holds its required state back until the first change,
+    // so nothing is red before anyone has had a chance to type.
+    expect(why.className).not.toContain("textarea-error")
     // Under 20 characters, so the card flags it as likely too short, and it
     // is still accepted: only an empty reason is ever held back.
     await fireEvent.input(why, { target: { value: "The window is real." } })
     expect(verdict.why).toBe("The window is real.")
     expect(why.className).not.toContain("textarea-error")
+    await fireEvent.input(why, { target: { value: "" } })
+    expect(why.className).toContain("textarea-error")
 
     // Switching to Agree hides the box and clears the reason typed under
     // Disagree, so nothing stale rides the agree grade into the record.

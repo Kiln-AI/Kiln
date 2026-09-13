@@ -412,9 +412,9 @@ export function is_claims_resolved(state: ClaimsBuildState): boolean {
   return state === "built" || state === "error"
 }
 
-// How many of the selected traces are resolved — the gate advances (and
-// the "Preparing review — N of M ready" count line fills) when this
-// reaches selected_indices.length.
+// How many of the selected traces are resolved — the gate advances (and the
+// "Preparing Review (N/M)" title counts up) when this reaches
+// selected_indices.length.
 export function resolved_selected_count(
   traces: { claims_state: ClaimsBuildState }[],
   selected_indices: number[],
@@ -423,4 +423,14 @@ export function resolved_selected_count(
     const t = traces[i]
     return t !== undefined && is_claims_resolved(t.claims_state)
   }).length
+}
+
+// A progress screen is the animation control and its two strings, so every
+// live count rides in the description rather than in a line of its own under
+// the bar. The failure clause travels with the count it qualifies, and reads
+// as part of the same sentence: "12 of 40 judged, 2 failed."
+export function with_failures(sentence: string, failed: number): string {
+  return failed > 0
+    ? `${sentence.replace(/\.$/, "")}, ${failed} failed.`
+    : sentence
 }

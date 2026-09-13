@@ -172,7 +172,7 @@
   // Without Copilot the page opens on the offer rather than the templates.
   // The Pro-vs-manual question is asked once, up front, instead of partway
   // through after a template is already chosen. Choosing manual reveals the
-  // same picker a Copilot user sees folded under "See templates".
+  // same picker a Copilot user sees folded under "LLM Judge Templates".
   let chose_manual = false
   // The offer is showing, as opposed to the picker behind it. Named once so
   // the page title and the body can never describe different screens.
@@ -312,7 +312,7 @@
                their primary choice. Folded here so the description leads,
                without hiding the option from someone who knows what they
                want. -->
-            <Collapse title="See templates" outlined={true}>
+            <Collapse title="LLM Judge Templates" outlined={true}>
               <OptionList
                 options={llm_options}
                 select_option={select_llm_option}

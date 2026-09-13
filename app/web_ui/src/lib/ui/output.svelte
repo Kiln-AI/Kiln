@@ -154,17 +154,38 @@
       : ''}"
     style={max_height && !is_expanded ? `max-height: ${max_height}` : ""}
   >
-    <!-- eslint-disable svelte/no-at-html-tags -->
-    <pre
-      bind:this={content_element}
-      class="grow p-3 whitespace-pre-wrap text-xs min-w-0 {no_padding
-        ? ''
-        : 'p-3'}"
-      style="overflow-wrap: anywhere;">{#if display_json_html}{@html display_json_html}{:else if text_segments}{text_segments.before}<mark
-          data-highlight-target
-          class={MARK_CLASS}>{text_segments.mark}</mark
-        >{text_segments.after}{:else}{raw_output}{/if}</pre>
-    <!-- eslint-enable svelte/no-at-html-tags -->
+    {#if $$slots.default}
+      <!-- Slotted content takes the place of the printed text, inside this
+           same surface: the caller owns what it renders and its typography,
+           this control owns the panel, the fold and the copy button. The copy
+           button still copies raw_output, so a caller that slots a rendering
+           of its text passes that text as the prop. `mark` does nothing on
+           this path: the span indexes raw_output, which is not what is on
+           screen, so a caller that needs a highlight marks it itself. -->
+      <!-- no_padding is honoured here and ignored on the printing path below,
+           where p-3 is unconditional. That is a bug in the printing path, but
+           eight shipped trace-viewer callers pass no_padding and render around
+           the padding they actually get, so fixing it is the control owner's
+           call, not this slot's. -->
+      <div
+        bind:this={content_element}
+        class="grow min-w-0 {no_padding ? '' : 'p-3'}"
+      >
+        <slot />
+      </div>
+    {:else}
+      <!-- eslint-disable svelte/no-at-html-tags -->
+      <pre
+        bind:this={content_element}
+        class="grow p-3 whitespace-pre-wrap text-xs min-w-0 {no_padding
+          ? ''
+          : 'p-3'}"
+        style="overflow-wrap: anywhere;">{#if display_json_html}{@html display_json_html}{:else if text_segments}{text_segments.before}<mark
+            data-highlight-target
+            class={MARK_CLASS}>{text_segments.mark}</mark
+          >{text_segments.after}{:else}{raw_output}{/if}</pre>
+      <!-- eslint-enable svelte/no-at-html-tags -->
+    {/if}
     <div class="flex-none">
       <button
         on:click|stopPropagation={copy_to_clipboard}

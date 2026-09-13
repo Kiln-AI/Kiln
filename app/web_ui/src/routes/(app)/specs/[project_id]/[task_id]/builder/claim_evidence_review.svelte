@@ -5,32 +5,31 @@
   // screen is the builder's text: the judge's score and reasoning never
   // render here, since the reviewer's calls are what calibrate the judge.
   //
-  // The overall pass/fail call is derived from the verdict claim's grade when
-  // the builder wrote one (it is always the last claim). When the builder
-  // omitted it, a Pass/Fail row after the claims asks the call outright. Continue
-  // is gated on the whole trace being graded (is_trace_reviewed).
+  // The overall pass/fail call is the verdict claim's grade — the builder
+  // writes the verdict as the last claim, and a case without one is not put in
+  // front of the reviewer at all (reviewable_subset). Next is gated on the
+  // whole trace being graded (is_trace_reviewed).
   //
   // Subset review: `selected_indices` is the judge-stratified sample the
   // reviewer grades (sized to the golden answer key) — the review shows
   // exactly these traces, mirroring the single-turn flow where the user
   // reviews exactly what's presented. Claims build lazily: opening a trace
-  // triggers its build via `on_open_trace`, and the panel shows a building or
-  // error state until they arrive. A failed build still lets the reviewer
-  // answer the overall call from the transcript, so the trace counts toward
-  // the save gate without a rebuild.
+  // triggers its build via `on_open_trace`, and the panel shows the build in
+  // progress until they arrive. A trace whose build already failed is not in
+  // this list at all: the claims gate resolves every selected trace before the
+  // review opens, and the page drops the failures from the subset.
   import ClaimCard from "./claim_card.svelte"
   import ClaimText from "./claim_text.svelte"
   import ClaimTraceModal from "./claim_trace_modal.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
-  import Warning from "$lib/ui/warning.svelte"
+  import Output from "$lib/ui/output.svelte"
+  import SettingsHeader from "$lib/ui/settings_header.svelte"
   // The nav row hand-rolls FormContainer's submit button, so it renders the
   // same keyboard hint using the same platform check.
   import { isMacOS } from "$lib/utils/platform"
   import {
-    has_verdict_claim,
     is_trace_reviewed,
     type Citation,
-    type JudgeScore,
     type TraceClaims,
     type TraceReview,
   } from "./claim_evidence"
@@ -43,16 +42,14 @@
   // Called with the trace index being shown — the parent builds its claims
   // if needed. Also the retry hook for a failed build.
   export let on_open_trace: (index: number) => void = () => {}
+  // Called when the reviewer takes the forward action on the last case. What
+  // happens next — a refine round or a straight save — is the parent's call,
+  // and it asks the reviewer in a dialog when there is feedback to act on.
   export let on_save: () => void = () => {}
-  // The review gate, computed by the parent (enough traces reviewed). Drives
-  // the Save button's VISIBILITY (not just its enabled state): Save is hidden
-  // until the gate is met, then takes the Continue slot on the last conversation.
+  // The review gate, computed by the parent (enough traces reviewed). Holds
+  // the forward action on the last conversation disabled until enough of the
+  // batch has been graded, the way every other form in the app holds a submit.
   export let save_disabled = true
-  // The primary action's label and optional tooltip, parent-owned so the
-  // button can say what the click actually does (a review with disagreements
-  // enters a judge-refine round instead of saving).
-  export let save_label = "Save"
-  export let save_tooltip: string | null = null
   // What the judge judged, in the caller's vocabulary: "conversation" for
   // multi-turn, "example" for single-turn.
   export let judged_noun = "example"
@@ -73,14 +70,8 @@
 
   // Names the judge, because the step header does. Claims are the decisions
   // the judge made, the verdict claim included, and the second sentence names
-  // the one control every card carries.
+  // the one control every claim carries.
   $: claims_description = `The decisions the judge made about this ${judged_noun}. Agree or disagree with each.`
-
-  // Why the primary action is held disabled on the last trace. Stated in the
-  // component's own terms (the parent owns how many grades the gate wants,
-  // but every unmet case comes down to grading that isn't finished).
-  const SAVE_GATE_TOOLTIP =
-    "Finish grading to continue. Disagreements need a reason."
 
   $: selected =
     selected_indices.length > 0 ? selected_indices : traces.map((_, i) => i)
@@ -105,24 +96,11 @@
   // Keep original indices, since verdicts are positional.
   $: visible = (current?.claims ?? []).map((claim, index) => ({ claim, index }))
 
-  // The overall call is asked outright only when nothing on screen records
-  // it: the builder omitted the verdict claim, or the build failed and there
-  // are no claims at all. Never while the claims are still on their way.
-  $: asks_overall =
-    !!current &&
-    (current.claims_state === "error" ||
-      (current.claims_state === "built" && !has_verdict_claim(current)))
-
   function open_citation(citation: Citation) {
     if (current) trace_modal?.open_citation(current, citation)
   }
 
-  function set_overall(value: JudgeScore) {
-    // Assigned through `verdicts` so the change reaches the parent's binding.
-    if (verdicts[current_index]) verdicts[current_index].overall = value
-  }
-
-  // Prev/Continue walk the selected sequence.
+  // Previous/Next walk the selected sequence.
   function go_prev() {
     const prior = selected.filter((i) => i < current_index)
     if (prior.length > 0) current_index = prior[prior.length - 1]
@@ -135,83 +113,97 @@
   $: has_next = selected.some((i) => i > current_index)
   $: on_last_trace = !has_next
 
-  // Continue is gated on the CURRENT conversation being fully answered. Save
-  // takes the Continue slot on the last conversation, but only once the overall
-  // gate is met.
+  // Next is gated on the CURRENT conversation being fully answered, and says
+  // so only by being disabled, as every other form in the app does. Save takes
+  // the forward slot on the last conversation, but only once the save gate is
+  // met.
   $: current_reviewed = is_trace_reviewed(current, current_verdicts)
+
+  // The reviewer's position in the graded sequence, which the step header
+  // states. It is the review's only progress readout.
+  $: case_position = selected.indexOf(current_index) + 1
 </script>
 
-<div>
+<!-- One vertical stack owns every gap on the step: gap-6 between sections
+     (the form rhythm the rest of the app is built on), gap-3 inside one.
+     Nothing below sets its own margin, so the spacing is read in one place
+     and cannot drift element by element. -->
+<div class="flex flex-col gap-6">
   {#if current && current_verdicts}
-    {#if current.overview}
-      <!-- The Overview, with the trace escape hatch beside it. The reviewer is
-           expected to read this, which is what lets the claims below stay
-           short. Its [n] chips open the same trace view the claim cards do. -->
-      <div
-        id="review-overview"
-        class="rounded-lg border bg-base-200/40 p-4 mb-4"
-      >
-        <div class="flex items-start justify-between gap-3">
-          <span class="text-sm font-medium">Overview</span>
-          <div class="flex items-center gap-1 flex-none">
-            {#if has_spec_text}
-              <!-- The eval text as a second escape hatch, beside the trace
-                   one: both open something the reviewer reads and closes. -->
-              <button
-                id="view-eval"
-                class="btn btn-xs btn-ghost"
-                on:click={() => spec_dialog?.show()}
-              >
-                View Eval Description
-              </button>
-            {/if}
+    <!-- The step header, which also carries the reviewer's position: the
+         review is a sequence, and the position belongs with the title rather
+         than in a separate line by the buttons. -->
+    <SettingsHeader
+      title={`Case ${case_position} of ${selected.length}`}
+      subtitle="Confirm the judge is aligned to your expectations."
+    />
+
+    <!-- The Overview section renders in every state, so the step never
+         changes shape between cases: the header and its two escape hatches
+         hold still, and only the body underneath differs — the overview when
+         the build produced one, the failure and its retry when it did not,
+         and the in-panel wait while it is still running. The [n] chips open
+         the same trace view the claims do. -->
+    <div id="review-overview" class="flex flex-col gap-3">
+      <SettingsHeader title="Overview">
+        <svelte:fragment slot="actions">
+          {#if has_spec_text}
+            <!-- The eval text as a second escape hatch, beside the trace
+                 one: both open something the reviewer reads and closes. -->
             <button
-              id="view-full-trace"
-              class="btn btn-xs btn-ghost"
-              on:click={() => current && trace_modal?.open_trace(current)}
+              id="view-eval"
+              class="btn btn-sm"
+              on:click={() => spec_dialog?.show()}
             >
-              View Full Trace
+              Eval Description
             </button>
-          </div>
-        </div>
-        <p class="text-sm text-gray-600 mt-2 leading-relaxed">
-          <ClaimText
-            text={current.overview.text}
-            citations={current.overview.citations}
-            on_cite={open_citation}
-          />
-        </p>
-      </div>
-    {:else}
-      <!-- Nothing built yet (or the build failed), so the escape hatches stand
-           alone: the trace and the eval text are all there is to read. The
-           eval text matters most here, where nothing describes the run. -->
-      <div class="flex items-center justify-end gap-1 mb-4">
-        {#if has_spec_text}
+          {/if}
           <button
-            id="view-eval"
-            class="btn btn-xs btn-ghost"
-            on:click={() => spec_dialog?.show()}
+            id="view-full-trace"
+            class="btn btn-sm"
+            on:click={() => current && trace_modal?.open_trace(current)}
           >
-            View Eval Description
+            Full Trace
           </button>
-        {/if}
-        <button
-          id="view-full-trace"
-          class="btn btn-xs btn-ghost"
-          on:click={() => current && trace_modal?.open_trace(current)}
-        >
-          View Full Trace
-        </button>
-      </div>
-    {/if}
+        </svelte:fragment>
+      </SettingsHeader>
+
+      {#if current.overview}
+        <!-- The read-only surface the rest of the app shows read-only content
+             on, with the chips rendered into its slot: Output prints a string
+             and cannot carry a clickable citation itself, so the caller
+             renders the body and Output keeps the panel and the copy button
+             (which copies the plain text passed as raw_output). -->
+        <Output raw_output={current.overview.text}>
+          <p class="text-sm leading-relaxed">
+            <ClaimText
+              text={current.overview.text}
+              citations={current.overview.citations}
+              on_cite={open_citation}
+            />
+          </p>
+        </Output>
+      {:else if current.claims_state === "unbuilt" || current.claims_state === "building"}
+        <!-- The build starts on open, so both render as in-progress, in the
+             body the overview will fill. Named rather than written as "not
+             built": a failed build never reaches this component, and if one
+             ever did, an honest empty body beats a spinner that never stops. -->
+        <div class="text-center py-12 text-gray-500">
+          <div class="loading loading-dots loading-md mb-2"></div>
+          <div class="text-sm">Analyzing this {judged_noun}…</div>
+        </div>
+      {/if}
+      <!-- Built but with no overview written: the header still labels the
+           section and its escape hatches still work, and nothing is invented
+           to fill the body. -->
+    </div>
 
     {#if current.claims_state === "built"}
-      <div class="space-y-3">
-        <div class="flex flex-col gap-1">
-          <span class="text-sm font-medium">Claims</span>
-          <div class="text-sm text-gray-500">{claims_description}</div>
-        </div>
+      <!-- The claims are a list of fields, so they sit at the form's
+           field-to-field gap, not the tighter gap a claim uses inside itself.
+           The section header is the list's first item and takes the same. -->
+      <div class="flex flex-col gap-6">
+        <SettingsHeader title="Claims" subtitle={claims_description} />
         {#each visible as { claim, index } (index)}
           <ClaimCard
             {claim}
@@ -221,148 +213,52 @@
           />
         {/each}
       </div>
-    {:else if current.claims_state === "error"}
-      <Warning
-        warning_color="error"
-        warning_message={`Couldn't analyze this ${judged_noun}: ${
-          current.claims_error ?? "unknown error"
-        }`}
-      />
-    {:else}
-      <!-- "unbuilt" | "building" — the build starts on open, so both render
-           as in-progress. -->
-      <div class="text-center py-12 text-gray-500">
-        <div class="loading loading-dots loading-md mb-2"></div>
-        <div class="text-sm">Analyzing this {judged_noun}…</div>
-      </div>
-    {/if}
-
-    {#if asks_overall}
-      <!-- The overall call, asked outright and last: no claim on screen
-           records pass or fail, so the reviewer answers it here, from the
-           claims above or from the transcript when there are none. Pass/Fail
-           is the pair the spec builder's review table answers this question
-           with. -->
-      <div
-        id="review-overall"
-        class="card card-bordered shadow-md p-4 bg-base-100 border-base-300 mt-3"
-      >
-        <div class="flex items-center justify-between gap-3">
-          <div class="font-medium text-sm">Does this {judged_noun} pass?</div>
-          <div class="flex gap-2 flex-none">
-            <button
-              id="overall-pass"
-              class="btn btn-sm {current_verdicts.overall === 'pass'
-                ? 'btn-success'
-                : 'btn-outline'}"
-              on:click={() => set_overall("pass")}
-            >
-              Pass
-            </button>
-            <button
-              id="overall-fail"
-              class="btn btn-sm {current_verdicts.overall === 'fail'
-                ? 'btn-error'
-                : 'btn-outline'}"
-              on:click={() => set_overall("fail")}
-            >
-              Fail
-            </button>
-          </div>
-        </div>
-      </div>
-    {/if}
-
-    {#if current.claims_state === "error"}
-      <div class="text-center py-4">
-        <!-- Outline primary: recovering a failed analysis is the obvious next
-             action, but the review's own forward button is on the same
-             screen, and only one solid primary belongs there. -->
-        <button
-          class="btn btn-outline btn-primary"
-          on:click={() => on_open_trace(current_index)}
-        >
-          Retry Analysis
-        </button>
-      </div>
     {/if}
   {/if}
 
-  <!-- Bottom nav: the review-order count inline beside a right-aligned
-       [Previous][Continue] cluster. Wizard-step navigation is the browser's
-       Back/Forward. Previous walks back whenever there's an earlier trace;
-       Continue is gated on finishing the current one. On the last conversation
-       the Continue slot becomes the primary action. -->
-  <div class="flex flex-col items-end gap-1 mt-8">
-    <div class="flex items-center gap-2">
-      <!-- Count inline beside the controls — the run-control pattern
-           (see docs/extractors' "Completed N of M"). -->
-      <span class="text-xs font-light text-gray-500 mr-2">
-        {selected.indexOf(current_index) + 1} of {selected.length}
-      </span>
+  <!-- Bottom nav, the last child of the stack at the same section gap:
+       Previous on the left, the forward action on the right. Wizard-step
+       navigation is the browser's Back/Forward. Previous is hidden rather
+       than disabled where there is nothing to go back to; Next is gated on
+       finishing the current case. On the last case the same slot becomes the
+       save action. -->
+  <div class="flex items-center justify-between gap-2">
+    {#if has_prev}
+      <button class="btn" on:click={go_prev}>Previous</button>
+    {:else}
+      <div></div>
+    {/if}
+    {#if has_next}
       <button
-        class="btn btn-sm btn-outline"
-        on:click={go_prev}
-        disabled={!has_prev}>Previous</button
+        class="btn btn-primary"
+        on:click={go_next}
+        disabled={!current_reviewed}>Next</button
       >
-      <!-- Continue carries the wide primary spec (Previous stays small): it is the
-           forward action on every trace but the last, where the same slot
-           becomes the save. The ⌘↵ hint rides only the enabled save variant —
-           the wizard's shortcut fires the save action, and only once the gate
-           is met. -->
-      {#if has_next}
-        <button
-          class="btn btn-primary min-w-64 px-12"
-          on:click={go_next}
-          disabled={!current_reviewed}>Continue</button
-        >
-      {:else if !save_disabled}
-        <!-- Last conversation, gate met: the primary action replaces Continue.
-             The label is parent-owned (Save vs Refine Judge) so it never
-             promises a save that a calibration round would intercept. -->
-        {#if save_tooltip}
-          <div class="tooltip tooltip-left" data-tip={save_tooltip}>
-            <button
-              class="relative btn btn-primary min-w-64 px-12"
-              on:click={on_save}
-            >
-              {save_label}
-              <span class="absolute opacity-80 right-4 text-xs font-light">
-                {#if isMacOS()}
-                  <span class="tracking-widest">⌘↵</span>
-                {:else}
-                  <span>ctrl ↵</span>
-                {/if}
-              </span>
-            </button>
-          </div>
-        {:else}
-          <button
-            class="relative btn btn-primary min-w-64 px-12"
-            on:click={on_save}
-          >
-            {save_label}
-            <span class="absolute opacity-80 right-4 text-xs font-light">
-              {#if isMacOS()}
-                <span class="tracking-widest">⌘↵</span>
-              {:else}
-                <span>ctrl ↵</span>
-              {/if}
-            </span>
-          </button>
-        {/if}
-      {:else}
-        <!-- Last conversation, gate not met: the same primary action, held
-             disabled with the reason on hover. A "Continue" here would point at
-             nothing, so the slot stays the save action throughout. No ⌘↵
-             hint: the shortcut is gated on the same rule as this button. -->
-        <div class="tooltip tooltip-left" data-tip={SAVE_GATE_TOOLTIP}>
-          <button class="btn btn-primary min-w-64 px-12" disabled>
-            {save_label}
-          </button>
-        </div>
-      {/if}
-    </div>
+    {:else if !save_disabled}
+      <!-- Last case, gate met. One label whatever the review found: what the
+           click does is settled in the dialog it opens, not in the word on the
+           button. The keyboard hint rides only this enabled variant, because
+           the shortcut fires the same action and only once the gate is met —
+           the house form shows the same hint on its own submit. -->
+      <button id="review-continue" class="btn btn-primary" on:click={on_save}>
+        Continue
+        <span class="opacity-80 ml-2 text-xs font-light">
+          {#if isMacOS()}
+            <span class="tracking-widest">⌘↵</span>
+          {:else}
+            <span>ctrl ↵</span>
+          {/if}
+        </span>
+      </button>
+    {:else}
+      <!-- Last case, gate not met: the same action, simply disabled. A "Next"
+           here would point at nothing, so the slot stays this action
+           throughout. No keyboard hint: the shortcut is gated on the same rule
+           as this button. -->
+      <button id="review-continue" class="btn btn-primary" disabled>
+        Continue
+      </button>
+    {/if}
   </div>
 </div>
 
@@ -380,11 +276,8 @@
     width="wide"
     action_buttons={[{ label: "Close", isCancel: true }]}
   >
-    <p
-      id="spec-text"
-      class="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed"
-    >
-      {spec_text}
-    </p>
+    <div id="spec-text">
+      <Output raw_output={spec_text ?? ""} show_border />
+    </div>
   </Dialog>
 {/if}

@@ -809,8 +809,208 @@ describe("the run config the eval is written against", () => {
     expect(mentions("run_config_id: target_run_config_id")).toBe(2)
     expect(
       normalize(
-        region("async function on_save() {", "function back_to_task()"),
+        region("async function on_save() {", "function create_manually()"),
       ),
     ).not.toContain("run_config_id")
+  })
+})
+
+// ── The review-preparation and drive progress screens ──────────────────────
+//
+// A progress screen is the animation control and its two strings: the counts
+// ride in them, not in a line of their own under the bar. These pin where each
+// count lives, because the difference is invisible to a render test that only
+// reads text.
+describe("progress screens carry their counts in the animation's strings", () => {
+  it("titles the claims gate with its count, on both the first round and a later one", () => {
+    const titled =
+      normalized.split(
+        "title={`Preparing Review (${selected_claims_resolved}/${selected_trace_indices.length})`}",
+      ).length - 1
+    // Once for the first-round gate, once for the calibration round's.
+    expect(titled).toBe(2)
+    // And the description under it says what the screen is doing, with no
+    // count in it.
+    expect(normalized).toContain(
+      'description="Finding the examples where your judgment is most useful."',
+    )
+  })
+
+  it("puts the drive counts in the description and keeps no count line", () => {
+    expect(normalized).toContain(
+      "${multi_turn_turns_done} of up to ${multi_turn_total_turns} turns complete.",
+    )
+    expect(normalized).toContain(
+      "${judged_case_count} of ${pipeline_total_cases} judged.",
+    )
+    // The old count line under the bar is gone from every progress screen.
+    expect(normalized).not.toContain('class="font-light text-xs text-center')
+  })
+
+  it("counts the cases dropped from the review on both claims gates", () => {
+    // A case the builder wrote without a verdict claim is excluded from the
+    // review; a prompt that starts dropping verdicts has to be visible.
+    expect(normalized.split("num_no_verdict:").length - 1).toBe(2)
+  })
+})
+
+// ── The empty review subset ────────────────────────────────────────────────
+describe("a review with nothing to grade is not a dead end", () => {
+  it("names both causes and offers the save on a calibration round", () => {
+    expect(normalized).toContain(
+      "None of these ${judged_noun}s could be reviewed. Analyzing them either failed or produced no verdict to check.",
+    )
+    // First round: create the data again. Later rounds: that would throw away
+    // grades the reviewer already gave, so the opt-out is offered instead.
+    expect(normalized).toContain(
+      'calibration_rounds_completed > 0 ? "" : " Create your eval data again."',
+    )
+    const branch = region(
+      "{:else if reviewable_trace_indices.length === 0}",
+      "{:else}",
+    )
+    expect(normalize(branch)).toContain("Save Without Improving")
+    expect(normalize(branch)).toContain("on:click={save_without_refining}")
+  })
+})
+
+// ── The forward action on the last case ───────────────────────────────────
+//
+// The reviewer's feedback can either improve the judge or be kept as-is. The
+// wizard asks rather than deciding, and the dialog's secondary is the only way
+// out of the refine loop, so these strings and both wirings are contractual.
+describe("the improve-judge dialog", () => {
+  // One action button's own object literal, from its label to the brace that
+  // closes it. Asserting over the whole dialog cannot tell the two buttons
+  // apart: swap their bodies and every string is still somewhere in the
+  // region. This is what makes a swap fail.
+  function action_button(label: string): string {
+    const dialog = region('title="Improve Judge with Feedback?"', "</Dialog>")
+    const at = dialog.indexOf(`label: "${label}"`)
+    if (at < 0) throw new Error(`no action button labelled ${label}`)
+    const end = dialog.indexOf("\n    },", at)
+    if (end < 0) throw new Error(`unterminated action button ${label}`)
+    return normalize(dialog.slice(at, end))
+  }
+
+  it("asks before refining, in the words the reviewer was promised", () => {
+    const d = normalize(
+      region('title="Improve Judge with Feedback?"', "</Dialog>"),
+    )
+    expect(d).toContain(
+      "You disagreed with the judge and gave feedback, which we can use to improve your Judge.",
+    )
+    expect(d).toContain('label: "Improve Judge"')
+    expect(d).toContain('label: "Save Without Improving"')
+  })
+
+  it("wires each button to the path it names, and only that path", () => {
+    const improve = action_button("Improve Judge")
+    expect(improve).toContain("isPrimary: true")
+    expect(improve).toContain("run_calibration_round()")
+    expect(improve).not.toContain("save_without_refining()")
+
+    const save = action_button("Save Without Improving")
+    expect(save).toContain("save_without_refining()")
+    expect(save).not.toContain("run_calibration_round()")
+    expect(save).not.toContain("isPrimary")
+  })
+
+  it("is what the keyboard shortcut reaches too", () => {
+    // The shortcut fires the review's forward action rather than the save, so
+    // a round with feedback is asked about however the reviewer triggers it.
+    const keys = normalize(
+      region("function handle_global_keydown(", "function step_name_for("),
+    )
+    expect(keys).toContain("save_gate_met && review_on_last_trace")
+    expect(keys).toContain("on_advance_to_save()")
+    expect(keys).not.toContain("on_save()")
+  })
+
+  it("opens only where the review asks to go forward with feedback", () => {
+    // The dialog replaces the automatic refine: the decision point is the
+    // same one, so it is opened from the same branch that used to calibrate.
+    const advance = normalize(
+      region("function on_advance_to_save()", 'goto_step("save")'),
+    )
+    expect(advance).toContain('decision.action === "calibrate"')
+    expect(advance).toContain("improve_judge_dialog?.show()")
+  })
+
+  it("keeps no second exit beside the review's own action", () => {
+    // The dialog's secondary is the only way past a review that has feedback;
+    // the quiet link that used to sit under the review is gone. The empty-
+    // subset screen keeps its own exit, because there is no review to go
+    // forward from there at all.
+    const review = normalize(
+      region("<ClaimEvidenceReview", '{:else if current_step === "save"}'),
+    )
+    expect(review).not.toContain("Save Without Improving")
+    expect(normalized).not.toContain("Save Without Refining Further")
+  })
+})
+
+// ── The save's success screen ─────────────────────────────────────────────
+describe("the eval-created screen", () => {
+  it("finishes on the house success control rather than a redirect", () => {
+    const done = normalize(region('title="Eval Created"', "/>"))
+    expect(done).toContain(
+      'subtitle="You\'ve created a new eval, including an eval dataset and aligned judge!"',
+    )
+    expect(done).toContain('button_text={created_eval_href ? "View Eval"')
+    // A save with no id has no eval page to offer, so it points at the list.
+    expect(done).toContain(
+      "link={created_eval_href ?? `/specs/${project_id}/${task_id}`}",
+    )
+  })
+
+  it("suppresses the leave guards by state, not by a latch", () => {
+    // A latch that is only ever set stays set: a wizard that somehow returned
+    // to a live step would be unguarded. The guard reads where the wizard is,
+    // so it comes back on by itself.
+    expect(normalized).toContain(
+      '$: leave_guard_suppressed = resetting || current_step === "done"',
+    )
+    expect(normalized).not.toContain("leave_guard_suppressed = true")
+  })
+
+  it("makes the finished state terminal", () => {
+    // The wizard stays mounted behind the success screen, so Back would
+    // otherwise land on the graded review with its save gate met — one click
+    // from a second Spec with the same batch tag, or a paid round on an eval
+    // that already shipped.
+    const sync = normalize(
+      region("function sync_step_from_history(", "abort_copilot_request()"),
+    )
+    expect(sync).toContain("if (saved_eval_created) {")
+    expect(sync).toContain("goto(finished_destination)")
+
+    // And the state those two actions would need is dropped on the way in, so
+    // a bug that got past the guard still has nothing to act on.
+    const finish = normalize(
+      region("function finish_on_done_screen(", 'replace_step("done")'),
+    )
+    expect(finish).toContain("saved_eval_created = true")
+    expect(finish).toContain("trace_claims = []")
+    expect(finish).toContain("trace_reviews = []")
+  })
+
+  it("finishes both save branches the same way, after the draft is cleared", () => {
+    // Multi-turn and single-turn each end in their own save; both must land
+    // on the same screen, and neither may do it while a draft still points at
+    // the work that just shipped.
+    expect(normalized.split("finish_on_done_screen(saved.id)").length - 1).toBe(
+      2,
+    )
+    const save_body = normalize(
+      region("async function on_save() {", "function create_manually()"),
+    )
+    // The clear is awaited before the flip, on both paths.
+    expect(
+      save_body.split("await clear_builder_draft(").length - 1,
+    ).toBeGreaterThanOrEqual(2)
+    const [first, second] = save_body.split("finish_on_done_screen(saved.id)")
+    expect(first).toContain("await clear_builder_draft(")
+    expect(second).toContain("await clear_builder_draft(")
   })
 })

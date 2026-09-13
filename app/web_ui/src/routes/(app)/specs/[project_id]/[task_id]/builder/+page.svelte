@@ -1,5 +1,6 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
+  import Completed from "$lib/ui/completed.svelte"
   import { page } from "$app/stores"
   import { onMount, onDestroy, tick } from "svelte"
   import { agentInfo } from "$lib/agent"
@@ -109,11 +110,10 @@
     flipped_indices,
     grade_disagreement_count,
     has_grade_disagreement,
+    has_verdict_claim,
     is_trace_reviewed,
     plan_save_action,
-    refine_judge_tooltip,
     rejudge_shortfall_notice,
-    review_cta,
     reviewable_subset,
     reviewed_trace_count,
     select_calibration_subset,
@@ -143,6 +143,7 @@
     plan_drive,
     resolved_selected_count,
     restore_turns_per_case,
+    with_failures,
     MAX_TURNS_PER_CASE,
     MIN_TURNS_PER_CASE,
     type DriveStop,
@@ -301,6 +302,14 @@
   // request so a cancelled loading step doesn't leave a stuck spinner.
   function sync_step_from_history(step: BuilderStep | undefined) {
     if (!step || step === current_step) return
+    // Finished: every earlier step is behind a history entry, and all of them
+    // are about making the eval that now exists. Back leaves the wizard
+    // instead of re-entering it. This is what the save's redirect used to do
+    // by unmounting the page.
+    if (saved_eval_created) {
+      goto(finished_destination)
+      return
+    }
     abort_copilot_request()
     // Navigating away also cancels the preparing-review gate's ownership of
     // the advance: in-flight claim builds keep running (they belong to the
@@ -361,8 +370,12 @@
   // same — guard those too. In-wizard steps use shallow routing
   // (pushState/replaceState), which doesn't run beforeNavigate, so step
   // Back/Forward stays free; this fires only when the ROUTE changes.
-  // The save-success redirect suppresses it: the work is persisted.
-  let leave_guard_suppressed = false
+  // Suppressed on the two exits where the work is safe: the finished screen
+  // (the eval is saved and the draft cleared) and the reset's reload (the
+  // reset is itself persisted). Derived rather than latched, so a wizard that
+  // is somehow back on a live step is guarded again.
+  let resetting = false
+  $: leave_guard_suppressed = resetting || current_step === "done"
   beforeNavigate((nav) => {
     if (leave_guard_suppressed || !warn_before_unload) return
     // "leave" = real unload (reload/close) — the beforeunload handler owns
@@ -456,11 +469,12 @@
       console.error("Failed to persist the reset draft:", e)
     }
     // The reset is persisted — suppress both guards for the navigation.
+    // Cleared by nothing: the page is about to be replaced wholesale.
     // Start over where eval creation starts, on the Setup and Eval Type
     // page, rather than reloading this URL: it can carry the description
     // that page handed over, which a reload would apply again and walk
     // straight back into Step 2.
-    leave_guard_suppressed = true
+    resetting = true
     window.location.href = `/specs/${project_id}/${task_id}/select_template`
   }
 
@@ -3213,17 +3227,59 @@
   // Same pattern for Review (5) → Save (6): land on Save with the request
   // already in flight; only show the in-step button on error as retry.
   // Both arms first route through the calibration loop: a review with
-  // disagreement enters a refine+re-check round instead of saving, round
-  // after round, until the grades converge (or the user opts out via the
-  // save-without-refining link under the CTA). A judge the reviewer said was
-  // wrong never ships without them seeing it re-checked.
+  // disagreement asks whether to improve the judge before saving, and a yes
+  // runs a refine+re-check round, round after round, until the grades
+  // converge or the reviewer takes the dialog's other button. A judge the
+  // reviewer said was wrong never ships without them seeing it re-checked.
+  let improve_judge_dialog: Dialog | null = null
+
+  // True once a save has succeeded. The wizard has nothing left to do, and
+  // every exit from the done screen leaves the route.
+  let saved_eval_created = false
+
+  // Where the success screen's button goes, and the marker that the wizard has
+  // finished. The eval's own page when the save returned an id, the evals list
+  // when it did not — a button that promises one eval must not land on a 404.
+  let created_eval_href: string | null = null
+
+  // The save is done, and this state is terminal. Holding the reviewer on a
+  // success screen instead of redirecting means the wizard is still mounted,
+  // with a graded review and a met save gate sitting in memory behind a
+  // history entry Back can reach. Both of the things that review could still
+  // do — save again, or start a paid refine round — would act on an eval that
+  // already shipped, so the state they need is dropped here. What survives is
+  // the link and the fact that a save happened.
+  function finish_on_done_screen(saved_id: string | null | undefined) {
+    created_eval_href = saved_id
+      ? `/specs/${project_id}/${task_id}/${saved_id}`
+      : null
+    saved_eval_created = true
+    // Nothing left for a second save or a second round to act on. Belt and
+    // braces beside the history guard below: a bug that got back to the
+    // review would find no traces to grade and no gate to meet.
+    trace_claims = []
+    trace_reviews = []
+    multi_turn_batch_tag = null
+    driven_prompts_json = null
+    replace_step("done")
+  }
+
+  // The page the wizard leaves for once it is finished. The eval itself when
+  // there is one, its list when the save returned no id.
+  $: finished_destination =
+    created_eval_href ?? `/specs/${project_id}/${task_id}`
+
   function on_advance_to_save() {
     const graded = build_graded_traces(trace_claims, trace_reviews)
     const decision = plan_save_action({
       has_disagreement: has_grade_disagreement(graded),
     })
     if (decision.action === "calibrate") {
-      void run_calibration_round()
+      // The reviewer gave feedback the judge could learn from. Improving it
+      // costs a model call and a re-review, so it is offered rather than
+      // taken: the dialog's two buttons are the two ways forward, and its
+      // secondary is the only exit from the loop.
+      improve_judge_dialog?.show()
       return
     }
     // Converged: zero disagreement, so the judge whose verdicts were just
@@ -3271,8 +3327,8 @@
   // by what the round actually surfaced, every round: a re-judge shortfall or
   // a failed claims build can leave fewer traces on screen than the standard
   // target, and the gate must never demand reviews of traces it didn't show.
-  // This number also writes the step's "reviewing N of M" sentence, so the
-  // header, the gate and the review's own counter all read the same subset.
+  // The review's own "Case N of M" header counts the same subset, so the gate
+  // and what the reviewer sees can never disagree about how many there are.
   $: review_target_count = calibration_gate_target(
     trace_claims.length,
     reviewable_trace_indices.length,
@@ -3284,17 +3340,12 @@
     trace_claims.length > 0 &&
     reviewable_trace_indices.length > 0 &&
     reviewed_count >= review_target_count
-  // The review CTA says what clicking it does: with any graded disagreement
-  // a save enters a refine round, so the button reads Refine Judge (with a
-  // tooltip naming the count). It flips back to Save the moment the last
-  // disagreement clears — the convergence signal. Uses the loop's exact entry
-  // predicate, so label and behavior can't drift apart.
+  // How many graded disagreements the round carries. The forward action reads
+  // the same either way; this decides whether clicking it asks the reviewer
+  // what to do with that feedback or simply saves.
   $: review_disagreement_count = grade_disagreement_count(
     build_graded_traces(trace_claims, trace_reviews),
   )
-  $: review_cta_state = review_cta({
-    num_disagreements: review_disagreement_count,
-  })
   // The arm's word for one reviewed item, for copy that counts them.
   $: judged_noun = is_multi_turn ? "conversation" : "example"
   // The plan's rows read as "items" on both arms (the plan surface labels them
@@ -3303,8 +3354,8 @@
   const plan_noun = "items"
   $: case_noun = is_multi_turn ? "conversation" : "test run"
   // Bound out of the review component: true only while it shows its last
-  // trace, which is where it renders the primary CTA. The save-without-
-  // refining link stacks under that CTA, so it follows this flag.
+  // trace, which is where it renders the forward action. Anything the page
+  // stacks under that action follows this flag.
   let review_on_last_trace = false
 
   // ── Lazy claims (multi-turn). The pipeline stream stops at the judge;
@@ -3486,6 +3537,15 @@
       num_errored: selected_trace_indices.filter(
         (i) => trace_claims[i]?.claims_state === "error",
       ).length,
+      // Built, but the builder broke its own contract and wrote no verdict
+      // claim, so there is nothing on screen that records the pass/fail call.
+      // Excluded from the walk the same way a failed build is, and counted
+      // here for the same reason: it is a prompt slip worth seeing.
+      num_no_verdict: selected_trace_indices.filter(
+        (i) =>
+          trace_claims[i]?.claims_state === "built" &&
+          !has_verdict_claim(trace_claims[i]),
+      ).length,
     })
     // PUSH review (both arms): Back must return to the plan screen.
     goto_step("review")
@@ -3503,8 +3563,8 @@
   // grade the result — round after round. Both arms re-judge their driven
   // runs by durable id (judge_traces) and re-open a smart-picked subset.
   // Save happens only when a review carries zero disagreement (the judge
-  // that ships is the one whose verdicts were graded) or when the user opts
-  // out via the save-without-refining link under the review CTA.
+  // that ships is the one whose verdicts were graded) or when the reviewer
+  // takes Save Without Improving in the dialog Continue opens.
   type CalibrationPhase = "idle" | "refining" | "rejudging" | "building_claims"
   let calibration_phase: CalibrationPhase = "idle"
   // Completed refine+re-judge rounds this batch — round tags, the gate
@@ -3514,8 +3574,9 @@
   // the re-check without re-paying the refine call.
   let calibration_error: string | null = null
   // Refine-attempt failure (request died, timeout, unusable prompt): shown
-  // inline under the review actions. The CTA stays Refine Judge and re-fires
-  // the refine; the save-without-refining link remains the way out.
+  // inline under the review actions. Continue re-opens the dialog, so
+  // Improve Judge re-fires the refine and Save Without Improving is still
+  // the way out.
   let calibration_refine_error: string | null = null
   // Cases without a fresh verdict last round — surfaced honestly above the
   // review; they keep stale results and sit the round out.
@@ -3766,8 +3827,8 @@
       // There is no judge to refine FROM — the review on screen was never
       // pinned to one. Report it on the inline refine surface (the same
       // sentence save uses for the same missing judge) rather than returning
-      // quietly, which would leave the CTA doing nothing however often it is
-      // clicked.
+      // quietly, which would leave Improve Judge doing nothing however often
+      // it is clicked.
       calibration_refine_error =
         "No judge was configured. Go back and re-run the review."
       return
@@ -3861,10 +3922,10 @@
           reason: e.reason,
         })
         // Surface the failure inline under the review actions. The grades
-        // stay editable underneath it, so clicking Refine Judge again starts
-        // a fresh attempt from whatever the grades say at that moment.
-        // Bare message, data-guide idiom: the Refine Judge CTA above it and
-        // the bail link below already say what the user can do.
+        // stay editable underneath it, so re-opening the dialog and choosing
+        // Improve Judge starts a fresh attempt from whatever the grades say at
+        // that moment. Bare message, data-guide idiom: the dialog's two
+        // buttons already say what the user can do.
         calibration_refine_error = e.message
         return
       }
@@ -3882,12 +3943,25 @@
     selected_trace_indices.length > 0 &&
     selected_claims_resolved === selected_trace_indices.length
   ) {
+    posthog.capture("eval_v2_claims_build_completed", {
+      duration_ms: Date.now() - claims_gate_started_ms,
+      num_selected: selected_trace_indices.length,
+      num_errored: selected_trace_indices.filter(
+        (i) => trace_claims[i]?.claims_state === "error",
+      ).length,
+      num_no_verdict: selected_trace_indices.filter(
+        (i) =>
+          trace_claims[i]?.claims_state === "built" &&
+          !has_verdict_claim(trace_claims[i]),
+      ).length,
+    })
     calibration_phase = "idle"
   }
 
-  // The loop's opt-out (the link under the review CTA): save immediately
-  // with the judge whose verdicts the reviewer actually graded — the latest
-  // refined one once a round has run — grades carried as-is.
+  // The loop's opt-out (the dialog's Save Without Improving, and the same
+  // exit on the empty-review screen): save immediately with the judge whose
+  // verdicts the reviewer actually graded — the latest refined one once a
+  // round has run — grades carried as-is.
   function save_without_refining() {
     posthog.capture("eval_v2_judge_calibration_opted_out", {
       is_multi_turn,
@@ -4052,12 +4126,9 @@
             leaf_run_id: tc.leaf_run_id as string,
             user_says_meets_spec: user_says_meets_spec(tc, review),
             feedback: disagreement_feedback(review),
-            // Claim grades ride along only where claims were built; a
-            // trace graded on the overall call alone has none to record.
-            claim_review:
-              tc.claims_state === "built"
-                ? build_claim_review_payload(tc, review)
-                : null,
+            // Gated on is_trace_reviewed above, which demands built claims,
+            // so a reviewed trace always has grades to record.
+            claim_review: build_claim_review_payload(tc, review),
           }))
         const { data, error } = await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
@@ -4111,12 +4182,7 @@
             undeleted_batch_tags,
           ),
         )
-        if (saved.id) {
-          leave_guard_suppressed = true
-          goto(`/specs/${project_id}/${task_id}/${saved.id}`)
-        } else {
-          replace_step("done")
-        }
+        finish_on_done_screen(saved.id)
         return
       }
 
@@ -4149,12 +4215,9 @@
           leaf_run_id: tc.leaf_run_id as string,
           user_says_meets_spec: user_says_meets_spec(tc, review),
           feedback: disagreement_feedback(review),
-          // Claim grades ride along only where claims were built; a trace
-          // graded on the overall call alone has none to record.
-          claim_review:
-            tc.claims_state === "built"
-              ? build_claim_review_payload(tc, review)
-              : null,
+          // Gated on is_trace_reviewed above, which demands built claims, so
+          // a reviewed trace always has grades to record.
+          claim_review: build_claim_review_payload(tc, review),
         }))
       const { data, error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
@@ -4205,12 +4268,7 @@
           undeleted_batch_tags,
         ),
       )
-      if (saved.id) {
-        leave_guard_suppressed = true
-        goto(`/specs/${project_id}/${task_id}/${saved.id}`)
-      } else {
-        replace_step("done")
-      }
+      finish_on_done_screen(saved.id)
       return
     } catch (e) {
       if (is_abort_error(e)) return
@@ -4218,11 +4276,6 @@
     } finally {
       saving = false
     }
-  }
-
-  // ── Navigation helpers
-  function back_to_task() {
-    goto(`/specs/${project_id}/${task_id}`)
   }
 
   // Escape hatch from Step 1 to the legacy manual builder (template carousel),
@@ -4285,7 +4338,7 @@
     } else if (current_step === "review") {
       // The gate/last-trace pair matches the Save button only within the review
       // component: the gate can be met several traces early, and the shortcut
-      // must not skip traces the reviewer still sees a Continue button for. The
+      // must not skip traces the reviewer still sees a Next button for. The
       // screen-level guards exclude the stale-results gate, the calibration
       // error screen, and in-flight calibration, where that component is
       // unmounted but its binds still hold their last values.
@@ -4405,7 +4458,7 @@
                 : "eval data generation model"
             }, and the judge all respond before creating your eval data.`
           : generation_phase === "minting_inputs"
-            ? `Writing ${planned_total} items from the approved plan.`
+            ? `Writing ${planned_total} items from the approved plan. ${minting_done} of ${minting_total} written.`
             : `Setting up ${planned_total} simulated users from the approved plan.`
 
   // The long-wait line, on exactly the stages that run one long request with
@@ -4677,16 +4730,13 @@
                     value={minting_done}
                     max={minting_total}
                   ></progress>
-                  <div class="font-light text-xs text-center mt-1">
-                    {minting_done} of {minting_total} inputs written
-                  </div>
                 </div>
               {/if}
             {/if}
           {/if}
           {#if pipeline_running}
             <!-- The drive stage: the arm's animation plus the house
-                 batch-progress readout (slim bar + tiny count line,
+                 batch-progress readout (bar plus its count caption,
                  mirroring /generate's batch generation). Multi-turn's bar
                  tracks TURNS for smooth motion (cases complete in
                  concurrency waves), so its count line LEADS with turns;
@@ -4694,9 +4744,17 @@
                  finished cases directly. The title stays static: the live
                  counts belong to the readout under the bar. -->
             {#if is_multi_turn}
+              <!-- Turns, not cases: cases finish in concurrency waves, so the
+                   turn count is the one that actually moves while the batch
+                   runs. The denominator is a ceiling, not a total:
+                   conversations that end early leave the bar short of full, so
+                   it can jump to done rather than creep there. -->
               <ConversationAnimation
                 title="Creating Eval Data"
-                description="Simulating conversations with your agent and judging each one."
+                description={with_failures(
+                  `Simulating conversations with your agent and judging each one. ${multi_turn_turns_done} of up to ${multi_turn_total_turns} turns complete.`,
+                  pipeline_failed_count,
+                )}
                 warning={null}
               />
               <div class="flex flex-col items-center mt-6">
@@ -4705,22 +4763,14 @@
                   value={multi_turn_turns_done}
                   max={multi_turn_total_turns}
                 ></progress>
-                <!-- Turns, not cases: cases finish in concurrency waves, so
-                     the turn count is the one that actually moves while the
-                     batch runs. It's the only live count on this screen.
-                     The denominator is a ceiling, not a total: conversations
-                     that end early leave the bar short of full, so it can
-                     jump to done rather than creep there. -->
-                <div class="font-light text-xs text-center mt-1">
-                  {multi_turn_turns_done} of up to {multi_turn_total_turns} turns
-                  complete{#if pipeline_failed_count > 0},
-                    {pipeline_failed_count} failed{/if}
-                </div>
               </div>
             {:else}
               <AnalyzingAnimation
                 title="Creating Eval Data"
-                description="Running your task on each item and judging the result."
+                description={with_failures(
+                  `Running your task on each item and judging the result. ${judged_case_count} of ${pipeline_total_cases} judged.`,
+                  pipeline_failed_count,
+                )}
                 warning={null}
               />
               <div class="flex flex-col items-center mt-6">
@@ -4729,10 +4779,6 @@
                   value={judged_case_count + pipeline_failed_count}
                   max={pipeline_total_cases}
                 ></progress>
-                <div class="font-light text-xs text-center mt-1">
-                  {judged_case_count} of {pipeline_total_cases} judged{#if pipeline_failed_count > 0},
-                    {pipeline_failed_count} failed{/if}
-                </div>
               </div>
             {/if}
           {/if}
@@ -4743,7 +4789,7 @@
                  selected claim set must be resolved up front. -->
             <svelte:component
               this={is_multi_turn ? ConversationAnimation : AnalyzingAnimation}
-              title="Preparing Review"
+              title={`Preparing Review (${selected_claims_resolved}/${selected_trace_indices.length})`}
               description="Finding the examples where your judgment is most useful."
               warning={null}
             />
@@ -4753,10 +4799,6 @@
                 value={selected_claims_resolved}
                 max={selected_trace_indices.length}
               ></progress>
-              <div class="font-light text-xs text-center mt-1">
-                Preparing review: {selected_claims_resolved} of {selected_trace_indices.length}
-                ready
-              </div>
             </div>
           {/if}
           <!-- The two failure surfaces are one chain so only ever one can
@@ -4773,7 +4815,7 @@
             </div>
             <div class="text-center py-4 flex justify-center gap-2">
               <button
-                class="btn btn-outline"
+                class="btn"
                 on:click={() => {
                   claims_gate_error = null
                 }}
@@ -4802,7 +4844,7 @@
                      committed lanes and the cost of this batch, so the models
                      can be changed on the way back in. -->
                 <button
-                  class="btn btn-outline"
+                  class="btn"
                   on:click={() => {
                     generation_error = null
                   }}
@@ -4984,7 +5026,7 @@
               />
             </div>
             <div class="flex justify-center gap-2 py-4">
-              <button class="btn btn-outline" on:click={() => history.back()}>
+              <button class="btn" on:click={() => history.back()}>
                 Back
               </button>
               <button class="btn btn-primary" on:click={discard_stale_results}>
@@ -5005,7 +5047,10 @@
             <svelte:component
               this={is_multi_turn ? ConversationAnimation : AnalyzingAnimation}
               title="Re-checking Eval Data"
-              description="Re-checking your eval data with the improved judge."
+              description={with_failures(
+                `Re-checking your eval data with the improved judge. ${rejudged_done} of ${rejudge_total} re-checked.`,
+                rejudge_failed_live,
+              )}
               warning={null}
             />
             <div class="flex flex-col items-center mt-6">
@@ -5014,17 +5059,13 @@
                 value={rejudged_done + rejudge_failed_live}
                 max={rejudge_total}
               ></progress>
-              <div class="font-light text-xs text-center mt-1">
-                {rejudged_done} of {rejudge_total} re-checked{#if rejudge_failed_live > 0},
-                  {rejudge_failed_live} failed{/if}
-              </div>
             </div>
           {:else if calibration_phase === "building_claims"}
             <!-- Same wait-for-all claims gate as the first round, held on the
                  review step: the re-review opens fully loaded. -->
             <svelte:component
               this={is_multi_turn ? ConversationAnimation : AnalyzingAnimation}
-              title="Preparing Review"
+              title={`Preparing Review (${selected_claims_resolved}/${selected_trace_indices.length})`}
               description="Finding the examples where your judgment is most useful."
               warning={null}
             />
@@ -5034,10 +5075,6 @@
                 value={selected_claims_resolved}
                 max={selected_trace_indices.length}
               ></progress>
-              <div class="font-light text-xs text-center mt-1">
-                Preparing review: {selected_claims_resolved} of {selected_trace_indices.length}
-                ready
-              </div>
             </div>
           {:else if calibration_error}
             <!-- Retryable re-judge failure — the grades that fed the refine
@@ -5049,12 +5086,12 @@
             <div class="mt-2">
               <Warning
                 warning_color="error"
-                warning_message={`${calibration_error.trimEnd().replace(/\.$/, "")}. You can also go back to review and save without refining further.`}
+                warning_message={`${calibration_error.trimEnd().replace(/\.$/, "")}. You can also go back to review and choose Save Without Improving.`}
               />
             </div>
             <div class="text-center py-4 flex justify-center gap-2">
               <button
-                class="btn btn-outline"
+                class="btn"
                 on:click={() => {
                   calibration_error = null
                 }}
@@ -5079,15 +5116,35 @@
               />
             </div>
           {:else if reviewable_trace_indices.length === 0}
-            <!-- Every selected trace failed its claims build, so the subset
-                 emptied. Say so: an empty review would leave a save gate that
-                 can never be met and no explanation for it. -->
+            <!-- The subset emptied: every selected case either failed its
+                 claims build or came back without a verdict claim, so there is
+                 nothing to grade. Say both causes, because the reviewer cannot
+                 tell them apart from here. An empty review would otherwise
+                 leave a save gate that can never be met and no explanation.
+                 On a calibration round the grades from the previous round are
+                 still good, so the same opt-out the review offers is offered
+                 here: discarding the batch must not be the only way out. -->
             <div class="mt-2">
               <Warning
                 warning_color="warning"
-                warning_message={`Couldn't analyze any of these ${judged_noun}s. Create your eval data again.`}
+                warning_message={`None of these ${judged_noun}s could be reviewed. Analyzing them either failed or produced no verdict to check.${
+                  calibration_rounds_completed > 0
+                    ? ""
+                    : " Create your eval data again."
+                }`}
               />
             </div>
+            {#if calibration_rounds_completed > 0}
+              <div class="flex flex-col items-end mt-2">
+                <button
+                  type="button"
+                  class="link underline text-sm text-gray-500"
+                  on:click={save_without_refining}
+                >
+                  Save Without Improving
+                </button>
+              </div>
+            {/if}
           {:else}
             {#if calibration_rounds_completed > 0 && rejudge_shortfall_notice(calibration_failed_count, case_noun)}
               <!-- Cases without a fresh verdict sat the round out — say so
@@ -5122,44 +5179,20 @@
                   spec_text={current_spec_text}
                   on_save={on_advance_to_save}
                   save_disabled={!save_gate_met}
-                  save_label={review_cta_state === "refine"
-                    ? "Refine Judge"
-                    : "Save"}
-                  save_tooltip={review_cta_state === "refine"
-                    ? refine_judge_tooltip(
-                        review_disagreement_count,
-                        judged_noun,
-                      )
-                    : null}
                   bind:on_last_trace={review_on_last_trace}
                 />
               {/key}
             {/if}
             {#if calibration_refine_error}
               <!-- A failed refine attempt, reported inline under the review
-                   actions. Rendered independently of the opt-out link below:
-                   editing grades can drop the save gate (a fresh disagreement
-                   without a reason yet), and the failure must not vanish
-                   while the user is reacting to it. -->
-              <div class="text-sm text-center text-error mt-2">
-                {calibration_refine_error}
-              </div>
-            {/if}
-            {#if review_cta_state === "refine" && save_gate_met && review_on_last_trace}
-              <!-- The loop's opt-out, in the wizard's quiet-link idiom (the
-                   data-guide refine flow): saves immediately with the judge
-                   the reviewer graded — no dialog. Only offered where the
-                   primary CTA itself renders — a refine on the last trace —
-                   so it never sits under a Continue button, where one unconfirmed
-                   click would save mid-review. -->
-              <div class="flex flex-col items-end mt-2">
-                <button
-                  type="button"
-                  class="link underline text-sm text-gray-500"
-                  on:click={save_without_refining}
-                >
-                  Save Without Refining Further
-                </button>
+                   actions: editing grades can drop the save gate (a fresh
+                   disagreement without a reason yet), and the failure must not
+                   vanish while the user is reacting to it. -->
+              <div class="mt-2">
+                <Warning
+                  warning_color="error"
+                  warning_message={calibration_refine_error}
+                />
               </div>
             {/if}
           {/if}
@@ -5179,36 +5212,17 @@
             </div>
           {/if}
         {:else if current_step === "done"}
-          <!-- Fallback: save succeeded but no eval_id/spec_id to redirect to.
-               Centered completion card, same idiom as the git-import done
-               screen. -->
-          <div class="flex flex-col items-center py-8 gap-4">
-            <div class="text-success">
-              <svg
-                class="w-16 h-16"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M16 9L10 15.5L7.5 13M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </div>
-            <h2 class="text-xl font-medium">Eval Created</h2>
-            <p class="text-sm text-gray-500 text-center max-w-md">
-              Your eval is ready to run.
-            </p>
-            <div class="flex flex-row gap-4 mt-4">
-              <button class="btn btn-primary btn-wide" on:click={back_to_task}>
-                Back to Evals
-              </button>
-            </div>
-          </div>
+          <!-- The save's success screen, the same control every other create
+               flow in the app finishes on. "View Eval" is the one place the
+               guide allows the word: on a success screen nothing else reads
+               right. A save that returned no id has no eval page to offer, so
+               the button goes to the list instead of promising one. -->
+          <Completed
+            title="Eval Created"
+            subtitle="You've created a new eval, including an eval dataset and aligned judge!"
+            link={created_eval_href ?? `/specs/${project_id}/${task_id}`}
+            button_text={created_eval_href ? "View Eval" : "Back to Evals"}
+          />
         {/if}
       </div>
     {/if}
@@ -5359,15 +5373,45 @@
          rather than the usual amber one: every case there is a whole
          conversation billed per turn on both sides, so the same item count
          costs many times what it does single-turn, and this sits directly
-         above the button that commits the spend. Filled rather than bigger:
-         the ring mark is mostly empty at this size, so the error colour reads
-         amber next to a real amber one, and Warning styles its mark, never
-         its text. The form's gap spaces it like every lane above it, and the
-         default indent keeps its text on the lanes' label line. -->
+         above the button that commits the spend. The form's gap spaces it
+         like every lane above it, and the default indent keeps its text on
+         the lanes' label line. -->
     <Warning
       warning_color={is_multi_turn ? "error" : "warning"}
-      filled_icon={is_multi_turn}
       warning_message={drive_cost_message}
     />
   </FormContainer>
+</Dialog>
+
+<!-- The forward action's fork on the last case: the reviewer disagreed with
+     the judge somewhere and said why, and that feedback can either improve the
+     judge or be kept as-is. Both are legitimate, so both are buttons, and the
+     wizard does not decide for them. Improving costs a model call and a
+     re-review; saving is final. Nothing here is destructive, so neither button
+     is an error button. -->
+<Dialog
+  bind:this={improve_judge_dialog}
+  title="Improve Judge with Feedback?"
+  action_buttons={[
+    {
+      label: "Save Without Improving",
+      action: () => {
+        save_without_refining()
+        return true
+      },
+    },
+    {
+      label: "Improve Judge",
+      isPrimary: true,
+      action: () => {
+        void run_calibration_round()
+        return true
+      },
+    },
+  ]}
+>
+  <p class="text-sm text-gray-500">
+    You disagreed with the judge and gave feedback, which we can use to improve
+    your Judge.
+  </p>
 </Dialog>
