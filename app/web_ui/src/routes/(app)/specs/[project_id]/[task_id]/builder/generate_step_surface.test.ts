@@ -115,20 +115,14 @@ describe("plan surface copy", () => {
     expect(plan_surface).not.toContain("regenerate_label=")
   })
 
-  it("renders the multi-turn subheader", () => {
-    expect(
-      contains(
-        "Here's the plan for your eval dataset. Kiln will run each item as a test conversation with your agent in the next step. Refine the plan if the coverage looks off.",
-      ),
-    ).toBe(true)
-  })
-
-  it("renders the single-turn subheader", () => {
-    expect(
-      contains(
-        "Here's the plan for your eval dataset. Kiln will use this guidance to generate each item in the next step. Refine the plan if the coverage looks off.",
-      ),
-    ).toBe(true)
+  it("renders one subheader, the same on both arms", () => {
+    // What the next step does to each row belongs on that step, not in the
+    // plan's sub-line: one sentence reads the same whether the run drives
+    // conversations or generates single inputs.
+    expect(normalize(plan_surface)).toContain(
+      'subheader="Here\'s a plan for your eval dataset. Refine the plan if the coverage looks off."',
+    )
+    expect(plan_surface).not.toContain("is_multi_turn")
   })
 
   it("labels the primary button with the artifact noun and the count", () => {
@@ -144,7 +138,26 @@ describe("plan surface copy", () => {
     // hears "items" too. The /generate sentence is about dataset samples, which
     // is not what this surface's rows become.
     expect(normalize(plan_surface)).toContain('items_label="Items"')
-    expect(normalize(plan_surface)).toContain("expanded_description={false}")
+    expect(normalize(plan_surface)).toContain(
+      'expanded_description="Each row will be used to seed one item of your eval dataset."',
+    )
+  })
+
+  it("puts the data guide note on the sub-line, only when a guide was used", () => {
+    // The note is a clause on the header's sub-line rather than a row of its
+    // own, so the plan surface opens with one sentence. It is a claim about
+    // how the plan was drafted, so it renders only when that is true.
+    const normalized_surface = normalize(plan_surface)
+    expect(normalized_surface).toContain(
+      '<svelte:fragment slot="under_subheader"> {#if plan_drafted_with_data_guide}',
+    )
+    // The clause, normalized so Prettier's wrapping is not what is pinned. It
+    // has to open with an explicit space, because Svelte drops whitespace at
+    // the start of slot content and the sub-line adds no separator of its own.
+    const note = normalize(region('<span id="data_guide_plan_note"', "</span"))
+    expect(note).toContain('{" "}Planned using your')
+    expect(note).toContain("data guide</button")
+    expect(note.endsWith(".</span")).toBe(true)
   })
 
   it("names the rows' column for what this surface's rows hold", () => {

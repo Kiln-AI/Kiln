@@ -4886,20 +4886,18 @@
               </div>
             {/if}
             <!-- Plan approval: the run starts only after the user approves
-                 the plan — the shared /generate batch-plan surface, on its
-                 own default header and regenerate labels so the two flows
-                 read alike. Only the subheader differs per arm, because the
-                 arms do different things to each item. The primary button
-                 opens Generation Settings rather than driving: that dialog
-                 is the single entrance, so every run passes its lanes and
-                 its cost warning. -->
+                 the plan — the shared /generate batch-plan surface. It
+                 overrides the header, because what it lists is a proposed
+                 eval dataset, and keeps the surface's own regenerate label so
+                 the two flows read alike. The primary button opens Generation
+                 Settings rather than driving: that dialog is the single
+                 entrance, so every run passes its lanes and its cost
+                 warning. -->
             <KilnProBatchPlan
               plan={batch_plan}
               header_label="Eval Dataset Proposal"
               summary_out_of_sync={batch_plan_edited}
-              subheader={is_multi_turn
-                ? "Here's the plan for your eval dataset. Kiln will run each item as a test conversation with your agent in the next step. Refine the plan if the coverage looks off."
-                : "Here's the plan for your eval dataset. Kiln will use this guidance to generate each item in the next step. Refine the plan if the coverage looks off."}
+              subheader="Here's a plan for your eval dataset. Refine the plan if the coverage looks off."
               on_generate_inputs={open_drive_settings}
               on_regenerate={open_new_plan_dialog}
               on_delete_prompt={on_delete_plan_prompt}
@@ -4908,28 +4906,28 @@
                 drive_stop !== null}
               generate_button_label={`Generate Dataset (${batch_plan.prompts.length} items)`}
               items_label="Items"
-              expanded_description={false}
+              expanded_description="Each row will be used to seed one item of your eval dataset."
               column_label="Item Guidance"
             >
               <!-- The first plan fires without a form, so the proposal says
-                   what it was drafted under; View is the checkbox's own
-                   opener (a new tab, so the plan stays on screen). -->
+                   what it was drafted under. It rides on the sub-line as one
+                   sentence rather than a row of its own, and the guide opens
+                   in a new tab so the plan stays on screen. The leading {" "}
+                   is load-bearing: Svelte drops whitespace at the start of
+                   slot content, which would fuse this clause onto the
+                   sub-line's last word. -->
               <svelte:fragment slot="under_subheader">
                 {#if plan_drafted_with_data_guide}
-                  <div
-                    id="data_guide_plan_note"
-                    class="text-sm font-light text-gray-500"
-                  >
-                    Planned using your Data Guide.
+                  <span id="data_guide_plan_note"
+                    >{" "}Planned using your
                     <button
                       type="button"
                       class="link"
                       on:click={() =>
                         open_data_guide_in_new_tab(project_id, task_id)}
-                    >
-                      View
-                    </button>
-                  </div>
+                      >data guide</button
+                    >.</span
+                  >
                 {/if}
               </svelte:fragment>
             </KilnProBatchPlan>
