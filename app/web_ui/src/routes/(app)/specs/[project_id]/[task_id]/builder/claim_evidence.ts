@@ -1263,16 +1263,17 @@ export function plan_save_action(args: {
   return args.has_disagreement ? { action: "calibrate" } : { action: "save" }
 }
 
-// The honest shortfall notice when some cases couldn't be re-checked: they
-// kept stale verdicts, so they were left out of the round. case_noun is the
-// arm's word for one unit of eval data (conversation / test run).
+// The honest shortfall notice when some eval data couldn't be re-checked: it
+// kept stale verdicts, so it was left out of the round. `total` is every
+// result carried over from the previous round, the ones with no id included —
+// those cannot be re-checked either, so they count as failures here. Counting
+// rather than naming keeps one sentence true on both arms.
 export function rejudge_shortfall_notice(
   failed: number,
-  case_noun: string,
+  total: number,
 ): string | null {
   if (failed <= 0) return null
-  const cases = failed === 1 ? case_noun : `${case_noun}s`
-  return `${failed} ${cases} couldn't be re-checked with the improved judge and kept their previous results. They were left out of this review round.`
+  return `${failed} of ${total} couldn't be re-checked with the improved judge and kept their previous results. They were left out of this review round.`
 }
 
 // A judge prompt/rubric this long is almost certainly runaway model output,

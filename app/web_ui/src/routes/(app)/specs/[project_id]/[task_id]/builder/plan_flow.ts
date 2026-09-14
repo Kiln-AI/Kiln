@@ -253,6 +253,37 @@ export function dominant_failure_message(messages: string[]): string | null {
   return best
 }
 
+// The centred stop screen has room for a few wrapped lines of diagnosis (its
+// column fits roughly 40 characters a line); the full text stays in the
+// console/log. A provider message can run to hundreds of characters, which
+// would push the screen's actions below the fold.
+export const STOP_SCREEN_ERROR_EXCERPT_CHARS = 160
+
+// A short excerpt of the diagnosis, cut to fit the stop screen: the message's
+// first non-blank line without the trailing period the surrounding sentence
+// supplies, shortened to the bound above. A shortened excerpt ends in an
+// ellipsis, which stands in for the text that was dropped.
+export function error_excerpt(message: string): string {
+  // Some messages arrive with their newlines still escaped as the two
+  // characters backslash-n. The renderer turns those into real newlines before
+  // it splits into lines, so unescaping here is what keeps the excerpt to one
+  // rendered line instead of quoting the whole message as if it were one.
+  const normalized = message.replace(/\\n/g, "\n")
+  // The first line that has content, not simply the first: a message that opens
+  // with a blank line would otherwise excerpt to nothing and drop the diagnosis
+  // from the screen. The line is trimmed on its own, so an indented one is
+  // quoted without its indent.
+  const first_line = (normalized.split("\n").find((l) => l.trim() !== "") ?? "")
+    .trim()
+    .replace(/[.\s]+$/, "")
+  // Cut by code points, not UTF-16 units: an emoji or other non-BMP character
+  // sliced in half leaves a lone surrogate that renders as a broken glyph.
+  const code_points = Array.from(first_line)
+  return code_points.length > STOP_SCREEN_ERROR_EXCERPT_CHARS
+    ? `${code_points.slice(0, STOP_SCREEN_ERROR_EXCERPT_CHARS).join("")}…`
+    : first_line
+}
+
 // The stop banner's message. Rendered via Warning's markdown+trusted mode
 // so the all-failed variant can carry the run-page deeplink in-message —
 // markdown links open in a new tab by component design, so the wizard tab
@@ -264,15 +295,13 @@ export function drive_stop_banner(
   stop: DriveStop,
   run_config_name: string | null,
   run_config_model: string | null = null,
-  // The arm's word for one unit of work — "conversation" (multi-turn) or
-  // "test run" (single-turn) — so the banner never claims conversations a
-  // one-shot run never had.
-  case_noun: string = "conversation",
 ): string {
   const config_clause = run_config_name
     ? ` (run config: ${run_config_name})`
     : ""
-  const plural = (n: number) => `${case_noun}${n === 1 ? "" : "s"}`
+  // Counts alone, no noun for the unit of work: the same sentence is true
+  // whether a run drove conversations or generated single inputs.
+  const total = stop.survivors + stop.failed
   if (stop.preflight) {
     // A lane failed its pre-drive test call: nothing ran and nothing was
     // spent. All lanes show the raw error (the SDG precedent — generation
@@ -313,26 +342,40 @@ export function drive_stop_banner(
       : ""
     const recovery =
       stop.survivors > 0
-        ? `${stop.survivors} ${plural(
-            stop.survivors,
-          )} completed before the stop. Continue with those, or [test your run config](/run) and run the batch again.`
+        ? `${stop.survivors} of ${total} completed before the stop. Continue with those, or [test your run config](/run) and run the batch again.`
         : `You can [test your run config](/run), then run the batch again.`
     return `The run was stopped: ${stop.aborted_error}${abort_config}.\n\n${recovery}`
   }
   if (stop.survivors === 0) {
     // Every case failed identically — a capability boundary of the run
     // config, not bad luck. Point at the one place it can be verified.
-    return `All ${plural(2)} failed: ${
+    return `All ${total} failed: ${
       stop.dominant_error ?? "no error details"
     }${config_clause}.\n\nYou can [test your run config](/run), then run the batch again.`
   }
-  const total = stop.survivors + stop.failed
-  const common_clause = stop.dominant_error
-    ? ` (most common: ${stop.dominant_error})`
+  // The partial stop. It asks the question the screen exists to answer in the
+  // first paragraph, and puts the diagnosis in the second: what was already
+  // tried, and a bounded excerpt of the error behind most of the failures.
+  // The excerpt ends the sentence with a period unless it already closes
+  // itself: its own question or exclamation mark, or an ellipsis, whether the
+  // provider's own or the one marking where the text was cut. The two
+  // paragraphs are one newline apart:
+  // a blank markdown line renders a spacer, which would double the gap the
+  // stop screen's own layout already puts between them.
+  const excerpt = stop.dominant_error ? error_excerpt(stop.dominant_error) : ""
+  const common_clause = excerpt
+    ? ` Most common error: ${excerpt}${/[!?…]$/.test(excerpt) ? "" : "."}`
     : ""
-  return `${stop.survivors} of ${total} ${plural(
-    total,
-  )} completed. ${stop.failed} failed after retries${common_clause}.\n\nContinue with the ${stop.survivors} that completed, or run the batch again.`
+  return `${stop.failed} of ${total} failed. Continue with only ${stop.survivors}, or run this batch again?\nEach failure was retried.${common_clause}`
+}
+
+// A stop that left usable work behind: some cases failed, the batch was never
+// aborted, and nothing failed before the drive started. Only this kind can be
+// told in one counted sentence plus a line of diagnosis, so only this kind
+// gets the centred screen; the others carry the full provider text and a
+// recovery deeplink, and their way out runs through the plan.
+export function is_partial_stop(stop: DriveStop): boolean {
+  return stop.survivors > 0 && !stop.aborted_error && !stop.preflight
 }
 
 // SDG's confirm formula for the destructive tier that carries real work.
@@ -433,4 +476,26 @@ export function with_failures(sentence: string, failed: number): string {
   return failed > 0
     ? `${sentence.replace(/\.$/, "")}, ${failed} failed.`
     : sentence
+}
+
+// The share of the batch that has to survive for continuing with the
+// survivors to lead. Below it too much of the approved plan is missing for
+// the survivors to be the better offer.
+export const STOP_CONTINUE_LEADS_AT = 0.9
+
+// Which of the stop screen's two actions is the primary. Continuing with the
+// survivors leads only when almost the whole batch made it; below that, and
+// whenever nothing survived, re-running the batch is the action worth leading
+// with. A stop that never drove anything (preflight) or that was cut short by
+// a failing config (aborted_error) leads with re-running whatever survived,
+// because the survivors are not the whole story.
+export function stop_primary_action(stop: DriveStop): "continue" | "rerun" {
+  if (stop.preflight || stop.aborted_error) {
+    return "rerun"
+  }
+  const total = stop.survivors + stop.failed
+  if (stop.survivors <= 0 || total <= 0) {
+    return "rerun"
+  }
+  return stop.survivors / total >= STOP_CONTINUE_LEADS_AT ? "continue" : "rerun"
 }

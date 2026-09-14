@@ -1454,22 +1454,21 @@ describe("has_grade_disagreement / disagreed_trace_indices", () => {
 })
 
 describe("rejudge_shortfall_notice", () => {
-  it("silent when every case re-judged", () => {
-    expect(rejudge_shortfall_notice(0, "conversation")).toBeNull()
+  it("silent when everything re-judged", () => {
+    expect(rejudge_shortfall_notice(0, 20)).toBeNull()
   })
 
-  it("counts the stale cases honestly, singular and plural, in the arm's noun", () => {
-    expect(rejudge_shortfall_notice(1, "conversation")).toContain(
-      "1 conversation ",
-    )
-    expect(rejudge_shortfall_notice(3, "conversation")).toContain(
-      "3 conversations ",
-    )
-    expect(rejudge_shortfall_notice(2, "test run")).toContain("2 test runs ")
-    expect(rejudge_shortfall_notice(3, "conversation")).toContain(
+  it("counts the stale eval data against what was put up for re-checking", () => {
+    // Counts rather than a noun: the same sentence is true whether the round
+    // re-checked conversations or single test runs.
+    expect(rejudge_shortfall_notice(1, 20)).toContain("1 of 20 couldn't be")
+    expect(rejudge_shortfall_notice(3, 20)).toContain("3 of 20 couldn't be")
+    expect(rejudge_shortfall_notice(3, 20)).not.toContain("conversation")
+    expect(rejudge_shortfall_notice(3, 20)).not.toContain("test run")
+    expect(rejudge_shortfall_notice(3, 20)).toContain(
       "left out of this review round",
     )
-    expect(rejudge_shortfall_notice(3, "conversation")).not.toMatch(/—/)
+    expect(rejudge_shortfall_notice(3, 20)).not.toMatch(/—/)
   })
 })
 

@@ -1069,3 +1069,99 @@ describe("wizard step copy", () => {
     expect(page_source).not.toContain('title="Creating Eval Data"')
   })
 })
+
+// A drive that stopped with usable work left behind takes over the step: how
+// much failed and the two ways out are the whole decision there. Every other
+// stop kind keeps the banner over the plan, because its text is raw provider
+// output and its way out runs through the plan.
+describe("the stopped-drive screen", () => {
+  const stop_step = region(
+    "{#if show_plan_approval && batch_plan}",
+    "{:else if !generation_loading",
+  )
+  const partial_branch = stop_step.slice(0, stop_step.indexOf("{:else}"))
+  const plan_branch = stop_step.slice(stop_step.indexOf("{:else}"))
+  const stop_actions = region(
+    "$: stop_lead = drive_stop",
+    "[stop_rerun_action, stop_continue_action]",
+  )
+
+  it("takes over the step only for a stop that left usable work behind", () => {
+    expect(normalize(partial_branch)).toContain(
+      "{#if drive_stop && is_partial_stop(drive_stop)}",
+    )
+    expect(partial_branch).toContain("<Intro")
+    expect(partial_branch).not.toContain("<Warning")
+  })
+
+  it("keeps the banner above the plan for every other stop kind", () => {
+    // Preflight, abort and all-failed carry long raw provider text and a
+    // recovery that runs through the plan, so the plan has to stay on screen.
+    expect(plan_branch).toContain("<Warning")
+    expect(plan_branch).toContain("<KilnProBatchPlan")
+    // Always the error color here: what is left once the partial stop has
+    // taken its own screen is a failed config or a failed batch.
+    expect(normalize(plan_branch)).toContain('warning_color="error"')
+    expect(plan_branch).not.toContain("is_partial_stop")
+    expect(normalize(plan_branch)).toContain("markdown trusted")
+  })
+
+  it("demotes the plan's own primary while the Continue row is beside it", () => {
+    // Two solid primaries on one screen is two leads. The plan's generate
+    // button steps back to an outline whenever the survivors row co-renders.
+    expect(normalize(plan_branch)).toContain(
+      "generate_button_outline={has_driven_results && drive_stop !== null}",
+    )
+  })
+
+  it("names the screen and hands it the two ways forward", () => {
+    const screen = normalize(partial_branch)
+    expect(screen).toContain('<Intro title="Errors During Dataset Creation"')
+    expect(screen).toContain("action_buttons={stop_screen_actions}")
+  })
+
+  it("says what happened from the same source the banner uses", () => {
+    // One function writes the sentence, so the screen and the banner can
+    // never end up telling the same stop two different ways.
+    expect(normalize(partial_branch)).toContain(
+      "description_markdown={drive_stop_banner( drive_stop, " +
+        "drive_run_config_name, drive_run_config_model, )}",
+    )
+    expect(partial_branch).not.toContain("description_paragraphs")
+  })
+
+  it("renders the leading action first and makes it the solid one", () => {
+    // The house offer screen stacks its primary above the alternative, so the
+    // order and the emphasis both come from the same decision.
+    const actions = normalize(stop_actions)
+    expect(actions).toContain(
+      "label: `Continue With ${drive_stop?.survivors ?? 0}`, " +
+        'onClick: on_continue_with_survivors, is_primary: stop_lead === "continue",',
+    )
+    expect(actions).toContain(
+      'label: "Re-run Batch", onClick: open_drive_settings, ' +
+        'is_primary: stop_lead === "rerun",',
+    )
+    expect(actions).toContain(
+      '$: stop_screen_actions = stop_lead === "continue" ' +
+        "? [stop_continue_action, stop_rerun_action] " +
+        ": [stop_rerun_action, stop_continue_action]",
+    )
+  })
+
+  it("swallows the keyboard shortcut instead of acting on it", () => {
+    // The screen's buttons carry no shortcut hint, and which of them leads
+    // changes with the batch, so the shortcut would fire an action the user
+    // was never offered — on most of those batches a paid re-run. The
+    // keystroke is consumed all the same, or a focused button takes the Enter.
+    const shortcut = normalize(
+      region(
+        "if (drive_stop && is_partial_stop(drive_stop)) {",
+        "if (has_driven_results) {",
+      ),
+    )
+    expect(shortcut).toContain("event.preventDefault() return }")
+    expect(shortcut).not.toContain("on_continue_with_survivors()")
+    expect(shortcut).not.toContain("open_drive_settings()")
+  })
+})
