@@ -69,6 +69,9 @@ def app(
             "name": world.name,
             "version": world.version,
             "description": _description(world),
+            # How many sessions this server will hold at once. A client that needs more
+            # can then refuse before a run rather than deadlock partway through one.
+            "max_concurrent_envs": max_concurrent_envs,
         }
 
     @api.websocket("/ws")

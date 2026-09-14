@@ -85,6 +85,8 @@ async def test_metadata_and_health(served):
         meta = (await client.get("/metadata")).json()
     assert meta["name"] == "toy" and meta["version"] == "1.0.0"
     assert meta["description"] == ""
+    # A client sizing a concurrent run has to be able to read the cap before it starts.
+    assert meta["max_concurrent_envs"] == 500
 
 
 async def test_metadata_description_is_the_readme_first_paragraph(toy_world, frozen):
