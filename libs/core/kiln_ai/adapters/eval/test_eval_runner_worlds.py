@@ -377,10 +377,10 @@ async def test_full_run_isolates_and_records_instances(
     assert ep_a.reset.world_id == world.id and ep_b.reset.world_id == world.id
     assert ep_a.reset.reset_kwargs == {"fixture_id": "a", "frozen_time": CLOCK_A}
     assert ep_b.reset.reset_kwargs == {"fixture_id": "b", "frozen_time": CLOCK_B}
-    assert ep_a.reset_metadata["fixture_id"] == "a"
-    assert ep_a.reset_metadata["frozen_time"] == CLOCK_A
-    assert ep_b.reset_metadata["frozen_time"] == CLOCK_B
-    assert "env_name" not in ep_a.reset_metadata
+    assert ep_a.reset_facts["fixture_id"] == "a"
+    assert ep_a.reset_facts["frozen_time"] == CLOCK_A
+    assert ep_b.reset_facts["frozen_time"] == CLOCK_B
+    assert "env_name" not in ep_a.reset_facts
     # Each episode holds only its own run's note.
     assert ep_a.final_state["notes"] == ["note for a"]
     assert ep_b.final_state["notes"] == ["note for b"]
@@ -404,7 +404,7 @@ async def test_full_run_isolates_and_records_instances(
     info = by_input["note for a"].world_episode
     assert info is not None
     assert info.reset.reset_kwargs == {"fixture_id": "a", "frozen_time": CLOCK_A}
-    assert info.reset_metadata["fixture_id"] == "a"
+    assert info.reset_facts["fixture_id"] == "a"
     assert info.final_state["notes"] == ["note for a"]
     assert RecordingJudge.states["note for a"]["notes"] == ["note for a"]
 
@@ -999,11 +999,11 @@ async def test_reset_facts_from_result_reach_the_judge(
     with patch.object(BaseV2EvalBridge, "run_task", new=generator), _judge_patch():
         await _drain(_runner([cfg], run_config, session_manager))
     (trace,) = _traces(task)
-    facts = trace.world_episode.reset_metadata
+    facts = trace.world_episode.reset_facts
     assert facts["tools"] == len(ControlledCounterEnv.TOOLS)
     assert facts["fixture_id"] == "a"
     (seen,) = RecordingJudge.seen
-    assert seen.world_episode.reset_metadata == facts
+    assert seen.world_episode.reset_facts == facts
 
 
 async def test_settle_error_is_saved_with_the_generation(

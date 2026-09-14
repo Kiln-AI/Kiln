@@ -308,7 +308,7 @@ def _world_episode(final_state: dict | None) -> WorldEpisode:
         reset=WorldReset(world_id="world-1", reset_kwargs={"fixture": "notes-v1"}),
         episode_id="ep_abc",
         world_version="notes@1",
-        reset_metadata={"now": "2026-03-04T00:00:00Z"},
+        reset_facts={"now": "2026-03-04T00:00:00Z"},
         final_state=final_state,
     )
 

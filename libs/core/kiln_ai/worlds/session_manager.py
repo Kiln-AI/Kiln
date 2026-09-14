@@ -50,7 +50,22 @@ logger = logging.getLogger(__name__)
 
 STEP_TIMEOUT_S = 600.0
 """How long one reset, step or state call may take. Tool calls block the LLM loop, so
-this is deliberately generous; an environment enforces its own per-tool timeouts."""
+this is deliberately generous; an environment enforces its own per-tool timeouts.
+A call that stalls the environment's event loop never reaches this ceiling: the
+keepalive below closes the session after PING_TIMEOUT_S of unanswered pings, so a
+stalled loop surfaces as a closed session at 120s, not a step timeout at 600s."""
+
+PING_INTERVAL_S = 20.0
+"""How often the websockets keepalive pings the environment. Stated rather than left to
+the library's default so a default that moves cannot silently change what a run
+measured."""
+
+PING_TIMEOUT_S = 120.0
+"""How long an unanswered ping may go before the keepalive closes the session. A world
+server doing synchronous work stalls its event loop and cannot answer a ping: the
+library's 20s timeout would drop every session on the box at once, so this matches the
+120s a world framework's own client allows for it. Stated for the same reason as the
+interval above."""
 
 
 class OpenEnvError(RuntimeError):
@@ -211,19 +226,19 @@ class OpenEnvSessionManager:
         observation = data.get("observation")
         if not isinstance(observation, dict):
             observation = {}
-        reset_metadata: dict[str, JsonValue] = {}
+        reset_facts: dict[str, JsonValue] = {}
         for source in (
             observation.get("result"),
             observation.get("metadata"),
             data.get("metadata"),
         ):
             if isinstance(source, dict):
-                reset_metadata.update({str(k): v for k, v in source.items()})
+                reset_facts.update({str(k): v for k, v in source.items()})
         return WorldEpisode(
             reset=WorldReset(world_id=world.id, reset_kwargs=reset_kwargs),
             episode_id=episode_id,
             world_version=server.world_version,
-            reset_metadata=reset_metadata,
+            reset_facts=reset_facts,
         )
 
     async def call_tool(
@@ -332,18 +347,18 @@ class OpenEnvSessionManager:
         settling first would make every `final_state.step_count` two more than the agent
         took. Control tools are read-only, so the snapshot is the same either way.
 
-        An environment that does not serve a control tool answers `unknown_tool`, or an
-        error with no code at all if it does not use that error shape; either way the
-        key is simply absent, which is what keeps environments that know nothing of this
-        working. Any other coded error is a real fault in an environment that does serve
-        the tool: it is recorded in `final_state` and settling stops there, so the
-        generation is still saved with the evidence in it rather than scoring as
-        'the agent wrote nothing'."""
+        An environment that does not serve a control tool answers `unknown_tool` or
+        `tool_not_found`, or an error with no code at all if it does not use that error
+        shape; either way the key is simply absent, which is what keeps environments
+        that know nothing of this working. Any other coded error is a real fault in an
+        environment that does serve the tool: it is recorded in `final_state` and
+        settling stops there, so the generation is still saved with the evidence in it
+        rather than scoring as 'the agent wrote nothing'."""
         for key, tool_name in self._settle_calls:
             outcome = await self._step_call_tool(session, tool_name, {}, record=False)
             if outcome.error is None:
                 state[key] = outcome.result
-            elif outcome.error_code in (None, "unknown_tool"):
+            elif outcome.error_code in (None, "unknown_tool", "tool_not_found"):
                 logger.debug(
                     "world %s: no %s (%s)",
                     episode.episode_id,
@@ -430,7 +445,13 @@ class OpenEnvSessionManager:
 
     async def _open(self, server: _EnvServer) -> ClientConnection:
         try:
-            return await connect(server.ws_url, max_size=None, open_timeout=30)
+            return await connect(
+                server.ws_url,
+                max_size=None,
+                open_timeout=30,
+                ping_interval=PING_INTERVAL_S,
+                ping_timeout=PING_TIMEOUT_S,
+            )
         except (OSError, ConnectionClosed) as e:
             raise OpenEnvError(
                 f"Could not open a session on {server.base_url}: {e}"

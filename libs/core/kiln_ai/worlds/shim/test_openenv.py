@@ -505,7 +505,7 @@ async def test_conformance_under_kiln_session_manager(tmp_path, toy_world, froze
             assert tools[0].input_schema["required"] == ["name"]
 
             episode = await session_manager.start_episode(record, {"fixture": "base"})
-            assert episode.reset_metadata == {
+            assert episode.reset_facts == {
                 "fixture": "base",
                 "now": FIXED_NOW,
                 "tools": 3,

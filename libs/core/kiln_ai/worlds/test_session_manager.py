@@ -7,9 +7,13 @@ import pytest
 
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.world import World
+from kiln_ai.worlds import session_manager as session_manager_module
 from kiln_ai.worlds.session_manager import (
+    PING_INTERVAL_S,
+    PING_TIMEOUT_S,
     OpenEnvError,
     OpenEnvSessionManager,
+    ToolCallOutcome,
 )
 from kiln_ai.worlds.testing import (
     ENV_NAME,
@@ -86,7 +90,7 @@ class TestRemoteSessions:
             "frozen_time": "2026-07-14",
         }
         # Only what the environment reported: no Kiln-added keys.
-        assert episode.reset_metadata == {
+        assert episode.reset_facts == {
             "fixture_id": "boxr",
             "frozen_time": "2026-07-14",
         }
@@ -121,7 +125,7 @@ class TestRemoteSessions:
             "reset",
             "episode_id",
             "world_version",
-            "reset_metadata",
+            "reset_facts",
             "final_state",
         }
         # The session is gone: tools cannot be called after end_episode, and a second
@@ -163,9 +167,9 @@ class TestRemoteSessions:
         )
         # `tools` exists only in the observation's result; `fixture_id` is in both, and
         # the metadata's value wins.
-        assert episode.reset_metadata["tools"] == len(ControlledCounterEnv.TOOLS)
-        assert episode.reset_metadata["fixture_id"] == "a"
-        assert episode.reset_metadata["frozen_time"] == "2026-07-14"
+        assert episode.reset_facts["tools"] == len(ControlledCounterEnv.TOOLS)
+        assert episode.reset_facts["fixture_id"] == "a"
+        assert episode.reset_facts["frozen_time"] == "2026-07-14"
 
     async def test_end_episode_settles_changes_and_digest(
         self, session_manager, controlled_world
@@ -223,6 +227,32 @@ class TestRemoteSessions:
         assert final.final_state["step_count"] == 1
         assert final.final_state["notes"] == ["poison"]
         assert session_manager._sessions == {}
+
+    @pytest.mark.parametrize("error_code", [None, "unknown_tool", "tool_not_found"])
+    async def test_settle_tolerates_every_shape_of_no_such_tool(
+        self, session_manager, remote_world, error_code
+    ):
+        """An environment that does not serve a control tool leaves the key absent and
+        settling running, whichever way it says so. OpenEnv's `MCPEnvironment` reports
+        an unknown tool with no code at all today; if its error_type is ever mapped onto
+        the code, the tolerance must still hold rather than write `settle_error` into
+        every episode's final_state."""
+        episode = await session_manager.start_episode(remote_world, {})
+        session = session_manager._sessions[episode.episode_id]
+
+        async def not_served(_session, tool_name, _arguments, *, record):
+            return ToolCallOutcome(
+                result=None,
+                error=f"no tool '{tool_name}'",
+                reward=None,
+                done=False,
+                error_code=error_code,
+            )
+
+        session_manager._step_call_tool = not_served
+        state: dict = {}
+        await session_manager._settle(episode, session, state)
+        assert state == {}
 
     async def test_settle_stops_at_the_first_failure(self, controlled_world):
         session_manager = OpenEnvSessionManager(
@@ -282,6 +312,27 @@ class TestRemoteSessions:
         with pytest.raises(RuntimeError):
             await session_manager.call_tool(episode, "read_notes", {})
         await session_manager.release(episode)
+
+    async def test_sessions_state_the_keepalive_they_run_under(
+        self, session_manager, remote_world, monkeypatch
+    ):
+        """A world server that stalls its event loop cannot answer a ping, and the
+        library's own 20s timeout would drop every session on the box at once. Both
+        values are passed, so a library default that moves cannot change what a run
+        measured."""
+        seen: dict = {}
+        real_connect = session_manager_module.connect
+
+        async def recording_connect(url, **kwargs):
+            seen.update(kwargs)
+            return await real_connect(url, **kwargs)
+
+        monkeypatch.setattr(session_manager_module, "connect", recording_connect)
+        episode = await session_manager.start_episode(remote_world, {})
+        assert seen["ping_interval"] == PING_INTERVAL_S == 20.0
+        assert seen["ping_timeout"] == PING_TIMEOUT_S == 120.0
+        assert seen["open_timeout"] == 30 and seen["max_size"] is None
+        await session_manager.end_episode(episode)
 
     async def test_error_responses_raise(self, session_manager, remote_world):
         server = await session_manager._server_for(remote_world)
