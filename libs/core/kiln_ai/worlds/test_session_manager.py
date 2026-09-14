@@ -18,6 +18,7 @@ from kiln_ai.worlds.session_manager import (
 from kiln_ai.worlds.testing import (
     ENV_NAME,
     ControlledCounterEnv,
+    CounterEnv,
     free_port,
     serve_in_thread,
 )
@@ -171,6 +172,68 @@ class TestRemoteSessions:
         assert episode.reset_facts["fixture_id"] == "a"
         assert episode.reset_facts["frozen_time"] == "2026-07-14"
 
+    async def test_reset_facts_come_only_from_the_observation(
+        self, session_manager, project
+    ):
+        """The response's top-level `metadata` is a copy OpenEnv's serializer makes of
+        `observation.metadata`, so it is not read as a source of its own. An
+        environment that puts something else there is telling Kiln nothing."""
+
+        class TopLevelOnlyEnv(CounterEnv):
+            def reset(self, **kwargs):
+                data = super().reset(**kwargs)
+                data["observation"]["metadata"] = {"from": "observation"}
+                data["metadata"] = {"from": "top level", "only_up_here": True}
+                return data
+
+        with serve_in_thread(env_factory=TopLevelOnlyEnv) as base_url:
+            world = World(name="top-level", parent=project, env_url=base_url)
+            world.save_to_file()
+            episode = await session_manager.start_episode(world, {})
+            assert episode.reset_facts == {"from": "observation"}
+
+    @pytest.mark.parametrize(
+        "wire_error, expected",
+        [
+            ("no tool controller_digest", "no tool controller_digest"),
+            (["no tool", "controller_digest"], "['no tool', 'controller_digest']"),
+        ],
+        ids=["string", "list"],
+    )
+    async def test_an_error_that_is_not_a_dict_is_still_an_error(
+        self, session_manager, project, wire_error, expected
+    ):
+        """A coded `{code, message, details}` error is one framework's convention, not
+        a condition of running here: an environment that answers with a bare string
+        gets it through as the message, with no code, and is tolerated while settling
+        the same way any other uncoded error is."""
+
+        class StringErrorEnv(CounterEnv):
+            def tool_call(self, name, args):
+                if name in ("controller_changes", "controller_digest"):
+                    return {
+                        "observation": {
+                            "tool_name": name,
+                            "result": None,
+                            "error": wire_error,
+                        },
+                        "reward": None,
+                        "done": False,
+                    }
+                return super().tool_call(name, args)
+
+        with serve_in_thread(env_factory=StringErrorEnv) as base_url:
+            world = World(name="string-error", parent=project, env_url=base_url)
+            world.save_to_file()
+            episode = await session_manager.start_episode(world, {})
+            outcome = await session_manager.call_control_tool(
+                episode, "controller_digest", {}
+            )
+            assert outcome.error == expected
+            assert outcome.error_code is None and outcome.error_details is None
+            final = await session_manager.end_episode(episode)
+            assert "settle_error" not in (final.final_state or {})
+
     async def test_end_episode_settles_changes_and_digest(
         self, session_manager, controlled_world
     ):
@@ -228,15 +291,15 @@ class TestRemoteSessions:
         assert final.final_state["notes"] == ["poison"]
         assert session_manager._sessions == {}
 
-    @pytest.mark.parametrize("error_code", [None, "unknown_tool", "tool_not_found"])
+    @pytest.mark.parametrize("error_code", [None, "unknown_tool"])
     async def test_settle_tolerates_every_shape_of_no_such_tool(
         self, session_manager, remote_world, error_code
     ):
         """An environment that does not serve a control tool leaves the key absent and
-        settling running, whichever way it says so. OpenEnv's `MCPEnvironment` reports
-        an unknown tool with no code at all today; if its error_type is ever mapped onto
-        the code, the tolerance must still hold rather than write `settle_error` into
-        every episode's final_state."""
+        settling running, whichever way it says so. `None` is the generic case and the
+        one that matters most: OpenEnv's `ToolError` has no code field, so every
+        environment built on its `MCPEnvironment` lands here, and refusing to tolerate
+        it would write `settle_error` into every one of their episodes."""
         episode = await session_manager.start_episode(remote_world, {})
         session = session_manager._sessions[episode.episode_id]
 

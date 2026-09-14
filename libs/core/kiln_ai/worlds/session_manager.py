@@ -76,10 +76,14 @@ class OpenEnvError(RuntimeError):
 class ToolCallOutcome:
     """What one `step(CallToolAction)` came back with.
 
-    An environment that reports an error as a dict (`{"code", "message", "details"}`)
-    has all three read: `error` stays the human-readable message, and the code and
-    details ride alongside so the tool proxy can tell the world's own failure from the
-    modelled product answering with an error of its own."""
+    An environment that reports an error as a dict has whatever of `code`, `message`
+    and `details` it carries read out: `error` stays the human-readable message, and
+    the code and details ride alongside so the tool proxy can tell the world's own
+    failure from the modelled product answering with an error of its own. A dict
+    without a code -- OpenEnv's own `ToolError`, which has none to give -- leaves
+    `error_code` None, and so does an error that is not a dict at all. Neither is a
+    shape Kiln insists on: requiring a coded dict would make one framework's error
+    convention a condition of running here."""
 
     result: Any
     error: str | None
@@ -220,9 +224,18 @@ class OpenEnvSessionManager:
             raise
         self._sessions[episode_id] = _Session(episode_id=episode_id, ws=ws)
 
-        # Lowest to highest precedence: an environment that reports its facts in the
-        # observation's result (Seahaven's shape) has them read, and the metadata an
-        # environment also reports wins on any key they share.
+        # Both slots the reset observation can carry facts in, lowest to highest
+        # precedence, because OpenEnv permits either and a client that reads one is
+        # a client that works against half the environments. `metadata` is the base
+        # `Observation`'s own field, so it is where an environment that returns a
+        # stock observation must put them; `result` exists only on an observation
+        # subclass that declares it, which is how an environment that wants facts
+        # and a tool result to share a shape reports them. An environment that fills
+        # both has `metadata` win on any key they share.
+        #
+        # The response's top-level `metadata` is not a third source: OpenEnv's
+        # serializer copies `observation.metadata` there, so it can never say
+        # anything the observation did not.
         observation = data.get("observation")
         if not isinstance(observation, dict):
             observation = {}
@@ -230,7 +243,6 @@ class OpenEnvSessionManager:
         for source in (
             observation.get("result"),
             observation.get("metadata"),
-            data.get("metadata"),
         ):
             if isinstance(source, dict):
                 reset_facts.update({str(k): v for k, v in source.items()})
@@ -347,18 +359,34 @@ class OpenEnvSessionManager:
         settling first would make every `final_state.step_count` two more than the agent
         took. Control tools are read-only, so the snapshot is the same either way.
 
-        An environment that does not serve a control tool answers `unknown_tool` or
-        `tool_not_found`, or an error with no code at all if it does not use that error
-        shape; either way the key is simply absent, which is what keeps environments
-        that know nothing of this working. Any other coded error is a real fault in an
-        environment that does serve the tool: it is recorded in `final_state` and
-        settling stops there, so the generation is still saved with the evidence in it
-        rather than scoring as 'the agent wrote nothing'."""
+        An environment that does not serve a control tool says so either with no code
+        at all -- which is every environment that does not use the coded-error shape,
+        OpenEnv's own `MCPEnvironment` among them, since its `ToolError` carries an
+        `error_type` and a message and has no room for a code -- or with the code
+        `unknown_tool`. Either way the key is simply absent, which is what keeps
+        environments that know nothing of this working. Any other coded error is a real
+        fault in an environment that does serve the tool: it is recorded in
+        `final_state` and settling stops there, so the generation is still saved with
+        the evidence in it rather than scoring as 'the agent wrote nothing'.
+
+        `unknown_tool` is a string from one world framework's vocabulary rather than a
+        protocol constant -- the same kind of thing `tool_not_found` was -- and it is kept
+        only because it is reachable and load-bearing: a Seahaven-shaped world started
+        without `include_control_tools` answers exactly that, and dropping the entry would
+        write `settle_error` into every one of its episodes. It is the narrowest entry that
+        keeps that path working, and it should be revisited whenever the coded-error shape
+        is.
+
+        Only those two are tolerated. `tool_not_found` was enumerated here as well and
+        was removed: it is `ToolErrorType`'s name for the same condition, never a
+        *code*, so it could only ever have matched an environment we wrote ourselves
+        that chose to repeat the string. Kiln reads a code, and no OpenEnv environment
+        can send one."""
         for key, tool_name in self._settle_calls:
             outcome = await self._step_call_tool(session, tool_name, {}, record=False)
             if outcome.error is None:
                 state[key] = outcome.result
-            elif outcome.error_code in (None, "unknown_tool", "tool_not_found"):
+            elif outcome.error_code in (None, "unknown_tool"):
                 logger.debug(
                     "world %s: no %s (%s)",
                     episode.episode_id,
