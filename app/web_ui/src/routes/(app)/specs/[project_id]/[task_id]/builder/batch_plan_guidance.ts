@@ -1,6 +1,7 @@
 // Batch-planner guidance for the eval builder's Step 4 — one function per
 // arm, both carrying the ~50/50 pass/fail balance policy (an all-PASS set
-// can't catch a lenient judge).
+// can't catch a lenient judge) and the world-state rule (the planner cannot
+// see the agent's live system, so no input may assume a record exists).
 
 // Dataset grounding for the single-turn arm: one real input from the task's
 // dataset, passed as the data-guide param of both the batch planner and the
@@ -50,6 +51,8 @@ ${grounding}`
 export function single_turn_plan_guidance(spec: string): string {
   return `Each input is one single-turn task input: the complete message a real user would send the agent in one shot.
 
+The agent may act on a live system through tools (a database, an API, a set of records). You cannot see what that system contains. Never write an input that depends on a specific record already existing: the input creates what it later acts on, or asks the agent what exists. Name a specific record only when the point of the input is how the agent handles a record that is not found.
+
 The batch exists to stress-test the agent against this specification:
 <specification>
 ${spec}
@@ -80,6 +83,8 @@ ${trimmed}`
 // Multi-turn: recasts each planned "input" as a conversation scenario.
 export function multiturn_plan_guidance(spec: string): string {
   return `Each input is a scenario for one multi-turn synthetic-user conversation with the agent: the user's situation, their opening request, and how they press the agent as the conversation unfolds.
+
+The agent may act on a live system through tools (a database, an API, a set of records). Neither you nor the user can see what that system contains. Never write a scenario that depends on a specific record already existing: the user creates what the scenario later acts on, or asks the agent what exists and works from the answer. Name a specific record only when the point of the scenario is how the agent handles a record that is not found.
 
 The batch exists to stress-test the agent against this specification:
 <specification>
