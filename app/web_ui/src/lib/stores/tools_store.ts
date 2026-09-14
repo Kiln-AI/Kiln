@@ -163,6 +163,7 @@ export function tool_qualifier_id(tool_id: string): string | null {
     CODE_TOOL_ID_PREFIX,
     RAG_TOOL_ID_PREFIX,
     SKILL_TOOL_ID_PREFIX,
+    WORLD_TOOL_ID_PREFIX,
   ]) {
     if (tool_id.startsWith(prefix)) {
       return tool_id.slice(prefix.length) || null
@@ -174,6 +175,7 @@ export function tool_qualifier_id(tool_id: string): string | null {
 const KILN_TASK_TOOL_ID_PREFIX = "kiln_task::"
 const CODE_TOOL_ID_PREFIX = "kiln_tool::code::"
 const RAG_TOOL_ID_PREFIX = "kiln_tool::rag::"
+const WORLD_TOOL_ID_PREFIX = "kiln_tool::world::"
 
 // The tool server id inside a Kiln task tool id, or null for every other tool type.
 export function kiln_task_tool_server_id(tool_id: string): string | null {

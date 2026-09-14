@@ -22,6 +22,7 @@ from kiln_ai.datamodel.tool_id import (
     build_kiln_task_tool_id,
     build_rag_tool_id,
     build_skill_tool_id,
+    build_world_tool_id,
 )
 from kiln_ai.tools.kiln_task_tool import KilnTaskTool
 from kiln_ai.tools.mcp_session_manager import (
@@ -31,6 +32,7 @@ from kiln_ai.tools.mcp_session_manager import (
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.worlds.session_manager import shared_session_manager
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
@@ -203,6 +205,10 @@ class ToolSetType(Enum):
     # inferred from tool ids so API consumers can see it, and so the rule cannot
     # drift if a KilnBuiltInToolId value is ever renamed.
     SANDBOX_CODE = "sandbox_code"
+    # Tools a world's OpenEnv environment serves, listed by a run config as
+    # kiln_tool::world::<world_id>::<tool_name>. Usable only by evals whose inputs
+    # run in that world; the environment must be running at the world's env_url.
+    WORLD = "world"
 
 
 class ToolSetApiDescription(BaseModel):
@@ -402,6 +408,33 @@ def connect_tool_servers_api(app: FastAPI):
         # Add MCP tool sets
         if len(mcp_tool_sets) > 0:
             tool_sets.extend(mcp_tool_sets)
+
+        # Add world tools, read from each world's running environment. A
+        # world whose environment is down is skipped, like an unreachable MCP server.
+        for world in project.worlds(readonly=True):
+            if world.id is None or not world.env_url:
+                continue
+            try:
+                env_tools = await shared_session_manager().list_tools(world)
+            except Exception:
+                continue
+            if not env_tools:
+                continue
+            tool_sets.append(
+                ToolSetApiDescription(
+                    type=ToolSetType.WORLD,
+                    set_name="World: " + world.name,
+                    tools=[
+                        ToolApiDescription(
+                            id=build_world_tool_id(world.id, env_tool.name),
+                            name=env_tool.name,
+                            description=env_tool.description,
+                            function_name=env_tool.name,
+                        )
+                        for env_tool in env_tools
+                    ],
+                )
+            )
 
         skills = project.skills(readonly=True)
         if skills:

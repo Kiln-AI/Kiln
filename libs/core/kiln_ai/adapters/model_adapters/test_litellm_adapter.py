@@ -3364,3 +3364,70 @@ class TestEmptyResponseErrors:
                     await adapter._run_model_turn(
                         provider, [{"role": "user", "content": "Hi"}], None, False
                     )
+
+
+async def test_process_tool_calls_passes_episode_context(config, mock_task):
+    """The active episode reaches every tool through ToolCallContext."""
+    from kiln_ai.datamodel.tool_id import ToolId
+    from kiln_ai.datamodel.world import WorldEpisode, WorldReset
+    from kiln_ai.run_context import (
+        EpisodeContext,
+        reset_episode,
+        set_episode,
+    )
+    from kiln_ai.tools.base_tool import (
+        KilnToolInterface,
+        ToolCallContext,
+        ToolCallDefinition,
+        ToolCallResult,
+    )
+
+    seen: list[ToolCallContext | None] = []
+
+    class RecordingTool(KilnToolInterface):
+        async def run(
+            self, context: ToolCallContext | None = None, **kwargs
+        ) -> ToolCallResult:
+            seen.append(context)
+            return ToolCallResult(output="ok")
+
+        async def toolcall_definition(self) -> ToolCallDefinition:
+            return {
+                "type": "function",
+                "function": {
+                    "name": "rec",
+                    "description": "records",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+
+        async def id(self) -> ToolId:
+            return "rec"
+
+        async def name(self) -> str:
+            return "rec"
+
+        async def description(self) -> str:
+            return "records"
+
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    call = ChatCompletionMessageToolCall(
+        id="call_1", type="function", function=Function(name="rec", arguments="{}")
+    )
+    instance = WorldEpisode(
+        reset=WorldReset(world_id="w"), episode_id="ep_ctx", world_version="w@1"
+    )
+    token = set_episode(
+        EpisodeContext(episode=instance, world=Mock(), session_manager=Mock())
+    )
+    try:
+        with patch.object(adapter, "available_tools", return_value=[RecordingTool()]):
+            await adapter.process_tool_calls([call])
+    finally:
+        reset_episode(token)
+
+    with patch.object(adapter, "available_tools", return_value=[RecordingTool()]):
+        await adapter.process_tool_calls([call])
+
+    assert seen[0] is not None and seen[0].episode is instance
+    assert seen[1] is not None and seen[1].episode is None

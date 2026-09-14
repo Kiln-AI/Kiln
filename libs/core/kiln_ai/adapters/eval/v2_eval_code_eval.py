@@ -17,6 +17,7 @@ from kiln_ai.datamodel.eval import (
     EvalTaskInput,
     V2EvalResult,
 )
+from kiln_ai.run_context import get_episode
 from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.sandbox_bridge import (
     NestedToolServer,
@@ -72,11 +73,20 @@ class CodeEvalAdapter(BaseV2EvalBridge):
         props = self.properties
         assert isinstance(props, CodeEvalProperties)
 
+        # The full instance record (with the environment's final state) goes to the
+        # scorer through these inputs, never through EvalTaskInput, which is an API
+        # request body.
+        episode_ctx = get_episode()
+        world_episode: dict[str, Any] | None = (
+            episode_ctx.episode.to_sandbox_dict() if episode_ctx is not None else None
+        )
+
         inputs: dict[str, Any] = {
             "output": eval_input.final_message,
             "trace": eval_input.trace,
             "reference_data": eval_input.reference_data,
             "task_input": eval_input.task_input,
+            "world_episode": world_episode,
         }
 
         server = NestedToolServer(
@@ -88,6 +98,7 @@ class CodeEvalAdapter(BaseV2EvalBridge):
                 eval_output_schema=BaseEval.build_score_schema(
                     self.eval, allow_float_scores=False
                 ),
+                episode=episode_ctx.episode if episode_ctx is not None else None,
             ),
             recorder=self.tool_call_recorder,
         )

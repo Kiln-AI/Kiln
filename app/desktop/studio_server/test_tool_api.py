@@ -4746,3 +4746,50 @@ async def test_get_tool_definition_task_not_found(client, test_project):
 
         assert response.status_code == 404
         assert "Task not found" in response.json()["message"]
+
+
+def test_get_available_tools_lists_world_tools(client, test_project):
+    """A world whose environment is running contributes a tool set of the tools the
+    environment serves, under world tool ids; a world whose environment is down is
+    skipped, like an unreachable MCP server."""
+    from kiln_ai.datamodel.tool_id import build_world_tool_id
+    from kiln_ai.datamodel.world import World
+    from kiln_ai.worlds.session_manager import OpenEnvSessionManager
+    from kiln_ai.worlds.testing import free_port, serve_in_thread
+
+    down = World(
+        name="Down World",
+        parent=test_project,
+        env_url=f"http://127.0.0.1:{free_port()}",
+    )
+    down.save_to_file()
+    session_manager = OpenEnvSessionManager()
+    try:
+        with (
+            serve_in_thread() as base_url,
+            patch(
+                "app.desktop.studio_server.tool_api.project_from_id",
+                return_value=test_project,
+            ),
+            patch(
+                "app.desktop.studio_server.tool_api.shared_session_manager",
+                return_value=session_manager,
+            ),
+        ):
+            live = World(name="Live World", parent=test_project, env_url=base_url)
+            live.save_to_file()
+            response = client.get(f"/api/projects/{test_project.id}/available_tools")
+            assert response.status_code == 200
+            sets = [s for s in response.json() if s["type"] == "world"]
+            assert [s["set_name"] for s in sets] == ["World: Live World"]
+            tools = sets[0]["tools"]
+            assert [t["id"] for t in tools] == [
+                build_world_tool_id(live.id, name)
+                for name in ["append_note", "read_notes", "explode"]
+            ]
+            assert tools[0]["function_name"] == "append_note"
+            assert tools[0]["description"] == "Append a note to the episode's notebook."
+    finally:
+        import asyncio
+
+        asyncio.run(session_manager.shutdown())

@@ -1598,6 +1598,7 @@ dependencies = [
     { name = "typer" },
     { name = "typing-extensions" },
     { name = "vertexai" },
+    { name = "websockets" },
 ]
 
 [package.dev-dependencies]
@@ -1641,6 +1642,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.9.0" },
     { name = "typing-extensions", specifier = ">=4.12.2" },
     { name = "vertexai", specifier = ">=1.43.0" },
+    { name = "websockets", specifier = ">=15.0.1" },
 ]
 
 [package.metadata.requires-dev]

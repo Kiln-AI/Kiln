@@ -6117,20 +6117,20 @@ class TestStoredConversationsAreVettedBeforeReuse:
         whole = _stored_conversation(mock_task, mock_run_config, MULTI_TURN_TRACE)
         rc_id = mock_run_config.id
 
-        assert vet(("eval_input", "ei_redrive", rc_id), whole) is None
+        assert vet(("eval_input", "ei_redrive", rc_id, ""), whole) is None
         # A rejection answers with the reason, which is what the index logs.
-        assert vet(("eval_input", "ei_redrive", rc_id), stump) == (
+        assert vet(("eval_input", "ei_redrive", rc_id, ""), stump) == (
             "expected 3 user turns, found 1"
         )
         # An item from another eval's split: this runner has no turn count for it, and
         # never looks it up either.
-        assert vet(("eval_input", "ei_elsewhere", rc_id), stump) is None
+        assert vet(("eval_input", "ei_elsewhere", rc_id, ""), stump) is None
         # Ids come from one generator shared by every model type, so a TaskRun can carry
         # an EvalInput's id. Matching on the id alone would check the wrong contract.
-        assert vet(("task_run", "ei_redrive", rc_id), stump) is None
+        assert vet(("task_run", "ei_redrive", rc_id, ""), stump) is None
         # An item with no drive config is skipped by the readiness path before it ever
         # drives, so there is no turn count to hold its traces to.
-        assert vet(("eval_input", "ei_unstamped", rc_id), stump) is None
+        assert vet(("eval_input", "ei_unstamped", rc_id, ""), stump) is None
 
     def test_the_vet_reads_the_tag_to_accept_a_short_stored_conversation(
         self,
@@ -6155,8 +6155,8 @@ class TestStoredConversationsAreVettedBeforeReuse:
         assert vet is not None
         rc_id = mock_run_config.id
 
-        assert vet(("eval_input", "ei_redrive", rc_id), ended) is None
-        assert vet(("eval_input", "ei_redrive", rc_id), truncated) == (
+        assert vet(("eval_input", "ei_redrive", rc_id, ""), ended) is None
+        assert vet(("eval_input", "ei_redrive", rc_id, ""), truncated) == (
             "expected 3 user turns, found 1"
         )
 
