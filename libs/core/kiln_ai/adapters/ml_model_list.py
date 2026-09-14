@@ -189,6 +189,7 @@ class ModelName(str, Enum):
     qwen_2p5_vl_32b = "qwen_2p5_vl_32b"
     qwen_2p5_vl_72b = "qwen_2p5_vl_72b"
     qwq_32b = "qwq_32b"
+    deepseek_4_1_flash = "deepseek_4_1_flash"
     deepseek_4_pro = "deepseek_4_pro"
     deepseek_4_flash = "deepseek_4_flash"
     deepseek_3_2 = "deepseek_3_2"
@@ -5468,6 +5469,70 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # DeepSeek V4.1 Flash
+    KilnModel(
+        family=ModelFamily.deepseek,
+        name=ModelName.deepseek_4_1_flash,
+        friendly_name="DeepSeek V4.1 Flash",
+        featured_rank=11,
+        editorial_notes="Latest V4.1 Flash variant. 1M context, configurable reasoning, and adds native image input.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="deepseek/deepseek-v4.1-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/deepseek-v4p1-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="deepseek-ai/DeepSeek-V4.1-Flash",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
     # DeepSeek V4 Pro
     KilnModel(
         family=ModelFamily.deepseek,
@@ -5518,7 +5583,6 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.deepseek,
         name=ModelName.deepseek_4_flash,
         friendly_name="DeepSeek V4 Flash",
-        featured_rank=11,
         editorial_notes="Faster V4 variant with 284B params (13B activated). 1M context, same reasoning capabilities.",
         providers=[
             KilnModelProvider(
