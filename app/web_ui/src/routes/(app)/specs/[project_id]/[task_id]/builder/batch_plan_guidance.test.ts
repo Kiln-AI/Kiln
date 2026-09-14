@@ -52,6 +52,79 @@ describe("compose_plan_guidance", () => {
   })
 })
 
+// Both arms carry a world-state paragraph: the planner cannot see the live
+// system the agent acts on, so no input or scenario may assume a record
+// already exists. Each arm's tests pin the paragraph's wording in that arm's
+// voice, its place as the second paragraph (read before the specification),
+// and the arm marker at the very start, because the arm is identified from
+// the head of the guidance.
+const WORLD_STATE_OPENER =
+  "The agent may act on a live system through tools (a database, an API, a set of records)."
+const SPECIFICATION_INTRO =
+  "The batch exists to stress-test the agent against this specification:"
+
+describe("multiturn_plan_guidance world-state rule", () => {
+  const guidance = multiturn_plan_guidance("be helpful")
+
+  it("carries the world-state paragraph in the multi-turn voice", () => {
+    expect(guidance).toContain(WORLD_STATE_OPENER)
+    expect(guidance).toContain(
+      "Neither you nor the user can see what that system contains.",
+    )
+    expect(guidance).toContain(
+      "Never write a scenario that depends on a specific record already existing: the user creates what the scenario later acts on, or asks the agent what exists and works from the answer.",
+    )
+    expect(guidance).toContain(
+      "Name a specific record only when the point of the scenario is how the agent handles a record that is not found.",
+    )
+    // Multi-turn plans scenarios, so the single-turn wording must not leak in.
+    expect(guidance).not.toContain("Never write an input that depends on")
+  })
+
+  it("places it as the second paragraph, directly before the specification block", () => {
+    const paragraphs = guidance.split("\n\n")
+    expect(paragraphs[1].startsWith(WORLD_STATE_OPENER)).toBe(true)
+    expect(paragraphs[2].startsWith(SPECIFICATION_INTRO)).toBe(true)
+  })
+
+  it("keeps the arm marker at the exact start of the string", () => {
+    expect(
+      guidance.startsWith(
+        "Each input is a scenario for one multi-turn synthetic-user conversation with the agent:",
+      ),
+    ).toBe(true)
+  })
+})
+
+describe("single_turn_plan_guidance world-state rule", () => {
+  const guidance = single_turn_plan_guidance("be helpful")
+
+  it("carries the world-state paragraph in the single-turn voice", () => {
+    expect(guidance).toContain(WORLD_STATE_OPENER)
+    expect(guidance).toContain("You cannot see what that system contains.")
+    expect(guidance).toContain(
+      "Never write an input that depends on a specific record already existing: the input creates what it later acts on, or asks the agent what exists.",
+    )
+    expect(guidance).toContain(
+      "Name a specific record only when the point of the input is how the agent handles a record that is not found.",
+    )
+    // Single-turn has no synthetic user, so the multi-turn wording must not leak in.
+    expect(guidance).not.toContain("Neither you nor the user")
+  })
+
+  it("places it as the second paragraph, directly before the specification block", () => {
+    const paragraphs = guidance.split("\n\n")
+    expect(paragraphs[1].startsWith(WORLD_STATE_OPENER)).toBe(true)
+    expect(paragraphs[2].startsWith(SPECIFICATION_INTRO)).toBe(true)
+  })
+
+  it("keeps the arm marker at the exact start of the string", () => {
+    expect(
+      guidance.startsWith("Each input is one single-turn task input:"),
+    ).toBe(true)
+  })
+})
+
 describe("join_data_guides", () => {
   const guide = "# Reference Inputs\n\nShort support questions.\n"
   const grounding = grounding_data_guide({
