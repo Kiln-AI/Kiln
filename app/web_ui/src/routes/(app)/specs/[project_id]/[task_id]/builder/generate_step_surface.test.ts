@@ -495,10 +495,13 @@ describe("Generation Settings dialog", () => {
     )
     expect(
       contains(
-        'model_info_description="Writes one item from each approved plan line; your task then runs on them."',
+        'model_info_description="Writes the input for each dataset item. Your run config then produces the output that the judge scores."',
       ),
     ).toBe(true)
-    expect(contains('model_label="Eval Data Generation Model"')).toBe(true)
+    // The lane writes the input half of each dataset item; the output comes
+    // from the run config the eval is about, so the label says which of the
+    // two this model is.
+    expect(contains('model_label="Input Generation Model"')).toBe(true)
   })
 
   it("gives the input generator the same control synthetic data generation uses", () => {
@@ -764,7 +767,7 @@ describe("Data Guide skip and Back", () => {
 describe("Reset", () => {
   const reset = region("async function reset_draft_with_confirm", "\n  }\n")
 
-  it("starts over on the Setup and Eval Type page, not by reloading a URL that may carry a description", () => {
+  it("starts over on the Create Eval page, not by reloading a URL that may carry a description", () => {
     expect(normalize(reset)).toContain(
       normalize(
         "window.location.href = `/specs/${project_id}/${task_id}/select_template`",
@@ -1025,5 +1028,44 @@ describe("the eval-created screen", () => {
     const [first, second] = save_body.split("finish_on_done_screen(saved.id)")
     expect(first).toContain("await clear_builder_draft(")
     expect(second).toContain("await clear_builder_draft(")
+  })
+})
+
+// The wizard's own copy: what each step is called, and what the screens the
+// steps open on say while they work.
+describe("wizard step copy", () => {
+  const step_names = function_body(
+    'function step_name_for(step: Exclude<BuilderStep, "save" | "done">): string {',
+  )
+
+  it("names each step after what the user does on it", () => {
+    const named = normalize(step_names)
+    expect(named).toContain('case "clarify": return "Clarify Eval"')
+    expect(named).toContain('case "refine": return "Review Updated Eval"')
+    expect(named).toContain('case "generate": return "Create Eval Dataset"')
+  })
+
+  it("asks the refine step's question in the header's second line", () => {
+    // The step shows the eval rewritten from the user's answers, so the
+    // header asks what the step exists to answer — and only there.
+    expect(normalize(page_source)).toContain(
+      '$: page_sub_subtitle = current_step === "refine" ' +
+        '? "We\'ve integrated your feedback, does it look right?" : ""',
+    )
+    expect(normalize(page_source)).toContain("sub_subtitle={page_sub_subtitle}")
+  })
+
+  it("says what the minting screen is making, and leaves the count to the bar", () => {
+    // The progress bar under the line already carries how far along the run
+    // is, so the sentence says what is being made and stops there.
+    expect(contains('? "Creating Eval Dataset"')).toBe(true)
+    expect(contains("? `Creating ${planned_total} dataset items.`")).toBe(true)
+  })
+
+  it("carries that name into the drive screen that follows, on both arms", () => {
+    // Minting and driving are one stretch of work to someone watching it, so
+    // the screen that follows the minting screen says the same thing it did.
+    expect(page_source.match(/title="Creating Eval Dataset"/g)).toHaveLength(2)
+    expect(page_source).not.toContain('title="Creating Eval Data"')
   })
 })

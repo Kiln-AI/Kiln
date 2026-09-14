@@ -448,7 +448,7 @@
 
   // Start the wizard over: wipe the draft but CARRY the batch tags (they
   // name chains on disk that only delete-on-next-drive cleans up), then
-  // start over on the Setup and Eval Type page — SDG's clear-and-reload
+  // start over on the Create Eval page — SDG's clear-and-reload
   // move, aimed at where eval creation begins.
   async function reset_draft_with_confirm() {
     const msg =
@@ -470,7 +470,7 @@
     }
     // The reset is persisted — suppress both guards for the navigation.
     // Cleared by nothing: the page is about to be replaced wholesale.
-    // Start over where eval creation starts, on the Setup and Eval Type
+    // Start over where eval creation starts, on the Create Eval
     // page, rather than reloading this URL: it can carry the description
     // that page handed over, which a reload would apply again and walk
     // straight back into Step 2.
@@ -1723,7 +1723,7 @@
       drive_settings_error = new KilnError(
         is_multi_turn
           ? "Select a model to play the user and a judge model to continue."
-          : "Select an eval data generation model and a judge model to continue.",
+          : "Select an input generation model and a judge model to continue.",
       )
       return
     }
@@ -4381,11 +4381,11 @@
       case "describe":
         return "Describe Your Eval"
       case "clarify":
-        return "Answer a Few Questions"
+        return "Clarify Eval"
       case "refine":
-        return "Check the Details"
+        return "Review Updated Eval"
       case "generate":
-        return "Creating Eval"
+        return "Create Eval Dataset"
       case "review":
         // Verdict-neutral on purpose: half of every batch passes by design,
         // so a fault-presuming headline would blame agents that behaved. The
@@ -4420,6 +4420,13 @@
           current_step,
         )}`
   $: page_max_w = page_max_w_for(current_step)
+  // Second subtitle line, on the refine step only: that step shows the eval
+  // rewritten from the user's answers, so the header asks the question the
+  // step exists to answer.
+  $: page_sub_subtitle =
+    current_step === "refine"
+      ? "We've integrated your feedback, does it look right?"
+      : ""
 
   // Total assistant turns expected across the whole batch — the denominator
   // for the smooth turn-level progress (cases run in parallel waves, so this
@@ -4442,7 +4449,7 @@
         : generation_phase === "preflight"
           ? "Checking Configuration"
           : generation_phase === "minting_inputs"
-            ? "Writing Eval Data"
+            ? "Creating Eval Dataset"
             : "Creating Simulated Users"
   $: generate_animation_description =
     generation_phase === "planning"
@@ -4455,10 +4462,10 @@
           ? `Checking that your run config, the ${
               is_multi_turn
                 ? "model that plays the user"
-                : "eval data generation model"
+                : "input generation model"
             }, and the judge all respond before creating your eval data.`
           : generation_phase === "minting_inputs"
-            ? `Writing ${planned_total} items from the approved plan. ${minting_done} of ${minting_total} written.`
+            ? `Creating ${planned_total} dataset items.`
             : `Setting up ${planned_total} simulated users from the approved plan.`
 
   // The long-wait line, on exactly the stages that run one long request with
@@ -4494,6 +4501,7 @@
   <AppPage
     title={page_title}
     subtitle={page_step_line}
+    sub_subtitle={page_sub_subtitle}
     breadcrumbs={[{ label: "Evals", href: `/specs/${project_id}/${task_id}` }]}
     no_y_padding
     action_buttons={reset_available
@@ -4750,7 +4758,7 @@
                    conversations that end early leave the bar short of full, so
                    it can jump to done rather than creep there. -->
               <ConversationAnimation
-                title="Creating Eval Data"
+                title="Creating Eval Dataset"
                 description={with_failures(
                   `Simulating conversations with your agent and judging each one. ${multi_turn_turns_done} of up to ${multi_turn_total_turns} turns complete.`,
                   pipeline_failed_count,
@@ -4766,7 +4774,7 @@
               </div>
             {:else}
               <AnalyzingAnimation
-                title="Creating Eval Data"
+                title="Creating Eval Dataset"
                 description={with_failures(
                   `Running your task on each item and judging the result. ${judged_case_count} of ${pipeline_total_cases} judged.`,
                   pipeline_failed_count,
@@ -5339,8 +5347,8 @@
       <RunConfigComponent
         bind:this={input_gen_config_component}
         {project_id}
-        model_label="Eval Data Generation Model"
-        model_info_description="Writes one item from each approved plan line; your task then runs on them."
+        model_label="Input Generation Model"
+        model_info_description="Writes the input for each dataset item. Your run config then produces the output that the judge scores."
         bind:model={input_gen_model_combined}
         initial_run_config_properties={input_gen_run_config}
         requires_structured_output={true}

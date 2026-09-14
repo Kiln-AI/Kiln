@@ -367,7 +367,7 @@ describe("drive_stop_banner — preflight stop", () => {
       "Polite Hawk",
     )
     expect(banner).toContain(
-      "The eval data generation model failed a test call: NotFoundError: model retired (gpt_5_4_mini via openrouter).",
+      "The input generation model failed a test call: NotFoundError: model retired (gpt_5_4_mini via openrouter).",
     )
     expect(banner).toContain(
       "Creating your eval data requires your OpenRouter API key.",

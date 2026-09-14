@@ -386,7 +386,7 @@ export function create_eval_button_label(
 }
 
 // Where that button goes. A draft continues in the builder, which restores
-// it on entry; everything else starts on the Setup and Eval Type page. Kept
+// it on entry; everything else starts on the Create Eval page. Kept
 // beside the label so the two cannot promise different things.
 export function create_eval_destination(
   has_copilot: boolean,
