@@ -57,6 +57,8 @@ class ModelName(str, Enum):
     Where models have instruct and raw versions, instruct is default and raw is specified.
     """
 
+    fugu_max = "fugu_max"
+    fugu_ultra_v2 = "fugu_ultra_v2"
     fugu_ultra = "fugu_ultra"
     muse_spark_1_2 = "muse_spark_1_2"
     muse_spark_1_1 = "muse_spark_1_1"
@@ -189,6 +191,7 @@ class ModelName(str, Enum):
     qwen_2p5_vl_32b = "qwen_2p5_vl_32b"
     qwen_2p5_vl_72b = "qwen_2p5_vl_72b"
     qwq_32b = "qwq_32b"
+    deepseek_4_1_flash = "deepseek_4_1_flash"
     deepseek_4_pro = "deepseek_4_pro"
     deepseek_4_flash = "deepseek_4_flash"
     deepseek_3_2 = "deepseek_3_2"
@@ -5468,6 +5471,70 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # DeepSeek V4.1 Flash
+    KilnModel(
+        family=ModelFamily.deepseek,
+        name=ModelName.deepseek_4_1_flash,
+        friendly_name="DeepSeek V4.1 Flash",
+        featured_rank=11,
+        editorial_notes="Latest V4.1 Flash variant. 1M context, configurable reasoning, and adds native image input.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="deepseek/deepseek-v4.1-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/deepseek-v4p1-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="deepseek-ai/DeepSeek-V4.1-Flash",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
     # DeepSeek V4 Pro
     KilnModel(
         family=ModelFamily.deepseek,
@@ -5518,7 +5585,6 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.deepseek,
         name=ModelName.deepseek_4_flash,
         friendly_name="DeepSeek V4 Flash",
-        featured_rank=11,
         editorial_notes="Faster V4 variant with 284B params (13B activated). 1M context, same reasoning capabilities.",
         providers=[
             KilnModelProvider(
@@ -8503,6 +8569,14 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=False,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="accounts/fireworks/models/glm-5p3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=False,
+            ),
         ],
     ),
     # GLM 5.3 Flash
@@ -8536,6 +8610,23 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="zai-org/GLM-5.3-Flash",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/glm-5p3-flash",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=False,
                 supports_doc_extraction=True,
@@ -9062,9 +9153,16 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
             ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="moonshotai/Kimi-K3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
             # SiliconFlow provider omitted: moonshotai/Kimi-K3 returns HTTP 400
             # "Model does not exist" on the .cn endpoint Kiln uses (it appears live
-            # on the .com site only). Not yet on Together AI (K2.6 / K2.7).
+            # on the .com site only).
             KilnModelProvider(
                 name=ModelProviderName.featherless_ai,
                 suggested_for_evals=True,
@@ -9460,6 +9558,19 @@ built_in_models: List[KilnModel] = [
                 model_id="accounts/fireworks/models/minimax-m3",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
+            ),
+            # Together serves the raw weights, which emit <think> inline (like
+            # Featherless below). Use the optional parser so the tags are stripped
+            # when present, and leave reasoning_capable False since M3 does not always
+            # emit reasoning. Together advertises this as a text chat endpoint, so no
+            # vision/multimodal here.
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="MiniMaxAI/MiniMax-M3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.optional_r1_thinking,
+                supports_data_gen=True,
+                supports_function_calling=False,
             ),
             # Featherless serves the raw weights, which emit <think> inline. Use the
             # optional parser so the tags are stripped when present, and leave
@@ -9945,6 +10056,66 @@ built_in_models: List[KilnModel] = [
                 model_id="accounts/fireworks/models/inkling",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
+            ),
+        ],
+    ),
+    # Fugu Max
+    KilnModel(
+        family=ModelFamily.sakana,
+        name=ModelName.fugu_max,
+        friendly_name="Fugu Max",
+        editorial_notes="Sakana's largest Fable-tier model from Japan. A learned multi-agent orchestrator that routes across a pool of models, including recursive instances of itself. 1M context, with vision and configurable reasoning.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="sakana/fugu-max",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=FUGU_ULTRA_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="xhigh",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # Fugu Ultra v2
+    KilnModel(
+        family=ModelFamily.sakana,
+        name=ModelName.fugu_ultra_v2,
+        friendly_name="Fugu Ultra v2",
+        editorial_notes="The second generation of Sakana's Fugu Ultra, a Fable-tier model from Japan. A learned multi-agent orchestrator that routes across a pool of models, including recursive instances of itself. 1M context, with vision and configurable reasoning.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="sakana/fugu-ultra-v2",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=FUGU_ULTRA_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="xhigh",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
