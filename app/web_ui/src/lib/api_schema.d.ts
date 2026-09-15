@@ -4839,9 +4839,6 @@ export interface components {
              * @enum {string}
              */
             judge_score: "pass" | "fail";
-            /** Source Run Id */
-            source_run_id?: string | null;
-            debug_context?: components["schemas"]["ClaimDebugContext"] | null;
         };
         /**
          * BuildClaimsApiOutput
@@ -5256,23 +5253,6 @@ export interface components {
             citations: components["schemas"]["CitationApi"][];
             /** Is Verdict */
             is_verdict: boolean;
-        };
-        /**
-         * ClaimDebugContext
-         * @description The wizard settings that produced a captured trace, for offline
-         *     analysis. Every field is optional: the client fills in whatever state it
-         *     has, and a single-turn build naturally carries no synthetic-user lane.
-         */
-        ClaimDebugContext: {
-            /** Task Model */
-            task_model?: string | null;
-            /** Synthetic User Model */
-            synthetic_user_model?: string | null;
-            judge?: components["schemas"]["JudgeConfig"] | null;
-            /** Turns */
-            turns?: number | null;
-            /** Batch Tag */
-            batch_tag?: string | null;
         };
         /**
          * ClaimReviewApi
