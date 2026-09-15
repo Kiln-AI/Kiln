@@ -637,21 +637,48 @@ describe("Generation Settings dialog", () => {
     expect(dialog.slice(warning, close)).not.toContain("<AvailableModels")
   })
 
-  it("fills the dropdowns once the lane pre-population resolves", () => {
-    // The dialog shows immediately; the reseed must run AFTER the pass that
-    // fills the lanes, or the dropdowns open empty on the eager-start path.
+  it("seeds every lane before the dialog is shown", () => {
+    // Order is the whole fix: showing first let the user pick a model while
+    // the defaults were still resolving, and the reseed then overwrote it.
+    // Pinned by index, because only the sequence is wrong in the old version.
     const open = function_body("async function open_drive_settings() {")
-    const show = open.indexOf("drive_settings_dialog?.show()")
     const awaited = open.indexOf("await prepopulate_lanes()")
-    const reseed = open.indexOf("su_model_combined = su_driver")
-    expect(show).toBeGreaterThan(-1)
-    expect(awaited).toBeGreaterThan(show)
+    const reseed = open.indexOf("judge_model_combined = judge_model")
+    const show = open.indexOf("drive_settings_dialog?.show()")
+    expect(awaited).toBeGreaterThan(-1)
     expect(reseed).toBeGreaterThan(awaited)
+    expect(show).toBeGreaterThan(reseed)
     // The pass is memoized as a promise, so a second caller awaits the one in
     // flight instead of returning early while the lanes are still null.
     expect(
       contains("let lanes_prepopulated: Promise<void> | null = null"),
     ).toBe(true)
+    // A failed pass must still open the dialog on whatever is committed,
+    // rather than swallow the click.
+    expect(open).toContain('console.warn("Could not resolve the default')
+  })
+
+  it("clears a stale validation error when a lane changes", () => {
+    // The error names a condition ("… to continue"); once the user fills the
+    // lanes the condition is gone, so the sentence must go with it instead of
+    // standing over two filled dropdowns. All four editable values are
+    // dependencies, and the error itself is not read — raising it in submit
+    // must not immediately re-run the clear.
+    const statement = region(
+      "$: drive_settings_error = cleared_on_lane_change(",
+      ")",
+    )
+    const dependencies = normalize(
+      statement.slice(statement.indexOf("(") + 1, statement.lastIndexOf(")")),
+    )
+    expect(dependencies).toContain("su_model_combined")
+    expect(dependencies).toContain("input_gen_model_combined")
+    expect(dependencies).toContain("judge_model_combined")
+    expect(dependencies).toContain("staged_turns_per_case")
+    expect(dependencies).not.toContain("drive_settings_error")
+    expect(
+      normalize(function_body("function cleared_on_lane_change(")),
+    ).toContain("return null")
   })
 })
 
