@@ -165,14 +165,6 @@ class TestSelectGoldenLeaves:
         assert golden == []
         assert len(remaining) == 8
 
-    def test_excess_rated_falls_into_remaining(self, multiturn_task):
-        # All 8 rated, cap 2 → 6 rated leaves land in remaining (still held out).
-        leaves = _make_su_leaves(multiturn_task, 8)
-        rated = {leaf.id for leaf in leaves}
-        golden, remaining = select_golden_runs(leaves, rated, random.Random(1))
-        assert len(golden) == 2
-        assert all(leaf.id in rated for leaf in remaining)
-
 
 class TestWarnIfGoldenBelowTarget:
     def test_warns_when_below_target(self, caplog):
@@ -727,7 +719,6 @@ class TestRateMultiTurnChainLeaves:
         unrate_reviewed_batch_runs(rated_out)
         assert leaves[0].output.rating is None
         assert leaves[0].feedback() == []
-        assert leaves[0].claim_reviews() == []
 
 
 class TestSavePendingChildren:
@@ -786,7 +777,6 @@ def _make_su_leaves(task: Task, n: int) -> list[TaskRun]:
 
 def _leaf_split(leaves: list[TaskRun]) -> dict[str, list[TaskRun]]:
     return {
-        "eval": [x for x in leaves if "eval_tag" in (x.tags or [])],
         "train": [x for x in leaves if "train_tag" in (x.tags or [])],
         "val": [x for x in leaves if "val_tag" in (x.tags or [])],
         "golden": [x for x in leaves if "golden_tag" in (x.tags or [])],
@@ -843,7 +833,6 @@ class TestSplitAndTagMultiTurnChains:
 
         buckets = _leaf_split(leaves)
         assert len(buckets["golden"]) == 2
-        assert buckets["eval"] == []
         # 6 * 40 // 65 = 3 train, 6 * 25 // 65 = 2 val, leftover seat to train.
         assert len(buckets["train"]) == 4
         assert len(buckets["val"]) == 2

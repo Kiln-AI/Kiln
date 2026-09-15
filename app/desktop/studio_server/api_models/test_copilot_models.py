@@ -73,8 +73,21 @@ class TestTaskInfoApi:
                 "task_prompt": "Test prompt",
                 "task_input_schema": '{"type": "string"}',
                 "task_output_schema": '{"type": "object"}',
-                "task_tools": [{"name": "add", "description": "Adds two numbers."}],
-                "task_skills": [{"name": "refunds", "description": "Refund policy."}],
+                # Extra keys a caller might send; the models must drop them.
+                "task_tools": [
+                    {
+                        "name": "add",
+                        "description": "Adds two numbers.",
+                        "parameters": {"type": "object"},
+                    }
+                ],
+                "task_skills": [
+                    {
+                        "name": "refunds",
+                        "description": "Refund policy.",
+                        "body": "Full skill body.",
+                    }
+                ],
             }
         )
         assert info.task_tools == [
@@ -256,9 +269,10 @@ class TestTaskScopedCopilotInput:
         """An empty string is a supplied (bad) id, not an omitted one — it
         belongs in the task lookup, which rejects it, rather than silently
         turning into an un-enriched request."""
-        input_model = self._questioner_input(project_id="", task_id="")
+        # Paired with a real id so a truthiness check would see half a pair.
+        input_model = self._questioner_input(project_id="", task_id="t1")
         assert input_model.project_id == ""
-        assert input_model.task_id == ""
+        assert input_model.task_id == "t1"
 
 
 class TestClarifySpecApiInput:

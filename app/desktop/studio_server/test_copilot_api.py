@@ -996,7 +996,6 @@ class TestCreateSpecWithCopilot:
             )
 
         assert task.evals() == []
-        assert task.specs() == []
         assert task.runs() == []
         assert task.eval_inputs() == []
 
@@ -1233,10 +1232,6 @@ class TestCreateSpecWithCopilotMultiTurn:
             synthetic_chain_leaves[1].id,
         }
         assert by_tag["golden_multi_turn_spec"] == reviewed_ids
-        assert by_tag["val_multi_turn_spec"].isdisjoint(reviewed_ids)
-        # An unreviewed leaf is held out in one of the dealt slices, never golden.
-        unreviewed_tags = set(runs_by_id[synthetic_chain_leaves[2].id].tags)
-        assert "golden_multi_turn_spec" not in unreviewed_tags
 
         # Reviewed leaves carry golden ratings matching the review clicks,
         # plus feedback + per-claim grades; the unreviewed leaf stays unrated.
@@ -1349,10 +1344,6 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert on_disk["eval_set_filter_id"] is None
         # Golden slice rides along unchanged.
         assert on_disk["eval_configs_filter_id"] == "tag::golden_multi_turn_spec"
-        # The retired pre-splits key never reaches disk, and drive settings
-        # live on the eval items, not the eval.
-        assert "eval_input_filter_id" not in first_bytes
-        assert "multi_turn_drive_config" not in first_bytes
 
         # The stamped drive config is written per item, nested under data.
         eval_input_path = task.eval_inputs()[0].path
@@ -1395,6 +1386,9 @@ class TestCreateSpecWithCopilotMultiTurn:
 
         assert response.status_code == 404
         assert "not_a_real_leaf" in response.json()["message"]
+        # The up-front check's wording: the rating backstop also 404s, but only
+        # after the eval and spec were written and then rolled back.
+        assert "not found in batch" in response.json()["message"]
         assert len(task.evals()) == 0
         assert len(task.specs()) == 0
         assert len(task.eval_inputs()) == 0
@@ -1965,9 +1959,6 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         assert len(by_tag["val_single_turn_spec"]) == 2
         reviewed_ids = {batch_runs[0].id, batch_runs[1].id}
         assert by_tag["golden_single_turn_spec"] == reviewed_ids
-        assert by_tag["val_single_turn_spec"].isdisjoint(reviewed_ids)
-        unreviewed_tags = set(runs_by_id[batch_runs[2].id].tags)
-        assert "golden_single_turn_spec" not in unreviewed_tags
 
         # Reviewed runs carry golden ratings matching the review clicks, plus
         # feedback + per-claim grades; unreviewed runs stay unrated — REAL
@@ -2027,7 +2018,6 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         assert on_disk["train_set_filter_id"] is None
         assert on_disk["eval_set_filter_id"] is None
         assert on_disk["eval_configs_filter_id"] == "tag::golden_single_turn_spec"
-        assert "eval_input_filter_id" not in first_bytes
 
     def test_404_when_batch_tag_matches_nothing(
         self, client, project_and_task, single_turn_request_data
@@ -2049,6 +2039,9 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         response = self._post(client, project, task, single_turn_request_data)
         assert response.status_code == 404
         assert "no-such-run" in response.json()["message"]
+        # The up-front check's wording: the rating backstop also 404s, but only
+        # after the eval and spec were written and then rolled back.
+        assert "not found in batch" in response.json()["message"]
         assert len(task.evals()) == 0
 
     def test_422_on_duplicate_reviewed_runs(

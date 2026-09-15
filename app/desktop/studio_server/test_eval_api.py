@@ -3754,6 +3754,10 @@ def test_update_eval_rejects_invalid_train_set_filter_id(
     )
 
     assert response.status_code == 422
+    # Located on the request body field: a split model rejecting it inside the
+    # handler would also 422, but located on the split's own filter_id.
+    locs = [error["loc"] for error in response.json()["source_errors"]]
+    assert locs == [["body", "train_set_filter_id"]]
 
 
 def test_runs_in_filter():
@@ -7978,7 +7982,8 @@ def test_update_eval_input_omitting_reference_leaves_it_unchanged(
     [
         pytest.param(
             {
-                "tags": ["corpus"],
+                # Differs from the stored tags, so a half-applied edit shows.
+                "tags": ["corpus", "val_split"],
                 "data": {
                     "type": "multi_turn_synthetic",
                     "first_message": {"text": "new seed"},
