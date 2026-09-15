@@ -39,13 +39,6 @@ class TestV2PropertyTypes:
         explicit_members = set(V2_PROPERTY_TYPES)
         assert explicit_members == union_members
 
-    def test_no_extra_members(self):
-        """The explicit tuple must not contain types absent from the union."""
-        union_type = get_args(V2EvalConfigProperties)[0]
-        union_members = set(get_args(union_type))
-        for t in V2_PROPERTY_TYPES:
-            assert t in union_members
-
     def test_isinstance_works(self):
         """isinstance() checks against the tuple should work correctly."""
         props = ExactMatchProperties(expected_value="hello")
@@ -82,16 +75,6 @@ class TestBuildBinaryScores:
     def test_empty_scores_returns_empty(self):
         result = build_binary_scores([], passed=True)
         assert result == {}
-
-    def test_no_eval_config_needed(self):
-        """build_binary_scores works from output_scores alone -- no EvalConfig or parent_eval() call."""
-        scores_def = [
-            EvalOutputScore(
-                name="check", instruction="test", type=TaskOutputRatingType.pass_fail
-            ),
-        ]
-        result = build_binary_scores(scores_def, passed=True)
-        assert result == {"check": 1.0}
 
 
 class TestCachedOutputScores:

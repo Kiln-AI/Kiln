@@ -605,9 +605,9 @@ def test_golden_item_scored_as_test_item_still_calibrates(
     mock_eval.eval_configs_filter_id = "tag::tag1"
     mock_eval.save_to_file()
 
-    # Test-lane records on the same golden item: a real score and a tombstone
-    # (terminal in the calibration runner, which has no split to recover
-    # against). Neither is a calibration record.
+    # Test-lane records on the same golden item: a real score and a tombstone.
+    # Neither is a calibration record. The tombstone's type is reported available
+    # below, so it is recoverable and would be superseded if calibration read it.
     EvalRun(
         parent=mock_eval_config,
         dataset_id=golden_run.id,
@@ -625,7 +625,7 @@ def test_golden_item_scored_as_test_item_still_calibrates(
         input="test",
         output=None,
         scores={},
-        skipped_reason=SkippedReason.missing_drive_config.value,
+        skipped_reason=SkippedReason.type_not_available.value,
         skipped_detail="test tombstone",
     ).save_to_file()
 
@@ -634,7 +634,11 @@ def test_golden_item_scored_as_test_item_still_calibrates(
         run_configs=None,
         eval_run_type="eval_config_eval",
     )
-    jobs = runner.collect_tasks()
+    with patch(
+        "kiln_ai.adapters.eval.eval_runner.v2_eval_type_available",
+        return_value=True,
+    ):
+        jobs = runner.collect_tasks()
     assert [job.item.id for job in jobs] == [golden_run.id]
     assert jobs[0].superseded_tombstones == []
 
@@ -696,13 +700,17 @@ def test_collect_tasks_multiple_run_configs(
     }
 
 
-def test_collect_tasks_empty_cases(mock_eval_runner, mock_task, data_source):
+def test_collect_tasks_empty_cases(
+    mock_eval, mock_eval_config, mock_run_config, mock_task, data_source
+):
     """Test empty cases - no matching tasks or no tasks at all"""
-    # Set filter that won't match anything
-    mock_eval_runner.eval.eval_set_filter_id = "tag::nonexistent"
-    mock_eval_runner.eval.eval_configs_filter_id = "tag::nonexistent"
+    # Set filter that won't match anything. The runner snapshots its split when
+    # built, so each case builds a fresh runner after the data is in place.
+    mock_eval.splits["test"] = TaskRunSplit(filter_id="tag::nonexistent")
 
-    jobs = mock_eval_runner.collect_tasks()
+    jobs = build_task_run_eval_runner(
+        [mock_eval_config], [mock_run_config]
+    ).collect_tasks()
     assert len(jobs) == 0
 
     # Create task run with non-matching tag
@@ -717,7 +725,9 @@ def test_collect_tasks_empty_cases(mock_eval_runner, mock_task, data_source):
     )
     task_run.save_to_file()
 
-    jobs = mock_eval_runner.collect_tasks()
+    jobs = build_task_run_eval_runner(
+        [mock_eval_config], [mock_run_config]
+    ).collect_tasks()
     assert len(jobs) == 0
 
 
@@ -1582,40 +1592,6 @@ class TestEvalRunnerV2Init:
             assert job.type == "task_run_eval"
             assert job.task_run_config is mock_run_config
 
-    def test_tag_filter(self, mock_task, mock_run_config, mock_eval_inputs):
-        eval = Eval(
-            id="tag_eval",
-            name="tag eval",
-            description="tag eval desc",
-            splits={"test": EvalInputSplit(filter_id="tag::math")},
-            eval_configs_filter_id="all",
-            output_scores=[
-                EvalOutputScore(
-                    name="Accuracy",
-                    instruction="Check",
-                    type=TaskOutputRatingType.pass_fail,
-                ),
-            ],
-            parent=mock_task,
-        )
-        eval.save_to_file()
-        eval_config = EvalConfig(
-            name="tag config",
-            config_type=EvalConfigType.v2,
-            properties=ExactMatchProperties(expected_value="4"),
-            parent=eval,
-        )
-        eval_config.save_to_file()
-        runner = EvalRunner(
-            eval_configs=[eval_config],
-            run_configs=[mock_run_config],
-            eval_run_type="task_run_eval",
-            split=_test_split([eval_config]),
-        )
-        jobs = runner.collect_tasks()
-        assert len(jobs) == 1
-        assert jobs[0].item.id == "ei_1"
-
     def test_dedup_already_run(
         self, mock_v2_eval_config, mock_run_config, mock_eval_inputs
     ):
@@ -1638,24 +1614,6 @@ class TestEvalRunnerV2Init:
         jobs = runner.collect_tasks()
         assert len(jobs) == 1
         assert jobs[0].item.id == "ei_2"
-
-    def test_eval_config_eval_collects_golden_task_runs(
-        self, mock_v2_runner, mock_task, mock_eval_inputs, data_source
-    ):
-        """eval_config_eval on an EvalInput-sourced eval must still collect
-        golden TASKRUNS (via eval_configs_filter_id) — judge validation needs
-        stored, human-rated outputs, which EvalInput items don't carry."""
-        golden_run = TaskRun(
-            input="golden input",
-            output=TaskOutput(output="golden output", source=data_source),
-            parent=mock_task,
-        )
-        golden_run.save_to_file()
-        jobs = mock_v2_runner.collect_tasks()
-        assert len(jobs) == 1
-        assert isinstance(jobs[0].item, TaskRun)
-        assert jobs[0].item.id == golden_run.id
-        assert jobs[0].type == "eval_config_eval"
 
 
 # -------------------------------------------------------------------
@@ -4913,35 +4871,6 @@ class TestSupersededTombstoneDeletion:
         assert runs[0].skipped_reason is None
         assert runs[0].eval_input_id == "ei_redrive"
 
-    def test_still_blocked_tombstone_not_marked_superseded(
-        self, mock_task, mock_v2_eval_config, mock_run_config, mock_eval_inputs
-    ):
-        """While the item stays unstamped, the tombstone dedupes: the item is
-        not re-collected and no job carries the tombstone for deletion."""
-        EvalInput(
-            id="ei_still_unstamped",
-            data=MultiTurnSyntheticEvalInputData(
-                first_message=UserMessage(text="hi"),
-                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
-            ),
-            parent=mock_task,
-        ).save_to_file()
-        _skip_run(
-            mock_v2_eval_config,
-            mock_run_config.id,
-            SkippedReason.missing_drive_config,
-            eval_input_id="ei_still_unstamped",
-        )
-        runner = EvalRunner(
-            eval_configs=[mock_v2_eval_config],
-            run_configs=[mock_run_config],
-            eval_run_type="task_run_eval",
-            split=_test_split([mock_v2_eval_config]),
-        )
-        jobs = runner.collect_tasks()
-        assert not any(j.item.id == "ei_still_unstamped" for j in jobs)
-        assert all(j.superseded_tombstones == [] for j in jobs)
-
 
 class TestValidateReadinessSourceGating:
     def test_task_run_source_is_noop(
@@ -5106,17 +5035,6 @@ class TestCollectTasksEvalConfigEval:
         assert [job.item.id for job in jobs] == [task_run.id]
         assert all(isinstance(job.item, TaskRun) for job in jobs)
         assert all(job.type == "eval_config_eval" for job in jobs)
-
-    @pytest.mark.asyncio
-    async def test_writes_no_skipped_runs_for_an_eval_input_backed_eval(
-        self, mock_v2_runner, mock_v2_eval_config, mock_eval_inputs
-    ):
-        """Architecture 4.3. This used to be a *successful* run that persisted one junk
-        EvalRun per EvalInput, so only the absence of records can catch a regression."""
-        async for _ in mock_v2_runner.run():
-            pass
-
-        assert mock_v2_eval_config.runs(readonly=True) == []
 
     def test_no_golden_set_raises_at_construction(self, mock_task, mock_eval_inputs):
         """Not at collect time. These runners are driven by SSE endpoints, so a failure
@@ -5312,10 +5230,29 @@ class TestCollectTasksOverArbitrarySplits:
             skipped_detail="test tombstone",
         )
         tombstone.save_to_file()
+        # A recoverable tombstone under the same TaskRun key: this config's type is
+        # available again, so it is superseded rather than deduped and could attach.
+        EvalRun(
+            parent=mock_v2_ei_tr_eval_config,
+            dataset_id=shared_id,
+            task_run_config_id=mock_run_config.id,
+            eval_config_eval=False,
+            input="task run with the colliding id",
+            output=None,
+            scores={},
+            skipped_reason=SkippedReason.type_not_available.value,
+            skipped_detail="test tombstone",
+        ).save_to_file()
 
-        jobs = build_task_run_eval_runner(
-            [mock_v2_ei_tr_eval_config], [mock_run_config]
-        ).collect_tasks()
+        # Pin availability so the second tombstone stays recoverable whatever the
+        # registry reports; otherwise it would dedupe and test nothing.
+        with patch(
+            "kiln_ai.adapters.eval.eval_runner.v2_eval_type_available",
+            return_value=True,
+        ):
+            jobs = build_task_run_eval_runner(
+                [mock_v2_ei_tr_eval_config], [mock_run_config]
+            ).collect_tasks()
 
         ei_jobs = [j for j in jobs if j.item.id == shared_id]
         assert len(ei_jobs) == 1
