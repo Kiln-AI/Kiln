@@ -324,3 +324,53 @@ describe("ClaimCard — the disagree reason hint", () => {
     expect(hint(container)).toBe("")
   })
 })
+
+describe("ClaimCard — collapsed", () => {
+  it("shows its state and one plain line, and Edit asks the review to open it", async () => {
+    const on_open = vi.fn()
+    const { container } = render(ClaimCard, {
+      props: {
+        claim: claim(),
+        index: 1,
+        verdict: { agrees: false, why: "The window is real." },
+        open: false,
+        on_open,
+      },
+    })
+
+    expect(by_id(container, "claim-state-1").textContent?.trim()).toBe(
+      "Disagreed",
+    )
+    expect(container.querySelector("#claim-agree-1")).toBeNull()
+    expect(container.querySelector("#claim-why-1")).toBeNull()
+    // The [1] marker is dropped, so a line cut short never ends in a chip.
+    const card = by_id(container, "claim-card-1")
+    expect(card.textContent).toContain(
+      "The agent stated a return window as fact.",
+    )
+    expect(card.querySelector("button[title='View in trace']")).toBeNull()
+
+    await fireEvent.click(by_id(container, "claim-edit-1"))
+    expect(on_open).toHaveBeenCalledOnce()
+  })
+})
+
+describe("ClaimCard — reporting answers", () => {
+  it("tells the review each answer, Disagree and Agree alike", async () => {
+    const on_answer = vi.fn()
+    const { container } = render(ClaimCard, {
+      props: { claim: claim(), index: 0, verdict: fresh_verdict(), on_answer },
+    })
+
+    await fireEvent.click(by_id(container, "claim-disagree-0"))
+    await fireEvent.click(by_id(container, "claim-agree-0"))
+    expect(on_answer.mock.calls).toEqual([[false], [true]])
+    // Each answer carries its keyboard shortcut.
+    expect(
+      by_id(container, "claim-agree-0").querySelector("span")?.textContent,
+    ).toBe("A")
+    expect(
+      by_id(container, "claim-disagree-0").querySelector("span")?.textContent,
+    ).toBe("D")
+  })
+})
