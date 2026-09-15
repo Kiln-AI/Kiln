@@ -4,5 +4,71 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "run_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Run Ids",
+          "description": "The list of task run IDs to edit."
+        },
+        "add_tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Add Tags",
+          "description": "Tags to add to the task runs."
+        },
+        "remove_tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Remove Tags",
+          "description": "Tags to remove from the task runs."
+        }
+      },
+      "type": "object",
+      "required": [
+        "run_ids"
+      ],
+      "title": "Body_edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      }
+    },
+    "query": {}
   }
 }

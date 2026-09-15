@@ -4,5 +4,144 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 120,
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name",
+          "description": "A name for this entity."
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Description",
+          "description": "A description for your own reference."
+        },
+        "tool_name": {
+          "type": "string",
+          "title": "Tool Name",
+          "description": "A name for the model to identify the Search Tool in conversations."
+        },
+        "tool_description": {
+          "type": "string",
+          "title": "Tool Description",
+          "description": "A description of the purpose of the tool. The model will use this description to understand the tool's capabilities."
+        },
+        "extractor_config_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Extractor Config Id",
+          "description": "The extractor config to use for the RAG workflow"
+        },
+        "chunker_config_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Chunker Config Id",
+          "description": "The chunker config to use for the RAG workflow."
+        },
+        "embedding_config_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Embedding Config Id",
+          "description": "The embedding config to use for the RAG workflow."
+        },
+        "vector_store_config_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Vector Store Config Id",
+          "description": "The vector store config to use for the RAG workflow."
+        },
+        "reranker_config_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reranker Config Id",
+          "description": "The reranker config to use for the RAG workflow."
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Tags",
+          "description": "List of document tags to filter by. If None, all documents in the project are used."
+        }
+      },
+      "type": "object",
+      "required": [
+        "tool_name",
+        "tool_description",
+        "extractor_config_id",
+        "chunker_config_id",
+        "embedding_config_id",
+        "vector_store_config_id"
+      ],
+      "title": "CreateRagConfigRequest"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      }
+    },
+    "query": {}
   }
 }

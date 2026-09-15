@@ -4,5 +4,35 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {},
+    "query": {
+      "state": {
+        "type": "string",
+        "description": "OAuth state parameter linking the callback to a pending flow.",
+        "default": "",
+        "title": "State"
+      },
+      "code": {
+        "type": "string",
+        "description": "Authorization code from GitHub to exchange for an access token.",
+        "default": "",
+        "title": "Code"
+      },
+      "error": {
+        "type": "string",
+        "description": "Error code returned by GitHub if authorization was denied.",
+        "default": "",
+        "title": "Error"
+      },
+      "error_description": {
+        "type": "string",
+        "description": "Human-readable description of the error from GitHub.",
+        "default": "",
+        "title": "Error Description"
+      }
+    }
   }
 }

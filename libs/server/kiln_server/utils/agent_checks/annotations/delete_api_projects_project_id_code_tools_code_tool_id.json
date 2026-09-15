@@ -4,5 +4,21 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "code_tool_id": {
+        "type": "string",
+        "description": "The unique identifier of the code tool.",
+        "title": "Code Tool Id"
+      }
+    },
+    "query": {}
   }
 }
