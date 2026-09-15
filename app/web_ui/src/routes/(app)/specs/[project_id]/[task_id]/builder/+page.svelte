@@ -2254,10 +2254,10 @@
           num_cases: cases.length,
         })
       } else {
-        // Generate via copilot — ONE batch call, one case per approved
-        // scenario prompt. Under the upstream salvage contract a flaky case
-        // is dropped instead of failing the batch; scenario_index maps each
-        // survivor back to its plan row.
+        // Generate via copilot — one case per approved scenario prompt. Under
+        // the upstream salvage contract a flaky case is dropped instead of
+        // failing the batch; scenario_index maps each survivor back to its
+        // plan row.
         generation_phase = "generating_cases"
         const cases_resp = await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/generate_cases",
@@ -2272,8 +2272,20 @@
           },
         )
         if (cases_resp.error || !cases_resp.data) {
-          generation_error =
-            "Failed to create eval inputs from the approved items."
+          // The route's typed error nests {code, message} inside the handler's
+          // {message} wrapper — unwrap it and append it: the sentence alone
+          // leaves the user with nothing to act on, and the server's reason is
+          // the only thing that says which part of the plan the route refused.
+          const wrapped = (
+            cases_resp.error as
+              | { message?: string | { message?: string } }
+              | undefined
+          )?.message
+          const detail =
+            typeof wrapped === "string" ? wrapped : wrapped?.message
+          generation_error = detail
+            ? `Failed to create eval inputs from the approved items: ${detail}`
+            : "Failed to create eval inputs from the approved items."
           return
         }
         cases = cases_resp.data.cases as SyntheticUserCaseWire[]

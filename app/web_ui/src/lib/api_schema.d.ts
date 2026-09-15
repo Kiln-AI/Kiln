@@ -8552,7 +8552,7 @@ export interface components {
             num_cases: number;
             /**
              * Case Prompts
-             * @description Optional per-case scenario prompts (e.g. from an approved batch plan). When provided, the batch is generated in ONE upstream call with case i designed around prompt i; each returned case carries scenario_index. Under the upstream salvage contract a flaky case is dropped rather than failing the batch, so the response may hold fewer cases than prompts — scenario_index, not position, maps a case to its prompt. Length must equal num_cases.
+             * @description Optional per-case scenario prompts (e.g. from an approved batch plan). When provided, case i is designed around prompt i and each returned case carries scenario_index. Under the upstream salvage contract a flaky case is dropped rather than failing the batch, so the response may hold fewer cases than prompts — scenario_index, not position, maps a case to its prompt. Length must equal num_cases.
              */
             case_prompts?: string[] | null;
         };
