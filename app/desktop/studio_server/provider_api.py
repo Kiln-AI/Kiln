@@ -1668,7 +1668,7 @@ async def connect_bedrock(key_data: dict):
 
 
 async def connect_kiln_copilot(key: str):
-    base_url = os.environ.get("KILN_SERVER_BASE_URL", "https://api.kiln.tech")
+    base_url = kiln_server_base_url()
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
