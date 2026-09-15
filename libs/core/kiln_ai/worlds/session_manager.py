@@ -17,7 +17,7 @@ what OpenEnv already exposes:
     world_version   the environment's reported name and version
     start_episode     open a `/ws` session and `reset(**reset_kwargs)`
     call_tool         `step(CallToolAction)`; each observation's reward is kept in memory
-    end_episode       `state`, then close the session
+    end_episode       `state`, the control-tool snapshots, then close the session
     release           close the session
 
 One session per episode; sessions are closed by `end_episode`, so the record on the
@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -49,7 +50,22 @@ logger = logging.getLogger(__name__)
 
 STEP_TIMEOUT_S = 600.0
 """How long one reset, step or state call may take. Tool calls block the LLM loop, so
-this is deliberately generous; an environment enforces its own per-tool timeouts."""
+this is deliberately generous; an environment enforces its own per-tool timeouts.
+A call that stalls the environment's event loop never reaches this ceiling: the
+keepalive below closes the session after PING_TIMEOUT_S of unanswered pings, so a
+stalled loop surfaces as a closed session at 120s, not a step timeout at 600s."""
+
+PING_INTERVAL_S = 20.0
+"""How often the websockets keepalive pings the environment. Stated rather than left to
+the library's default so a default that moves cannot silently change what a run
+measured."""
+
+PING_TIMEOUT_S = 120.0
+"""How long an unanswered ping may go before the keepalive closes the session. A world
+server doing synchronous work stalls its event loop and cannot answer a ping: the
+library's 20s timeout would drop every session on the box at once, so this matches the
+120s a world framework's own client allows for it. Stated for the same reason as the
+interval above."""
 
 
 class OpenEnvError(RuntimeError):
@@ -58,12 +74,43 @@ class OpenEnvError(RuntimeError):
 
 @dataclass(frozen=True)
 class ToolCallOutcome:
-    """What one `step(CallToolAction)` came back with."""
+    """What one `step(CallToolAction)` came back with.
+
+    An environment that reports an error as a dict has whatever of `code`, `message`
+    and `details` it carries read out: `error` stays the human-readable message, and
+    the code and details ride alongside so the tool proxy can tell the world's own
+    failure from the modelled product answering with an error of its own. A dict
+    without a code -- OpenEnv's own `ToolError`, which has none to give -- leaves
+    `error_code` None, and so does an error that is not a dict at all. Neither is a
+    shape Kiln insists on: requiring a coded dict would make one framework's error
+    convention a condition of running here."""
 
     result: Any
     error: str | None
     reward: float | None
     done: bool
+    error_code: str | None = None
+    error_details: Any = None
+
+
+DEFAULT_SETTLE_CALLS: tuple[tuple[str, str], ...] = (("changes", "controller_changes"),)
+"""(final_state key, control tool name); each is stepped with arguments {}.
+
+One entry, because one is what graders read: `controller_changes` is the record of what
+the episode did to the world, and a scorer or judge asking whether the agent wrote the
+right row reads it out of `final_state["changes"]`.
+
+A `("state_digest", "controller_digest")` pair sat here too and was removed. A world
+framework need not serve a digest tool and none we point at does -- Seahaven's control
+set is `controller_changes` and `controller_run_sql`, and nothing else -- so the call
+missed on every episode, and no scorer, judge or view in Kiln ever read the value it
+would have written. A default that cannot hit is a round trip per episode spent on a
+key no one opens.
+
+What makes an absent control tool safe is `_settle` below, not this tuple: a tool the
+environment does not serve leaves its key absent and settling running, whichever way
+the environment says so. That tolerance is unchanged, so a deployment whose world does
+serve a digest tool adds the pair back and it settles like any other entry."""
 
 
 class WorldSessionManager(Protocol):
@@ -86,6 +133,15 @@ class WorldSessionManager(Protocol):
     async def call_tool(
         self, episode: WorldEpisode, tool_name: str, arguments: dict[str, Any]
     ) -> ToolCallOutcome: ...
+
+    async def call_control_tool(
+        self, episode: WorldEpisode, tool_name: str, arguments: dict[str, Any]
+    ) -> ToolCallOutcome:
+        """Step a tool the environment does not list (a control tool) on the episode's
+        live session. Raises RuntimeError when the episode has no live session, and
+        OpenEnvError on a transport or protocol failure; an env-level error is returned
+        in the outcome, never raised."""
+        ...
 
     async def end_episode(self, episode: WorldEpisode) -> WorldEpisode: ...
 
@@ -121,8 +177,13 @@ class _Session:
 class OpenEnvSessionManager:
     """Drives sessions on running OpenEnv environments."""
 
-    def __init__(self, step_timeout_s: float = STEP_TIMEOUT_S) -> None:
+    def __init__(
+        self,
+        step_timeout_s: float = STEP_TIMEOUT_S,
+        settle_calls: Sequence[tuple[str, str]] = DEFAULT_SETTLE_CALLS,
+    ) -> None:
         self._step_timeout_s = step_timeout_s
+        self._settle_calls = tuple(settle_calls)
         self._servers: dict[str, _EnvServer] = {}
         self._server_locks: dict[str, asyncio.Lock] = {}
         self._sessions: dict[str, _Session] = {}
@@ -176,48 +237,104 @@ class OpenEnvSessionManager:
             raise
         self._sessions[episode_id] = _Session(episode_id=episode_id, ws=ws)
 
-        reset_metadata: dict[str, JsonValue] = {}
-        reported = data.get("metadata")
-        if not isinstance(reported, dict):
-            reported = (data.get("observation") or {}).get("metadata")
-        if isinstance(reported, dict):
-            reset_metadata.update({str(k): v for k, v in reported.items()})
+        # Both slots the reset observation can carry facts in, lowest to highest
+        # precedence, because OpenEnv permits either and a client that reads one is
+        # a client that works against half the environments. `metadata` is the base
+        # `Observation`'s own field, so it is where an environment that returns a
+        # stock observation must put them; `result` exists only on an observation
+        # subclass that declares it, which is how an environment that wants facts
+        # and a tool result to share a shape reports them. An environment that fills
+        # both has `metadata` win on any key they share.
+        #
+        # The response's top-level `metadata` is not a third source: OpenEnv's
+        # serializer copies `observation.metadata` there, so it can never say
+        # anything the observation did not.
+        observation = data.get("observation")
+        if not isinstance(observation, dict):
+            observation = {}
+        reset_facts: dict[str, JsonValue] = {}
+        for source in (
+            observation.get("result"),
+            observation.get("metadata"),
+        ):
+            if isinstance(source, dict):
+                reset_facts.update({str(k): v for k, v in source.items()})
         return WorldEpisode(
             reset=WorldReset(world_id=world.id, reset_kwargs=reset_kwargs),
             episode_id=episode_id,
             world_version=server.world_version,
-            reset_metadata=reset_metadata,
+            reset_facts=reset_facts,
         )
 
     async def call_tool(
         self, episode: WorldEpisode, tool_name: str, arguments: dict[str, Any]
     ) -> ToolCallOutcome:
+        session = self._live_session(episode)
+        async with session.lock:
+            return await self._step_call_tool(
+                session, tool_name, arguments, record=True
+            )
+
+    async def call_control_tool(
+        self, episode: WorldEpisode, tool_name: str, arguments: dict[str, Any]
+    ) -> ToolCallOutcome:
+        """A tool the environment does not list, stepped on the episode's live session.
+
+        Kiln and the harness read an environment's own snapshot of itself this way. It
+        is the same wire call as `call_tool` and differs only in what it means at the
+        seam and in bookkeeping: Kiln's own probes never count as the agent's reward or
+        end its episode."""
+        session = self._live_session(episode)
+        async with session.lock:
+            return await self._step_call_tool(
+                session, tool_name, arguments, record=False
+            )
+
+    def _live_session(self, episode: WorldEpisode) -> _Session:
         session = self._sessions.get(episode.episode_id)
         if session is None:
             raise RuntimeError(
                 f"Episode {episode.episode_id} has no live session; tools "
                 "can only be called during generation"
             )
-        async with session.lock:
-            data = await self._request(
-                session.ws,
-                {
-                    "type": "step",
-                    "data": {
-                        "type": "call_tool",
-                        "tool_name": tool_name,
-                        "arguments": arguments,
-                    },
+        return session
+
+    async def _step_call_tool(
+        self,
+        session: _Session,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        record: bool,
+    ) -> ToolCallOutcome:
+        """One `step(CallToolAction)` on a session whose lock the caller holds.
+
+        `record` keeps the reward and `done` on the session; control calls pass False."""
+        data = await self._request(
+            session.ws,
+            {
+                "type": "step",
+                "data": {
+                    "type": "call_tool",
+                    "tool_name": tool_name,
+                    "arguments": arguments,
                 },
-            )
-            reward = data.get("reward")
+            },
+        )
+        reward = data.get("reward")
+        done = bool(data.get("done", False))
+        if record:
             if isinstance(reward, (int, float)) and not isinstance(reward, bool):
                 session.rewards.append(float(reward))
-            done = bool(data.get("done", False))
             session.done = session.done or done
         observation = data.get("observation") or {}
         error = observation.get("error")
+        error_code: str | None = None
+        error_details: Any = None
         if isinstance(error, dict):
+            code = error.get("code")
+            error_code = str(code) if code else None
+            error_details = error.get("details")
             error = str(error.get("message") or error)
         elif error is not None:
             error = str(error)
@@ -226,6 +343,8 @@ class OpenEnvSessionManager:
             error=error,
             reward=float(reward) if isinstance(reward, (int, float)) else None,
             done=done,
+            error_code=error_code,
+            error_details=error_details,
         )
 
     async def end_episode(self, episode: WorldEpisode) -> WorldEpisode:
@@ -237,10 +356,70 @@ class OpenEnvSessionManager:
             async with session.lock:
                 data = await self._request(session.ws, {"type": "state"})
                 state = {str(k): v for k, v in data.items()}
+                await self._settle(episode, session, state)
                 await self._end_session(session.ws)
         finally:
             await self._close_quietly(session.ws)
         return episode.model_copy(update={"final_state": state})
+
+    async def _settle(
+        self, episode: WorldEpisode, session: _Session, state: dict[str, JsonValue]
+    ) -> None:
+        """Ask the environment for the snapshots graders read, on the session that is
+        about to close.
+
+        After `state`, not before: an environment may count a tool call as a step, so
+        settling first would make every `final_state.step_count` two more than the agent
+        took. Control tools are read-only, so the snapshot is the same either way.
+
+        An environment that does not serve a control tool says so either with no code
+        at all -- which is every environment that does not use the coded-error shape,
+        OpenEnv's own `MCPEnvironment` among them, since its `ToolError` carries an
+        `error_type` and a message and has no room for a code -- or with the code
+        `unknown_tool`. Either way the key is simply absent, which is what keeps
+        environments that know nothing of this working. Any other coded error is a real
+        fault in an environment that does serve the tool: it is recorded in
+        `final_state` and settling stops there, so the generation is still saved with
+        the evidence in it rather than scoring as 'the agent wrote nothing'.
+
+        `unknown_tool` is a string from one world framework's vocabulary rather than a
+        protocol constant -- the same kind of thing `tool_not_found` was -- and it is kept
+        only because it is reachable and load-bearing: a Seahaven-shaped world started
+        without `include_control_tools` answers exactly that, and dropping the entry would
+        write `settle_error` into every one of its episodes. It is the narrowest entry that
+        keeps that path working, and it should be revisited whenever the coded-error shape
+        is.
+
+        Only those two are tolerated. `tool_not_found` was enumerated here as well and
+        was removed: it is `ToolErrorType`'s name for the same condition, never a
+        *code*, so it could only ever have matched an environment we wrote ourselves
+        that chose to repeat the string. Kiln reads a code, and no OpenEnv environment
+        can send one."""
+        for key, tool_name in self._settle_calls:
+            outcome = await self._step_call_tool(session, tool_name, {}, record=False)
+            if outcome.error is None:
+                state[key] = outcome.result
+            elif outcome.error_code in (None, "unknown_tool"):
+                logger.debug(
+                    "world %s: no %s (%s)",
+                    episode.episode_id,
+                    tool_name,
+                    outcome.error,
+                )
+            else:
+                logger.warning(
+                    "world %s: '%s' failed while settling: %s: %s",
+                    episode.episode_id,
+                    tool_name,
+                    outcome.error_code,
+                    outcome.error,
+                )
+                state["settle_error"] = {
+                    "tool": tool_name,
+                    "code": outcome.error_code,
+                    "message": outcome.error,
+                }
+                return
 
     async def release(self, episode: WorldEpisode) -> None:
         session = self._sessions.pop(episode.episode_id, None)
@@ -307,7 +486,13 @@ class OpenEnvSessionManager:
 
     async def _open(self, server: _EnvServer) -> ClientConnection:
         try:
-            return await connect(server.ws_url, max_size=None, open_timeout=30)
+            return await connect(
+                server.ws_url,
+                max_size=None,
+                open_timeout=30,
+                ping_interval=PING_INTERVAL_S,
+                ping_timeout=PING_TIMEOUT_S,
+            )
         except (OSError, ConnectionClosed) as e:
             raise OpenEnvError(
                 f"Could not open a session on {server.base_url}: {e}"

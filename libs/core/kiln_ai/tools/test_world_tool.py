@@ -29,7 +29,11 @@ from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.built_in_tools.math_tools import AddTool
 from kiln_ai.tools.code_tool import PythonCodeTool
 from kiln_ai.tools.tool_registry import tool_from_id_and_project
-from kiln_ai.tools.world_tool import OpenEnvToolProxy, render_tool_result
+from kiln_ai.tools.world_tool import (
+    OpenEnvToolProxy,
+    render_tool_error,
+    render_tool_result,
+)
 from kiln_ai.worlds.session_manager import ToolCallOutcome
 
 SCHEMA = {"type": "object", "properties": {"x": {"type": "string"}}}
@@ -160,6 +164,7 @@ class TestWorldToolIds:
     async def test_error_outcome_reaches_model_as_error(
         self, world, active, session_manager
     ):
+        """An environment that reports no code at all: the bare message, as an error."""
         session_manager.outcome = ToolCallOutcome(
             result=None, error="tool exploded", reward=-1.0, done=True
         )
@@ -167,6 +172,50 @@ class TestWorldToolIds:
         result = await tool.run(ToolCallContext(), x="q")
         assert result.is_error and result.output == "tool exploded"
         assert result.error_message == "tool exploded"
+
+    async def test_coded_product_error_is_an_ordinary_result(
+        self, world, active, session_manager
+    ):
+        """The modelled product refusing is an answer, not a tool failure: the same
+        envelope the real system's tool would return, with is_error unset."""
+        session_manager.outcome = ToolCallOutcome(
+            result=None,
+            error="not there",
+            reward=None,
+            done=False,
+            error_code="not_found",
+            error_details={"id": "x"},
+        )
+        tool = tool_from_id_and_project(build_world_tool_id(world.id, "lookup"))
+        result = await tool.run(ToolCallContext(), x="q")
+        assert result.is_error is False
+        assert result.error_message is None
+        assert result.output == (
+            '{"error": {"code": "not_found", "message": "not there", '
+            '"details": {"id": "x"}}}'
+        )
+
+    @pytest.mark.parametrize(
+        "code", ["internal", "unknown_tool", "invalid_arguments", "world_gap"]
+    )
+    async def test_world_failure_renders_the_envelope_as_error(
+        self, world, active, session_manager, code
+    ):
+        session_manager.outcome = ToolCallOutcome(
+            result=None,
+            error="tripped",
+            reward=None,
+            done=False,
+            error_code=code,
+            error_details=None,
+        )
+        tool = tool_from_id_and_project(build_world_tool_id(world.id, "lookup"))
+        result = await tool.run(ToolCallContext(), x="q")
+        assert result.is_error
+        assert result.output == (
+            f'{{"error": {{"code": "{code}", "message": "tripped", "details": null}}}}'
+        )
+        assert result.error_message == "tripped"
 
     async def test_fastmcp_is_error_result_is_an_error(
         self, world, active, session_manager
@@ -209,9 +258,23 @@ class TestWorldToolIds:
             tool_from_id_and_project(build_world_tool_id(world.id, "nope"))
 
 
+class TestRenderError:
+    def test_shapes(self):
+        assert render_tool_error(None, "boom", None) == "boom"
+        # An empty code is no code: nothing to tell the two kinds of error apart by.
+        assert render_tool_error("", "boom", {"a": 1}) == "boom"
+        # All three keys, always, so the shape is stable on both arms.
+        assert render_tool_error("c", "m", None) == (
+            '{"error": {"code": "c", "message": "m", "details": null}}'
+        )
+        assert render_tool_error("c", "naïve", None) == (
+            '{"error": {"code": "c", "message": "naïve", "details": null}}'
+        )
+
+
 class TestRenderResult:
     def test_shapes(self):
-        assert render_tool_result(None) == ""
+        assert render_tool_result(None) == "null"
         assert render_tool_result("text") == "text"
         assert render_tool_result({"a": 1}) == '{"a": 1}'
         assert render_tool_result([1, 2]) == "[1, 2]"

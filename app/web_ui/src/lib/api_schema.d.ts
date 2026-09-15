@@ -13677,10 +13677,10 @@ export interface components {
              */
             world_version: string;
             /**
-             * Reset Metadata
-             * @description What the environment reported in the observation metadata when the episode was reset: facts about the starting state that judges may want, such as the scenario it started from or the clock it runs on.
+             * Reset Facts
+             * @description What the environment reported about the starting state when the episode was reset, read from the reset observation's result or metadata: facts judges may want, such as the scenario it started from or the clock it runs on.
              */
-            reset_metadata?: {
+            reset_facts?: {
                 [key: string]: components["schemas"]["JsonValue"];
             };
             /**
