@@ -11,6 +11,7 @@
 
 import type { components } from "$lib/api_schema"
 import type { TraceMessage } from "$lib/types"
+import { TASK_RESPONSE_TOOL_NAME } from "$lib/utils/task_response_tool"
 
 export type CitationSource = "input" | "output"
 
@@ -497,11 +498,6 @@ function flattener_reasoning(message: TraceMessage): string | null {
   }
   return null
 }
-
-// The synthetic tool that carries a structured answer back from the model.
-// Not a tool the user defined, so it is never listed as one. Mirrors
-// TASK_RESPONSE_TOOL_NAME in libs/core .../open_ai_types.py.
-const TASK_RESPONSE_TOOL_NAME = "task_response"
 
 // Mirror EvalTraceFormatter.structured_output_from_message: the arguments of
 // the last task_response call, which are the model's answer.
