@@ -244,18 +244,21 @@ describe("ClaimEvidenceReview — overview and claims", () => {
     )
   })
 
-  it("renders the overview at full height, with no fold over its last line", () => {
+  it("caps the overview in pixels so only a runaway overview folds", () => {
     const { container } = render_review([built_trace("t0")])
     const overview = by_id(container, "review-overview")
 
-    // Output measures overflow against a cap it reads in pixels, so any cap
-    // here would fade out an overview and offer Show All on a panel that
-    // clips nothing.
-    expect(
-      [...overview.querySelectorAll("[style]")].some((el) =>
-        (el.getAttribute("style") ?? "").includes("max-height"),
-      ),
-    ).toBe(false)
+    // Output measures overflow against a cap it reads in pixels, so the cap
+    // has to be a pixel value: a viewport unit reads as its bare number and
+    // folds every overview.
+    const capped = [...overview.querySelectorAll("[style]")].filter((el) =>
+      (el.getAttribute("style") ?? "").includes("max-height"),
+    )
+    expect(capped.length).toBe(1)
+    expect(capped[0].getAttribute("style")).toContain("max-height: 480px")
+
+    // jsdom measures every scrollHeight as 0, so nothing folds here whatever
+    // the cap is. The assertion pins the intent: this overview is short.
     expect(
       [...overview.querySelectorAll("button")].some((b) =>
         /show all/i.test(b.textContent ?? ""),
