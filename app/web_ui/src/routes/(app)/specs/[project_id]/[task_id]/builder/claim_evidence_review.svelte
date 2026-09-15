@@ -8,8 +8,8 @@
   // Claims are answered where they are expanded: a case opens its first
   // undecided claim, and the others wait as one line each with their state and
   // Edit (open_claims_by_trace). The Overview sits beside the claims on wide
-  // windows, and the case header carries the decided count and a button per
-  // case.
+  // windows, and the numbered bar above them carries the decided count and a
+  // button per case.
   //
   // The overall pass/fail call is the verdict claim's grade — the builder
   // writes the verdict as the last claim, and a case without one is not put in
@@ -66,7 +66,8 @@
   export let on_last_trace = false
   // The eval's own description, read-only. The review shows what each
   // conversation did but never what the eval asks for, so a reviewer who
-  // forgot it can reread it here. Empty or null hides the control.
+  // forgot it can reread it. Empty or null mounts no dialog at all, and
+  // show_spec_dialog() below becomes a no-op.
   export let spec_text: string | null = null
 
   // Height at which an overview folds behind Show All. Output reads its cap in
@@ -84,10 +85,22 @@
 
   $: has_spec_text = (spec_text ?? "").trim().length > 0
 
-  // Names the judge, because the step header does. Claims are the decisions
-  // the judge made, the verdict claim included, and the second sentence names
-  // the one control every claim carries.
-  $: claims_description = `The decisions the judge made about this ${judged_noun}. Agree or disagree with each.`
+  // Opens the eval description. The trigger is the page header's sub-line
+  // rather than a control on this step: a reviewer who wants to reread what
+  // the eval asks for looks up, not into the work. The dialog stays here, with
+  // the text it renders; the page reaches in the same way this component
+  // reaches into its own trace modal.
+  export function show_spec_dialog() {
+    spec_dialog?.show()
+  }
+
+  // The two section sub-lines. The claims section carries the step's purpose,
+  // since the step no longer has a header of its own to carry it: answering
+  // the claims IS confirming the judge. The overview's says what the panel
+  // beside them holds.
+  const CLAIMS_DESCRIPTION =
+    "Confirm the judge is aligned to your expectations."
+  const OVERVIEW_DESCRIPTION = "A summary of this task's run."
 
   $: selected =
     selected_indices.length > 0 ? selected_indices : traces.map((_, i) => i)
@@ -134,9 +147,15 @@
   // the forward slot on the last conversation, but only once the save gate is
   // met.
   $: current_reviewed = is_trace_reviewed(current, current_verdicts)
+  // The one gate on the one forward button: mid-review the current case has to
+  // be answered, and on the last case the parent's review gate decides. Both
+  // rules feed the same button, so the slot can never be enabled for one
+  // meaning and disabled for another.
+  $: forward_disabled = has_next ? !current_reviewed : save_disabled
+  $: show_forward_hint = !has_next && !save_disabled
 
-  // The reviewer's position in the graded sequence, which the step header
-  // states.
+  // The reviewer's position in the graded sequence, which the line over the
+  // pills states.
   $: case_position = selected.indexOf(current_index) + 1
 
   // Which claims are expanded, per case. On entry a case expands its first
@@ -280,40 +299,46 @@
      and cannot drift element by element. -->
 <div class="flex flex-col gap-6">
   {#if current && current_verdicts}
-    <!-- The step header, which also carries the reviewer's position: the
-         review is a sequence, and the position belongs with the title rather
-         than in a separate line by the buttons. -->
-    <SettingsHeader
-      title={`Case ${case_position} of ${selected.length}`}
-      subtitle="Confirm the judge is aligned to your expectations."
-    >
-      <svelte:fragment slot="actions">
-        <span id="review-batch-count" class="text-sm text-gray-500">
-          {batch_counts.decided}/{batch_counts.total} claims decided
-        </span>
-        <!-- Joined buttons, as the house pagination joins them. The current case is the one to
-             find, so it takes the filled chosen state; a reviewed case is
-             the grey default, and a case still to review is the unchosen
-             outline the answer buttons use. -->
-        <div class="join" id="review-case-steps">
-          {#each case_steps as step (step.trace_index)}
-            <button
-              class="join-item btn btn-xs {step.trace_index === current_index
-                ? 'btn-secondary'
+    <!-- The reviewer's position: one line saying where they are and how much
+         of the batch is graded, over a pill per case. It is a progress readout
+         first and a control second, so it reads as a row of segments rather
+         than as numbered buttons — but every pill is still a jump to its case.
+         The line is the only place the numbers are written; the pills carry
+         state in colour alone. -->
+    <div class="flex flex-col items-end gap-1">
+      <span id="review-batch-count" class="text-sm text-gray-500"
+        >Case {case_position} of {selected.length} · {batch_counts.decided}/{batch_counts.total}
+        decided</span
+      >
+      <!-- Colour is the whole of a pill's meaning: primary for the case open
+           now, success for one already graded, and the theme's inactive grey
+           for one still to do. A graded case is green whatever the reviewer
+           decided — the colour tracks that the work is done, not that the
+           judge was right, so a disagreement is as complete as an agreement.
+           The button is twice the bar's height with the bar centred in it, so
+           the bar can be thin without the target being a sliver — margin would
+           give the same spacing but none of the extra target. -->
+      <div class="flex flex-wrap justify-end gap-2" id="review-case-steps">
+        {#each case_steps as step (step.trace_index)}
+          <button
+            class="w-8 h-4 flex items-center"
+            aria-label={`Case ${step.position + 1}`}
+            aria-current={step.trace_index === current_index
+              ? "step"
+              : undefined}
+            on:click={() => (current_index = step.trace_index)}
+          >
+            <span
+              class="w-8 h-2 rounded-full {step.trace_index === current_index
+                ? 'bg-primary'
                 : step.reviewed
-                  ? ''
-                  : 'btn-outline'}"
-              aria-current={step.trace_index === current_index
-                ? "step"
-                : undefined}
-              on:click={() => (current_index = step.trace_index)}
-            >
-              {step.position + 1}
-            </button>
-          {/each}
-        </div>
-      </svelte:fragment>
-    </SettingsHeader>
+                  ? 'bg-success'
+                  : 'bg-neutral'}"
+            ></span>
+          </button>
+        {/each}
+      </div>
+    </div>
 
     <!-- Overview beside the claims on wide windows, in a grid that stacks to
          one column below xl the way the judge form's side pane does. The
@@ -330,7 +355,11 @@
         id="review-overview"
         class="flex flex-col gap-3 min-w-0 xl:sticky xl:top-6"
       >
-        <SettingsHeader title="Overview" />
+        <SettingsHeader
+          title="Overview"
+          subtitle={OVERVIEW_DESCRIPTION}
+          show_divider={false}
+        />
 
         {#if current.overview}
           <!-- The read-only surface the rest of the app shows read-only
@@ -352,6 +381,21 @@
                 on_cite={open_citation}
               />
             </p>
+            <!-- The way out of the summary and into what it summarises, in the
+                 panel's bottom right: the overview is the short form of the
+                 trace, so the link to the long form belongs on it rather than
+                 in a button row of its own. -->
+            <svelte:fragment slot="after">
+              <div class="flex justify-end">
+                <button
+                  id="view-full-trace"
+                  class="link underline text-sm text-gray-500"
+                  on:click={() => current && trace_modal?.open_trace(current)}
+                >
+                  Full Trace
+                </button>
+              </div>
+            </svelte:fragment>
           </Output>
         {:else if current.claims_state === "unbuilt" || current.claims_state === "building"}
           <!-- The build starts on open, so both render as in-progress, in the
@@ -363,27 +407,6 @@
             <div class="text-sm">Analyzing this {judged_noun}…</div>
           </div>
         {/if}
-
-        <!-- The two escape hatches under what they expand on: both open
-             something the reviewer reads and closes. -->
-        <div class="flex flex-wrap gap-2">
-          {#if has_spec_text}
-            <button
-              id="view-eval"
-              class="btn btn-sm"
-              on:click={() => spec_dialog?.show()}
-            >
-              Eval Description
-            </button>
-          {/if}
-          <button
-            id="view-full-trace"
-            class="btn btn-sm"
-            on:click={() => current && trace_modal?.open_trace(current)}
-          >
-            Full Trace
-          </button>
-        </div>
       </div>
 
       <!-- The claims are a list of fields, so they sit at the form's
@@ -392,57 +415,80 @@
            the nav row is its last, so the forward action sits under the work. -->
       <div class="flex flex-col gap-6 min-w-0">
         {#if current.claims_state === "built"}
-          <SettingsHeader title="Claims" subtitle={claims_description}>
+          <SettingsHeader
+            title="Claims"
+            subtitle={CLAIMS_DESCRIPTION}
+            show_divider={false}
+          >
             <svelte:fragment slot="actions">
               <span id="review-case-count" class="text-sm text-gray-500">
                 {case_decided}/{case_claims} decided
               </span>
             </svelte:fragment>
           </SettingsHeader>
-          {#each visible as { claim, index } (index)}
-            <ClaimCard
-              bind:this={claim_cards[index]}
-              {claim}
-              {index}
-              bind:verdict={current_verdicts.claim_verdicts[index]}
-              open={open_claims.includes(index)}
-              on_open={() => open_claim(index)}
-              on_answer={(agrees) => answered(index, agrees)}
-              on_cite={open_citation}
-            />
-          {/each}
+          <!-- The house table: the claims are a numbered list of decisions to
+               answer, which is what a table is for.
+               Auto layout, sized by the outer two columns: the number hugs
+               its digits (w-px), the decision hugs its two buttons with a
+               floor that keeps short states from looking cramped, and the
+               claim column takes everything left over (w-full). Its cells
+               carry max-w-0, which is what lets a collapsed claim clamp to one
+               line rather than widening the column to fit the sentence. -->
+          <div class="rounded-lg border">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th class="w-px">#</th>
+                  <th class="w-full">Claim from Judge</th>
+                  <th style="min-width: 250px">Decision</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each visible as { claim, index } (index)}
+                  <ClaimCard
+                    bind:this={claim_cards[index]}
+                    {claim}
+                    {index}
+                    bind:verdict={current_verdicts.claim_verdicts[index]}
+                    open={open_claims.includes(index)}
+                    on_open={() => open_claim(index)}
+                    on_answer={(agrees) => answered(index, agrees)}
+                    on_cite={open_citation}
+                  />
+                {/each}
+              </tbody>
+            </table>
+          </div>
         {/if}
 
         <!-- Previous on the left, the forward action on the right. Wizard-step
              navigation is the browser's Back/Forward. Previous is hidden
-             rather than disabled where there is nothing to go back to; Next is
-             gated on finishing the current case. On the last case the same
-             slot becomes the save action. -->
+             rather than disabled where there is nothing to go back to. -->
         <div class="flex items-center justify-between gap-2">
           {#if has_prev}
             <button class="btn" on:click={go_prev}>Previous</button>
           {:else}
             <div></div>
           {/if}
-          {#if has_next}
-            <button
-              class="btn btn-primary"
-              on:click={go_next}
-              disabled={!current_reviewed}>Next</button
-            >
-          {:else if !save_disabled}
-            <!-- Last case, gate met. One label whatever the review found: what
-                 the click does is settled in the dialog it opens, not in the
-                 word on the button. The keyboard hint rides only this enabled
-                 variant, because the shortcut fires the same action and only
-                 once the gate is met — the house form shows the same hint on
-                 its own submit. -->
-            <button
-              id="review-continue"
-              class="btn btn-primary"
-              on:click={on_save}
-            >
-              Continue
+          <!-- One forward button in every position, reading Next throughout.
+               Where it leads changes with the position — the next case, or the
+               parent's dialog for a finished review — but the word does not: a
+               label that differs between the disabled and the enabled state
+               reads as two buttons swapping places rather than one button
+               opening. What the click leads to on the last case is settled in
+               that dialog anyway, not in the word on the button. -->
+          <button
+            id="review-next"
+            class="btn btn-primary"
+            on:click={has_next ? go_next : on_save}
+            disabled={forward_disabled}
+          >
+            Next
+            {#if show_forward_hint}
+              <!-- The hint rides the button only where the shortcut fires it:
+                   the page binds ⌘↵ to the same save, and only on the last
+                   case with the gate met. The house form shows the same hint
+                   on its own submit. -->
               <span class="opacity-80 ml-2 text-xs font-light">
                 {#if isMacOS()}
                   <span class="tracking-widest">⌘↵</span>
@@ -450,16 +496,8 @@
                   <span>ctrl ↵</span>
                 {/if}
               </span>
-            </button>
-          {:else}
-            <!-- Last case, gate not met: the same action, simply disabled. A
-                 "Next" here would point at nothing, so the slot stays this
-                 action throughout. No keyboard hint: the shortcut is gated on
-                 the same rule as this button. -->
-            <button id="review-continue" class="btn btn-primary" disabled>
-              Continue
-            </button>
-          {/if}
+            {/if}
+          </button>
         </div>
       </div>
     </div>

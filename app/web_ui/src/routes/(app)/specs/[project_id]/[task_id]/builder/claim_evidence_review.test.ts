@@ -9,6 +9,7 @@ import {
   vi,
 } from "vitest"
 import { render, fireEvent, cleanup } from "@testing-library/svelte"
+import { tick } from "svelte"
 import ClaimEvidenceReview from "./claim_evidence_review.svelte"
 import {
   build_claim_review_payload,
@@ -189,9 +190,59 @@ function state_of(container: HTMLElement, index: number): string {
   return by_id(container, `claim-state-${index}`).textContent?.trim() ?? ""
 }
 
+// The pill bar's buttons, and the one it marks as open. The pills carry their
+// state in colour alone, so their position is read from the aria-label that
+// names each for a screen reader.
+function steps_of(container: HTMLElement): HTMLButtonElement[] {
+  return [...by_id(container, "review-case-steps").querySelectorAll("button")]
+}
+function step_labels(container: HTMLElement): (string | null)[] {
+  return steps_of(container).map((b) => b.getAttribute("aria-label"))
+}
+// The bar a pill draws. It sits inside a taller button, so the fill is on the
+// inner element and the target is the outer one.
+function fill_of(pill: HTMLButtonElement): string {
+  return pill.querySelector("span")!.className
+}
+function current_step(container: HTMLElement): string | null {
+  const label = by_id(container, "review-case-steps")
+    .querySelector("[aria-current='step']")
+    ?.getAttribute("aria-label")
+  return label?.replace("Case ", "") ?? null
+}
+
+// The line over the pills, with its runs of whitespace squashed to one space.
+function position_line(container: HTMLElement): string {
+  return (by_id(container, "review-batch-count").textContent ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
 // ── The review surface ───────────────────────────────────────────────────
 
 describe("ClaimEvidenceReview — overview and claims", () => {
+  it("lists the claims in the house table, one row each", () => {
+    const trace = built_trace("t0")
+    const { container } = render_review([trace])
+
+    // The house table style: a bordered, rounded wrapper around the table.
+    const table = container.querySelector(".rounded-lg.border table")
+    expect(table).not.toBeNull()
+    expect(
+      [...table!.querySelectorAll("thead th")].map((th) =>
+        th.textContent?.trim(),
+      ),
+    ).toEqual(["#", "Claim from Judge", "Decision"])
+
+    // Every claim is a row of that table's body — the claim list and the
+    // table cannot drift out of step.
+    const claim_count = trace.claims?.length ?? 0
+    expect(claim_count).toBeGreaterThan(0)
+    expect(
+      [...table!.querySelectorAll("tbody tr")].map((row) => row.id),
+    ).toEqual(Array.from({ length: claim_count }, (_, i) => `claim-card-${i}`))
+  })
+
   it("shows the overview with its trace button, the first claim open and the rest collapsed", async () => {
     const { container, getByText } = render_review([built_trace("t0")])
 
@@ -199,17 +250,18 @@ describe("ClaimEvidenceReview — overview and claims", () => {
     expect(overview.textContent).toContain(
       "The user asked about a mattress return window",
     )
+    expect(overview.textContent).toContain("A summary of this task's run.")
     expect(overview.querySelector("#view-full-trace")).not.toBeNull()
 
     // The claims are the review, so the first is open on arrival with its
     // answers, and the rest wait as one line each with their state and Edit.
+    // Their sub-line carries the step's purpose, since no step header does.
     expect(
-      getByText(
-        "The decisions the judge made about this conversation. Agree or disagree with each.",
-      ),
+      getByText("Confirm the judge is aligned to your expectations."),
     ).toBeTruthy()
     const first = by_id(container, "claim-card-0")
-    expect(first.textContent).toContain("#1")
+    // The number cell, under the table's "#" header.
+    expect(first.querySelector("td")!.textContent?.trim()).toBe("1")
     expect(first.querySelector("#claim-agree-0")).not.toBeNull()
     const second = by_id(container, "claim-card-1")
     expect(second.querySelector("#claim-agree-1")).toBeNull()
@@ -278,25 +330,22 @@ function spec_dialog(container: HTMLElement): HTMLDialogElement {
   return dialog_titled(container, SPEC_DIALOG_TITLE)
 }
 
+// The eval description has no control of its own on this step: the page header
+// carries the line that opens it, and calls in through this exported function.
 describe("ClaimEvidenceReview — the eval text", () => {
-  it("opens the eval's description read-only from the button under the overview", async () => {
-    const { container } = render_review([built_trace("t0")], {
+  it("opens the eval's description read-only, and offers no control of its own", async () => {
+    const { container, component } = render_review([built_trace("t0")], {
       spec_text: SPEC_TEXT,
     })
 
-    // Beside the trace button, in the Overview section, not elsewhere on the page.
-    const header = by_id(container, "review-overview")
-    const button = by_id<HTMLButtonElement>(header, "view-eval")
-    expect(button.textContent?.trim()).toBe("Eval Description")
-    expect(
-      button.compareDocumentPosition(by_id(header, "view-full-trace")) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy()
+    // Nothing in the work opens it — the trigger is the page header's.
+    expect(container.querySelector("#view-eval")).toBeNull()
 
     const dialog = spec_dialog(container)
     expect(dialog.open).toBe(false)
 
-    await fireEvent.click(button)
+    component.show_spec_dialog()
+    await tick()
     expect(dialog.open).toBe(true)
     // The text verbatim, on the house read-only surface. Output prints into a
     // pre, which is what keeps the line breaks and runs of spaces on screen.
@@ -319,18 +368,15 @@ describe("ClaimEvidenceReview — the eval text", () => {
       claims: null,
       claims_state: "unbuilt",
     }
-    const { container } = render_review([unbuilt], { spec_text: SPEC_TEXT })
-    // The Overview section renders in every state, so the escape hatches
-    // never lose their header: only the body under it changes.
+    const { container, component } = render_review([unbuilt], {
+      spec_text: SPEC_TEXT,
+    })
+    // The Overview section renders in every state, so the header never goes
+    // away: only the body under it changes.
     expect(container.querySelector("#review-overview")).not.toBeNull()
 
-    const button = by_id<HTMLButtonElement>(container, "view-eval")
-    expect(
-      button.compareDocumentPosition(by_id(container, "view-full-trace")) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy()
-
-    await fireEvent.click(button)
+    component.show_spec_dialog()
+    await tick()
     const dialog = spec_dialog(container)
     expect(dialog.open).toBe(true)
     expect(by_id(dialog, "spec-text").textContent?.trim()).toBe(SPEC_TEXT)
@@ -338,13 +384,14 @@ describe("ClaimEvidenceReview — the eval text", () => {
 
   it("reopens the same dialog after moving to the next conversation", async () => {
     // One eval-level dialog for the whole review: advancing does not tear it
-    // down and rebuild it, so the text is one click away on every trace.
-    const { container, getByText } = render_review(
+    // down and rebuild it, so the text is one call away on every trace.
+    const { container, component, getByText } = render_review(
       [built_trace("t0"), built_trace("t1")],
       { spec_text: SPEC_TEXT },
     )
 
-    await fireEvent.click(by_id(container, "view-eval"))
+    component.show_spec_dialog()
+    await tick()
     const opened = spec_dialog(container)
     expect(opened.open).toBe(true)
     // jsdom cannot submit the dialog's close form, so close it directly.
@@ -352,9 +399,10 @@ describe("ClaimEvidenceReview — the eval text", () => {
 
     await agree_all(container, 2)
     await fireEvent.click(next_button(getByText))
-    expect(container.textContent).toContain("2 of 2")
+    expect(current_step(container)).toBe("2")
 
-    await fireEvent.click(by_id(container, "view-eval"))
+    component.show_spec_dialog()
+    await tick()
     const reopened = spec_dialog(container)
     // The same node, not a fresh one mounted for this conversation.
     expect(reopened).toBe(opened)
@@ -362,21 +410,42 @@ describe("ClaimEvidenceReview — the eval text", () => {
     expect(by_id(reopened, "spec-text").textContent?.trim()).toBe(SPEC_TEXT)
   })
 
-  it("leaves out the eval button when there is no eval text", () => {
+  it("mounts no dialog when there is no eval text, and opening it is a no-op", async () => {
     for (const spec_text of [null, "", "   "]) {
-      const { container } = render_review([built_trace("t0")], { spec_text })
-      const header = by_id(container, "review-overview")
+      const { container, component } = render_review([built_trace("t0")], {
+        spec_text,
+      })
 
-      expect(header.querySelector("#view-eval")).toBeNull()
-      expect(header.querySelector("#view-full-trace")).not.toBeNull()
-      // Nothing left mounted either: no dialog carrying the eval title.
+      // Nothing mounted: no dialog carrying the eval title.
       expect(
         [...container.querySelectorAll("dialog h3")].some(
           (h) => h.textContent?.trim() === "Eval Description",
         ),
       ).toBe(false)
+      // The page header hides its line in this case, but the call must be safe
+      // whatever the header does — it is the page's flag, not this one's.
+      expect(() => component.show_spec_dialog()).not.toThrow()
+      await tick()
       cleanup()
     }
+  })
+})
+
+describe("ClaimEvidenceReview — the way into the full trace", () => {
+  it("is a link in the overview panel's footer, right-aligned", () => {
+    const { container } = render_review([built_trace("t0")])
+
+    const link = by_id(container, "view-full-trace")
+    expect(link.textContent?.trim()).toBe("Full Trace")
+    expect(link.className).toContain("link")
+
+    // In Output's `after` slot, so it renders under the panel rather than
+    // inside the region max_height folds behind Show All.
+    const panel = by_id(container, "review-overview").querySelector(
+      ".relative",
+    )!
+    expect(panel.contains(link)).toBe(true)
+    expect(link.parentElement!.className).toContain("justify-end")
   })
 })
 
@@ -462,40 +531,46 @@ describe("ClaimEvidenceReview — the pass/fail call", () => {
 })
 
 describe("ClaimEvidenceReview — the forward action on the last conversation", () => {
-  it("holds the slot disabled until the gate is met, never a dead Next", async () => {
+  it("holds the slot disabled until the gate is met, with the label unchanged", async () => {
     const traces = [built_trace("only")]
 
     // Gate not met: the same button holds the slot, simply disabled, the way
-    // every other form in the app holds a submit. No Next — there's nothing
-    // left to advance to.
+    // every other form in the app holds a submit.
     const gated = render_review(traces, { save_disabled: true })
-    const blocked = by_id<HTMLButtonElement>(gated.container, "review-continue")
+    const blocked = by_id<HTMLButtonElement>(gated.container, "review-next")
     expect(blocked.disabled).toBe(true)
-    expect(gated.queryByText("Next")).toBeNull()
     expect(gated.container.querySelector(".tooltip")).toBeNull()
     cleanup()
 
     // Gate met on the last conversation: the same slot, now enabled.
     const open = render_review(traces, { save_disabled: false })
-    const live = by_id<HTMLButtonElement>(open.container, "review-continue")
+    const live = by_id<HTMLButtonElement>(open.container, "review-next")
     expect(live.disabled).toBe(false)
-    expect(open.queryByText("Next")).toBeNull()
     // The slot keeps one size across that flip, so it doesn't resize as the
     // gate completes — and that size is the same button Previous is.
     expect(live.className).toBe(blocked.className)
     expect(live.className).not.toContain("min-w-64")
   })
 
-  it("reads Continue on the last case", () => {
-    // The label used to flip between Save and Refine Judge with the grades.
-    // It no longer does: what the click leads to is settled in the dialog it
-    // opens, so the button carries one word.
-    const { container } = render_review([built_trace("only")], {
-      save_disabled: false,
-    })
-    expect(by_id(container, "review-continue").textContent?.trim()).toContain(
-      "Continue",
-    )
+  // The label used to flip between Save and Refine Judge with the grades, then
+  // between Continue and Next with the position. It no longer moves at all:
+  // one button, one word, whatever the position and whatever the gate says.
+  // What the click leads to on the last case is settled in the dialog it
+  // opens, not in the word on the button.
+  it("reads Next in every position, enabled or not", () => {
+    const positions = [
+      { traces: [built_trace("t0"), built_trace("t1")], save_disabled: true },
+      { traces: [built_trace("only")], save_disabled: false },
+      { traces: [built_trace("only")], save_disabled: true },
+    ]
+    for (const { traces, save_disabled } of positions) {
+      const { container } = render_review(traces, { save_disabled })
+      expect(by_id(container, "review-next").textContent?.trim()).toContain(
+        "Next",
+      )
+      expect(container.textContent).not.toContain("Continue")
+      cleanup()
+    }
   })
 
   it("reports the forward action to the parent, which decides what it means", async () => {
@@ -504,7 +579,7 @@ describe("ClaimEvidenceReview — the forward action on the last conversation", 
       save_disabled: false,
       on_save,
     })
-    await fireEvent.click(by_id(container, "review-continue"))
+    await fireEvent.click(by_id(container, "review-next"))
     expect(on_save).toHaveBeenCalledTimes(1)
   })
 })
@@ -703,11 +778,11 @@ describe("the trace modal — multi-turn", () => {
   })
 })
 
-// The step header states the reviewer's position in the graded sequence: it is
+// The pill bar states the reviewer's position in the graded sequence: it is
 // the review's only progress readout, so it must count the subset the reviewer
 // actually walks rather than the whole batch.
-describe("ClaimEvidenceReview — the case header", () => {
-  it("counts the position within the selected subset", async () => {
+describe("ClaimEvidenceReview — the case position", () => {
+  it("counts the position within the selected subset, in the line and the pills", async () => {
     const traces = [
       built_trace("t0"),
       built_trace("t1"),
@@ -718,12 +793,34 @@ describe("ClaimEvidenceReview — the case header", () => {
     const { container, getByText } = render_review(traces, {
       selected_indices: [1, 3],
     })
-    const header = () => container.querySelector("h2")!.textContent
 
-    expect(header()).toBe("Case 1 of 2")
+    // Position and progress in one line, and it is the only place either
+    // number is written: the pills say the same thing in colour.
+    expect(position_line(container)).toBe("Case 1 of 2 · 0/4 decided")
+    // The line is not a heading — the step's only headings are its sections.
+    expect(
+      [...container.querySelectorAll("h2")].map((h) => h.textContent?.trim()),
+    ).toEqual(["Overview", "Claims"])
+
+    expect(steps_of(container)).toHaveLength(2)
+    expect(current_step(container)).toBe("1")
     await agree_all(container, 2)
     await fireEvent.click(getByText("Next"))
-    expect(header()).toBe("Case 2 of 2")
+    expect(position_line(container)).toBe("Case 2 of 2 · 2/4 decided")
+    expect(current_step(container)).toBe("2")
+  })
+
+  it("names each pill for a screen reader, since colour is all it shows", () => {
+    const { container } = render_review([
+      built_trace("t0"),
+      built_trace("t1"),
+      built_trace("t2"),
+    ])
+    expect(step_labels(container)).toEqual(["Case 1", "Case 2", "Case 3"])
+    // No text inside them: the pill is a segment, not a numbered button.
+    expect(steps_of(container).every((b) => b.textContent?.trim() === "")).toBe(
+      true,
+    )
   })
 })
 
@@ -821,56 +918,76 @@ describe("ClaimEvidenceReview — progress", () => {
     const { container } = render_review([built_trace("t0"), built_trace("t1")])
     const case_count = () =>
       by_id(container, "review-case-count").textContent?.trim()
-    const batch_count = () =>
-      by_id(container, "review-batch-count").textContent?.trim()
     expect(case_count()).toBe("0/2 decided")
-    expect(batch_count()).toBe("0/4 claims decided")
+    expect(position_line(container)).toBe("Case 1 of 2 · 0/4 decided")
 
     // A disagree counts as decided before its reason is in; Next still waits
     // for the reason.
     await fireEvent.click(by_id(container, "claim-disagree-0"))
     expect(case_count()).toBe("1/2 decided")
-    expect(batch_count()).toBe("1/4 claims decided")
+    expect(position_line(container)).toBe("Case 1 of 2 · 1/4 decided")
   })
 
-  it("jumps to a case from its button and marks current, reviewed and pending cases", async () => {
+  it("jumps to a case from its pill and colours current, reviewed and pending", async () => {
     const on_open_trace = vi.fn()
     const traces = [built_trace("t0"), built_trace("t1"), built_trace("t2")]
-    const { container, getByText } = render_review(traces, { on_open_trace })
-    const steps = () => [
-      ...by_id(container, "review-case-steps").querySelectorAll("button"),
-    ]
-    expect(steps().map((b) => b.textContent?.trim())).toEqual(["1", "2", "3"])
+    const { container } = render_review(traces, { on_open_trace })
+    const steps = () => steps_of(container)
+    expect(step_labels(container)).toEqual(["Case 1", "Case 2", "Case 3"])
 
     await agree_all(container, 2)
     await fireEvent.click(steps()[2])
-    expect(getByText("Case 3 of 3")).toBeTruthy()
+    expect(current_step(container)).toBe("3")
     expect(on_open_trace).toHaveBeenLastCalledWith(2)
 
+    // Three states, three fills, and each pill is the same pill shape.
     const [reviewed, pending, current] = steps()
     expect(current.getAttribute("aria-current")).toBe("step")
-    expect(current.className).toContain("btn-secondary")
-    expect(reviewed.className).not.toMatch(/btn-secondary|btn-outline/)
-    expect(pending.className).toContain("btn-outline")
+    expect(fill_of(current)).toContain("bg-primary")
+    expect(fill_of(reviewed)).toContain("bg-success")
+    expect(fill_of(pending)).toContain("bg-neutral")
+    for (const pill of steps()) {
+      // A thin bar, in a target twice its height — margin around the bar would
+      // space it the same way but leave the target as thin as the bar.
+      expect(fill_of(pill)).toContain("rounded-full")
+      expect(fill_of(pill)).toContain("w-8")
+      expect(fill_of(pill)).toContain("h-2")
+      expect(pill.className).toContain("h-4")
+    }
+  })
+
+  it("greens a reviewed case whether the reviewer agreed or disagreed", async () => {
+    // The colour tracks that the case is done, not that the judge was right,
+    // so a case graded with a disagreement is as green as one fully agreed.
+    const traces = [three_claim_trace("t0"), built_trace("t1")]
+    const { container, getByText } = render_review(traces)
+    await fireEvent.click(by_id(container, "claim-disagree-0"))
+    await fireEvent.input(by_id(container, "claim-why-0"), {
+      target: { value: "The judge read the transcript wrong." },
+    })
+    await fireEvent.click(by_id(container, "claim-agree-1"))
+    await fireEvent.click(by_id(container, "claim-agree-2"))
+
+    // Still the open case, so it is primary: current outranks reviewed.
+    expect(fill_of(steps_of(container)[0])).toContain("bg-primary")
+
+    await fireEvent.click(next_button(getByText))
+    expect(current_step(container)).toBe("2")
+    expect(fill_of(steps_of(container)[0])).toContain("bg-success")
   })
 
   it("counts and numbers only the cases under review", () => {
     const traces = ["t0", "t1", "t2", "t3"].map((id) => built_trace(id))
     const verdicts = build_trace_reviews(traces)
     verdicts[0].claim_verdicts[0] = { agrees: true, why: "" }
-    const { container, getByText } = render_review(traces, {
+    const { container } = render_review(traces, {
       verdicts,
       selected_indices: [1, 3],
     })
-    expect(getByText("Case 1 of 2")).toBeTruthy()
-    expect(by_id(container, "review-batch-count").textContent?.trim()).toBe(
-      "0/4 claims decided",
-    )
-    expect(
-      [...by_id(container, "review-case-steps").querySelectorAll("button")].map(
-        (b) => b.textContent?.trim(),
-      ),
-    ).toEqual(["1", "2"])
+    expect(current_step(container)).toBe("1")
+    // The batch count spans the whole batch; the position counts the subset.
+    expect(position_line(container)).toBe("Case 1 of 2 · 0/4 decided")
+    expect(step_labels(container)).toEqual(["Case 1", "Case 2"])
   })
 })
 

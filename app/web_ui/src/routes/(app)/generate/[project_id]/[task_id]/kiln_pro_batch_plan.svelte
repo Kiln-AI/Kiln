@@ -35,6 +35,10 @@
   // drives its header and aria-label together), the sentence it shows when
   // expanded, and the header over the rows' first column. Defaults match the
   // table's own, so /generate is unchanged.
+  // The rule under the header. The eval builder's screens stack headers and
+  // read as a ladder of lines with it on, so that flow turns it off. Default
+  // keeps /generate unchanged.
+  export let show_header_divider = true
   export let items_label = "Dataset Items"
   export let expanded_description: string | null | false = null
   export let column_label = "Prompt"
@@ -52,7 +56,7 @@
   the task's Data Guide) rides on the same subtitle line; nothing renders with
   no consumer content. That line is a paragraph, so the slot's content has to
   be phrasing content (spans, links, plain text) and never a block element. -->
-  <SettingsHeader title={header_label}>
+  <SettingsHeader title={header_label} show_divider={show_header_divider}>
     <svelte:fragment slot="subtitle"
       >{subheader}<slot name="under_subheader" /></svelte:fragment
     >

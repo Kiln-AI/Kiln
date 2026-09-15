@@ -4,9 +4,14 @@
   // `subtitle` slot instead of this string; with no slot the render is
   // unchanged.
   export let subtitle: string | null = null
+  // The rule under the header. A screen that stacks many headers reads as a
+  // ladder of lines rather than as sections, so those callers turn it off. The
+  // padding goes with it: with no rule to clear, the gap below the header is
+  // the parent stack's to own.
+  export let show_divider = true
 </script>
 
-<div class="pb-3 border-b border-gray-200">
+<div class={show_divider ? "pb-3 border-b border-gray-200" : ""}>
   {#if $$slots.actions}
     <!-- Actions ride on the title's line, right-aligned and bottom-aligned
          with it, inside the header's own rule so the rule still runs the full

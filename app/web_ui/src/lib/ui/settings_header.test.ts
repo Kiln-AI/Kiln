@@ -30,6 +30,34 @@ describe("settings_header — no actions", () => {
   })
 })
 
+// A screen that stacks several headers turns the rule off. The padding that
+// cleared the rule goes with it, so the header does not leave a gap the
+// parent stack did not ask for.
+describe("settings_header — show_divider", () => {
+  it("drops the rule and its padding, keeping everything else", () => {
+    const { container } = render(SettingsHeader, {
+      props: { title: "Overview", subtitle: "What happened here" },
+    })
+    const bare = container.querySelector("div")!
+    expect(bare.className).toContain("border-b")
+    expect(bare.className).toContain("pb-3")
+    cleanup()
+
+    const plain = render(SettingsHeader, {
+      props: {
+        title: "Overview",
+        subtitle: "What happened here",
+        show_divider: false,
+      },
+    })
+    const rule = plain.container.querySelector("div")!
+    expect(rule.className).not.toContain("border-b")
+    expect(rule.className).not.toContain("pb-3")
+    expect(rule.querySelector("h2")!.textContent).toBe("Overview")
+    expect(rule.querySelector("p")!.textContent).toBe("What happened here")
+  })
+})
+
 describe("settings_header — with actions", () => {
   it("puts the actions on the title's line, inside the header's own rule", () => {
     const { container } = render(SettingsHeaderActionsHarness, {

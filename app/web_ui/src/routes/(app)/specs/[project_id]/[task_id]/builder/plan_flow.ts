@@ -468,16 +468,6 @@ export function resolved_selected_count(
   }).length
 }
 
-// A progress screen is the animation control and its two strings, so every
-// live count rides in the description rather than in a line of its own under
-// the bar. The failure clause travels with the count it qualifies, and reads
-// as part of the same sentence: "12 of 40 judged, 2 failed."
-export function with_failures(sentence: string, failed: number): string {
-  return failed > 0
-    ? `${sentence.replace(/\.$/, "")}, ${failed} failed.`
-    : sentence
-}
-
 // The share of the batch that has to survive for continuing with the
 // survivors to lead. Below it too much of the approved plan is missing for
 // the survivors to be the better offer.

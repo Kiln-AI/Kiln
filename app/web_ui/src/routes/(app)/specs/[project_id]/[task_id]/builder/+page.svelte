@@ -145,7 +145,6 @@
     is_partial_stop,
     restore_turns_per_case,
     stop_primary_action,
-    with_failures,
     MAX_TURNS_PER_CASE,
     MIN_TURNS_PER_CASE,
     type DriveStop,
@@ -154,6 +153,7 @@
   } from "./plan_flow"
   // Reuse v1's themed loading animations on the wizard's transition screens
   // instead of bare dot-spinners, so the two builders feel consistent.
+  import ProgressCount from "./progress_count.svelte"
   import QuestioningAnimation from "$lib/ui/animations/questioning_animation.svelte"
   import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
   import AnalyzingAnimation from "$lib/ui/animations/analyzing_animation.svelte"
@@ -3395,6 +3395,9 @@
   // trace, which is where it renders the forward action. Anything the page
   // stacks under that action follows this flag.
   let review_on_last_trace = false
+  // The mounted review, so the page header's "Eval Description" line can open
+  // the dialog the review owns. Null on every step but review.
+  let review_component: ClaimEvidenceReview | null = null
 
   // ── Lazy claims (multi-turn). The pipeline stream stops at the judge;
   // only traces the review surfaces (the selected subset) or the user opens
@@ -4450,13 +4453,19 @@
           current_step,
         )}`
   $: page_max_w = page_max_w_for(current_step)
-  // Second subtitle line, on the refine step only: that step shows the eval
-  // rewritten from the user's answers, so the header asks the question the
-  // step exists to answer.
+  // Second subtitle line. On refine it asks the question the step exists to
+  // answer, since that step shows the eval rewritten from the user's answers.
+  // On review it is the way back to the eval's own text: the review shows what
+  // each case did but never what the eval asks for, so a reviewer who forgot
+  // it rereads it from the header rather than from a control among the work.
+  $: review_can_show_spec =
+    current_step === "review" && current_spec_text.trim().length > 0
   $: page_sub_subtitle =
     current_step === "refine"
       ? "We've integrated your feedback, does it look right?"
-      : ""
+      : review_can_show_spec
+        ? "Eval Description"
+        : ""
 
   // Total assistant turns expected across the whole batch — the denominator
   // for the smooth turn-level progress (cases run in parallel waves, so this
@@ -4532,6 +4541,9 @@
     title={page_title}
     subtitle={page_step_line}
     sub_subtitle={page_sub_subtitle}
+    sub_subtitle_action={review_can_show_spec
+      ? () => review_component?.show_spec_dialog()
+      : undefined}
     breadcrumbs={[{ label: "Evals", href: `/specs/${project_id}/${task_id}` }]}
     no_y_padding
     action_buttons={reset_available
@@ -4762,62 +4774,48 @@
                 warning={generate_animation_warning}
               />
               {#if generation_phase === "minting_inputs"}
-                <div class="flex flex-col items-center mt-6">
-                  <progress
-                    class="progress w-56 progress-success"
-                    value={minting_done}
-                    max={minting_total}
-                  ></progress>
-                </div>
+                <ProgressCount
+                  value={minting_done}
+                  max={minting_total}
+                  noun="items created"
+                />
               {/if}
             {/if}
           {/if}
           {#if pipeline_running}
             <!-- The drive stage: the arm's animation plus the house
-                 batch-progress readout (bar plus its count caption,
-                 mirroring /generate's batch generation). Multi-turn's bar
-                 tracks TURNS for smooth motion (cases complete in
-                 concurrency waves), so its count line LEADS with turns;
-                 single-turn cases are one run each, so its bar counts
-                 finished cases directly. The title stays static: the live
-                 counts belong to the readout under the bar. -->
+                 batch-progress readout (bar plus its count line underneath,
+                 mirroring /generate's batch generation). Both strings are
+                 static — every live number is in the readout. -->
             {#if is_multi_turn}
               <!-- Turns, not cases: cases finish in concurrency waves, so the
                    turn count is the one that actually moves while the batch
-                   runs. The denominator is a ceiling, not a total:
-                   conversations that end early leave the bar short of full, so
-                   it can jump to done rather than creep there. -->
+                   runs. -->
               <ConversationAnimation
                 title="Creating Eval Dataset"
-                description={with_failures(
-                  `Simulating conversations with your agent and judging each one. ${multi_turn_turns_done} of up to ${multi_turn_total_turns} turns complete.`,
-                  pipeline_failed_count,
-                )}
+                description="Simulating conversations with your agent and judging each one."
                 warning={null}
               />
-              <div class="flex flex-col items-center mt-6">
-                <progress
-                  class="progress w-56 progress-success"
-                  value={multi_turn_turns_done}
-                  max={multi_turn_total_turns}
-                ></progress>
-              </div>
+              <ProgressCount
+                value={multi_turn_turns_done}
+                max={multi_turn_total_turns}
+                noun="turns complete"
+                max_is_ceiling
+                failed={pipeline_failed_count}
+              />
             {:else}
               <AnalyzingAnimation
                 title="Creating Eval Dataset"
-                description={with_failures(
-                  `Running your task on each item and judging the result. ${judged_case_count} of ${pipeline_total_cases} judged.`,
-                  pipeline_failed_count,
-                )}
+                description="Running your task on each item and judging the result."
                 warning={null}
               />
-              <div class="flex flex-col items-center mt-6">
-                <progress
-                  class="progress w-56 progress-success"
-                  value={judged_case_count + pipeline_failed_count}
-                  max={pipeline_total_cases}
-                ></progress>
-              </div>
+              <ProgressCount
+                value={judged_case_count}
+                bar_value={judged_case_count + pipeline_failed_count}
+                max={pipeline_total_cases}
+                noun="judged"
+                failed={pipeline_failed_count}
+              />
             {/if}
           {/if}
           {#if preparing_review}
@@ -4827,17 +4825,15 @@
                  selected claim set must be resolved up front. -->
             <svelte:component
               this={is_multi_turn ? ConversationAnimation : AnalyzingAnimation}
-              title={`Preparing Review (${selected_claims_resolved}/${selected_trace_indices.length})`}
+              title="Preparing Review"
               description="Finding the examples where your judgment is most useful."
               warning={null}
             />
-            <div class="flex flex-col items-center mt-6">
-              <progress
-                class="progress w-56 progress-success"
-                value={selected_claims_resolved}
-                max={selected_trace_indices.length}
-              ></progress>
-            </div>
+            <ProgressCount
+              value={selected_claims_resolved}
+              max={selected_trace_indices.length}
+              noun={`${judged_noun}s ready`}
+            />
           {/if}
           <!-- The two failure surfaces are one chain so only ever one can
                render: the claims gate runs after a successful drive, so its
@@ -4957,6 +4953,7 @@
               <KilnProBatchPlan
                 plan={batch_plan}
                 header_label="Eval Dataset Proposal"
+                show_header_divider={false}
                 summary_out_of_sync={batch_plan_edited}
                 subheader="Here's a plan for your eval dataset. Refine the plan if the coverage looks off."
                 on_generate_inputs={open_drive_settings}
@@ -5108,35 +5105,30 @@
             <svelte:component
               this={is_multi_turn ? ConversationAnimation : AnalyzingAnimation}
               title="Re-checking Eval Data"
-              description={with_failures(
-                `Re-checking your eval data with the improved judge. ${rejudged_done} of ${rejudge_total} re-checked.`,
-                rejudge_failed_live,
-              )}
+              description="Re-checking your eval data with the improved judge."
               warning={null}
             />
-            <div class="flex flex-col items-center mt-6">
-              <progress
-                class="progress w-56 progress-success"
-                value={rejudged_done + rejudge_failed_live}
-                max={rejudge_total}
-              ></progress>
-            </div>
+            <ProgressCount
+              value={rejudged_done}
+              bar_value={rejudged_done + rejudge_failed_live}
+              max={rejudge_total}
+              noun="re-checked"
+              failed={rejudge_failed_live}
+            />
           {:else if calibration_phase === "building_claims"}
             <!-- Same wait-for-all claims gate as the first round, held on the
                  review step: the re-review opens fully loaded. -->
             <svelte:component
               this={is_multi_turn ? ConversationAnimation : AnalyzingAnimation}
-              title={`Preparing Review (${selected_claims_resolved}/${selected_trace_indices.length})`}
+              title="Preparing Review"
               description="Finding the examples where your judgment is most useful."
               warning={null}
             />
-            <div class="flex flex-col items-center mt-6">
-              <progress
-                class="progress w-56 progress-success"
-                value={selected_claims_resolved}
-                max={selected_trace_indices.length}
-              ></progress>
-            </div>
+            <ProgressCount
+              value={selected_claims_resolved}
+              max={selected_trace_indices.length}
+              noun={`${judged_noun}s ready`}
+            />
           {:else if calibration_error}
             <!-- Retryable re-judge failure — the grades that fed the refine
                  are intact, so Retry resumes at the re-check without paying
@@ -5232,6 +5224,7 @@
             {:else}
               {#key calibration_rounds_completed}
                 <ClaimEvidenceReview
+                  bind:this={review_component}
                   traces={trace_claims}
                   bind:verdicts={trace_reviews}
                   selected_indices={reviewable_trace_indices}

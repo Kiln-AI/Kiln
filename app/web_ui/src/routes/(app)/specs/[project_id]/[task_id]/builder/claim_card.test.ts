@@ -31,14 +31,56 @@ function by_id<T extends HTMLElement>(container: HTMLElement, id: string): T {
 }
 
 describe("ClaimCard — Agree / Disagree", () => {
+  it("asks with both answers in primary outline, and drops the colour once answered", async () => {
+    const verdict = fresh_verdict()
+    const { container } = render(ClaimCard, {
+      props: { claim: claim(), index: 0, verdict },
+    })
+
+    // Undecided: the ask is on both sides equally, so both carry the house
+    // pick-one-of-these treatment.
+    const agree = by_id(container, "claim-agree-0")
+    const disagree = by_id(container, "claim-disagree-0")
+    for (const button of [agree, disagree]) {
+      expect(button.className).toContain("btn-outline")
+      expect(button.className).toContain("btn-primary")
+    }
+
+    // Answered: the chosen side fills in, and the side not taken keeps the
+    // outline but loses the primary colour — there is nothing left to ask.
+    await fireEvent.click(agree)
+    expect(agree.className).toContain("btn-secondary")
+    expect(agree.className).not.toContain("btn-outline")
+    expect(disagree.className).toContain("btn-outline")
+    expect(disagree.className).not.toContain("btn-primary")
+  })
+
+  it("is one table row of three cells, collapsed or expanded", async () => {
+    // Collapsing changes a claim's height, never its shape: the same three
+    // cells either way, so the columns line up down the table whatever state
+    // each claim is in.
+    for (const open of [true, false]) {
+      const { container } = render(ClaimCard, {
+        props: { claim: claim(), index: 0, verdict: fresh_verdict(), open },
+      })
+      const row = by_id(container, "claim-card-0")
+      expect(row.tagName).toBe("TR")
+      expect(row.querySelectorAll("td")).toHaveLength(3)
+      cleanup()
+    }
+  })
+
   it("numbers the claim and records Agree without a reason box", async () => {
     const verdict = fresh_verdict()
     const { container } = render(ClaimCard, {
       props: { claim: claim(), index: 2, verdict },
     })
 
-    // The number is the one the builder's own cross-references use.
-    expect(by_id(container, "claim-card-2").textContent).toContain("#3")
+    // The number is the one the builder's own cross-references use, in the
+    // row's first cell under the table's "#" header.
+    expect(
+      by_id(container, "claim-card-2").querySelector("td")!.textContent?.trim(),
+    ).toBe("3")
 
     await fireEvent.click(by_id(container, "claim-agree-2"))
     expect(verdict.agrees).toBe(true)

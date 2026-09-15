@@ -1,7 +1,8 @@
 <script lang="ts">
-  // One claim in the claim review: one decision the judge made, written so
-  // the reviewer can vote on it where they read it. The text carries its own
-  // evidence, with [n] chips that open the trace at the cited span. The
+  // One claim in the claim review, rendered as a row of the caller's claims
+  // table: one decision the judge made, written so the reviewer can vote on
+  // it where they read it. The text carries its own evidence, with [n] chips
+  // that open the trace at the cited span. The
   // reviewer answers Agree (the judge got this decision right) or Disagree
   // (it got it wrong); a disagreement needs a reason, which feeds judge
   // refinement. Every claim renders through this one component, the verdict
@@ -11,7 +12,6 @@
   // its score: everything on screen is the builder's text, the verdict
   // claim's "It passes" / "It fails" included.
   import { onDestroy } from "svelte"
-  import SettingsHeader from "$lib/ui/settings_header.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import ClaimText from "./claim_text.svelte"
@@ -23,8 +23,8 @@
   } from "./claim_evidence"
 
   export let claim: Claim
-  // Position in the review's claim list, shown as "#{index + 1}": the number
-  // the builder's own cross-references ("#1") use.
+  // Position in the review's claim list, shown in the table's "#" column as
+  // index + 1: the number the builder's own cross-references ("#1") use.
   export let index: number
   export let verdict: ClaimVerdict
   export let on_cite: (citation: Citation) => void = () => {}
@@ -69,6 +69,18 @@
   // One plain line of the claim for the collapsed row. The [n] markers are
   // dropped: a chip cut off mid-line is not something to click.
   $: collapsed_text = split.body.replace(/\s*\[\d+\]/g, "")
+
+  // The look of one answer button, given the side it answers. While the claim
+  // is undecided both sides carry btn-outline btn-primary: that is the house
+  // treatment for "pick one of these", and the ask is on both equally. Once
+  // answered, the chosen side is filled secondary and the other drops to a
+  // plain outline — the ask is spent, so the primary colour goes with it.
+  $: answer_class = (side: boolean) =>
+    verdict.agrees === side
+      ? "btn-secondary"
+      : verdict.agrees === null
+        ? "btn-outline btn-primary"
+        : "btn-outline"
 
   // The reason field and the hint that describes it, named once so the field,
   // its label and the aria wiring cannot drift apart.
@@ -151,40 +163,99 @@
   onDestroy(clear_hint_timer)
 </script>
 
-<!-- No card: a claim is not a click target or a list item. It is a titled
-     section like every other read-and-answer block in the app — the header
-     carries its number and its two answers, the text sits under the rule at
-     full width. The claim owns the gaps between its own parts; the list above
-     owns the gap between claims. Collapsed, it keeps the same header and
-     clamps the text to one line, so a claim never changes shape, only size. -->
-<div id="claim-card-{index}" class="flex flex-col gap-3">
-  {#if !open}
-    <SettingsHeader title="Claim #{index + 1}">
-      <svelte:fragment slot="actions">
-        <span id="claim-state-{index}" class="text-sm text-gray-500">
+<!-- One row of the claims table (the caller owns the table and its header).
+     Collapsed and expanded are the same three cells — the number, the claim,
+     the decision — so a claim never changes shape, only height: collapsed the
+     middle cell clamps to one line and the decision cell offers Edit;
+     expanded it carries the evidence, the aside and the reason box, and the
+     decision cell offers the two answers. -->
+<tr id="claim-card-{index}">
+  <td class="align-middle text-sm text-gray-500">{index + 1}</td>
+  <!-- max-w-0 with the column's w-full: the cell takes the slack the other two
+       columns leave, and nothing inside it can widen the column — which is
+       what makes the collapsed clamp below a clamp rather than a long row. -->
+  <td class="align-top max-w-0">
+    {#if !open}
+      <div class="text-sm text-gray-500 truncate">{collapsed_text}</div>
+    {:else}
+      <!-- The claim owns the gaps between its own parts; the table owns the
+           gap between claims. -->
+      <div class="flex flex-col gap-3">
+        <p class="text-sm leading-relaxed whitespace-normal">
+          <ClaimText text={split.body} citations={claim.citations} {on_cite} />
+        </p>
+
+        {#if split.note !== null}
+          <!-- The builder's aside, muted so it reads as context rather than as
+               part of the decision being voted on. -->
+          <p
+            class="text-sm text-gray-500 leading-relaxed whitespace-normal"
+            data-claim-note
+          >
+            <ClaimText
+              text={split.note}
+              citations={claim.citations}
+              {on_cite}
+            />
+          </p>
+        {/if}
+
+        {#if verdict.agrees === false}
+          <!-- A null validator, because an empty reason is not a form error to
+               spell out: the control's own required treatment already says it,
+               and the default validator would overwrite the placeholder with
+               the message. -->
+          <FormElement
+            id={why_id(index)}
+            inputType="textarea"
+            label={WHY_LABEL}
+            placeholder="This is wrong because…"
+            aria_describedby={why_hint_id(index)}
+            validator={() => null}
+            bind:value={verdict.why}
+          />
+          <!-- Fixed height whether or not a hint is showing, so the row never
+               shifts as the reviewer types. Announced politely so it reads out
+               without taking focus; the icon and the words carry the meaning,
+               the colour only ranks it. There is deliberately no "long
+               enough" state. -->
+          <div id={why_hint_id(index)} class="h-5" aria-live="polite">
+            {#if reason_hint}
+              <Warning
+                warning_color={reason_hint === "short" ? "warning" : "gray"}
+                warning_icon="exclaim"
+                inline
+                warning_message={REASON_HINTS[reason_hint]}
+              />
+            {/if}
+          </div>
+        {/if}
+      </div>
+    {/if}
+  </td>
+  <!-- The decision. The two answers sit side by side on one line and never
+       wrap: they are what sizes this column, so shrink-0 keeps their own width
+       the column's floor rather than letting the table squeeze them. -->
+  <td class="align-middle">
+    <div class="flex items-center gap-2">
+      {#if !open}
+        <span id="claim-state-{index}" class="text-sm text-gray-500 shrink-0">
           {state_label}
         </span>
-        <button id="claim-edit-{index}" class="btn btn-sm" on:click={on_open}>
+        <button
+          id="claim-edit-{index}"
+          class="btn btn-sm shrink-0"
+          on:click={on_open}
+        >
           Edit
         </button>
-      </svelte:fragment>
-    </SettingsHeader>
-    <p class="text-sm text-gray-500 truncate">{collapsed_text}</p>
-  {:else}
-    <SettingsHeader title="Claim #{index + 1}">
-      <!-- Agree / Disagree, in the words the payload stores, so nothing is
-           translated between the click and the record. The selection style is
-           the app's Rating and Feedback one, with one departure: an unmade
-           choice is a full-contrast outline button, and a made one is filled
-           secondary. The sibling keeps btn-outline on the chosen side and dims
-           the other, which in this theme leaves the two states almost
-           identical. -->
-      <svelte:fragment slot="actions">
+      {:else}
+        <!-- Agree / Disagree, in the words the payload stores, so nothing is
+             translated between the click and the record. Both sides take their
+             look from one place (answer_class), so the pair cannot drift. -->
         <button
           id="claim-agree-{index}"
-          class="btn btn-sm {verdict.agrees === true
-            ? 'btn-secondary'
-            : 'btn-outline'}"
+          class="btn btn-sm shrink-0 {answer_class(true)}"
           on:click={() => set_agrees(true)}
         >
           Agree
@@ -192,57 +263,13 @@
         </button>
         <button
           id="claim-disagree-{index}"
-          class="btn btn-sm {verdict.agrees === false
-            ? 'btn-secondary'
-            : 'btn-outline'}"
+          class="btn btn-sm shrink-0 {answer_class(false)}"
           on:click={() => set_agrees(false)}
         >
           Disagree
           <span class="opacity-80 ml-2 text-xs font-light">D</span>
         </button>
-      </svelte:fragment>
-    </SettingsHeader>
-
-    <p class="text-sm leading-relaxed">
-      <ClaimText text={split.body} citations={claim.citations} {on_cite} />
-    </p>
-
-    {#if split.note !== null}
-      <!-- The builder's aside, muted so it reads as context rather than as
-           part of the decision being voted on. -->
-      <p class="text-sm text-gray-500 leading-relaxed" data-claim-note>
-        <ClaimText text={split.note} citations={claim.citations} {on_cite} />
-      </p>
-    {/if}
-
-    {#if verdict.agrees === false}
-      <!-- A null validator, because an empty reason is not a form error to
-           spell out: the control's own required treatment already says it,
-           and the default validator would overwrite the placeholder with the
-           message. -->
-      <FormElement
-        id={why_id(index)}
-        inputType="textarea"
-        label={WHY_LABEL}
-        placeholder="This is wrong because…"
-        aria_describedby={why_hint_id(index)}
-        validator={() => null}
-        bind:value={verdict.why}
-      />
-      <!-- Fixed height whether or not a hint is showing, so the claim never
-           shifts as the reviewer types. Announced politely so it reads out
-           without taking focus; the icon and the words carry the meaning, the
-           colour only ranks it. There is deliberately no "long enough" state. -->
-      <div id={why_hint_id(index)} class="h-5" aria-live="polite">
-        {#if reason_hint}
-          <Warning
-            warning_color={reason_hint === "short" ? "warning" : "gray"}
-            warning_icon="exclaim"
-            inline
-            warning_message={REASON_HINTS[reason_hint]}
-          />
-        {/if}
-      </div>
-    {/if}
-  {/if}
-</div>
+      {/if}
+    </div>
+  </td>
+</tr>

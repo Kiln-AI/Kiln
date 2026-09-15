@@ -833,40 +833,77 @@ describe("the run config the eval is written against", () => {
 
 // ── The review-preparation and drive progress screens ──────────────────────
 //
-// A progress screen is the animation control and its two strings: the counts
-// ride in them, not in a line of their own under the bar. These pin where each
-// count lives, because the difference is invisible to a render test that only
-// reads text.
-describe("progress screens carry their counts in the animation's strings", () => {
-  it("titles the claims gate with its count, on both the first round and a later one", () => {
-    const titled =
-      normalized.split(
-        "title={`Preparing Review (${selected_claims_resolved}/${selected_trace_indices.length})`}",
-      ).length - 1
+// Every waiting screen on this step reads the same way: a static title and
+// description, and one ProgressCount under the bar carrying every live number.
+// A count inside a sentence re-lays that sentence out on every tick; under the
+// bar it changes in place. These pin where each count lives, because the
+// difference is invisible to a render test that only reads text.
+describe("progress screens carry their counts under the bar, never in a string", () => {
+  it("leaves the claims gate's title static on both the first round and a later one", () => {
     // Once for the first-round gate, once for the calibration round's.
-    expect(titled).toBe(2)
-    // And the description under it says what the screen is doing, with no
-    // count in it.
+    expect(normalized.split('title="Preparing Review"').length - 1).toBe(2)
     expect(normalized).toContain(
       'description="Finding the examples where your judgment is most useful."',
     )
+    // The count it used to carry now sits under that screen's bar.
+    expect(normalized.split("noun={`${judged_noun}s ready`}").length - 1).toBe(
+      2,
+    )
   })
 
-  it("puts the drive counts in the description and keeps no count line", () => {
+  it("leaves the drive descriptions static, with the counts under the bar", () => {
     expect(normalized).toContain(
-      "${multi_turn_turns_done} of up to ${multi_turn_total_turns} turns complete.",
+      'description="Simulating conversations with your agent and judging each one."',
     )
     expect(normalized).toContain(
-      "${judged_case_count} of ${pipeline_total_cases} judged.",
+      'description="Running your task on each item and judging the result."',
     )
-    // The old count line under the bar is gone from every progress screen.
-    expect(normalized).not.toContain('class="font-light text-xs text-center')
+    expect(normalized).toContain('noun="turns complete"')
+    expect(normalized).toContain('noun="judged"')
+    // No screen hand-rolls a bar any more: they all go through the component,
+    // so the readouts cannot drift apart.
+    expect(normalized).not.toContain('class="progress w-56 progress-success"')
+  })
+
+  it("routes every waiting screen's bar through the one readout component", () => {
+    // Minting, both drive arms, both claims gates, and the re-check.
+    expect(normalized.split("<ProgressCount").length - 1).toBe(6)
   })
 
   it("counts the cases dropped from the review on both claims gates", () => {
     // A case the builder wrote without a verdict claim is excluded from the
     // review; a prompt that starts dropping verdicts has to be visible.
     expect(normalized.split("num_no_verdict:").length - 1).toBe(2)
+  })
+})
+
+// ── The eval description, opened from the page header ──────────────────────
+//
+// The review step has no control of its own for the eval's text: the header's
+// sub-line is the way in, so the reviewer looks up rather than into the work.
+// The line and the action it fires are two props that must agree, and the
+// dialog they open lives in the review component.
+describe("the eval description opens from the page header", () => {
+  it("shows the line only on review, and only with text to show", () => {
+    expect(
+      contains(
+        'review_can_show_spec = current_step === "review" && current_spec_text.trim().length > 0',
+      ),
+    ).toBe(true)
+    expect(contains('review_can_show_spec ? "Eval Description" : ""')).toBe(
+      true,
+    )
+  })
+
+  it("fires the review's own dialog, under the same condition as the line", () => {
+    // Same flag on both, so the header can never render a line that opens
+    // nothing — nor an action with no line to fire it.
+    expect(
+      contains(
+        "sub_subtitle_action={review_can_show_spec ? () => review_component?.show_spec_dialog() : undefined}",
+      ),
+    ).toBe(true)
+    expect(contains("bind:this={review_component}")).toBe(true)
   })
 })
 
@@ -1047,12 +1084,16 @@ describe("wizard step copy", () => {
 
   it("asks the refine step's question in the header's second line", () => {
     // The step shows the eval rewritten from the user's answers, so the
-    // header asks what the step exists to answer — and only there.
-    expect(normalize(page_source)).toContain(
-      '$: page_sub_subtitle = current_step === "refine" ' +
-        '? "We\'ve integrated your feedback, does it look right?" : ""',
-    )
-    expect(normalize(page_source)).toContain("sub_subtitle={page_sub_subtitle}")
+    // header asks what the step exists to answer — and only there. The review
+    // step's own second line is pinned separately, below.
+    expect(
+      contains(
+        '$: page_sub_subtitle = current_step === "refine" ' +
+          '? "We\'ve integrated your feedback, does it look right?" ' +
+          ': review_can_show_spec ? "Eval Description" : ""',
+      ),
+    ).toBe(true)
+    expect(contains("sub_subtitle={page_sub_subtitle}")).toBe(true)
   })
 
   it("says what the minting screen is making, and leaves the count to the bar", () => {
