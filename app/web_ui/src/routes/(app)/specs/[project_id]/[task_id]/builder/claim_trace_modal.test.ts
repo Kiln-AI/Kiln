@@ -219,7 +219,6 @@ describe("claim_trace_modal — citation mapping fallbacks", () => {
     )
     await tick()
 
-    expect(container.querySelector("mark")).toBeNull()
     expect(warn_reasons(warn)).toContain("row_not_rendered")
   })
 

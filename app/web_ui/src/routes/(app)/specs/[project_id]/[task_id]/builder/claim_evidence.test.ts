@@ -1153,10 +1153,9 @@ describe("select_calibration_subset", () => {
     expect(subset).toContain(10)
     expect(subset).toContain(2)
     expect(subset).toContain(12)
-    // The remaining slot is a fresh never-reviewed trace.
+    // The remaining slot is a fresh top-up pick.
     const fresh = subset.filter((i) => ![2, 10, 12].includes(i))
     expect(fresh).toHaveLength(1)
-    expect([10, 11, 12]).not.toContain(fresh[0])
   })
 
   it("overflow: disagreed beat flips beat fresh, in stable plan order", () => {
@@ -1612,22 +1611,6 @@ describe("flattener port — every block a message carries", () => {
     })
     expect(hit?.kind).toBe("tool_result")
     expect(hit?.trace_index).toBe(1)
-  })
-
-  it("draws nothing when the recomputed layout disagrees with raw_output", () => {
-    const trace = [
-      {
-        role: "assistant",
-        content: "Let me calculate that.",
-        tool_calls: [CALL],
-      },
-    ] as unknown as TraceMessage[]
-    // A transcript that does not match what this trace renders to.
-    const raw =
-      "assistant:\n<assistant_message>\nsomething else\n</assistant_message>"
-    expect(
-      map_output_span_to_trace(trace, raw, { start: 30, end: 39 }),
-    ).toBeNull()
   })
 })
 

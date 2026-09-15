@@ -58,8 +58,21 @@ describe("Step 5 entry screen", () => {
 
   it("does not persist the dismissal", () => {
     // Per arrival, not per user: a reviewer who reloads has lost the context
-    // along with the page, so the screen earns its place again.
-    expect(intro_source).not.toContain("localStorage")
-    expect(intro_source).not.toContain("sessionStorage")
+    // along with the page, so the screen earns its place again. The flag lives
+    // on the builder page, which persists its state through the draft mirror,
+    // and the intro itself must not remember it either.
+    expect(intro_source).not.toMatch(/localStorage|sessionStorage/)
+    expect(page_source).toContain("let review_intro_dismissed = false")
+    const draft_mirror = page_source.match(
+      /\$: current_draft = draft_ready\s*\?\s*\{([\s\S]*?)\}/,
+    )
+    expect(draft_mirror).not.toBeNull()
+    expect(draft_mirror![1]).not.toContain("review_intro_dismissed")
+    const flag_lines = page_source
+      .split("\n")
+      .filter((line) => line.includes("review_intro_dismissed"))
+    for (const line of flag_lines) {
+      expect(line).not.toMatch(/Storage|saved\./)
+    }
   })
 })
