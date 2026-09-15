@@ -116,4 +116,5 @@ pyinstaller $(printf %s "$PLATFORM_OPTS")  \
   --hidden-import=kiln_ai.adapters.eval.eval_helpers \
   --hidden-import=litellm \
   --collect-all=litellm \
+  --collect-submodules=scipy._external.array_api_compat.numpy \
   --paths=. ./desktop/desktop.py
