@@ -3679,8 +3679,8 @@ async def test_get_available_tools_with_rag_configs(client, test_project):
             rag_set = next(s for s in result if s["set_name"] == "Search Tools (RAG)")
             assert len(rag_set["tools"]) == 2
 
-            # Verify RAG tool details: the user-facing config name is the tool
-            # name, and the model-facing tool name is the function name.
+            # Verify RAG tool details: name is the display name, function_name
+            # the callable tool name.
             tool_names = [tool["name"] for tool in rag_set["tools"]]
 
             assert "Test RAG Config 1" in tool_names
@@ -3690,7 +3690,7 @@ async def test_get_available_tools_with_rag_configs(client, test_project):
             for tool in rag_set["tools"]:
                 assert tool["id"].startswith("kiln_tool::rag::")
 
-            # Find specific tools and check their descriptions
+            # Find specific tools and check their fields
             config1_tool = next(
                 t for t in rag_set["tools"] if t["name"] == "Test RAG Config 1"
             )

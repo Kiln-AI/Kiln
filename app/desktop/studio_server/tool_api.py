@@ -179,6 +179,9 @@ class ExternalToolServerApiDescription(BaseModel):
 
 
 class ToolApiDescription(BaseModel):
+    """A tool as shown in pickers: name is the user-facing display name,
+    function_name the callable name the model sees (they often coincide)."""
+
     id: ToolId
     name: str
     description: str | None

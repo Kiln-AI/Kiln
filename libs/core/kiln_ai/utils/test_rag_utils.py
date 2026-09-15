@@ -57,13 +57,31 @@ class TestSplitGlobalChunkId:
         assert doc_id == original_doc_id
         assert chunk_idx == original_chunk_idx
 
-    def test_split_invalid_format_raises_error(self):
-        with pytest.raises(ValueError):
-            split_global_chunk_id("invalid_format")
+    @pytest.mark.parametrize(
+        "invalid_id",
+        [
+            "invalid_format",
+            "",
+            "doc::with::colons::0",
+            "doc::with::colons",
+        ],
+    )
+    def test_split_wrong_separator_count_raises_error(self, invalid_id):
+        with pytest.raises(ValueError, match="Expected exactly one '::' separator"):
+            split_global_chunk_id(invalid_id)
 
-    def test_split_invalid_chunk_idx_raises_error(self):
-        with pytest.raises(ValueError):
-            split_global_chunk_id("doc123::not_a_number")
+    @pytest.mark.parametrize(
+        "invalid_chunk_idx",
+        ["not_a_number", "", "1.5", "0x5"],
+    )
+    def test_split_non_integer_chunk_idx_raises_error(self, invalid_chunk_idx):
+        with pytest.raises(ValueError, match="is not an integer"):
+            split_global_chunk_id(f"doc123::{invalid_chunk_idx}")
+
+    def test_split_error_message_includes_offending_id(self):
+        with pytest.raises(ValueError) as exc_info:
+            split_global_chunk_id("doc::with::colons::0")
+        assert "doc::with::colons::0" in str(exc_info.value)
 
 
 class TestConvertSearchResultsToRerankInput:
