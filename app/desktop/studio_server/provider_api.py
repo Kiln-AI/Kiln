@@ -59,6 +59,17 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
 
 logger = logging.getLogger(__name__)
 
+# Origin for the hosted Kiln API. Override with the KILN_SERVER_BASE_URL environment variable --
+# the web UI's end-to-end suite uses it to point the client at a local mock, and a self-hosted or
+# regional deployment would use it the same way. Note that the Copilot API key is sent to whatever
+# this resolves to, so it should be an origin you trust.
+DEFAULT_KILN_SERVER_BASE_URL = "https://api.kiln.tech"
+
+
+def kiln_server_base_url() -> str:
+    """Resolve the Kiln API origin, honouring KILN_SERVER_BASE_URL."""
+    return os.environ.get("KILN_SERVER_BASE_URL", DEFAULT_KILN_SERVER_BASE_URL)
+
 
 async def connect_ollama(custom_ollama_url: str | None = None) -> OllamaConnection:
     # Tags is a list of Ollama models. Proves Ollama is running, and models are available.
