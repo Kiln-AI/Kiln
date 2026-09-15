@@ -1046,7 +1046,7 @@ def connect_provider_api(app: FastAPI):
         if not key:
             return JSONResponse(status_code=200, content={"is_valid": False})
 
-        base_url = os.environ.get("KILN_SERVER_BASE_URL", "https://api.kiln.tech")
+        base_url = kiln_server_base_url()
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(
