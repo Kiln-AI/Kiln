@@ -36,13 +36,6 @@
   export let description: string | undefined = undefined
   export let info_description: string | undefined = undefined
   export let settings: Partial<ModelDropdownSettings> = {}
-  // Suppresses the suggested-model advisory in its "all good" state only, for
-  // forms that stack several model lanes and would otherwise show a row of
-  // green checks. Warnings still render. Default keeps every other caller as
-  // it ships.
-  // No caller in the app sets this today; it stays as the documented way for
-  // a screen that stacks several lanes to drop the all-good confirmation.
-  export let quiet_suggested: boolean = false
   export let error_message: string | null = null
   export let inline_action: InlineAction | null = null
   export let optional: boolean = false
@@ -434,7 +427,7 @@
       />
     {/if}
   {:else if settings.suggested_mode === "data_gen"}
-    {#if show_suggested_advisory(!!model, selected_model_suggested_data_gen, quiet_suggested, suggestion_known)}
+    {#if show_suggested_advisory(!!model, suggestion_known)}
       <Warning
         warning_icon={!model
           ? "info"
@@ -450,7 +443,7 @@
       />
     {/if}
   {:else if settings.suggested_mode === "uncensored_data_gen"}
-    {#if show_suggested_advisory(!!model, selected_model_suggested_uncensored_data_gen, quiet_suggested, suggestion_known)}
+    {#if show_suggested_advisory(!!model, suggestion_known)}
       <Warning
         warning_icon={!model
           ? "info"
@@ -466,7 +459,7 @@
       />
     {/if}
   {:else if settings.suggested_mode === "evals"}
-    {#if show_suggested_advisory(!!model, selected_model_suggested_evals, quiet_suggested, suggestion_known)}
+    {#if show_suggested_advisory(!!model, suggestion_known)}
       <Warning
         warning_icon={!model
           ? "info"
@@ -482,7 +475,7 @@
       />
     {/if}
   {:else if settings.suggested_mode === "doc_extraction"}
-    {#if show_suggested_advisory(!!model, selected_model_suggested_doc_extraction, quiet_suggested, suggestion_known)}
+    {#if show_suggested_advisory(!!model, suggestion_known)}
       <Warning
         warning_icon={!model
           ? "info"
@@ -498,7 +491,7 @@
       />
     {/if}
   {:else if settings.suggested_mode === "synthetic_user"}
-    {#if show_suggested_advisory(!!model, selected_model_suggested_synthetic_user, quiet_suggested, suggestion_known)}
+    {#if show_suggested_advisory(!!model, suggestion_known)}
       <Warning
         warning_icon={!model
           ? "info"

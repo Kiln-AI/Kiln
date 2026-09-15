@@ -604,25 +604,6 @@ describe("Generation Settings dialog", () => {
     )
   })
 
-  it("shows the suggested-model advisory on every lane", () => {
-    // Each lane says what the models dropdown says everywhere else: a green
-    // check on a recommended model, an amber note on one outside the set. No
-    // lane quiets the check, so the judge and user-model lanes read like the
-    // input generator, which matches the same control in synthetic data
-    // generation. The grep below guards against a lane quieting it again.
-    const lanes = drive_settings_dialog
-      .split("<AvailableModelsDropdown")
-      .slice(1)
-      // Bound each chunk at its own tag close so a flag on a later lane can
-      // never stand in for an earlier one.
-      .map((chunk) => chunk.slice(0, chunk.indexOf("/>")))
-    expect(lanes.length).toBe(2)
-    for (const lane of lanes) {
-      expect(normalize(lane)).not.toContain("quiet_suggested")
-    }
-    expect(input_gen_lane()).not.toContain("quiet_suggested")
-  })
-
   it("puts the cost warning immediately before the submit", () => {
     // Last child of the FormContainer = directly above the submit row, which
     // is the one button that spends the credits.

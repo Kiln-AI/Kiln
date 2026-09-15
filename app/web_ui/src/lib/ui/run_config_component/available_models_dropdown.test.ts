@@ -110,7 +110,7 @@ async function render_dropdown(props: Record<string, unknown>) {
 describe.each(MODES)(
   "suggested advisory — $suggested_mode",
   ({ suggested_mode, flag, message }) => {
-    it("renders all three states by default", async () => {
+    it("renders all three states", async () => {
       set_selection(flag, false)
       const no_model = await render_dropdown({
         model: null,
@@ -140,64 +140,19 @@ describe.each(MODES)(
       ).not.toBeNull()
     })
 
-    it("hides only the suggested state when quiet_suggested is set", async () => {
-      set_selection(flag, true)
-      const { container } = await render_dropdown({
-        model: "openai/gpt-4o",
-        settings: { suggested_mode },
-        quiet_suggested: true,
-      })
-      expect(container.textContent).not.toContain(message)
-      expect(container.querySelector(".text-success")).toBeNull()
-    })
-
-    it("still warns about a model that is not suggested when quiet", async () => {
-      set_selection(flag, false)
-      const { container } = await render_dropdown({
-        model: "openai/gpt-4o",
-        settings: { suggested_mode },
-        quiet_suggested: true,
-      })
-      expect(container.textContent).toContain(message)
-      expect(container.querySelector(".text-warning")).not.toBeNull()
-    })
-
-    it("still prompts for a choice with no model when quiet", async () => {
-      set_selection(flag, true)
-      const { container } = await render_dropdown({
-        model: null,
-        settings: { suggested_mode },
-        quiet_suggested: true,
-      })
-      expect(container.textContent).toContain(message)
-    })
-
-    it("shows nothing for a chosen model while the list is loading when quiet", async () => {
+    it("shows nothing for a chosen model while the list is loading", async () => {
       // Before the list lands, a suggested model reads exactly like an
-      // unsuggested one — so rendering the warning here only to drop it once
-      // the list arrives moves everything below it. A restored model that IS
-      // suggested is the common case.
+      // unsuggested one, so rendering the amber note here only to swap it for
+      // the green check once the list arrives moves everything below it. A
+      // restored model that IS suggested is the common case.
       mock_available_models.set([])
       set_selection(flag, true)
       const { container } = await render_dropdown({
         model: "openai/gpt-4o",
         settings: { suggested_mode },
-        quiet_suggested: true,
       })
       expect(container.textContent).not.toContain(message)
       expect(container.querySelector(".text-warning")).toBeNull()
-    })
-
-    it("shows nothing for a chosen model while the list is loading, quiet or not", async () => {
-      // Same reason as above: a non-quiet caller would otherwise flash the
-      // amber note and swap it for the green check when the list arrives.
-      mock_available_models.set([])
-      set_selection(flag, true)
-      const { container } = await render_dropdown({
-        model: "openai/gpt-4o",
-        settings: { suggested_mode },
-      })
-      expect(container.textContent).not.toContain(message)
     })
   },
 )
