@@ -69,6 +69,14 @@
   // forgot it can reread it here. Empty or null hides the control.
   export let spec_text: string | null = null
 
+  // Height at which an overview folds behind Show All. Output reads its cap in
+  // pixels only, so this is a pixel value, never a viewport unit. Calibrated
+  // on the captured corpus: the longest overview there is about 400 characters,
+  // which renders around 260px tall in this column at a 1440px window and about
+  // 320px on a narrower one; this cap is roughly twice that, so no real overview
+  // folds and only a runaway of six or more sentences does.
+  const OVERVIEW_MAX_HEIGHT = "480px"
+
   let current_index = 0
   let trace_modal: ClaimTraceModal | null = null
   let spec_dialog: Dialog | null = null
@@ -330,12 +338,13 @@
                a string and cannot carry a clickable citation itself, so the
                caller renders the body and Output keeps the panel and the copy
                button (which copies the plain text passed as raw_output).
-               Deliberately uncapped: Output reads its cap in pixels only, so a
-               viewport unit would make every overview look overflowing and
-               paint a fade and a Show All over text that is not clipped. A
-               cap buys nothing either, since a column taller than the viewport
-               stops sticking and scrolls with the page. -->
-          <Output raw_output={current.overview.text}>
+               Capped in pixels so a runaway overview folds behind Show All
+               rather than pushing the buttons and the claims down the page;
+               the value and why it is a pixel value are on the constant. -->
+          <Output
+            raw_output={current.overview.text}
+            max_height={OVERVIEW_MAX_HEIGHT}
+          >
             <p class="text-sm leading-relaxed">
               <ClaimText
                 text={current.overview.text}
