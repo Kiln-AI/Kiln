@@ -15,17 +15,10 @@
   } from "$lib/utils/run_config_formatters"
   import ChartNoData from "./chart_no_data.svelte"
   import { formatLatency } from "$lib/utils/formatters"
-
-  // Type for comparison features (same as parent page)
-  type ComparisonFeature = {
-    category: string
-    items: { label: string; key: string }[]
-    has_default_eval_config: boolean | undefined
-    eval_id: string
-  }
+  import type { ComparisonSection } from "$lib/utils/compare_metric_keys"
 
   // Props
-  export let comparisonFeatures: ComparisonFeature[]
+  export let comparisonFeatures: ComparisonSection[]
   export let getModelValueRaw: (
     modelKey: string | null,
     dataKey: string,
