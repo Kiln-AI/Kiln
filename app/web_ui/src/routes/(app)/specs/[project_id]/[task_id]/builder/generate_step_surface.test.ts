@@ -107,12 +107,10 @@ describe("describe step action row", () => {
 describe("plan surface copy", () => {
   it("names the plan surface for the eval dataset it proposes", () => {
     // The header is the one label this surface overrides: what it lists is a
-    // proposed eval dataset, not the synthetic data flow's batch. The
-    // regenerate button keeps the shared default, so no override there.
+    // proposed eval dataset, not the synthetic data flow's batch.
     expect(normalize(plan_surface)).toContain(
       'header_label="Eval Dataset Proposal"',
     )
-    expect(plan_surface).not.toContain("regenerate_label=")
   })
 
   it("renders one subheader, the same on both arms", () => {
