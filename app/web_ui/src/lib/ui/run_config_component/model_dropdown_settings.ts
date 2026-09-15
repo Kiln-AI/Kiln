@@ -19,11 +19,7 @@ export interface ModelDropdownSettings {
 }
 
 // Whether the "we suggest a Recommended model" advisory renders under a model
-// dropdown. Quiet callers (forms with several model lanes, where one advisory
-// per lane is noise) drop it only in the state that tells the user nothing
-// new: a chosen model that already is suggested. The states that carry
-// information — no model chosen yet, or a model that is not suggested — always
-// render.
+// dropdown.
 //
 // `suggestion_known` is false while the model list is still loading: until it
 // arrives, a chosen model reads as "not suggested" whatever it really is. Every
@@ -31,12 +27,10 @@ export interface ModelDropdownSettings {
 // moment later and shifts the rows under it.
 export function show_suggested_advisory(
   model_selected: boolean,
-  model_is_suggested: boolean,
-  quiet_suggested: boolean,
   suggestion_known: boolean,
 ): boolean {
   if (model_selected && !suggestion_known) {
     return false
   }
-  return !(quiet_suggested && model_selected && model_is_suggested)
+  return true
 }

@@ -6,15 +6,14 @@
   export let on_delete: ((index: number) => void) | null = null
   // The noun for the rows. One prop feeds both the visible header and the
   // toggle's aria-label, so what a screen reader announces can never drift
-  // from what is on screen. Default reproduces the /generate strings.
-  export let items_label: string = "Dataset Items"
+  // from what is on screen.
+  export let items_label: string
   // The sentence under the header while expanded: null keeps the /generate
   // sentence, false renders no description, a string renders that string.
   // The render gate is falsy, so an empty string behaves the same as false.
-  export let expanded_description: string | null | false = null
+  export let expanded_description: string | null | false
   // Passed straight to the rows table: the header over its first column.
-  // Default matches that table's own, so /generate is unchanged.
-  export let column_label: string = "Prompt"
+  export let column_label: string
 
   const DEFAULT_EXPANDED_DESCRIPTION =
     "Each prompt below will be used to guide one dataset sample."

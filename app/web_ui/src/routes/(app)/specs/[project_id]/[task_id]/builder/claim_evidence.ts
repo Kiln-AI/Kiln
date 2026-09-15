@@ -11,6 +11,7 @@
 
 import type { components } from "$lib/api_schema"
 import type { TraceMessage } from "$lib/types"
+import { TASK_RESPONSE_TOOL_NAME } from "$lib/utils/task_response_tool"
 
 export type CitationSource = "input" | "output"
 
@@ -49,25 +50,6 @@ export type Claim = {
 export type Overview = {
   text: string
   citations: Citation[]
-}
-
-// What buildClaimEvidence returns for a single trace: the overview, then one
-// to eight claims in reading order.
-export type BuildClaimEvidenceOutput = {
-  overview: Overview
-  claims: Claim[]
-}
-
-// What buildClaimEvidence takes for a single trace. The studio adds
-// task_instruction itself (context for what the task is, never a rubric);
-// the UI sends the rest.
-export type BuildClaimEvidenceInput = {
-  task_instruction: string
-  raw_input: string
-  raw_output: string
-  eval_rubric: string
-  judge_reasoning: string
-  judge_score: JudgeScore
 }
 
 // ── Client-side per-trace bundle ─────────────────────────────────────────
@@ -449,11 +431,7 @@ function span_end(haystack: FoldedText, last: number): number {
 // Any drift would shift offsets, so the mapper verifies the recomputed block
 // against raw_output before trusting it (see below).
 
-export type TraceHighlightKind =
-  | "content"
-  | "reasoning"
-  | "tool_calls"
-  | "tool_result"
+type TraceHighlightKind = "content" | "reasoning" | "tool_calls" | "tool_result"
 
 export type TraceHighlight = {
   trace_index: number
@@ -520,11 +498,6 @@ function flattener_reasoning(message: TraceMessage): string | null {
   }
   return null
 }
-
-// The synthetic tool that carries a structured answer back from the model.
-// Not a tool the user defined, so it is never listed as one. Mirrors
-// TASK_RESPONSE_TOOL_NAME in libs/core .../open_ai_types.py.
-const TASK_RESPONSE_TOOL_NAME = "task_response"
 
 // Mirror EvalTraceFormatter.structured_output_from_message: the arguments of
 // the last task_response call, which are the model's answer.
@@ -827,9 +800,7 @@ export function empty_claim_verdicts(claims: Claim[]): ClaimVerdict[] {
 
 // Index of the claim carrying the overall verdict, or -1 when the builder
 // omitted it. At most one claim is flagged (the studio flags only the last).
-export function verdict_claim_index(
-  trace: Pick<TraceClaims, "claims">,
-): number {
+function verdict_claim_index(trace: Pick<TraceClaims, "claims">): number {
   return (trace.claims ?? []).findIndex((c) => c.is_verdict)
 }
 
@@ -1063,7 +1034,7 @@ export function select_calibration_subset(
 
 // The studio save contract IS in the generated schema — alias it (don't
 // hand-mirror) so a backend change to the payload shape fails to compile here.
-export type GradedClaim = components["schemas"]["GradedClaim"]
+type GradedClaim = components["schemas"]["GradedClaim"]
 export type ClaimReviewPayload = components["schemas"]["ClaimReviewApi"]
 
 function graded_claim(claim: Claim, verdict: ClaimVerdict): GradedClaim {
@@ -1123,7 +1094,7 @@ export function disagreement_feedback(review: TraceReview): string {
 export type GradedTracePayload = ClaimReviewPayload & { trace_label: string }
 
 // The refine model's proposed edit + its one-line rationale.
-export type RefineJudgeChange = { change: string; rationale: string }
+type RefineJudgeChange = { change: string; rationale: string }
 
 // The refine loop's response — a PROPOSAL, never auto-applied.
 export type RefineJudgeProposal = {

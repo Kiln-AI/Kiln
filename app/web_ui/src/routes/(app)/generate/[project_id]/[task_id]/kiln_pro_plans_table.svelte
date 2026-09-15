@@ -7,10 +7,8 @@
   // When provided, each row shows its status (e.g. what became of the prompt
   // once inputs were generated). Parallel to `prompts`.
   export let statuses: string[] | null = null
-  // Header for the first column. The default names /generate's rows, which
-  // really are generation prompts; surfaces whose rows are something else
-  // (e.g. per-item guidance) override it.
-  export let column_label = "Prompt"
+  // Header for the first column.
+  export let column_label: string
 
   $: reserved_width = (statuses ? 140 : 0) + (on_delete ? 40 : 0)
 </script>
