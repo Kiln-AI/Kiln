@@ -47,7 +47,7 @@ Our end-to-end UI tests are separate and not part of `checks.sh`.
 
 ### Agent Prompts
 
-Agents have access to a number of helpful prompts, which will give you additional context for how you should write code and docs for this repo. Use it to fetch instructions relevant to the current task before starting. For example, read `python_test_guide.md` before writing tests and `frontend_design_guide.md` before writing front end code.
+Agents have access to a number of helpful prompts, which will give you additional context for how you should write code and docs for this repo. Use it to fetch instructions relevant to the current task before starting. For example, read `python_test_guide.md` before writing tests, and invoke the `kiln-ui` skill (`.agents/skills/kiln-ui/SKILL.md`) before any change under `app/web_ui`; it loads `frontend_design_guide.md` and `frontend_controls.md` and adds a component plan and a gate.
 
 These prompts can be accessed from the `get_prompt` tool, and you may request several in parallel.
 
