@@ -1406,6 +1406,24 @@
   // Typed as KilnError so the dialog's FormContainer renders it in its own
   // centered error slot, like every other form in the app.
   let drive_settings_error: KilnError | null = null
+  // Drop the validation error the moment any lane or the length changes. The
+  // error describes a condition ("… to continue"), so it cannot outlive that
+  // condition: left standing over two now-filled dropdowns it reads as a
+  // contradiction. The lanes are passed as arguments so Svelte tracks them as
+  // this statement's dependencies; the error itself is never read here, so
+  // raising it cannot re-trigger the clear.
+  $: drive_settings_error = cleared_on_lane_change(
+    su_model_combined,
+    input_gen_model_combined,
+    judge_model_combined,
+    staged_turns_per_case,
+  )
+
+  // Always null — the arguments are read for their reactivity alone, so that
+  // the statement above depends on every value the dialog lets the user edit.
+  function cleared_on_lane_change(..._: (string | number | null)[]): null {
+    return null
+  }
   // One pre-population pass per mount; lanes the draft restored (or the
   // user committed) are never overwritten — only null lanes are filled.
   // Held as the pass's PROMISE, not a done flag: the plan surface starts the
@@ -1538,14 +1556,13 @@
 
   async function open_drive_settings() {
     drive_settings_error = null
-    // Reseed the stepper from the committed length before the dialog paints,
-    // so a cancelled nudge is gone the next time it opens. Unlike the lanes it
-    // waits on nothing, so it is seeded here rather than after the await.
+    // Reseed the stepper from the committed length, so a cancelled nudge is
+    // gone the next time it opens. Unlike the lanes it waits on nothing, so it
+    // is seeded up front rather than after the await below.
     staged_turns_per_case = turns_per_case
-    drive_settings_dialog?.show()
     // Await the pre-population pass (usually already in flight from the plan
-    // surface) so the reseed below reads resolved lanes: the dialog shows
-    // immediately and its dropdowns fill when the lanes land.
+    // surface, so this resolves at once) so the reseed below reads resolved
+    // lanes. On failure the dialog still opens on whatever is committed.
     try {
       await prepopulate_lanes()
     } catch (e) {
@@ -1575,6 +1592,10 @@
     } else {
       input_gen_config_component?.reset_run_options()
     }
+    // Show last, once every lane holds its committed or default value: opening
+    // first let the user pick while the defaults were still resolving, and the
+    // reseed above then overwrote that pick.
+    drive_settings_dialog?.show()
   }
 
   // The authored multi-turn judge prompt, cached against BOTH authoring
