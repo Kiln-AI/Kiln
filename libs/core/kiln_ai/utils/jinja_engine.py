@@ -10,6 +10,7 @@ Both envs share trim_blocks=True and lstrip_blocks=True for prompt-friendly outp
 Public API:
   - compile_template_or_raise(template) -> None
   - compile_expression_or_raise(expression) -> None
+  - expression_variables(expression) -> set[str]
   - render_input_transform(transform, task_input) -> str
   - extract(expression, data) -> Any
 """
@@ -20,7 +21,7 @@ import json
 import types
 from typing import TYPE_CHECKING, Any
 
-from jinja2 import StrictUndefined, TemplateSyntaxError, Undefined
+from jinja2 import StrictUndefined, TemplateSyntaxError, Undefined, UndefinedError
 from jinja2.sandbox import SandboxedEnvironment
 
 if TYPE_CHECKING:
@@ -28,10 +29,13 @@ if TYPE_CHECKING:
 
 
 class JinjaExtractionError(ValueError):
-    """Raised when a Jinja2 filter encounters invalid data during extraction.
+    """Raised when a Jinja2 expression encounters missing or invalid data during extraction.
 
-    For example, the ``fromjson`` filter raises this when the input string is
-    not valid JSON.
+    Covers both filters that reject their input (``fromjson`` on a non-JSON
+    string) and expressions that operate on a value that isn't there (reaching
+    into a missing nested field, indexing past the end of a list). Callers treat
+    it as "this input didn't have what the expression asked for" rather than an
+    unexpected crash.
     """
 
 
@@ -85,6 +89,24 @@ def compile_expression_or_raise(expression: str) -> None:
         ) from e
 
 
+def expression_variables(expression: str) -> set[str]:
+    """Return the namespace variables a Jinja2 expression reads.
+
+    An expression is not a template -- ``final_message.strip()`` parsed as a
+    template is just literal text with no variables -- so it is wrapped in an
+    output block before the AST walk. Raises ValueError on syntax error.
+    """
+    from jinja2 import meta
+
+    try:
+        ast = _expression_env.parse("{{ " + expression + " }}")
+    except TemplateSyntaxError as e:
+        raise ValueError(
+            f"Invalid Jinja2 expression: {e.message} (line {e.lineno})"
+        ) from e
+    return meta.find_undeclared_variables(ast)
+
+
 def render_input_transform(
     transform: InputTransform,
     task_input: Any,
@@ -108,6 +130,7 @@ def extract(expression: str, data: dict) -> Any:
     - Missing keys return Undefined (not None, not a raise).
     - Explicit null values return None.
     - Generators are auto-materialized to lists.
+    - Operating on a missing value raises JinjaExtractionError, never UndefinedError.
     """
     try:
         compiled = _expression_env.compile_expression(
@@ -117,9 +140,19 @@ def extract(expression: str, data: dict) -> Any:
         raise ValueError(
             f"Invalid Jinja2 expression: {e.message} (line {e.lineno})"
         ) from e
-    result = compiled(**data)
-    if isinstance(result, types.GeneratorType):
-        result = list(result)
+    try:
+        result = compiled(**data)
+        # Materializing inside the try is load-bearing: map/selectattr/groupby
+        # return lazy generators, so their per-item lookups don't run until
+        # list() does. A missing field there raises here, not above.
+        if isinstance(result, types.GeneratorType):
+            result = list(result)
+    except UndefinedError as e:
+        # A single missing lookup yields Undefined, but any further operation on
+        # it (attribute access, indexing, a filter) raises. That's still just
+        # missing data, so surface it as an extraction error callers handle --
+        # keeping Jinja's message, which names the field that wasn't there.
+        raise JinjaExtractionError(str(e)) from e
     return result
 
 

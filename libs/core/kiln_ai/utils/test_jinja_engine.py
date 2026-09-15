@@ -7,6 +7,7 @@ from kiln_ai.utils.jinja_engine import (
     JinjaExtractionError,
     compile_expression_or_raise,
     compile_template_or_raise,
+    expression_variables,
     extract,
     render_input_transform,
 )
@@ -171,6 +172,86 @@ class TestExtract:
     def test_malformed_expression_raises_value_error(self):
         with pytest.raises(ValueError, match="Invalid Jinja2 expression"):
             extract("{{ invalid", {})
+
+
+class TestExpressionVariables:
+    @pytest.mark.parametrize(
+        "expression,expected",
+        [
+            # A bare expression has no {{ }} of its own, so it only reports
+            # variables once the function wraps it.
+            ("final_message", {"final_message"}),
+            ("final_message.strip()", {"final_message"}),
+            ("(final_message | fromjson).user.status", {"final_message"}),
+            ("trace | map(attribute='x') | list", {"trace"}),
+            ("outpt.status", {"outpt"}),
+            # Delimiters inside a string literal are lexed as text, not as the
+            # end of the wrapper block.
+            ('final_message ~ "}}"', {"final_message"}),
+            ("'literal'", set()),
+        ],
+    )
+    def test_reports_referenced_variables(self, expression, expected):
+        assert expression_variables(expression) == expected
+
+    def test_syntax_error_raises_value_error(self):
+        with pytest.raises(ValueError, match="Invalid Jinja2 expression"):
+            expression_variables("final_message[")
+
+
+class TestExtractOperationsOnMissingData:
+    """Operating on a missing value is an extraction error, not an unhandled raise.
+
+    A single missing lookup returns Undefined, but anything done to that
+    Undefined raises inside Jinja. Callers only handle JinjaExtractionError, so
+    extract() must convert -- while keeping Jinja's message, which names the
+    field that wasn't there.
+    """
+
+    @pytest.mark.parametrize(
+        "expression,data,expected_message",
+        [
+            # A filter or operator that forces the Undefined.
+            ("missing | int", {}, "'missing' is undefined"),
+            ("missing + 1", {}, "'missing' is undefined"),
+            # Reaching into a field the parsed JSON doesn't have.
+            (
+                "(final_message | fromjson).user.status",
+                {"final_message": '{"status": "ok"}'},
+                "'dict object' has no attribute 'user'",
+            ),
+            # Indexing past the end of a list.
+            (
+                "trace[-1].tool_calls[0].function.name",
+                {"trace": []},
+                "has no element -1",
+            ),
+        ],
+    )
+    def test_raising_operation_on_missing_value(
+        self, expression, data, expected_message
+    ):
+        # Only operations that force the value raise; others stay silent, which
+        # test_silent_operation_on_missing_value pins.
+        with pytest.raises(JinjaExtractionError, match=expected_message):
+            extract(expression, data)
+
+    def test_silent_operation_on_missing_value(self):
+        # The other side of the boundary: `~` stringifies Undefined to '' rather
+        # than raising, so a typo'd name yields a wrong value, not an error.
+        assert extract("final_message ~ typo", {"final_message": "hi"}) == "hi"
+
+    def test_lazy_generator_over_missing_field_raises_extraction_error(self):
+        # The sole guard that generators are materialized inside extract()'s try:
+        # map() defers its per-item lookups, so the raise fires during list(),
+        # not when the compiled expression is called.
+        with pytest.raises(
+            JinjaExtractionError, match="'dict object' has no attribute 'tool_calls'"
+        ):
+            extract(
+                "trace | map(attribute='tool_calls.0.function.name')",
+                {"trace": [{"content": "no tools"}]},
+            )
 
 
 class TestTrimAndLstripBlocks:
