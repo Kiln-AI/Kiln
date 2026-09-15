@@ -83,7 +83,12 @@ def raise_for_empty_model_response(response_choice: Any) -> NoReturn:
         raise ValueError(
             CONTENT_FILTER_ERROR_MESSAGE.format(finish_reason=finish_reason)
         )
-    raise ValueError(EMPTY_RESPONSE_ERROR_MESSAGE)
+    # finish_reason distinguishes the failure modes behind an empty message
+    # (e.g. 'length' = token budget consumed by reasoning before any output)
+    # — without it, post-mortems can't tell them apart from logs alone.
+    raise ValueError(
+        f"{EMPTY_RESPONSE_ERROR_MESSAGE} (finish_reason={finish_reason!r})"
+    )
 
 
 @dataclass
