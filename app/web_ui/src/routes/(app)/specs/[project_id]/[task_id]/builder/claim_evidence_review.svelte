@@ -5,6 +5,12 @@
   // screen is the builder's text: the judge's score and reasoning never
   // render here, since the reviewer's calls are what calibrate the judge.
   //
+  // Claims are answered where they are expanded: a case opens its first
+  // undecided claim, and the others wait as one line each with their state and
+  // Edit (open_claims_by_trace). The Overview sits beside the claims on wide
+  // windows, and the case header carries the decided count and a button per
+  // case.
+  //
   // The overall pass/fail call is the verdict claim's grade — the builder
   // writes the verdict as the last claim, and a case without one is not put in
   // front of the reviewer at all (reviewable_subset). Next is gated on the
@@ -30,6 +36,7 @@
   import {
     is_trace_reviewed,
     type Citation,
+    type ClaimVerdict,
     type TraceClaims,
     type TraceReview,
   } from "./claim_evidence"
@@ -65,6 +72,7 @@
   let current_index = 0
   let trace_modal: ClaimTraceModal | null = null
   let spec_dialog: Dialog | null = null
+  let claim_cards: ClaimCard[] = []
 
   $: has_spec_text = (spec_text ?? "").trim().length > 0
 
@@ -120,9 +128,143 @@
   $: current_reviewed = is_trace_reviewed(current, current_verdicts)
 
   // The reviewer's position in the graded sequence, which the step header
-  // states. It is the review's only progress readout.
+  // states.
   $: case_position = selected.indexOf(current_index) + 1
+
+  // Which claims are expanded, per case. On entry a case expands its first
+  // undecided claim. Agree collapses the claim and expands the next undecided
+  // one. Disagree keeps the claim expanded for its reason and also expands the
+  // next undecided claim, so the reviewer can answer it straight away. A
+  // disagree collapses when the reviewer answers or opens another claim, but
+  // only once its reason is filled in: an empty reason is what holds Next, so
+  // it stays in view.
+  let open_claims_by_trace: Record<number, number[]> = {}
+  // The claim the A / D shortcuts answer: the one the reviewer reached last.
+  let active_claim_by_trace: Record<number, number> = {}
+  $: pin_open_claims(current_index, current, current_verdicts)
+  function pin_open_claims(
+    trace_index: number,
+    trace: TraceClaims | undefined,
+    review: TraceReview | undefined,
+  ) {
+    if (open_claims_by_trace[trace_index] !== undefined) return
+    // Lazily-built claims arrive later; wait until their slots exist.
+    const slots = review?.claim_verdicts ?? []
+    if (trace?.claims_state !== "built" || slots.length === 0) return
+    // A disagree still missing its reason is what holds Next, so it opens
+    // alongside the first undecided claim, as it was when the case was left.
+    const first = first_undecided(slots)
+    const waiting = unfinished(
+      slots.map((_, i) => i),
+      slots,
+    )
+    set_open(
+      trace_index,
+      [...waiting, first],
+      first >= 0 ? first : waiting[0] ?? -1,
+    )
+  }
+  $: open_claims = open_claims_by_trace[current_index] ?? []
+  $: active_claim = active_claim_by_trace[current_index] ?? -1
+
+  function first_undecided(slots: ClaimVerdict[]): number {
+    return slots.findIndex((v) => v.agrees === null)
+  }
+  // The open claims that stay open whatever the reviewer does next: a
+  // disagree whose reason is still empty.
+  function unfinished(open: number[], slots: ClaimVerdict[]): number[] {
+    return open.filter(
+      (i) => slots[i]?.agrees === false && slots[i].why.trim().length === 0,
+    )
+  }
+  function set_open(trace_index: number, open: number[], active: number) {
+    const unique = [...new Set(open.filter((i) => i >= 0))]
+    open_claims_by_trace = { ...open_claims_by_trace, [trace_index]: unique }
+    active_claim_by_trace = { ...active_claim_by_trace, [trace_index]: active }
+  }
+  // Edit: expand this claim, collapsing every other claim that is finished.
+  function open_claim(index: number) {
+    const slots = current_verdicts?.claim_verdicts ?? []
+    set_open(current_index, [...unfinished(open_claims, slots), index], index)
+  }
+  // A claim was answered. With no undecided claim left, only unfinished
+  // disagrees stay open, so a finished case reads as a list of decided claims.
+  function answered(index: number, agrees: boolean) {
+    const slots = current_verdicts?.claim_verdicts ?? []
+    const next = first_undecided(slots)
+    const others = unfinished(
+      open_claims.filter((i) => i !== index),
+      slots,
+    )
+    if (agrees) set_open(current_index, [...others, next], next)
+    else
+      set_open(
+        current_index,
+        [...others, index, next],
+        next >= 0 ? next : index,
+      )
+  }
+
+  // Decided counts: for this case beside the Claims header, and for the whole
+  // subset in the case header. A disagreement without its reason counts as
+  // decided here; Next still waits for the reason.
+  const count_decided = (review: TraceReview | undefined) =>
+    (review?.claim_verdicts ?? []).filter((v) => v.agrees !== null).length
+  $: case_decided = count_decided(current_verdicts)
+  $: case_claims = current?.claims?.length ?? 0
+  $: batch_counts = count_batch(selected, traces, verdicts)
+  function count_batch(
+    indices: number[],
+    all_traces: TraceClaims[],
+    reviews: TraceReview[],
+  ) {
+    let decided = 0
+    let total = 0
+    for (const i of indices) {
+      decided += count_decided(reviews[i])
+      total += all_traces[i]?.claims?.length ?? 0
+    }
+    return { decided, total }
+  }
+
+  // One button per case in the case header: the current case, cases already
+  // reviewed, and the rest. Any case can be jumped to.
+  $: case_steps = selected.map((trace_index, position) => ({
+    trace_index,
+    position,
+    reviewed: is_trace_reviewed(
+      traces[trace_index],
+      trace_index === current_index ? current_verdicts : verdicts[trace_index],
+    ),
+  }))
+
+  // A answers Agree and D Disagree on the claim reached last. Ignored while
+  // typing, while a dialog is open, and with a modifier held so the browser's
+  // own shortcuts still work.
+  function handle_keydown(event: KeyboardEvent) {
+    // A held key repeats, and would answer claim after claim.
+    if (event.repeat) return
+    if (event.metaKey || event.ctrlKey || event.altKey) return
+    const key = event.key.toLowerCase()
+    if (key !== "a" && key !== "d") return
+    const target = event.target as HTMLElement | null
+    if (
+      target &&
+      (target.isContentEditable ||
+        ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+    )
+      return
+    if (document.querySelector("dialog[open]")) return
+    if (current?.claims_state !== "built") return
+    if (!open_claims.includes(active_claim)) return
+    const card = claim_cards[active_claim]
+    if (!card) return
+    event.preventDefault()
+    card.set_agrees(key === "a")
+  }
 </script>
+
+<svelte:window on:keydown={handle_keydown} />
 
 <!-- One vertical stack owns every gap on the step: gap-6 between sections
      (the form rhythm the rest of the app is built on), gap-3 inside one.
@@ -136,20 +278,84 @@
     <SettingsHeader
       title={`Case ${case_position} of ${selected.length}`}
       subtitle="Confirm the judge is aligned to your expectations."
-    />
+    >
+      <svelte:fragment slot="actions">
+        <span id="review-batch-count" class="text-sm text-gray-500">
+          {batch_counts.decided}/{batch_counts.total} claims decided
+        </span>
+        <!-- Joined buttons, as the house pagination joins them. The current case is the one to
+             find, so it takes the filled chosen state; a reviewed case is
+             the grey default, and a case still to review is the unchosen
+             outline the answer buttons use. -->
+        <div class="join" id="review-case-steps">
+          {#each case_steps as step (step.trace_index)}
+            <button
+              class="join-item btn btn-xs {step.trace_index === current_index
+                ? 'btn-secondary'
+                : step.reviewed
+                  ? ''
+                  : 'btn-outline'}"
+              aria-current={step.trace_index === current_index
+                ? "step"
+                : undefined}
+              on:click={() => (current_index = step.trace_index)}
+            >
+              {step.position + 1}
+            </button>
+          {/each}
+        </div>
+      </svelte:fragment>
+    </SettingsHeader>
 
-    <!-- The Overview section renders in every state, so the step never
-         changes shape between cases: the header and its two escape hatches
-         hold still, and only the body underneath differs — the overview when
-         the build produced one, the failure and its retry when it did not,
-         and the in-panel wait while it is still running. The [n] chips open
-         the same trace view the claims do. -->
-    <div id="review-overview" class="flex flex-col gap-3">
-      <SettingsHeader title="Overview">
-        <svelte:fragment slot="actions">
+    <!-- Overview beside the claims on wide windows, in a grid that stacks to
+         one column below xl the way the judge form's side pane does. The
+         Overview holds still while the reviewer scrolls a long claim list. -->
+    <div
+      class="grid grid-cols-1 gap-y-6 xl:gap-x-16 xl:items-start xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]"
+    >
+      <!-- The Overview section renders in every state, so the step never
+           changes shape between cases: the header and its two escape hatches
+           hold still, and only the body differs — the overview when the build
+           produced one, and the in-panel wait while it is still running. The
+           [n] chips open the same trace view the claims do. -->
+      <div
+        id="review-overview"
+        class="flex flex-col gap-3 min-w-0 xl:sticky xl:top-6"
+      >
+        <SettingsHeader title="Overview" />
+
+        {#if current.overview}
+          <!-- The read-only surface the rest of the app shows read-only
+               content on, with the chips rendered into its slot: Output prints
+               a string and cannot carry a clickable citation itself, so the
+               caller renders the body and Output keeps the panel and the copy
+               button (which copies the plain text passed as raw_output).
+               Capped in height so a long overview never pushes the two
+               buttons under it out of the sticky column. -->
+          <Output raw_output={current.overview.text} max_height="50vh">
+            <p class="text-sm leading-relaxed">
+              <ClaimText
+                text={current.overview.text}
+                citations={current.overview.citations}
+                on_cite={open_citation}
+              />
+            </p>
+          </Output>
+        {:else if current.claims_state === "unbuilt" || current.claims_state === "building"}
+          <!-- The build starts on open, so both render as in-progress, in the
+               body the overview will fill. Named rather than written as "not
+               built": a failed build never reaches this component, and if one
+               ever did, an honest empty body beats a spinner that never stops. -->
+          <div class="text-center py-12 text-gray-500">
+            <div class="loading loading-dots loading-md mb-2"></div>
+            <div class="text-sm">Analyzing this {judged_noun}…</div>
+          </div>
+        {/if}
+
+        <!-- The two escape hatches under what they expand on: both open
+             something the reviewer reads and closes. -->
+        <div class="flex flex-wrap gap-2">
           {#if has_spec_text}
-            <!-- The eval text as a second escape hatch, beside the trace
-                 one: both open something the reviewer reads and closes. -->
             <button
               id="view-eval"
               class="btn btn-sm"
@@ -165,101 +371,87 @@
           >
             Full Trace
           </button>
-        </svelte:fragment>
-      </SettingsHeader>
-
-      {#if current.overview}
-        <!-- The read-only surface the rest of the app shows read-only content
-             on, with the chips rendered into its slot: Output prints a string
-             and cannot carry a clickable citation itself, so the caller
-             renders the body and Output keeps the panel and the copy button
-             (which copies the plain text passed as raw_output). -->
-        <Output raw_output={current.overview.text}>
-          <p class="text-sm leading-relaxed">
-            <ClaimText
-              text={current.overview.text}
-              citations={current.overview.citations}
-              on_cite={open_citation}
-            />
-          </p>
-        </Output>
-      {:else if current.claims_state === "unbuilt" || current.claims_state === "building"}
-        <!-- The build starts on open, so both render as in-progress, in the
-             body the overview will fill. Named rather than written as "not
-             built": a failed build never reaches this component, and if one
-             ever did, an honest empty body beats a spinner that never stops. -->
-        <div class="text-center py-12 text-gray-500">
-          <div class="loading loading-dots loading-md mb-2"></div>
-          <div class="text-sm">Analyzing this {judged_noun}…</div>
         </div>
-      {/if}
-      <!-- Built but with no overview written: the header still labels the
-           section and its escape hatches still work, and nothing is invented
-           to fill the body. -->
-    </div>
+      </div>
 
-    {#if current.claims_state === "built"}
       <!-- The claims are a list of fields, so they sit at the form's
            field-to-field gap, not the tighter gap a claim uses inside itself.
-           The section header is the list's first item and takes the same. -->
-      <div class="flex flex-col gap-6">
-        <SettingsHeader title="Claims" subtitle={claims_description} />
-        {#each visible as { claim, index } (index)}
-          <ClaimCard
-            {claim}
-            {index}
-            bind:verdict={current_verdicts.claim_verdicts[index]}
-            on_cite={open_citation}
-          />
-        {/each}
-      </div>
-    {/if}
-  {/if}
+           The section header is the list's first item and takes the same, and
+           the nav row is its last, so the forward action sits under the work. -->
+      <div class="flex flex-col gap-6 min-w-0">
+        {#if current.claims_state === "built"}
+          <SettingsHeader title="Claims" subtitle={claims_description}>
+            <svelte:fragment slot="actions">
+              <span id="review-case-count" class="text-sm text-gray-500">
+                {case_decided}/{case_claims} decided
+              </span>
+            </svelte:fragment>
+          </SettingsHeader>
+          {#each visible as { claim, index } (index)}
+            <ClaimCard
+              bind:this={claim_cards[index]}
+              {claim}
+              {index}
+              bind:verdict={current_verdicts.claim_verdicts[index]}
+              open={open_claims.includes(index)}
+              on_open={() => open_claim(index)}
+              on_answer={(agrees) => answered(index, agrees)}
+              on_cite={open_citation}
+            />
+          {/each}
+        {/if}
 
-  <!-- Bottom nav, the last child of the stack at the same section gap:
-       Previous on the left, the forward action on the right. Wizard-step
-       navigation is the browser's Back/Forward. Previous is hidden rather
-       than disabled where there is nothing to go back to; Next is gated on
-       finishing the current case. On the last case the same slot becomes the
-       save action. -->
-  <div class="flex items-center justify-between gap-2">
-    {#if has_prev}
-      <button class="btn" on:click={go_prev}>Previous</button>
-    {:else}
-      <div></div>
-    {/if}
-    {#if has_next}
-      <button
-        class="btn btn-primary"
-        on:click={go_next}
-        disabled={!current_reviewed}>Next</button
-      >
-    {:else if !save_disabled}
-      <!-- Last case, gate met. One label whatever the review found: what the
-           click does is settled in the dialog it opens, not in the word on the
-           button. The keyboard hint rides only this enabled variant, because
-           the shortcut fires the same action and only once the gate is met —
-           the house form shows the same hint on its own submit. -->
-      <button id="review-continue" class="btn btn-primary" on:click={on_save}>
-        Continue
-        <span class="opacity-80 ml-2 text-xs font-light">
-          {#if isMacOS()}
-            <span class="tracking-widest">⌘↵</span>
+        <!-- Previous on the left, the forward action on the right. Wizard-step
+             navigation is the browser's Back/Forward. Previous is hidden
+             rather than disabled where there is nothing to go back to; Next is
+             gated on finishing the current case. On the last case the same
+             slot becomes the save action. -->
+        <div class="flex items-center justify-between gap-2">
+          {#if has_prev}
+            <button class="btn" on:click={go_prev}>Previous</button>
           {:else}
-            <span>ctrl ↵</span>
+            <div></div>
           {/if}
-        </span>
-      </button>
-    {:else}
-      <!-- Last case, gate not met: the same action, simply disabled. A "Next"
-           here would point at nothing, so the slot stays this action
-           throughout. No keyboard hint: the shortcut is gated on the same rule
-           as this button. -->
-      <button id="review-continue" class="btn btn-primary" disabled>
-        Continue
-      </button>
-    {/if}
-  </div>
+          {#if has_next}
+            <button
+              class="btn btn-primary"
+              on:click={go_next}
+              disabled={!current_reviewed}>Next</button
+            >
+          {:else if !save_disabled}
+            <!-- Last case, gate met. One label whatever the review found: what
+                 the click does is settled in the dialog it opens, not in the
+                 word on the button. The keyboard hint rides only this enabled
+                 variant, because the shortcut fires the same action and only
+                 once the gate is met — the house form shows the same hint on
+                 its own submit. -->
+            <button
+              id="review-continue"
+              class="btn btn-primary"
+              on:click={on_save}
+            >
+              Continue
+              <span class="opacity-80 ml-2 text-xs font-light">
+                {#if isMacOS()}
+                  <span class="tracking-widest">⌘↵</span>
+                {:else}
+                  <span>ctrl ↵</span>
+                {/if}
+              </span>
+            </button>
+          {:else}
+            <!-- Last case, gate not met: the same action, simply disabled. A
+                 "Next" here would point at nothing, so the slot stays this
+                 action throughout. No keyboard hint: the shortcut is gated on
+                 the same rule as this button. -->
+            <button id="review-continue" class="btn btn-primary" disabled>
+              Continue
+            </button>
+          {/if}
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <!-- One trace rendering for both arms: a single-turn run is a conversation of

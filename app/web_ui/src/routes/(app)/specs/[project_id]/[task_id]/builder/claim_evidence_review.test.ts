@@ -165,10 +165,34 @@ function cited_text(container: HTMLElement): string | null {
   return container.querySelector("mark")?.textContent ?? null
 }
 
+// Three claims, so a claim after the next one is there to stay collapsed.
+function three_claim_trace(id: string): TraceClaims {
+  return {
+    ...built_trace(id),
+    claims: [
+      claim("The agent stated a return window as fact [1]."),
+      claim("The agent named no policy page.", { citations: [] }),
+      claim(VERDICT_TEXT, { is_verdict: true }),
+    ],
+  }
+}
+
+// The claims whose answer buttons are on screen, by index.
+function open_claims(container: HTMLElement): number[] {
+  return [...container.querySelectorAll("[id^=claim-agree-]")].map((el) =>
+    Number(el.id.replace("claim-agree-", "")),
+  )
+}
+
+// A collapsed claim's state label.
+function state_of(container: HTMLElement, index: number): string {
+  return by_id(container, `claim-state-${index}`).textContent?.trim() ?? ""
+}
+
 // ── The review surface ───────────────────────────────────────────────────
 
 describe("ClaimEvidenceReview — overview and claims", () => {
-  it("shows the overview with the trace button beside it and every claim open", async () => {
+  it("shows the overview with its trace button, the first claim open and the rest collapsed", async () => {
     const { container, getByText } = render_review([built_trace("t0")])
 
     const overview = by_id(container, "review-overview")
@@ -177,15 +201,25 @@ describe("ClaimEvidenceReview — overview and claims", () => {
     )
     expect(overview.querySelector("#view-full-trace")).not.toBeNull()
 
-    // The claims are the review, so they are on screen on arrival, numbered,
-    // with no disclosure to open first.
+    // The claims are the review, so the first is open on arrival with its
+    // answers, and the rest wait as one line each with their state and Edit.
     expect(
       getByText(
         "The decisions the judge made about this conversation. Agree or disagree with each.",
       ),
     ).toBeTruthy()
-    expect(by_id(container, "claim-card-0").textContent).toContain("#1")
-    expect(by_id(container, "claim-card-1").textContent).toContain(VERDICT_TEXT)
+    const first = by_id(container, "claim-card-0")
+    expect(first.textContent).toContain("#1")
+    expect(first.querySelector("#claim-agree-0")).not.toBeNull()
+    const second = by_id(container, "claim-card-1")
+    expect(second.querySelector("#claim-agree-1")).toBeNull()
+    expect(state_of(container, 1)).toBe("Not decided")
+    expect(second.querySelector("#claim-edit-1")).not.toBeNull()
+    // One plain line: the [1] marker is dropped rather than cut into a chip.
+    expect(second.textContent).toContain(
+      "It fails because the window was never verified.",
+    )
+    expect(second.querySelector("button[title='View in trace']")).toBeNull()
     expect(
       [...container.querySelectorAll("button")].some((b) =>
         /show claims/i.test(b.textContent ?? ""),
@@ -223,12 +257,12 @@ function spec_dialog(container: HTMLElement): HTMLDialogElement {
 }
 
 describe("ClaimEvidenceReview — the eval text", () => {
-  it("opens the eval's description read-only from the overview header", async () => {
+  it("opens the eval's description read-only from the button under the overview", async () => {
     const { container } = render_review([built_trace("t0")], {
       spec_text: SPEC_TEXT,
     })
 
-    // Beside the trace button, in the overview header, not in the page body.
+    // Beside the trace button, in the Overview section, not elsewhere on the page.
     const header = by_id(container, "review-overview")
     const button = by_id<HTMLButtonElement>(header, "view-eval")
     expect(button.textContent?.trim()).toBe("Eval Description")
@@ -306,7 +340,7 @@ describe("ClaimEvidenceReview — the eval text", () => {
     expect(by_id(reopened, "spec-text").textContent?.trim()).toBe(SPEC_TEXT)
   })
 
-  it("leaves the overview header alone when there is no eval text", () => {
+  it("leaves out the eval button when there is no eval text", () => {
     for (const spec_text of [null, "", "   "]) {
       const { container } = render_review([built_trace("t0")], { spec_text })
       const header = by_id(container, "review-overview")
@@ -378,7 +412,9 @@ describe("ClaimEvidenceReview — the pass/fail call", () => {
         judge_score === "pass",
       )
 
-      // Disagreeing with it flips the call the other way.
+      // Disagreeing with it flips the call the other way. Every claim is
+      // decided, so every claim is collapsed and the verdict reopens by Edit.
+      await fireEvent.click(by_id(container, "claim-edit-1"))
       await fireEvent.click(by_id(container, "claim-disagree-1"))
       await fireEvent.input(by_id(container, "claim-why-1"), {
         target: { value: "The judge read the transcript wrong." },
@@ -666,5 +702,196 @@ describe("ClaimEvidenceReview — the case header", () => {
     await agree_all(container, 2)
     await fireEvent.click(getByText("Next"))
     expect(header()).toBe("Case 2 of 2")
+  })
+})
+
+describe("ClaimEvidenceReview — one claim at a time", () => {
+  it("Agree collapses the claim and opens the next undecided one, and the last leaves none open", async () => {
+    const { container } = render_review([three_claim_trace("t0")])
+    expect(open_claims(container)).toEqual([0])
+
+    await fireEvent.click(by_id(container, "claim-agree-0"))
+    expect(open_claims(container)).toEqual([1])
+    expect(state_of(container, 0)).toBe("Agreed")
+    expect(state_of(container, 2)).toBe("Not decided")
+
+    await fireEvent.click(by_id(container, "claim-agree-1"))
+    await fireEvent.click(by_id(container, "claim-agree-2"))
+    expect(open_claims(container)).toEqual([])
+    expect([0, 1, 2].map((i) => state_of(container, i))).toEqual([
+      "Agreed",
+      "Agreed",
+      "Agreed",
+    ])
+  })
+
+  it("Disagree keeps the claim open for its reason and opens the next undecided claim too", async () => {
+    const { container, verdicts } = render_review([three_claim_trace("t0")])
+    await fireEvent.click(by_id(container, "claim-disagree-0"))
+    expect(open_claims(container)).toEqual([0, 1])
+    expect(container.querySelector("#claim-why-0")).not.toBeNull()
+    expect(state_of(container, 2)).toBe("Not decided")
+
+    // Answering the next claim settles the disagree above it once its reason
+    // is in.
+    await fireEvent.input(by_id(container, "claim-why-0"), {
+      target: { value: "The window is documented." },
+    })
+    await fireEvent.click(by_id(container, "claim-agree-1"))
+    expect(open_claims(container)).toEqual([2])
+    expect(state_of(container, 0)).toBe("Disagreed")
+    expect(verdicts[0].claim_verdicts[0]).toEqual({
+      agrees: false,
+      why: "The window is documented.",
+    })
+  })
+
+  it("keeps a disagree with an empty reason open while the rest are answered", async () => {
+    const traces = [three_claim_trace("t0")]
+    const { container, verdicts } = render_review(traces)
+    await fireEvent.click(by_id(container, "claim-disagree-0"))
+    await fireEvent.click(by_id(container, "claim-agree-1"))
+    await fireEvent.click(by_id(container, "claim-agree-2"))
+    // The empty reason is what holds the case, so it stays in view.
+    expect(open_claims(container)).toEqual([0])
+    expect(container.querySelector("#claim-why-0")).not.toBeNull()
+    expect(is_trace_reviewed(traces[0], verdicts[0])).toBe(false)
+
+    // Opening another claim does not hide it either.
+    await fireEvent.click(by_id(container, "claim-edit-1"))
+    expect(open_claims(container)).toEqual([0, 1])
+  })
+
+  it("opens nothing more for a disagree on the last undecided claim", async () => {
+    const { container } = render_review([built_trace("t0")])
+    await fireEvent.click(by_id(container, "claim-agree-0"))
+    await fireEvent.click(by_id(container, "claim-disagree-1"))
+    expect(open_claims(container)).toEqual([1])
+    expect(container.querySelector("#claim-why-1")).not.toBeNull()
+  })
+
+  it("Edit reopens a decided claim with its answer and collapses the finished one", async () => {
+    const { container } = render_review([three_claim_trace("t0")])
+    await agree_all(container, 3)
+
+    await fireEvent.click(by_id(container, "claim-edit-1"))
+    expect(open_claims(container)).toEqual([1])
+    expect(by_id(container, "claim-agree-1").className).toContain(
+      "btn-secondary",
+    )
+
+    await fireEvent.click(by_id(container, "claim-edit-2"))
+    expect(open_claims(container)).toEqual([2])
+  })
+
+  it("opens a disagree still missing its reason and the first undecided claim when a case is shown again", () => {
+    const traces = [three_claim_trace("t0")]
+    const verdicts = build_trace_reviews(traces)
+    verdicts[0].claim_verdicts[0] = { agrees: true, why: "" }
+    verdicts[0].claim_verdicts[1] = { agrees: false, why: "" }
+    const { container } = render_review(traces, { verdicts })
+    expect(open_claims(container)).toEqual([1, 2])
+  })
+})
+
+describe("ClaimEvidenceReview — progress", () => {
+  it("counts decided claims for the case and across the subset", async () => {
+    const { container } = render_review([built_trace("t0"), built_trace("t1")])
+    const case_count = () =>
+      by_id(container, "review-case-count").textContent?.trim()
+    const batch_count = () =>
+      by_id(container, "review-batch-count").textContent?.trim()
+    expect(case_count()).toBe("0/2 decided")
+    expect(batch_count()).toBe("0/4 claims decided")
+
+    // A disagree counts as decided before its reason is in; Next still waits
+    // for the reason.
+    await fireEvent.click(by_id(container, "claim-disagree-0"))
+    expect(case_count()).toBe("1/2 decided")
+    expect(batch_count()).toBe("1/4 claims decided")
+  })
+
+  it("jumps to a case from its button and marks current, reviewed and pending cases", async () => {
+    const on_open_trace = vi.fn()
+    const traces = [built_trace("t0"), built_trace("t1"), built_trace("t2")]
+    const { container, getByText } = render_review(traces, { on_open_trace })
+    const steps = () => [
+      ...by_id(container, "review-case-steps").querySelectorAll("button"),
+    ]
+    expect(steps().map((b) => b.textContent?.trim())).toEqual(["1", "2", "3"])
+
+    await agree_all(container, 2)
+    await fireEvent.click(steps()[2])
+    expect(getByText("Case 3 of 3")).toBeTruthy()
+    expect(on_open_trace).toHaveBeenLastCalledWith(2)
+
+    const [reviewed, pending, current] = steps()
+    expect(current.getAttribute("aria-current")).toBe("step")
+    expect(current.className).toContain("btn-secondary")
+    expect(reviewed.className).not.toMatch(/btn-secondary|btn-outline/)
+    expect(pending.className).toContain("btn-outline")
+  })
+
+  it("counts and numbers only the cases under review", () => {
+    const traces = ["t0", "t1", "t2", "t3"].map((id) => built_trace(id))
+    const verdicts = build_trace_reviews(traces)
+    verdicts[0].claim_verdicts[0] = { agrees: true, why: "" }
+    const { container, getByText } = render_review(traces, {
+      verdicts,
+      selected_indices: [1, 3],
+    })
+    expect(getByText("Case 1 of 2")).toBeTruthy()
+    expect(by_id(container, "review-batch-count").textContent?.trim()).toBe(
+      "0/4 claims decided",
+    )
+    expect(
+      [...by_id(container, "review-case-steps").querySelectorAll("button")].map(
+        (b) => b.textContent?.trim(),
+      ),
+    ).toEqual(["1", "2"])
+  })
+})
+
+describe("ClaimEvidenceReview — keyboard", () => {
+  it("A and D answer the claim reached last", async () => {
+    const { container, verdicts } = render_review([three_claim_trace("t0")])
+    const slots = verdicts[0].claim_verdicts
+
+    await fireEvent.keyDown(window, { key: "a" })
+    expect(slots[0].agrees).toBe(true)
+
+    // D disagrees with the second claim and opens the third, which the next
+    // key answers rather than the disagree above it.
+    await fireEvent.keyDown(window, { key: "d" })
+    expect(slots[1].agrees).toBe(false)
+    // D puts the focus in the reason box, where keys are typing; once the
+    // reviewer leaves the box, the next key answers the claim below.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const why = by_id(container, "claim-why-1")
+    expect(document.activeElement).toBe(why)
+    why.blur()
+    await fireEvent.keyDown(window, { key: "A" })
+    expect(slots[2].agrees).toBe(true)
+    expect(slots[1].agrees).toBe(false)
+  })
+
+  it("leaves A and D alone while typing, with a modifier or a held key, or with a dialog open", async () => {
+    const { container, verdicts } = render_review([three_claim_trace("t0")])
+    const slots = verdicts[0].claim_verdicts
+    await fireEvent.click(by_id(container, "claim-disagree-0"))
+
+    await fireEvent.keyDown(by_id(container, "claim-why-0"), { key: "a" })
+    expect(slots[1].agrees).toBeNull()
+    for (const modifier of ["metaKey", "ctrlKey", "altKey"]) {
+      await fireEvent.keyDown(window, { key: "a", [modifier]: true })
+      expect(slots[1].agrees).toBeNull()
+    }
+    await fireEvent.keyDown(window, { key: "a", repeat: true })
+    expect(slots[1].agrees).toBeNull()
+
+    await fireEvent.click(by_id(container, "view-full-trace"))
+    expect(trace_dialog(container).open).toBe(true)
+    await fireEvent.keyDown(window, { key: "a" })
+    expect(slots[1].agrees).toBeNull()
   })
 })
