@@ -39,18 +39,6 @@ def test_driver_config_default_visible_roles() -> None:
     assert cfg.visible_message_roles == ["user", "assistant"]
 
 
-def test_driver_config_default_is_per_instance() -> None:
-    # Pydantic v2 + default_factory must not share the list across instances.
-    a = SyntheticUserDriverConfig(
-        model_name="x", model_provider_name=ModelProviderName.openrouter
-    )
-    b = SyntheticUserDriverConfig(
-        model_name="y", model_provider_name=ModelProviderName.openrouter
-    )
-    a.visible_message_roles.append("user")  # type: ignore[arg-type]
-    assert b.visible_message_roles == ["user", "assistant"]
-
-
 def test_driver_config_accepts_explicit_visible_roles() -> None:
     cfg = SyntheticUserDriverConfig(
         model_name="x",

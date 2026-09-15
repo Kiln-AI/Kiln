@@ -422,6 +422,10 @@ async def test_respond_reuses_adapter_across_turns(
 ) -> None:
     """The adapter is built once in the constructor and reused per turn."""
     adapter = _patch_adapter(monkeypatch, _fake_run_output("reply"))
+    # Count factory calls: a per-turn rebuild returns the same stub, so only
+    # the build count can tell it apart from reuse.
+    factory = Mock(return_value=adapter)
+    monkeypatch.setattr(driver_mod, "adapter_for_task", factory)
     drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
 
     conversation: list[ChatCompletionMessageParam] = [
@@ -433,4 +437,4 @@ async def test_respond_reuses_adapter_across_turns(
     await drv.respond(conversation)
 
     assert adapter.invoke_returning_run_output.await_count == 3
-    # The driver's _adapter reference doesn't change between calls.
+    assert factory.call_count == 1

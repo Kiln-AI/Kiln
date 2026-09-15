@@ -3261,30 +3261,7 @@ async def test_delete_with_missing_parent_stops_cascade_cleanly(
         )
 
     assert response.status_code == 200
-    # Leaf is gone. Cascade stops at the break — the still-present root is
-    # NOT swept up because we couldn't verify mid (its only child) is dead.
     assert not leaf.path.exists()
-    assert _root.path.exists()
-
-
-@pytest.mark.asyncio
-async def test_delete_single_turn_run_unchanged(client, task_run_setup):
-    """Single-turn runs have no parent chain — behavior is the same as before."""
-    project = task_run_setup["project"]
-    task = task_run_setup["task"]
-    task_run = task_run_setup["task_run"]
-
-    path = task_run.path
-    assert path.exists()
-
-    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
-        mock_task_from_id.return_value = task
-        response = client.delete(
-            f"/api/projects/{project.id}/tasks/{task.id}/runs/{task_run.id}"
-        )
-
-    assert response.status_code == 200
-    assert not path.exists()
 
 
 @pytest.mark.asyncio

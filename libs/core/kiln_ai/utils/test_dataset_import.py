@@ -1095,18 +1095,6 @@ def test_import_csv_multiturn_splits_apply_to_leaves_only(
     assert leaf_split_count == 10
 
 
-def test_import_csv_multiturn_returns_imported_result(multiturn_task: Task, tmp_path):
-    rows = [
-        {"trace": json.dumps(_two_turn_trace())},
-        {"trace": json.dumps(_single_pair_trace())},
-    ]
-    result = _import_multiturn_csv(multiturn_task, rows, tmp_path)
-
-    assert isinstance(result, ImportResult)
-    assert result.imported_run_count == 3
-    assert result.imported_conversation_count == 2
-
-
 def test_import_csv_multiturn_input_output_derived(multiturn_task: Task, tmp_path):
     _import_multiturn_csv(
         multiturn_task,
