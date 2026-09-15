@@ -302,7 +302,7 @@
             />
             <FormElement
               label="What should this eval check?"
-              placeholder="e.g. The model should not hallucinate."
+              placeholder="e.g. Off-topic requests should be politely declined."
               id="eval_description"
               inputType="textarea"
               height="medium"

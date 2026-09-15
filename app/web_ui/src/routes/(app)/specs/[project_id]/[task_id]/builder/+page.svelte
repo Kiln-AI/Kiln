@@ -4587,7 +4587,7 @@
           <FormElement
             label="What should this eval check?"
             description="Describe what to check in plain language. Kiln Pro writes the eval and generates the data to test it."
-            placeholder="e.g. The model should not hallucinate."
+            placeholder="e.g. Off-topic requests should be politely declined."
             id="description"
             inputType="textarea"
             height="medium"
