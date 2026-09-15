@@ -50,12 +50,12 @@
   export let empty_label: string = "Select a model"
   // Empty-dropdown affordance (fancy_select's built-in empty state). An
   // empty model list means no connected provider offers a usable model, so
-  // every picker names the way out by default — a same-tab link, because
+  // every picker names the way out — a same-tab link, because
   // connecting clears the models cache in this tab and the return trip
   // refetches it (a new tab would strand this tab's stale cache).
-  export let empty_state_message: string = "No models available"
-  export let empty_state_subtitle: string | null = "Connect an AI provider"
-  export let empty_state_link: string | null = "/settings/providers"
+  const empty_state_message = "No models available"
+  const empty_state_subtitle = "Connect an AI provider"
+  const empty_state_link = "/settings/providers"
 
   let default_model_dropdown_settings: ModelDropdownSettings = {
     filter_models_predicate: (_) => true,
