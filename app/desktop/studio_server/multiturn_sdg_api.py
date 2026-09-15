@@ -1,21 +1,13 @@
-"""FastAPI routes for multi-turn synthetic data generation.
-
-Two routes wrap the runner so the web UI can drive it without a
-Python REPL:
+"""FastAPI route for multi-turn synthetic data generation, plus the drive
+request models and helpers the eval builder's pipelines share.
 
   POST /api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/generate_cases
        Synchronous JSON. Calls kiln_server `/generate` via the local
        SyntheticUserClient and returns the N cases as the SDK shape
        (`{seed_prompt, synthetic_user_info: <tagged blob>}` per case).
 
-  POST /api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/run_cases_batch
-       SSE stream. Takes (possibly edited) cases + run config + SU driver
-       config, runs the drive loop concurrently across cases, and emits
-       BatchEvent frames as `data:` lines. Terminator is
-       `data: complete\\n\\n`, matching the eval_api SSE convention.
-
-Both routes guard `task.turn_mode == TurnMode.multiturn` before doing any
-upstream work — the runner depends on multi-turn TaskRun chaining
+The route and `guard_multiturn` reject single-turn tasks before any upstream
+work: the runner the pipelines drive depends on multi-turn TaskRun chaining
 (parent_task_run_id is rejected on single-turn tasks).
 
 The kiln_server API key is read server-side (`get_copilot_api_key`) and
@@ -24,13 +16,9 @@ driver model is exposed to the caller because the choice of model
 affects probe quality and cost.
 """
 
-import dataclasses
-import json
-import logging
 from typing import Annotated, Any
 
-from fastapi import FastAPI, HTTPException, Path, Request
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     TurnMode,
@@ -41,23 +29,8 @@ from kiln_ai.datamodel.run_config import (
     as_kiln_agent_run_config,
 )
 from kiln_ai.datamodel.task import Task
-from kiln_ai.datamodel.usage import MessageUsage
-from kiln_ai.synthetic_user.case import SyntheticUserCase as RunnerCase
 from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
-from kiln_ai.synthetic_user.runner import (
-    CONCURRENCY,
-    MAX_TURNS_DEFAULT,
-    NUM_CASES_MAX,
-    BatchCompletedEvent,
-    BatchEvent,
-    BatchStartedEvent,
-    CaseCompletedEvent,
-    CaseFailedEvent,
-    TurnCompletedEvent,
-    run_cases_batch,
-)
-from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
-from kiln_server.git_sync_decorators import build_save_context, no_write_lock
+from kiln_ai.synthetic_user.runner import MAX_TURNS_DEFAULT, NUM_CASES_MAX
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
 from pydantic import BaseModel, Field, model_validator
@@ -71,16 +44,13 @@ from app.desktop.studio_server.synthetic_user.client import (
 )
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 
-logger = logging.getLogger(__name__)
-
-
 # ───────────────────────── Pydantic API models ─────────────────────────
 
 # Cases ride the wire as `list[dict[str, Any]]`: the kiln_server SDK
 # emits cases as attrs models with `to_dict()` (used by `/generate_cases`
 # below) and the libs/core runner consumes `SyntheticUserCase` (Pydantic).
-# Both are field-identical; this route validates dicts straight into the
-# libs/core type via Pydantic. Trade-off: TS bindings type cases as
+# Both are field-identical; the multi-turn pipeline validates dicts straight
+# into the libs/core type via Pydantic. Trade-off: TS bindings type cases as
 # `Record<string, unknown>` instead of getting per-field autocomplete.
 SyntheticUserCaseDict = dict[str, Any]
 _CASE_DICT_DESCRIPTION = (
@@ -139,7 +109,7 @@ class SyntheticUserDriverSpec(BaseModel):
 
 class TargetRunConfigFields(BaseModel):
     """The target-config half of every drive request — inherited by both the
-    multi-turn batch/pipeline requests and the single-turn pipeline request,
+    multi-turn pipeline request and the single-turn pipeline request,
     so the two drive contracts can't drift."""
 
     target_run_config: RunConfigProperties | None = Field(
@@ -297,41 +267,6 @@ def to_su_driver_config(spec: SyntheticUserDriverSpec) -> SyntheticUserDriverCon
     )
 
 
-# Maps each event dataclass to the snake_case `event` discriminator on the
-# SSE frame. Keeps the wire shape stable even if the dataclass types are
-# renamed later.
-_EVENT_NAMES: dict[type, str] = {
-    BatchStartedEvent: "batch_started",
-    TurnCompletedEvent: "turn_completed",
-    CaseCompletedEvent: "case_completed",
-    CaseFailedEvent: "case_failed",
-    BatchCompletedEvent: "batch_completed",
-}
-
-
-def _event_to_payload(event: BatchEvent) -> dict:
-    name = _EVENT_NAMES.get(type(event))
-    if name is None:
-        # New dataclass added without registering it — fail loud rather
-        # than silently swallowing.
-        raise RuntimeError(f"Unregistered BatchEvent type: {type(event).__name__}")
-    return {"event": name, **dataclasses.asdict(event)}
-
-
-def _jsonable(obj: Any) -> Any:
-    """json.dumps `default` handler. SSE trace frames embed `MessageUsage`
-    (Pydantic) on assistant turns, which doesn't survive `dataclasses.asdict`
-    recursion. The whitelist is intentionally narrow: any new Pydantic type
-    on the wire must be added here explicitly, prompting a review for
-    whether `model_dump()` exposes sensitive fields. Do NOT broaden to
-    `hasattr(obj, "model_dump")` or `str(obj)` — silent leakage is worse
-    than a loud TypeError that fails the stream.
-    """
-    if isinstance(obj, MessageUsage):
-        return obj.model_dump()
-    raise TypeError(f"{type(obj).__name__} is not JSON serializable")
-
-
 def _to_http_exception(
     exc: SyntheticUserRequestError | SyntheticUserServerError,
 ) -> HTTPException:
@@ -422,108 +357,3 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
                 },
             )
         return GenerateCasesApiOutput(cases=[c.to_dict() for c in sdk_cases])
-
-    @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/run_cases_batch",
-        tags=["Multiturn SDG"],
-        summary="Run Multi-Turn SU Cases Batch",
-        openapi_extra=agent_policy_require_approval(
-            "Run a multi-turn synthetic-user batch? Invokes the target model "
-            "and the SU driver model for several turns per case (cost)."
-        ),
-    )
-    @no_write_lock
-    async def stream_run_cases_batch(
-        request: Request,
-        project_id: Annotated[
-            str, Path(description="ID of the project containing the target task.")
-        ],
-        task_id: Annotated[
-            str,
-            Path(
-                description=("ID of the target task. Must be a multi-turn task."),
-            ),
-        ],
-        input: RunCasesBatchApiInput,
-    ) -> StreamingResponse:
-        # Guard + decode happen before the stream opens so the client sees
-        # a clean 400 / 422 rather than a half-open text/event-stream on
-        # bad input.
-        task = task_from_id(project_id, task_id)
-        guard_multiturn(task)
-
-        # Parse dict → libs/core RunnerCase. Pydantic raises ValidationError
-        # on missing keys or empty strings; surface as a clean 400 instead
-        # of letting it explode inside the SSE generator. We go straight to
-        # the libs/core type (skipping the SDK round-trip) because the two
-        # shapes are field-identical and the runner only needs the libs/core
-        # one.
-        try:
-            runner_cases = [RunnerCase.model_validate(c) for c in input.cases]
-        except Exception as exc:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "code": "invalid_case_shape",
-                    "message": f"Could not parse cases against the runner shape: {exc}",
-                },
-            ) from exc
-
-        target_run_config, target_run_config_id = resolve_target_run_config(
-            input, project_id, task_id
-        )
-        su_driver_config = to_su_driver_config(input.su_driver)
-        save_context = build_save_context(request)
-
-        async def event_generator():
-            try:
-                async for event in run_cases_batch(
-                    cases=runner_cases,
-                    target_task=task,
-                    target_run_config=target_run_config,
-                    su_driver_config=su_driver_config,
-                    turns=input.turns,
-                    concurrency=CONCURRENCY,
-                    batch_tag=input.batch_tag,
-                    save_context=save_context,
-                    task_run_config_id=target_run_config_id,
-                ):
-                    yield (
-                        "data: "
-                        + json.dumps(
-                            _event_to_payload(event),
-                            default=_jsonable,
-                            ensure_ascii=False,
-                        )
-                        + "\n\n"
-                    )
-            except Exception as e:
-                # The catch is narrow in practice: run_cases_batch
-                # swallows per-case failures into CaseFailedEvent, so the
-                # only paths that escape here are developer bugs
-                # (RuntimeError from _event_to_payload, TypeError from
-                # _jsonable). asyncio.CancelledError is BaseException and
-                # bypasses this except — correct, since cancellation
-                # means the consumer is gone.
-                logger.exception("multiturn_sdg run_cases_batch failed mid-stream")
-                yield (
-                    "data: "
-                    + json.dumps(
-                        {
-                            "event": "batch_failed",
-                            # Stable wire code; class name goes in message
-                            # so it stays useful for debug without leaking
-                            # internal type names onto the wire contract.
-                            "error_code": "internal_error",
-                            "message": f"{type(e).__name__}: {e}",
-                        },
-                        ensure_ascii=False,
-                    )
-                    + "\n\n"
-                )
-            yield "data: complete\n\n"
-
-        return CancellableStreamingResponse(
-            content=event_generator(),
-            media_type="text/event-stream",
-        )

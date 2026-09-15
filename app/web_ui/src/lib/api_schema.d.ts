@@ -3559,23 +3559,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/run_cases_batch": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Run Multi-Turn SU Cases Batch */
-        post: operations["stream_run_cases_batch_api_projects__project_id__tasks__task_id__multiturn_sdg_run_cases_batch_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects/{project_id}/tasks/{task_id}/copilot/batch_plan": {
         parameters: {
             query?: never;
@@ -11254,38 +11237,6 @@ export interface components {
             feedback: string;
             /** @description Per-claim grades from the claim review, when the example was reviewed that way (v2 builder). */
             claim_review?: components["schemas"]["ClaimReviewApi"] | null;
-        };
-        /** RunCasesBatchApiInput */
-        RunCasesBatchApiInput: {
-            /**
-             * Target Run Config
-             * @description Inline run config for the target task, used verbatim — the same full properties shape a manual run sends, tools included. For driving a config that isn't worth saving (ad-hoc experiments, scripting). Must be a Kiln agent config. Exactly one of target_run_config / target_run_config_id is required.
-             */
-            target_run_config?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
-            /**
-             * Target Run Config Id
-             * @description ID of one of the target task's saved run configs. The drive uses the saved config verbatim — model, prompt, sampling, and tools — so the agent under test behaves exactly like a manual run, and driven runs attribute back to the config. Exactly one of target_run_config / target_run_config_id is required.
-             */
-            target_run_config_id?: string | null;
-            /**
-             * Cases
-             * @description Cases as returned by /generate_cases, optionally edited. A SyntheticUserCase. Shape: {seed_prompt: str, synthetic_user_info: str, scenario_index?: int | null}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser. scenario_index is set only on scenario batches (generate_cases with case_prompts) and maps the case back to its plan prompt.
-             */
-            cases: {
-                [key: string]: unknown;
-            }[];
-            /**
-             * Turns
-             * @description Ceiling on the assistant turns produced per case.
-             * @default 5
-             */
-            turns: number;
-            su_driver: components["schemas"]["SyntheticUserDriverSpec"];
-            /**
-             * Batch Tag
-             * @description Optional user-supplied batch label. Constrained to [A-Za-z0-9_-]{1,64} so it can safely be used as a tag on leaf TaskRuns. Auto-generated if not provided.
-             */
-            batch_tag?: string | null;
         };
         /**
          * RunChainEntry
@@ -21748,44 +21699,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GenerateCasesApiOutput"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    stream_run_cases_batch_api_projects__project_id__tasks__task_id__multiturn_sdg_run_cases_batch_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description ID of the project containing the target task. */
-                project_id: string;
-                /** @description ID of the target task. Must be a multi-turn task. */
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RunCasesBatchApiInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
