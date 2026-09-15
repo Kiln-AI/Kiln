@@ -174,7 +174,7 @@
   <!-- max-w-0 with the column's w-full: the cell takes the slack the other two
        columns leave, and nothing inside it can widen the column — which is
        what makes the collapsed clamp below a clamp rather than a long row. -->
-  <td class="align-top max-w-0">
+  <td class="align-middle max-w-0">
     {#if !open}
       <div class="text-sm text-gray-500 truncate">{collapsed_text}</div>
     {:else}

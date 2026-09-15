@@ -432,20 +432,25 @@ describe("ClaimEvidenceReview — the eval text", () => {
 })
 
 describe("ClaimEvidenceReview — the way into the full trace", () => {
-  it("is a link in the overview panel's footer, right-aligned", () => {
+  it("is a right-aligned link under the overview panel, not inside it", () => {
     const { container } = render_review([built_trace("t0")])
 
     const link = by_id(container, "view-full-trace")
     expect(link.textContent?.trim()).toBe("Full Trace")
     expect(link.className).toContain("link")
+    expect(link.parentElement!.className).toContain("justify-end")
 
-    // In Output's `after` slot, so it renders under the panel rather than
-    // inside the region max_height folds behind Show All.
+    // Under the panel, not in it: Output folds its body at max_height and
+    // lays a gradient over the fold. Still its footer, though — next sibling,
+    // closer than the gap the column gives its own sections.
     const panel = by_id(container, "review-overview").querySelector(
       ".relative",
     )!
-    expect(panel.contains(link)).toBe(true)
-    expect(link.parentElement!.className).toContain("justify-end")
+    expect(panel.contains(link)).toBe(false)
+
+    const footer = link.parentElement!
+    expect(footer.previousElementSibling).toBe(panel)
+    expect(footer.parentElement!.className).toContain("gap-1")
   })
 })
 
@@ -944,8 +949,8 @@ describe("ClaimEvidenceReview — progress", () => {
     const [reviewed, pending, current] = steps()
     expect(current.getAttribute("aria-current")).toBe("step")
     expect(fill_of(current)).toContain("bg-primary")
-    expect(fill_of(reviewed)).toContain("bg-success")
     expect(fill_of(pending)).toContain("bg-neutral")
+    expect(fill_of(reviewed)).toContain("bg-success/60")
     for (const pill of steps()) {
       // A thin bar, in a target twice its height — margin around the bar would
       // space it the same way but leave the target as thin as the bar.

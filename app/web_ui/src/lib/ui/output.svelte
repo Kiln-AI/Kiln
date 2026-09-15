@@ -233,15 +233,4 @@
       </button>
     </div>
   {/if}
-
-  <!-- A caller's own footer for this output — a link back to what the text
-       came from, say. Deliberately OUTSIDE the panel that max_height clips:
-       content inside it folds behind Show All and sits under that button's
-       gradient, which is no place for a control. Nothing renders with no
-       caller content, so every existing caller is unchanged. -->
-  {#if $$slots.after}
-    <div class="mt-1">
-      <slot name="after" />
-    </div>
-  {/if}
 </div>

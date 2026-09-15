@@ -65,7 +65,11 @@ describe("ClaimCard — Agree / Disagree", () => {
       })
       const row = by_id(container, "claim-card-0")
       expect(row.tagName).toBe("TR")
-      expect(row.querySelectorAll("td")).toHaveLength(3)
+      const cells = row.querySelectorAll("td")
+      expect(cells).toHaveLength(3)
+      for (const cell of cells) {
+        expect(cell.className).toContain("align-middle")
+      }
       cleanup()
     }
   })

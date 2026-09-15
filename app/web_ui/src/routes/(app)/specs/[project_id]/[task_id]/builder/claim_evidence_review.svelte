@@ -332,7 +332,7 @@
               class="w-8 h-2 rounded-full {step.trace_index === current_index
                 ? 'bg-primary'
                 : step.reviewed
-                  ? 'bg-success'
+                  ? 'bg-success/60'
                   : 'bg-neutral'}"
             ></span>
           </button>
@@ -362,41 +362,42 @@
         />
 
         {#if current.overview}
-          <!-- The read-only surface the rest of the app shows read-only
-               content on, with the chips rendered into its slot: Output prints
-               a string and cannot carry a clickable citation itself, so the
-               caller renders the body and Output keeps the panel and the copy
-               button (which copies the plain text passed as raw_output).
-               Capped in pixels so a runaway overview folds behind Show All
-               rather than pushing the buttons and the claims down the page;
-               the value and why it is a pixel value are on the constant. -->
-          <Output
-            raw_output={current.overview.text}
-            max_height={OVERVIEW_MAX_HEIGHT}
-          >
-            <p class="text-sm leading-relaxed">
-              <ClaimText
-                text={current.overview.text}
-                citations={current.overview.citations}
-                on_cite={open_citation}
-              />
-            </p>
-            <!-- The way out of the summary and into what it summarises, in the
-                 panel's bottom right: the overview is the short form of the
+          <div class="flex flex-col gap-1">
+            <!-- The read-only surface the rest of the app shows read-only
+                 content on, with the chips rendered into its slot: Output
+                 prints a string and cannot carry a clickable citation itself,
+                 so the caller renders the body and Output keeps the panel and
+                 the copy button (which copies the plain text passed as
+                 raw_output). Capped in pixels so a runaway overview folds
+                 behind Show All rather than pushing the buttons and the claims
+                 down the page; the value and why it is a pixel value are on the
+                 constant. -->
+            <Output
+              raw_output={current.overview.text}
+              max_height={OVERVIEW_MAX_HEIGHT}
+            >
+              <p class="text-sm leading-relaxed">
+                <ClaimText
+                  text={current.overview.text}
+                  citations={current.overview.citations}
+                  on_cite={open_citation}
+                />
+              </p>
+            </Output>
+            <!-- The way out of the summary and into what it summarises, under
+                 the panel's bottom right: the overview is the short form of the
                  trace, so the link to the long form belongs on it rather than
                  in a button row of its own. -->
-            <svelte:fragment slot="after">
-              <div class="flex justify-end">
-                <button
-                  id="view-full-trace"
-                  class="link underline text-sm text-gray-500"
-                  on:click={() => current && trace_modal?.open_trace(current)}
-                >
-                  Full Trace
-                </button>
-              </div>
-            </svelte:fragment>
-          </Output>
+            <div class="flex justify-end">
+              <button
+                id="view-full-trace"
+                class="link underline text-sm text-gray-500"
+                on:click={() => current && trace_modal?.open_trace(current)}
+              >
+                Full Trace
+              </button>
+            </div>
+          </div>
         {:else if current.claims_state === "unbuilt" || current.claims_state === "building"}
           <!-- The build starts on open, so both render as in-progress, in the
                body the overview will fill. Named rather than written as "not
