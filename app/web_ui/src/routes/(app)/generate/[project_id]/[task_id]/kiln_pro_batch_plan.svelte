@@ -21,24 +21,22 @@
   // page, so only one solid primary shows at a time. Default keeps /generate
   // unchanged.
   export let generate_button_outline = false
-  // Header, its sub-line, and the regenerate button label. The regenerate
-  // default is shared copy both surfaces render, so neither overrides it. The
-  // eval builder overrides the header (what it lists is a proposed eval
-  // dataset) and passes its own one-line sub-line; what the next step does to
-  // each row belongs on that step, not here. It renames the rows through the
-  // items_label / expanded_description props below.
+  // Header and its sub-line. The eval builder overrides the header (what it
+  // lists is a proposed eval dataset) and passes its own one-line sub-line;
+  // what the next step does to each row belongs on that step, not here. It
+  // renames the rows through the items_label / expanded_description props
+  // below.
   export let header_label = "Batch Plan"
   export let subheader =
     "Review the plan for generating your synthetic data batch."
-  export let regenerate_label = "Refine Plan"
-  // Passed straight to the prompts table: the noun for the plan's rows (which
-  // drives its header and aria-label together), the sentence it shows when
-  // expanded, and the header over the rows' first column. Defaults match the
-  // table's own, so /generate is unchanged.
   // The rule under the header. The eval builder's screens stack headers and
   // read as a ladder of lines with it on, so that flow turns it off. Default
   // keeps /generate unchanged.
   export let show_header_divider = true
+  // Passed straight to the prompts table: the noun for the plan's rows (which
+  // drives its header and aria-label together), the sentence it shows when
+  // expanded, and the header over the rows' first column. The defaults are
+  // /generate's strings, so that flow passes nothing.
   export let items_label = "Dataset Items"
   export let expanded_description: string | null | false = null
   export let column_label = "Prompt"
@@ -61,9 +59,7 @@
       >{subheader}<slot name="under_subheader" /></svelte:fragment
     >
     <svelte:fragment slot="actions">
-      <button class="btn btn-md" on:click={on_regenerate}
-        >{regenerate_label}</button
-      >
+      <button class="btn btn-md" on:click={on_regenerate}>Refine Plan</button>
       {#if !hide_generate_button}
         <button
           class="btn btn-md {generate_button_outline

@@ -3,21 +3,18 @@ import { describe, it, expect, afterEach } from "vitest"
 import { render, cleanup, fireEvent } from "@testing-library/svelte"
 import KilnProPromptsTable from "./kiln_pro_prompts_table.svelte"
 
-// The strings this component shipped with, before items_label and
-// expanded_description existed. The defaults must still produce them exactly:
-// /generate renders this component with no overrides.
-const SHIPPED_HEADER = "All Dataset Items (2)"
-const SHIPPED_SHOW_LABEL = "Show dataset items"
-const SHIPPED_HIDE_LABEL = "Hide dataset items"
-const SHIPPED_DESCRIPTION =
-  "Each prompt below will be used to guide one dataset sample."
-const SHIPPED_COLUMN_HEADER = "Prompt"
-
 afterEach(cleanup)
 
 function setup(props: Record<string, unknown> = {}) {
   const utils = render(KilnProPromptsTable, {
-    props: { prompts: ["first prompt", "second prompt"], ...props },
+    // The batch plan always passes these; its defaults are the values below.
+    props: {
+      prompts: ["first prompt", "second prompt"],
+      items_label: "Dataset Items",
+      expanded_description: null,
+      column_label: "Prompt",
+      ...props,
+    },
   })
   const toggle = utils.container.querySelector("button") as HTMLButtonElement
   return { ...utils, toggle }
@@ -39,20 +36,22 @@ function description_text(container: HTMLElement): string | null {
   return node ? node.textContent?.trim() ?? "" : null
 }
 
-describe("KilnProPromptsTable defaults", () => {
-  it("renders the shipped header and toggle label", () => {
+describe("toggle", () => {
+  it("starts collapsed with the header and toggle label", () => {
     const { container, toggle } = setup()
-    expect(header_text(container)).toBe(SHIPPED_HEADER)
-    expect(toggle.getAttribute("aria-label")).toBe(SHIPPED_SHOW_LABEL)
+    expect(header_text(container)).toBe("All Dataset Items (2)")
+    expect(toggle.getAttribute("aria-label")).toBe("Show dataset items")
     expect(toggle.getAttribute("aria-expanded")).toBe("false")
   })
 
-  it("renders the shipped description once expanded", async () => {
+  it("shows the description only once expanded", async () => {
     const { container, toggle } = setup()
     expect(description_text(container)).toBeNull()
     await fireEvent.click(toggle)
-    expect(description_text(container)).toBe(SHIPPED_DESCRIPTION)
-    expect(toggle.getAttribute("aria-label")).toBe(SHIPPED_HIDE_LABEL)
+    expect(description_text(container)).toBe(
+      "Each prompt below will be used to guide one dataset sample.",
+    )
+    expect(toggle.getAttribute("aria-label")).toBe("Hide dataset items")
     expect(toggle.getAttribute("aria-expanded")).toBe("true")
   })
 })
@@ -64,13 +63,6 @@ function column_header_text(container: HTMLElement): string {
 }
 
 describe("column_label", () => {
-  it("renders the shipped column header by default", async () => {
-    // /generate passes nothing here, so the default IS what that flow ships.
-    const { container, toggle } = setup()
-    await fireEvent.click(toggle)
-    expect(column_header_text(container)).toBe(SHIPPED_COLUMN_HEADER)
-  })
-
   it("forwards a caller's header down to the rows table", async () => {
     const { container, toggle } = setup({ column_label: "Item Guidance" })
     await fireEvent.click(toggle)
