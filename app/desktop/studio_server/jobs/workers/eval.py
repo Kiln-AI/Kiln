@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Set
 
 from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.eval_runner import (
@@ -10,6 +11,7 @@ from kiln_ai.adapters.eval.eval_runner import (
 )
 from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalInput, EvalSplitName
 from kiln_ai.datamodel.eval_splits import (
+    ItemKey,
     ItemSource,
     ResolvedSplit,
     eval_run_item_key,
@@ -125,6 +127,15 @@ class EvalJobParams(BaseModel):
         "Fails with 422 if the eval has no such split. Leave null to run the test "
         "split, which is what running an eval has always meant.",
     )
+    item_ids: list[str] | None = Field(
+        default=None,
+        description="Restrict the job to these items of the split (EvalInput ids for an "
+        "EvalInput-backed split, TaskRun ids for a TaskRun-backed one). Ids outside "
+        "the split are ignored; progress and completion are measured over the "
+        "subset. Leave null to run the whole split. Lets a caller trial a run config "
+        "on a handful of named items before paying for the full split — the rows it "
+        "stores are reused by a later full run, which skips scored items as always.",
+    )
 
 
 class EvalJobResult(BaseModel):
@@ -173,6 +184,16 @@ class EvalJobProperties(BaseModel):
     judge_model_provider: str = Field(
         description="Raw model provider id used by the judge. The frontend resolves it to a display name."
     )
+
+
+def _scoped_item_keys(split: ResolvedSplit, params: EvalJobParams) -> Set[ItemKey]:
+    """The split's item keys, narrowed to `params.item_ids` when the job names a
+    subset. The same narrowing the runner applies, so progress and work agree."""
+    keys = split.item_keys()
+    if not params.item_ids:
+        return keys
+    wanted = set(params.item_ids)
+    return {key for key in keys if key[1] in wanted}
 
 
 class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
@@ -315,8 +336,8 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
         # progress must be measured against the same split the runner is handed —
         # hence the shared _resolve_split rather than a second, independent one.
         split = self._resolve_split(eval, task, params)
-        split_items = split.item_keys()
-        total = len(split)
+        split_items = _scoped_item_keys(split, params)
+        total = len(split_items)
 
         # Count only scored items that are still in the split. Items that were
         # scored but later drifted out of it must not be counted, or
@@ -421,6 +442,7 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
             eval_run_type="task_run_eval",
             split=self._resolve_split(eval, task, params),
             save_context=save_context,
+            item_ids=set(params.item_ids) if params.item_ids else None,
         )
 
     def _eval_and_task(self, eval_config: EvalConfig) -> tuple[Eval, Task]:

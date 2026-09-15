@@ -1417,3 +1417,29 @@ async def test_eval_job_missing_entity_marks_failed(
     final = registry._jobs[job.id]
     assert final.status == BackgroundJobStatus.FAILED
     assert final.error is not None
+
+
+async def test_compute_state_measures_only_the_named_items(
+    resolve_project, task, run_config, data_source, input_backed_eval
+):
+    # `item_ids` narrows the job to a subset of the split: a trial of a run config
+    # on a few named items. Progress and completion are measured over the subset,
+    # so a scored item outside it neither counts nor completes the job.
+    inputs = [_make_eval_input(task, "inputs") for _ in range(3)]
+    outside = _make_eval_input(task, "other")
+    eval_config = input_backed_eval.configs()[0]
+    _make_eval_input_run(eval_config, inputs[0].id, "run_config1")
+    _make_eval_input_run(eval_config, inputs[2].id, "run_config1")
+
+    state = await EvalJobWorker().compute_state(
+        _input_backed_params(item_ids=[inputs[0].id, inputs[1].id, outside.id, "nope"])
+    )
+
+    assert state.total == 2  # outside-the-split and unknown ids are ignored
+    assert state.success == 1  # inputs[2] is scored but not in the subset
+    assert state.is_complete is False
+
+    done = await EvalJobWorker().compute_state(
+        _input_backed_params(item_ids=[inputs[0].id])
+    )
+    assert done.total == 1 and done.success == 1 and done.is_complete is True

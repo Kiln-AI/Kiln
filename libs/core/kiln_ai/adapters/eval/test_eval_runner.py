@@ -4964,3 +4964,50 @@ class TestMultiTurnTraceReuse:
         # under two evals that share a drive config. What matters is that one of them is
         # reused rather than a third being driven.
         assert stub.seen_inputs[0].trace in (cross_trace, MULTI_TURN_TRACE)
+
+
+def test_collect_tasks_item_ids_narrow_the_split(
+    mock_eval, mock_task, mock_eval_config, data_source, mock_run_config
+):
+    """`item_ids` runs only the named items of the split (a trial on a few
+    items before the full split); ids outside the split are ignored, and an
+    already-run named item is still skipped."""
+    runs = []
+    for _ in range(3):
+        task_run = TaskRun(
+            parent=mock_task,
+            input="test1",
+            input_source=data_source,
+            output=TaskOutput(output="test1"),
+            tags=["tag1"],
+        )
+        task_run.save_to_file()
+        runs.append(task_run)
+    outside = TaskRun(
+        parent=mock_task,
+        input="x",
+        input_source=data_source,
+        output=TaskOutput(output="x"),
+        tags=["other"],
+    )
+    outside.save_to_file()
+    mock_eval.splits["test"] = TaskRunSplit(filter_id="tag::tag1")
+
+    runner = build_task_run_eval_runner(
+        [mock_eval_config],
+        [mock_run_config],
+        item_ids={runs[0].id, runs[1].id, outside.id},
+    )
+    jobs = runner.collect_tasks()
+    assert {job.item.id for job in jobs} == {runs[0].id, runs[1].id}
+
+    full = build_task_run_eval_runner([mock_eval_config], [mock_run_config])
+    assert len(full.collect_tasks()) == 3
+
+    with pytest.raises(ValueError, match="task_run_eval"):
+        EvalRunner(
+            eval_configs=[mock_eval_config],
+            run_configs=None,
+            eval_run_type="eval_config_eval",
+            item_ids={"x"},
+        )

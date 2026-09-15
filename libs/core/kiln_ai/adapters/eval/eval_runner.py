@@ -146,7 +146,11 @@ class EvalRunner:
         split: ResolvedSplit | None = None,
         save_context: SaveContext | None = None,
         eval_set_filter_id_override: DatasetFilterId | None = None,
+        item_ids: Set[ID_TYPE] | None = None,
     ):
+        """`item_ids`: run only these items of the split (task_run_eval mode) —
+        a trial of a run config on a few named items; ids outside the split are
+        ignored. None = the whole split."""
         if len(eval_configs) == 0:
             raise ValueError("Eval runner requires at least one eval config")
         target_eval = eval_configs[0].parent_eval()
@@ -200,6 +204,9 @@ class EvalRunner:
                 raise ValueError(no_golden_set_message(target_eval))
             self.golden_filter_id = target_eval.eval_configs_filter_id
 
+        if item_ids is not None and eval_run_type != "task_run_eval":
+            raise ValueError("item_ids narrows a task_run_eval split only")
+        self.item_ids = item_ids
         self.eval_run_type = eval_run_type
         self.eval_set_filter_id_override = eval_set_filter_id_override
         self.eval_configs = eval_configs
@@ -295,6 +302,7 @@ class EvalRunner:
                 eval_config=eval_config,
             )
             for item in self.split.items
+            if self.item_ids is None or item.id in self.item_ids
             for eval_config in self.eval_configs
             for run_config in self.run_configs or []
             if (self.split.source, item.id)
