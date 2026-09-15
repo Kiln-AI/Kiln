@@ -93,11 +93,24 @@ class ToolCallOutcome:
     error_details: Any = None
 
 
-DEFAULT_SETTLE_CALLS: tuple[tuple[str, str], ...] = (
-    ("changes", "controller_changes"),
-    ("state_digest", "controller_digest"),
-)
-"""(final_state key, control tool name); each is stepped with arguments {}."""
+DEFAULT_SETTLE_CALLS: tuple[tuple[str, str], ...] = (("changes", "controller_changes"),)
+"""(final_state key, control tool name); each is stepped with arguments {}.
+
+One entry, because one is what graders read: `controller_changes` is the record of what
+the episode did to the world, and a scorer or judge asking whether the agent wrote the
+right row reads it out of `final_state["changes"]`.
+
+A `("state_digest", "controller_digest")` pair sat here too and was removed. A world
+framework need not serve a digest tool and none we point at does -- Seahaven's control
+set is `controller_changes` and `controller_run_sql`, and nothing else -- so the call
+missed on every episode, and no scorer, judge or view in Kiln ever read the value it
+would have written. A default that cannot hit is a round trip per episode spent on a
+key no one opens.
+
+What makes an absent control tool safe is `_settle` below, not this tuple: a tool the
+environment does not serve leaves its key absent and settling running, whichever way
+the environment says so. That tolerance is unchanged, so a deployment whose world does
+serve a digest tool adds the pair back and it settles like any other entry."""
 
 
 class WorldSessionManager(Protocol):

@@ -924,7 +924,7 @@ async def test_tool_error_reaches_the_model_and_ends_the_episode(
 CHANGES_SCORER = (
     "def score(output, world_episode):\n"
     "    final = world_episode['final_state']\n"
-    "    ok = len(final['changes']) == 1 and final['state_digest'] is not None\n"
+    "    ok = len(final['changes']) == 1\n"
     "    return {'accuracy': 1.0 if ok else 0.0}\n"
 )
 
@@ -968,7 +968,7 @@ async def test_world_failure_reaches_the_model_as_an_error(
     assert generator.errors["ei_a"] == "tripped"
 
 
-async def test_final_state_carries_changes_and_a_digest(
+async def test_final_state_carries_changes(
     project, task, controlled_world, eval_, session_manager
 ):
     tool_id = build_world_tool_id(controlled_world.id, "append_note")
@@ -981,8 +981,6 @@ async def test_final_state_carries_changes_and_a_digest(
     (trace,) = _traces(task)
     final = trace.world_episode.final_state
     assert final["changes"][0]["after"] == {"n": 0, "note": "note"}
-    digest = final["state_digest"]
-    assert len(digest) == 64 and all(c in "0123456789abcdef" for c in digest)
     assert cfg.runs(readonly=True)[0].scores == {"accuracy": 1.0}
 
 

@@ -119,9 +119,8 @@ class TestRemoteSessions:
         assert final.final_state["notes"] == ["hi"]
         assert final.final_state["step_count"] == 4
         assert final.final_state["episode_id"] == episode.episode_id
-        # This environment serves no control tools, so the settle keys are absent.
+        # This environment serves no control tools, so the settle key is absent.
         assert "changes" not in final.final_state
-        assert "state_digest" not in final.final_state
         assert set(final.model_dump()) == {
             "reset",
             "episode_id",
@@ -234,9 +233,7 @@ class TestRemoteSessions:
             final = await session_manager.end_episode(episode)
             assert "settle_error" not in (final.final_state or {})
 
-    async def test_end_episode_settles_changes_and_digest(
-        self, session_manager, controlled_world
-    ):
+    async def test_end_episode_settles_changes(self, session_manager, controlled_world):
         episode = await session_manager.start_episode(controlled_world, {})
         await session_manager.call_tool(episode, "append_note", {"note": "hi"})
         final = await session_manager.end_episode(episode)
@@ -249,7 +246,6 @@ class TestRemoteSessions:
                 "after": {"n": 0, "note": "hi"},
             }
         ]
-        assert final.final_state["state_digest"] == hashlib.sha256(b"hi").hexdigest()
         # Settling happens after `state`, so step_count is still the agent's own.
         assert final.final_state["step_count"] == 1
         assert final.final_state["notes"] == ["hi"]
@@ -265,11 +261,13 @@ class TestRemoteSessions:
                 await session_manager.shutdown()
 
         none = await settled(settle_calls=())
-        assert "changes" not in none and "state_digest" not in none
+        assert "changes" not in none
 
+        # A key the default never asks for: the pair names the tool and the key it
+        # lands under, so a deployment can settle whatever its world serves.
         renamed = await settled(settle_calls=(("digest", "controller_digest"),))
         assert renamed["digest"] == hashlib.sha256(b"hi").hexdigest()
-        assert "changes" not in renamed and "state_digest" not in renamed
+        assert "changes" not in renamed
 
     async def test_settle_records_a_coded_failure(
         self, session_manager, controlled_world
@@ -284,9 +282,8 @@ class TestRemoteSessions:
             "code": "db_error",
             "message": "diff failed",
         }
-        # Settling stopped at the failure, so neither key was written.
+        # The failing call wrote no key of its own.
         assert "changes" not in final.final_state
-        assert "state_digest" not in final.final_state
         assert final.final_state["step_count"] == 1
         assert final.final_state["notes"] == ["poison"]
         assert session_manager._sessions == {}
