@@ -263,7 +263,7 @@ export const STOP_SCREEN_ERROR_EXCERPT_CHARS = 160
 // first non-blank line without the trailing period the surrounding sentence
 // supplies, shortened to the bound above. A shortened excerpt ends in an
 // ellipsis, which stands in for the text that was dropped.
-export function error_excerpt(message: string): string {
+function error_excerpt(message: string): string {
   // Some messages arrive with their newlines still escaped as the two
   // characters backslash-n. The renderer turns those into real newlines before
   // it splits into lines, so unescaping here is what keeps the excerpt to one
@@ -481,7 +481,7 @@ export function with_failures(sentence: string, failed: number): string {
 // The share of the batch that has to survive for continuing with the
 // survivors to lead. Below it too much of the approved plan is missing for
 // the survivors to be the better offer.
-export const STOP_CONTINUE_LEADS_AT = 0.9
+const STOP_CONTINUE_LEADS_AT = 0.9
 
 // Which of the stop screen's two actions is the primary. Continuing with the
 // survivors leads only when almost the whole batch made it; below that, and
