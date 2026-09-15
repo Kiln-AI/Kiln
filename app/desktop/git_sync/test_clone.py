@@ -277,6 +277,19 @@ class TestScanForProjects:
         assert len(results) == 1
         assert results[0]["id"] == ""
 
+    def test_null_fields_become_empty_strings(self, tmp_path: Path):
+        # A project file written without these values set carries an explicit
+        # null rather than omitting the key.
+        project_data = {"name": None, "description": None, "id": None}
+        (tmp_path / "project.kiln").write_text(json.dumps(project_data))
+
+        results = scan_for_projects(tmp_path)
+        assert len(results) == 1
+        assert results[0]["description"] == ""
+        assert results[0]["id"] == ""
+        # A project with no usable name falls back to its path.
+        assert results[0]["name"] == "project.kiln"
+
     def test_results_sorted_by_path(self, tmp_path: Path):
         for name in ["c_proj", "a_proj", "b_proj"]:
             d = tmp_path / name

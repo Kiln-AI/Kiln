@@ -9310,11 +9310,13 @@ export interface components {
             /**
              * Name
              * @description Project name from the project file.
+             * @default
              */
             name: string;
             /**
              * Description
              * @description Project description from the project file.
+             * @default
              */
             description: string;
             /**
