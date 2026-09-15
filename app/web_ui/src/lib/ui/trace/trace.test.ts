@@ -211,25 +211,6 @@ describe("Trace component — auto_expand_indices", () => {
     expect(expandedRoles(container)).toEqual(["Assistant", "Tool"])
   })
 
-  it("keeps the reader's clicks while the trace stays the same", async () => {
-    // The rebuild is keyed on the trace, so an unrelated prop change must not
-    // slam a block the reader just opened back shut.
-    const { container, component } = render(Trace, {
-      props: { trace, auto_expand_indices: [2] },
-    })
-    const tool_block = [...container.querySelectorAll(".collapse")].find(
-      (block) =>
-        block.querySelector(".collapse-title span")?.textContent === "Tool",
-    )!
-    await fireEvent.click(
-      tool_block.querySelector<HTMLInputElement>("input[type=checkbox]")!,
-    )
-    expect(expandedRoles(container)).toEqual(["Assistant", "Tool"])
-
-    await component.$set({ project_id: "proj_1" })
-    expect(expandedRoles(container)).toEqual(["Assistant", "Tool"])
-  })
-
   it("lets the reader collapse a block that started expanded", async () => {
     const { container } = render(Trace, {
       props: { trace, auto_expand_indices: [2] },

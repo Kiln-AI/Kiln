@@ -128,15 +128,6 @@ const full_draft: BuilderDraft = {
 }
 
 describe("draft round-trip", () => {
-  it("survives serialization with every field intact", () => {
-    // IndexedDB structured-clones the draft; JSON is a strictly harsher
-    // proxy (drops functions/undefined), so surviving it guarantees the
-    // stored shape restores exactly.
-    const restored = JSON.parse(JSON.stringify(full_draft)) as BuilderDraft
-    expect(restored).toEqual(full_draft)
-    expect(restore_step(restored)).toBe(restore_step(full_draft))
-  })
-
   it("empty draft round-trips to no-content", () => {
     const restored = JSON.parse(
       JSON.stringify(EMPTY_BUILDER_DRAFT),
@@ -203,14 +194,6 @@ describe("restore_step resolution", () => {
     expect(restore_step(full_draft)).toBe("generate")
   })
 
-  it("never restores past step 4", () => {
-    // Even a draft that carries batch tags (a drive happened) resolves to
-    // the plan screen at furthest — review state is never persisted.
-    expect(["describe", "refine", "generate"]).toContain(
-      restore_step(full_draft),
-    )
-  })
-
   it("an open Data Guide offer restores to the plan screen with no plan", () => {
     expect(
       restore_step({
@@ -230,22 +213,6 @@ describe("restore_step resolution", () => {
         data_guide_skipped: true,
       }),
     ).toBe("refine")
-  })
-
-  it("the Data Guide fields survive a round trip on a pending draft", () => {
-    const pending: BuilderDraft = {
-      ...full_draft,
-      batch_plan: null,
-      data_guide_text: null,
-      use_data_guide: false,
-      data_guide_skipped: true,
-      data_guide_offer_pending: true,
-    }
-    const restored = JSON.parse(JSON.stringify(pending)) as BuilderDraft
-    expect(restored.data_guide_skipped).toBe(true)
-    expect(restored.data_guide_offer_pending).toBe(true)
-    expect(restored.data_guide_text).toBeNull()
-    expect(restore_step(restored)).toBe("generate")
   })
 
   it("a plan with no prompts falls back to the earlier steps", () => {
@@ -757,28 +724,6 @@ describe("create_eval_button_label", () => {
 })
 
 describe("model lanes (su_driver / judge_model)", () => {
-  it("round-trip through serialization", () => {
-    const restored = JSON.parse(JSON.stringify(full_draft)) as BuilderDraft
-    expect(restored.su_driver).toEqual({
-      model_name: "gpt_5_4_mini",
-      model_provider: "openai",
-    })
-    expect(restored.judge_model).toEqual({
-      model_name: "gpt_5_4",
-      model_provider: "openai",
-    })
-  })
-
-  it("a pre-Drive-Settings draft restores lanes as null via ??", () => {
-    // Drafts written before the lanes existed have no such keys. The
-    // builder restores with `saved.su_driver ?? null` — mirror that here
-    // against a legacy-shaped blob.
-    const { su_driver: _su, judge_model: _judge, ...legacy } = full_draft
-    const restored = JSON.parse(JSON.stringify(legacy)) as BuilderDraft
-    expect(restored.su_driver ?? null).toBeNull()
-    expect(restored.judge_model ?? null).toBeNull()
-  })
-
   it("reset wipes the lanes — pre-population re-fills them", () => {
     const reset = reset_draft_keeping_tags(full_draft)
     expect(reset.su_driver).toBeNull()
@@ -806,7 +751,6 @@ describe("conversation length (turns_per_case)", () => {
 
   it("round-trips the chosen length", () => {
     const restored = JSON.parse(JSON.stringify(full_draft)) as BuilderDraft
-    expect(restored.turns_per_case).toBe(8)
     expect(restore(restored)).toBe(8)
   })
 

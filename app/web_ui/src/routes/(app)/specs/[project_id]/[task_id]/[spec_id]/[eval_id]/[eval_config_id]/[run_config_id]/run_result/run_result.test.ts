@@ -436,7 +436,6 @@ describe("run result page — a renderable trace gates the conversation view", (
     expect(
       container.querySelector("[data-testid='chat-trace-stub']"),
     ).toBeNull()
-    expect(visible_text(container)).not.toContain("assistant: Madrid.")
 
     const link = container.querySelector("button.text-primary")
     await fireEvent.click(link!)

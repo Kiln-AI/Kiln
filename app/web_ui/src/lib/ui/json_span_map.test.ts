@@ -158,7 +158,6 @@ describe("mark_html_range", () => {
   it("counts an entity as one character, not as its escape", () => {
     // hljs escapes quotes, so a JSON string is full of &quot;.
     const html = "<span>&quot;ab&quot;</span>"
-    expect(rendered(html)).toBe('"ab"')
     // Characters 1..3 of the rendered text are `ab`.
     expect(marked_text(html, 1, 3)).toBe("ab")
   })

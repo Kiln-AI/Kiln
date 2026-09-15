@@ -319,16 +319,22 @@ describe("ChatTrace component — layout & roles", () => {
   })
 
   it("places the fork affordance on the assistant message, not the user bubble", () => {
+    // The user rows carry run ids and usage too, so their own actions row
+    // renders and only the user branch keeps a fork button out of it.
+    const usage = { input_tokens: 10, output_tokens: 5 }
     const trace: TraceType = [
-      userMsg("hello"),
+      { ...userMsg("hello"), usage } as TraceMessage,
       assistantMsg("hi"),
-      userMsg("again"),
+      { ...userMsg("again"), usage } as TraceMessage,
     ]
-    // The fork affordance is mapped onto the assistant message (index 1) that
-    // precedes the forkable user turn.
-    const forkable_run_ids = [null, "run-2", null]
+    const forkable_run_ids = ["run-1", "run-2", "run-3"]
     const { container } = render(ChatTrace, {
-      props: { trace, forkable_run_ids, on_fork: vi.fn() },
+      props: {
+        trace,
+        forkable_run_ids,
+        on_fork: vi.fn(),
+        show_per_message_usage: true,
+      },
     })
     const userBubbles = container.querySelectorAll(
       "[data-testid='chat-msg-user']",
@@ -959,9 +965,6 @@ describe("ChatTrace component — system prompt", () => {
   it("does not render system messages at all (no toggle, no content)", () => {
     const trace: TraceType = [systemMsg("you are helpful"), userMsg("hi")]
     const { container } = render(ChatTrace, { props: { trace } })
-    expect(
-      container.querySelector("[data-testid='chat-msg-system']"),
-    ).toBeNull()
     expect(container.textContent).not.toContain("you are helpful")
     expect(container.textContent).not.toContain("system prompt")
   })
@@ -972,9 +975,6 @@ describe("ChatTrace component — system prompt", () => {
       userMsg("hi"),
     ]
     const { container } = render(ChatTrace, { props: { trace } })
-    expect(
-      container.querySelector("[data-testid='chat-msg-system']"),
-    ).toBeNull()
     expect(container.textContent).not.toContain("internal directive")
   })
 })

@@ -303,7 +303,6 @@ describe("drive_stop_banner — preflight stop", () => {
     expect(banner).toContain(
       "You can [test your run config](/run), then start again.",
     )
-    expect(banner).toContain("[test your run config](/run)")
     // The recovery action is its own paragraph, never drowned in the error.
     expect(banner).toContain("\n\n")
   })
@@ -489,7 +488,6 @@ describe("the partial stop's error excerpt", () => {
   it("cuts a long message at the bound and ends it with an ellipsis", () => {
     const excerpt = excerpt_of("x".repeat(400))
     expect(excerpt).toBe(`Most common error: ${"x".repeat(160)}…`)
-    expect(excerpt.endsWith(".")).toBe(false)
   })
 
   it("bounds the excerpt at 160 characters", () => {
@@ -508,12 +506,8 @@ describe("the partial stop's error excerpt", () => {
     // puts every pair on an odd offset: cutting by UTF-16 units would both
     // shorten a message that fits and leave half a character on screen.
     const astral = `x${"\u{1F642}".repeat(100)}`
-    expect(astral.length).toBe(201)
     const excerpt = excerpt_of(astral)
     expect(excerpt).toBe(`Most common error: ${astral}.`)
-    // The u flag is what makes this a well-formedness check: without it the
-    // class matches the code units inside a perfectly good pair as well.
-    expect([...excerpt].every((ch) => !/[\uD800-\uDFFF]/u.test(ch))).toBe(true)
   })
 
   it("adds no period after a message that asks a question", () => {

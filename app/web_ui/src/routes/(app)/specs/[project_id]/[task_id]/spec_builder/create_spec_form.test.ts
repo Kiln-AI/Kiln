@@ -41,7 +41,9 @@ afterEach(() => {
 
 describe("CreateSpecForm", () => {
   it("offers manual creation only", () => {
-    const { getByText, queryByText } = render_form()
+    // Passes the flag that used to switch the form to Kiln Pro, so a form that
+    // brought the flag back would show its Pro buttons here.
+    const { getByText, queryByText } = render_form({ copilot_enabled: true })
     expect(getByText("Create Eval")).toBeTruthy()
     // The Kiln Pro creation path was removed: neither its submit button nor
     // the "or Create Manually" escape hatch beside it should render.

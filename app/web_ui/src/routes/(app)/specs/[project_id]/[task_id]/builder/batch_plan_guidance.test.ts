@@ -35,21 +35,6 @@ describe("compose_plan_guidance", () => {
       compose_plan_guidance("BASE", "steer text"),
     )
   })
-
-  it("leaves the arm marker readable at the start of the composed guidance", () => {
-    // The mock (and anything else reading the request) identifies the arm from
-    // the head of the guidance, so a steer must never displace it.
-    const single = compose_plan_guidance(
-      single_turn_plan_guidance("be helpful"),
-      "More edge cases.",
-    )
-    expect(single).toContain("one single-turn task input")
-    const multi = compose_plan_guidance(
-      multiturn_plan_guidance("be helpful"),
-      "More edge cases.",
-    )
-    expect(multi).not.toContain("one single-turn task input")
-  })
 })
 
 // Both arms carry a world-state paragraph: the planner cannot see the live

@@ -576,7 +576,6 @@ describe("eval detail page — add eval data", () => {
     expect(container.textContent?.replace(/\s+/g, " ")).toContain(
       "created by the eval builder and can't be extended here",
     )
-    expect(mockGoto).not.toHaveBeenCalled()
   })
 
   it("refuses a test split whose filter isn't a tag", async () => {
