@@ -142,7 +142,9 @@
     new_plan_confirm,
     plan_drive,
     resolved_selected_count,
+    is_partial_stop,
     restore_turns_per_case,
+    stop_primary_action,
     with_failures,
     MAX_TURNS_PER_CASE,
     MIN_TURNS_PER_CASE,
@@ -189,6 +191,8 @@
   } from "$lib/stores/copilot_connection_store"
   import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import Intro from "$lib/ui/intro.svelte"
+  import ExclaimCircleIcon from "$lib/ui/icons/exclaim_circle_icon.svelte"
   // The house stepper + label tooltip, for the Generation Settings turns row.
   import IncrementUi from "$lib/ui/increment_ui.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
@@ -448,7 +452,7 @@
 
   // Start the wizard over: wipe the draft but CARRY the batch tags (they
   // name chains on disk that only delete-on-next-drive cleans up), then
-  // start over on the Setup and Eval Type page — SDG's clear-and-reload
+  // start over on the Create Eval page — SDG's clear-and-reload
   // move, aimed at where eval creation begins.
   async function reset_draft_with_confirm() {
     const msg =
@@ -470,7 +474,7 @@
     }
     // The reset is persisted — suppress both guards for the navigation.
     // Cleared by nothing: the page is about to be replaced wholesale.
-    // Start over where eval creation starts, on the Setup and Eval Type
+    // Start over where eval creation starts, on the Create Eval
     // page, rather than reloading this URL: it can carry the description
     // that page handed over, which a reload would apply again and walk
     // straight back into Step 2.
@@ -1723,7 +1727,7 @@
       drive_settings_error = new KilnError(
         is_multi_turn
           ? "Select a model to play the user and a judge model to continue."
-          : "Select an eval data generation model and a judge model to continue.",
+          : "Select an input generation model and a judge model to continue.",
       )
       return
     }
@@ -1947,14 +1951,36 @@
     batch_plan !== null &&
     driven_prompts_json === JSON.stringify(batch_plan.prompts)
   // Accepted has-data state (clean drive, or survivors accepted via Continue):
-  // Drive is hidden — Continue (to review) is the only forward action. On the
-  // stop screen Drive stays visible as the re-drive recovery.
+  // Drive is hidden — Continue (to review) is the only forward action. A stop
+  // that left usable work behind takes over the step with its own two
+  // actions; every other stop keeps the plan on screen with Drive as the
+  // re-drive recovery.
   $: has_data_accepted = has_driven_results && drive_stop === null
   // How many cases the last drive was asked to run — the denominator for
   // the has-data notice (survivors vs. the approved plan at drive time).
   $: driven_plan_size = driven_prompts_json
     ? (JSON.parse(driven_prompts_json) as string[]).length
     : 0
+
+  // Which way out the stopped-drive screen leads with, computed once so the
+  // button order and the solid button can never disagree about it.
+  $: stop_lead = drive_stop ? stop_primary_action(drive_stop) : "rerun"
+  $: stop_continue_action = {
+    label: `Continue With ${drive_stop?.survivors ?? 0}`,
+    onClick: on_continue_with_survivors,
+    is_primary: stop_lead === "continue",
+  }
+  $: stop_rerun_action = {
+    label: "Re-run Batch",
+    onClick: open_drive_settings,
+    is_primary: stop_lead === "rerun",
+  }
+  // The lead renders first: the house offer screen stacks its primary above
+  // the alternative, so the order and the emphasis say the same thing.
+  $: stop_screen_actions =
+    stop_lead === "continue"
+      ? [stop_continue_action, stop_rerun_action]
+      : [stop_rerun_action, stop_continue_action]
 
   // Clears the driven results (conversations, review progress, stop banner)
   // so the plan screen returns to its pre-drive editable form. Batch tags
@@ -4087,7 +4113,7 @@
       // eval slice is minted server-side as EvalInputs from the driven cases.
       if (is_multi_turn) {
         if (multi_turn_batch_tag === null || driven_cases.length === 0) {
-          save_error = "No multi-turn chains were generated. Go back to Step 4."
+          save_error = "Nothing was generated. Go back to Step 4."
           return
         }
         // The saved batch's own tag: its chains become the eval, so it must
@@ -4192,7 +4218,7 @@
       // runs were driven on. Nothing is generated at save time — the
       // dataset IS the runs the user just reviewed.
       if (single_turn_batch_tag === null || trace_claims.length === 0) {
-        save_error = "No test runs were generated. Go back to Step 4."
+        save_error = "Nothing was generated. Go back to Step 4."
         return
       }
       // The saved batch's own tag: its runs become the eval's dataset, so
@@ -4320,10 +4346,19 @@
       if (generation_loading || preparing_review || data_guide_offer_pending)
         return
       if (show_plan_approval && batch_plan) {
-        // The plan surface's own generate button belongs to the shared
-        // component and has no keyboard path; only the continue-to-results
-        // action beside it is ours to fire.
+        if (drive_stop && is_partial_stop(drive_stop)) {
+          // The stop screen has no keyboard path: its buttons carry no
+          // shortcut hint, and which of them leads changes with the batch, so
+          // the shortcut would fire an unannounced action — on most of those
+          // batches a paid re-run. The keystroke is still swallowed, or a
+          // focused button would take the Enter and act anyway.
+          event.preventDefault()
+          return
+        }
         if (has_driven_results) {
+          // The plan surface's own generate button belongs to the shared
+          // component and has no keyboard path; only the continue-to-results
+          // action beside it is ours to fire.
           event.preventDefault()
           on_continue_with_survivors()
         }
@@ -4381,11 +4416,11 @@
       case "describe":
         return "Describe Your Eval"
       case "clarify":
-        return "Answer a Few Questions"
+        return "Clarify Eval"
       case "refine":
-        return "Check the Details"
+        return "Review Updated Eval"
       case "generate":
-        return "Creating Eval"
+        return "Create Eval Dataset"
       case "review":
         // Verdict-neutral on purpose: half of every batch passes by design,
         // so a fault-presuming headline would blame agents that behaved. The
@@ -4420,6 +4455,13 @@
           current_step,
         )}`
   $: page_max_w = page_max_w_for(current_step)
+  // Second subtitle line, on the refine step only: that step shows the eval
+  // rewritten from the user's answers, so the header asks the question the
+  // step exists to answer.
+  $: page_sub_subtitle =
+    current_step === "refine"
+      ? "We've integrated your feedback, does it look right?"
+      : ""
 
   // Total assistant turns expected across the whole batch — the denominator
   // for the smooth turn-level progress (cases run in parallel waves, so this
@@ -4442,7 +4484,7 @@
         : generation_phase === "preflight"
           ? "Checking Configuration"
           : generation_phase === "minting_inputs"
-            ? "Writing Eval Data"
+            ? "Creating Eval Dataset"
             : "Creating Simulated Users"
   $: generate_animation_description =
     generation_phase === "planning"
@@ -4455,10 +4497,10 @@
           ? `Checking that your run config, the ${
               is_multi_turn
                 ? "model that plays the user"
-                : "eval data generation model"
+                : "input generation model"
             }, and the judge all respond before creating your eval data.`
           : generation_phase === "minting_inputs"
-            ? `Writing ${planned_total} items from the approved plan. ${minting_done} of ${minting_total} written.`
+            ? `Creating ${planned_total} dataset items.`
             : `Setting up ${planned_total} simulated users from the approved plan.`
 
   // The long-wait line, on exactly the stages that run one long request with
@@ -4494,6 +4536,7 @@
   <AppPage
     title={page_title}
     subtitle={page_step_line}
+    sub_subtitle={page_sub_subtitle}
     breadcrumbs={[{ label: "Evals", href: `/specs/${project_id}/${task_id}` }]}
     no_y_padding
     action_buttons={reset_available
@@ -4750,7 +4793,7 @@
                    conversations that end early leave the bar short of full, so
                    it can jump to done rather than creep there. -->
               <ConversationAnimation
-                title="Creating Eval Data"
+                title="Creating Eval Dataset"
                 description={with_failures(
                   `Simulating conversations with your agent and judging each one. ${multi_turn_turns_done} of up to ${multi_turn_total_turns} turns complete.`,
                   pipeline_failed_count,
@@ -4766,7 +4809,7 @@
               </div>
             {:else}
               <AnalyzingAnimation
-                title="Creating Eval Data"
+                title="Creating Eval Dataset"
                 description={with_failures(
                   `Running your task on each item and judging the result. ${judged_case_count} of ${pipeline_total_cases} judged.`,
                   pipeline_failed_count,
@@ -4862,113 +4905,136 @@
           {/if}
 
           {#if show_plan_approval && batch_plan}
-            {#if drive_stop}
-              <!-- The unified stop banner: partial failure warns, all-failed
-                   errors — same surface, message and actions scale with what
-                   happened. trusted+markdown for the in-message /run
-                   deeplink (renders target=_blank, wizard state survives). -->
-              <div class="mt-2 mb-4">
-                <Warning
-                  warning_color={drive_stop.survivors > 0 &&
-                  !drive_stop.aborted_error &&
-                  !drive_stop.preflight
-                    ? "warning"
-                    : "error"}
-                  markdown
-                  trusted
-                  warning_message={drive_stop_banner(
+            {#if drive_stop && is_partial_stop(drive_stop)}
+              <!-- A stop that left usable work behind takes over the step:
+                   how much failed, one line of diagnosis and the two ways out
+                   are the whole decision, and the plan underneath has nothing
+                   to add to it. Every other stop kind carries the full
+                   provider text and a recovery deeplink, and its way out runs
+                   through the plan (Refine Plan, testing the run config), so
+                   those stay a banner above the plan below. -->
+              <div class="flex justify-center mt-[10vh]">
+                <Intro
+                  title="Errors During Dataset Creation"
+                  description_markdown={drive_stop_banner(
                     drive_stop,
                     drive_run_config_name,
                     drive_run_config_model,
-                    case_noun,
                   )}
-                />
-              </div>
-            {/if}
-            <!-- Plan approval: the run starts only after the user approves
-                 the plan — the shared /generate batch-plan surface, on its
-                 own default header and regenerate labels so the two flows
-                 read alike. Only the subheader differs per arm, because the
-                 arms do different things to each item. The primary button
-                 opens Generation Settings rather than driving: that dialog
-                 is the single entrance, so every run passes its lanes and
-                 its cost warning. -->
-            <KilnProBatchPlan
-              plan={batch_plan}
-              header_label="Eval Dataset Proposal"
-              summary_out_of_sync={batch_plan_edited}
-              subheader={is_multi_turn
-                ? "Here's the plan for your eval dataset. Kiln will run each item as a test conversation with your agent in the next step. Refine the plan if the coverage looks off."
-                : "Here's the plan for your eval dataset. Kiln will use this guidance to generate each item in the next step. Refine the plan if the coverage looks off."}
-              on_generate_inputs={open_drive_settings}
-              on_regenerate={open_new_plan_dialog}
-              on_delete_prompt={on_delete_plan_prompt}
-              hide_generate_button={has_data_accepted}
-              generate_button_outline={has_driven_results &&
-                drive_stop !== null}
-              generate_button_label={`Generate Dataset (${batch_plan.prompts.length} items)`}
-              items_label="Items"
-              expanded_description={false}
-              column_label="Item Guidance"
-            >
-              <!-- The first plan fires without a form, so the proposal says
-                   what it was drafted under; View is the checkbox's own
-                   opener (a new tab, so the plan stays on screen). -->
-              <svelte:fragment slot="under_subheader">
-                {#if plan_drafted_with_data_guide}
-                  <div
-                    id="data_guide_plan_note"
-                    class="text-sm font-light text-gray-500"
-                  >
-                    Planned using your Data Guide.
-                    <button
-                      type="button"
-                      class="link"
-                      on:click={() =>
-                        open_data_guide_in_new_tab(project_id, task_id)}
-                    >
-                      View
-                    </button>
+                  action_buttons={stop_screen_actions}
+                >
+                  <div slot="icon" class="h-12 w-12 text-warning">
+                    <ExclaimCircleIcon />
                   </div>
-                {/if}
-              </svelte:fragment>
-            </KilnProBatchPlan>
-            <!-- Wizard chrome stays outside the shared component (it has no
-                 slots): once this exact plan has driven results, offer the
-                 way forward to review. Stepping back is the browser's Back. -->
-            {#if has_driven_results}
-              <!-- Conversations were already driven from this exact plan —
-                   returning to the results doesn't re-spend model calls.
-                   Also the survivors path from the stop banner. -->
-              <div class="flex flex-row justify-end mt-4">
-                <div class="flex flex-row items-center gap-3">
-                  <span class="font-light text-xs text-gray-500">
-                    {#if trace_claims.length < driven_plan_size}
-                      {trace_claims.length} of {driven_plan_size} eval inputs created
-                    {:else}
-                      {trace_claims.length} eval inputs created
-                    {/if}
-                  </span>
-                  <!-- The screen's single solid primary: the re-drive button
-                       on the plan surface above demotes to outline whenever
-                       this one co-renders (see generate_button_outline). -->
-                  <button
-                    class="relative btn btn-primary min-w-64 px-12"
-                    on:click={on_continue_with_survivors}
-                  >
-                    Continue
-                    <span
-                      class="absolute opacity-80 right-4 text-xs font-light"
+                </Intro>
+              </div>
+            {:else}
+              {#if drive_stop}
+                <!-- The stop kinds that keep the plan on screen: their text is
+                     raw provider output with a deeplink in it, too long for
+                     the stop screen's column, and their recovery runs through
+                     the plan below. trusted+markdown for the in-message /run
+                     deeplink (renders target=_blank, wizard state survives). -->
+                <div class="mt-2 mb-4">
+                  <!-- Always the error color: the stops that keep the plan
+                       are all failures of the run config or of the whole
+                       batch, never a run that left usable work behind. -->
+                  <Warning
+                    warning_color="error"
+                    markdown
+                    trusted
+                    warning_message={drive_stop_banner(
+                      drive_stop,
+                      drive_run_config_name,
+                      drive_run_config_model,
+                    )}
+                  />
+                </div>
+              {/if}
+              <!-- Plan approval: the run starts only after the user approves
+                   the plan — the shared /generate batch-plan surface. It
+                   overrides the header, because what it lists is a proposed
+                   eval dataset, and keeps the surface's own regenerate label
+                   so the two flows read alike. The primary button opens
+                   Generation Settings rather than driving: that dialog is the
+                   single entrance, so every run passes its lanes and its cost
+                   warning. -->
+              <KilnProBatchPlan
+                plan={batch_plan}
+                header_label="Eval Dataset Proposal"
+                summary_out_of_sync={batch_plan_edited}
+                subheader="Here's a plan for your eval dataset. Refine the plan if the coverage looks off."
+                on_generate_inputs={open_drive_settings}
+                on_regenerate={open_new_plan_dialog}
+                on_delete_prompt={on_delete_plan_prompt}
+                hide_generate_button={has_data_accepted}
+                generate_button_outline={has_driven_results &&
+                  drive_stop !== null}
+                generate_button_label={`Generate Dataset (${batch_plan.prompts.length} items)`}
+                items_label="Items"
+                expanded_description="Each row will be used to seed one item of your eval dataset."
+                column_label="Item Guidance"
+              >
+                <!-- The first plan fires without a form, so the proposal says
+                     what it was drafted under. It rides on the sub-line as one
+                     sentence rather than a row of its own, and the guide opens
+                     in a new tab so the plan stays on screen. The leading
+                     {" "} is load-bearing: Svelte drops whitespace at the
+                     start of slot content, which would fuse this clause onto
+                     the sub-line's last word. -->
+                <svelte:fragment slot="under_subheader">
+                  {#if plan_drafted_with_data_guide}
+                    <span id="data_guide_plan_note"
+                      >{" "}Planned using your
+                      <button
+                        type="button"
+                        class="link"
+                        on:click={() =>
+                          open_data_guide_in_new_tab(project_id, task_id)}
+                        >data guide</button
+                      >.</span
                     >
-                      {#if isMacOS()}
-                        <span class="tracking-widest">⌘↵</span>
+                  {/if}
+                </svelte:fragment>
+              </KilnProBatchPlan>
+              <!-- Wizard chrome stays outside the shared component (it has no
+                   slots): once this exact plan has driven results, offer the
+                   way forward to review. Stepping back is the browser's Back. -->
+              {#if has_driven_results}
+                <!-- Conversations were already driven from this exact plan —
+                     returning to the results doesn't re-spend model calls.
+                     Also the survivors path from the stop banner above. -->
+                <div class="flex flex-row justify-end mt-4">
+                  <div class="flex flex-row items-center gap-3">
+                    <span class="font-light text-xs text-gray-500">
+                      {#if trace_claims.length < driven_plan_size}
+                        {trace_claims.length} of {driven_plan_size} eval inputs created
                       {:else}
-                        <span>ctrl ↵</span>
+                        {trace_claims.length} eval inputs created
                       {/if}
                     </span>
-                  </button>
+                    <!-- The screen's single solid primary: the re-drive
+                         button on the plan surface above demotes to outline
+                         whenever this one co-renders (see
+                         generate_button_outline). -->
+                    <button
+                      class="relative btn btn-primary min-w-64 px-12"
+                      on:click={on_continue_with_survivors}
+                    >
+                      Continue
+                      <span
+                        class="absolute opacity-80 right-4 text-xs font-light"
+                      >
+                        {#if isMacOS()}
+                          <span class="tracking-widest">⌘↵</span>
+                        {:else}
+                          <span>ctrl ↵</span>
+                        {/if}
+                      </span>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              {/if}
             {/if}
           {:else if !generation_loading && !generation_error && !preparing_review && !claims_gate_error && !data_guide_offer_pending}
             <div class="flex justify-end mt-8">
@@ -5146,7 +5212,7 @@
               </div>
             {/if}
           {:else}
-            {#if calibration_rounds_completed > 0 && rejudge_shortfall_notice(calibration_failed_count, case_noun)}
+            {#if calibration_rounds_completed > 0 && rejudge_shortfall_notice(calibration_failed_count, trace_claims.length)}
               <!-- Cases without a fresh verdict sat the round out — say so
                    instead of letting the smaller subset pass unremarked. -->
               <div class="mt-2 mb-4">
@@ -5155,7 +5221,7 @@
                   warning_icon="info"
                   warning_message={rejudge_shortfall_notice(
                     calibration_failed_count,
-                    case_noun,
+                    trace_claims.length,
                   )}
                 />
               </div>
@@ -5341,8 +5407,8 @@
       <RunConfigComponent
         bind:this={input_gen_config_component}
         {project_id}
-        model_label="Eval Data Generation Model"
-        model_info_description="Writes one item from each approved plan line; your task then runs on them."
+        model_label="Input Generation Model"
+        model_info_description="Writes the input for each dataset item. Your run config then produces the output that the judge scores."
         bind:model={input_gen_model_combined}
         initial_run_config_properties={input_gen_run_config}
         requires_structured_output={true}

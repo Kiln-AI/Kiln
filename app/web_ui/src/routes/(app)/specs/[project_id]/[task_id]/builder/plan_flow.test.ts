@@ -9,14 +9,17 @@ import {
   driven_data_confirm,
   first_preflight_failure,
   is_claims_resolved,
+  is_partial_stop,
   missing_slot_indices,
   new_plan_confirm,
   plan_drive,
   resolved_selected_count,
   restore_turns_per_case,
+  stop_primary_action,
   with_failures,
   MAX_TURNS_PER_CASE,
   MIN_TURNS_PER_CASE,
+  STOP_SCREEN_ERROR_EXCERPT_CHARS,
   type DriveStop,
 } from "./plan_flow"
 import type { ClaimsBuildState } from "./claim_evidence"
@@ -52,20 +55,29 @@ describe("drive_stop_banner", () => {
     dominant_error: "RateLimitError from OpenRouter",
   }
 
-  it("partial failure: counts, dominant error, both recovery actions", () => {
+  it("partial failure: the question first, then what was already tried", () => {
     const msg = drive_stop_banner(partial, "Polite Hawk")
     expect(msg).toBe(
-      "38 of 40 conversations completed. 2 failed after retries (most common: RateLimitError from OpenRouter).\n\nContinue with the 38 that completed, or run the batch again.",
+      "2 of 40 failed. Continue with only 38, or run this batch again?\nEach failure was retried. Most common error: RateLimitError from OpenRouter.",
     )
   })
 
-  it("partial failure without a dominant error omits the clause", () => {
+  it("partial failure: a dominant error ending in a period gets one period, not two", () => {
+    const msg = drive_stop_banner(
+      { ...partial, dominant_error: "Request timed out." },
+      "Polite Hawk",
+    )
+    expect(msg.endsWith("Most common error: Request timed out.")).toBe(true)
+  })
+
+  it("partial failure without a dominant error omits that clause", () => {
     const msg = drive_stop_banner(
       { ...partial, dominant_error: null },
       "Polite Hawk",
     )
-    expect(msg).toContain("2 failed after retries.")
-    expect(msg).not.toContain("most common")
+    expect(msg).toBe(
+      "2 of 40 failed. Continue with only 38, or run this batch again?\nEach failure was retried.",
+    )
   })
 
   it("all-failed: error color content — dominant error, run config name, and the /run deeplink", () => {
@@ -78,7 +90,7 @@ describe("drive_stop_banner", () => {
       "Polite Hawk",
     )
     expect(msg).toBe(
-      "All conversations failed: NotFoundError: model gpt_5_5 is unavailable (run config: Polite Hawk).\n\nYou can [test your run config](/run), then run the batch again.",
+      "All 40 failed: NotFoundError: model gpt_5_5 is unavailable (run config: Polite Hawk).\n\nYou can [test your run config](/run), then run the batch again.",
     )
   })
 
@@ -103,7 +115,7 @@ describe("drive_stop_banner", () => {
       "gpt_5_5",
     )
     expect(msg).toBe(
-      "The run was stopped: AuthenticationError: invalid api key (run config: Polite Hawk, gpt_5_5).\n\n12 conversations completed before the stop. Continue with those, or [test your run config](/run) and run the batch again.",
+      "The run was stopped: AuthenticationError: invalid api key (run config: Polite Hawk, gpt_5_5).\n\n12 of 40 completed before the stop. Continue with those, or [test your run config](/run) and run the batch again.",
     )
   })
 
@@ -367,7 +379,7 @@ describe("drive_stop_banner — preflight stop", () => {
       "Polite Hawk",
     )
     expect(banner).toContain(
-      "The eval data generation model failed a test call: NotFoundError: model retired (gpt_5_4_mini via openrouter).",
+      "The input generation model failed a test call: NotFoundError: model retired (gpt_5_4_mini via openrouter).",
     )
     expect(banner).toContain(
       "Creating your eval data requires your OpenRouter API key.",
@@ -378,8 +390,11 @@ describe("drive_stop_banner — preflight stop", () => {
   })
 })
 
-describe("drive_stop_banner — single-turn case noun", () => {
-  it("counts test runs, never conversations", () => {
+// One banner serves both arms. Naming the unit of work meant the sentence had
+// to be told which arm it was on, and it read wrong whenever it was told
+// nothing; counts alone are true either way.
+describe("drive_stop_banner — counts, not nouns", () => {
+  it("counts rather than naming what failed", () => {
     const banner = drive_stop_banner(
       {
         survivors: 38,
@@ -387,34 +402,234 @@ describe("drive_stop_banner — single-turn case noun", () => {
         dominant_error: "RateLimitError from OpenRouter",
       },
       "Polite Hawk",
-      null,
-      "test run",
     )
-    expect(banner).toContain("38 of 40 test runs completed.")
+    expect(banner).toContain("2 of 40 failed.")
+    expect(banner).toContain("Continue with only 38")
     expect(banner).not.toContain("conversation")
+    expect(banner).not.toContain("test run")
   })
 
-  it("all-failed and abort variants carry the noun too", () => {
+  it("counts in the all-failed and abort variants too", () => {
     const all_failed = drive_stop_banner(
       { survivors: 0, failed: 40, dominant_error: "boom" },
       "Polite Hawk",
-      null,
-      "test run",
     )
-    expect(all_failed).toContain("All test runs failed: boom")
+    expect(all_failed).toContain("All 40 failed: boom")
     const aborted = drive_stop_banner(
       {
         survivors: 12,
-        failed: 0,
+        failed: 28,
         dominant_error: null,
         aborted_error: "AuthenticationError: invalid api key",
       },
       "Polite Hawk",
       "gpt_5_5",
-      "test run",
     )
-    expect(aborted).toContain("12 test runs completed before the stop.")
+    expect(aborted).toContain("12 of 40 completed before the stop.")
     expect(aborted).not.toContain("conversation")
+    expect(aborted).not.toContain("test run")
+  })
+})
+
+// The stop screen is a 300px column with its actions below the text, so the
+// provider error it quotes has to be a short bounded excerpt: a raw message
+// runs to hundreds of characters and pushes the actions off the screen.
+describe("the partial stop's error excerpt", () => {
+  const partial: DriveStop = {
+    survivors: 38,
+    failed: 2,
+    dominant_error: "RateLimitError from OpenRouter",
+  }
+  const banner_of = (dominant_error: string): string =>
+    drive_stop_banner({ ...partial, dominant_error }, null)
+  // The clause the excerpt is quoted in, so each case reads as the sentence the
+  // screen shows. It throws rather than returning "" when the clause is
+  // missing: an absent clause is its own outcome, asserted on the whole banner.
+  const excerpt_of = (dominant_error: string): string => {
+    const msg = banner_of(dominant_error)
+    const at = msg.indexOf("Most common error: ")
+    if (at === -1) {
+      throw new Error(`banner carries no error clause: ${msg}`)
+    }
+    return msg.slice(at)
+  }
+
+  it("trims the message and ends it with a single period, no gap", () => {
+    expect(excerpt_of("   RateLimitError from OpenRouter")).toBe(
+      "Most common error: RateLimitError from OpenRouter.",
+    )
+  })
+
+  it("collapses several trailing periods to one", () => {
+    expect(excerpt_of("Request timed out..")).toBe(
+      "Most common error: Request timed out.",
+    )
+  })
+
+  it("quotes only the first line of a multi-line message", () => {
+    expect(
+      excerpt_of(
+        "RateLimitError from OpenRouter\nRetry after 30s\nrequest id 7",
+      ),
+    ).toBe("Most common error: RateLimitError from OpenRouter.")
+  })
+
+  it("skips a blank first line and quotes the first line with content", () => {
+    expect(
+      excerpt_of("\n   \nRateLimitError from OpenRouter\nRetry after 30s"),
+    ).toBe("Most common error: RateLimitError from OpenRouter.")
+  })
+
+  it("splits on escaped newlines the way the renderer does", () => {
+    expect(excerpt_of("RateLimitError from OpenRouter\\nRetry after 30s")).toBe(
+      "Most common error: RateLimitError from OpenRouter.",
+    )
+  })
+
+  it("cuts a long message at the bound and ends it with an ellipsis", () => {
+    const excerpt = excerpt_of("x".repeat(400))
+    expect(excerpt).toBe(`Most common error: ${"x".repeat(160)}…`)
+    expect(excerpt.endsWith(".")).toBe(false)
+  })
+
+  it("bounds the excerpt at 160 characters", () => {
+    // Pinned so the number in the case above stays honest: changing the bound
+    // has to be a deliberate edit here, not a silently passing suite.
+    expect(STOP_SCREEN_ERROR_EXCERPT_CHARS).toBe(160)
+  })
+
+  it("keeps a message that is exactly at the bound whole", () => {
+    const at_bound = "x".repeat(160)
+    expect(excerpt_of(at_bound)).toBe(`Most common error: ${at_bound}.`)
+  })
+
+  it("never cuts a surrogate pair in half", () => {
+    // 201 UTF-16 units but only 101 code points, and the odd leading character
+    // puts every pair on an odd offset: cutting by UTF-16 units would both
+    // shorten a message that fits and leave half a character on screen.
+    const astral = `x${"\u{1F642}".repeat(100)}`
+    expect(astral.length).toBe(201)
+    const excerpt = excerpt_of(astral)
+    expect(excerpt).toBe(`Most common error: ${astral}.`)
+    // The u flag is what makes this a well-formedness check: without it the
+    // class matches the code units inside a perfectly good pair as well.
+    expect([...excerpt].every((ch) => !/[\uD800-\uDFFF]/u.test(ch))).toBe(true)
+  })
+
+  it("adds no period after a message that asks a question", () => {
+    expect(excerpt_of("Connection reset?")).toBe(
+      "Most common error: Connection reset?",
+    )
+  })
+
+  it("keeps a provider's own ellipsis and adds no period after it", () => {
+    expect(excerpt_of("Request timed out…")).toBe(
+      "Most common error: Request timed out…",
+    )
+  })
+
+  it("drops the clause when the message is nothing but punctuation", () => {
+    // Stripping the trailing periods leaves nothing to quote, and half a
+    // sentence reads as a bug on the screen.
+    expect(banner_of("...").endsWith("Each failure was retried.")).toBe(true)
+    expect(banner_of(" . . . ").endsWith("Each failure was retried.")).toBe(
+      true,
+    )
+  })
+})
+
+// Which of the stop screen's two actions leads. Continuing is only worth
+// leading with when almost everything survived; otherwise the batch is worth
+// running again.
+describe("stop_primary_action", () => {
+  const stop = (survivors: number, failed: number): DriveStop => ({
+    survivors,
+    failed,
+    dominant_error: null,
+  })
+
+  it("leads with continuing when almost everything survived", () => {
+    expect(stop_primary_action(stop(19, 1))).toBe("continue")
+  })
+
+  it("leads with re-running when enough was lost to be worth redoing", () => {
+    expect(stop_primary_action(stop(8, 2))).toBe("rerun")
+    expect(stop_primary_action(stop(89, 11))).toBe("rerun")
+  })
+
+  it("leads with re-running when nothing survived", () => {
+    expect(stop_primary_action(stop(0, 10))).toBe("rerun")
+  })
+
+  it("treats exactly the threshold as good enough to continue", () => {
+    expect(stop_primary_action(stop(9, 1))).toBe("continue")
+    expect(stop_primary_action(stop(90, 10))).toBe("continue")
+  })
+
+  it("leads with re-running when there was nothing to run", () => {
+    // A zero total is a stop before anything started, so there are no
+    // survivors to continue with and the ratio is undefined.
+    expect(stop_primary_action(stop(0, 0))).toBe("rerun")
+  })
+
+  it("leads with re-running when the stop was not about how much survived", () => {
+    // A preflight stop never drove the batch, and an abort cut it short on a
+    // config fault, so whatever count came back is not the thing to decide on.
+    expect(
+      stop_primary_action({
+        ...stop(19, 1),
+        preflight: {
+          lane: "judge",
+          message: "model retired",
+          model: "gpt_5_4_mini",
+          provider: "openrouter",
+        },
+      }),
+    ).toBe("rerun")
+    expect(
+      stop_primary_action({
+        ...stop(19, 1),
+        aborted_error: "AuthenticationError: invalid api key",
+      }),
+    ).toBe("rerun")
+  })
+})
+
+// Which stop kinds the centred screen is for: only the ones that can be told
+// in one counted sentence, with usable work left behind.
+describe("is_partial_stop", () => {
+  const stop = (extra: Partial<DriveStop> = {}): DriveStop => ({
+    survivors: 38,
+    failed: 2,
+    dominant_error: null,
+    ...extra,
+  })
+
+  it("is a partial stop when cases failed and the batch itself did not", () => {
+    expect(is_partial_stop(stop())).toBe(true)
+  })
+
+  it("is not a partial stop when nothing survived", () => {
+    expect(is_partial_stop(stop({ survivors: 0, failed: 40 }))).toBe(false)
+  })
+
+  it("is not a partial stop when the batch was aborted", () => {
+    expect(is_partial_stop(stop({ aborted_error: "boom" }))).toBe(false)
+  })
+
+  it("is not a partial stop when a lane failed before the drive", () => {
+    expect(
+      is_partial_stop(
+        stop({
+          preflight: {
+            lane: "judge",
+            message: "model retired",
+            model: null,
+            provider: null,
+          },
+        }),
+      ),
+    ).toBe(false)
   })
 })
 

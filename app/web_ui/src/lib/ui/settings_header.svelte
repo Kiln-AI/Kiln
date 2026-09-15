@@ -1,5 +1,8 @@
 <script lang="ts">
   export let title: string
+  // A caller that needs a link or other markup on the subtitle line fills the
+  // `subtitle` slot instead of this string; with no slot the render is
+  // unchanged.
   export let subtitle: string | null = null
 </script>
 
@@ -12,7 +15,9 @@
     <div class="flex items-end justify-between gap-3">
       <div class="min-w-0">
         <h2 class="text-lg font-medium text-gray-900">{title}</h2>
-        {#if subtitle}
+        {#if $$slots.subtitle}
+          <p class="text-sm text-gray-500"><slot name="subtitle" /></p>
+        {:else if subtitle}
           <p class="text-sm text-gray-500">{subtitle}</p>
         {/if}
       </div>
@@ -24,7 +29,9 @@
     </div>
   {:else}
     <h2 class="text-lg font-medium text-gray-900">{title}</h2>
-    {#if subtitle}
+    {#if $$slots.subtitle}
+      <p class="text-sm text-gray-500"><slot name="subtitle" /></p>
+    {:else if subtitle}
       <p class="text-sm text-gray-500">{subtitle}</p>
     {/if}
   {/if}

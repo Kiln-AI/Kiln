@@ -2,6 +2,7 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { render, cleanup, fireEvent } from "@testing-library/svelte"
 import KilnProBatchPlan from "./kiln_pro_batch_plan.svelte"
+import KilnProBatchPlanUnderSubheaderHarness from "./kiln_pro_batch_plan_under_subheader_harness.test.svelte"
 
 const PLAN = {
   prompts: ["first prompt", "second prompt"],
@@ -105,5 +106,43 @@ describe("shared defaults", () => {
     expect(buttons).toContain("Refine Plan")
     expect(container.textContent).toContain("Overview")
     expect(container.textContent).not.toContain("Batch Overview")
+  })
+})
+
+// The surface's header is the house section header, so this plan reads like
+// every other section in the app and both flows move together when it changes.
+describe("the plan header", () => {
+  it("renders the title, the sub-line and the actions in one section header", () => {
+    const { container } = setup()
+    const heading = container.querySelector("h2")!
+    expect(heading.textContent).toBe("Batch Plan")
+    // The section header's rule, which the title, sub-line and actions share.
+    const rule = heading.closest(".border-b")!
+    expect(rule).not.toBeNull()
+    expect(rule.querySelector("p")!.textContent).toBe(
+      "Review the plan for generating your synthetic data batch.",
+    )
+    const labels = Array.from(rule.querySelectorAll("button")).map((b) =>
+      b.textContent?.trim(),
+    )
+    expect(labels).toEqual(["Refine Plan", "Generate Batch (2)"])
+  })
+
+  it("puts a consumer's clause on the sub-line, beside the sub-line's text", () => {
+    const { container } = render(KilnProBatchPlanUnderSubheaderHarness, {
+      props: { plan: PLAN },
+    })
+    const subtitle = container
+      .querySelector("h2")!
+      .closest(".border-b")!
+      .querySelector("p")!
+    const clause = subtitle.querySelector("[data-under-subheader]")
+    expect(clause).not.toBeNull()
+    // One joined assertion, because the join is the thing that breaks: the
+    // sub-line and the clause share a paragraph with no separator of their
+    // own, so a clause that does not open with a space reads as one word.
+    expect(subtitle.textContent).toBe(
+      "Review the plan for generating your synthetic data batch. Planned using your data guide.",
+    )
   })
 })

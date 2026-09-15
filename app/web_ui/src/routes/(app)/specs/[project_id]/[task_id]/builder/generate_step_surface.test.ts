@@ -115,20 +115,14 @@ describe("plan surface copy", () => {
     expect(plan_surface).not.toContain("regenerate_label=")
   })
 
-  it("renders the multi-turn subheader", () => {
-    expect(
-      contains(
-        "Here's the plan for your eval dataset. Kiln will run each item as a test conversation with your agent in the next step. Refine the plan if the coverage looks off.",
-      ),
-    ).toBe(true)
-  })
-
-  it("renders the single-turn subheader", () => {
-    expect(
-      contains(
-        "Here's the plan for your eval dataset. Kiln will use this guidance to generate each item in the next step. Refine the plan if the coverage looks off.",
-      ),
-    ).toBe(true)
+  it("renders one subheader, the same on both arms", () => {
+    // What the next step does to each row belongs on that step, not in the
+    // plan's sub-line: one sentence reads the same whether the run drives
+    // conversations or generates single inputs.
+    expect(normalize(plan_surface)).toContain(
+      'subheader="Here\'s a plan for your eval dataset. Refine the plan if the coverage looks off."',
+    )
+    expect(plan_surface).not.toContain("is_multi_turn")
   })
 
   it("labels the primary button with the artifact noun and the count", () => {
@@ -144,7 +138,26 @@ describe("plan surface copy", () => {
     // hears "items" too. The /generate sentence is about dataset samples, which
     // is not what this surface's rows become.
     expect(normalize(plan_surface)).toContain('items_label="Items"')
-    expect(normalize(plan_surface)).toContain("expanded_description={false}")
+    expect(normalize(plan_surface)).toContain(
+      'expanded_description="Each row will be used to seed one item of your eval dataset."',
+    )
+  })
+
+  it("puts the data guide note on the sub-line, only when a guide was used", () => {
+    // The note is a clause on the header's sub-line rather than a row of its
+    // own, so the plan surface opens with one sentence. It is a claim about
+    // how the plan was drafted, so it renders only when that is true.
+    const normalized_surface = normalize(plan_surface)
+    expect(normalized_surface).toContain(
+      '<svelte:fragment slot="under_subheader"> {#if plan_drafted_with_data_guide}',
+    )
+    // The clause, normalized so Prettier's wrapping is not what is pinned. It
+    // has to open with an explicit space, because Svelte drops whitespace at
+    // the start of slot content and the sub-line adds no separator of its own.
+    const note = normalize(region('<span id="data_guide_plan_note"', "</span"))
+    expect(note).toContain('{" "}Planned using your')
+    expect(note).toContain("data guide</button")
+    expect(note.endsWith(".</span")).toBe(true)
   })
 
   it("names the rows' column for what this surface's rows hold", () => {
@@ -482,10 +495,13 @@ describe("Generation Settings dialog", () => {
     )
     expect(
       contains(
-        'model_info_description="Writes one item from each approved plan line; your task then runs on them."',
+        'model_info_description="Writes the input for each dataset item. Your run config then produces the output that the judge scores."',
       ),
     ).toBe(true)
-    expect(contains('model_label="Eval Data Generation Model"')).toBe(true)
+    // The lane writes the input half of each dataset item; the output comes
+    // from the run config the eval is about, so the label says which of the
+    // two this model is.
+    expect(contains('model_label="Input Generation Model"')).toBe(true)
   })
 
   it("gives the input generator the same control synthetic data generation uses", () => {
@@ -751,7 +767,7 @@ describe("Data Guide skip and Back", () => {
 describe("Reset", () => {
   const reset = region("async function reset_draft_with_confirm", "\n  }\n")
 
-  it("starts over on the Setup and Eval Type page, not by reloading a URL that may carry a description", () => {
+  it("starts over on the Create Eval page, not by reloading a URL that may carry a description", () => {
     expect(normalize(reset)).toContain(
       normalize(
         "window.location.href = `/specs/${project_id}/${task_id}/select_template`",
@@ -1012,5 +1028,140 @@ describe("the eval-created screen", () => {
     const [first, second] = save_body.split("finish_on_done_screen(saved.id)")
     expect(first).toContain("await clear_builder_draft(")
     expect(second).toContain("await clear_builder_draft(")
+  })
+})
+
+// The wizard's own copy: what each step is called, and what the screens the
+// steps open on say while they work.
+describe("wizard step copy", () => {
+  const step_names = function_body(
+    'function step_name_for(step: Exclude<BuilderStep, "save" | "done">): string {',
+  )
+
+  it("names each step after what the user does on it", () => {
+    const named = normalize(step_names)
+    expect(named).toContain('case "clarify": return "Clarify Eval"')
+    expect(named).toContain('case "refine": return "Review Updated Eval"')
+    expect(named).toContain('case "generate": return "Create Eval Dataset"')
+  })
+
+  it("asks the refine step's question in the header's second line", () => {
+    // The step shows the eval rewritten from the user's answers, so the
+    // header asks what the step exists to answer — and only there.
+    expect(normalize(page_source)).toContain(
+      '$: page_sub_subtitle = current_step === "refine" ' +
+        '? "We\'ve integrated your feedback, does it look right?" : ""',
+    )
+    expect(normalize(page_source)).toContain("sub_subtitle={page_sub_subtitle}")
+  })
+
+  it("says what the minting screen is making, and leaves the count to the bar", () => {
+    // The progress bar under the line already carries how far along the run
+    // is, so the sentence says what is being made and stops there.
+    expect(contains('? "Creating Eval Dataset"')).toBe(true)
+    expect(contains("? `Creating ${planned_total} dataset items.`")).toBe(true)
+  })
+
+  it("carries that name into the drive screen that follows, on both arms", () => {
+    // Minting and driving are one stretch of work to someone watching it, so
+    // the screen that follows the minting screen says the same thing it did.
+    expect(page_source.match(/title="Creating Eval Dataset"/g)).toHaveLength(2)
+    expect(page_source).not.toContain('title="Creating Eval Data"')
+  })
+})
+
+// A drive that stopped with usable work left behind takes over the step: how
+// much failed and the two ways out are the whole decision there. Every other
+// stop kind keeps the banner over the plan, because its text is raw provider
+// output and its way out runs through the plan.
+describe("the stopped-drive screen", () => {
+  const stop_step = region(
+    "{#if show_plan_approval && batch_plan}",
+    "{:else if !generation_loading",
+  )
+  const partial_branch = stop_step.slice(0, stop_step.indexOf("{:else}"))
+  const plan_branch = stop_step.slice(stop_step.indexOf("{:else}"))
+  const stop_actions = region(
+    "$: stop_lead = drive_stop",
+    "[stop_rerun_action, stop_continue_action]",
+  )
+
+  it("takes over the step only for a stop that left usable work behind", () => {
+    expect(normalize(partial_branch)).toContain(
+      "{#if drive_stop && is_partial_stop(drive_stop)}",
+    )
+    expect(partial_branch).toContain("<Intro")
+    expect(partial_branch).not.toContain("<Warning")
+  })
+
+  it("keeps the banner above the plan for every other stop kind", () => {
+    // Preflight, abort and all-failed carry long raw provider text and a
+    // recovery that runs through the plan, so the plan has to stay on screen.
+    expect(plan_branch).toContain("<Warning")
+    expect(plan_branch).toContain("<KilnProBatchPlan")
+    // Always the error color here: what is left once the partial stop has
+    // taken its own screen is a failed config or a failed batch.
+    expect(normalize(plan_branch)).toContain('warning_color="error"')
+    expect(plan_branch).not.toContain("is_partial_stop")
+    expect(normalize(plan_branch)).toContain("markdown trusted")
+  })
+
+  it("demotes the plan's own primary while the Continue row is beside it", () => {
+    // Two solid primaries on one screen is two leads. The plan's generate
+    // button steps back to an outline whenever the survivors row co-renders.
+    expect(normalize(plan_branch)).toContain(
+      "generate_button_outline={has_driven_results && drive_stop !== null}",
+    )
+  })
+
+  it("names the screen and hands it the two ways forward", () => {
+    const screen = normalize(partial_branch)
+    expect(screen).toContain('<Intro title="Errors During Dataset Creation"')
+    expect(screen).toContain("action_buttons={stop_screen_actions}")
+  })
+
+  it("says what happened from the same source the banner uses", () => {
+    // One function writes the sentence, so the screen and the banner can
+    // never end up telling the same stop two different ways.
+    expect(normalize(partial_branch)).toContain(
+      "description_markdown={drive_stop_banner( drive_stop, " +
+        "drive_run_config_name, drive_run_config_model, )}",
+    )
+    expect(partial_branch).not.toContain("description_paragraphs")
+  })
+
+  it("renders the leading action first and makes it the solid one", () => {
+    // The house offer screen stacks its primary above the alternative, so the
+    // order and the emphasis both come from the same decision.
+    const actions = normalize(stop_actions)
+    expect(actions).toContain(
+      "label: `Continue With ${drive_stop?.survivors ?? 0}`, " +
+        'onClick: on_continue_with_survivors, is_primary: stop_lead === "continue",',
+    )
+    expect(actions).toContain(
+      'label: "Re-run Batch", onClick: open_drive_settings, ' +
+        'is_primary: stop_lead === "rerun",',
+    )
+    expect(actions).toContain(
+      '$: stop_screen_actions = stop_lead === "continue" ' +
+        "? [stop_continue_action, stop_rerun_action] " +
+        ": [stop_rerun_action, stop_continue_action]",
+    )
+  })
+
+  it("swallows the keyboard shortcut instead of acting on it", () => {
+    // The screen's buttons carry no shortcut hint, and which of them leads
+    // changes with the batch, so the shortcut would fire an action the user
+    // was never offered — on most of those batches a paid re-run. The
+    // keystroke is consumed all the same, or a focused button takes the Enter.
+    const shortcut = normalize(
+      region(
+        "if (drive_stop && is_partial_stop(drive_stop)) {",
+        "if (has_driven_results) {",
+      ),
+    )
+    expect(shortcut).toContain("event.preventDefault() return }")
+    expect(shortcut).not.toContain("on_continue_with_survivors()")
+    expect(shortcut).not.toContain("open_drive_settings()")
   })
 })

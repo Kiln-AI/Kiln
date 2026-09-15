@@ -848,7 +848,7 @@ describe("create_eval_destination — where the Evals page's button goes", () =>
     expect(create_eval_destination(true, true)).toBe("builder")
   })
 
-  it("starts on the Setup and Eval Type page otherwise", () => {
+  it("starts on the Create Eval page otherwise", () => {
     expect(create_eval_destination(true, false)).toBe("select_template")
     expect(create_eval_destination(false, true)).toBe("select_template")
     expect(create_eval_destination(false, false)).toBe("select_template")

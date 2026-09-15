@@ -14,7 +14,6 @@
     judge_only_builder_url,
   } from "../spec_utils"
   import { agentInfo } from "$lib/agent"
-  import Collapse from "$lib/ui/collapse.svelte"
   import Intro from "$lib/ui/intro.svelte"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
@@ -172,11 +171,19 @@
   // Without Copilot the page opens on the offer rather than the templates.
   // The Pro-vs-manual question is asked once, up front, instead of partway
   // through after a template is already chosen. Choosing manual reveals the
-  // same picker a Copilot user sees folded under "LLM Judge Templates".
+  // same list a Copilot user gets as the page's third section.
   let chose_manual = false
   // The offer is showing, as opposed to the picker behind it. Named once so
   // the page title and the body can never describe different screens.
   $: show_offer = $kilnCopilotConnected !== true && !chose_manual
+
+  // "or use templates" moves down the page rather than navigating: the
+  // description the user may have typed stays put.
+  function scroll_to_templates() {
+    document
+      .getElementById("llm_judge_templates")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
 
   function connect_kiln_pro() {
     goto("/specs/pro_auth")
@@ -243,12 +250,12 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Setup and Eval Type"
+    title="Create Eval"
     subtitle={show_offer
       ? "Kiln Pro drafts the eval for you, or set one up yourself."
       : $kilnCopilotConnected === true
-        ? "Describe what this eval should check, or pick a template or a programmatic check."
-        : "Pick a template or a programmatic check."}
+        ? "Three ways to create an eval"
+        : "Two ways to create an eval"}
     breadcrumbs={[
       {
         label: "Evals",
@@ -289,41 +296,41 @@
       <div class="pt-6 max-w-5xl flex flex-col gap-10">
         {#if $kilnCopilotConnected === true}
           <div class="flex flex-col gap-4">
-            <SettingsHeader title="LLM Judge" />
+            <SettingsHeader
+              title="LLM Judge Assistant"
+              subtitle="Describe what to evaluate in plain language. Kiln Pro writes the eval and generates the dataset."
+            />
             <FormElement
               label="What should this eval check?"
-              description="Describe what to check in plain language. Kiln Pro writes the eval and generates the data to test it."
               placeholder="e.g. The model should not hallucinate."
               id="eval_description"
               inputType="textarea"
               height="medium"
               bind:value={description}
             />
-            <div class="flex justify-end">
+            <!-- The primary and its quiet alternative read as one action
+                 group: someone who already knows the template they want
+                 jumps to the list below instead of describing anything. -->
+            <div class="flex flex-col items-end gap-1">
               <button
                 class="btn btn-primary min-w-48"
                 disabled={!description.trim()}
                 on:click={open_run_config_dialog}
               >
-                Continue
+                Write My Eval
+              </button>
+              <button
+                type="button"
+                class="link underline text-sm text-gray-500"
+                on:click={scroll_to_templates}
+              >
+                or use templates
               </button>
             </div>
-            <!-- The templates are the same list a user without Copilot gets as
-               their primary choice. Folded here so the description leads,
-               without hiding the option from someone who knows what they
-               want. -->
-            <Collapse title="LLM Judge Templates" outlined={true}>
-              <OptionList
-                options={llm_options}
-                select_option={select_llm_option}
-                two_columns={true}
-                two_line_descriptions={true}
-              />
-            </Collapse>
           </div>
         {:else}
           <div class="flex flex-col gap-4">
-            <SettingsHeader title="LLM Judges" />
+            <SettingsHeader title="LLM Judge Templates" />
             <OptionList
               options={llm_options}
               select_option={select_llm_option}
@@ -341,6 +348,19 @@
             two_line_descriptions={true}
           />
         </div>
+        {#if $kilnCopilotConnected === true}
+          <!-- The same list the Pro-off arm opens on, third here so the
+               assistant leads. Its id is what "or use templates" scrolls to. -->
+          <div id="llm_judge_templates" class="flex flex-col gap-4">
+            <SettingsHeader title="LLM Judge Templates" />
+            <OptionList
+              options={llm_options}
+              select_option={select_llm_option}
+              two_columns={true}
+              two_line_descriptions={true}
+            />
+          </div>
+        {/if}
       </div>
     {/if}
   </AppPage>
@@ -350,7 +370,8 @@
        into Advanced Options. -->
   <Dialog
     bind:this={run_config_dialog}
-    title="Choose the run config to evaluate"
+    title="Choose Run Config"
+    subtitle="Choose how your task will be run for generating examples in the eval builder."
   >
     <FormContainer
       submit_label="Continue"
@@ -366,7 +387,7 @@
           bind:selected_run_config_id={target_run_config_id}
           bind:save_config_error
           bind:set_default_error
-          info_description="The run config this eval tests. Kiln uses its tools and skills to write the questions and the judge, then runs it to generate the eval data."
+          info_description="The run config your task runs with in the eval builder. Kiln uses its tools and skills to write the questions and the judge, then runs it to create the eval dataset."
           save_new_run_config={handle_save_new_run_config}
         />
         <RunConfigComponent
