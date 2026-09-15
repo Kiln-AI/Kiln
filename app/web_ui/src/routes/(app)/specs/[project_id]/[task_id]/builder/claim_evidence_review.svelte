@@ -330,9 +330,12 @@
                a string and cannot carry a clickable citation itself, so the
                caller renders the body and Output keeps the panel and the copy
                button (which copies the plain text passed as raw_output).
-               Capped in height so a long overview never pushes the two
-               buttons under it out of the sticky column. -->
-          <Output raw_output={current.overview.text} max_height="50vh">
+               Deliberately uncapped: Output reads its cap in pixels only, so a
+               viewport unit would make every overview look overflowing and
+               paint a fade and a Show All over text that is not clipped. A
+               cap buys nothing either, since a column taller than the viewport
+               stops sticking and scrolls with the page. -->
+          <Output raw_output={current.overview.text}>
             <p class="text-sm leading-relaxed">
               <ClaimText
                 text={current.overview.text}

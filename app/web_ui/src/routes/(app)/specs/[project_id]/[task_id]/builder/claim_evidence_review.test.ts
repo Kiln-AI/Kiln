@@ -243,6 +243,25 @@ describe("ClaimEvidenceReview — overview and claims", () => {
       "return window on a mattress?",
     )
   })
+
+  it("renders the overview at full height, with no fold over its last line", () => {
+    const { container } = render_review([built_trace("t0")])
+    const overview = by_id(container, "review-overview")
+
+    // Output measures overflow against a cap it reads in pixels, so any cap
+    // here would fade out an overview and offer Show All on a panel that
+    // clips nothing.
+    expect(
+      [...overview.querySelectorAll("[style]")].some((el) =>
+        (el.getAttribute("style") ?? "").includes("max-height"),
+      ),
+    ).toBe(false)
+    expect(
+      [...overview.querySelectorAll("button")].some((b) =>
+        /show all/i.test(b.textContent ?? ""),
+      ),
+    ).toBe(false)
+  })
 })
 
 // Two paragraphs and a run of spaces: enough shape that a rendering which
