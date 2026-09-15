@@ -52,5 +52,17 @@ describe.each(animations)("%s — the warning line", (_name, Animation) => {
     })
     expect(container.textContent).not.toContain(WARNING_TEXT)
     expect(container.querySelector(".pl-4")).toBeNull()
+    // The warning's spacer goes too, so no blank gap sits under the description:
+    // exactly one spacer fewer than the same animation with a warning.
+    const with_warning = render(Animation, {
+      props: {
+        title: "Working",
+        description: "Doing the thing",
+        warning: WARNING_TEXT,
+      },
+    })
+    expect(container.querySelectorAll(".mt-6").length).toBe(
+      with_warning.container.querySelectorAll(".mt-6").length - 1,
+    )
   })
 })

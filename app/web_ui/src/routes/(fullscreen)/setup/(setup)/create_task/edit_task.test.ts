@@ -239,8 +239,8 @@ describe("EditTask — create payload", () => {
     const call = postMock.mock.calls[0]
     const body = call[1].body as Record<string, unknown>
     expect(body.turn_mode).toBe("multiturn")
-    expect(body.input_json_schema ?? null).toBeNull()
-    expect(body.output_json_schema ?? null).toBeNull()
+    expect(body).not.toHaveProperty("input_json_schema")
+    expect(body).not.toHaveProperty("output_json_schema")
   })
 })
 

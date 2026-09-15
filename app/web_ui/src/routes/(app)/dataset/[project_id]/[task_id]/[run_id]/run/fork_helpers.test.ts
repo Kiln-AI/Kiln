@@ -99,13 +99,21 @@ describe("compute_forkable_run_ids", () => {
     expect(result).toEqual([null, null, null])
   })
 
-  it("skips turn 1 even when chain includes it (single-turn chain)", () => {
-    const trace: Trace = [systemMsg("s"), userMsg("u1"), assistantMsg("a1")]
+  it("skips turn 1 even when chain includes it", () => {
+    // The boundary is in range and follows an assistant message, so only the
+    // turn-1 rule keeps this entry off the trace.
+    const trace: Trace = [
+      systemMsg("s"),
+      userMsg("u1"),
+      assistantMsg("a1"),
+      userMsg("u2"),
+      assistantMsg("a2"),
+    ]
     const chain: RunChainEntry[] = [
-      { run_id: "run-1", turn_index: 1, trace_start_index: 0 },
+      { run_id: "run-1", turn_index: 1, trace_start_index: 3 },
     ]
     const result = compute_forkable_run_ids(trace, chain)
-    expect(result).toEqual([null, null, null])
+    expect(result).toEqual([null, null, null, null, null])
   })
 })
 

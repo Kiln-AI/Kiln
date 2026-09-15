@@ -14,6 +14,7 @@ import { tools_store } from "$lib/stores/tools_store"
 import { skills_store } from "$lib/stores/skills_store"
 import type {
   KilnAgentRunConfigProperties,
+  Task,
   ToolSetApiDescription,
 } from "$lib/types"
 import { isKilnAgentRunConfig } from "$lib/types"
@@ -84,6 +85,12 @@ beforeEach(() => {
   })
 })
 
+// Lets the pickers' async store loads and the reactive updates behind them land.
+async function settle() {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await tick()
+}
+
 // Render the component the way a generation lane does: no task, so the tool
 // pickers never touch the shared stores.
 async function render_taskless_lane() {
@@ -128,8 +135,26 @@ describe("RunConfigComponent without a task", () => {
 
   it("does not seed itself from another surface's tools", async () => {
     // Without this the first open would silently inherit whatever Run last
-    // used, and mint eval data under a config the user never chose.
-    const component = await render_taskless_lane()
+    // used, and mint eval data under a config the user never chose. Mounted
+    // on the task first, so its pickers really do load that task's saved
+    // tools, then moved to a task-less lane: none of them may stay behind.
+    const { component } = render(RunConfigComponent, {
+      props: {
+        project_id,
+        current_task: { id: "task_1" } as Task,
+        show_name_field: false,
+        hide_prompt_selector: true,
+        show_tools_selector_in_advanced: true,
+      },
+    })
+    await settle()
+    const seeded = component.run_options_as_run_config_properties()
+    expect(isKilnAgentRunConfig(seeded)).toBe(true)
+    if (!isKilnAgentRunConfig(seeded)) return
+    expect(seeded.tools_config?.tools).toContain("mcp::search")
+
+    component.$set({ current_task: null })
+    await settle()
     const properties = component.run_options_as_run_config_properties()
     expect(isKilnAgentRunConfig(properties)).toBe(true)
     if (!isKilnAgentRunConfig(properties)) return

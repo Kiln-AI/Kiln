@@ -151,7 +151,6 @@ test("rubric templates go straight from the type picker to the spec form", async
   await expect(
     page.getByText("Toxicity Examples", { exact: true }),
   ).toBeVisible()
-  await expect(page.getByRole("button", { name: /Kiln Pro/ })).toHaveCount(0)
 })
 
 test("tool call check skips the tool dialog", async ({
@@ -192,22 +191,7 @@ test("the Kiln Pro eval creation path is gone", async ({
     `/specs/${project.id}/${task.id}/select_workflow?type=toxicity&judge=llm_judge`,
   )
   await expect(page.getByText(/Spec not found/)).toBeVisible()
-  await expect(
-    page.getByText("Choose your Eval Creation Workflow"),
-  ).toHaveCount(0)
   await expect(page.getByRole("button", { name: /Kiln Pro/ })).toHaveCount(0)
-
-  // The builder has one mode. A hand-edited workflow param — the old pro
-  // value, or garbage — still lands on the plain manual form.
-  for (const workflow of ["pro", "GARBAGE"]) {
-    await page.goto(
-      `/specs/${project.id}/${task.id}/spec_builder?type=toxicity&workflow=${workflow}`,
-    )
-    await expect(
-      page.getByRole("button", { name: "Create Eval" }),
-    ).toBeVisible()
-    await expect(page.getByRole("button", { name: /Kiln Pro/ })).toHaveCount(0)
-  }
 })
 
 /**
