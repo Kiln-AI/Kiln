@@ -97,9 +97,9 @@
   // does, and that stays the review's job.
   //
   // Both thresholds are the first trimmed length of their tier: under 20 reads
-  // as a fragment, 60 and up is left alone.
+  // as a fragment, 40 and up is left alone.
   const BRIEF_REASON_MIN = 20
-  const FULL_REASON_MIN = 60
+  const FULL_REASON_MIN = 40
   const REASON_HINT_DELAY_MS = 500
 
   type ReasonHint = "short" | "brief"
@@ -201,33 +201,35 @@
         {/if}
 
         {#if verdict.agrees === false}
-          <!-- A null validator, because an empty reason is not a form error to
+          <div class="flex flex-col gap-1 mt-2">
+            <!-- A null validator, because an empty reason is not a form error to
                spell out: the control's own required treatment already says it,
                and the default validator would overwrite the placeholder with
                the message. -->
-          <FormElement
-            id={why_id(index)}
-            inputType="textarea"
-            label={WHY_LABEL}
-            placeholder="This is wrong because…"
-            aria_describedby={why_hint_id(index)}
-            validator={() => null}
-            bind:value={verdict.why}
-          />
-          <!-- Fixed height whether or not a hint is showing, so the row never
+            <FormElement
+              id={why_id(index)}
+              inputType="textarea"
+              label={WHY_LABEL}
+              placeholder="This is wrong because…"
+              aria_describedby={why_hint_id(index)}
+              validator={() => null}
+              bind:value={verdict.why}
+            />
+            <!-- Fixed height whether or not a hint is showing, so the row never
                shifts as the reviewer types. Announced politely so it reads out
                without taking focus; the icon and the words carry the meaning,
                the colour only ranks it. There is deliberately no "long
                enough" state. -->
-          <div id={why_hint_id(index)} class="h-5" aria-live="polite">
-            {#if reason_hint}
-              <Warning
-                warning_color={reason_hint === "short" ? "warning" : "gray"}
-                warning_icon="exclaim"
-                inline
-                warning_message={REASON_HINTS[reason_hint]}
-              />
-            {/if}
+            <div id={why_hint_id(index)} class="h-5" aria-live="polite">
+              {#if reason_hint}
+                <Warning
+                  warning_color={reason_hint === "short" ? "warning" : "gray"}
+                  warning_icon="exclaim"
+                  inline
+                  warning_message={REASON_HINTS[reason_hint]}
+                />
+              {/if}
+            </div>
           </div>
         {/if}
       </div>

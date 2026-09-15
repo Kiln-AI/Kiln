@@ -239,14 +239,14 @@ describe("ClaimCard — the disagree reason hint", () => {
     expect(hint(container)).toBe(TOO_SHORT)
   })
 
-  it("asks for more detail from 20 through 59 characters", async () => {
+  it("asks for more detail from 20 through 39 characters", async () => {
     const { container } = await open_disagree()
 
     await type_reason(container, "a".repeat(20))
     await wait(500)
     expect(hint(container)).toBe(MORE_DETAIL)
 
-    await type_reason(container, "a".repeat(59))
+    await type_reason(container, "a".repeat(39))
     await wait(500)
     expect(hint(container)).toBe(MORE_DETAIL)
   })
@@ -260,7 +260,7 @@ describe("ClaimCard — the disagree reason hint", () => {
     await wait(500)
     expect(hint(container)).toBe("")
 
-    await type_reason(container, "a".repeat(60))
+    await type_reason(container, "a".repeat(40))
     await wait(500)
     expect(hint(container)).toBe("")
   })
@@ -308,7 +308,7 @@ describe("ClaimCard — the disagree reason hint", () => {
     await wait(500)
     expect(hint(container)).toBe(MORE_DETAIL)
 
-    await type_reason(container, "a".repeat(60))
+    await type_reason(container, "a".repeat(40))
     await tick()
     expect(hint(container)).toBe("")
   })
