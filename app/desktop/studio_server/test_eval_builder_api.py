@@ -1057,7 +1057,7 @@ def _auth_error() -> litellm.AuthenticationError:
     )
 
 
-def _fake_run_cases_batch(*, fail_case: int | None = None, events_per_case: int = 2):
+def _fake_run_cases_batch(*, fail_case: int | None = None):
     """An async-generator stand-in for the libs/core runner: batch_started,
     then per case its turn events and completion (or failure)."""
     from kiln_ai.synthetic_user.runner import (
