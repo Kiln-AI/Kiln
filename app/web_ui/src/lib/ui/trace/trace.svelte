@@ -1,15 +1,48 @@
 <script lang="ts">
   import type { Trace, TraceMessage, ToolCallMessageParam } from "$lib/types"
   import Output from "$lib/ui/output.svelte"
+  import ChatMarkdown from "$lib/ui/chat/chat_markdown.svelte"
   import ArrowRightUpIcon from "../icons/arrow_right_up_icon.svelte"
+  import ForkIcon from "../icons/fork_icon.svelte"
+  import InfoCircleIcon from "../icons/info_circle_icon.svelte"
   import ToolCall from "./tool_call.svelte"
   import ToolMessagesDialog from "./tool_messages_dialog.svelte"
+  import Float from "$lib/ui/float.svelte"
+  import { formatLatency } from "$lib/utils/formatters"
 
   export let trace: Trace
   export let project_id: string | undefined = undefined
+  // When true, render non-tool content via Markdown instead of raw Output.
+  // Tool results still render via Output since they're typically JSON.
+  export let markdown_content: boolean = false
+  // Positional map from trace index to a TaskRun id for that user turn. Same
+  // length as `trace` when provided. Entries are non-null only for user
+  // messages whose originating TaskRun has been resolved AND that are
+  // eligible to fork (turn 1 is excluded by the caller).
+  export let forkable_run_ids: (string | null)[] | undefined = undefined
+  // When set, messages at trace indices >= this value are hidden. Used to
+  // visually truncate the conversation while a fork composer is open.
+  export let truncate_at_trace_index: number | null = null
+  // Invoked when the user clicks a fork affordance on a user block. Receives
+  // the run id at that turn and the trace index of the clicked user block.
+  export let on_fork:
+    | ((run_id: string, trace_index: number) => void)
+    | undefined = undefined
+  // Show the per-message usage/latency tooltip. Off by default because for
+  // single-turn runs the run-level usage panel already covers it; the
+  // per-message breakdown is only meaningful for multi-turn conversations
+  // where each turn has its own usage to compare.
+  export let show_per_message_usage: boolean = false
+
+  function should_render_markdown(message: TraceMessage): boolean {
+    return markdown_content && message.role !== "tool"
+  }
 
   // Track collapsed state for each message (true = expanded, false = collapsed)
   let messageExpanded: boolean[] = trace.map(() => false)
+  // Track which message's usage info tooltip is currently visible. Only one
+  // tooltip can be visible at a time. -1 means no tooltip is visible.
+  let usageTooltipVisibleIndex: number = -1
 
   function getRoleDisplayName(role: string): string {
     return (
@@ -190,141 +223,275 @@
   }
 
   let tool_messages_dialog: ToolMessagesDialog | null = null
+
+  function message_usage(message: TraceMessage) {
+    if ("usage" in message && message.usage) {
+      return message.usage
+    }
+    return null
+  }
+
+  function message_latency_ms(message: TraceMessage): number | null {
+    if (
+      "latency_ms" in message &&
+      typeof message.latency_ms === "number" &&
+      message.latency_ms > 0
+    ) {
+      return message.latency_ms
+    }
+    return null
+  }
+
+  function has_usage_info(message: TraceMessage): boolean {
+    return (
+      message_usage(message) !== null || message_latency_ms(message) !== null
+    )
+  }
+
+  function usage_tooltip(message: TraceMessage): string {
+    const usage = message_usage(message)
+    const latency_ms = message_latency_ms(message)
+    const lines: string[] = []
+    if (usage) {
+      if (typeof usage.input_tokens === "number") {
+        lines.push(`Input tokens: ${usage.input_tokens}`)
+      }
+      if (typeof usage.output_tokens === "number") {
+        lines.push(`Output tokens: ${usage.output_tokens}`)
+      }
+      if (typeof usage.total_tokens === "number") {
+        lines.push(`Total tokens: ${usage.total_tokens}`)
+      }
+      if (typeof usage.cached_tokens === "number") {
+        lines.push(`Cached tokens: ${usage.cached_tokens}`)
+      }
+      if (typeof usage.cost === "number") {
+        lines.push(`Cost: $${usage.cost.toFixed(6)}`)
+      }
+    }
+    if (latency_ms !== null) {
+      lines.push(`Latency: ${formatLatency(latency_ms)}`)
+    }
+    return lines.join("\n")
+  }
 </script>
 
 <div class="flex flex-col gap-3 w-full">
   {#each trace as message, index}
-    <!-- Message Bubble -->
-    <div class="">
-      <div class="collapse collapse-arrow bg-base-200 rounded-lg">
-        <input
-          type="checkbox"
-          class="peer"
-          bind:checked={messageExpanded[index]}
-        />
-        <div
-          class="collapse-title flex items-center justify-between cursor-pointer min-w-0"
-          role="presentation"
-        >
-          <span class="font-medium text-xs min-w-[80px] text-gray-500 uppercase"
-            >{getRoleDisplayName(message.role)}</span
-          >
-          <!-- Collapsed Preview -->
+    {#if truncate_at_trace_index === null || index < truncate_at_trace_index}
+      {@const fork_run_id = forkable_run_ids?.[index] ?? null}
+      <!-- Message Bubble -->
+      <div class="">
+        <div class="collapse collapse-arrow bg-base-200 rounded-lg">
+          <input
+            type="checkbox"
+            class="peer"
+            bind:checked={messageExpanded[index]}
+          />
           <div
-            class="px-2 text-sm text-gray-600 overflow-hidden text-ellipsis whitespace-nowrap grow {messageExpanded[
-              index
-            ]
-              ? 'hidden'
-              : ''}"
+            class="collapse-title flex items-center justify-between cursor-pointer min-w-0"
+            role="presentation"
           >
-            {getMessagePreview(message)}
+            <span
+              class="font-medium text-xs min-w-[80px] text-gray-500 uppercase"
+              >{getRoleDisplayName(message.role)}</span
+            >
+            <!-- Collapsed Preview -->
+            <div
+              class="px-2 text-sm text-gray-600 overflow-hidden text-ellipsis whitespace-nowrap grow {messageExpanded[
+                index
+              ]
+                ? 'hidden'
+                : ''}"
+            >
+              {getMessagePreview(message)}
+            </div>
           </div>
-        </div>
 
-        <div class="collapse-content">
-          <!-- Don't render unless they expand. There's a lot of content here in a long list. -->
-          {#if messageExpanded[index]}
-            {@const tool_calls = tool_calls_from_message(message)}
-            {@const content = content_from_message(message)}
-            {@const reasoning_content = reasoning_content_from_message(message)}
-            <!-- Expanded View -->
-            <div class="flex flex-col gap-3">
-              {#if tool_calls}
-                <div>
-                  <div class="text-xs text-gray-500 font-bold mb-1">
-                    Requested Tool Calls
-                  </div>
-                  <div class="flex flex-col gap-2">
-                    {#each tool_calls as tool_call, index}
-                      <ToolCall
-                        {tool_call}
-                        {project_id}
-                        nameTag={tool_calls.length > 1
-                          ? `Tool Call #${index + 1}`
-                          : "Tool Call"}
-                      />
-                    {/each}
-                  </div>
-                </div>
-              {/if}
-              {#if reasoning_content}
-                <div>
-                  <div class="text-xs text-gray-500 font-bold mb-1">
-                    Reasoning
-                  </div>
-                  <Output raw_output={reasoning_content} no_padding={true} />
-                </div>
-              {/if}
-
-              <!-- Message content cases -->
-              {#if content && message.role === "tool"}
-                {@const origin_tool_call = origin_tool_call_by_id(
-                  message.tool_call_id,
-                )}
-                {@const kiln_task_tool_data =
-                  kiln_task_tool_data_from_message(message)}
-                {@const tool_error = is_tool_error(message)}
-                {#if origin_tool_call}
+          <div class="collapse-content">
+            <!-- Don't render unless they expand. There's a lot of content here in a long list. -->
+            {#if messageExpanded[index]}
+              {@const tool_calls = tool_calls_from_message(message)}
+              {@const content = content_from_message(message)}
+              {@const reasoning_content =
+                reasoning_content_from_message(message)}
+              <!-- Expanded View -->
+              <div class="flex flex-col gap-3">
+                {#if tool_calls}
                   <div>
                     <div class="text-xs text-gray-500 font-bold mb-1">
-                      Invoked Tool Call
+                      Requested Tool Calls
                     </div>
-                    <ToolCall
-                      tool_call={origin_tool_call}
-                      {project_id}
-                      persistent_tool_id={kiln_task_tool_data?.tool_id}
-                    />
+                    <div class="flex flex-col gap-2">
+                      {#each tool_calls as tool_call, index}
+                        <ToolCall
+                          {tool_call}
+                          {project_id}
+                          nameTag={tool_calls.length > 1
+                            ? `Tool Call #${index + 1}`
+                            : "Tool Call"}
+                        />
+                      {/each}
+                    </div>
                   </div>
                 {/if}
-                <div>
-                  <div
-                    class="text-xs font-bold mb-1 {tool_error
-                      ? 'text-error'
-                      : 'text-gray-500'}"
-                  >
-                    {tool_error ? "Tool Error" : "Tool Result"}
-                  </div>
-                  <div
-                    class={tool_error
-                      ? "border border-error/20 rounded-lg p-2"
-                      : ""}
-                  >
-                    <Output raw_output={content} no_padding={true} />
-                  </div>
-                </div>
-                {#if kiln_task_tool_data}
+                {#if reasoning_content}
                   <div>
-                    <button
-                      class="link text-xs text-gray-500"
-                      on:click={() => {
-                        tool_messages_dialog?.show(kiln_task_tool_data)
-                      }}
-                    >
-                      <div class="flex flex-row items-center gap-1">
-                        <span>Subtask Message Trace</span>
-                        <div class="w-4 h-4">
-                          <ArrowRightUpIcon />
-                        </div>
-                      </div>
-                    </button>
+                    <div class="text-xs text-gray-500 font-bold mb-1">
+                      Reasoning
+                    </div>
+                    {#if should_render_markdown(message)}
+                      <ChatMarkdown text={reasoning_content} />
+                    {:else}
+                      <Output
+                        raw_output={reasoning_content}
+                        no_padding={true}
+                      />
+                    {/if}
                   </div>
                 {/if}
-              {:else if content}
-                <div>
-                  <!-- Header logic: skip if only a message, just for a cleaner ui -->
-                  {#if tool_calls || reasoning_content}
-                    <div class="text-xs text-gray-500 font-bold mb-1">
-                      Content
+
+                <!-- Message content cases -->
+                {#if content && message.role === "tool"}
+                  {@const origin_tool_call = origin_tool_call_by_id(
+                    message.tool_call_id,
+                  )}
+                  {@const kiln_task_tool_data =
+                    kiln_task_tool_data_from_message(message)}
+                  {@const tool_error = is_tool_error(message)}
+                  {#if origin_tool_call}
+                    <div>
+                      <div class="text-xs text-gray-500 font-bold mb-1">
+                        Invoked Tool Call
+                      </div>
+                      <ToolCall
+                        tool_call={origin_tool_call}
+                        {project_id}
+                        persistent_tool_id={kiln_task_tool_data?.tool_id}
+                      />
                     </div>
                   {/if}
-                  <Output raw_output={content} no_padding={true} />
-                </div>
-              {/if}
-            </div>
-          {/if}
+                  <div>
+                    <div
+                      class="text-xs font-bold mb-1 {tool_error
+                        ? 'text-error'
+                        : 'text-gray-500'}"
+                    >
+                      {tool_error ? "Tool Error" : "Tool Result"}
+                    </div>
+                    <div
+                      class={tool_error
+                        ? "border border-error/20 rounded-lg p-2"
+                        : ""}
+                    >
+                      <Output raw_output={content} no_padding={true} />
+                    </div>
+                  </div>
+                  {#if kiln_task_tool_data}
+                    <div>
+                      <button
+                        class="link text-xs text-gray-500"
+                        on:click={() => {
+                          tool_messages_dialog?.show(kiln_task_tool_data)
+                        }}
+                      >
+                        <div class="flex flex-row items-center gap-1">
+                          <span>Subtask Message Trace</span>
+                          <div class="w-4 h-4">
+                            <ArrowRightUpIcon />
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  {/if}
+                {:else if content}
+                  <div>
+                    <!-- Header logic: skip if only a message, just for a cleaner ui -->
+                    {#if tool_calls || reasoning_content}
+                      <div class="text-xs text-gray-500 font-bold mb-1">
+                        Content
+                      </div>
+                    {/if}
+                    {#if should_render_markdown(message)}
+                      <ChatMarkdown text={content} />
+                    {:else}
+                      <Output raw_output={content} no_padding={true} />
+                    {/if}
+                  </div>
+                {/if}
+                {#if (message.role === "user" && fork_run_id && on_fork) || (show_per_message_usage && has_usage_info(message))}
+                  {@const show_fork = !!(
+                    message.role === "user" &&
+                    fork_run_id &&
+                    on_fork
+                  )}
+                  {@const show_info =
+                    show_per_message_usage && has_usage_info(message)}
+                  <div class="flex justify-end gap-1">
+                    {#if show_info}
+                      <!-- svelte-ignore a11y-no-static-element-interactions -->
+                      <div
+                        class="relative inline-block"
+                        on:mouseenter={() => (usageTooltipVisibleIndex = index)}
+                        on:mouseleave={() => {
+                          if (usageTooltipVisibleIndex === index)
+                            usageTooltipVisibleIndex = -1
+                        }}
+                      >
+                        <button
+                          type="button"
+                          class="btn btn-sm btn-square h-8 w-8 shadow-none text-gray-400 hover:text-gray-900"
+                          aria-label="Message usage info"
+                          on:focus={() => (usageTooltipVisibleIndex = index)}
+                          on:blur={() => {
+                            if (usageTooltipVisibleIndex === index)
+                              usageTooltipVisibleIndex = -1
+                          }}
+                        >
+                          <span class="w-5 h-5 block"><InfoCircleIcon /></span>
+                        </button>
+                        {#if usageTooltipVisibleIndex === index}
+                          <Float
+                            placement="left"
+                            strategy="fixed"
+                            offset_px={6}
+                            role="tooltip"
+                          >
+                            <!-- svelte-ignore a11y-no-static-element-interactions -->
+                            <div
+                              class="px-3 py-2 text-xs text-base-content bg-stone-200 rounded-md shadow-lg whitespace-pre-line max-w-xs"
+                              on:mouseenter={() =>
+                                (usageTooltipVisibleIndex = index)}
+                              on:mouseleave={() => {
+                                if (usageTooltipVisibleIndex === index)
+                                  usageTooltipVisibleIndex = -1
+                              }}
+                            >
+                              {usage_tooltip(message)}
+                            </div>
+                          </Float>
+                        {/if}
+                      </div>
+                    {/if}
+                    {#if show_fork}
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-square h-8 w-8 shadow-none text-gray-400 hover:text-gray-900"
+                        aria-label="Fork from this turn"
+                        title="Fork from here"
+                        on:click={() => on_fork?.(fork_run_id, index)}
+                      >
+                        <span class="w-5 h-5 block"><ForkIcon /></span>
+                      </button>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          </div>
         </div>
       </div>
-    </div>
+    {/if}
   {/each}
 </div>
 
