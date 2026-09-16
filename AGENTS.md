@@ -51,6 +51,8 @@ Agents have access to a number of helpful prompts, which will give you additiona
 
 These prompts can be accessed from the `get_prompt` tool, and you may request several in parallel.
 
+Invoke the `merge-audit` skill (`.agents/skills/merge-audit/SKILL.md`) after any merge you run, so what the merge itself adds is audited and named before it is pushed.
+
 ### General Agent Guidance
 
 - When spawning subagents, always use the same model as the current agent

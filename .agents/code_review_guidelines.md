@@ -14,6 +14,17 @@
 - `TODO` comments: before the final PR, all `TODO` comments must be resolved. Any code or comment that must be changed before merging to main must include the exact string `TODO` in the comment — `FIXME`, `HACK`, `XXX`, and other alternatives do not count, as only `TODO` is enforced by CI. `TODO` comments are acceptable in intermediate commits but must be cleaned up before the final PR/phase.
 - Editing globals: rarely a good idea. When done it should be thoughtful and clear: singletons clearly designed to be singletons and labeled as such. Never set globals on external libs (structlog) unless this project is an “application” (server always run at top level) and not a library (potentially called from many apps).
 
+### The four questions on every non-feature hunk
+
+Ask these of every hunk that is not the change itself (a move, a visibility change, a refactor, an import re-sort, a re-indent, a lint or formatter config tweak, a generated file). A hunk that cannot answer is a finding.
+
+1. Why is this moved? Making something public, exported or module-level without a caller that needs it is a finding.
+2. Was the move necessary for the change under review? If the feature works without it, it does not belong in this diff.
+3. Was the refactor needed? A refactor riding along with a feature doubles the review surface; it is its own commit or its own PR, with its own reason.
+4. Is this the minimal diff? Formatting, import order and whitespace outside the touched lines are tool artifacts until proven otherwise: find the commit and test its stated reason rather than repeating it.
+
+An unexplained lint or formatter config change, and code written inside a merge commit that no PR carried, are critical. Unexplained moves, visibility changes and refactors are moderate. Explained churn missing from the PR description is mild. For a merge commit, `git show --remerge-diff <sha>` shows exactly what its resolution changed; the `merge-audit` skill wraps it.
+
 ### Python specific guide
 - Code should be "Pythonic"
 - We use `asyncio` where ever possible. Avoid threads unless there's a good reason we can't use async.
