@@ -62,6 +62,7 @@ class ModelName(str, Enum):
     fugu_ultra = "fugu_ultra"
     muse_spark_1_2 = "muse_spark_1_2"
     muse_spark_1_1 = "muse_spark_1_1"
+    muse_glimmer_30b = "muse_glimmer_30b"
     llama_3_1_8b = "llama_3_1_8b"
     llama_3_1_70b = "llama_3_1_70b"
     llama_3_1_405b = "llama_3_1_405b"
@@ -179,6 +180,7 @@ class ModelName(str, Enum):
     gemini_3_5_flash = "gemini_3_5_flash"
     gemini_3_flash = "gemini_3_flash"
     nemotron_70b = "nemotron_70b"
+    nemotron_3p5_lightning = "nemotron_3p5_lightning"
     nemotron_3_ultra = "nemotron_3_ultra"
     nemotron_3_super = "nemotron_3_super"
     nemotron_3_nano = "nemotron_3_nano"
@@ -270,6 +272,7 @@ class ModelName(str, Enum):
     qwen_3_vl_8b_no_thinking = "qwen_3_vl_8b_no_thinking"
     qwen_long_l1_32b = "qwen_long_l1_32b"
     kimi_k3 = "kimi_k3"
+    kimi_k3_fast = "kimi_k3_fast"
     kimi_k2_6 = "kimi_k2_6"
     kimi_k2 = "kimi_k2"
     kimi_k2_0905 = "kimi_k2_0905"
@@ -2067,6 +2070,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/gpt-oss-20b",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
             ),
@@ -4088,6 +4092,28 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Nemotron 3.5 Lightning
+    KilnModel(
+        family=ModelFamily.nemotron,
+        name=ModelName.nemotron_3p5_lightning,
+        friendly_name="Nemotron 3.5 Lightning",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="nvidia/nemotron-3.5-lightning",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                require_openrouter_reasoning=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/nemotron-lightning-3p5-30b-a3b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+            ),
+            # Together AI does not host Nemotron 3.5 Lightning. The /v1/models
+            # listing has the Nemotron 3 family only. Omitted until Together
+            # adds it.
+        ],
+    ),
     # Nemotron 3 Ultra
     KilnModel(
         family=ModelFamily.nemotron,
@@ -4790,6 +4816,55 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
                 multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Muse Glimmer 30B — dense 30B model distilled from Muse Spark
+    KilnModel(
+        family=ModelFamily.muse,
+        name=ModelName.muse_glimmer_30b,
+        friendly_name="Muse Glimmer 30B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="meta/muse-glimmer-30b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents (html and csv excluded, as on the Muse Spark entries)
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/muse-glimmer-30b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="meta-models/Muse-Glimmer-30B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
@@ -5557,9 +5632,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 model_id="accounts/fireworks/models/deepseek-v4-pro",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
             ),
@@ -6484,6 +6558,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/qwen3p7-plus",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 supports_function_calling=True,
@@ -7158,6 +7233,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/qwen3-235b-a22b",
+                deprecated=True,
                 supports_data_gen=True,
                 formatter=ModelFormatterID.qwen3_style_no_think,
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -7376,6 +7452,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/qwen3-30b-a3b",
+                deprecated=True,
                 supports_data_gen=True,
                 formatter=ModelFormatterID.qwen3_style_no_think,
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -8721,6 +8798,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/glm-5p1",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
             ),
@@ -9189,6 +9267,29 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Kimi K3 Fast — Fireworks speed-optimized serving of Kimi K3 (routers/ slug)
+    KilnModel(
+        family=ModelFamily.kimi,
+        name=ModelName.kimi_k3_fast,
+        friendly_name="Kimi K3 Fast",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/routers/kimi-k3-fast",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # Kimi K2.6
     # Not available on Together AI or SiliconFlow CN yet
     KilnModel(
@@ -9634,6 +9735,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/minimax-m2p7",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
