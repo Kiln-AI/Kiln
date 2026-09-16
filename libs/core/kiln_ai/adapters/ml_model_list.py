@@ -813,6 +813,8 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="gpt-5.6-terra",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
@@ -836,6 +838,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="openai/gpt-5.6-terra",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
@@ -869,6 +873,8 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="gpt-5.6-luna",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
@@ -892,6 +898,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="openai/gpt-5.6-luna",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
@@ -2521,6 +2529,8 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="anthropic/claude-sonnet-5",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 openrouter_reasoning_object=True,
@@ -2540,6 +2550,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="claude-sonnet-5",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
@@ -2778,6 +2790,8 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="google/gemini-3.8-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 # while the model is capable of reasoning, it doesn't always return it in the response
@@ -2811,6 +2825,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="gemini-3.8-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_doc_extraction=True,
@@ -2842,6 +2858,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.vertex,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="gemini-3.8-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_doc_extraction=True,
@@ -5481,6 +5499,8 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="deepseek/deepseek-v4.1-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
@@ -5501,6 +5521,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="accounts/fireworks/models/deepseek-v4p1-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
@@ -5518,6 +5540,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="deepseek-ai/DeepSeek-V4.1-Flash",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
