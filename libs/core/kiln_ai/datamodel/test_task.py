@@ -10,6 +10,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     TaskOutputRatingType,
     TurnMode,
 )
+from kiln_ai.datamodel.model_cache import ModelCache
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
@@ -1111,3 +1112,73 @@ def test_task_runs_filters_compose(tmp_path):
             include_intermediate_runs=True, include_eval_generated=True
         )
     } == {dataset_leaf.id, eval_intermediate.id, eval_leaf.id}
+
+
+def test_task_runs_eval_child_does_not_hide_dataset_parent(tmp_path):
+    """A filtered-out eval-generated run must not count as a leaf-filter parent: an eval
+    child chained onto a curated dataset run would otherwise remove that dataset run from
+    the default view while itself being filtered, so the row vanishes entirely."""
+    task = _make_task_for_runs_tests(tmp_path)
+    output = TaskOutput(output="out")
+
+    dataset_run = TaskRun(input="dataset", output=output, parent=task)
+    dataset_run.save_to_file()
+    eval_child = TaskRun(
+        input="eval child",
+        output=output,
+        parent=task,
+        eval_source=EvalItemSource(source_type="task_run", source_id="item1"),
+        parent_task_run_id=dataset_run.id,
+    )
+    eval_child.save_to_file()
+
+    loaded_task = Task.load_from_file(task.path)
+
+    # Default view: the eval child is excluded, and the dataset run it chains onto
+    # stays visible.
+    assert {r.id for r in loaded_task.runs()} == {dataset_run.id}
+    # With eval-generated runs included the leaf filter sees the whole chain, so the
+    # dataset run is a parent and only the eval child is a leaf. Unchanged behavior.
+    assert {r.id for r in loaded_task.runs(include_eval_generated=True)} == {
+        eval_child.id
+    }
+    assert {
+        r.id
+        for r in loaded_task.runs(
+            include_intermediate_runs=True, include_eval_generated=True
+        )
+    } == {dataset_run.id, eval_child.id}
+
+
+def test_content_part_trace_bulk_load_after_readonly_scan(tmp_path):
+    """Pydantic validates list-valued message content into a lazy, single-use iterator.
+    A readonly scan caches the loaded instance; a later default (mutable) load deep-copies
+    the cached model, which crashes unless the content was materialized at validation."""
+    task = _make_task_for_runs_tests(tmp_path, turn_mode=TurnMode.single_turn)
+    run = TaskRun(
+        input="in",
+        output=TaskOutput(output="out"),
+        parent=task,
+        trace=[
+            {"role": "user", "content": [{"type": "text", "text": "hello"}]},
+            {"role": "assistant", "content": "hi"},
+        ],
+    )
+    run.save_to_file()
+
+    # Load from disk and populate the model cache, as any readonly runs scan does.
+    ModelCache.shared().clear()
+    assert {r.id for r in task.runs(readonly=True)} == {run.id}
+
+    # Cache hit on the default (mutable) path: returns a deep copy of the cached model.
+    loaded = TaskRun.from_ids_and_parent_path({run.id}, task.path)
+    assert loaded[run.id].trace is not None
+    assert loaded[run.id].trace[0]["content"] == [{"type": "text", "text": "hello"}]
+
+    # The readonly passthrough returns the cached instance without copying.
+    readonly_loaded = TaskRun.from_ids_and_parent_path(
+        {run.id}, task.path, readonly=True
+    )
+    readonly_run = readonly_loaded[run.id]
+    assert readonly_run.trace is not None
+    assert readonly_run.trace[0]["content"] == [{"type": "text", "text": "hello"}]
