@@ -38,6 +38,9 @@ PRERELEASE_EMBEDDING_MODELS: list[tuple[str, str]] = [
     ("gemini_embedding_001", ModelProviderName.gemini_api.value),
     ("nomic_text_embedding_v1_5", ModelProviderName.fireworks_ai.value),
     ("multilingual_e5_large", ModelProviderName.openrouter.value),
+    # Verifies the Voyage 4 family n_dimensions, which we set from docs
+    # rather than a live call. The whole family shares an embedding space.
+    ("voyage_4", ModelProviderName.openrouter.value),
     ("qwen_3_embedding_8b", ModelProviderName.siliconflow_cn.value),
 ]
 
