@@ -26,6 +26,7 @@
   let loading = true
 
   let task: Task | null = null
+  let task_error: KilnError | null = null
   let prompt_optimization_jobs: PromptOptimizationJob[] | null = null
   let prompt_optimization_jobs_error: KilnError | null = null
 
@@ -33,13 +34,14 @@
   let has_prompt_optimization_entitlement: boolean | null = null
   let copilot_check_error: KilnError | null = null
 
-  $: error = copilot_check_error || prompt_optimization_jobs_error
+  $: error = copilot_check_error || prompt_optimization_jobs_error || task_error
   $: is_empty =
     !prompt_optimization_jobs || prompt_optimization_jobs.length === 0
   $: is_multiturn = task?.turn_mode === "multiturn"
 
   $: if (project_id && task_id) {
     task = null
+    task_error = null
     load_task_for_page(project_id, task_id)
     load_jobs_and_copilot_status(project_id, task_id)
   }
@@ -48,9 +50,14 @@
     req_project_id: string,
     req_task_id: string,
   ) {
-    const loaded = await load_task(req_project_id, req_task_id)
-    if (req_project_id !== project_id || req_task_id !== task_id) return
-    task = loaded
+    try {
+      const loaded = await load_task(req_project_id, req_task_id)
+      if (req_project_id !== project_id || req_task_id !== task_id) return
+      task = loaded
+    } catch (e) {
+      if (req_project_id !== project_id || req_task_id !== task_id) return
+      task_error = createKilnError(e)
+    }
   }
 
   async function load_jobs_and_copilot_status(
@@ -174,7 +181,7 @@
       href: `/prompts/${project_id}/${task_id}`,
     },
   ]}
-  action_buttons={is_empty || is_multiturn
+  action_buttons={task === null || is_multiturn || is_empty || error
     ? []
     : [
         {
@@ -184,7 +191,10 @@
         },
       ]}
 >
-  {#if loading}
+  {#if loading || (task === null && !task_error)}
+    <!-- Wait for the task to resolve before choosing a content branch: the
+         multi-turn gate must come from a loaded task, never a null default, or
+         a multi-turn task would flash the single-turn intro/jobs UI. -->
     <div class="w-full min-h-[50vh] flex justify-center items-center">
       <div class="loading loading-spinner loading-lg"></div>
     </div>
