@@ -4845,23 +4845,6 @@ built_in_models: List[KilnModel] = [
                 multimodal_requires_pdf_as_image=True,
             ),
             KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                model_id="accounts/fireworks/models/muse-glimmer-30b",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                supports_function_calling=True,
-                supports_doc_extraction=True,
-                supports_vision=True,
-                multimodal_capable=True,
-                multimodal_mime_types=[
-                    KilnMimeType.PDF,
-                    KilnMimeType.TXT,
-                    KilnMimeType.MD,
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
-                ],
-                multimodal_requires_pdf_as_image=True,
-            ),
-            KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="meta-models/Muse-Glimmer-30B",
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -5674,6 +5657,8 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/deepseek-v4-flash-0731",
+                # Fireworks decommissions this serverless model on 2026-09-25
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
@@ -8751,6 +8736,8 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/glm-5p2",
+                # Fireworks decommissions this serverless model on 2026-09-25
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
             KilnModelProvider(
@@ -8779,6 +8766,8 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/routers/glm-5p2-fast",
+                # Fireworks decommissions this serverless model on 2026-09-25
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
@@ -9301,6 +9290,8 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/kimi-k2p6",
+                # Fireworks decommissions this serverless model on 2026-09-25
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 multimodal_capable=True,
