@@ -62,11 +62,11 @@ if [[ $* == *--build-bootloader* ]]; then
   cd desktop/build/bootloader
 
   echo "Downloading pyinstaller"
-  curl -L https://github.com/pyinstaller/pyinstaller/archive/refs/tags/v6.11.1.tar.gz -o pyinstaller.tar.gz
+  curl -L https://github.com/pyinstaller/pyinstaller/archive/refs/tags/v6.22.3.tar.gz -o pyinstaller.tar.gz
   tar -xzf pyinstaller.tar.gz
   # Remove the old pyinstaller if it exists
   rm -rf pyinstaller
-  mv pyinstaller-6.11.1 pyinstaller
+  mv pyinstaller-6.22.3 pyinstaller
   cd pyinstaller/bootloader
 
   echo "Building bootloader"
@@ -116,5 +116,4 @@ pyinstaller $(printf %s "$PLATFORM_OPTS")  \
   --hidden-import=kiln_ai.adapters.eval.eval_helpers \
   --hidden-import=litellm \
   --collect-all=litellm \
-  --collect-submodules=scipy._external.array_api_compat.numpy \
   --paths=. ./desktop/desktop.py
