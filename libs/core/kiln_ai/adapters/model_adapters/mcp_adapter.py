@@ -1,11 +1,7 @@
 import json
 from typing import Tuple
 
-from kiln_ai.adapters.errors import (
-    KilnRunError,
-    StructuredOutputParseError,
-    format_error_message,
-)
+from kiln_ai.adapters.errors import KilnRunError, format_error_message
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, BaseAdapter
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.run_output import RunOutput
@@ -17,7 +13,6 @@ from kiln_ai.datamodel.json_schema import (
 )
 from kiln_ai.datamodel.run_config import McpRunConfigProperties
 from kiln_ai.datamodel.task import RunConfigProperties
-from kiln_ai.datamodel.task_output import TASK_OUTPUT_SCHEMA_ERROR_PREFIX
 from kiln_ai.tools.mcp_session_manager import mcp_session_scope
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
@@ -161,25 +156,17 @@ class MCPAdapter(BaseAdapter):
 
             if self.output_schema is not None:
                 if isinstance(run_output.output, str):
-                    try:
-                        parsed_output = parse_json_string(run_output.output)
-                    except ValueError as e:
-                        # Re-type (message unchanged) so retries treat bad JSON
-                        # like a schema mismatch: a one-off model slip.
-                        raise StructuredOutputParseError(str(e)) from e
+                    parsed_output = parse_json_string(run_output.output)
                 else:
                     parsed_output = run_output.output
                 if not isinstance(parsed_output, dict):
-                    # Valid JSON of the wrong shape (often the object wrapped in
-                    # a list) is the same one-off model slip as bad JSON, so it
-                    # carries the retryable type too.
-                    raise StructuredOutputParseError(
+                    raise RuntimeError(
                         f"structured response is not a dict: {parsed_output}"
                     )
                 validate_schema_with_value_error(
                     parsed_output,
                     self.output_schema,
-                    TASK_OUTPUT_SCHEMA_ERROR_PREFIX,
+                    "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
                 )
                 run_output.output = parsed_output
             else:

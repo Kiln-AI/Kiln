@@ -304,9 +304,12 @@ class NestedToolServer:
             result = await tool.run(self._context, **arguments)
 
             if result.is_error:
-                # The tool reports timeouts as a typed flag; sniffing the output
-                # text would misclassify results that merely mention a timeout.
-                kind = "timeout" if result.timed_out else "call_error"
+                from kiln_ai.tools.code_tool import PythonCodeTool
+
+                is_timeout = isinstance(tool, PythonCodeTool) and "timed out" in (
+                    result.output or ""
+                )
+                kind = "timeout" if is_timeout else "call_error"
                 responses.put(
                     {
                         "type": "tool_result",
@@ -398,17 +401,7 @@ class NestedToolServer:
 
         name_map: dict[str, list[ToolId]] = {}
         for tool_id in self._allowlist:
-            # A broken allowlist entry (deleted tool, bad config) must not take
-            # down every other tool in the sandbox — skip it and keep serving.
-            try:
-                fn_name = await self._canonical_tool_name(tool_id)
-            except Exception as exc:
-                logger.warning(
-                    "Code tool allowlist entry '%s' failed to resolve: %s",
-                    tool_id,
-                    exc,
-                )
-                continue
+            fn_name = await self._canonical_tool_name(tool_id)
             name_map.setdefault(fn_name, []).append(tool_id)
 
         self._name_map = name_map
@@ -445,13 +438,12 @@ class NestedToolServer:
                         "parameters_schema": tool_def["function"]["parameters"],
                     }
                 )
-            except Exception as exc:
-                # Resolution failed, so no canonical name exists — key the entry
-                # by the raw tool id and surface why it is unavailable.
+            except Exception:
+                fn_name = await self._canonical_tool_name(tool_id)
                 result.append(
                     {
-                        "name": tool_id,
-                        "description": f"(unavailable: {exc})",
+                        "name": fn_name,
+                        "description": "(unavailable)",
                         "parameters_schema": {},
                     }
                 )
