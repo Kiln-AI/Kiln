@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -386,7 +387,7 @@ def test_error_mapping(git_repos, error_class, expected_status, expected_detail)
     assert body["message"] == expected_detail
 
 
-def test_git_sync_error_response_has_cors_headers(monkeypatch):
+def test_git_sync_error_response_has_cors_headers():
     """GitSyncMiddleware error short-circuits must still carry CORS headers.
 
     GitSyncMiddleware must be installed INNER to CORSMiddleware (via
@@ -396,9 +397,11 @@ def test_git_sync_error_response_has_cors_headers(monkeypatch):
     as "origin not allowed" and the user sees "Load failed" with no error
     message instead of the descriptive git-sync error.
     """
-    monkeypatch.delenv("KILN_FRONTEND_PORT", raising=False)
     config = _auto_config("/tmp/test/clone.kiln")
-    origin = "http://localhost:5173"
+    # Mirror make_app's own port resolution so this passes under any ambient
+    # KILN_FRONTEND_PORT, not just the 5173 default.
+    frontend_port = os.environ.get("KILN_FRONTEND_PORT", "5173")
+    origin = f"http://localhost:{frontend_port}"
 
     mock_manager = MagicMock(repo_path=PROJECT_PATH)
     mock_manager.ensure_fresh_for_read = AsyncMock(
