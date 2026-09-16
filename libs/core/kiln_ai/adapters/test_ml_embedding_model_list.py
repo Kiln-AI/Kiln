@@ -1,5 +1,3 @@
-from typing import List
-
 import pytest
 
 from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
@@ -12,6 +10,10 @@ from kiln_ai.adapters.ml_embedding_model_list import (
     built_in_embedding_models_from_provider,
     get_model_by_name,
     transform_slug_for_litellm,
+)
+from kiln_ai.adapters.pytest_embedding_fanout import (
+    all_embedding_model_provider_pairs,
+    live_embedding_model_provider_pairs,
 )
 from kiln_ai.adapters.pytest_prerelease_whitelist import PRERELEASE_EMBEDDING_MODELS
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
@@ -29,18 +31,6 @@ def litellm_adapter():
         )
     )
     return adapter
-
-
-def get_all_embedding_models_and_providers() -> List[tuple[str, str]]:
-    return [
-        (model.name, provider.name)
-        for model in built_in_embedding_models
-        for provider in model.providers
-        # Skip deprecated provider entries (e.g. Together dropped serverless
-        # embeddings) — they're surfaced-but-flagged in the product and would
-        # always fail a live call.
-        if not provider.deprecated
-    ]
 
 
 class TestKilnEmbeddingModelProvider:
@@ -154,7 +144,7 @@ class TestGetModelByName:
 
 class TestBuiltInEmbeddingModelsFromProvider:
     @pytest.mark.parametrize(
-        "model_name,provider_name", get_all_embedding_models_and_providers()
+        "model_name,provider_name", all_embedding_model_provider_pairs()
     )
     def test_get_all_existing_models_and_providers(self, model_name, provider_name):
         provider = built_in_embedding_models_from_provider(provider_name, model_name)
@@ -189,7 +179,7 @@ class TestGenerateEmbedding:
     """Test cases for generate_embedding function"""
 
     @pytest.mark.parametrize(
-        "model_name,provider_name", get_all_embedding_models_and_providers()
+        "model_name,provider_name", live_embedding_model_provider_pairs()
     )
     @pytest.mark.paid
     async def test_generate_embedding(self, model_name, provider_name):
@@ -212,7 +202,7 @@ class TestGenerateEmbedding:
         assert len(embedding.embeddings[0].vector) == model_provider.n_dimensions
 
     @pytest.mark.parametrize(
-        "model_name,provider_name", get_all_embedding_models_and_providers()
+        "model_name,provider_name", live_embedding_model_provider_pairs()
     )
     @pytest.mark.paid
     async def test_generate_embedding_with_user_supplied_dimensions(
