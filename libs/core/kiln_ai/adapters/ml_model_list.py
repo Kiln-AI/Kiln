@@ -9266,7 +9266,11 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 multimodal_requires_pdf_as_image=True,
                 multimodal_mime_types=[
+                    # documents
                     KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
