@@ -33,6 +33,8 @@ If the change contains UI changes read:
  - `./frontend_design_guide.md`
  - `./frontend_controls.md`
 
+Then apply the "house control or justify" lens from `./skills/kiln-ui/SKILL.md` section 6: for each visible element the diff adds or restyles, name the house control that renders it or the plan row that justifies a custom one; flag any change under `app/web_ui/src/lib/ui`, `lib/components`, `lib/utils/form_*`, `app_page.svelte` or the shared `kiln_pro_*` components that is not a stated, separate decision; and check the screen against the sibling screen the change names, not against the diff. Style findings under this lens are valid findings.
+
 ### FastAPI / OpenAPI Standards
 
 If the change impacts API endpoints, read `.agents/api_code_review.md` for instructions on how to code review API endpoints.
