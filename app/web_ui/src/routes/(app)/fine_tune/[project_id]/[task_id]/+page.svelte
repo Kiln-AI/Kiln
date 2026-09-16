@@ -26,6 +26,7 @@
   $: is_multiturn = task?.turn_mode === "multiturn"
 
   let task: Task | null = null
+  let task_error: KilnError | null = null
   let finetunes: Finetune[] | null = null
   let finetunes_error: KilnError | null = null
   let finetunes_loading = true
@@ -34,6 +35,7 @@
     finetunes_error = null
     finetunes = null
     task = null
+    task_error = null
     load_available_models()
     load_task_for_page(project_id, task_id)
     get_finetunes(project_id, task_id)
@@ -43,9 +45,23 @@
     req_project_id: string,
     req_task_id: string,
   ) {
-    const loaded = await load_task(req_project_id, req_task_id)
-    if (req_project_id !== project_id || req_task_id !== task_id) return
-    task = loaded
+    try {
+      const loaded = await load_task(req_project_id, req_task_id)
+      if (req_project_id !== project_id || req_task_id !== task_id) return
+      task = loaded
+    } catch (e) {
+      // Without this the "task === null" spinner would spin forever on a
+      // failed load (e.g. a deleted task or a project you can't access).
+      if (req_project_id !== project_id || req_task_id !== task_id) return
+      if (e instanceof Error && e.message.includes("Load failed")) {
+        task_error = new KilnError(
+          "Could not load task. This task may belong to a project you don't have access to.",
+          null,
+        )
+      } else {
+        task_error = createKilnError(e)
+      }
+    }
   }
 
   async function get_finetunes(req_project_id: string, req_task_id: string) {
@@ -127,9 +143,19 @@
           },
         ]}
   >
-    {#if finetunes_loading || task === null}
+    {#if finetunes_loading || (task === null && !task_error)}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
+      </div>
+    {:else if finetunes_error || task_error}
+      <div
+        class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+      >
+        <div class="font-medium">Error Loading Fine Tunes</div>
+        <div class="text-error text-sm">
+          {(finetunes_error || task_error)?.getMessage() ||
+            "An unknown error occurred"}
+        </div>
       </div>
     {:else if is_multiturn}
       <div class="flex flex-col items-center justify-center min-h-[60vh]">
@@ -178,15 +204,6 @@
             {/each}
           </tbody>
         </table>
-      </div>
-    {:else if finetunes_error}
-      <div
-        class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
-      >
-        <div class="font-medium">Error Loading Fine Tunes</div>
-        <div class="text-error text-sm">
-          {finetunes_error.getMessage() || "An unknown error occurred"}
-        </div>
       </div>
     {/if}
   </AppPage>

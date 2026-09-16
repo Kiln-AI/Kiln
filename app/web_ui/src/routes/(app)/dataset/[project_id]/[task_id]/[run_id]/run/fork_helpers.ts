@@ -10,42 +10,29 @@ export type ForkTarget = {
 // Compute, for each trace index, the run id used to fork at that point. The
 // fork affordance lives on the assistant message that ends a turn (forking
 // "after" the assistant continues the conversation down a new branch). For a
-// forkable user turn K (K >= 2), we map the run id of turn K onto the
-// assistant message immediately preceding turn K's user message (i.e. turn
-// K-1's final assistant message). The result has the same length as `trace`;
-// every other index is null. Turn 1 is not forkable (no parent exists), so the
-// leaf turn's trailing assistant message is never mapped.
+// forkable turn K (K >= 2), we map the run id of turn K onto the assistant
+// message immediately preceding the turn's first message (i.e. turn K-1's
+// final assistant message), using the server-computed trace_start_index —
+// chat strategies vary in how many user messages a turn emits (chain-of-
+// thought adds a second one), so message-role counting can't locate turns.
+// The result has the same length as `trace`; every other index is null. Turn
+// 1 is never forkable: it's either the true root (no parent) or the first
+// entry of a broken chain (parent missing, boundary unknown).
 export function compute_forkable_run_ids(
   trace: Trace,
   chain: RunChainEntry[],
 ): (string | null)[] {
   const result: (string | null)[] = trace.map(() => null)
-  const user_trace_indices: number[] = []
-  for (let i = 0; i < trace.length; i++) {
-    if (trace[i].role === "user") {
-      user_trace_indices.push(i)
-    }
-  }
-  const total_turns = user_trace_indices.length
-  if (total_turns === 0 || chain.length === 0) {
-    return result
-  }
-  // Suffix-align the chain against the user messages: the last entry (the
-  // leaf) corresponds to the last user message. A negative offset would
-  // mean the server returned more chain entries than the trace can support
-  // — caller guards against that by capping chain length to turn_count.
-  const offset = total_turns - chain.length
-  if (offset < 0) return result
-  for (let k = 0; k < chain.length; k++) {
-    const entry = chain[k]
+  for (const entry of chain) {
     if (entry.turn_index === 1) continue // turn 1 is not forkable
-    const user_idx = user_trace_indices[offset + k]
-    if (user_idx === undefined) continue
+    const start = entry.trace_start_index
+    // Unknown boundary, or one that doesn't point into the trace: skip.
+    if (start == null || start <= 0 || start >= trace.length) continue
     // Place the fork affordance on the assistant message immediately
-    // preceding this user turn (the previous turn's final assistant
-    // response), not on the user message itself.
-    const assistant_idx = user_idx - 1
-    if (assistant_idx >= 0 && trace[assistant_idx]?.role === "assistant") {
+    // preceding this turn's first message (the previous turn's final
+    // assistant response), not on the turn's own messages.
+    const assistant_idx = start - 1
+    if (trace[assistant_idx]?.role === "assistant") {
       result[assistant_idx] = entry.run_id
     }
   }
