@@ -247,11 +247,14 @@ class Task(
         copy every run regardless.
         """
         runs = self._runs(readonly=readonly)  # type: ignore[attr-defined]
+        # Eval filter first: an excluded eval-generated run must not count as a parent
+        # either, or an eval child chained onto a dataset run would hide that dataset
+        # run from the default view while itself being filtered out.
+        if not include_eval_generated:
+            runs = [r for r in runs if r.eval_source is None]
         if not include_intermediate_runs:
             parent_ids = {r.parent_task_run_id for r in runs if r.parent_task_run_id}
             runs = [r for r in runs if r.id not in parent_ids]
-        if not include_eval_generated:
-            runs = [r for r in runs if r.eval_source is None]
         return runs
 
     # These wrappers help for typechecking. We should fix this in KilnParentModel
