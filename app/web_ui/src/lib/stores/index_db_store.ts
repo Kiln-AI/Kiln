@@ -22,16 +22,11 @@ export function indexedDBStore<T>(key: string, initialValue: T) {
 
   if (isBrowser) {
     let db: IDBDatabase | null = null
+    let pendingOpen: Promise<IDBDatabase> | null = null
     let autoSaveEnabled = false
 
-    // Initialize IndexedDB
-    const initDB = (): Promise<IDBDatabase> => {
+    const openDB = (): Promise<IDBDatabase> => {
       return new Promise((resolve, reject) => {
-        if (db) {
-          resolve(db)
-          return
-        }
-
         const request = window.indexedDB.open(DB_NAME, DB_VERSION)
 
         let settled = false
@@ -106,6 +101,28 @@ export function indexedDBStore<T>(key: string, initialValue: T) {
           reject(error)
         }, DB_OPEN_TIMEOUT_MS)
       })
+    }
+
+    // Initialize IndexedDB. Callers that race while an open is in flight share
+    // it: a second open() would hand back a second connection that nothing
+    // holds a reference to, and that connection would block a later upgrade.
+    const initDB = (): Promise<IDBDatabase> => {
+      if (db) {
+        return Promise.resolve(db)
+      }
+      if (!pendingOpen) {
+        const open = openDB()
+        pendingOpen = open
+        // Forget it once it settles, so the memo never outlives the connection
+        // it resolved to and a later call can open a fresh one.
+        const forgetOpen = () => {
+          if (pendingOpen === open) {
+            pendingOpen = null
+          }
+        }
+        open.then(forgetOpen, forgetOpen)
+      }
+      return pendingOpen
     }
 
     // Get value from IndexedDB

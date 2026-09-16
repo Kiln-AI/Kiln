@@ -93,22 +93,62 @@ const autoResolveGet = (storedValue?: unknown) => {
   })
 }
 
-const transactionsFire = (event: "oncomplete" | "onabort") => {
-  mockDatabase.transaction.mockImplementation(() => {
-    const transaction: MockIDBTransaction = {
-      objectStore: vi.fn<[string], MockIDBObjectStore>(() => mockObjectStore),
-      oncomplete: null,
-      onerror: null,
-      onabort: null,
-      error: null,
-    }
-    process.nextTick(() => {
-      const handler = transaction[event]
-      if (handler) handler()
-    })
-    return transaction
+const newTransactionFiring = (
+  event: "oncomplete" | "onabort",
+): MockIDBTransaction => {
+  const transaction: MockIDBTransaction = {
+    objectStore: vi.fn<[string], MockIDBObjectStore>(() => mockObjectStore),
+    oncomplete: null,
+    onerror: null,
+    onabort: null,
+    error: null,
+  }
+  process.nextTick(() => {
+    const handler = transaction[event]
+    if (handler) handler()
   })
+  return transaction
 }
+
+const transactionsFire = (event: "oncomplete" | "onabort") => {
+  mockDatabase.transaction.mockImplementation(() => newTransactionFiring(event))
+}
+
+// Each open() hands back its own connection, so a duplicate open() is visible
+// as an extra connection rather than as an overwritten reference.
+const openRequestsCreateDistinctConnections = (): MockIDBDatabase[] => {
+  const connections: MockIDBDatabase[] = []
+  mockIndexedDB.open.mockImplementation(() => {
+    const database: MockIDBDatabase = {
+      transaction: vi.fn<[string[], string], MockIDBTransaction>(() =>
+        newTransactionFiring("oncomplete"),
+      ),
+      objectStoreNames: {
+        contains: vi.fn<[string], boolean>(() => true),
+      },
+      createObjectStore: vi.fn<
+        [string, { keyPath: string }],
+        MockIDBObjectStore
+      >(() => mockObjectStore),
+      close: vi.fn<[], void>(),
+      onversionchange: null,
+    }
+    connections.push(database)
+    const request = newOpenRequest()
+    request.result = database
+    process.nextTick(() => {
+      if (request.onsuccess) request.onsuccess()
+    })
+    return request
+  })
+  return connections
+}
+
+const settlementOf = (promise: Promise<unknown>): Promise<unknown> =>
+  promise.then(
+    (value) => value,
+    (error) => error,
+  )
 
 const loggedOpenError = (consoleSpy: {
   mock: { calls: unknown[][] }
@@ -755,6 +795,86 @@ describe("indexedDBStore", () => {
 
       transactionsFire("onabort")
       await expect(persist()).rejects.toThrow(/aborted/)
+    })
+  })
+
+  describe("one open() at a time per store", () => {
+    it("shares a single open() between writes that race a re-open", async () => {
+      const connections = openRequestsCreateDistinctConnections()
+      autoResolveGet()
+
+      const { store: storeInstance, initialized } = indexedDBStore(
+        "test-key",
+        "initial-value",
+      )
+      await initialized
+      expect(connections).toHaveLength(1)
+
+      connections[0].onversionchange!()
+      expect(connections[0].close).toHaveBeenCalledTimes(1)
+
+      // Both writes reach initDB() before any open can resolve.
+      storeInstance.set("a")
+      storeInstance.set("b")
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(mockIndexedDB.open).toHaveBeenCalledTimes(2)
+      expect(connections).toHaveLength(2)
+      // The single re-opened connection is the cached one, not an orphan.
+      expect(connections[1].close).not.toHaveBeenCalled()
+      expect(connections[1].transaction).toHaveBeenCalledTimes(2)
+    })
+
+    it("shares one open(), one timer and one failure between callers retrying after a failed open", async () => {
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+      openRequestsFire("onblocked")
+
+      const { initialized, persist } = indexedDBStore(
+        "test-key",
+        "initial-value",
+      )
+      await initialized
+      expect(mockIndexedDB.open).toHaveBeenCalledTimes(1)
+      expect(vi.getTimerCount()).toBe(0)
+
+      // The retry goes silent, so both callers stay on the same in-flight open.
+      silentOpenRequest()
+      const first = settlementOf(persist())
+      const second = settlementOf(persist())
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(mockIndexedDB.open).toHaveBeenCalledTimes(2)
+      expect(vi.getTimerCount()).toBe(1)
+
+      await vi.advanceTimersByTimeAsync(DB_OPEN_TIMEOUT_MS)
+
+      const failure = await first
+      expect(failure).toBeInstanceOf(Error)
+      expect((failure as Error).message).toContain("timed out")
+      expect(await second).toBe(failure)
+
+      consoleSpy.mockRestore()
+    })
+
+    it("opens again once a shared open has settled", async () => {
+      openRequestsFire("onsuccess")
+      autoResolveGet()
+      transactionsFire("oncomplete")
+
+      const { initialized, persist } = indexedDBStore(
+        "test-key",
+        "initial-value",
+      )
+      await initialized
+      expect(mockIndexedDB.open).toHaveBeenCalledTimes(1)
+
+      mockDatabase.onversionchange!()
+      await persist()
+      expect(mockIndexedDB.open).toHaveBeenCalledTimes(2)
+
+      mockDatabase.onversionchange!()
+      await persist()
+      expect(mockIndexedDB.open).toHaveBeenCalledTimes(3)
     })
   })
 })
