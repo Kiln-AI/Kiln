@@ -7,6 +7,7 @@
 - Poor names: function or class names that don’t represent what they actually do
 - Code Comments:
   - Unnecessary comments: explaining code that is self explanitory, or code that should be explained by function/var names and is instead explained by comments
+  - Diff-dependent comments: comments that only make sense while reading the change, not the file. These narrate what the author did (“switched to X”, “no longer need Y”), or defend code that is now simply correct — e.g. a comment explaining why a route declares no 401 response, added when a bogus 401 was deleted. Once merged the diff is gone and the comment reads as a justification for code that was never there. That history belongs in the commit message or PR description. Rule of thumb: if a reader who never saw the change wouldn’t need it, cut it.
   - Missing comments: comments should document the "why" not the what. If code does something unexpected, and the "why" is non obvious, the why should be documented.
 - Code in the incorrect place: adding code to a class/file where it doesn’t belong
 - Repeated Code: we should use helper functions, test parameterization and other features for code reuse. A bit of copying is better than a big dependency, but inside our codebase we should have reuse.
