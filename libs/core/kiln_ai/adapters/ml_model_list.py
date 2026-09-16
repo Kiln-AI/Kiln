@@ -277,6 +277,7 @@ class ModelName(str, Enum):
     kimi_k2_5 = "kimi_k2_5"
     kimi_dev_72b = "kimi_dev_72b"
     glm_5_3 = "glm_5_3"
+    glm_5_3_fast = "glm_5_3_fast"
     glm_5_3_flash = "glm_5_3_flash"
     glm_5_2 = "glm_5_2"
     glm_5_2_fast = "glm_5_2_fast"
@@ -8574,6 +8575,22 @@ built_in_models: List[KilnModel] = [
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 model_id="accounts/fireworks/models/glm-5p3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=False,
+            ),
+        ],
+    ),
+    # GLM 5.3 Fast — Fireworks speed-optimized serving of GLM 5.3 (routers/ slug, ~2x throughput)
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5_3_fast,
+        friendly_name="GLM 5.3 Fast",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="accounts/fireworks/routers/glm-5p3-fast",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=False,
             ),
