@@ -4,6 +4,17 @@ on:
   push:
     branches:
       - main # Adjust this if your main branch has a different name
+  # Also run on PRs that change dependencies. The library coverage step runs the suite
+  # serially, so it exercises code paths the parallel jobs don't, and it has caught a
+  # dependency bump that every other check passed. Running only on push meant that
+  # breakage surfaced after the merge landed. Path-filtered to keep it off unrelated PRs.
+  pull_request:
+    paths:
+      - 'uv.lock'
+      - 'pyproject.toml'
+      - 'app/web_ui/package-lock.json'
+      - 'app/web_ui/package.json'
+      - '.github/workflows/test_count.yml'
 
 jobs:
   count_tests:
@@ -53,6 +64,9 @@ jobs:
           echo "TOTAL_TEST_COUNT=$TOTAL_TEST_COUNT" >> $GITHUB_ENV
 
       - name: Create test count badge
+        # The badges report main's numbers, so only publish from the push-to-main run.
+        # PR runs also have no gist secret when they come from a fork.
+        if: github.event_name == 'push'
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
           auth: ${{ secrets.GIST_SECRET }}
@@ -70,6 +84,9 @@ jobs:
           echo "TOTAL_LIB_COVERAGE=$TOTAL_LIB_COVERAGE" >> $GITHUB_ENV
 
       - name: Create coverage badge
+        # The badges report main's numbers, so only publish from the push-to-main run.
+        # PR runs also have no gist secret when they come from a fork.
+        if: github.event_name == 'push'
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
           auth: ${{ secrets.GIST_SECRET }}

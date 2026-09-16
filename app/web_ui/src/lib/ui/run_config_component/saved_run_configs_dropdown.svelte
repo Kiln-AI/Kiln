@@ -343,10 +343,13 @@
     }
     try {
       inline_action_loading = true
+      save_config_error = null
       const saved_run_config = await save_new_run_config()
       if (saved_run_config.id) {
         selected_run_config_id = saved_run_config.id
       }
+    } catch (e) {
+      save_config_error = createKilnError(e)
     } finally {
       inline_action_loading = false
     }

@@ -24,16 +24,21 @@ environment**. There is no settings page or direct URL for it.
     ```
     cdn.playwright.dev
     playwright.download.prss.microsoft.com
+    openrouter.ai
     ```
 
   - Check **Also include default list of common package managers**. That keeps
     the whole Trusted list: PyPI, npm, apt, and `raw.githubusercontent.com`,
     which the setup script fetches itself from.
 
-The default **Trusted** policy is not enough on its own: the two domains above
-are Playwright's CDN and its download fallback, and on Trusted they answer 403,
-so the environment comes up without a browser. Everything else Kiln's setup
+The default **Trusted** policy is not enough on its own: the first two domains
+above are Playwright's CDN and its download fallback, and on Trusted they answer
+403, so the environment comes up without a browser. Everything else Kiln's setup
 needs is in the default list.
+
+`openrouter.ai` is only needed if you set `OPENROUTER_QA_KEY` below — it is where
+the app's model calls go, and without it the calls die at the proxy and a perfectly
+good key looks broken. Leave it out if you are not using the key.
 
 ## 3. Fill in two fields
 
@@ -46,6 +51,12 @@ UV_SYSTEM_CERTS=true
 The image sets the deprecated `UV_NATIVE_TLS` and the environment config cannot
 unset it, so this **adds** its modern replacement rather than replacing it. Both
 end up live. See "Things to know" below.
+
+Optionally also `OPENROUTER_QA_KEY=sk-or-...`, which connects OpenRouter inside
+the browser sandbox so agents can make real model calls. Read
+["An OpenRouter key for agents"](#an-openrouter-key-for-agents-optional) before
+you set it: the key must carry a hard spending limit, because nothing else limits
+what an agent spends.
 
 **Setup script:** paste the *entire contents* of
 [`.config/utils/claude_code_vm_setup.sh`](claude_code_vm_setup.sh) into the
@@ -112,6 +123,57 @@ You can re-run the whole check any time; it is cheap and idempotent:
 ```
 bash .config/utils/setup_startup.sh
 ```
+
+## An OpenRouter key for agents (optional)
+
+Without a key, the browser sandbox has no provider connected. Agents can drive
+every screen and every flow right up to the point a model call happens, and no
+further — so QA of anything that actually runs a model (generation, evals,
+extraction, chat) stops at the gate.
+
+Setting `OPENROUTER_QA_KEY` in the environment variables fixes that.
+[`playwright_server.sh`](../../.agents/scripts/playwright_server.sh) writes it
+into a sandbox's `settings.yaml` when it seeds that sandbox, which is the same
+thing the app's Settings screen writes when you connect a provider by hand — so
+the app behaves exactly as a real user's does, with OpenRouter connected.
+
+**The key must have a hard, low spending limit. $10/month is the ceiling.**
+
+That is not a style preference. With this set:
+
+- **Agents can read the key.** It is a variable in their shell and a line in a
+  file they can `cat`. So can anything else running in the session.
+- **Agents decide what to spend.** The skills tell them to keep runs small and to
+  prefer a cheap model, and that guidance is followed rather than enforced. The
+  limit on the key is the only thing that actually stops a runaway loop.
+- **A session is not private.** Its transcript, its logs and its disk are all
+  places the key can end up, and none of them are yours alone.
+
+So, when you set it:
+
+- Create a **dedicated key** at <https://openrouter.ai/settings/keys> and use it
+  for nothing else.
+- Set the **credit limit on the key itself**, in OpenRouter's own field. A limit
+  you intend to watch is not a limit.
+- **Never** paste in a personal key, a shared team key, or one that can reach
+  account credit beyond its own limit.
+- **Rotate it** on a schedule, and immediately if a session did something you did
+  not expect. Treat it as burnable: the worst case is that it leaks, spends its
+  limit, and you delete it.
+- Put nothing else secret in the environment variables. They reach every session.
+
+Two smaller things worth knowing:
+
+- The name is deliberately not `OPENROUTER_API_KEY`. That name is what Kiln's
+  `Config` and litellm both read on their own, so under it `pytest --runpaid` and
+  any stray script in the VM would start spending the key without anyone choosing
+  to. `OPENROUTER_QA_KEY` is only ever read where a sandbox is seeded.
+- The key reaches a sandbox when that sandbox is **seeded**. A sandbox that
+  already exists from before you set the variable keeps whatever it was seeded
+  with; `playwright_server.sh start` says so, and `reset` reseeds it. Nothing
+  writes the key to your real `~/.kiln_ai/settings.yaml`, and
+  `playwright_server.sh snapshot` never reads or writes `settings.yaml`, so a key
+  cannot reach the repo through the fixture.
 
 ## Things to know
 

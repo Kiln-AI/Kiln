@@ -8,6 +8,7 @@ from ...client import AuthenticatedClient, Client
 from ...models.draft_input_data_guide_input import DraftInputDataGuideInput
 from ...models.http_validation_error import HTTPValidationError
 from ...models.job_start_response import JobStartResponse
+from ...models.unauthorized_response import UnauthorizedResponse
 from ...types import Response
 
 
@@ -32,11 +33,16 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | JobStartResponse | None:
+) -> HTTPValidationError | JobStartResponse | UnauthorizedResponse | None:
     if response.status_code == 200:
         response_200 = JobStartResponse.from_dict(response.json())
 
         return response_200
+
+    if response.status_code == 401:
+        response_401 = UnauthorizedResponse.from_dict(response.json())
+
+        return response_401
 
     if response.status_code == 422:
         response_422 = HTTPValidationError.from_dict(response.json())
@@ -51,7 +57,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | JobStartResponse]:
+) -> Response[HTTPValidationError | JobStartResponse | UnauthorizedResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -64,7 +70,7 @@ def sync_detailed(
     *,
     client: AuthenticatedClient,
     body: DraftInputDataGuideInput,
-) -> Response[HTTPValidationError | JobStartResponse]:
+) -> Response[HTTPValidationError | JobStartResponse | UnauthorizedResponse]:
     """Start Data Guide Job
 
      Start a new data guide job.
@@ -85,7 +91,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | JobStartResponse]
+        Response[HTTPValidationError | JobStartResponse | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -103,7 +109,7 @@ def sync(
     *,
     client: AuthenticatedClient,
     body: DraftInputDataGuideInput,
-) -> HTTPValidationError | JobStartResponse | None:
+) -> HTTPValidationError | JobStartResponse | UnauthorizedResponse | None:
     """Start Data Guide Job
 
      Start a new data guide job.
@@ -124,7 +130,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | JobStartResponse
+        HTTPValidationError | JobStartResponse | UnauthorizedResponse
     """
 
     return sync_detailed(
@@ -137,7 +143,7 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
     body: DraftInputDataGuideInput,
-) -> Response[HTTPValidationError | JobStartResponse]:
+) -> Response[HTTPValidationError | JobStartResponse | UnauthorizedResponse]:
     """Start Data Guide Job
 
      Start a new data guide job.
@@ -158,7 +164,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | JobStartResponse]
+        Response[HTTPValidationError | JobStartResponse | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -174,7 +180,7 @@ async def asyncio(
     *,
     client: AuthenticatedClient,
     body: DraftInputDataGuideInput,
-) -> HTTPValidationError | JobStartResponse | None:
+) -> HTTPValidationError | JobStartResponse | UnauthorizedResponse | None:
     """Start Data Guide Job
 
      Start a new data guide job.
@@ -195,7 +201,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | JobStartResponse
+        HTTPValidationError | JobStartResponse | UnauthorizedResponse
     """
 
     return (

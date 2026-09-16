@@ -6,6 +6,7 @@ import httpx
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.api_key_verification_result import ApiKeyVerificationResult
+from ...models.unauthorized_response import UnauthorizedResponse
 from ...types import Response
 
 
@@ -21,11 +22,16 @@ def _get_kwargs() -> dict[str, Any]:
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> ApiKeyVerificationResult | None:
+) -> ApiKeyVerificationResult | UnauthorizedResponse | None:
     if response.status_code == 200:
         response_200 = ApiKeyVerificationResult.from_dict(response.json())
 
         return response_200
+
+    if response.status_code == 401:
+        response_401 = UnauthorizedResponse.from_dict(response.json())
+
+        return response_401
 
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
@@ -35,7 +41,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[ApiKeyVerificationResult]:
+) -> Response[ApiKeyVerificationResult | UnauthorizedResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -47,7 +53,7 @@ def _build_response(
 def sync_detailed(
     *,
     client: AuthenticatedClient,
-) -> Response[ApiKeyVerificationResult]:
+) -> Response[ApiKeyVerificationResult | UnauthorizedResponse]:
     """Verify Api Key
 
      Verify an API key. If auth passes, return a success response.
@@ -57,7 +63,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ApiKeyVerificationResult]
+        Response[ApiKeyVerificationResult | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs()
@@ -72,7 +78,7 @@ def sync_detailed(
 def sync(
     *,
     client: AuthenticatedClient,
-) -> ApiKeyVerificationResult | None:
+) -> ApiKeyVerificationResult | UnauthorizedResponse | None:
     """Verify Api Key
 
      Verify an API key. If auth passes, return a success response.
@@ -82,7 +88,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ApiKeyVerificationResult
+        ApiKeyVerificationResult | UnauthorizedResponse
     """
 
     return sync_detailed(
@@ -93,7 +99,7 @@ def sync(
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
-) -> Response[ApiKeyVerificationResult]:
+) -> Response[ApiKeyVerificationResult | UnauthorizedResponse]:
     """Verify Api Key
 
      Verify an API key. If auth passes, return a success response.
@@ -103,7 +109,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ApiKeyVerificationResult]
+        Response[ApiKeyVerificationResult | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs()
@@ -116,7 +122,7 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: AuthenticatedClient,
-) -> ApiKeyVerificationResult | None:
+) -> ApiKeyVerificationResult | UnauthorizedResponse | None:
     """Verify Api Key
 
      Verify an API key. If auth passes, return a success response.
@@ -126,7 +132,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ApiKeyVerificationResult
+        ApiKeyVerificationResult | UnauthorizedResponse
     """
 
     return (

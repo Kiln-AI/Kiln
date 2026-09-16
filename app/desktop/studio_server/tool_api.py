@@ -179,6 +179,9 @@ class ExternalToolServerApiDescription(BaseModel):
 
 
 class ToolApiDescription(BaseModel):
+    """A tool as shown in pickers: name is the user-facing display name,
+    function_name the callable name the model sees (they often coincide)."""
+
     id: ToolId
     name: str
     description: str | None
@@ -333,8 +336,8 @@ def connect_tool_servers_api(app: FastAPI):
             tools = [
                 ToolApiDescription(
                     id=build_rag_tool_id(rag_config.id),
-                    name=rag_config.tool_name,
-                    description=f"{rag_config.name}: {rag_config.tool_description}",
+                    name=rag_config.name,
+                    description=rag_config.tool_description,
                     function_name=rag_config.tool_name,
                 )
                 for rag_config in rag_configs
@@ -462,7 +465,7 @@ def connect_tool_servers_api(app: FastAPI):
             code_tool_items = [
                 ToolApiDescription(
                     id=build_code_tool_id(ct.id),
-                    name=ct.tool_function_name,
+                    name=ct.name,
                     description=ct.tool_description,
                     function_name=ct.tool_function_name,
                 )

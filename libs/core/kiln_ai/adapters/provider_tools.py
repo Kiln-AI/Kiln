@@ -26,6 +26,10 @@ from kiln_ai.utils.project_utils import project_from_id
 
 logger = logging.getLogger(__name__)
 
+# Some providers (Ollama, LM Studio, other local servers) don't use an API key, but the
+# OpenAI client and LiteLLM both error out when constructed without one. Send this instead.
+PLACEHOLDER_API_KEY = "NA"
+
 
 async def provider_enabled(provider_name: ModelProviderName) -> bool:
     if provider_name == ModelProviderName.ollama:
@@ -687,7 +691,7 @@ def lite_llm_core_config_for_provider(
                 base_url=ollama_base_url + "/v1",
                 additional_body_options={
                     # LiteLLM errors without an api_key, even though Ollama doesn't support one
-                    "api_key": "NA",
+                    "api_key": PLACEHOLDER_API_KEY,
                 },
             )
         case ModelProviderName.docker_model_runner:
@@ -789,7 +793,7 @@ def lite_llm_core_config_for_provider(
                 )
 
             # API key optional - some providers like Ollama don't use it, but LiteLLM errors without one
-            api_key = provider.get("api_key") or "NA"
+            api_key = provider.get("api_key") or PLACEHOLDER_API_KEY
             base_url = provider.get("base_url")
             if base_url is None:
                 raise ValueError(

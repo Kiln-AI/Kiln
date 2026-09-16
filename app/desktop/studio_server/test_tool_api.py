@@ -3679,32 +3679,29 @@ async def test_get_available_tools_with_rag_configs(client, test_project):
             rag_set = next(s for s in result if s["set_name"] == "Search Tools (RAG)")
             assert len(rag_set["tools"]) == 2
 
-            # Verify RAG tool details
+            # Verify RAG tool details: name is the display name, function_name
+            # the callable tool name.
             tool_names = [tool["name"] for tool in rag_set["tools"]]
 
-            assert "test_rag_config_1" in tool_names
-            assert "test_rag_config_2" in tool_names
+            assert "Test RAG Config 1" in tool_names
+            assert "Test RAG Config 2" in tool_names
 
             # Verify tool IDs are properly formatted
             for tool in rag_set["tools"]:
                 assert tool["id"].startswith("kiln_tool::rag::")
 
-            # Find specific tools and check their descriptions
+            # Find specific tools and check their fields
             config1_tool = next(
-                t for t in rag_set["tools"] if t["name"] == "test_rag_config_1"
+                t for t in rag_set["tools"] if t["name"] == "Test RAG Config 1"
             )
-            assert (
-                config1_tool["description"]
-                == "Test RAG Config 1: First test RAG configuration"
-            )
+            assert config1_tool["function_name"] == "test_rag_config_1"
+            assert config1_tool["description"] == "First test RAG configuration"
 
             config2_tool = next(
-                t for t in rag_set["tools"] if t["name"] == "test_rag_config_2"
+                t for t in rag_set["tools"] if t["name"] == "Test RAG Config 2"
             )
-            assert (
-                config2_tool["description"]
-                == "Test RAG Config 2: Second test RAG configuration"
-            )
+            assert config2_tool["function_name"] == "test_rag_config_2"
+            assert config2_tool["description"] == "Second test RAG configuration"
 
 
 async def test_get_available_tools_with_rag_and_mcp(client, test_project):
@@ -3914,7 +3911,8 @@ async def test_available_tools_excludes_archived_rag_and_kiln_task_tools(
 
         # Only the active RAG config should be present
         assert len(rag_set["tools"]) == 1
-        assert rag_set["tools"][0]["name"] == "active_rag"
+        assert rag_set["tools"][0]["name"] == "Active RAG"
+        assert rag_set["tools"][0]["function_name"] == "active_rag"
 
         # Only the active kiln task tool should be present
         assert len(kiln_task_set["tools"]) == 1
