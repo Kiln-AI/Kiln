@@ -22,10 +22,6 @@
   // Fork-mode only.
   export let prefill_text: string = ""
   export let forked_turn_index: number | undefined = undefined
-  // Fork-mode only. True when earlier turns couldn't be recovered, so
-  // forked_turn_index counts from the recovered portion rather than the
-  // conversation's true start. Keeps the turn label from reading as absolute.
-  export let chain_broken: boolean = false
   export let on_success: (
     new_run_id: string,
     created_run?: TaskRun,
@@ -210,13 +206,7 @@
     >
       <div class="flex flex-row items-center gap-2 text-sm font-medium">
         <span class="w-4 h-4 text-gray-500 flex-none"><ForkIcon /></span>
-        <span>
-          {#if chain_broken}
-            Forking turn {forked_turn_index} of the recovered conversation
-          {:else}
-            Forking turn {forked_turn_index}
-          {/if}
-        </span>
+        <span>Forking turn {forked_turn_index}</span>
       </div>
       <p class="text-xs text-gray-500">
         Your next message will start a new conversation branch from this point.

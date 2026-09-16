@@ -93,6 +93,7 @@
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let v2FormComponentRef: any
   $: v2FormComponent = v2FormComponentRef as EvalTypeFormApi | undefined
+  let llmJudgeFormComponent: LlmJudgeForm
 
   // Save state
   let create_evaluator_error: KilnError | null = null
@@ -108,6 +109,7 @@
   let test_loading = false
   let test_error: KilnError | null = null
   let test_result: TestV2EvalResponse | null = null
+  let test_has_valid_run = false
   let test_shape_warning: string | null = null
   let test_score_range_warning: string | null = null
   let test_abort_controller: AbortController | null = null
@@ -155,19 +157,44 @@
     return false
   }
 
-  // Unified tested-state. A passing test only counts for the exact config that
-  // produced it: `config_version` bumps on every edit, and each run records the
-  // version it tested against (captured before the request's await, so an edit
-  // while a test is in flight invalidates it on arrival). The result counts only
-  // while the version is unchanged, so any later edit re-arms the
-  // test-before-save gates.
-  let config_version = 0
-  let last_tested: { version: number; passed: boolean } | null = null
+  // Snapshot of prompt/code + reference data at the time of the last passing test.
+  // When either changes, the passing test is invalidated.
+  let test_passed_snapshot: {
+    prompt_or_code: string
+    reference_data: string
+  } | null = null
 
-  $: test_valid_for_current_config =
-    !!last_tested &&
-    last_tested.passed &&
-    last_tested.version === config_version
+  // The effective "test passed" flag: true only when the snapshot matches current state.
+  // Uses llm_judge_prompt and code_eval_code as direct reactive dependencies so
+  // edits to either invalidate the snapshot immediately.
+  $: test_passed_for_current_config = (() => {
+    if (!test_passed_snapshot) return false
+    const current_prompt_or_code = get_prompt_or_code(
+      eval_config_type,
+      llm_judge_prompt,
+      code_eval_code,
+      llm_judge_instructions,
+    )
+    return (
+      test_passed_snapshot.prompt_or_code === current_prompt_or_code &&
+      test_passed_snapshot.reference_data === advanced_reference_data
+    )
+  })()
+
+  function get_prompt_or_code(
+    type: V2EvalType,
+    judge_prompt: string | undefined,
+    code: string | undefined,
+    judge_instructions: string[],
+  ): string {
+    if (type === "llm_judge") {
+      // Instructions are part of the effective prompt (bound via Jinja), so
+      // edits to them invalidate a passing test just like prompt edits.
+      return (judge_prompt ?? "") + "\n" + JSON.stringify(judge_instructions)
+    }
+    if (type === "code_eval") return code ?? ""
+    return ""
+  }
 
   // Required reference fields surfaced by the active form.
   // Only the deterministic forms (exact_match, contains, set_check) bind
@@ -182,21 +209,22 @@
     required_reference_fields = []
   }
 
+  // Output-source expression surfaced by the deterministic forms (drives the
+  // reference-key dropdown and required fields).
+  let active_value_expression: string | null = null
   $: manual_example_support = manualExampleSupport(eval_config_type)
 
-  // Unsaved-changes guard + tested-state invalidation. Every real edit arms the
-  // guard and bumps config_version, so a prior passing test no longer counts.
+  // Unsaved-changes guard: activate after any real form interaction
   let has_typed = false
 
-  function on_config_edit() {
+  function markDirty() {
     has_typed = true
-    config_version++
   }
 
-  // Model/algo selection uses callback props rather than DOM events, so the
-  // wrapper's on:input/on:change can't see them; watch the bound values to
-  // register those edits too.
-  $: if (llm_combined_model_name || llm_selected_algo) on_config_edit()
+  // LLM-judge model/algo selection uses callback props, not native DOM events,
+  // so on:input/on:change on the form wrapper won't catch those changes.
+  // Watch the bound values reactively to arm the unsaved-changes guard.
+  $: if (llm_combined_model_name || llm_selected_algo) markDirty()
 
   $: is_llm_judge = eval_config_type === "llm_judge"
   $: can_submit_v2 = !!eval_config_type && !is_llm_judge
@@ -264,7 +292,7 @@
     // path fires before the test runs.
     test_error = null
     test_result = null
-    last_tested = null
+    test_has_valid_run = false
     test_shape_warning = null
     test_score_range_warning = null
 
@@ -291,10 +319,6 @@
 
     const controller = new AbortController()
     test_abort_controller = controller
-
-    // Capture the config version BEFORE the await so an edit made while the
-    // request is in flight can't be mis-stamped as tested-and-passed.
-    const tested_version = config_version
 
     try {
       test_loading = true
@@ -350,16 +374,24 @@
           result.scores,
           evaluator?.output_scores,
         )
+        test_has_valid_run = shape.valid
         test_shape_warning = shape.message
 
-        let passed = shape.valid
         if (result.score_range_errors && result.score_range_errors.length > 0) {
           test_score_range_warning = result.score_range_errors.join("; ")
-          passed = false
+          test_has_valid_run = false
         }
 
-        if (passed) {
-          last_tested = { version: tested_version, passed: true }
+        if (test_has_valid_run) {
+          test_passed_snapshot = {
+            prompt_or_code: get_prompt_or_code(
+              eval_config_type,
+              llm_judge_prompt,
+              code_eval_code,
+              llm_judge_instructions,
+            ),
+            reference_data: advanced_reference_data,
+          }
         }
       }
     } catch (e) {
@@ -436,12 +468,12 @@
     // When the config uses reference_data, require a passing test with
     // current prompt/code AND reference data before allowing save.
     if (config_uses_reference_data) {
-      if (!test_valid_for_current_config) {
+      if (!test_passed_for_current_config) {
         create_evaluator_loading = false
         test_required_dialog.show()
         return
       }
-    } else if (!test_valid_for_current_config) {
+    } else if (!test_has_valid_run) {
       create_evaluator_loading = false
       confirm_save_dialog.show()
       return
@@ -543,7 +575,7 @@
   function select_task_run(run: TaskRunOutput) {
     selected_task_run = run
     test_result = null
-    last_tested = null
+    test_has_valid_run = false
     test_shape_warning = null
     test_score_range_warning = null
     test_error = null
@@ -582,16 +614,11 @@
       bind:submitting={create_evaluator_loading}
       warn_before_unload={!complete && !!eval_config_type && has_typed}
     >
-      <!--
-        Catch every real form interaction for the unsaved-changes guard and to
-        invalidate a prior test. on:input covers typing; on:change covers native
-        selects, checkboxes, radios, and fancy_select dropdowns (which emit a
-        bubbling change on pick).
-      -->
+      <!-- on:input/on:change capture real form interactions for unsaved-changes guard -->
       <div
         class="flex flex-col gap-6"
-        on:input={on_config_edit}
-        on:change={on_config_edit}
+        on:input={markDirty}
+        on:change={markDirty}
       >
         <div>
           <div class="text-xl font-bold">Judge Configuration</div>
@@ -599,6 +626,7 @@
 
         {#if is_llm_judge}
           <LlmJudgeForm
+            bind:this={llmJudgeFormComponent}
             {task_id}
             {project_id}
             {eval_id}
@@ -621,6 +649,7 @@
             output_scores={evaluator?.output_scores}
             bind:code_string={code_eval_code}
             bind:required_reference_fields
+            bind:output_value_expression={active_value_expression}
           />
         {/if}
 
@@ -660,7 +689,7 @@
       {test_error}
       {test_shape_warning}
       {test_score_range_warning}
-      test_has_valid_run={test_valid_for_current_config}
+      {test_has_valid_run}
       {is_llm_judge}
       {can_submit_llm}
       {judge_reference_signals}
@@ -668,11 +697,7 @@
       on:select={(e) => select_task_run(e.detail)}
       on:run={run_test}
       on:cancel={cancel_test}
-      on:updateReferenceData={(e) => {
-        advanced_reference_data = e.detail
-        // A reference-data edit is a config edit: invalidate any prior test.
-        on_config_edit()
-      }}
+      on:updateReferenceData={(e) => (advanced_reference_data = e.detail)}
       on:runAgain={run_test}
     />
   </div>

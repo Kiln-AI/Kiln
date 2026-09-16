@@ -66,7 +66,6 @@ function makeModel(
     suggested_for_data_gen: false,
     supports_logprobs: opts.supports_logprobs ?? false,
     suggested_for_evals: opts.suggested_for_evals ?? false,
-    suggested_for_synthetic_user: false,
     supports_function_calling: false,
     uncensored: false,
     suggested_for_uncensored_data_gen: false,

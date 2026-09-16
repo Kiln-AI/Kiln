@@ -141,6 +141,7 @@ export type ErrorWithTrace = components["schemas"]["ErrorWithTrace"]
 export type ToolCallMessageParam =
   components["schemas"]["ChatCompletionMessageFunctionToolCallParam"]
 export type RunChainEntry = components["schemas"]["RunChainEntry"]
+export type RunChainResponse = components["schemas"]["RunChainResponse"]
 export type SearchToolApiDescription =
   components["schemas"]["SearchToolApiDescription"]
 export type CodeToolResponse = components["schemas"]["CodeToolResponse"]

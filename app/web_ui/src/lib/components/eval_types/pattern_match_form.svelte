@@ -10,6 +10,11 @@
     value_expression: null,
   }
 
+  // Read-only mirror of the configured output source, surfaced to the parent so
+  // it can decide whether input/output-only manual examples are usable.
+  export let output_value_expression: string | null = null
+  $: output_value_expression = properties.value_expression ?? null
+
   export function getProperties(): components["schemas"]["PatternMatchProperties"] {
     return properties
   }
@@ -17,7 +22,7 @@
   let regex_error: string | null = null
   let pattern_touched = false
 
-  function on_pattern_focusout() {
+  function on_pattern_blur() {
     pattern_touched = true
     validate_regex()
   }
@@ -53,12 +58,8 @@
 </script>
 
 <div class="flex flex-col gap-6">
-  <!-- focusout (not blur) so the event bubbles up from the inner input -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div
-    on:focusout={on_pattern_focusout}
-    data-testid="pattern-match-pattern-section"
-  >
+  <div on:blur={on_pattern_blur} data-testid="pattern-match-pattern-section">
     <FormElement
       id="pattern_match_pattern"
       label="Expected Pattern (Regex)"

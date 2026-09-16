@@ -11,6 +11,7 @@
 <div class="flex flex-col items-center justify-center min-h-[60vh]">
   <Intro
     {title}
+    align_title_left={true}
     description_paragraphs={[subtitle]}
     action_buttons={[
       {

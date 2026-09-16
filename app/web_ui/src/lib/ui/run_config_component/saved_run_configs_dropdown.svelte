@@ -153,12 +153,7 @@
   let saved_configs_info_description =
     "Select a saved run configuration which includes model, prompt, tools and properties. Alternatively choose 'Custom' to manually configure this run."
 
-  // Whether the caller gave the control its own tooltip copy. Captured once at
-  // init, because the default below writes to the same prop: without the
-  // snapshot a caller's text would be overwritten as soon as the options load.
-  const caller_supplied_info_description = info_description !== ""
-
-  $: if (!caller_supplied_info_description && run_page && options.length > 0) {
+  $: if (run_page && options.length > 0) {
     info_description =
       options.length === 1
         ? cold_start_info_description
@@ -408,7 +403,7 @@
   }
 </script>
 
-<div class="flex flex-col gap-2">
+<div>
   <FormElement
     label={title}
     {description}
@@ -420,12 +415,12 @@
     {inline_action}
   />
   {#if save_config_error}
-    <div class="text-error text-sm text-right">
+    <div class="text-error text-sm text-right mt-2">
       {save_config_error.getMessage() || "An unknown error occurred"}
     </div>
   {/if}
   {#if set_default_error}
-    <div class="text-error text-sm text-right">
+    <div class="text-error text-sm text-right mt-2">
       {set_default_error.getMessage() || "An unknown error occurred"}
     </div>
   {/if}
