@@ -267,6 +267,9 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 model_id="text-embedding-004",
                 n_dimensions=768,
                 max_input_tokens=2048,
+                # Google shut down the text-embedding-004 endpoint on
+                # 2026-01-14. Replaced by gemini-embedding-001.
+                deprecated=True,
             ),
         ],
     ),
@@ -447,6 +450,9 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 n_dimensions=1024,
                 max_input_tokens=512,
                 supports_custom_dimensions=False,
+                # Together removed this from serverless inference (2026-02-06);
+                # dedicated endpoints only. OpenRouter still serves it.
+                deprecated=True,
             ),
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.openrouter,
@@ -476,6 +482,9 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 n_dimensions=768,
                 max_input_tokens=512,
                 supports_custom_dimensions=False,
+                # Together removed this from serverless inference (2026-02);
+                # dedicated endpoints only. Fireworks/OpenRouter still serve it.
+                deprecated=True,
             ),
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.openrouter,
@@ -603,6 +612,9 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 n_dimensions=768,
                 max_input_tokens=32_768,
                 supports_custom_dimensions=False,
+                # Together removed this from serverless inference (2026-02-06).
+                # No other provider serves it, so the model is fully dead.
+                deprecated=True,
             ),
         ],
     ),
@@ -618,6 +630,9 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 n_dimensions=768,
                 max_input_tokens=8192,
                 supports_custom_dimensions=False,
+                # Together removed this from serverless inference (2026-02-25).
+                # No other provider serves it, so the model is fully dead.
+                deprecated=True,
             ),
         ],
     ),
@@ -634,6 +649,10 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 n_dimensions=1024,
                 max_input_tokens=512,
                 supports_custom_dimensions=False,
+                # Together dropped serverless for this model (2026-09-14);
+                # dedicated endpoints only. The non-instruct multilingual-e5-large
+                # on OpenRouter is the closest live replacement.
+                deprecated=True,
             ),
         ],
     ),

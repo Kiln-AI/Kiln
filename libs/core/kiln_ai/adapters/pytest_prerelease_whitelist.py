@@ -37,7 +37,7 @@ PRERELEASE_EMBEDDING_MODELS: list[tuple[str, str]] = [
     ("openai_text_embedding_3_large", ModelProviderName.openai.value),
     ("gemini_embedding_001", ModelProviderName.gemini_api.value),
     ("nomic_text_embedding_v1_5", ModelProviderName.fireworks_ai.value),
-    ("multilingual_e5_large_instruct", ModelProviderName.together_ai.value),
+    ("multilingual_e5_large", ModelProviderName.openrouter.value),
     ("qwen_3_embedding_8b", ModelProviderName.siliconflow_cn.value),
 ]
 

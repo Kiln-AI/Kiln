@@ -36,6 +36,10 @@ def get_all_embedding_models_and_providers() -> List[tuple[str, str]]:
         (model.name, provider.name)
         for model in built_in_embedding_models
         for provider in model.providers
+        # Skip deprecated provider entries (e.g. Together dropped serverless
+        # embeddings) — they're surfaced-but-flagged in the product and would
+        # always fail a live call.
+        if not provider.deprecated
     ]
 
 
@@ -239,6 +243,37 @@ class TestGenerateEmbedding:
         embedding = await embedding.generate_embeddings(["Hello, world!"])
         assert len(embedding.embeddings) == 1
         assert len(embedding.embeddings[0].vector) == dimensions_target
+
+
+def test_deprecated_providers_not_suggested():
+    """Deprecated providers should not be suggested for chunk embedding"""
+    for model in built_in_embedding_models:
+        for provider in model.providers:
+            if provider.deprecated:
+                assert not provider.suggested_for_chunk_embedding, (
+                    f"{model.name} / {provider.name} ({provider.model_id}) is deprecated "
+                    "but suggested_for_chunk_embedding=True"
+                )
+
+
+def test_every_model_has_a_live_provider():
+    """Every built-in embedding model should be usable on at least one provider"""
+    dead_models = {
+        model.name
+        for model in built_in_embedding_models
+        if all(provider.deprecated for provider in model.providers)
+    }
+    assert dead_models == {
+        # Together was the only host for these, and dropped serverless embeddings.
+        EmbeddingModelName.m2_bert_retrieval_32k,
+        EmbeddingModelName.gte_modernbert_base,
+        EmbeddingModelName.multilingual_e5_large_instruct,
+        # Google shut down the text-embedding-004 endpoint.
+        EmbeddingModelName.gemini_text_embedding_004,
+    }, (
+        "Models with no live provider changed. Remove the model (and its enum "
+        "entry) or update this list."
+    )
 
 
 def test_transform_slug_for_litellm():
