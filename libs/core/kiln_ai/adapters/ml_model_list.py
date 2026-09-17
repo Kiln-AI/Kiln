@@ -8588,7 +8588,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="z-ai/glm-5.3-flash",
-                structured_output_mode=StructuredOutputMode.json_instructions,
+                structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=False,
                 supports_doc_extraction=True,
                 supports_vision=True,
