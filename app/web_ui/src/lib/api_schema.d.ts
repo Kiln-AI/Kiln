@@ -2750,6 +2750,148 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/synthetic_worlds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Synthetic Worlds */
+        get: operations["list_synthetic_worlds_api_projects__project_id__synthetic_worlds_get"];
+        put?: never;
+        /** Create Synthetic World */
+        post: operations["create_synthetic_world_api_projects__project_id__synthetic_worlds_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/synthetic_worlds/{world_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Synthetic World */
+        get: operations["get_synthetic_world_api_projects__project_id__synthetic_worlds__world_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Synthetic World */
+        delete: operations["delete_synthetic_world_api_projects__project_id__synthetic_worlds__world_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Synthetic World */
+        patch: operations["update_synthetic_world_api_projects__project_id__synthetic_worlds__world_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/synthetic_worlds/{world_id}/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Validate Synthetic World Bindings */
+        get: operations["validate_synthetic_world_api_projects__project_id__synthetic_worlds__world_id__validate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/synthetic_worlds/{world_id}/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Synthetic Tools */
+        get: operations["list_synthetic_tools_api_projects__project_id__synthetic_worlds__world_id__tools_get"];
+        put?: never;
+        /** Create Synthetic Tool */
+        post: operations["create_synthetic_tool_api_projects__project_id__synthetic_worlds__world_id__tools_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/synthetic_worlds/{world_id}/tools/{tool_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Synthetic Tool */
+        delete: operations["delete_synthetic_tool_api_projects__project_id__synthetic_worlds__world_id__tools__tool_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Synthetic Tool */
+        patch: operations["update_synthetic_tool_api_projects__project_id__synthetic_worlds__world_id__tools__tool_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/synthetic_worlds/{world_id}/fixtures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Local Fixtures */
+        get: operations["list_local_fixtures_api_projects__project_id__synthetic_worlds__world_id__fixtures_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/synthetic_worlds/{world_id}/fixtures/{fixture_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Local Fixture */
+        post: operations["create_local_fixture_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__post"];
+        /** Delete Local Fixture */
+        delete: operations["delete_local_fixture_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/synthetic_worlds/{world_id}/fixtures/{fixture_id}/data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Local Fixture Data File */
+        post: operations["upload_local_fixture_data_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__data_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/skills": {
         parameters: {
             query?: never;
@@ -4375,6 +4517,15 @@ export interface components {
              * File
              * Format: binary
              * @description The file of input examples to parse and validate.
+             */
+            file: string;
+        };
+        /** Body_upload_local_fixture_data_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__data_post */
+        Body_upload_local_fixture_data_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__data_post: {
+            /**
+             * File
+             * Format: binary
+             * @description The data file to add.
              */
             file: string;
         };
@@ -6537,6 +6688,11 @@ export interface components {
              * @description The id of the dataset item this run was generated for. Interpreted within the store named by source_type — ids are only unique within a store.
              */
             source_id: string;
+            /**
+             * Variant
+             * @description Distinguishes generations of the same item under the same run config that are not interchangeable, e.g. different synthetic fixtures. None (the common case) and the empty string mean the same thing: no variant.
+             */
+            variant?: string | null;
         };
         /**
          * EvalOutputScore
@@ -6936,6 +7092,8 @@ export interface components {
              * @description The original task input text.
              */
             task_input?: string | null;
+            /** @description Identity and clock of the synthetic world instance the trace ran against, when it ran against one. No filesystem paths: this model travels in API request bodies. Code-eval scorers receive the full record separately. */
+            synthetic_instance?: components["schemas"]["SyntheticInstanceInfo"] | null;
         };
         /**
          * EvalTemplateId
@@ -8663,6 +8821,27 @@ export interface components {
             g_eval: boolean;
             /** Judge Instructions */
             judge_instructions?: string[] | null;
+        };
+        /** LocalFixtureCreateRequest */
+        LocalFixtureCreateRequest: {
+            /**
+             * Manifest
+             * @description Facts the launcher reports on instances of this fixture, e.g. {'frozen_time': '2026-07-14T00:00:00+00:00'}. Written to fixture.yaml.
+             */
+            manifest?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
+        /** LocalFixtureResponse */
+        LocalFixtureResponse: {
+            /** Fixture Id */
+            fixture_id: string;
+            /** Manifest */
+            manifest?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Data Files */
+            data_files?: string[];
         };
         /** LocalServerProperties */
         LocalServerProperties: {
@@ -11021,6 +11200,442 @@ export interface components {
             /** Prompt */
             prompt: string;
         };
+        /**
+         * SyntheticInstance
+         * @description One launched instance, recorded on the trace it was generated for.
+         *
+         *     Persisted on `TaskRun.synthetic_instance` so graders (including judges added
+         *     later, which reuse the same trace) can find the state the run left behind.
+         *     Exactly what a launcher returns; `path` is local to the machine that ran the eval,
+         *     `connection` is how to reach a hosted instance while it is alive, and `changes` is
+         *     what a launcher records at finalize for graders that outlive the instance.
+         */
+        "SyntheticInstance-Input": {
+            /** Instance Id */
+            instance_id: string;
+            /** World Id */
+            world_id: string;
+            /**
+             * Config
+             * @description The launch config this instance was created from.
+             */
+            config?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Path
+             * @description Local directory holding this instance's state, for file-backed launchers.
+             */
+            path?: string | null;
+            /** @description How to reach a hosted instance, for launchers that serve it over the network or as a subprocess. */
+            connection?: components["schemas"]["SyntheticInstanceConnection-Input"] | null;
+            /**
+             * Source Path
+             * @description For file-backed launchers: the read-only original the instance was copied from; what readers use once `unchanged` is set.
+             */
+            source_path?: string | null;
+            /**
+             * World Lib Path
+             * @description The world's shared lib/ directory, put on the sandbox import path.
+             */
+            world_lib_path?: string | null;
+            /**
+             * Metadata
+             * @description Facts the launcher reports about the instance, e.g. frozen_time or fixture_id. Scalar entries are exported to tools as KILN_SYNTHETIC_<KEY>.
+             */
+            metadata?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Content Version
+             * @description The launcher's identity for the content this instance started from (world code plus fixture bytes, or a framework's world and fixture versions). Part of the trace fingerprint.
+             */
+            content_version?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Unchanged
+             * @description True once the run was found to have left the instance identical to its source; the copy is released and readers use source_path.
+             * @default false
+             */
+            unchanged: boolean;
+            /**
+             * Changes
+             * @description What the run changed, as recorded by the launcher at finalize (a changeset, a diff, a summary). Handed to code scorers; the durable record for launchers whose instances are short-lived.
+             */
+            changes?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
+             * Valid
+             * @description False when the launcher judged the run not transferable: the instance served an unfaithful tool surface, or the run hit gaps in the world. Strict worlds skip grading such runs.
+             * @default true
+             */
+            valid: boolean;
+            /** Invalid Reason */
+            invalid_reason?: string | null;
+        };
+        /**
+         * SyntheticInstance
+         * @description One launched instance, recorded on the trace it was generated for.
+         *
+         *     Persisted on `TaskRun.synthetic_instance` so graders (including judges added
+         *     later, which reuse the same trace) can find the state the run left behind.
+         *     Exactly what a launcher returns; `path` is local to the machine that ran the eval,
+         *     `connection` is how to reach a hosted instance while it is alive, and `changes` is
+         *     what a launcher records at finalize for graders that outlive the instance.
+         */
+        "SyntheticInstance-Output": {
+            /** Instance Id */
+            instance_id: string;
+            /** World Id */
+            world_id: string;
+            /**
+             * Config
+             * @description The launch config this instance was created from.
+             */
+            config?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Path
+             * @description Local directory holding this instance's state, for file-backed launchers.
+             */
+            path?: string | null;
+            /** @description How to reach a hosted instance, for launchers that serve it over the network or as a subprocess. */
+            connection?: components["schemas"]["SyntheticInstanceConnection-Output"] | null;
+            /**
+             * Source Path
+             * @description For file-backed launchers: the read-only original the instance was copied from; what readers use once `unchanged` is set.
+             */
+            source_path?: string | null;
+            /**
+             * World Lib Path
+             * @description The world's shared lib/ directory, put on the sandbox import path.
+             */
+            world_lib_path?: string | null;
+            /**
+             * Metadata
+             * @description Facts the launcher reports about the instance, e.g. frozen_time or fixture_id. Scalar entries are exported to tools as KILN_SYNTHETIC_<KEY>.
+             */
+            metadata?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Content Version
+             * @description The launcher's identity for the content this instance started from (world code plus fixture bytes, or a framework's world and fixture versions). Part of the trace fingerprint.
+             */
+            content_version?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Unchanged
+             * @description True once the run was found to have left the instance identical to its source; the copy is released and readers use source_path.
+             * @default false
+             */
+            unchanged: boolean;
+            /**
+             * Changes
+             * @description What the run changed, as recorded by the launcher at finalize (a changeset, a diff, a summary). Handed to code scorers; the durable record for launchers whose instances are short-lived.
+             */
+            changes?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
+             * Valid
+             * @description False when the launcher judged the run not transferable: the instance served an unfaithful tool surface, or the run hit gaps in the world. Strict worlds skip grading such runs.
+             * @default true
+             */
+            valid: boolean;
+            /** Invalid Reason */
+            invalid_reason?: string | null;
+        };
+        /**
+         * SyntheticInstanceConnection
+         * @description How to reach a hosted instance: an HTTP endpoint or a stdio command.
+         *
+         *     `headers` and `env` hold per-instance credentials. They are excluded from
+         *     serialization, so they never land on the trace, in an API response, or in a judge
+         *     prompt; only the in-memory record handed to tools during the run carries them.
+         */
+        "SyntheticInstanceConnection-Input": {
+            /**
+             * Transport
+             * @description 'http' for a URL the instance serves (MCP or REST), 'stdio' for a command to spawn, or a launcher-defined name.
+             * @default http
+             */
+            transport: string;
+            /**
+             * Url
+             * @description Address of an HTTP instance.
+             */
+            url?: string | null;
+            /**
+             * Headers
+             * @description Request headers for an HTTP instance, typically a per-instance bearer token. Never persisted.
+             */
+            headers?: {
+                [key: string]: string;
+            };
+            /**
+             * Command
+             * @description Executable of a stdio instance.
+             */
+            command?: string | null;
+            /** Args */
+            args?: string[];
+            /**
+             * Env
+             * @description Environment for a stdio instance. Never persisted.
+             */
+            env?: {
+                [key: string]: string;
+            };
+        };
+        /**
+         * SyntheticInstanceConnection
+         * @description How to reach a hosted instance: an HTTP endpoint or a stdio command.
+         *
+         *     `headers` and `env` hold per-instance credentials. They are excluded from
+         *     serialization, so they never land on the trace, in an API response, or in a judge
+         *     prompt; only the in-memory record handed to tools during the run carries them.
+         */
+        "SyntheticInstanceConnection-Output": {
+            /**
+             * Transport
+             * @description 'http' for a URL the instance serves (MCP or REST), 'stdio' for a command to spawn, or a launcher-defined name.
+             * @default http
+             */
+            transport: string;
+            /**
+             * Url
+             * @description Address of an HTTP instance.
+             */
+            url?: string | null;
+            /**
+             * Command
+             * @description Executable of a stdio instance.
+             */
+            command?: string | null;
+            /** Args */
+            args?: string[];
+        };
+        /**
+         * SyntheticInstanceInfo
+         * @description The grader-facing view of an instance: identity and reported facts, no locations
+         *     or credentials, and no changeset (it can be large; code scorers get it through the
+         *     sandbox inputs instead).
+         *
+         *     `EvalTaskInput` is a FastAPI request body, so paths and connections must not travel
+         *     on it.
+         */
+        SyntheticInstanceInfo: {
+            /** Instance Id */
+            instance_id: string;
+            /** World Id */
+            world_id: string;
+            /** Config */
+            config?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Metadata */
+            metadata?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Content Version */
+            content_version?: string | null;
+            /**
+             * Valid
+             * @default true
+             */
+            valid: boolean;
+            /** Invalid Reason */
+            invalid_reason?: string | null;
+        };
+        /** SyntheticToolCreateRequest */
+        SyntheticToolCreateRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Replaces Tool Id */
+            replaces_tool_id: string;
+            /** Tool Function Name */
+            tool_function_name: string;
+            /** Tool Description */
+            tool_description: string;
+            /** Parameters Schema */
+            parameters_schema: {
+                [key: string]: unknown;
+            };
+            /** Code */
+            code: string;
+            /**
+             * Timeout Seconds
+             * @default 60
+             */
+            timeout_seconds: number;
+            /** Tool Allowlist */
+            tool_allowlist?: string[];
+        };
+        /** SyntheticToolCreateResponse */
+        SyntheticToolCreateResponse: {
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Replaces Tool Id */
+            replaces_tool_id: string;
+            /** Tool Function Name */
+            tool_function_name: string;
+            /** Tool Description */
+            tool_description: string;
+            /** Parameters Schema */
+            parameters_schema: {
+                [key: string]: unknown;
+            };
+            /** Code */
+            code: string;
+            /** Timeout Seconds */
+            timeout_seconds: number;
+            /** Tool Allowlist */
+            tool_allowlist?: string[];
+            /** Created At */
+            created_at?: string | null;
+            /** Created By */
+            created_by?: string | null;
+            /**
+             * Not Trusted
+             * @default false
+             */
+            not_trusted: boolean;
+        };
+        /** SyntheticToolResponse */
+        SyntheticToolResponse: {
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Replaces Tool Id */
+            replaces_tool_id: string;
+            /** Tool Function Name */
+            tool_function_name: string;
+            /** Tool Description */
+            tool_description: string;
+            /** Parameters Schema */
+            parameters_schema: {
+                [key: string]: unknown;
+            };
+            /** Code */
+            code: string;
+            /** Timeout Seconds */
+            timeout_seconds: number;
+            /** Tool Allowlist */
+            tool_allowlist?: string[];
+            /** Created At */
+            created_at?: string | null;
+            /** Created By */
+            created_by?: string | null;
+        };
+        /** SyntheticToolUpdateRequest */
+        SyntheticToolUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+        };
+        /** SyntheticWorldCreateRequest */
+        SyntheticWorldCreateRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Launcher
+             * @default local_files
+             */
+            launcher: string;
+            /** Launcher Config */
+            launcher_config?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Strict
+             * @default false
+             */
+            strict: boolean;
+            /** Content Version */
+            content_version?: string | null;
+            /** Replaces Tool Server Id */
+            replaces_tool_server_id?: string | null;
+        };
+        /** SyntheticWorldResponse */
+        SyntheticWorldResponse: {
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Launcher */
+            launcher: string;
+            /** Launcher Config */
+            launcher_config?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Strict
+             * @default false
+             */
+            strict: boolean;
+            /** Content Version */
+            content_version?: string | null;
+            /** Replaces Tool Server Id */
+            replaces_tool_server_id?: string | null;
+            /**
+             * Tool Count
+             * @default 0
+             */
+            tool_count: number;
+            /** Created At */
+            created_at?: string | null;
+            /** Created By */
+            created_by?: string | null;
+        };
+        /** SyntheticWorldUpdateRequest */
+        SyntheticWorldUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Launcher */
+            launcher?: string | null;
+            /** Launcher Config */
+            launcher_config?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Strict */
+            strict?: boolean | null;
+            /** Content Version */
+            content_version?: string | null;
+            /** Replaces Tool Server Id */
+            replaces_tool_server_id?: string | null;
+        };
+        /** SyntheticWorldValidationResponse */
+        SyntheticWorldValidationResponse: {
+            /** Warnings */
+            warnings?: string[];
+        };
         /** TabooProperties */
         TabooProperties: {
             /**
@@ -11484,6 +12099,8 @@ export interface components {
             parent_task_run_id?: string | null;
             /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
             eval_source?: components["schemas"]["EvalItemSource"] | null;
+            /** @description Set when this run was generated against a synthetic world instance. Records where the instance's state lives so graders can inspect it. */
+            synthetic_instance?: components["schemas"]["SyntheticInstance-Input"] | null;
         };
         /**
          * TaskRun
@@ -11565,6 +12182,8 @@ export interface components {
             parent_task_run_id?: string | null;
             /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
             eval_source?: components["schemas"]["EvalItemSource"] | null;
+            /** @description Set when this run was generated against a synthetic world instance. Records where the instance's state lives so graders can inspect it. */
+            synthetic_instance?: components["schemas"]["SyntheticInstance-Output"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -18933,6 +19552,512 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CodeToolResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_synthetic_worlds_api_projects__project_id__synthetic_worlds_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project id. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyntheticWorldResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_synthetic_world_api_projects__project_id__synthetic_worlds_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project id. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyntheticWorldCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyntheticWorldResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_synthetic_world_api_projects__project_id__synthetic_worlds__world_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project id. */
+                project_id: string;
+                /** @description The synthetic world id. */
+                world_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyntheticWorldResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_synthetic_world_api_projects__project_id__synthetic_worlds__world_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project id. */
+                project_id: string;
+                /** @description The synthetic world id. */
+                world_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_synthetic_world_api_projects__project_id__synthetic_worlds__world_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project id. */
+                project_id: string;
+                /** @description The synthetic world id. */
+                world_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyntheticWorldUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyntheticWorldResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_synthetic_world_api_projects__project_id__synthetic_worlds__world_id__validate_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project id. */
+                project_id: string;
+                /** @description The synthetic world id. */
+                world_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyntheticWorldValidationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_synthetic_tools_api_projects__project_id__synthetic_worlds__world_id__tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project id. */
+                project_id: string;
+                /** @description The synthetic world id. */
+                world_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyntheticToolResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_synthetic_tool_api_projects__project_id__synthetic_worlds__world_id__tools_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project id. */
+                project_id: string;
+                /** @description The synthetic world id. */
+                world_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyntheticToolCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyntheticToolCreateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_synthetic_tool_api_projects__project_id__synthetic_worlds__world_id__tools__tool_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project id. */
+                project_id: string;
+                /** @description The synthetic world id. */
+                world_id: string;
+                /** @description The synthetic tool id. */
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_synthetic_tool_api_projects__project_id__synthetic_worlds__world_id__tools__tool_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project id. */
+                project_id: string;
+                /** @description The synthetic world id. */
+                world_id: string;
+                /** @description The synthetic tool id. */
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyntheticToolUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyntheticToolResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_local_fixtures_api_projects__project_id__synthetic_worlds__world_id__fixtures_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project id. */
+                project_id: string;
+                /** @description The synthetic world id. */
+                world_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalFixtureResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_local_fixture_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project id. */
+                project_id: string;
+                /** @description The synthetic world id. */
+                world_id: string;
+                /** @description Directory name of the fixture. */
+                fixture_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalFixtureCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalFixtureResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_local_fixture_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project id. */
+                project_id: string;
+                /** @description The synthetic world id. */
+                world_id: string;
+                /** @description Directory name of the fixture. */
+                fixture_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_local_fixture_data_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__data_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project id. */
+                project_id: string;
+                /** @description The synthetic world id. */
+                world_id: string;
+                /** @description Directory name of the fixture. */
+                fixture_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_local_fixture_data_api_projects__project_id__synthetic_worlds__world_id__fixtures__fixture_id__data_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalFixtureResponse"];
                 };
             };
             /** @description Validation Error */

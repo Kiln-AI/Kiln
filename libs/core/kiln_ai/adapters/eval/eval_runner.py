@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import AsyncGenerator, Dict, List, Literal, Set
 
 import litellm
@@ -34,8 +35,24 @@ from kiln_ai.datamodel.eval_splits import (
     eval_run_item_key,
     item_key,
 )
+from kiln_ai.datamodel.synthetic_world import (
+    SyntheticEnvironment,
+    SyntheticInstance,
+    SyntheticWorld,
+    synthetic_fingerprint,
+)
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import EvalItemSource, TaskRun, Usage
+from kiln_ai.run_context import (
+    SyntheticInstanceContext,
+    get_synthetic_instance,
+    reset_synthetic_instance,
+    set_synthetic_instance,
+)
+from kiln_ai.synthetic_worlds.launcher import (
+    SyntheticWorldLauncher,
+    launcher_for_world,
+)
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.open_ai_types import serialize_trace
@@ -77,6 +94,14 @@ def _is_multi_turn(item: TaskRun | EvalInput) -> bool:
     return isinstance(item.data, MultiTurnSyntheticEvalInputData)
 
 
+def _synthetic_environment_of(job: EvalJob) -> SyntheticEnvironment | None:
+    """The synthetic environment a job's item declares, if it is an EvalInput with one."""
+    item = getattr(job, "item", None)
+    if isinstance(item, EvalInput):
+        return item.synthetic_environment
+    return None
+
+
 def no_golden_set_message(eval: Eval) -> str:
     """Why judge comparison can't run without a golden set. One wording, two raisers.
 
@@ -109,6 +134,7 @@ class EvalRunner:
         eval_run_type: Literal["eval_config_eval", "task_run_eval"],
         split: ResolvedSplit | None = None,
         save_context: SaveContext | None = None,
+        synthetic_launcher: SyntheticWorldLauncher | None = None,
     ):
         if len(eval_configs) == 0:
             raise ValueError("Eval runner requires at least one eval config")
@@ -175,6 +201,15 @@ class EvalRunner:
         # visible to the next, whether that next job is running concurrently under a
         # different eval config or is this job's own retry (functional spec 4.2, 4.3).
         self._trace_index = TraceIndex(self.task)
+        # A launcher passed in overrides the world's own (tests point the cache at
+        # tmp_path); otherwise each world's `launcher` name selects one.
+        self._synthetic_launcher_override = synthetic_launcher
+        # Instances found unchanged during this run. Released only after every job has
+        # finished: a concurrent judge of the same trace may still be reading one, and
+        # its record predates the `unchanged` re-save.
+        self._unchanged_instances: List[
+            tuple[SyntheticWorldLauncher, SyntheticInstance]
+        ] = []
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":
@@ -279,14 +314,20 @@ class EvalRunner:
         """
         jobs = self.collect_tasks()
 
+        if any(_synthetic_environment_of(job) is not None for job in jobs):
+            await self._prune_synthetic_instances()
+
         runner = AsyncJobRunner(
             concurrency=concurrency,
             jobs=jobs,
             run_job_fn=self.run_job,
             max_retries=2,
         )
-        async for progress in runner.run():
-            yield progress
+        try:
+            async for progress in runner.run():
+                yield progress
+        finally:
+            await self._drop_unchanged_instances()
 
     async def run_job(self, job: EvalJob) -> bool:
         try:
@@ -402,10 +443,165 @@ class EvalRunner:
                 "V2 evals do not yet support multi-turn inputs",
             )
 
+        # After the skips (a skipped item must never create an instance) and before any
+        # dispatch, so a future multi-turn lane is enclosed by the same lifecycle.
+        environment = _synthetic_environment_of(job)
+        if environment is not None:
+            return await self._run_v2_job_in_synthetic_world(
+                job, evaluator, environment
+            )
+
         trace = await self._resolve_trace(job, evaluator)
         eval_task_input = EvalTaskInput.from_trace(trace, job.item)
         result = await evaluator.evaluate(eval_task_input)
         return await self._persist_judgment(job, trace, result)
+
+    async def _run_v2_job_in_synthetic_world(
+        self,
+        job: EvalJob,
+        evaluator: BaseV2EvalBridge,
+        environment: SyntheticEnvironment,
+    ) -> bool:
+        """One job against a synthetic world instance.
+
+        Generation runs under the trace index's per-key lock with a freshly launched
+        instance in context, so racing judges of one item share a single generation and
+        a single instance; the launcher finalizes the instance before the lock is
+        released. Grading then runs with the context rebuilt from whatever the trace
+        recorded — the same record for a reused trace — so scorers read the state the
+        generation actually left. The context is reset in `finally` both times: worker
+        tasks are reused across jobs.
+        """
+        if job.task_run_config is None:
+            raise ValueError("A task_run_eval job requires a run config")
+        world = self._resolve_synthetic_world(environment)
+        launcher = self._synthetic_launcher_override or launcher_for_world(world)
+        bindings = world.bindings()
+        variant = synthetic_fingerprint(
+            world.id or "",
+            environment.config,
+            await launcher.content_version(world, environment.config),
+        )
+        key = trace_key(item_key(job.item), job.task_run_config.id, variant)
+
+        async def generate() -> TaskRun:
+            instance = await launcher.launch(world, environment.config)
+            token = set_synthetic_instance(
+                SyntheticInstanceContext(
+                    instance=instance, world=world, bindings=bindings
+                )
+            )
+            try:
+                run = await self._generate_and_persist(job, evaluator, key)
+            finally:
+                reset_synthetic_instance(token)
+            # Finalize before anyone grades: the launcher records what graders will
+            # need (unchanged, changes, validity) and the trace persists it, so a
+            # concurrent judge reusing this generation sees the settled record.
+            finalized = await launcher.finalize(instance)
+            if finalized != instance:
+                run.synthetic_instance = finalized
+                async with self._save_context():
+                    run.save_to_file()
+            if finalized.unchanged:
+                self._unchanged_instances.append((launcher, finalized))
+            return run
+
+        trace, _ = await self._trace_index.get_or_create(key, generate)
+        instance = trace.synthetic_instance
+        if instance is None:
+            raise ValueError(
+                f"Eval trace {trace.id} was generated for a synthetic environment but "
+                "records no synthetic instance"
+            )
+        if world.strict and not instance.valid:
+            return await self._persist_skip(
+                job,
+                SkippedReason.synthetic_instance_invalid,
+                f"Synthetic instance {instance.instance_id} was judged invalid by its "
+                f"launcher: {instance.invalid_reason or 'no reason given'}",
+            )
+        state_unavailable = (
+            instance.path is not None
+            and not instance.unchanged
+            and not Path(instance.path).is_dir()
+        )
+        if state_unavailable:
+            logger.warning(
+                "Synthetic instance %s for trace %s has been evicted; graders that "
+                "need its state will be skipped rather than regenerating",
+                instance.instance_id,
+                trace.id,
+            )
+        token = set_synthetic_instance(
+            SyntheticInstanceContext(
+                instance=instance,
+                world=world,
+                bindings=bindings,
+                state_unavailable=state_unavailable,
+            )
+        )
+        try:
+            eval_task_input = EvalTaskInput.from_trace(trace, job.item)
+            result = await evaluator.evaluate(eval_task_input)
+            return await self._persist_judgment(job, trace, result)
+        finally:
+            reset_synthetic_instance(token)
+
+    def _resolve_synthetic_world(
+        self, environment: SyntheticEnvironment
+    ) -> SyntheticWorld:
+        """The world an input names, or an error: never a silent fallback. The launch
+        config is the launcher's to validate, which it does at launch."""
+        project = self.task.parent_project()
+        if project is None:
+            raise ValueError(
+                "Synthetic environments require the task to belong to a project"
+            )
+        world = SyntheticWorld.from_id_and_parent_path(
+            environment.world_id, project.path
+        )
+        if world is None:
+            raise ValueError(
+                f"Synthetic world {environment.world_id} not found in project {project.id}"
+            )
+        return world
+
+    async def _drop_unchanged_instances(self) -> None:
+        pending, self._unchanged_instances = self._unchanged_instances, []
+        for launcher, instance in pending:
+            try:
+                await launcher.release(instance)
+            except Exception as e:
+                logger.warning(
+                    "Releasing unchanged synthetic instance %s failed: %s",
+                    instance.instance_id,
+                    e,
+                )
+
+    async def _prune_synthetic_instances(self) -> None:
+        live = [
+            run.synthetic_instance
+            for run in self.task.runs(readonly=True, include_eval_generated=True)
+            if run.synthetic_instance is not None
+        ]
+        project = self.task.parent_project()
+        worlds = project.synthetic_worlds(readonly=True) if project else []
+        launchers: dict[str, SyntheticWorldLauncher] = {}
+        for world in worlds:
+            try:
+                launchers[world.launcher] = self._synthetic_launcher_override or (
+                    launchers.get(world.launcher) or launcher_for_world(world)
+                )
+            except Exception as e:
+                logger.warning("No launcher for world %s: %s", world.name, e)
+        for launcher in launchers.values():
+            try:
+                await launcher.prune(live)
+            except Exception as e:
+                logger.warning(
+                    "Pruning synthetic instances failed: %s", e, exc_info=True
+                )
 
     async def _resolve_trace(
         self, job: EvalJob, evaluator: BaseV2EvalBridge
@@ -435,7 +631,7 @@ class EvalRunner:
         under exactly the key the index filed it under. A run that disagrees is never
         found again, and the eval regenerates it on every future run.
         """
-        source_type, source_id, run_config_id = key
+        source_type, source_id, run_config_id, variant = key
         trace = await evaluator.run_task(job.item, run_config_id=run_config_id)
         if trace.id is None:
             # `run_task` builds its adapter with allow_saving=False, and every adapter
@@ -448,7 +644,12 @@ class EvalRunner:
             # leave an eval trace permanently indistinguishable from a curated dataset
             # row — the contamination Task.runs()' default-exclude exists to prevent.
             trace.id = generate_model_id()
-        trace.eval_source = EvalItemSource(source_type=source_type, source_id=source_id)
+        trace.eval_source = EvalItemSource(
+            source_type=source_type, source_id=source_id, variant=variant or None
+        )
+        synthetic_ctx = get_synthetic_instance()
+        if synthetic_ctx is not None:
+            trace.synthetic_instance = synthetic_ctx.instance
         async with self._save_context():
             trace.save_to_file()
         return trace

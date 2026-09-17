@@ -6,6 +6,7 @@ from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType
 from kiln_ai.datamodel.tool_id import ToolId
+from kiln_ai.run_context import get_synthetic_instance
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
     ToolCallContext,
@@ -66,8 +67,12 @@ class KilnTaskTool(KilnToolInterface):
     ) -> KilnTaskToolResult:
         """Execute the wrapped Kiln task with the given parameters and calling context."""
         if context is None:
+            synthetic_ctx = get_synthetic_instance()
             context = ToolCallContext(
                 allow_saving=False,
+                synthetic_instance=synthetic_ctx.instance
+                if synthetic_ctx is not None
+                else None,
             )
 
         # Determine the input format

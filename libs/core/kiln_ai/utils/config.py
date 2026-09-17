@@ -47,6 +47,11 @@ class Config:
                 default=True,
                 in_memory=True,
             ),
+            "synthetic_instance_cache_max_gb": ConfigProperty(
+                float,
+                env_var="KILN_SYNTHETIC_INSTANCE_CACHE_MAX_GB",
+                default=5.0,
+            ),
             "open_ai_api_key": ConfigProperty(
                 str,
                 env_var="OPENAI_API_KEY",

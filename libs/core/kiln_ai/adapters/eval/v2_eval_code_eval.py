@@ -1,5 +1,6 @@
 """V2 adapter for code_eval: runs user-authored Python scorer in a sandboxed subprocess."""
 
+import ast
 from threading import Lock
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -14,8 +15,10 @@ from kiln_ai.datamodel.eval import (
     EvalConfig,
     EvalScores,
     EvalTaskInput,
+    SkippedReason,
     V2EvalResult,
 )
+from kiln_ai.run_context import get_synthetic_instance
 from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.sandbox_bridge import (
     NestedToolServer,
@@ -71,11 +74,31 @@ class CodeEvalAdapter(BaseV2EvalBridge):
         props = self.properties
         assert isinstance(props, CodeEvalProperties)
 
+        # The full instance record (with paths) goes to the scorer through these
+        # inputs, never through EvalTaskInput, which is an API request body. A
+        # scorer that declares `synthetic_instance` cannot run once the instance's
+        # state has been evicted: it would read a path that no longer exists.
+        synthetic_ctx = get_synthetic_instance()
+        synthetic_instance: dict[str, Any] | None = None
+        if synthetic_ctx is not None:
+            if synthetic_ctx.state_unavailable and self._scorer_declares(
+                props.code, "synthetic_instance"
+            ):
+                return V2EvalResult(
+                    skipped_reason=SkippedReason.synthetic_instance_unavailable,
+                    skipped_detail=(
+                        f"Synthetic instance {synthetic_ctx.instance.instance_id} state "
+                        "is no longer available; the scorer reads synthetic_instance"
+                    ),
+                )
+            synthetic_instance = synthetic_ctx.instance.to_sandbox_dict()
+
         inputs: dict[str, Any] = {
             "output": eval_input.final_message,
             "trace": eval_input.trace,
             "reference_data": eval_input.reference_data,
             "task_input": eval_input.task_input,
+            "synthetic_instance": synthetic_instance,
         }
 
         server = NestedToolServer(
@@ -87,6 +110,9 @@ class CodeEvalAdapter(BaseV2EvalBridge):
                 eval_output_schema=BaseEval.build_score_schema(
                     self.eval, allow_float_scores=False
                 ),
+                synthetic_instance=synthetic_ctx.instance
+                if synthetic_ctx is not None
+                else None,
             ),
             recorder=self.tool_call_recorder,
         )
@@ -121,6 +147,25 @@ class CodeEvalAdapter(BaseV2EvalBridge):
 
         scores = self._validate_scores(raw_scores)
         return V2EvalResult(scores=scores)
+
+    @staticmethod
+    def _scorer_declares(code: str, param: str) -> bool:
+        """Whether the scorer's `score()` declares *param*, from its source.
+
+        Mirrors the sandbox's signature-based dispatch without executing anything.
+        """
+        try:
+            tree = ast.parse(code)
+        except SyntaxError:
+            return False
+        for node in ast.iter_child_nodes(tree):
+            if (
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == "score"
+            ):
+                names = [a.arg for a in node.args.args + node.args.kwonlyargs]
+                return param in names
+        return False
 
     def _validate_scores(self, raw: dict[str, Any]) -> EvalScores:
         expected_keys = {score.json_key() for score in self._output_scores}
