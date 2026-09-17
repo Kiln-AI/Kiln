@@ -1448,6 +1448,20 @@ class TestMultiTurnPipeline:
             assert e["error_type"] == "BadRequestError"
         assert events[-1] == "complete"
 
+    def test_replace_batch_tags_has_no_upper_bound(
+        self, client, pipeline_request, pipeline_seams
+    ):
+        # Every failed or aborted drive strands one more batch, and the next
+        # drive is asked to clean all of them up. A user who retried many
+        # times must still be able to drive.
+        stranded = [f"stale{i}" for i in range(25)]
+        pipeline_request["replace_batch_tags"] = stranded
+        resp = client.post(PIPELINE_URL, json=pipeline_request)
+
+        assert resp.status_code == 200
+        delete_mock = pipeline_seams["delete"]
+        assert [c.args[1] for c in delete_mock.call_args_list] == stranded
+
     def test_replace_batch_tags_deleted_after_successful_drive(
         self, client, pipeline_request, pipeline_seams
     ):
