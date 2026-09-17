@@ -4966,14 +4966,16 @@
               <!-- Plan approval: the run starts only after the user approves
                    the plan — the shared /generate batch-plan surface. It
                    overrides the header, because what it lists is a proposed
-                   eval dataset, and keeps the surface's own regenerate label
-                   so the two flows read alike. The primary button opens
+                   eval dataset, and relabels the regenerate button, because
+                   here it refines the plan already on screen rather than
+                   starting a fresh batch plan. The primary button opens
                    Generation Settings rather than driving: that dialog is the
                    single entrance, so every run passes its lanes and its cost
                    warning. -->
               <KilnProBatchPlan
                 plan={batch_plan}
                 header_label="Eval Dataset Proposal"
+                regenerate_label="Refine Plan"
                 show_header_divider={false}
                 summary_out_of_sync={batch_plan_edited}
                 subheader="Here's a plan for your eval dataset. Refine the plan if the coverage looks off."

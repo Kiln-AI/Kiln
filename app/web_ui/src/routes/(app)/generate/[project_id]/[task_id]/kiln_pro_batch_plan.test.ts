@@ -94,18 +94,27 @@ describe("prompts table pass-throughs", () => {
 })
 
 describe("shared defaults", () => {
-  // Both surfaces render these: /generate passes no override, and the eval
-  // builder deliberately relies on the same defaults. Changing either string
-  // changes both flows at once, so it is pinned here rather than left to a
-  // caller's assertion.
+  // The defaults are /generate's shipped strings; the end-to-end suite asserts
+  // the same wording.
   it("labels the regenerate button and the summary panel", () => {
     const { container } = setup()
     const buttons = Array.from(container.querySelectorAll("button")).map((b) =>
       b.textContent?.trim(),
     )
-    expect(buttons).toContain("Refine Plan")
+    expect(buttons).toContain("New Batch Plan")
     expect(container.textContent).toContain("Overview")
     expect(container.textContent).not.toContain("Batch Overview")
+  })
+
+  it("renames the regenerate button when a caller overrides it", () => {
+    // The eval builder's dialog refines the plan on screen instead of
+    // starting a fresh one, so it passes its own wording.
+    const { container } = setup({ regenerate_label: "Refine Plan" })
+    const buttons = Array.from(container.querySelectorAll("button")).map((b) =>
+      b.textContent?.trim(),
+    )
+    expect(buttons).toContain("Refine Plan")
+    expect(buttons).not.toContain("New Batch Plan")
   })
 })
 
@@ -125,7 +134,7 @@ describe("the plan header", () => {
     const labels = Array.from(rule.querySelectorAll("button")).map((b) =>
       b.textContent?.trim(),
     )
-    expect(labels).toEqual(["Refine Plan", "Generate Batch (2)"])
+    expect(labels).toEqual(["New Batch Plan", "Generate Batch (2)"])
   })
 
   it("puts a consumer's clause on the sub-line, beside the sub-line's text", () => {

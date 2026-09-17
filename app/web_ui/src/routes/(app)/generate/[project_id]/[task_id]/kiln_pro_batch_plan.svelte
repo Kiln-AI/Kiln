@@ -8,6 +8,10 @@
   export let on_regenerate: () => void
   export let on_delete_prompt: (index: number) => void
   export let summary_out_of_sync = false
+  // Label for the regenerate button. On /generate it discards the plan and
+  // starts a fresh one; the eval builder's dialog refines the plan already on
+  // screen, so that flow overrides the wording.
+  export let regenerate_label = "New Batch Plan"
   // Optional override for the generate button's label. The eval builder's
   // click starts a full conversation drive (long, paid), not quick sample
   // generation — its label must say so. Default keeps /generate unchanged.
@@ -59,7 +63,9 @@
       >{subheader}<slot name="under_subheader" /></svelte:fragment
     >
     <svelte:fragment slot="actions">
-      <button class="btn btn-md" on:click={on_regenerate}>Refine Plan</button>
+      <button class="btn btn-md" on:click={on_regenerate}
+        >{regenerate_label}</button
+      >
       {#if !hide_generate_button}
         <button
           class="btn btn-md {generate_button_outline
