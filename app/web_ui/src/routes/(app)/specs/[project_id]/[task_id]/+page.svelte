@@ -3,7 +3,6 @@
   import { page } from "$app/stores"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { client } from "$lib/api_client"
-  import { onMount } from "svelte"
   import { get } from "svelte/store"
   import { indexedDBStore } from "$lib/stores/index_db_store"
   import {
@@ -36,7 +35,7 @@
     type SortableColumn,
     type TableRow,
   } from "./spec_table"
-  import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
+  import { kilnCopilotConnected } from "$lib/stores/copilot_connection_store"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Banner from "$lib/ui/banner.svelte"
@@ -60,10 +59,6 @@
   let evals_loading = true
   let eval_load_error_count = 0
 
-  let settings_loading = true
-  let settings_error: KilnError | null = null
-  let has_kiln_copilot = false
-
   // The draft peek is in the page's loading gate, not outside it: its answer
   // is what the create button is LABELLED, so a button rendered before it
   // lands says "Create Eval" and then rewrites itself a few ms later. Held
@@ -71,9 +66,8 @@
   // right the first time it is painted.
   let draft_loading = true
 
-  $: loading =
-    specs_loading || evals_loading || settings_loading || draft_loading
-  $: error = specs_error || evals_error || settings_error
+  $: loading = specs_loading || evals_loading || draft_loading
+  $: error = specs_error || evals_error
 
   // Eval lookup for spec rows; priority/status resolution lives in spec_table.ts.
   $: evals_by_id = new Map((evals || []).map((e) => [e.id ?? "", e]))
@@ -255,27 +249,7 @@
       }
     }
   }
-  $: create_eval_label = create_eval_button_label(
-    has_kiln_copilot,
-    has_eval_draft,
-  )
-
-  // Not per-task, so it stays a once-only load.
-  onMount(async () => {
-    await load_has_kiln_copilot()
-  })
-
-  async function load_has_kiln_copilot() {
-    try {
-      settings_loading = true
-      settings_error = null
-      has_kiln_copilot = await checkKilnCopilotAvailable()
-    } catch (e) {
-      settings_error = createKilnError(e)
-    } finally {
-      settings_loading = false
-    }
-  }
+  $: create_eval_label = create_eval_button_label(has_eval_draft)
 
   async function load_specs(req_project_id: string, req_task_id: string) {
     try {
@@ -749,21 +723,12 @@
   }
 
   function create_eval() {
+    const has_kiln_copilot = get(kilnCopilotConnected) === true
     posthog.capture("eval_v2_cta_clicked", {
       branch: has_kiln_copilot ? "v2" : "v1_manual",
       has_pro: has_kiln_copilot,
     })
-    // PREVIEW (09-03): the entry restructure. Both user types start on the
-    // eval-type page now. With Copilot it leads with the free-text box and
-    // folds the templates behind it; without, the templates are the choice.
-    // One page either way, so the eval type and the description are settled
-    // together instead of across two screens. A draft in progress skips it:
-    // the builder restores the draft on entry, which is what the button
-    // promised.
-    const destination = create_eval_destination(
-      has_kiln_copilot,
-      has_eval_draft,
-    )
+    const destination = create_eval_destination(has_eval_draft)
     goto(`/specs/${project_id}/${task_id}/${destination}`)
   }
 </script>

@@ -11,9 +11,11 @@ const {
   mockPage,
   mockClientGET,
   setEvalsResponse,
-  holdCopilotCheck,
+  failCopilotVerify,
   holdDraftCheck,
   isDraftHeld,
+  setDraftResumable,
+  isDraftResumable,
 } = vi.hoisted(() => {
   type PageValue = {
     params: Record<string, string>
@@ -46,11 +48,11 @@ const {
     evals_response = v ?? default_evals_response
   }
 
-  // Keeps the copilot check pending, so the page sits with one loader
-  // outstanding and every other one settled.
-  let copilot_held = false
-  const holdCopilotCheck = (held: boolean) => {
-    copilot_held = held
+  // Makes the studio server's copilot check reject, the way an unreachable
+  // local server does — nothing on the page should notice.
+  let copilot_verify_fails = false
+  const failCopilotVerify = (fails: boolean) => {
+    copilot_verify_fails = fails
   }
 
   const mockClientGET = vi.fn().mockImplementation((path: string) => {
@@ -60,10 +62,8 @@ const {
     if (path.endsWith("/specs")) {
       return Promise.resolve({ data: [], error: null })
     }
-    if (path.includes("verify_kiln_copilot_api_key")) {
-      return copilot_held
-        ? new Promise(() => {})
-        : Promise.resolve({ data: { is_valid: false }, error: null })
+    if (copilot_verify_fails && path.includes("verify_kiln_copilot_api_key")) {
+      return Promise.reject(new Error("studio server unreachable"))
     }
     return Promise.resolve({ data: null, error: null })
   })
@@ -77,13 +77,23 @@ const {
   }
   const isDraftHeld = () => draft_held
 
+  // A stored draft with authoring work in it, which is what makes the create
+  // button offer to continue it rather than start a new eval.
+  let draft_resumable = false
+  const setDraftResumable = (resumable: boolean) => {
+    draft_resumable = resumable
+  }
+  const isDraftResumable = () => draft_resumable
+
   return {
     mockPage,
     mockClientGET,
     setEvalsResponse,
-    holdCopilotCheck,
+    failCopilotVerify,
     holdDraftCheck,
     isDraftHeld,
+    setDraftResumable,
+    isDraftResumable,
   }
 })
 
@@ -94,7 +104,11 @@ vi.mock("$lib/stores/index_db_store", async () => {
   const { writable } = await import("svelte/store")
   return {
     indexedDBStore: <T>(_key: string, initial: T) => ({
-      store: writable(initial),
+      store: writable(
+        isDraftResumable()
+          ? ({ ...initial, description: "a draft in progress" } as T)
+          : initial,
+      ),
       initialized: isDraftHeld()
         ? new Promise<void>(() => {})
         : Promise.resolve(),
@@ -155,7 +169,7 @@ const DRAFT_CHECK_TIMEOUT_MS = 2000
 
 async function render_page() {
   const result = render(SpecsPage)
-  // The page has three independent loaders (specs, evals, copilot settings) and only
+  // The page has three independent loaders (specs, evals, the draft peek) and only
   // renders its body once all three settle, so flush a few macrotask turns.
   for (let i = 0; i < 5; i++) {
     await new Promise((r) => setTimeout(r, 0))
@@ -171,8 +185,8 @@ async function render_page() {
 describe("specs page — the create button waits for the body", () => {
   afterEach(() => {
     cleanup()
-    holdCopilotCheck(false)
     holdDraftCheck(false)
+    setDraftResumable(false)
     setEvalsResponse(null)
   })
 
@@ -181,10 +195,10 @@ describe("specs page — the create button waits for the body", () => {
   }
 
   it("renders no action button while any loader is still outstanding", async () => {
-    // Specs and evals land; the copilot check does not. The evals list is
-    // non-empty, so the button would render on its own were it gated only on
-    // there being something to show.
-    holdCopilotCheck(true)
+    // Specs and evals land; the draft peek does not, and its answer is what
+    // the button is called. The evals list is non-empty, so the button would
+    // render on its own were it gated only on there being something to show.
+    holdDraftCheck(true)
     const { container } = await render_page()
 
     expect(app_page(container).getAttribute("data-action-button-count")).toBe(
@@ -204,6 +218,15 @@ describe("specs page — the create button waits for the body", () => {
       "Create Eval",
     )
     expect(container.querySelector(".loading-spinner")).toBeNull()
+  })
+
+  it("offers the stored draft, knowing nothing about any connection", async () => {
+    setDraftResumable(true)
+    const { container } = await render_page()
+
+    expect(app_page(container).getAttribute("data-action-button-labels")).toBe(
+      "Continue Eval Draft",
+    )
   })
 
   // The draft peek is the one loader with no network timeout behind it, and
@@ -281,5 +304,25 @@ describe("specs page — eval load error line", () => {
     expect(container.textContent).not.toContain("failed to load")
     expect(container.textContent).not.toContain(EXPECTED_TOOLTIP)
     expect(container.querySelector(".text-error")).toBeNull()
+  })
+})
+
+// The evals do not need Copilot to load, and nothing on this page asks
+// whether it is connected: a copilot route that fails or times out must not
+// touch the list.
+describe("specs page — a failing copilot check", () => {
+  afterEach(() => {
+    cleanup()
+    failCopilotVerify(false)
+  })
+
+  it("leaves the evals list on screen", async () => {
+    failCopilotVerify(true)
+    const { container } = await render_page()
+
+    expect(container.querySelector("table")).not.toBeNull()
+    expect(container.textContent).toContain("Test Eval")
+    expect(container.querySelector(".text-error")).toBeNull()
+    expect(container.querySelector(".loading-spinner")).toBeNull()
   })
 })
