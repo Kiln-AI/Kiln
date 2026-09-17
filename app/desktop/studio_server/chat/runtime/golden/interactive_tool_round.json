@@ -1,0 +1,23 @@
+{
+  "scenario": "interactive_tool_round",
+  "bodies": [
+    {
+      "messages": [
+        {
+          "role": "user",
+          "content": "add 10 and 5"
+        }
+      ]
+    },
+    {
+      "messages": [
+        {
+          "role": "tool",
+          "tool_call_id": "tc1",
+          "content": "15"
+        }
+      ],
+      "trace_id": "tr-1"
+    }
+  ]
+}

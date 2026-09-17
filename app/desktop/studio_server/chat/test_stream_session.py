@@ -1,3 +1,10 @@
+# Round-primitive tests for chat/stream_session.py. Phase 4 deleted the
+# ChatStreamSession loop class; the interactive stream behaviors these tests
+# used to drive through session.stream() are now driven through the
+# ConversationEngine under interactive_policy() — the same round primitives,
+# the same emitted bytes (the engine's io.emit is the old loop's `yield`).
+# The disable_auto_mode / consent interceptions are covered in
+# runtime/test_engine.py; the /api/conversations surface in runtime/test_api.py.
 import json
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -9,13 +16,44 @@ from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
 
 from app.desktop.studio_server.chat import execute_tool
 from app.desktop.studio_server.chat.constants import SSE_TYPE_TOOL_CALLS_PENDING
+from app.desktop.studio_server.chat.runtime.engine import ConversationEngine, EngineIO
+from app.desktop.studio_server.chat.runtime.models import (
+    ConversationRecord,
+    interactive_policy,
+)
 from app.desktop.studio_server.chat.stream_session import (
-    ChatStreamSession,
+    _RETRY_BACKOFF_SCHEDULE,
+    MAX_CHAT_RETRIES,
     ToolCallInfo,
     _build_openai_tool_continuation,
     _format_tool_calls_pending_sse,
+    _retry_backoff_seconds,
     execute_tool_batch,
 )
+from app.desktop.studio_server.chat.test_fakes import (
+    FakeUpstreamClient,
+    FakeUpstreamResponse,
+    finish,
+    text_delta,
+    trace,
+)
+
+
+async def _run_interactive_turn(fake_client) -> list[bytes]:
+    """Drive ONE interactive turn on the engine over a fake upstream and
+    return the emitted SSE payloads — the phase-4 equivalent of consuming
+    ChatStreamSession.stream() (io.emit is the old loop's `yield`)."""
+    emitted: list[bytes] = []
+    engine = ConversationEngine("https://example.test/v1/chat", {})
+    record = ConversationRecord(kind="interactive")
+
+    async def _decide(batch):  # pragma: no cover — these turns never park
+        return {}
+
+    io = EngineIO(emit=emitted.append, await_decisions=_decide)
+    with patch.object(httpx, "AsyncClient", return_value=fake_client):
+        await engine.run(record, interactive_policy(), io, {"messages": []})
+    return emitted
 
 
 class TestExecuteTool:
@@ -33,14 +71,6 @@ class TestExecuteTool:
         data = json.loads(out)
         assert "error" in data
         assert "nonexistent_tool_xyz" in data["error"]
-
-
-def _make_session():
-    return ChatStreamSession(
-        upstream_url="https://example.test/v1/chat",
-        headers={},
-        initial_body={"messages": []},
-    )
 
 
 class _FakeResponse:
@@ -99,12 +129,8 @@ class _FakeOkStreamThenDisconnect:
 async def test_stream_remote_protocol_error_yields_generic_message():
     fake_resp = _FakeOkStreamThenDisconnect()
     fake_client = _FakeClient(fake_resp)
-    session = _make_session()
 
-    with patch.object(httpx, "AsyncClient", return_value=fake_client):
-        chunks = []
-        async for chunk in session.stream():
-            chunks.append(chunk)
+    chunks = await _run_interactive_turn(fake_client)
 
     assert len(chunks) == 1
     payload = json.loads(chunks[0].decode().removeprefix("data: ").strip())
@@ -120,12 +146,8 @@ async def test_stream_remote_protocol_error_suppressed_when_upstream_error_alrea
     upstream_error = b'data: {"type":"error","errorText":"An internal error occurred.","kiln_metadata":{}}\n\n'
     fake_resp = _FakeOkStreamThenDisconnect(prefix_chunks=[upstream_error])
     fake_client = _FakeClient(fake_resp)
-    session = _make_session()
 
-    with patch.object(httpx, "AsyncClient", return_value=fake_client):
-        chunks = []
-        async for chunk in session.stream():
-            chunks.append(chunk)
+    chunks = await _run_interactive_turn(fake_client)
 
     assert len(chunks) == 1
     raw = chunks[0].decode()
@@ -141,12 +163,7 @@ async def test_stream_error_includes_code_field():
     fake_resp = _FakeResponse(400, error_body)
     fake_client = _FakeClient(fake_resp)
 
-    session = _make_session()
-
-    with patch.object(httpx, "AsyncClient", return_value=fake_client):
-        chunks = []
-        async for chunk in session.stream():
-            chunks.append(chunk)
+    chunks = await _run_interactive_turn(fake_client)
 
     assert len(chunks) == 1
     payload = json.loads(chunks[0].decode().removeprefix("data: ").strip())
@@ -158,21 +175,81 @@ async def test_stream_error_includes_code_field():
 @pytest.mark.asyncio
 async def test_stream_error_without_code_omits_code_field():
     error_body = json.dumps({"message": "Something failed"}).encode()
-    fake_resp = _FakeResponse(500, error_body)
+    # 404 (non-retryable): surfaces immediately so this stays a pure error-shape
+    # test. Retryable statuses (5xx/429) are covered by the retry tests below.
+    fake_resp = _FakeResponse(404, error_body)
     fake_client = _FakeClient(fake_resp)
 
-    session = _make_session()
-
-    with patch.object(httpx, "AsyncClient", return_value=fake_client):
-        chunks = []
-        async for chunk in session.stream():
-            chunks.append(chunk)
+    chunks = await _run_interactive_turn(fake_client)
 
     assert len(chunks) == 1
     payload = json.loads(chunks[0].decode().removeprefix("data: ").strip())
     assert payload["type"] == "error"
     assert payload["message"] == "Something failed"
     assert "code" not in payload
+
+
+@pytest.mark.asyncio
+async def test_stream_retries_transient_error_then_succeeds():
+    # The interactive path (not just auto mode) retries a transient upstream
+    # failure with backoff, emitting kiln-chat-retry events the UI renders, and
+    # recovers without ever surfacing the transient error.
+    ok_round = [text_delta("hi there"), trace("tr-1"), finish("stop")]
+    client = FakeUpstreamClient(
+        [
+            FakeUpstreamResponse(status_code=503, body=b'{"message": "busy"}'),
+            FakeUpstreamResponse(status_code=503, body=b'{"message": "busy"}'),
+            FakeUpstreamResponse(chunks=ok_round),
+        ]
+    )
+    with patch(
+        "app.desktop.studio_server.chat.stream_session.asyncio.sleep",
+        new_callable=AsyncMock,
+    ) as sleep_mock:
+        raw = "".join(c.decode() for c in await _run_interactive_turn(client))
+
+    assert raw.count('"type": "kiln-chat-retry"') == 2
+    assert '"status_code": 503' in raw
+    assert "hi there" in raw  # recovered round streamed through
+    assert "busy" not in raw  # the transient error was never surfaced
+    assert sleep_mock.await_count == 2
+    assert len(client.bodies) == 3
+
+
+@pytest.mark.asyncio
+async def test_stream_retries_exhausted_then_surfaces_error():
+    # A persistent retryable failure exhausts the bounded retries, then the error
+    # is surfaced (so the stream still terminates instead of hanging forever).
+    client = FakeUpstreamClient(
+        [
+            FakeUpstreamResponse(status_code=500, body=b'{"message": "boom"}')
+            for _ in range(MAX_CHAT_RETRIES + 1)
+        ]
+    )
+    with patch(
+        "app.desktop.studio_server.chat.stream_session.asyncio.sleep",
+        new_callable=AsyncMock,
+    ):
+        raw = "".join(c.decode() for c in await _run_interactive_turn(client))
+
+    assert raw.count('"type": "kiln-chat-retry"') == MAX_CHAT_RETRIES
+    assert "boom" in raw  # the held-back error is surfaced on give-up
+    assert len(client.bodies) == MAX_CHAT_RETRIES + 1
+
+
+def test_retry_backoff_schedule_ramps_and_caps():
+    # Each attempt's delay sits within the ±15% jitter band of its scheduled base.
+    for attempt, base in enumerate(_RETRY_BACKOFF_SCHEDULE, start=1):
+        delay = _retry_backoff_seconds(attempt)
+        assert base * 0.85 <= delay <= base * 1.15
+    # Early retries are a second or two; the tail caps at ~60s (so the full run
+    # rides out a real outage over minutes, not seconds).
+    assert _retry_backoff_seconds(1) < 2
+    assert 50 <= _retry_backoff_seconds(MAX_CHAT_RETRIES) <= 70
+    # Attempts beyond the schedule clamp to the last (capped) entry.
+    assert 50 <= _retry_backoff_seconds(MAX_CHAT_RETRIES + 5) <= 70
+    # The schedule is monotonically non-decreasing (ignoring jitter).
+    assert list(_RETRY_BACKOFF_SCHEDULE) == sorted(_RETRY_BACKOFF_SCHEDULE)
 
 
 class TestBuildOpenAIToolContinuation:

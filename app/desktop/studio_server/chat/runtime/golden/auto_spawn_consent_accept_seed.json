@@ -1,0 +1,27 @@
+{
+  "scenario": "auto_spawn_consent_accept_seed",
+  "bodies": [
+    {
+      "trace_id": "tr-0",
+      "messages": [
+        {
+          "role": "tool",
+          "tool_call_id": "tc_spawn",
+          "content": "{\"status\": \"spawned\", \"subagent_id\": \"cv_fixed\", \"name\": \"helper\"}"
+        }
+      ],
+      "auto_mode": true
+    },
+    {
+      "trace_id": "tr-1",
+      "messages": [
+        {
+          "role": "tool",
+          "tool_call_id": "tc1",
+          "content": "2"
+        }
+      ],
+      "auto_mode": true
+    }
+  ]
+}

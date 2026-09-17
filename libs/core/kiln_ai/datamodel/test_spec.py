@@ -356,7 +356,7 @@ def test_spec_all_statuses(sample_task, sample_tone_properties, status):
 
 def test_spec_tags_validation_empty_string(sample_task, sample_tone_properties):
     """Test that tags cannot be empty strings."""
-    with pytest.raises(ValidationError, match="tags cannot be empty strings"):
+    with pytest.raises(ValidationError, match="Tags cannot be empty strings"):
         Spec(
             name="Test Spec",
             definition="Test definition",
@@ -370,7 +370,7 @@ def test_spec_tags_validation_empty_string(sample_task, sample_tone_properties):
 def test_spec_tags_validation_spaces(sample_task, sample_tone_properties):
     """Test that tags cannot contain spaces."""
     with pytest.raises(
-        ValidationError, match=r"tags cannot contain spaces\. Try underscores\."
+        ValidationError, match=r"Tags cannot contain spaces\. Try underscores\."
     ):
         Spec(
             name="Test Spec",
