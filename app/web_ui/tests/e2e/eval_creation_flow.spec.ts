@@ -10,6 +10,15 @@ import { test, expect } from "./fixtures"
  * no spec fields are asked for.
  */
 
+/**
+ * Without a Copilot connection the entry page opens on the Kiln Pro offer, and
+ * the template picker is the screen behind it. These tests run with no Copilot
+ * key, so each one takes the manual branch to reach the picker.
+ */
+async function setUpManually(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: "Set Up Manually" }).click()
+}
+
 test("programmatic check: type picker -> judge-only builder creates a template-less eval", async ({
   page,
   apiRequest,
@@ -34,11 +43,16 @@ test("programmatic check: type picker -> judge-only builder creates a template-l
   )
   expect(run_resp.ok()).toBe(true)
 
-  // Create Eval lands straight on the type picker with both sections
+  // Create Eval lands straight on the type picker with both sections. The
+  // judge templates section says "LLM Judge Templates" so it reads apart from
+  // the description-driven assistant a Copilot user sees above it.
   await page.goto(`/specs/${project.id}/${task.id}`)
   await page.getByRole("button", { name: "Create Eval" }).first().click()
   await expect(page).toHaveURL(/select_template/)
-  await expect(page.getByText("LLM Judges", { exact: true })).toBeVisible()
+  await setUpManually(page)
+  await expect(
+    page.getByText("LLM Judge Templates", { exact: true }),
+  ).toBeVisible()
   await expect(
     page.getByText("Programmatic Checks", { exact: true }),
   ).toBeVisible()
@@ -142,6 +156,7 @@ test("rubric templates go straight from the type picker to the spec form", async
   const { project, task } = seededProjectWithTask
 
   await page.goto(`/specs/${project.id}/${task.id}/select_template`)
+  await setUpManually(page)
   await page.getByText("Toxicity", { exact: true }).first().click()
 
   // The template choice is the last question: no workflow screen in between.
@@ -163,6 +178,7 @@ test("tool call check skips the tool dialog", async ({
   const { project, task } = seededProjectWithTask
 
   await page.goto(`/specs/${project.id}/${task.id}/select_template`)
+  await setUpManually(page)
   await page.getByText("Tool Call Check", { exact: true }).first().click()
 
   // Straight to the builder with the tool call judge prefilled: the judge
@@ -234,6 +250,7 @@ test("leaving an untouched create form does not warn about unsaved changes", asy
   const dialogs = trackDialogs(page)
 
   await page.goto(`/specs/${project.id}/${task.id}/select_template`)
+  await setUpManually(page)
   await page.getByText("Pattern Match").first().click()
   await expect(page.getByRole("button", { name: "Save Eval" })).toBeVisible()
 
@@ -255,6 +272,7 @@ test("leaving after editing the judge warns about unsaved changes", async ({
   // Navigate in-app so goBack is an SPA navigation: the guard's confirm()
   // carries a message there, unlike the browser's native beforeunload.
   await page.goto(`/specs/${project.id}/${task.id}/select_template`)
+  await setUpManually(page)
   await page.getByText("Pattern Match").first().click()
   await expect(page.getByRole("button", { name: "Save Eval" })).toBeVisible()
   await page.locator("#pattern_match_pattern").fill("^ok$")
