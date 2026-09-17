@@ -376,21 +376,16 @@ export function draft_after_save_keeping_stranded_tags(
 
 // The Evals page's create button advertises a resumable draft (the silent
 // restore already happens on builder entry; this makes it discoverable).
-// Copilot-gated: without copilot the button routes to the legacy flow,
-// where no draft exists.
-export function create_eval_button_label(
-  has_copilot: boolean,
-  has_draft: boolean,
-): string {
-  return has_copilot && has_draft ? "Continue Eval Draft" : "Create Eval"
+export function create_eval_button_label(has_draft: boolean): string {
+  return has_draft ? "Continue Eval Draft" : "Create Eval"
 }
 
-// Where that button goes. A draft continues in the builder, which restores
-// it on entry; everything else starts on the Create Eval page. Kept
+// Where that button goes. A draft continues in the builder, which restores it
+// on entry and, if Copilot is not connected there, shows its own connect card
+// with the draft kept; everything else starts on the Create Eval page. Kept
 // beside the label so the two cannot promise different things.
 export function create_eval_destination(
-  has_copilot: boolean,
   has_draft: boolean,
 ): "builder" | "select_template" {
-  return has_copilot && has_draft ? "builder" : "select_template"
+  return has_draft ? "builder" : "select_template"
 }
