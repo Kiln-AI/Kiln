@@ -198,7 +198,6 @@ class ReplaceBatchTagsField(BaseModel):
 
     replace_batch_tags: list[str] = Field(
         default_factory=list,
-        max_length=20,
         description=(
             "Batch tags of previous drives this one supersedes (aborted "
             "re-drives can leave several behind). Their runs are deleted "
