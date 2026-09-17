@@ -7,8 +7,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.project_utils import DuplicateProjectError
+from pydantic import ValidationError
 
-from app.desktop.git_sync.git_sync_api import connect_git_sync_api
+from app.desktop.git_sync.git_sync_api import ProjectInfo, connect_git_sync_api
 
 
 @pytest.fixture
@@ -318,6 +319,18 @@ class TestTestWriteAccess:
         assert data["auth_required"] is True
 
 
+class TestProjectInfo:
+    def test_null_display_fields_are_coerced_to_blank(self):
+        info = ProjectInfo(path="project.kiln", name=None, description=None, id=None)
+        assert info.name == ""
+        assert info.description == ""
+        assert info.id == ""
+
+    def test_path_is_still_required(self):
+        with pytest.raises(ValidationError):
+            ProjectInfo(name="x", description="y", id="z")
+
+
 class TestScanProjects:
     def test_finds_projects(self, api_client, tmp_path):
         clone_dir = tmp_path / "kiln_clone_abc"
@@ -362,6 +375,37 @@ class TestScanProjects:
                 json={"clone_path": "/nonexistent/path"},
             )
         assert resp.status_code == 400
+
+    def test_one_null_description_still_returns_every_project(
+        self, api_client, tmp_path
+    ):
+        # A single project file with a null description used to fail validation
+        # for the whole list, so no project in the repo could be imported.
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
+        nested = clone_dir / "nested"
+        nested.mkdir()
+        (clone_dir / "project.kiln").write_text(
+            json.dumps({"name": "Good", "description": "desc", "id": "proj_good"})
+        )
+        (nested / "project.kiln").write_text(
+            json.dumps({"name": "Null Desc", "description": None, "id": "proj_null"})
+        )
+
+        with patch(
+            "app.desktop.git_sync.git_sync_api.default_project_path",
+            return_value=str(tmp_path),
+        ):
+            resp = api_client.post(
+                "/api/git_sync/scan_projects",
+                json={"clone_path": str(clone_dir)},
+            )
+
+        assert resp.status_code == 200
+        projects = resp.json()["projects"]
+        assert sorted(p["name"] for p in projects) == ["Good", "Null Desc"]
+        by_id = {p["id"]: p for p in projects}
+        assert by_id["proj_null"]["description"] == ""
 
 
 class TestSaveAndGetConfig:
