@@ -4,5 +4,77 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "query": {
+          "type": "string",
+          "title": "Query",
+          "description": "The synthetic user query"
+        },
+        "answer": {
+          "type": "string",
+          "title": "Answer",
+          "description": "The synthetic assistant answer/response for the given user query"
+        },
+        "model_name": {
+          "type": "string",
+          "title": "Model Name",
+          "description": "Model name used to generate the Q&A pair"
+        },
+        "model_provider": {
+          "type": "string",
+          "title": "Model Provider",
+          "description": "Model provider used to generate the Q&A pair"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Tags",
+          "description": "Optional tags"
+        }
+      },
+      "type": "object",
+      "required": [
+        "query",
+        "answer",
+        "model_name",
+        "model_provider"
+      ],
+      "title": "SaveQnaPairInput"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      }
+    },
+    "query": {
+      "session_id": {
+        "type": "string",
+        "description": "Session ID to group saved Q&A pairs.",
+        "title": "Session Id"
+      }
+    }
   }
 }

@@ -4,5 +4,27 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "template": {
+          "type": "string",
+          "title": "Template",
+          "description": "The Jinja2 template source to validate."
+        }
+      },
+      "type": "object",
+      "required": [
+        "template"
+      ],
+      "title": "ValidateInputTransformTemplateRequest"
+    }
+  },
+  "parameters": {
+    "path": {},
+    "query": {}
   }
 }

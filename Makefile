@@ -19,8 +19,9 @@ schema:
 	cd app/web_ui/src/lib && $(NVM_USE) && ./generate_schema.sh
 
 # Dump agent-check annotation JSON files from the running server's OpenAPI (server must be up on :8757).
+# The recorded version is the desktop app version, which is what clients report.
 annotations:
-	uv run python -m kiln_server.utils.agent_checks.dump_annotations http://localhost:8757/openapi.json libs/server/kiln_server/utils/agent_checks/annotations
+	uv run python -m kiln_server.utils.agent_checks.dump_annotations http://localhost:8757/openapi.json libs/server/kiln_server/utils/agent_checks/annotations --api-version $$(uv run python -c 'from app.desktop.studio_server._version import __version__; print(__version__)')
 
 # Run formatting, linting, typechecking, tests, and builds via the repo checks script.
 check:

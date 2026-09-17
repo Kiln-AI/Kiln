@@ -4,5 +4,16 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {
+      "provider_id": {
+        "type": "string",
+        "description": "The unique identifier of the finetune provider.",
+        "title": "Provider Id"
+      }
+    },
+    "query": {}
   }
 }

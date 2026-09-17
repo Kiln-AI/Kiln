@@ -4,5 +4,17 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {},
+    "query": {
+      "title": {
+        "type": "string",
+        "description": "The title for the file dialog window.",
+        "default": "Select Kiln File",
+        "title": "Title"
+      }
+    }
   }
 }
