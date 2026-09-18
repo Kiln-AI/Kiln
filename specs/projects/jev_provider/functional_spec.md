@@ -59,7 +59,13 @@ The model appears in every existing model dropdown that the flags allow (run pag
 
 ### Model entry and release gating
 
-Kiln's rule for new providers is that the model-list entry lands in a second PR after a client release, because remote config pushes entries to every deployed client immediately. For this project the entry is added in the same branch so the feature can be tested end to end, but it carries a `TODO` comment saying it must be removed before merge. CI enforces that no `TODO` comments reach main, so the PR cannot merge with the entry in. After the release that carries the provider, a follow-up PR re-adds the entry without the `TODO`.
+Kiln's rule for new providers is that the model-list entry lands in a second PR after a client release, because the remote config is published from `main` and the web model library page reads it directly in the browser. An old client would otherwise show the Jev row labelled with the raw provider ID `typesafe` and offer a model it cannot connect. The Python side already drops unknown providers safely, so this is a model-library-only problem, but it is the reason the Featherless entries were rolled back.
+
+So:
+
+1. The entry is added on the feature branch so the feature can be tested end to end, with a `TODO` comment saying it must be removed before merge. CI enforces that no `TODO` comments reach `main`, so the PR cannot merge with the entry in.
+2. Before merge, the entry is removed. Everything else (enum, adapter, routing, UI, evals) merges in that PR.
+3. After the release that carries the provider, a follow-up PR re-adds the entry without the `TODO`, along with the prerelease whitelist and paid smoke test.
 
 ## Task compatibility rules
 
