@@ -19,6 +19,8 @@
   //   A trace with no stored structure keeps the raw flattened panels.
   import { tick } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import Output from "$lib/ui/output.svelte"
+  import SettingsHeader from "$lib/ui/settings_header.svelte"
   import ChatTrace from "$lib/ui/trace/chat_trace.svelte"
   import {
     map_input_span_to_trace,
@@ -56,20 +58,6 @@
   function text_for(source: CitationSource): string {
     if (!trace) return ""
     return source === "input" ? trace.raw_input : trace.raw_output
-  }
-
-  // Split a raw source's text into [before, highlight, after] when it's the
-  // active span, so the highlight can be marked and scrolled to.
-  function segments(source: CitationSource) {
-    const text = text_for(source)
-    if (source !== active_source || !active_span) {
-      return { before: text, highlight: "", after: "" }
-    }
-    return {
-      before: text.slice(0, active_span.start),
-      highlight: text.slice(active_span.start, active_span.end),
-      after: text.slice(active_span.end),
-    }
   }
 
   // Map a citation onto the structured trace so ChatTrace can mark the exact
@@ -191,23 +179,23 @@
     dialog?.show()
     reset_scroll()
     // Wait for the <mark> to render, then bring it into view. Only the raw
-    // marks need this: on multi-turn the chat panel scrolls itself (ChatTrace
+    // panels need this: on multi-turn the chat panel scrolls itself (ChatTrace
     // reacts to its highlight prop).
     await tick()
     content_el
-      ?.querySelector("[data-citation-mark]")
+      ?.querySelector("[data-highlight-target]")
       ?.scrollIntoView({ block: "center", behavior: "smooth" })
   }
 
   // The raw panels only render when there is no conversation to show, so they
   // are also the only place a citation mark can land on that path. When the
   // chat renders, an unmappable citation shows no mark at all rather than one
-  // on a duplicate copy of the text. These statements don't name the citation
-  // state (Svelte can't see into segments()), so they recompute only because
-  // every entry point reassigns `trace` — a setter that changed the citation
-  // without doing that would leave a stale mark.
-  $: input_seg = trace && !use_chat ? segments("input") : null
-  $: output_seg = trace && !use_chat ? segments("output") : null
+  // on a duplicate copy of the text. The span is handed to Output, which owns
+  // the mark and translates it onto the printed form when the text is JSON.
+  $: input_mark =
+    trace && !use_chat && active_source === "input" ? active_span : null
+  $: output_mark =
+    trace && !use_chat && active_source === "output" ? active_span : null
 </script>
 
 <Dialog bind:this={dialog} title="Trace" width="extra_wide">
@@ -232,33 +220,17 @@
         <!-- No conversation recorded: the raw flattened input and output are
              the only rendering this trace has. -->
         <div>
-          <div class="text-xs uppercase tracking-wide text-gray-500 mb-1">
-            Input
-          </div>
-          <div class="rounded bg-base-100 px-4 py-3 whitespace-pre-wrap">
-            {#if input_seg}
-              {input_seg.before}{#if input_seg.highlight}<mark
-                  data-citation-mark
-                  class="bg-warning/40 rounded px-0.5"
-                  >{input_seg.highlight}</mark
-                >{/if}{input_seg.after}
-            {/if}
+          <SettingsHeader title="Input" />
+          <div class="mt-2">
+            <Output raw_output={trace.raw_input} mark={input_mark} />
           </div>
         </div>
 
         <div>
-          <div class="text-xs uppercase tracking-wide text-gray-500 mb-1">
-            Output
+          <SettingsHeader title="Output" />
+          <div class="mt-2">
+            <Output raw_output={trace.raw_output} mark={output_mark} />
           </div>
-          {#if output_seg}
-            <div class="rounded bg-primary/5 px-4 py-3 whitespace-pre-wrap">
-              {output_seg.before}{#if output_seg.highlight}<mark
-                  data-citation-mark
-                  class="bg-warning/40 rounded px-0.5"
-                  >{output_seg.highlight}</mark
-                >{/if}{output_seg.after}
-            </div>
-          {/if}
         </div>
       {/if}
     </div>

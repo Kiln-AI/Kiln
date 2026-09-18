@@ -107,28 +107,20 @@ describe("describe step action row", () => {
 describe("plan surface copy", () => {
   it("names the plan surface for the eval dataset it proposes", () => {
     // The header is the one label this surface overrides: what it lists is a
-    // proposed eval dataset, not the synthetic data flow's batch. The
-    // regenerate button keeps the shared default, so no override there.
+    // proposed eval dataset, not the synthetic data flow's batch.
     expect(normalize(plan_surface)).toContain(
       'header_label="Eval Dataset Proposal"',
     )
-    expect(plan_surface).not.toContain("regenerate_label=")
   })
 
-  it("renders the multi-turn subheader", () => {
-    expect(
-      contains(
-        "Here's the plan for your eval dataset. Kiln will run each item as a test conversation with your agent in the next step. Refine the plan if the coverage looks off.",
-      ),
-    ).toBe(true)
-  })
-
-  it("renders the single-turn subheader", () => {
-    expect(
-      contains(
-        "Here's the plan for your eval dataset. Kiln will use this guidance to generate each item in the next step. Refine the plan if the coverage looks off.",
-      ),
-    ).toBe(true)
+  it("renders one subheader, the same on both arms", () => {
+    // What the next step does to each row belongs on that step, not in the
+    // plan's sub-line: one sentence reads the same whether the run drives
+    // conversations or generates single inputs.
+    expect(normalize(plan_surface)).toContain(
+      'subheader="Here\'s a plan for your eval dataset. Refine the plan if the coverage looks off."',
+    )
+    expect(plan_surface).not.toContain("is_multi_turn")
   })
 
   it("labels the primary button with the artifact noun and the count", () => {
@@ -144,7 +136,26 @@ describe("plan surface copy", () => {
     // hears "items" too. The /generate sentence is about dataset samples, which
     // is not what this surface's rows become.
     expect(normalize(plan_surface)).toContain('items_label="Items"')
-    expect(normalize(plan_surface)).toContain("expanded_description={false}")
+    expect(normalize(plan_surface)).toContain(
+      'expanded_description="Each row will be used to seed one item of your eval dataset."',
+    )
+  })
+
+  it("puts the data guide note on the sub-line, only when a guide was used", () => {
+    // The note is a clause on the header's sub-line rather than a row of its
+    // own, so the plan surface opens with one sentence. It is a claim about
+    // how the plan was drafted, so it renders only when that is true.
+    const normalized_surface = normalize(plan_surface)
+    expect(normalized_surface).toContain(
+      '<svelte:fragment slot="under_subheader"> {#if plan_drafted_with_data_guide}',
+    )
+    // The clause, normalized so Prettier's wrapping is not what is pinned. It
+    // has to open with an explicit space, because Svelte drops whitespace at
+    // the start of slot content and the sub-line adds no separator of its own.
+    const note = normalize(region('<span id="data_guide_plan_note"', "</span"))
+    expect(note).toContain('{" "}Planned using your')
+    expect(note).toContain("data guide</button")
+    expect(note.endsWith(".</span")).toBe(true)
   })
 
   it("names the rows' column for what this surface's rows hold", () => {
@@ -482,10 +493,13 @@ describe("Generation Settings dialog", () => {
     )
     expect(
       contains(
-        'model_info_description="Writes one item from each approved plan line; your task then runs on them."',
+        'model_info_description="Writes the input for each dataset item. Your run config then produces the output that the judge scores."',
       ),
     ).toBe(true)
-    expect(contains('model_label="Eval Data Generation Model"')).toBe(true)
+    // The lane writes the input half of each dataset item; the output comes
+    // from the run config the eval is about, so the label says which of the
+    // two this model is.
+    expect(contains('model_label="Input Generation Model"')).toBe(true)
   })
 
   it("gives the input generator the same control synthetic data generation uses", () => {
@@ -590,25 +604,6 @@ describe("Generation Settings dialog", () => {
     )
   })
 
-  it("shows the suggested-model advisory on every lane", () => {
-    // Each lane says what the models dropdown says everywhere else: a green
-    // check on a recommended model, an amber note on one outside the set. No
-    // lane quiets the check, so the judge and user-model lanes read like the
-    // input generator, which matches the same control in synthetic data
-    // generation. The grep below guards against a lane quieting it again.
-    const lanes = drive_settings_dialog
-      .split("<AvailableModelsDropdown")
-      .slice(1)
-      // Bound each chunk at its own tag close so a flag on a later lane can
-      // never stand in for an earlier one.
-      .map((chunk) => chunk.slice(0, chunk.indexOf("/>")))
-    expect(lanes.length).toBe(2)
-    for (const lane of lanes) {
-      expect(normalize(lane)).not.toContain("quiet_suggested")
-    }
-    expect(input_gen_lane()).not.toContain("quiet_suggested")
-  })
-
   it("puts the cost warning immediately before the submit", () => {
     // Last child of the FormContainer = directly above the submit row, which
     // is the one button that spends the credits.
@@ -621,21 +616,48 @@ describe("Generation Settings dialog", () => {
     expect(dialog.slice(warning, close)).not.toContain("<AvailableModels")
   })
 
-  it("fills the dropdowns once the lane pre-population resolves", () => {
-    // The dialog shows immediately; the reseed must run AFTER the pass that
-    // fills the lanes, or the dropdowns open empty on the eager-start path.
+  it("seeds every lane before the dialog is shown", () => {
+    // Order is the whole fix: showing first let the user pick a model while
+    // the defaults were still resolving, and the reseed then overwrote it.
+    // Pinned by index, because only the sequence is wrong in the old version.
     const open = function_body("async function open_drive_settings() {")
-    const show = open.indexOf("drive_settings_dialog?.show()")
     const awaited = open.indexOf("await prepopulate_lanes()")
-    const reseed = open.indexOf("su_model_combined = su_driver")
-    expect(show).toBeGreaterThan(-1)
-    expect(awaited).toBeGreaterThan(show)
+    const reseed = open.indexOf("judge_model_combined = judge_model")
+    const show = open.indexOf("drive_settings_dialog?.show()")
+    expect(awaited).toBeGreaterThan(-1)
     expect(reseed).toBeGreaterThan(awaited)
+    expect(show).toBeGreaterThan(reseed)
     // The pass is memoized as a promise, so a second caller awaits the one in
     // flight instead of returning early while the lanes are still null.
     expect(
       contains("let lanes_prepopulated: Promise<void> | null = null"),
     ).toBe(true)
+    // A failed pass must still open the dialog on whatever is committed,
+    // rather than swallow the click.
+    expect(open).toContain('console.warn("Could not resolve the default')
+  })
+
+  it("clears a stale validation error when a lane changes", () => {
+    // The error names a condition ("… to continue"); once the user fills the
+    // lanes the condition is gone, so the sentence must go with it instead of
+    // standing over two filled dropdowns. All four editable values are
+    // dependencies, and the error itself is not read — raising it in submit
+    // must not immediately re-run the clear.
+    const statement = region(
+      "$: drive_settings_error = cleared_on_lane_change(",
+      ")",
+    )
+    const dependencies = normalize(
+      statement.slice(statement.indexOf("(") + 1, statement.lastIndexOf(")")),
+    )
+    expect(dependencies).toContain("su_model_combined")
+    expect(dependencies).toContain("input_gen_model_combined")
+    expect(dependencies).toContain("judge_model_combined")
+    expect(dependencies).toContain("staged_turns_per_case")
+    expect(dependencies).not.toContain("drive_settings_error")
+    expect(
+      normalize(function_body("function cleared_on_lane_change(")),
+    ).toContain("return null")
   })
 })
 
@@ -751,12 +773,442 @@ describe("Data Guide skip and Back", () => {
 describe("Reset", () => {
   const reset = region("async function reset_draft_with_confirm", "\n  }\n")
 
-  it("starts over on the Setup and Eval Type page, not by reloading a URL that may carry a description", () => {
+  it("starts over on the Create Eval page, not by reloading a URL that may carry a description", () => {
     expect(normalize(reset)).toContain(
       normalize(
         "window.location.href = `/specs/${project_id}/${task_id}/select_template`",
       ),
     )
     expect(reset).not.toContain("window.location.reload()")
+  })
+})
+
+describe("the run config the eval is written against", () => {
+  // The signature's own return type closes at script indent, so the shared
+  // function_body helper would stop there; take the whole function instead.
+  const resolve = region(
+    "async function resolve_drive_run_config(",
+    "// ── Step 4 — both arms are plan-first over one pipeline shape.",
+  )
+
+  it("drives the config the entry page chose over the task default", () => {
+    // The questions, the judge and the generated data were all authored
+    // against that config, so driving the task default instead would produce
+    // eval data for a different agent than the one the eval describes.
+    const body = normalize(resolve)
+    expect(body).toContain(
+      "const chosen_config = chosen_by_user ?? default_match ?? run_configs[0]",
+    )
+    // The no-default notice names a config the user did not pick. An explicit
+    // choice is not a fallback, so it must not raise it.
+    expect(body).toContain(
+      "fallback_run_config_name = chosen_by_user || default_match ? null : chosen_config.name",
+    )
+  })
+
+  it("stops the drive when the chosen config is no longer on the task", () => {
+    // Driving the task default instead would generate eval data for an agent
+    // this eval does not describe, and say nothing about it.
+    const body = normalize(resolve)
+    expect(body).toContain("if (target_run_config_id && !chosen_by_user) {")
+    expect(body).toContain("return null")
+  })
+
+  it("keeps the choice across a reload", () => {
+    expect(
+      normalize(region("$: current_draft = draft_ready", "    : null")),
+    ).toContain("target_run_config_id,")
+    expect(
+      normalize(function_body("async function restore_draft() {")),
+    ).toContain("target_run_config_id = saved.target_run_config_id ?? null")
+  })
+
+  it("tells the copilot calls that read a config which one to read", () => {
+    // Server-side these calls read the config's tools and skills; without the
+    // id they read the task default and describe the wrong agent. Only the
+    // calls that read capabilities are wired — the save reads none, so
+    // sending it there would be a field the server accepts and discards.
+    expect(mentions("run_config_id: target_run_config_id")).toBe(2)
+    expect(
+      normalize(
+        region("async function on_save() {", "function create_manually()"),
+      ),
+    ).not.toContain("run_config_id")
+  })
+})
+
+// ── The review-preparation and drive progress screens ──────────────────────
+//
+// Every waiting screen on this step reads the same way: a static title and
+// description, and one ProgressCount under the bar carrying every live number.
+// A count inside a sentence re-lays that sentence out on every tick; under the
+// bar it changes in place. These pin where each count lives, because the
+// difference is invisible to a render test that only reads text.
+describe("progress screens carry their counts under the bar, never in a string", () => {
+  it("leaves the claims gate's title static on both the first round and a later one", () => {
+    // Once for the first-round gate, once for the calibration round's.
+    expect(normalized.split('title="Preparing Review"').length - 1).toBe(2)
+    expect(normalized).toContain(
+      'description="Finding the examples where your judgment is most useful."',
+    )
+    // The count it used to carry now sits under that screen's bar.
+    expect(normalized.split("noun={`${judged_noun}s ready`}").length - 1).toBe(
+      2,
+    )
+  })
+
+  it("leaves the drive descriptions static, with the counts under the bar", () => {
+    expect(normalized).toContain(
+      'description="Simulating conversations with your agent and judging each one."',
+    )
+    expect(normalized).toContain(
+      'description="Running your task on each item and judging the result."',
+    )
+    expect(normalized).toContain('noun="turns complete"')
+    expect(normalized).toContain('noun="judged"')
+    // No screen hand-rolls a bar any more: they all go through the component,
+    // so the readouts cannot drift apart.
+    expect(normalized).not.toContain('class="progress w-56 progress-success"')
+  })
+
+  it("routes every waiting screen's bar through the one readout component", () => {
+    // Minting, both drive arms, both claims gates, and the re-check.
+    expect(normalized.split("<ProgressCount").length - 1).toBe(6)
+  })
+
+  it("counts the cases dropped from the review on both claims gates", () => {
+    // A case the builder wrote without a verdict claim is excluded from the
+    // review; a prompt that starts dropping verdicts has to be visible.
+    expect(normalized.split("num_no_verdict:").length - 1).toBe(2)
+  })
+})
+
+// ── The eval description, opened from the page header ──────────────────────
+//
+// The review step has no control of its own for the eval's text: the header's
+// sub-line is the way in, so the reviewer looks up rather than into the work.
+// The line and the action it fires are two props that must agree, and the
+// dialog they open lives in the review component.
+describe("the eval description opens from the page header", () => {
+  it("shows the line only on review, and only with text to show", () => {
+    expect(
+      contains(
+        'review_can_show_spec = current_step === "review" && current_spec_text.trim().length > 0',
+      ),
+    ).toBe(true)
+    expect(contains('review_can_show_spec ? "Eval Description" : ""')).toBe(
+      true,
+    )
+  })
+
+  it("fires the review's own dialog, under the same condition as the line", () => {
+    // Same flag on both, so the header can never render a line that opens
+    // nothing — nor an action with no line to fire it.
+    expect(
+      contains(
+        "sub_subtitle_action={review_can_show_spec ? () => review_component?.show_spec_dialog() : undefined}",
+      ),
+    ).toBe(true)
+    expect(contains("bind:this={review_component}")).toBe(true)
+  })
+})
+
+// ── The empty review subset ────────────────────────────────────────────────
+describe("a review with nothing to grade is not a dead end", () => {
+  it("names both causes and offers the save on a calibration round", () => {
+    expect(normalized).toContain(
+      "None of these ${judged_noun}s could be reviewed. Analyzing them either failed or produced no verdict to check.",
+    )
+    // First round: create the data again. Later rounds: that would throw away
+    // grades the reviewer already gave, so the opt-out is offered instead.
+    expect(normalized).toContain(
+      'calibration_rounds_completed > 0 ? "" : " Create your eval data again."',
+    )
+    const branch = region(
+      "{:else if reviewable_trace_indices.length === 0}",
+      "{:else}",
+    )
+    expect(normalize(branch)).toContain("Save Without Improving")
+    expect(normalize(branch)).toContain("on:click={save_without_refining}")
+  })
+})
+
+// ── The forward action on the last case ───────────────────────────────────
+//
+// The reviewer's feedback can either improve the judge or be kept as-is. The
+// wizard asks rather than deciding, and the dialog's secondary is the only way
+// out of the refine loop, so these strings and both wirings are contractual.
+describe("the improve-judge dialog", () => {
+  // One action button's own object literal, from its label to the brace that
+  // closes it. Asserting over the whole dialog cannot tell the two buttons
+  // apart: swap their bodies and every string is still somewhere in the
+  // region. This is what makes a swap fail.
+  function action_button(label: string): string {
+    const dialog = region('title="Improve Judge with Feedback?"', "</Dialog>")
+    const at = dialog.indexOf(`label: "${label}"`)
+    if (at < 0) throw new Error(`no action button labelled ${label}`)
+    const end = dialog.indexOf("\n    },", at)
+    if (end < 0) throw new Error(`unterminated action button ${label}`)
+    return normalize(dialog.slice(at, end))
+  }
+
+  it("asks before refining, in the words the reviewer was promised", () => {
+    const d = normalize(
+      region('title="Improve Judge with Feedback?"', "</Dialog>"),
+    )
+    expect(d).toContain(
+      "You disagreed with the judge and gave feedback, which we can use to improve your Judge.",
+    )
+    expect(d).toContain('label: "Improve Judge"')
+    expect(d).toContain('label: "Save Without Improving"')
+  })
+
+  it("wires each button to the path it names, and only that path", () => {
+    const improve = action_button("Improve Judge")
+    expect(improve).toContain("isPrimary: true")
+    expect(improve).toContain("run_calibration_round()")
+    expect(improve).not.toContain("save_without_refining()")
+
+    const save = action_button("Save Without Improving")
+    expect(save).toContain("save_without_refining()")
+    expect(save).not.toContain("run_calibration_round()")
+    expect(save).not.toContain("isPrimary")
+  })
+
+  it("is what the keyboard shortcut reaches too", () => {
+    // The shortcut fires the review's forward action rather than the save, so
+    // a round with feedback is asked about however the reviewer triggers it.
+    const keys = normalize(
+      region("function handle_global_keydown(", "function step_name_for("),
+    )
+    expect(keys).toContain("save_gate_met && review_on_last_trace")
+    expect(keys).toContain("on_advance_to_save()")
+    expect(keys).not.toContain("on_save()")
+  })
+
+  it("opens only where the review asks to go forward with feedback", () => {
+    // The dialog replaces the automatic refine: the decision point is the
+    // same one, so it is opened from the same branch that used to calibrate.
+    const advance = normalize(
+      region("function on_advance_to_save()", 'goto_step("save")'),
+    )
+    expect(advance).toContain('decision.action === "calibrate"')
+    expect(advance).toContain("improve_judge_dialog?.show()")
+  })
+
+  it("keeps no second exit beside the review's own action", () => {
+    // The dialog's secondary is the only way past a review that has feedback;
+    // the quiet link that used to sit under the review is gone. The empty-
+    // subset screen keeps its own exit, because there is no review to go
+    // forward from there at all.
+    const review = normalize(
+      region("<ClaimEvidenceReview", '{:else if current_step === "save"}'),
+    )
+    expect(review).not.toContain("Save Without Improving")
+    expect(normalized).not.toContain("Save Without Refining Further")
+  })
+})
+
+// ── The save's success screen ─────────────────────────────────────────────
+describe("the eval-created screen", () => {
+  it("finishes on the house success control rather than a redirect", () => {
+    const done = normalize(region('title="Eval Created"', "/>"))
+    expect(done).toContain(
+      'subtitle="You\'ve created a new eval, including an eval dataset and aligned judge!"',
+    )
+    expect(done).toContain('button_text={created_eval_href ? "View Eval"')
+    // A save with no id has no eval page to offer, so it points at the list.
+    expect(done).toContain(
+      "link={created_eval_href ?? `/specs/${project_id}/${task_id}`}",
+    )
+  })
+
+  it("suppresses the leave guards by state, not by a latch", () => {
+    // A latch that is only ever set stays set: a wizard that somehow returned
+    // to a live step would be unguarded. The guard reads where the wizard is,
+    // so it comes back on by itself.
+    expect(normalized).toContain(
+      '$: leave_guard_suppressed = resetting || current_step === "done"',
+    )
+    expect(normalized).not.toContain("leave_guard_suppressed = true")
+  })
+
+  it("makes the finished state terminal", () => {
+    // The wizard stays mounted behind the success screen, so Back would
+    // otherwise land on the graded review with its save gate met — one click
+    // from a second Spec with the same batch tag, or a paid round on an eval
+    // that already shipped.
+    const sync = normalize(
+      region("function sync_step_from_history(", "abort_copilot_request()"),
+    )
+    expect(sync).toContain("if (saved_eval_created) {")
+    expect(sync).toContain("goto(finished_destination)")
+
+    // And the state those two actions would need is dropped on the way in, so
+    // a bug that got past the guard still has nothing to act on.
+    const finish = normalize(
+      region("function finish_on_done_screen(", 'replace_step("done")'),
+    )
+    expect(finish).toContain("saved_eval_created = true")
+    expect(finish).toContain("trace_claims = []")
+    expect(finish).toContain("trace_reviews = []")
+  })
+
+  it("finishes both save branches the same way, after the draft is cleared", () => {
+    // Multi-turn and single-turn each end in their own save; both must land
+    // on the same screen, and neither may do it while a draft still points at
+    // the work that just shipped.
+    expect(normalized.split("finish_on_done_screen(saved.id)").length - 1).toBe(
+      2,
+    )
+    const save_body = normalize(
+      region("async function on_save() {", "function create_manually()"),
+    )
+    // The clear is awaited before the flip, on both paths.
+    expect(
+      save_body.split("await clear_builder_draft(").length - 1,
+    ).toBeGreaterThanOrEqual(2)
+    const [first, second] = save_body.split("finish_on_done_screen(saved.id)")
+    expect(first).toContain("await clear_builder_draft(")
+    expect(second).toContain("await clear_builder_draft(")
+  })
+})
+
+// The wizard's own copy: what each step is called, and what the screens the
+// steps open on say while they work.
+describe("wizard step copy", () => {
+  const step_names = function_body(
+    'function step_name_for(step: Exclude<BuilderStep, "save" | "done">): string {',
+  )
+
+  it("names each step after what the user does on it", () => {
+    const named = normalize(step_names)
+    expect(named).toContain('case "clarify": return "Clarify Eval"')
+    expect(named).toContain('case "refine": return "Review Updated Eval"')
+    expect(named).toContain('case "generate": return "Create Eval Dataset"')
+  })
+
+  it("asks the refine step's question in the header's second line", () => {
+    // The step shows the eval rewritten from the user's answers, so the
+    // header asks what the step exists to answer — and only there. The review
+    // step's own second line is pinned separately, below.
+    expect(
+      contains(
+        '$: page_sub_subtitle = current_step === "refine" ' +
+          '? "We\'ve integrated your feedback, does it look right?" ' +
+          ': review_can_show_spec ? "Eval Description" : ""',
+      ),
+    ).toBe(true)
+    expect(contains("sub_subtitle={page_sub_subtitle}")).toBe(true)
+  })
+
+  it("says what the minting screen is making, and leaves the count to the bar", () => {
+    // The progress bar under the line already carries how far along the run
+    // is, so the sentence says what is being made and stops there.
+    expect(contains('? "Creating Eval Dataset"')).toBe(true)
+    expect(contains("? `Creating ${planned_total} dataset items.`")).toBe(true)
+  })
+
+  it("carries that name into the drive screen that follows, on both arms", () => {
+    // Minting and driving are one stretch of work to someone watching it, so
+    // the screen that follows the minting screen says the same thing it did.
+    expect(page_source.match(/title="Creating Eval Dataset"/g)).toHaveLength(2)
+    expect(page_source).not.toContain('title="Creating Eval Data"')
+  })
+})
+
+// A drive that stopped with usable work left behind takes over the step: how
+// much failed and the two ways out are the whole decision there. Every other
+// stop kind keeps the banner over the plan, because its text is raw provider
+// output and its way out runs through the plan.
+describe("the stopped-drive screen", () => {
+  const stop_step = region(
+    "{#if show_plan_approval && batch_plan}",
+    "{:else if !generation_loading",
+  )
+  const partial_branch = stop_step.slice(0, stop_step.indexOf("{:else}"))
+  const plan_branch = stop_step.slice(stop_step.indexOf("{:else}"))
+  const stop_actions = region(
+    "$: stop_lead = drive_stop",
+    "[stop_rerun_action, stop_continue_action]",
+  )
+
+  it("takes over the step only for a stop that left usable work behind", () => {
+    expect(normalize(partial_branch)).toContain(
+      "{#if drive_stop && is_partial_stop(drive_stop)}",
+    )
+    expect(partial_branch).toContain("<Intro")
+    expect(partial_branch).not.toContain("<Warning")
+  })
+
+  it("keeps the banner above the plan for every other stop kind", () => {
+    // Preflight, abort and all-failed carry long raw provider text and a
+    // recovery that runs through the plan, so the plan has to stay on screen.
+    expect(plan_branch).toContain("<Warning")
+    expect(plan_branch).toContain("<KilnProBatchPlan")
+    // Always the error color here: what is left once the partial stop has
+    // taken its own screen is a failed config or a failed batch.
+    expect(normalize(plan_branch)).toContain('warning_color="error"')
+    expect(plan_branch).not.toContain("is_partial_stop")
+    expect(normalize(plan_branch)).toContain("markdown trusted")
+  })
+
+  it("demotes the plan's own primary while the Continue row is beside it", () => {
+    // Two solid primaries on one screen is two leads. The plan's generate
+    // button steps back to an outline whenever the survivors row co-renders.
+    expect(normalize(plan_branch)).toContain(
+      "generate_button_outline={has_driven_results && drive_stop !== null}",
+    )
+  })
+
+  it("names the screen and hands it the two ways forward", () => {
+    const screen = normalize(partial_branch)
+    expect(screen).toContain('<Intro title="Errors During Dataset Creation"')
+    expect(screen).toContain("action_buttons={stop_screen_actions}")
+  })
+
+  it("says what happened from the same source the banner uses", () => {
+    // One function writes the sentence, so the screen and the banner can
+    // never end up telling the same stop two different ways.
+    expect(normalize(partial_branch)).toContain(
+      "description_markdown={drive_stop_banner( drive_stop, " +
+        "drive_run_config_name, drive_run_config_model, )}",
+    )
+    expect(partial_branch).not.toContain("description_paragraphs")
+  })
+
+  it("renders the leading action first and makes it the solid one", () => {
+    // The house offer screen stacks its primary above the alternative, so the
+    // order and the emphasis both come from the same decision.
+    const actions = normalize(stop_actions)
+    expect(actions).toContain(
+      "label: `Continue With ${drive_stop?.survivors ?? 0}`, " +
+        'onClick: on_continue_with_survivors, is_primary: stop_lead === "continue",',
+    )
+    expect(actions).toContain(
+      'label: "Re-run Batch", onClick: open_drive_settings, ' +
+        'is_primary: stop_lead === "rerun",',
+    )
+    expect(actions).toContain(
+      '$: stop_screen_actions = stop_lead === "continue" ' +
+        "? [stop_continue_action, stop_rerun_action] " +
+        ": [stop_rerun_action, stop_continue_action]",
+    )
+  })
+
+  it("swallows the keyboard shortcut instead of acting on it", () => {
+    // The screen's buttons carry no shortcut hint, and which of them leads
+    // changes with the batch, so the shortcut would fire an action the user
+    // was never offered — on most of those batches a paid re-run. The
+    // keystroke is consumed all the same, or a focused button takes the Enter.
+    const shortcut = normalize(
+      region(
+        "if (drive_stop && is_partial_stop(drive_stop)) {",
+        "if (has_driven_results) {",
+      ),
+    )
+    expect(shortcut).toContain("event.preventDefault() return }")
+    expect(shortcut).not.toContain("on_continue_with_survivors()")
+    expect(shortcut).not.toContain("open_drive_settings()")
   })
 })

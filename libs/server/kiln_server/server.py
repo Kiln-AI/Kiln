@@ -66,6 +66,10 @@ tags_metadata = [
         "description": "Create and run evaluations for tasks.",
     },
     {
+        "name": "Eval Inputs",
+        "description": "Author and manage eval input datasets for tasks.",
+    },
+    {
         "name": "Statistics",
         "description": "Confidence intervals and significance tests on eval metrics.",
     },

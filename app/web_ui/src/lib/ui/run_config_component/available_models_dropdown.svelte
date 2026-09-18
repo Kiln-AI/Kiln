@@ -36,13 +36,6 @@
   export let description: string | undefined = undefined
   export let info_description: string | undefined = undefined
   export let settings: Partial<ModelDropdownSettings> = {}
-  // Suppresses the suggested-model advisory in its "all good" state only, for
-  // forms that stack several model lanes and would otherwise show a row of
-  // green checks. Warnings still render. Default keeps every other caller as
-  // it ships.
-  // No caller in the app sets this today; it stays as the documented way for
-  // a screen that stacks several lanes to drop the all-good confirmation.
-  export let quiet_suggested: boolean = false
   export let error_message: string | null = null
   export let inline_action: InlineAction | null = null
   export let optional: boolean = false
@@ -50,12 +43,12 @@
   export let empty_label: string = "Select a model"
   // Empty-dropdown affordance (fancy_select's built-in empty state). An
   // empty model list means no connected provider offers a usable model, so
-  // every picker names the way out by default — a same-tab link, because
+  // every picker names the way out — a same-tab link, because
   // connecting clears the models cache in this tab and the return trip
   // refetches it (a new tab would strand this tab's stale cache).
-  export let empty_state_message: string = "No models available"
-  export let empty_state_subtitle: string | null = "Connect an AI provider"
-  export let empty_state_link: string | null = "/settings/providers"
+  const empty_state_message = "No models available"
+  const empty_state_subtitle = "Connect an AI provider"
+  const empty_state_link = "/settings/providers"
 
   let default_model_dropdown_settings: ModelDropdownSettings = {
     filter_models_predicate: (_) => true,
@@ -434,7 +427,7 @@
       />
     {/if}
   {:else if settings.suggested_mode === "data_gen"}
-    {#if show_suggested_advisory(!!model, selected_model_suggested_data_gen, quiet_suggested, suggestion_known)}
+    {#if show_suggested_advisory(!!model, suggestion_known)}
       <Warning
         warning_icon={!model
           ? "info"
@@ -450,7 +443,7 @@
       />
     {/if}
   {:else if settings.suggested_mode === "uncensored_data_gen"}
-    {#if show_suggested_advisory(!!model, selected_model_suggested_uncensored_data_gen, quiet_suggested, suggestion_known)}
+    {#if show_suggested_advisory(!!model, suggestion_known)}
       <Warning
         warning_icon={!model
           ? "info"
@@ -466,7 +459,7 @@
       />
     {/if}
   {:else if settings.suggested_mode === "evals"}
-    {#if show_suggested_advisory(!!model, selected_model_suggested_evals, quiet_suggested, suggestion_known)}
+    {#if show_suggested_advisory(!!model, suggestion_known)}
       <Warning
         warning_icon={!model
           ? "info"
@@ -482,7 +475,7 @@
       />
     {/if}
   {:else if settings.suggested_mode === "doc_extraction"}
-    {#if show_suggested_advisory(!!model, selected_model_suggested_doc_extraction, quiet_suggested, suggestion_known)}
+    {#if show_suggested_advisory(!!model, suggestion_known)}
       <Warning
         warning_icon={!model
           ? "info"
@@ -498,7 +491,7 @@
       />
     {/if}
   {:else if settings.suggested_mode === "synthetic_user"}
-    {#if show_suggested_advisory(!!model, selected_model_suggested_synthetic_user, quiet_suggested, suggestion_known)}
+    {#if show_suggested_advisory(!!model, suggestion_known)}
       <Warning
         warning_icon={!model
           ? "info"

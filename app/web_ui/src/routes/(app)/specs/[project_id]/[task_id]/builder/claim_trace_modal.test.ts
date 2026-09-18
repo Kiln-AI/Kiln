@@ -231,8 +231,9 @@ describe("claim_trace_modal — citation mapping fallbacks", () => {
     component.open_citation(multi_turn_trace({ trace: [] }), input_citation())
     await tick()
 
-    // No chat renders; the Input panel marks the citation as it always has.
-    const panel_mark = container.querySelector("[data-citation-mark]")
+    // No chat renders; the Input panel still marks the citation, now through
+    // Output, which tags its own mark.
+    const panel_mark = container.querySelector("[data-highlight-target]")
     expect(panel_mark?.textContent).toBe("return my order")
     expect(warn).not.toHaveBeenCalled()
   })

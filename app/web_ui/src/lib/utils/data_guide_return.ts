@@ -12,7 +12,7 @@ import { sessionStorageStore } from "$lib/stores/local_storage_store"
 
 export type DataGuideCaller = "synth" | "builder"
 
-export const DATA_GUIDE_RETURN_PARAM = "return_to"
+const DATA_GUIDE_RETURN_PARAM = "return_to"
 
 const CALLERS: readonly DataGuideCaller[] = ["synth", "builder"]
 

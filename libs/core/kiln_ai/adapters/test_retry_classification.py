@@ -5,6 +5,10 @@ import litellm
 import pytest
 
 from kiln_ai.adapters.errors import KilnRunError, StructuredOutputParseError
+from kiln_ai.adapters.model_adapters.adapter_stream import (
+    EMPTY_RESPONSE_ERROR_MESSAGE,
+    raise_for_empty_model_response,
+)
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.retry_classification import (
@@ -207,6 +211,33 @@ class TestStructuredOutputParseClassification:
         assert str(exc_info.value) == expected_message
 
     def test_bare_value_error_is_not_retryable(self):
-        # Only the structured-output parse failure is retryable; ValueError
-        # stays terminal everywhere else (config errors, bad arguments, etc.).
+        # Only the ValueErrors the classifier names are retryable; a ValueError
+        # stays terminal everywhere else (config errors, bad arguments, etc.),
+        # which pins how narrow the recognized set is.
         assert is_retryable_error(ValueError("some judge parsing problem")) is False
+
+
+class TestEmptyModelResponseClassification:
+    """An assistant message with neither content nor tool calls: transient when
+    the model simply returned nothing, permanent when a safety classifier
+    refused. Both leave the same empty choice, so they are pinned together."""
+
+    def test_real_empty_response_raise_site_is_retryable(self):
+        # Trigger the production raise site rather than a hand-built ValueError,
+        # so the classifier can't drift from the raised message.
+        with pytest.raises(ValueError) as exc_info:
+            raise_for_empty_model_response(
+                {"finish_reason": "stop", "message": {"content": None}}
+            )
+        assert str(exc_info.value) == EMPTY_RESPONSE_ERROR_MESSAGE
+        assert is_retryable_error(exc_info.value) is True
+
+    def test_real_content_filter_raise_site_is_not_retryable(self):
+        # Same empty choice, but the provider says it refused: repeating the
+        # call returns the same refusal, so it must not be retried.
+        with pytest.raises(ValueError) as exc_info:
+            raise_for_empty_model_response(
+                {"finish_reason": "content_filter", "message": {"content": None}}
+            )
+        assert not str(exc_info.value).startswith(EMPTY_RESPONSE_ERROR_MESSAGE)
+        assert is_retryable_error(exc_info.value) is False

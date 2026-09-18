@@ -98,21 +98,6 @@ class ClaimApi(BaseModel):
     is_verdict: bool
 
 
-# TODO(eval-v2): remove — ClaimDebugContext is temporary ClaimDebug capture
-# scaffolding, deleted before the v2 builder ships GA.
-class ClaimDebugContext(BaseModel):
-    """The wizard settings that produced a captured trace, for offline
-    analysis. Every field is optional: the client fills in whatever state it
-    has, and a single-turn build naturally carries no synthetic-user lane.
-    """
-
-    task_model: str | None = None
-    synthetic_user_model: str | None = None
-    judge: JudgeConfig | None = None
-    turns: int | None = None
-    batch_tag: str | None = None
-
-
 class BuildClaimsApiInput(BaseModel):
     """One trace + its judge decision, to distill into claim/evidence pairs.
 
@@ -125,11 +110,6 @@ class BuildClaimsApiInput(BaseModel):
     eval_rubric: str
     judge_reasoning: str
     judge_score: JudgeScoreLiteral
-    # TODO(eval-v2): remove — the two fields below feed ClaimDebug capture and
-    # go away before GA. Both default to None so a client that sends only the
-    # five fields above behaves exactly as it did before.
-    source_run_id: str | None = None
-    debug_context: ClaimDebugContext | None = None
 
 
 class BuildClaimsApiOutput(BaseModel):
@@ -234,6 +214,12 @@ class AuthorJudgeApiInput(BaseModel):
 
     target_specification: str = Field(min_length=1)
     target_task_prompt: str
+    run_config_id: str | None = Field(
+        default=None,
+        description="The task run config the eval is written against. Its "
+        "tools and skills are what the rubric grades tool and skill use "
+        "over. Omit to use the task's default run config.",
+    )
 
 
 class AuthorJudgeApiOutput(BaseModel):

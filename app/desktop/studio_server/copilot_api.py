@@ -159,11 +159,13 @@ async def copilot_passthrough_payload(
 ) -> dict:
     """The kiln_server payload for a copilot route that forwards a client body.
 
-    When the client names a project and task, the task's tools and skills are
-    read from local storage and attached to target_task_info so the copilot
-    prompts can see what the target task can actually do. A client that already
-    sent capabilities keeps them. The ids are always stripped: they identify
-    local storage and mean nothing to kiln_server.
+    When the client names a project and task, the tools and skills of one of
+    the task's run configs are read from local storage and attached to
+    target_task_info so the copilot prompts can see what the target task can
+    actually do. The client picks the config with run_config_id, or gets the
+    task's default. A client that already sent capabilities keeps them. The
+    ids are always stripped: they identify local storage and mean nothing to
+    kiln_server.
     """
     task_info = input.target_task_info
     # Presence, not truthiness: the model already rejects a half-supplied pair,
@@ -172,7 +174,9 @@ async def copilot_passthrough_payload(
         # A bad id 404s here, which is the honest answer: the caller asked for
         # this task's capabilities and we cannot produce them.
         task = task_from_id(input.project_id, input.task_id)
-        task_tools, task_skills = await task_capabilities_for_task(task)
+        task_tools, task_skills = await task_capabilities_for_task(
+            task, input.run_config_id
+        )
         task_info = task_info.model_copy(
             update={
                 "task_tools": (
@@ -187,7 +191,7 @@ async def copilot_passthrough_payload(
                 ),
             }
         )
-    payload = input.model_dump(exclude={"project_id", "task_id"})
+    payload = input.model_dump(exclude={"project_id", "task_id", "run_config_id"})
     payload["target_task_info"] = task_info_payload(task_info)
     return payload
 
@@ -328,6 +332,14 @@ class CreateSpecWithCopilotRequest(BaseModel):
     # save time and omit it.
     task_prompt_with_example: str | None = None
     task_sample: TaskSample | None = None
+    run_config_id: str | None = Field(
+        default=None,
+        description="Legacy `sdg_session_config` path only: the run config "
+        "whose tools and skills describe the target task while examples are "
+        "generated. Omit to use the task's default run config. The wizard "
+        "arms generate nothing here, so they read no capabilities and this "
+        "field does not apply to them.",
+    )
 
     @model_validator(mode="after")
     def validate_synthesis_path(self) -> Self:
@@ -1334,7 +1346,9 @@ def connect_copilot_api(app: FastAPI):
             task_output_schema = (
                 str(task.output_json_schema) if task.output_json_schema else ""
             )
-            task_tools, task_skills = await task_capabilities_for_task(task)
+            task_tools, task_skills = await task_capabilities_for_task(
+                task, request.run_config_id
+            )
             all_examples = await generate_copilot_examples(
                 api_key=api_key,
                 target_task_info=TaskInfoApi(

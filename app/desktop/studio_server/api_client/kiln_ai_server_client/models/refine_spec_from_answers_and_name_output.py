@@ -17,8 +17,8 @@ class RefineSpecFromAnswersAndNameOutput:
     """
     Attributes:
         new_proposed_spec_edits (list[NewProposedSpecEdit]):
-        suggested_name (str): concise filename-safe snake_case name for the eval, at most 32 characters, derived from
-            the issue description
+        suggested_name (str): short, human-readable name for the eval in Title Case with spaces, at most 32 characters,
+            derived from the issue description
     """
 
     new_proposed_spec_edits: list[NewProposedSpecEdit]

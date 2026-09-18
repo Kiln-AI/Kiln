@@ -2,6 +2,7 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { render, cleanup, fireEvent } from "@testing-library/svelte"
 import KilnProBatchPlan from "./kiln_pro_batch_plan.svelte"
+import KilnProBatchPlanUnderSubheaderHarness from "./kiln_pro_batch_plan_under_subheader_harness.test.svelte"
 
 const PLAN = {
   prompts: ["first prompt", "second prompt"],
@@ -93,17 +94,64 @@ describe("prompts table pass-throughs", () => {
 })
 
 describe("shared defaults", () => {
-  // Both surfaces render these: /generate passes no override, and the eval
-  // builder deliberately relies on the same defaults. Changing either string
-  // changes both flows at once, so it is pinned here rather than left to a
-  // caller's assertion.
+  // The defaults are /generate's shipped strings; the end-to-end suite asserts
+  // the same wording.
   it("labels the regenerate button and the summary panel", () => {
     const { container } = setup()
     const buttons = Array.from(container.querySelectorAll("button")).map((b) =>
       b.textContent?.trim(),
     )
-    expect(buttons).toContain("Refine Plan")
+    expect(buttons).toContain("New Batch Plan")
     expect(container.textContent).toContain("Overview")
     expect(container.textContent).not.toContain("Batch Overview")
+  })
+
+  it("renames the regenerate button when a caller overrides it", () => {
+    // The eval builder's dialog refines the plan on screen instead of
+    // starting a fresh one, so it passes its own wording.
+    const { container } = setup({ regenerate_label: "Refine Plan" })
+    const buttons = Array.from(container.querySelectorAll("button")).map((b) =>
+      b.textContent?.trim(),
+    )
+    expect(buttons).toContain("Refine Plan")
+    expect(buttons).not.toContain("New Batch Plan")
+  })
+})
+
+// The surface's header is the house section header, so this plan reads like
+// every other section in the app and both flows move together when it changes.
+describe("the plan header", () => {
+  it("renders the title, the sub-line and the actions in one section header", () => {
+    const { container } = setup()
+    const heading = container.querySelector("h2")!
+    expect(heading.textContent).toBe("Batch Plan")
+    // The section header's rule, which the title, sub-line and actions share.
+    const rule = heading.closest(".border-b")!
+    expect(rule).not.toBeNull()
+    expect(rule.querySelector("p")!.textContent).toBe(
+      "Review the plan for generating your synthetic data batch.",
+    )
+    const labels = Array.from(rule.querySelectorAll("button")).map((b) =>
+      b.textContent?.trim(),
+    )
+    expect(labels).toEqual(["New Batch Plan", "Generate Batch (2)"])
+  })
+
+  it("puts a consumer's clause on the sub-line, beside the sub-line's text", () => {
+    const { container } = render(KilnProBatchPlanUnderSubheaderHarness, {
+      props: { plan: PLAN },
+    })
+    const subtitle = container
+      .querySelector("h2")!
+      .closest(".border-b")!
+      .querySelector("p")!
+    const clause = subtitle.querySelector("[data-under-subheader]")
+    expect(clause).not.toBeNull()
+    // One joined assertion, because the join is the thing that breaks: the
+    // sub-line and the clause share a paragraph with no separator of their
+    // own, so a clause that does not open with a space reads as one word.
+    expect(subtitle.textContent).toBe(
+      "Review the plan for generating your synthetic data batch. Planned using your data guide.",
+    )
   })
 })

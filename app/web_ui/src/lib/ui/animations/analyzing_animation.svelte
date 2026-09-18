@@ -783,8 +783,6 @@
         warning_message={warning}
         warning_color="warning"
         warning_icon="exclaim"
-        text_size="base"
-        inline={true}
       />
     </div>
   {/if}

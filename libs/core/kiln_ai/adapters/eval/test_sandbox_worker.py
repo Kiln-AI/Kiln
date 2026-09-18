@@ -152,8 +152,9 @@ class TestCapture:
         # child alive until the parent drains the queue; the run must succeed
         # instead of being misreported as a timeout.
         code = (
+            "import sys\n"
             "def score(output, trace, reference_data, task_input):\n"
-            "    print('x' * 70_000)\n"
+            "    sys.stdout.write('x' * 70_000)\n"
             "    return {'x': 1.0}\n"
         )
         result = run_scorer(code, _inputs(), timeout=10)

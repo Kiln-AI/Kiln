@@ -106,9 +106,6 @@ from app.desktop.studio_server.multiturn_sdg_api import (
     resolve_target_run_config,
     to_su_driver_config,
 )
-
-# TODO(eval-v2): remove — ClaimDebug capture scaffolding, deleted before GA.
-from app.desktop.studio_server.utils.claim_debug_capture import capture_claim_debug
 from app.desktop.studio_server.utils.copilot_utils import (
     delete_multi_turn_batch_chains,
     delete_single_turn_batch_runs,
@@ -201,7 +198,6 @@ class ReplaceBatchTagsField(BaseModel):
 
     replace_batch_tags: list[str] = Field(
         default_factory=list,
-        max_length=20,
         description=(
             "Batch tags of previous drives this one supersedes (aborted "
             "re-drives can leave several behind). Their runs are deleted "
@@ -1510,10 +1506,6 @@ def connect_eval_builder_api(app: FastAPI):
             judge_score=input.judge_score,
             judge_reasoning=input.judge_reasoning,
         )
-        # TODO(eval-v2): remove — ClaimDebug capture writes a sidecar record of
-        # this build so claim data survives the browser tab. It is fail-open
-        # (swallows everything), so it can never fail the user's request.
-        await asyncio.to_thread(capture_claim_debug, project_id, task_id, input, output)
         return output
 
     @app.post(
@@ -1606,8 +1598,11 @@ def connect_eval_builder_api(app: FastAPI):
         get_copilot_api_key()
         task = task_from_id(project_id, task_id)
         # The task is loaded for its tools and skills, so the rubric can grade
-        # tool and skill use instead of guessing at it.
-        task_tools, task_skills = await task_capabilities_for_task(task)
+        # tool and skill use instead of guessing at it. The caller names the
+        # run config the eval is about; without one the task default is read.
+        task_tools, task_skills = await task_capabilities_for_task(
+            task, input.run_config_id
+        )
         return await author_judge_prompt(
             target_specification=input.target_specification,
             target_task_prompt=input.target_task_prompt,

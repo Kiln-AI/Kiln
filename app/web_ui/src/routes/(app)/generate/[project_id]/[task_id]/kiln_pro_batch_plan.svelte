@@ -1,12 +1,17 @@
 <script lang="ts">
   import KilnProPlanSummary from "./kiln_pro_plan_summary.svelte"
   import KilnProPromptsTable from "./kiln_pro_prompts_table.svelte"
+  import SettingsHeader from "$lib/ui/settings_header.svelte"
 
   export let plan: { prompts: string[]; summary: string }
   export let on_generate_inputs: () => void
   export let on_regenerate: () => void
   export let on_delete_prompt: (index: number) => void
   export let summary_out_of_sync = false
+  // Label for the regenerate button. On /generate it discards the plan and
+  // starts a fresh one; the eval builder's dialog refines the plan already on
+  // screen, so that flow overrides the wording.
+  export let regenerate_label = "New Batch Plan"
   // Optional override for the generate button's label. The eval builder's
   // click starts a full conversation drive (long, paid), not quick sample
   // generation — its label must say so. Default keeps /generate unchanged.
@@ -20,20 +25,22 @@
   // page, so only one solid primary shows at a time. Default keeps /generate
   // unchanged.
   export let generate_button_outline = false
-  // Header, its sub-line, and the regenerate button label. The regenerate
-  // default is shared copy both surfaces render, so neither overrides it. The
-  // eval builder overrides the header (what it lists is a proposed eval
-  // dataset) and the sub-line (which has to say what running its plan
-  // actually does); it renames the rows through the items_label /
-  // expanded_description props below.
+  // Header and its sub-line. The eval builder overrides the header (what it
+  // lists is a proposed eval dataset) and passes its own one-line sub-line;
+  // what the next step does to each row belongs on that step, not here. It
+  // renames the rows through the items_label / expanded_description props
+  // below.
   export let header_label = "Batch Plan"
   export let subheader =
     "Review the plan for generating your synthetic data batch."
-  export let regenerate_label = "Refine Plan"
+  // The rule under the header. The eval builder's screens stack headers and
+  // read as a ladder of lines with it on, so that flow turns it off. Default
+  // keeps /generate unchanged.
+  export let show_header_divider = true
   // Passed straight to the prompts table: the noun for the plan's rows (which
   // drives its header and aria-label together), the sentence it shows when
-  // expanded, and the header over the rows' first column. Defaults match the
-  // table's own, so /generate is unchanged.
+  // expanded, and the header over the rows' first column. The defaults are
+  // /generate's strings, so that flow passes nothing.
   export let items_label = "Dataset Items"
   export let expanded_description: string | null | false = null
   export let column_label = "Prompt"
@@ -45,18 +52,17 @@
 </script>
 
 <div class="flex flex-col gap-4 mt-12">
-  <div class="flex flex-col md:flex-row md:items-start gap-4">
-    <div class="flex-grow">
-      <div class="text-2xl font-bold">{header_label}</div>
-      <div class="text-sm font-light text-gray-500">
-        {subheader}
-      </div>
-      <!-- Optional per-consumer line under the sub-line (the eval builder's
-      note that the plan used the task's Data Guide). Nothing renders with
-      no consumer content, so /generate stays byte-identical. -->
-      <slot name="under_subheader" />
-    </div>
-    <div class="flex flex-row gap-2 shrink-0">
+  <!-- The house section header carries the title, the sub-line and the two
+  actions, so this surface reads like every other section header in the app.
+  The optional per-consumer clause (the eval builder's note that the plan used
+  the task's Data Guide) rides on the same subtitle line; nothing renders with
+  no consumer content. That line is a paragraph, so the slot's content has to
+  be phrasing content (spans, links, plain text) and never a block element. -->
+  <SettingsHeader title={header_label} show_divider={show_header_divider}>
+    <svelte:fragment slot="subtitle"
+      >{subheader}<slot name="under_subheader" /></svelte:fragment
+    >
+    <svelte:fragment slot="actions">
       <button class="btn btn-md" on:click={on_regenerate}
         >{regenerate_label}</button
       >
@@ -71,8 +77,8 @@
           {generate_button_label ?? `Generate Batch (${count})`}
         </button>
       {/if}
-    </div>
-  </div>
+    </svelte:fragment>
+  </SettingsHeader>
   <!-- Optional per-consumer secondary action (the eval builder's
   model-settings link), right-aligned under the primary-button cluster.
   Guarded so with no consumer filling the slot NOTHING renders and

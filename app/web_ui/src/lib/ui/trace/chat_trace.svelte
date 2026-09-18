@@ -6,6 +6,7 @@
   // paragraph. Output owns the rule so every surface routes content the same.
   import Output, { is_non_string_json } from "$lib/ui/output.svelte"
   import ChatMarkdown from "$lib/ui/chat/chat_markdown.svelte"
+  import { TASK_RESPONSE_TOOL_NAME } from "$lib/utils/task_response_tool"
   import ArrowRightUpIcon from "../icons/arrow_right_up_icon.svelte"
   import ChatMessageActions from "./chat_message_actions.svelte"
   import ToolCall from "./tool_call.svelte"
@@ -240,9 +241,8 @@
     return null
   }
 
-  const INTERNAL_ANSWER_TOOL = "task_response"
   function is_internal_answer(tc: ToolCallMessageParam): boolean {
-    return tc.function?.name === INTERNAL_ANSWER_TOOL
+    return tc.function?.name === TASK_RESPONSE_TOOL_NAME
   }
   let tool_messages_dialog: ToolMessagesDialog | null = null
   let usage_info_dialog: UsageInfoDialog | null = null

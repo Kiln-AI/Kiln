@@ -9,6 +9,9 @@ the synthetic-user batch runner).
 import litellm
 
 from kiln_ai.adapters.errors import KilnRunError, StructuredOutputParseError
+from kiln_ai.adapters.model_adapters.adapter_stream import (
+    EMPTY_RESPONSE_ERROR_MESSAGE,
+)
 from kiln_ai.datamodel.task_output import TASK_OUTPUT_SCHEMA_ERROR_PREFIX
 
 
@@ -55,6 +58,15 @@ def is_retryable_error(e: BaseException) -> bool:
     # ValueError raised when structured output doesn't match the task's schema;
     # recognized by the shared prefix the raise sites prepend to the message.
     if isinstance(e, ValueError) and TASK_OUTPUT_SCHEMA_ERROR_PREFIX in str(e):
+        return True
+
+    # ValueError raised when the model returns an assistant message carrying
+    # neither content nor tool calls; recognized by the message the raise sites
+    # share. Transient: the same call repeated almost always comes back with
+    # content. A content-filter refusal produces a different message from the
+    # same raise site and is deliberately left out — a refusal is the model's
+    # deterministic answer, so repeating the call returns the same refusal.
+    if isinstance(e, ValueError) and str(e).startswith(EMPTY_RESPONSE_ERROR_MESSAGE):
         return True
 
     return False

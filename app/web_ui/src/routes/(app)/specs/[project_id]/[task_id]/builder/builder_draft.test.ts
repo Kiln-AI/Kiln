@@ -124,6 +124,7 @@ const full_draft: BuilderDraft = {
   // Deliberately NOT the default 5: a fixture on the default couldn't tell a
   // restored choice from the fallback.
   turns_per_case: 8,
+  target_run_config_id: "run_config_1",
 }
 
 describe("draft round-trip", () => {
@@ -747,11 +748,9 @@ describe("should_invalidate_refined_values", () => {
 })
 
 describe("create_eval_button_label", () => {
-  it("advertises the draft only with copilot AND content", () => {
-    expect(create_eval_button_label(true, true)).toBe("Continue Eval Draft")
-    expect(create_eval_button_label(true, false)).toBe("Create Eval")
-    expect(create_eval_button_label(false, true)).toBe("Create Eval")
-    expect(create_eval_button_label(false, false)).toBe("Create Eval")
+  it("advertises the draft when there is one to continue", () => {
+    expect(create_eval_button_label(true)).toBe("Continue Eval Draft")
+    expect(create_eval_button_label(false)).toBe("Create Eval")
   })
 })
 
@@ -844,25 +843,18 @@ describe("conversation length (turns_per_case)", () => {
 
 describe("create_eval_destination — where the Evals page's button goes", () => {
   it("continues a draft in the builder, which restores it", () => {
-    expect(create_eval_destination(true, true)).toBe("builder")
+    expect(create_eval_destination(true)).toBe("builder")
   })
 
-  it("starts on the Setup and Eval Type page otherwise", () => {
-    expect(create_eval_destination(true, false)).toBe("select_template")
-    expect(create_eval_destination(false, true)).toBe("select_template")
-    expect(create_eval_destination(false, false)).toBe("select_template")
+  it("starts on the Create Eval page when there is no draft", () => {
+    expect(create_eval_destination(false)).toBe("select_template")
   })
 
   it("agrees with the label: 'Continue Eval Draft' always means the builder", () => {
-    for (const has_copilot of [true, false]) {
-      for (const has_draft of [true, false]) {
-        const continues =
-          create_eval_button_label(has_copilot, has_draft) ===
-          "Continue Eval Draft"
-        expect(
-          create_eval_destination(has_copilot, has_draft) === "builder",
-        ).toBe(continues)
-      }
+    for (const has_draft of [true, false]) {
+      const continues =
+        create_eval_button_label(has_draft) === "Continue Eval Draft"
+      expect(create_eval_destination(has_draft) === "builder").toBe(continues)
     }
   })
 })

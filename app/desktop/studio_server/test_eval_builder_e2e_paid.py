@@ -111,6 +111,7 @@ cost.
 """
 
 import json
+import logging
 import os
 import random
 import warnings
@@ -134,6 +135,8 @@ from app.desktop.studio_server.utils.copilot_utils import (
     find_multi_turn_chain_leaves,
     get_copilot_api_key,
 )
+
+logger = logging.getLogger(__name__)
 
 # The UI runs 40 cases x 5 turns; both are request parameters, so the
 # harness shrinks them without touching any code. Four cases keeps the run
@@ -1071,9 +1074,11 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     # below 4 driven cases (golden_target = num_driven // 4 = 0).
     if agreements:
         agreement = sum(agreements) / len(agreements)
-        print(
-            f"\ngolden-set judge agreement: {agreement:.0%} "
-            f"({sum(agreements)}/{len(agreements)} golden leaves)"
+        logger.info(
+            "golden-set judge agreement: %.0f%% (%d/%d golden leaves)",
+            agreement * 100,
+            sum(agreements),
+            len(agreements),
         )
     else:
         warnings.warn(

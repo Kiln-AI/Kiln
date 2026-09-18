@@ -9,7 +9,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.adapters.errors import KilnRunError
-from kiln_ai.datamodel import Project, Task, TaskOutput, TaskRun
+from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
@@ -59,9 +59,6 @@ from app.desktop.studio_server.eval_builder_api import (
     connect_eval_builder_api,
     run_judge_with_retry,
 )
-
-# TODO(eval-v2): remove — ClaimDebug capture scaffolding, deleted before GA.
-from app.desktop.studio_server.utils.claim_debug_capture import ClaimDebug
 from app.desktop.studio_server.utils.eval_builder_utils import (
     JudgeVerdict,
     build_judge_prompt_template,
@@ -550,8 +547,10 @@ def _task_mock(turn_mode=None, input_json_schema=None):
     task.turn_mode = turn_mode if turn_mode is not None else TurnMode.multiturn
     task.input_json_schema = input_json_schema
     # No default run config, so capability collection yields nothing and routes
-    # that read it behave as they did before capabilities existed.
+    # that read it behave as they did before capabilities existed. The empty
+    # config list is what a caller-named config is looked up in.
     task.default_run_config_id = None
+    task.run_configs.return_value = []
     return task
 
 
@@ -696,6 +695,65 @@ class TestAuthorJudge:
         assert body_dict["task_skills"] == [
             {"name": "refund-policy", "description": "Refunds."}
         ]
+
+    @pytest.mark.parametrize(
+        ("extra_body", "expected_run_config_id"),
+        [({"run_config_id": "rc-7"}, "rc-7"), ({}, None)],
+        ids=["named_config", "no_config"],
+    )
+    def test_author_judge_reads_the_run_config_the_caller_named(
+        self,
+        client,
+        author_judge_input,
+        mock_api_key,
+        author_judge_task,
+        extra_body,
+        expected_run_config_id,
+    ):
+        """The rubric grades the config the eval is written against, so the id
+        the caller sends is the one the capability read must use. No id means
+        the task default, exactly as before the caller could choose."""
+        mock_output = MagicMock(spec=GenerateJudgePromptOutput)
+        mock_output.judge_evaluation_prompt = "1. Check the transcript."
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = mock_output
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.task_capabilities_for_task",
+                new_callable=AsyncMock,
+                return_value=([], []),
+            ) as mock_capabilities,
+            patch(
+                "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
+        ):
+            response = client.post(
+                AUTHOR_JUDGE_URL, json={**author_judge_input, **extra_body}
+            )
+
+        assert response.status_code == 200
+        assert mock_capabilities.await_args.args[1] == expected_run_config_id
+
+    def test_author_judge_unresolvable_run_config_404s(
+        self, client, author_judge_input, mock_api_key, author_judge_task
+    ):
+        """An id that names no config on the task stops the request rather
+        than authoring a rubric against the default config's surface."""
+        with patch(
+            "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
+            new_callable=AsyncMock,
+        ) as mock_post:
+            response = client.post(
+                AUTHOR_JUDGE_URL,
+                json={**author_judge_input, "run_config_id": "no-such-config"},
+            )
+
+        assert response.status_code == 404
+        mock_post.assert_not_awaited()
 
     def test_author_judge_reports_a_task_with_no_capabilities(
         self, client, author_judge_input, mock_api_key, author_judge_task
@@ -996,7 +1054,7 @@ def _auth_error() -> litellm.AuthenticationError:
     )
 
 
-def _fake_run_cases_batch(*, fail_case: int | None = None, events_per_case: int = 2):
+def _fake_run_cases_batch(*, fail_case: int | None = None):
     """An async-generator stand-in for the libs/core runner: batch_started,
     then per case its turn events and completion (or failure)."""
     from kiln_ai.synthetic_user.runner import (
@@ -1389,6 +1447,20 @@ class TestMultiTurnPipeline:
             assert "unexpected error" not in e["message"]
             assert e["error_type"] == "BadRequestError"
         assert events[-1] == "complete"
+
+    def test_replace_batch_tags_has_no_upper_bound(
+        self, client, pipeline_request, pipeline_seams
+    ):
+        # Every failed or aborted drive strands one more batch, and the next
+        # drive is asked to clean all of them up. A user who retried many
+        # times must still be able to drive.
+        stranded = [f"stale{i}" for i in range(25)]
+        pipeline_request["replace_batch_tags"] = stranded
+        resp = client.post(PIPELINE_URL, json=pipeline_request)
+
+        assert resp.status_code == 200
+        delete_mock = pipeline_seams["delete"]
+        assert [c.args[1] for c in delete_mock.call_args_list] == stranded
 
     def test_replace_batch_tags_deleted_after_successful_drive(
         self, client, pipeline_request, pipeline_seams
@@ -2801,199 +2873,3 @@ class TestPreflightModel:
         resp = client.post(PREFLIGHT_URL, json=preflight_request)
         assert resp.status_code == 422
         mock_adapter_for_task.assert_not_called()
-
-
-# ───────────────────── ClaimDebug capture ────────────────────────────────
-#
-# TODO(eval-v2): remove — everything below this header is ClaimDebug capture
-# scaffolding, deleted before the v2 builder ships GA along with the module
-# it tests.
-
-
-def _real_task(tmp_path, turn_mode=TurnMode.single_turn) -> Task:
-    """A project + task saved on disk, so capture can resolve real paths."""
-    project = Project(name="Debug Project", path=tmp_path / "project.kiln")
-    project.save_to_file()
-    task = Task(
-        name="Debug Task",
-        instruction="Answer customer questions about return policy.",
-        turn_mode=turn_mode,
-        parent=project,
-    )
-    task.save_to_file()
-    return task
-
-
-def _real_run(task: Task, trace=None) -> TaskRun:
-    """A saved run under the task, optionally carrying a trace."""
-    run = TaskRun(
-        parent=task,
-        input="What's your return window?",
-        output=TaskOutput(output="30 days from purchase."),
-        trace=trace,
-    )
-    run.save_to_file()
-    return run
-
-
-def _capture_dir(task: Task):
-    assert task.path is not None
-    return task.path.parent / "eval_debug" / "claim_builds"
-
-
-@pytest.fixture
-def capture_seams():
-    """Patch the claim builder with the canned output and yield a context
-    manager that points capture's task resolution at a given task."""
-    with patch(
-        "app.desktop.studio_server.eval_builder_api.build_claims_for_trace",
-        new=AsyncMock(return_value=_claims_output()),
-    ):
-        yield lambda task: patch(
-            "app.desktop.studio_server.utils.claim_debug_capture.task_from_id",
-            return_value=task,
-        )
-
-
-@pytest.mark.usefixtures("build_claims_task")
-class TestClaimDebugCapture:
-    def test_capture_failure_still_returns_claims(
-        self, client, build_claims_input, capture_seams
-    ):
-        """Fail-open: an exploding capture must not fail the user's build."""
-        with patch(
-            "app.desktop.studio_server.utils.claim_debug_capture.task_from_id",
-            side_effect=RuntimeError("disk on fire"),
-        ):
-            resp = client.post(
-                BUILD_CLAIMS_URL,
-                json={**build_claims_input, "source_run_id": "run-1"},
-            )
-
-        assert resp.status_code == 200
-        assert resp.json() == _claims_output().model_dump(mode="json", by_alias=True)
-
-    def test_traversal_run_id_writes_nothing(
-        self, client, build_claims_input, capture_seams, tmp_path
-    ):
-        """source_run_id lands in a filename, so a traversal-shaped id must not
-        write outside the capture directory (or anywhere at all)."""
-        task = _real_task(tmp_path)
-        before = sorted(p for p in tmp_path.rglob("*"))
-
-        with capture_seams(task):
-            resp = client.post(
-                BUILD_CLAIMS_URL,
-                json={**build_claims_input, "source_run_id": "../../../pwned"},
-            )
-
-        assert resp.status_code == 200
-        assert resp.json() == _claims_output().model_dump(mode="json", by_alias=True)
-        # Nothing new anywhere under the project, not just inside eval_debug.
-        assert sorted(p for p in tmp_path.rglob("*")) == before
-        assert task.path is not None
-        assert not (task.path.parent / "eval_debug").exists()
-
-    def test_old_payload_writes_no_capture(
-        self, client, build_claims_input, capture_seams, tmp_path
-    ):
-        """A client sending only the original five fields behaves as before."""
-        task = _real_task(tmp_path)
-        with capture_seams(task) as task_from_id_mock:
-            resp = client.post(BUILD_CLAIMS_URL, json=build_claims_input)
-
-        assert resp.status_code == 200
-        assert resp.json() == _claims_output().model_dump(mode="json", by_alias=True)
-        # No run id means no capture at all: it bails before touching the task.
-        task_from_id_mock.assert_not_called()
-        assert task.path is not None
-        assert not (task.path.parent / "eval_debug").exists()
-
-    def test_capture_round_trips_and_appends(
-        self, client, build_claims_input, capture_seams, tmp_path
-    ):
-        task = _real_task(tmp_path, turn_mode=TurnMode.multiturn)
-        trace = [
-            {"role": "user", "content": "What's your return window?"},
-            {"role": "assistant", "content": "30 days from purchase."},
-        ]
-        run = _real_run(task, trace=trace)
-        payload = {
-            **build_claims_input,
-            "source_run_id": run.id,
-            "debug_context": {
-                "task_model": "gpt_5_5",
-                "synthetic_user_model": "openai/gpt_5_5",
-                "judge": {
-                    "prompt": "Judge whether the output fabricates policy.",
-                    "model_name": "claude_sonnet_4_6",
-                    "model_provider": "anthropic",
-                },
-                "turns": 5,
-                "batch_tag": "batch-abc",
-            },
-        }
-
-        with capture_seams(task):
-            assert client.post(BUILD_CLAIMS_URL, json=payload).status_code == 200
-
-        capture_path = _capture_dir(task) / f"{run.id}_1.json"
-        on_disk = json.loads(capture_path.read_text())
-        # json.loads + model_validate, the same way the datamodel loads runs
-        # off disk — see ClaimDebug's docstring.
-        record = ClaimDebug.model_validate(on_disk)
-
-        assert record.source_run_id == run.id
-        assert record.trace == run.trace
-        assert record.raw_input == build_claims_input["raw_input"]
-        assert record.eval_rubric == build_claims_input["eval_rubric"]
-        assert record.judge_score == "fail"
-        assert record.overview == _claims_output().overview
-        assert record.claims == _claims_output().claims
-        assert record.debug_context is not None
-        assert record.debug_context.turns == 5
-        assert record.debug_context.synthetic_user_model == "openai/gpt_5_5"
-        assert record.debug_context.judge is not None
-        assert record.debug_context.judge.model_name == "claude_sonnet_4_6"
-
-        # Citations must keep the `from` wire key on disk, not `from_`.
-        for entry in [on_disk["overview"], *on_disk["claims"]]:
-            citation = entry["citations"][0]
-            assert "from" in citation and "from_" not in citation
-
-        # A refine-round rebuild appends a new file rather than overwriting.
-        with capture_seams(task):
-            assert client.post(BUILD_CLAIMS_URL, json=payload).status_code == 200
-        assert (_capture_dir(task) / f"{run.id}_2.json").exists()
-        assert capture_path.exists()
-
-    def test_capture_with_no_synthetic_user_lane(
-        self, client, build_claims_input, capture_seams, tmp_path
-    ):
-        """A single-turn build populates no synthetic-user state, so those
-        context fields arrive None and the capture is written all the same."""
-        task = _real_task(tmp_path)
-        run = _real_run(task, trace=[{"role": "user", "content": "hi"}])
-        payload = {
-            **build_claims_input,
-            "source_run_id": run.id,
-            "debug_context": {
-                "task_model": "gpt_5_5",
-                "synthetic_user_model": None,
-                "judge": None,
-                "turns": None,
-                "batch_tag": "batch-single",
-            },
-        }
-
-        with capture_seams(task):
-            assert client.post(BUILD_CLAIMS_URL, json=payload).status_code == 200
-
-        record = ClaimDebug.model_validate(
-            json.loads((_capture_dir(task) / f"{run.id}_1.json").read_text())
-        )
-        assert record.debug_context is not None
-        assert record.debug_context.synthetic_user_model is None
-        assert record.debug_context.turns is None
-        assert record.debug_context.task_model == "gpt_5_5"
-        assert record.trace == run.trace

@@ -11,6 +11,7 @@
 
 import type { components } from "$lib/api_schema"
 import type { TraceMessage } from "$lib/types"
+import { TASK_RESPONSE_TOOL_NAME } from "$lib/utils/task_response_tool"
 
 export type CitationSource = "input" | "output"
 
@@ -49,25 +50,6 @@ export type Claim = {
 export type Overview = {
   text: string
   citations: Citation[]
-}
-
-// What buildClaimEvidence returns for a single trace: the overview, then one
-// to eight claims in reading order.
-export type BuildClaimEvidenceOutput = {
-  overview: Overview
-  claims: Claim[]
-}
-
-// What buildClaimEvidence takes for a single trace. The studio adds
-// task_instruction itself (context for what the task is, never a rubric);
-// the UI sends the rest.
-export type BuildClaimEvidenceInput = {
-  task_instruction: string
-  raw_input: string
-  raw_output: string
-  eval_rubric: string
-  judge_reasoning: string
-  judge_score: JudgeScore
 }
 
 // ── Client-side per-trace bundle ─────────────────────────────────────────
@@ -115,11 +97,6 @@ export type ClaimVerdict = {
 export type TraceReview = {
   trace_id: string
   claim_verdicts: ClaimVerdict[]
-  // The reviewer's overall call, asked outright ONLY when no claim is the
-  // verdict (the builder omitted it, or the build failed). When a verdict
-  // claim exists the overall call is derived from its grade and this stays
-  // null. See human_verdict.
-  overall: JudgeScore | null
 }
 
 // ── Claim text ───────────────────────────────────────────────────────────
@@ -454,11 +431,7 @@ function span_end(haystack: FoldedText, last: number): number {
 // Any drift would shift offsets, so the mapper verifies the recomputed block
 // against raw_output before trusting it (see below).
 
-export type TraceHighlightKind =
-  | "content"
-  | "reasoning"
-  | "tool_calls"
-  | "tool_result"
+type TraceHighlightKind = "content" | "reasoning" | "tool_calls" | "tool_result"
 
 export type TraceHighlight = {
   trace_index: number
@@ -525,11 +498,6 @@ function flattener_reasoning(message: TraceMessage): string | null {
   }
   return null
 }
-
-// The synthetic tool that carries a structured answer back from the model.
-// Not a tool the user defined, so it is never listed as one. Mirrors
-// TASK_RESPONSE_TOOL_NAME in libs/core .../open_ai_types.py.
-const TASK_RESPONSE_TOOL_NAME = "task_response"
 
 // Mirror EvalTraceFormatter.structured_output_from_message: the arguments of
 // the last task_response call, which are the model's answer.
@@ -822,7 +790,6 @@ export function build_trace_reviews(traces: TraceClaims[]): TraceReview[] {
   return traces.map((t) => ({
     trace_id: t.trace_id,
     claim_verdicts: empty_claim_verdicts(t.claims ?? []),
-    overall: null,
   }))
 }
 
@@ -833,9 +800,7 @@ export function empty_claim_verdicts(claims: Claim[]): ClaimVerdict[] {
 
 // Index of the claim carrying the overall verdict, or -1 when the builder
 // omitted it. At most one claim is flagged (the studio flags only the last).
-export function verdict_claim_index(
-  trace: Pick<TraceClaims, "claims">,
-): number {
+function verdict_claim_index(trace: Pick<TraceClaims, "claims">): number {
   return (trace.claims ?? []).findIndex((c) => c.is_verdict)
 }
 
@@ -844,16 +809,16 @@ export function has_verdict_claim(trace: Pick<TraceClaims, "claims">): boolean {
 }
 
 // A trace is reviewed once every claim on screen has a grade, every
-// disagreement carries a reason, and the overall call is known: derived from
-// the verdict claim's grade when the builder wrote one, otherwise answered
-// outright. A failed build has no claims, so only the outright answer counts.
-// Unbuilt and in-flight traces are never reviewed: nothing was presented.
+// disagreement carries a reason, and the verdict claim is among them: the
+// pass/fail call is that claim's grade and nothing else records it. A trace
+// without one never reaches the reviewer (reviewable_subset), so this is the
+// gate, not a fallback. Unbuilt, in-flight and failed traces are never
+// reviewed: nothing was presented.
 export function is_trace_reviewed(
   trace: TraceClaims,
   review: TraceReview | undefined,
 ): boolean {
   if (!review) return false
-  if (trace.claims_state === "error") return review.overall !== null
   if (trace.claims_state !== "built") return false
   const claims = trace.claims ?? []
   // Slots are sized when the claims arrive; until then nothing is gradable.
@@ -863,7 +828,7 @@ export function is_trace_reviewed(
     (v) => v.agrees !== false || v.why.trim().length > 0,
   )
   if (!graded || !reasoned) return false
-  return has_verdict_claim(trace) || review.overall !== null
+  return has_verdict_claim(trace)
 }
 
 export function reviewed_trace_count(
@@ -873,16 +838,16 @@ export function reviewed_trace_count(
   return traces.filter((t, i) => is_trace_reviewed(t, reviews[i])).length
 }
 
-// The reviewer's overall call on a trace. When the builder wrote a verdict
-// claim, its grade IS the call: agree keeps the judge's verdict, disagree
-// flips it. When it omitted one, the call is the Pass/Fail the reviewer
-// answered outright. Null while unanswered.
+// The reviewer's call on a trace: the verdict claim's grade IS the call —
+// agree keeps the judge's verdict, disagree flips it. Null while unanswered,
+// and null for a trace with no verdict claim, which the reviewer is never
+// shown. Nothing else records the call.
 export function human_verdict(
   trace: TraceClaims,
   review: TraceReview,
 ): JudgeScore | null {
   const at = verdict_claim_index(trace)
-  if (at < 0) return review.overall
+  if (at < 0) return null
   const agrees = review.claim_verdicts[at]?.agrees ?? null
   if (agrees === null) return null
   if (agrees) return trace.judge_score
@@ -927,24 +892,35 @@ export function review_target(total: number): number {
 // demanding the full target then would deadlock the gate on traces the
 // reviewer was never shown. First-round subsets are sized to the target, so
 // this only ever bites mid-loop.
-// The subset the reviewer actually walks: the selected traces minus any whose
-// claims build FAILED. Such a trace carries no overview and no claims, so the
-// only grade it could take is the overall call answered from the raw
-// transcript, which is not the review this step is built around; it drops out
-// rather than becoming a transcript-reading exercise. Nothing is built to
-// replace it: the claims gate has already finished paying for the round's
-// builds. (The review component can still grade a trace that fails on screen
-// on its overall call; this filter is what keeps that off the wizard's path.)
+// The subset the reviewer actually walks: the selected traces minus the ones
+// there is no claim review to do on. Two cases drop out, for the same reason.
+//
+// A FAILED build carries no overview and no claims, so there is nothing to
+// grade. A BUILT trace whose claims carry no verdict claim has claims to grade
+// but nothing that records the pass/fail call, and asking the reviewer to
+// supply one the builder should have written is a different task from the one
+// this step is built around. The builder's contract is that the last claim is
+// the verdict, and it almost always is; a trace that breaks it is a prompt
+// problem, not a reviewing problem.
+//
+// Nothing is built to replace either: the claims gate has already finished
+// paying for the round's builds.
 //
 // An excluded trace is an unselected one in every sense: never shown, so never
 // graded, so absent from the answer key and left to the train split unrated.
 // Pair it with calibration_gate_target so the save gate, the step header's
 // "reviewing N of M" and the review's own counter all read one number.
 export function reviewable_subset(
-  traces: Pick<TraceClaims, "claims_state">[],
+  traces: Pick<TraceClaims, "claims_state" | "claims">[],
   selected: number[],
 ): number[] {
-  return selected.filter((i) => traces[i]?.claims_state !== "error")
+  return selected.filter((i) => {
+    const trace = traces[i]
+    if (!trace || trace.claims_state === "error") return false
+    if (trace.claims_state === "built" && !has_verdict_claim(trace))
+      return false
+    return true
+  })
 }
 
 export function calibration_gate_target(
@@ -1058,7 +1034,7 @@ export function select_calibration_subset(
 
 // The studio save contract IS in the generated schema — alias it (don't
 // hand-mirror) so a backend change to the payload shape fails to compile here.
-export type GradedClaim = components["schemas"]["GradedClaim"]
+type GradedClaim = components["schemas"]["GradedClaim"]
 export type ClaimReviewPayload = components["schemas"]["ClaimReviewApi"]
 
 function graded_claim(claim: Claim, verdict: ClaimVerdict): GradedClaim {
@@ -1074,7 +1050,8 @@ function graded_claim(claim: Claim, verdict: ClaimVerdict): GradedClaim {
 }
 
 // Build the persisted grades for one reviewed trace: the overview the
-// reviewer read, every claim with its grade, and the overall call. Every
+// reviewer read, every claim with its grade, and the call derived from the
+// verdict claim. Every
 // claim is graded by the time this runs (the gate demands it), so the record
 // never has to encode "not reviewed". Throws unless the claims are built and
 // the trace is fully graded: an invented grade would contradict the golden
@@ -1117,7 +1094,7 @@ export function disagreement_feedback(review: TraceReview): string {
 export type GradedTracePayload = ClaimReviewPayload & { trace_label: string }
 
 // The refine model's proposed edit + its one-line rationale.
-export type RefineJudgeChange = { change: string; rationale: string }
+type RefineJudgeChange = { change: string; rationale: string }
 
 // The refine loop's response — a PROPOSAL, never auto-applied.
 export type RefineJudgeProposal = {
@@ -1127,33 +1104,31 @@ export type RefineJudgeProposal = {
 }
 
 // Build the graded-traces payload for the refine call from the in-session
-// review. Only fully graded traces with BUILT claims contribute: a trace
-// graded on the overall call alone (a failed build) has no claim grade to
-// hand the refiner, and a half-graded trace is no signal. trace_label is the
+// review. Only fully graded traces with BUILT claims contribute: a
+// half-graded trace is no signal, and a trace the reviewer never saw has no
+// grades at all. trace_label is the
 // durable run id when present, else the client trace id (opaque — the
 // refine prompt tolerates that).
 export function build_graded_traces(
   traces: TraceClaims[],
   reviews: TraceReview[],
 ): GradedTracePayload[] {
-  return traces
-    .map((trace, i) => ({ trace, review: reviews[i] }))
-    .filter(
-      ({ trace, review }) =>
-        review &&
-        trace.claims_state === "built" &&
-        is_trace_reviewed(trace, review),
-    )
-    .map(({ trace, review }) => ({
-      trace_label: trace.leaf_run_id || trace.trace_id,
-      ...build_claim_review_payload(trace, review),
-    }))
+  return (
+    traces
+      .map((trace, i) => ({ trace, review: reviews[i] }))
+      // is_trace_reviewed demands built claims, so it is the whole filter.
+      .filter(({ trace, review }) => review && is_trace_reviewed(trace, review))
+      .map(({ trace, review }) => ({
+        trace_label: trace.leaf_run_id || trace.trace_id,
+        ...build_claim_review_payload(trace, review),
+      }))
+  )
 }
 
 // How many graded traces carry a disagreement on any claim. This is the
-// loop's entry predicate as a count, so the review CTA flips to its refine
-// label precisely when a save click would start a calibration round, and
-// the tooltip can name the number honestly.
+// loop's entry predicate as a count: the forward action asks whether to
+// improve the judge precisely when a click would otherwise start a
+// calibration round.
 export function grade_disagreement_count(
   graded: Pick<ClaimReviewPayload, "claims">[],
 ): number {
@@ -1168,18 +1143,6 @@ export function has_grade_disagreement(
   graded: Pick<ClaimReviewPayload, "claims">[],
 ): boolean {
   return grade_disagreement_count(graded) > 0
-}
-
-// The refine CTA's tooltip: says what the click actually starts (a refine
-// round, not a save) and what it costs the reviewer (one more review).
-// judged_noun is the arm's word for one reviewed item — the wizard reviews
-// conversations in multi-turn and examples in single-turn.
-export function refine_judge_tooltip(
-  num_disagreements: number,
-  judged_noun: string,
-): string {
-  const items = num_disagreements === 1 ? judged_noun : `${judged_noun}s`
-  return `You disagreed with the judge on ${num_disagreements} ${items}. Kiln will improve the judge from your feedback and re-check your eval data, then you'll review once more.`
 }
 
 // Indices of traces carrying any explicit disagreement on a claim — the
@@ -1271,38 +1234,17 @@ export function plan_save_action(args: {
   return args.has_disagreement ? { action: "calibrate" } : { action: "save" }
 }
 
-// Which primary action the review CTA offers. Any disagreement enters a
-// refine round; a review with zero disagreements saves — clearing the last
-// disagreement flips the CTA back, which doubles as the convergence signal.
-// The way out of the loop with disagreement remaining is the explicit
-// save-without-refining link, not this CTA.
-export type ReviewCta = "save" | "refine"
-
-export function review_cta(args: { num_disagreements: number }): ReviewCta {
-  return args.num_disagreements === 0 ? "save" : "refine"
-}
-
-// The honest shortfall notice when some cases couldn't be re-checked: they
-// kept stale verdicts, so they were left out of the round. case_noun is the
-// arm's word for one unit of eval data (conversation / test run).
+// The honest shortfall notice when some eval data couldn't be re-checked: it
+// kept stale verdicts, so it was left out of the round. `total` is every
+// result carried over from the previous round, the ones with no id included —
+// those cannot be re-checked either, so they count as failures here. Counting
+// rather than naming keeps one sentence true on both arms.
 export function rejudge_shortfall_notice(
   failed: number,
-  case_noun: string,
+  total: number,
 ): string | null {
   if (failed <= 0) return null
-  const cases = failed === 1 ? case_noun : `${case_noun}s`
-  return `${failed} ${cases} couldn't be re-checked with the improved judge and kept their previous results. They were left out of this review round.`
-}
-
-// The notice for feedback the refine model declined to incorporate. The
-// reviewer would otherwise see their note apparently ignored with no reason,
-// so the model's own words are quoted back. Null when it declined nothing.
-export function declined_feedback_notice(
-  not_incorporated_feedback: string | null,
-): string | null {
-  const text = (not_incorporated_feedback ?? "").trim()
-  if (!text) return null
-  return `Some of your feedback was not applied this round: "${text}"`
+  return `${failed} of ${total} couldn't be re-checked with the improved judge and kept their previous results. They were left out of this review round.`
 }
 
 // A judge prompt/rubric this long is almost certainly runaway model output,

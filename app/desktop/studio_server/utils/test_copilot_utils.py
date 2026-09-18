@@ -20,6 +20,7 @@ from kiln_ai.datamodel.run_config import (
     MCPToolReference,
     ToolsRunConfig,
 )
+from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_output import (
     DataSource,
     DataSourceType,
@@ -1493,6 +1494,87 @@ class TestTaskCapabilitiesForTask:
         _, skills = await task_capabilities_for_task(task)
 
         assert [skill.name for skill in skills or []] == ["alpha", "zebra"]
+
+
+class TestTaskCapabilitiesForANamedRunConfig:
+    """A caller can name the run config it is asking about — the one an eval is
+    written against — instead of taking whatever the task defaults to."""
+
+    @pytest.fixture
+    def task_with_a_second_run_config(
+        self,
+        project_and_task,
+        give_task_one_tool_and_skill,
+        agent_run_config_properties,
+    ):
+        """A task whose default gives it `add` plus a skill, and a second saved
+        config that gives it `multiply` and nothing else."""
+        project, task = project_and_task
+        give_task_one_tool_and_skill(project, task)
+        other = TaskRunConfig(
+            name="other",
+            run_config_properties=agent_run_config_properties(
+                tools_config=ToolsRunConfig(tools=["kiln_tool::multiply_numbers"])
+            ),
+            parent=task,
+        )
+        other.save_to_file()
+        return task, other
+
+    async def test_reads_the_named_config_rather_than_the_default(
+        self, task_with_a_second_run_config
+    ):
+        task, other = task_with_a_second_run_config
+
+        tools, skills = await task_capabilities_for_task(task, other.id)
+
+        assert [tool.name for tool in tools or []] == ["multiply"]
+        # The skill belongs to the default config, not this one.
+        assert skills == []
+
+    async def test_no_id_still_reads_the_default(self, task_with_a_second_run_config):
+        """The second config must not change what an un-named call reports."""
+        task, _ = task_with_a_second_run_config
+
+        tools, skills = await task_capabilities_for_task(task)
+
+        assert [tool.name for tool in tools or []] == ["add"]
+        assert [skill.name for skill in skills or []] == ["refund-policy"]
+
+    async def test_a_named_config_is_read_even_without_a_default(
+        self, project_and_task, agent_run_config_properties
+    ):
+        """Naming a config is a complete answer on its own — a task with no
+        default is still fully described."""
+        _, task = project_and_task
+        run_config = TaskRunConfig(
+            name="only",
+            run_config_properties=agent_run_config_properties(
+                tools_config=ToolsRunConfig(tools=["kiln_tool::add_numbers"])
+            ),
+            parent=task,
+        )
+        run_config.save_to_file()
+
+        tools, _ = await task_capabilities_for_task(task, run_config.id)
+
+        assert [tool.name for tool in tools or []] == ["add"]
+
+    @pytest.mark.parametrize(
+        "run_config_id", ["does-not-exist", ""], ids=["unknown_id", "empty_id"]
+    )
+    async def test_an_unresolvable_named_config_is_404(
+        self, task_with_a_second_run_config, run_config_id
+    ):
+        """Fail loud: falling back to the default would describe a config the
+        caller never asked about, with nothing on the wire to say so. An empty
+        string is a supplied id too."""
+        task, _ = task_with_a_second_run_config
+
+        with pytest.raises(HTTPException) as exc:
+            await task_capabilities_for_task(task, run_config_id)
+
+        assert exc.value.status_code == 404
 
 
 class TestTaskCapabilitiesRunContext:

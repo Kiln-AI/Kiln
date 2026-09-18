@@ -15,7 +15,7 @@ export type JudgeConfig = components["schemas"]["JudgeConfig"]
 // (the picks come from the models registry), and JudgeConfig now validates
 // it, so ModelChoice carries the same enum end-to-end rather than a bare
 // string.
-export type ModelProviderName = components["schemas"]["ModelProviderName"]
+type ModelProviderName = components["schemas"]["ModelProviderName"]
 
 // A bare model choice for one of the builder's lanes (synthetic-user driver
 // or judge), as the wire carries it.
@@ -35,23 +35,4 @@ export function model_choice(
   model_provider: string,
 ): ModelChoice {
   return { model_name, model_provider: model_provider as ModelProviderName }
-}
-
-type SdgStepConfig =
-  components["schemas"]["SyntheticDataGenerationStepConfigApi"]
-
-// The single boundary mapping from the server's SDG step-config shape
-// (clarify_spec's judge_result) into the builder's judge shape. The user's
-// judge-model pick overrides the server's model suggestion — the prompt is
-// the part the server authored; the model is the user's choice.
-export function judge_config_from_sdg_step(
-  step: SdgStepConfig,
-  model_override: ModelChoice | null = null,
-): JudgeConfig {
-  return {
-    prompt: step.prompt,
-    model_name: model_override?.model_name ?? step.task_metadata.model_name,
-    model_provider:
-      model_override?.model_provider ?? step.task_metadata.model_provider_name,
-  }
 }

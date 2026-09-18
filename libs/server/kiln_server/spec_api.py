@@ -97,9 +97,10 @@ def resolve_available_spec_name(
     Collision is judged by the DERIVED EVAL TAGS, not the raw string — two
     names differing only by case or spacing share a tag namespace (and so
     each other's datasets), which is the same comparison the save guard
-    enforces. On a collision, suffix `_2`, `_3`, … — trimming the base to
+    enforces. On a collision, suffix ` 2`, ` 3`, … — trimming the base to
     keep the result inside the short-name limit, and trimming trailing
-    underscores so the join can't fabricate a forbidden `__`.
+    spaces and underscores so the join can't fabricate a forbidden double
+    space or a `_ ` seam.
 
     Raises HTTPException(409) if no variant is free within the search bound
     (a task with ~100 same-named specs — pathological; refusing beats
@@ -110,8 +111,8 @@ def resolve_available_spec_name(
         return AvailableSpecNameResponse(name=candidate, was_taken=False)
     max_length = 32  # FilenameStringShort's cap; validated on the way in
     for i in range(2, 100):
-        suffix = f"_{i}"
-        base = candidate[: max_length - len(suffix)].rstrip("_")
+        suffix = f" {i}"
+        base = candidate[: max_length - len(suffix)].rstrip("_ ")
         variant = f"{base}{suffix}"
         if generate_spec_eval_tags(variant).test_tag not in taken:
             return AvailableSpecNameResponse(name=variant, was_taken=True)

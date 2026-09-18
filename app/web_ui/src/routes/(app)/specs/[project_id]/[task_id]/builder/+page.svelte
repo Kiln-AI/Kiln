@@ -1,5 +1,6 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
+  import Completed from "$lib/ui/completed.svelte"
   import { page } from "$app/stores"
   import { onMount, onDestroy, tick } from "svelte"
   import { agentInfo } from "$lib/agent"
@@ -103,18 +104,16 @@
     build_graded_traces,
     build_trace_reviews,
     calibration_gate_target,
-    declined_feedback_notice,
     disagreed_trace_indices,
     disagreement_feedback,
     empty_claim_verdicts,
     flipped_indices,
     grade_disagreement_count,
     has_grade_disagreement,
+    has_verdict_claim,
     is_trace_reviewed,
     plan_save_action,
-    refine_judge_tooltip,
     rejudge_shortfall_notice,
-    review_cta,
     reviewable_subset,
     reviewed_trace_count,
     select_calibration_subset,
@@ -143,7 +142,9 @@
     new_plan_confirm,
     plan_drive,
     resolved_selected_count,
+    is_partial_stop,
     restore_turns_per_case,
+    stop_primary_action,
     MAX_TURNS_PER_CASE,
     MIN_TURNS_PER_CASE,
     type DriveStop,
@@ -152,6 +153,7 @@
   } from "./plan_flow"
   // Reuse v1's themed loading animations on the wizard's transition screens
   // instead of bare dot-spinners, so the two builders feel consistent.
+  import ProgressCount from "./progress_count.svelte"
   import QuestioningAnimation from "$lib/ui/animations/questioning_animation.svelte"
   import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
   import AnalyzingAnimation from "$lib/ui/animations/analyzing_animation.svelte"
@@ -189,6 +191,8 @@
   } from "$lib/stores/copilot_connection_store"
   import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import Intro from "$lib/ui/intro.svelte"
+  import ExclaimCircleIcon from "$lib/ui/icons/exclaim_circle_icon.svelte"
   // The house stepper + label tooltip, for the Generation Settings turns row.
   import IncrementUi from "$lib/ui/increment_ui.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
@@ -302,6 +306,14 @@
   // request so a cancelled loading step doesn't leave a stuck spinner.
   function sync_step_from_history(step: BuilderStep | undefined) {
     if (!step || step === current_step) return
+    // Finished: every earlier step is behind a history entry, and all of them
+    // are about making the eval that now exists. Back leaves the wizard
+    // instead of re-entering it. This is what the save's redirect used to do
+    // by unmounting the page.
+    if (saved_eval_created) {
+      goto(finished_destination)
+      return
+    }
     abort_copilot_request()
     // Navigating away also cancels the preparing-review gate's ownership of
     // the advance: in-flight claim builds keep running (they belong to the
@@ -318,9 +330,6 @@
     calibration_phase = "idle"
     calibration_error = null
     calibration_refine_error = null
-    // The declined-feedback notice belongs to the round the reviewer was in;
-    // leaving review retires it rather than re-opening it later out of context.
-    calibration_declined_feedback_notice = null
     // Leaving Step 4 with no plan undoes a Continue Without Data Guide, as
     // Back does on the synthetic data page: the next entry offers again.
     // With a plan, the skip stands; the plan is what the next entry shows.
@@ -365,8 +374,12 @@
   // same — guard those too. In-wizard steps use shallow routing
   // (pushState/replaceState), which doesn't run beforeNavigate, so step
   // Back/Forward stays free; this fires only when the ROUTE changes.
-  // The save-success redirect suppresses it: the work is persisted.
-  let leave_guard_suppressed = false
+  // Suppressed on the two exits where the work is safe: the finished screen
+  // (the eval is saved and the draft cleared) and the reset's reload (the
+  // reset is itself persisted). Derived rather than latched, so a wizard that
+  // is somehow back on a live step is guarded again.
+  let resetting = false
+  $: leave_guard_suppressed = resetting || current_step === "done"
   beforeNavigate((nav) => {
     if (leave_guard_suppressed || !warn_before_unload) return
     // "leave" = real unload (reload/close) — the beforeunload handler owns
@@ -421,6 +434,7 @@
         input_gen_run_config,
         judge_model,
         turns_per_case,
+        target_run_config_id,
       }
     : null
   $: if (current_draft && draft_store) {
@@ -438,7 +452,7 @@
 
   // Start the wizard over: wipe the draft but CARRY the batch tags (they
   // name chains on disk that only delete-on-next-drive cleans up), then
-  // start over on the Setup and Eval Type page — SDG's clear-and-reload
+  // start over on the Create Eval page — SDG's clear-and-reload
   // move, aimed at where eval creation begins.
   async function reset_draft_with_confirm() {
     const msg =
@@ -459,11 +473,12 @@
       console.error("Failed to persist the reset draft:", e)
     }
     // The reset is persisted — suppress both guards for the navigation.
-    // Start over where eval creation starts, on the Setup and Eval Type
+    // Cleared by nothing: the page is about to be replaced wholesale.
+    // Start over where eval creation starts, on the Create Eval
     // page, rather than reloading this URL: it can carry the description
     // that page handed over, which a reload would apply again and walk
     // straight back into Step 2.
-    leave_guard_suppressed = true
+    resetting = true
     window.location.href = `/specs/${project_id}/${task_id}/select_template`
   }
 
@@ -532,6 +547,9 @@
         saved.turns_per_case,
         TURNS_PER_CASE,
       )
+      // Drafts written before the entry page asked for a config restore null,
+      // which reads as nothing chosen and keeps the task-default behaviour.
+      target_run_config_id = saved.target_run_config_id ?? null
       // Rebuild the shallow-routing chain up to the restored step (the
       // mount already seeded "describe") so the browser's Back walks the
       // wizard steps exactly as in the original session instead of
@@ -624,6 +642,12 @@
       // restored draft wins — someone resuming has typed more than a link can
       // carry — and before this point `description` is empty either way.
       const handed_over = $page.url.searchParams.get("description")
+      // The chosen run config travels with the description, and like it a
+      // restored draft wins — that session already picked one.
+      const handed_over_run_config = $page.url.searchParams.get("run_config_id")
+      if (handed_over_run_config && !target_run_config_id) {
+        target_run_config_id = handed_over_run_config
+      }
       if (handed_over && !description.trim()) {
         description = handed_over
         continue_from_describe()
@@ -739,6 +763,10 @@
         body: {
           project_id,
           task_id,
+          // The questions are asked about one run config's agent: its tools
+          // and skills are what the copilot has to reason about. Null means
+          // nothing was chosen and the server reads the task default.
+          run_config_id: target_run_config_id,
           // The task's real schemas, not blanks. A structured-output task
           // that reports no schema gets asked to invent the very field names
           // it already defines, and whatever the user answers then becomes
@@ -1224,9 +1252,17 @@
   // know which model the eval data was generated against.
   let fallback_run_config_name: string | null = null
 
-  // Resolve the target run config a drive runs on (both arms): prefer the
-  // task's default; if none set, fall back to the first available config so
-  // the user doesn't have to detour into task settings just to try v2.
+  // The run config chosen on the entry page: the thing this eval is written
+  // about. It wins over the task default everywhere the builder resolves a
+  // target, and rides the draft so a reload keeps the choice. Null means
+  // nothing was chosen (a direct link into the builder) and the task default
+  // applies as before.
+  let target_run_config_id: string | null = null
+
+  // Resolve the target run config a drive runs on (both arms): prefer the one
+  // the entry page chose; then the task's default; if neither, fall back to
+  // the first available config so the user doesn't have to detour into task
+  // settings just to try v2.
   // Returns null AFTER setting generation_error (task unrunnable or the
   // config isn't a Kiln agent one). Re-fetches the task first: the default
   // can change while the wizard is open — the stop banner's own recovery
@@ -1252,11 +1288,27 @@
         "Task has no run configs. Create one before creating eval data."
       return null
     }
+    // The entry page's choice wins: the whole eval was authored about that
+    // config. Only a builder entered without one falls back to the task
+    // default, and then to the first available config.
+    const chosen_by_user = target_run_config_id
+      ? run_configs.find((c) => c.id === target_run_config_id)
+      : undefined
+    // A choice that no longer resolves (the config was deleted while the
+    // wizard was open) stops the drive. Running the task default instead
+    // would generate eval data for an agent this eval does not describe, and
+    // say nothing about it.
+    if (target_run_config_id && !chosen_by_user) {
+      generation_error =
+        "The run config this eval was written against is no longer on the task. Start a new eval to pick another one."
+      return null
+    }
     const default_match = run_configs.find(
       (c) => c.id === task!.default_run_config_id,
     )
-    const chosen_config = default_match ?? run_configs[0]
-    fallback_run_config_name = default_match ? null : chosen_config.name
+    const chosen_config = chosen_by_user ?? default_match ?? run_configs[0]
+    fallback_run_config_name =
+      chosen_by_user || default_match ? null : chosen_config.name
     drive_run_config_name = chosen_config.name
     const rcp = chosen_config.run_config_properties
     if (!isKilnAgentRunConfig(rcp)) {
@@ -1354,6 +1406,24 @@
   // Typed as KilnError so the dialog's FormContainer renders it in its own
   // centered error slot, like every other form in the app.
   let drive_settings_error: KilnError | null = null
+  // Drop the validation error the moment any lane or the length changes. The
+  // error describes a condition ("… to continue"), so it cannot outlive that
+  // condition: left standing over two now-filled dropdowns it reads as a
+  // contradiction. The lanes are passed as arguments so Svelte tracks them as
+  // this statement's dependencies; the error itself is never read here, so
+  // raising it cannot re-trigger the clear.
+  $: drive_settings_error = cleared_on_lane_change(
+    su_model_combined,
+    input_gen_model_combined,
+    judge_model_combined,
+    staged_turns_per_case,
+  )
+
+  // Always null — the arguments are read for their reactivity alone, so that
+  // the statement above depends on every value the dialog lets the user edit.
+  function cleared_on_lane_change(..._: (string | number | null)[]): null {
+    return null
+  }
   // One pre-population pass per mount; lanes the draft restored (or the
   // user committed) are never overwritten — only null lanes are filled.
   // Held as the pass's PROMISE, not a done flag: the plan surface starts the
@@ -1486,14 +1556,13 @@
 
   async function open_drive_settings() {
     drive_settings_error = null
-    // Reseed the stepper from the committed length before the dialog paints,
-    // so a cancelled nudge is gone the next time it opens. Unlike the lanes it
-    // waits on nothing, so it is seeded here rather than after the await.
+    // Reseed the stepper from the committed length, so a cancelled nudge is
+    // gone the next time it opens. Unlike the lanes it waits on nothing, so it
+    // is seeded up front rather than after the await below.
     staged_turns_per_case = turns_per_case
-    drive_settings_dialog?.show()
     // Await the pre-population pass (usually already in flight from the plan
-    // surface) so the reseed below reads resolved lanes: the dialog shows
-    // immediately and its dropdowns fill when the lanes land.
+    // surface, so this resolves at once) so the reseed below reads resolved
+    // lanes. On failure the dialog still opens on whatever is committed.
     try {
       await prepopulate_lanes()
     } catch (e) {
@@ -1523,6 +1592,10 @@
     } else {
       input_gen_config_component?.reset_run_options()
     }
+    // Show last, once every lane holds its committed or default value: opening
+    // first let the user pick while the defaults were still resolving, and the
+    // reseed above then overwrote that pick.
+    drive_settings_dialog?.show()
   }
 
   // The authored multi-turn judge prompt, cached against BOTH authoring
@@ -1576,6 +1649,9 @@
             body: {
               target_specification: spec,
               target_task_prompt: task_prompt,
+              // The rubric grades the agent this eval is about, so it is
+              // authored against that run config's tools and skills.
+              run_config_id: target_run_config_id,
             },
             signal,
           },
@@ -1672,7 +1748,7 @@
       drive_settings_error = new KilnError(
         is_multi_turn
           ? "Select a model to play the user and a judge model to continue."
-          : "Select an eval data generation model and a judge model to continue.",
+          : "Select an input generation model and a judge model to continue.",
       )
       return
     }
@@ -1896,14 +1972,36 @@
     batch_plan !== null &&
     driven_prompts_json === JSON.stringify(batch_plan.prompts)
   // Accepted has-data state (clean drive, or survivors accepted via Continue):
-  // Drive is hidden — Continue (to review) is the only forward action. On the
-  // stop screen Drive stays visible as the re-drive recovery.
+  // Drive is hidden — Continue (to review) is the only forward action. A stop
+  // that left usable work behind takes over the step with its own two
+  // actions; every other stop keeps the plan on screen with Drive as the
+  // re-drive recovery.
   $: has_data_accepted = has_driven_results && drive_stop === null
   // How many cases the last drive was asked to run — the denominator for
   // the has-data notice (survivors vs. the approved plan at drive time).
   $: driven_plan_size = driven_prompts_json
     ? (JSON.parse(driven_prompts_json) as string[]).length
     : 0
+
+  // Which way out the stopped-drive screen leads with, computed once so the
+  // button order and the solid button can never disagree about it.
+  $: stop_lead = drive_stop ? stop_primary_action(drive_stop) : "rerun"
+  $: stop_continue_action = {
+    label: `Continue With ${drive_stop?.survivors ?? 0}`,
+    onClick: on_continue_with_survivors,
+    is_primary: stop_lead === "continue",
+  }
+  $: stop_rerun_action = {
+    label: "Re-run Batch",
+    onClick: open_drive_settings,
+    is_primary: stop_lead === "rerun",
+  }
+  // The lead renders first: the house offer screen stacks its primary above
+  // the alternative, so the order and the emphasis say the same thing.
+  $: stop_screen_actions =
+    stop_lead === "continue"
+      ? [stop_continue_action, stop_rerun_action]
+      : [stop_rerun_action, stop_continue_action]
 
   // Clears the driven results (conversations, review progress, stop banner)
   // so the plan screen returns to its pre-drive editable form. Batch tags
@@ -2177,10 +2275,10 @@
           num_cases: cases.length,
         })
       } else {
-        // Generate via copilot — ONE batch call, one case per approved
-        // scenario prompt. Under the upstream salvage contract a flaky case
-        // is dropped instead of failing the batch; scenario_index maps each
-        // survivor back to its plan row.
+        // Generate via copilot — one case per approved scenario prompt. Under
+        // the upstream salvage contract a flaky case is dropped instead of
+        // failing the batch; scenario_index maps each survivor back to its
+        // plan row.
         generation_phase = "generating_cases"
         const cases_resp = await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/generate_cases",
@@ -2195,8 +2293,20 @@
           },
         )
         if (cases_resp.error || !cases_resp.data) {
-          generation_error =
-            "Failed to create eval inputs from the approved items."
+          // The route's typed error nests {code, message} inside the handler's
+          // {message} wrapper — unwrap it and append it: the sentence alone
+          // leaves the user with nothing to act on, and the server's reason is
+          // the only thing that says which part of the plan the route refused.
+          const wrapped = (
+            cases_resp.error as
+              | { message?: string | { message?: string } }
+              | undefined
+          )?.message
+          const detail =
+            typeof wrapped === "string" ? wrapped : wrapped?.message
+          generation_error = detail
+            ? `Failed to create eval inputs from the approved items: ${detail}`
+            : "Failed to create eval inputs from the approved items."
           return
         }
         cases = cases_resp.data.cases as SyntheticUserCaseWire[]
@@ -3176,17 +3286,59 @@
   // Same pattern for Review (5) → Save (6): land on Save with the request
   // already in flight; only show the in-step button on error as retry.
   // Both arms first route through the calibration loop: a review with
-  // disagreement enters a refine+re-check round instead of saving, round
-  // after round, until the grades converge (or the user opts out via the
-  // save-without-refining link under the CTA). A judge the reviewer said was
-  // wrong never ships without them seeing it re-checked.
+  // disagreement asks whether to improve the judge before saving, and a yes
+  // runs a refine+re-check round, round after round, until the grades
+  // converge or the reviewer takes the dialog's other button. A judge the
+  // reviewer said was wrong never ships without them seeing it re-checked.
+  let improve_judge_dialog: Dialog | null = null
+
+  // True once a save has succeeded. The wizard has nothing left to do, and
+  // every exit from the done screen leaves the route.
+  let saved_eval_created = false
+
+  // Where the success screen's button goes, and the marker that the wizard has
+  // finished. The eval's own page when the save returned an id, the evals list
+  // when it did not — a button that promises one eval must not land on a 404.
+  let created_eval_href: string | null = null
+
+  // The save is done, and this state is terminal. Holding the reviewer on a
+  // success screen instead of redirecting means the wizard is still mounted,
+  // with a graded review and a met save gate sitting in memory behind a
+  // history entry Back can reach. Both of the things that review could still
+  // do — save again, or start a paid refine round — would act on an eval that
+  // already shipped, so the state they need is dropped here. What survives is
+  // the link and the fact that a save happened.
+  function finish_on_done_screen(saved_id: string | null | undefined) {
+    created_eval_href = saved_id
+      ? `/specs/${project_id}/${task_id}/${saved_id}`
+      : null
+    saved_eval_created = true
+    // Nothing left for a second save or a second round to act on. Belt and
+    // braces beside the history guard below: a bug that got back to the
+    // review would find no traces to grade and no gate to meet.
+    trace_claims = []
+    trace_reviews = []
+    multi_turn_batch_tag = null
+    driven_prompts_json = null
+    replace_step("done")
+  }
+
+  // The page the wizard leaves for once it is finished. The eval itself when
+  // there is one, its list when the save returned no id.
+  $: finished_destination =
+    created_eval_href ?? `/specs/${project_id}/${task_id}`
+
   function on_advance_to_save() {
     const graded = build_graded_traces(trace_claims, trace_reviews)
     const decision = plan_save_action({
       has_disagreement: has_grade_disagreement(graded),
     })
     if (decision.action === "calibrate") {
-      void run_calibration_round()
+      // The reviewer gave feedback the judge could learn from. Improving it
+      // costs a model call and a re-review, so it is offered rather than
+      // taken: the dialog's two buttons are the two ways forward, and its
+      // secondary is the only exit from the loop.
+      improve_judge_dialog?.show()
       return
     }
     // Converged: zero disagreement, so the judge whose verdicts were just
@@ -3234,8 +3386,8 @@
   // by what the round actually surfaced, every round: a re-judge shortfall or
   // a failed claims build can leave fewer traces on screen than the standard
   // target, and the gate must never demand reviews of traces it didn't show.
-  // This number also writes the step's "reviewing N of M" sentence, so the
-  // header, the gate and the review's own counter all read the same subset.
+  // The review's own "Case N of M" header counts the same subset, so the gate
+  // and what the reviewer sees can never disagree about how many there are.
   $: review_target_count = calibration_gate_target(
     trace_claims.length,
     reviewable_trace_indices.length,
@@ -3247,17 +3399,12 @@
     trace_claims.length > 0 &&
     reviewable_trace_indices.length > 0 &&
     reviewed_count >= review_target_count
-  // The review CTA says what clicking it does: with any graded disagreement
-  // a save enters a refine round, so the button reads Refine Judge (with a
-  // tooltip naming the count). It flips back to Save the moment the last
-  // disagreement clears — the convergence signal. Uses the loop's exact entry
-  // predicate, so label and behavior can't drift apart.
+  // How many graded disagreements the round carries. The forward action reads
+  // the same either way; this decides whether clicking it asks the reviewer
+  // what to do with that feedback or simply saves.
   $: review_disagreement_count = grade_disagreement_count(
     build_graded_traces(trace_claims, trace_reviews),
   )
-  $: review_cta_state = review_cta({
-    num_disagreements: review_disagreement_count,
-  })
   // The arm's word for one reviewed item, for copy that counts them.
   $: judged_noun = is_multi_turn ? "conversation" : "example"
   // The plan's rows read as "items" on both arms (the plan surface labels them
@@ -3266,9 +3413,12 @@
   const plan_noun = "items"
   $: case_noun = is_multi_turn ? "conversation" : "test run"
   // Bound out of the review component: true only while it shows its last
-  // trace, which is where it renders the primary CTA. The save-without-
-  // refining link stacks under that CTA, so it follows this flag.
+  // trace, which is where it renders the forward action. Anything the page
+  // stacks under that action follows this flag.
   let review_on_last_trace = false
+  // The mounted review, so the page header's "Eval Description" line can open
+  // the dialog the review owns. Null on every step but review.
+  let review_component: ClaimEvidenceReview | null = null
 
   // ── Lazy claims (multi-turn). The pipeline stream stops at the judge;
   // only traces the review surfaces (the selected subset) or the user opens
@@ -3311,20 +3461,6 @@
       claims_state: "building",
       claims_error: null,
     })
-    // TODO(eval-v2): remove — ClaimDebug capture context, deleted before GA.
-    // Derived from whichever wizard state is populated, never from an arm
-    // switch: a single-turn build never set a synthetic-user driver, so both
-    // the model and the turn count come out null on their own.
-    const su_lane = driven_su_driver ?? su_driver
-    const debug_context = {
-      task_model: drive_run_config_model,
-      synthetic_user_model: su_lane
-        ? `${su_lane.model_provider}/${su_lane.model_name}`
-        : null,
-      judge,
-      turns: su_lane ? driven_turns_per_case ?? drive_turns_per_case : null,
-      batch_tag: multi_turn_batch_tag ?? single_turn_batch_tag,
-    }
     try {
       const { data, error, response } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/eval_builder/build_claims",
@@ -3340,9 +3476,6 @@
             eval_rubric: judge.prompt,
             judge_score: tc.judge_score,
             judge_reasoning: tc.judge_reasoning,
-            // TODO(eval-v2): remove — ClaimDebug capture fields.
-            source_run_id: tc.leaf_run_id,
-            debug_context,
           },
         },
       )
@@ -3449,6 +3582,15 @@
       num_errored: selected_trace_indices.filter(
         (i) => trace_claims[i]?.claims_state === "error",
       ).length,
+      // Built, but the builder broke its own contract and wrote no verdict
+      // claim, so there is nothing on screen that records the pass/fail call.
+      // Excluded from the walk the same way a failed build is, and counted
+      // here for the same reason: it is a prompt slip worth seeing.
+      num_no_verdict: selected_trace_indices.filter(
+        (i) =>
+          trace_claims[i]?.claims_state === "built" &&
+          !has_verdict_claim(trace_claims[i]),
+      ).length,
     })
     // PUSH review (both arms): Back must return to the plan screen.
     goto_step("review")
@@ -3466,8 +3608,8 @@
   // grade the result — round after round. Both arms re-judge their driven
   // runs by durable id (judge_traces) and re-open a smart-picked subset.
   // Save happens only when a review carries zero disagreement (the judge
-  // that ships is the one whose verdicts were graded) or when the user opts
-  // out via the save-without-refining link under the review CTA.
+  // that ships is the one whose verdicts were graded) or when the reviewer
+  // takes Save Without Improving in the dialog Continue opens.
   type CalibrationPhase = "idle" | "refining" | "rejudging" | "building_claims"
   let calibration_phase: CalibrationPhase = "idle"
   // Completed refine+re-judge rounds this batch — round tags, the gate
@@ -3477,15 +3619,13 @@
   // the re-check without re-paying the refine call.
   let calibration_error: string | null = null
   // Refine-attempt failure (request died, timeout, unusable prompt): shown
-  // inline under the review actions. The CTA stays Refine Judge and re-fires
-  // the refine; the save-without-refining link remains the way out.
+  // inline under the review actions. Continue re-opens the dialog, so
+  // Improve Judge re-fires the refine and Save Without Improving is still
+  // the way out.
   let calibration_refine_error: string | null = null
   // Cases without a fresh verdict last round — surfaced honestly above the
   // review; they keep stale results and sit the round out.
   let calibration_failed_count = 0
-  // Feedback the last refine declined to incorporate, as the notice to show
-  // over the round it produced — otherwise the reviewer's note looks ignored.
-  let calibration_declined_feedback_notice: string | null = null
   // Durable run ids of traces graded in ANY round — the fresh top-up must
   // never re-serve them as "never reviewed".
   let calibration_reviewed_keys = new Set<string>()
@@ -3507,7 +3647,6 @@
     calibration_error = null
     calibration_refine_error = null
     calibration_failed_count = 0
-    calibration_declined_feedback_notice = null
     calibration_reviewed_keys = new Set()
     calibration_pending_judge = null
     calibration_pending_disagreed = []
@@ -3558,9 +3697,6 @@
   async function refine_judge_for_calibration(
     judge: JudgeConfig,
   ): Promise<JudgeConfig> {
-    // A fresh refine answers the current grades: whatever the last one
-    // declined is no longer what the reviewer is about to see.
-    calibration_declined_feedback_notice = null
     const graded_traces = build_graded_traces(trace_claims, trace_reviews)
     const { signal, timed_out } = with_deadline(
       new_copilot_abort_signal(),
@@ -3616,11 +3752,17 @@
         "The refined judge prompt wasn't usable.",
       )
     }
-    // Feedback the model says it left out — carried into the re-review the
-    // refined judge produces, where the reviewer is looking for their note.
-    calibration_declined_feedback_notice = declined_feedback_notice(
-      proposal.not_incorporated_feedback,
-    )
+    // Feedback the refiner declined is a refiner problem, not something the
+    // reviewer can act on, so it is not shown. The event records how often it
+    // happens and whether the refiner changed anything else that round, which
+    // is what tuning the refiner needs; the text itself stays out of analytics.
+    if ((proposal.not_incorporated_feedback ?? "").trim()) {
+      posthog.capture("eval_v2_judge_calibration_feedback_declined", {
+        is_multi_turn,
+        round: calibration_rounds_completed + 1,
+        num_changes: proposal.changes.length,
+      })
+    }
     return { ...judge, prompt: refined_prompt }
   }
 
@@ -3730,8 +3872,8 @@
       // There is no judge to refine FROM — the review on screen was never
       // pinned to one. Report it on the inline refine surface (the same
       // sentence save uses for the same missing judge) rather than returning
-      // quietly, which would leave the CTA doing nothing however often it is
-      // clicked.
+      // quietly, which would leave Improve Judge doing nothing however often
+      // it is clicked.
       calibration_refine_error =
         "No judge was configured. Go back and re-run the review."
       return
@@ -3825,10 +3967,10 @@
           reason: e.reason,
         })
         // Surface the failure inline under the review actions. The grades
-        // stay editable underneath it, so clicking Refine Judge again starts
-        // a fresh attempt from whatever the grades say at that moment.
-        // Bare message, data-guide idiom: the Refine Judge CTA above it and
-        // the bail link below already say what the user can do.
+        // stay editable underneath it, so re-opening the dialog and choosing
+        // Improve Judge starts a fresh attempt from whatever the grades say at
+        // that moment. Bare message, data-guide idiom: the dialog's two
+        // buttons already say what the user can do.
         calibration_refine_error = e.message
         return
       }
@@ -3846,12 +3988,25 @@
     selected_trace_indices.length > 0 &&
     selected_claims_resolved === selected_trace_indices.length
   ) {
+    posthog.capture("eval_v2_claims_build_completed", {
+      duration_ms: Date.now() - claims_gate_started_ms,
+      num_selected: selected_trace_indices.length,
+      num_errored: selected_trace_indices.filter(
+        (i) => trace_claims[i]?.claims_state === "error",
+      ).length,
+      num_no_verdict: selected_trace_indices.filter(
+        (i) =>
+          trace_claims[i]?.claims_state === "built" &&
+          !has_verdict_claim(trace_claims[i]),
+      ).length,
+    })
     calibration_phase = "idle"
   }
 
-  // The loop's opt-out (the link under the review CTA): save immediately
-  // with the judge whose verdicts the reviewer actually graded — the latest
-  // refined one once a round has run — grades carried as-is.
+  // The loop's opt-out (the dialog's Save Without Improving, and the same
+  // exit on the empty-review screen): save immediately with the judge whose
+  // verdicts the reviewer actually graded — the latest refined one once a
+  // round has run — grades carried as-is.
   function save_without_refining() {
     posthog.capture("eval_v2_judge_calibration_opted_out", {
       is_multi_turn,
@@ -3977,7 +4132,7 @@
       // eval slice is minted server-side as EvalInputs from the driven cases.
       if (is_multi_turn) {
         if (multi_turn_batch_tag === null || driven_cases.length === 0) {
-          save_error = "No multi-turn chains were generated. Go back to Step 4."
+          save_error = "Nothing was generated. Go back to Step 4."
           return
         }
         // The saved batch's own tag: its chains become the eval, so it must
@@ -4016,12 +4171,9 @@
             leaf_run_id: tc.leaf_run_id as string,
             user_says_meets_spec: user_says_meets_spec(tc, review),
             feedback: disagreement_feedback(review),
-            // Claim grades ride along only where claims were built; a
-            // trace graded on the overall call alone has none to record.
-            claim_review:
-              tc.claims_state === "built"
-                ? build_claim_review_payload(tc, review)
-                : null,
+            // Gated on is_trace_reviewed above, which demands built claims,
+            // so a reviewed trace always has grades to record.
+            claim_review: build_claim_review_payload(tc, review),
           }))
         const { data, error } = await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
@@ -4075,12 +4227,7 @@
             undeleted_batch_tags,
           ),
         )
-        if (saved.id) {
-          leave_guard_suppressed = true
-          goto(`/specs/${project_id}/${task_id}/${saved.id}`)
-        } else {
-          replace_step("done")
-        }
+        finish_on_done_screen(saved.id)
         return
       }
 
@@ -4090,7 +4237,7 @@
       // runs were driven on. Nothing is generated at save time — the
       // dataset IS the runs the user just reviewed.
       if (single_turn_batch_tag === null || trace_claims.length === 0) {
-        save_error = "No test runs were generated. Go back to Step 4."
+        save_error = "Nothing was generated. Go back to Step 4."
         return
       }
       // The saved batch's own tag: its runs become the eval's dataset, so
@@ -4113,12 +4260,9 @@
           leaf_run_id: tc.leaf_run_id as string,
           user_says_meets_spec: user_says_meets_spec(tc, review),
           feedback: disagreement_feedback(review),
-          // Claim grades ride along only where claims were built; a trace
-          // graded on the overall call alone has none to record.
-          claim_review:
-            tc.claims_state === "built"
-              ? build_claim_review_payload(tc, review)
-              : null,
+          // Gated on is_trace_reviewed above, which demands built claims, so
+          // a reviewed trace always has grades to record.
+          claim_review: build_claim_review_payload(tc, review),
         }))
       const { data, error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
@@ -4169,12 +4313,7 @@
           undeleted_batch_tags,
         ),
       )
-      if (saved.id) {
-        leave_guard_suppressed = true
-        goto(`/specs/${project_id}/${task_id}/${saved.id}`)
-      } else {
-        replace_step("done")
-      }
+      finish_on_done_screen(saved.id)
       return
     } catch (e) {
       if (is_abort_error(e)) return
@@ -4182,11 +4321,6 @@
     } finally {
       saving = false
     }
-  }
-
-  // ── Navigation helpers
-  function back_to_task() {
-    goto(`/specs/${project_id}/${task_id}`)
   }
 
   // Escape hatch from Step 1 to the legacy manual builder (template carousel),
@@ -4231,10 +4365,19 @@
       if (generation_loading || preparing_review || data_guide_offer_pending)
         return
       if (show_plan_approval && batch_plan) {
-        // The plan surface's own generate button belongs to the shared
-        // component and has no keyboard path; only the continue-to-results
-        // action beside it is ours to fire.
+        if (drive_stop && is_partial_stop(drive_stop)) {
+          // The stop screen has no keyboard path: its buttons carry no
+          // shortcut hint, and which of them leads changes with the batch, so
+          // the shortcut would fire an unannounced action — on most of those
+          // batches a paid re-run. The keystroke is still swallowed, or a
+          // focused button would take the Enter and act anyway.
+          event.preventDefault()
+          return
+        }
         if (has_driven_results) {
+          // The plan surface's own generate button belongs to the shared
+          // component and has no keyboard path; only the continue-to-results
+          // action beside it is ours to fire.
           event.preventDefault()
           on_continue_with_survivors()
         }
@@ -4249,7 +4392,7 @@
     } else if (current_step === "review") {
       // The gate/last-trace pair matches the Save button only within the review
       // component: the gate can be met several traces early, and the shortcut
-      // must not skip traces the reviewer still sees a Continue button for. The
+      // must not skip traces the reviewer still sees a Next button for. The
       // screen-level guards exclude the stale-results gate, the calibration
       // error screen, and in-flight calibration, where that component is
       // unmounted but its binds still hold their last values.
@@ -4292,11 +4435,11 @@
       case "describe":
         return "Describe Your Eval"
       case "clarify":
-        return "Answer a Few Questions"
+        return "Clarify Eval"
       case "refine":
-        return "Check the Details"
+        return "Review Updated Eval"
       case "generate":
-        return "Creating Eval"
+        return "Create Eval Dataset"
       case "review":
         // Verdict-neutral on purpose: half of every batch passes by design,
         // so a fault-presuming headline would blame agents that behaved. The
@@ -4331,6 +4474,19 @@
           current_step,
         )}`
   $: page_max_w = page_max_w_for(current_step)
+  // Second subtitle line. On refine it asks the question the step exists to
+  // answer, since that step shows the eval rewritten from the user's answers.
+  // On review it is the way back to the eval's own text: the review shows what
+  // each case did but never what the eval asks for, so a reviewer who forgot
+  // it rereads it from the header rather than from a control among the work.
+  $: review_can_show_spec =
+    current_step === "review" && current_spec_text.trim().length > 0
+  $: page_sub_subtitle =
+    current_step === "refine"
+      ? "We've integrated your feedback, does it look right?"
+      : review_can_show_spec
+        ? "Eval Description"
+        : ""
 
   // Total assistant turns expected across the whole batch — the denominator
   // for the smooth turn-level progress (cases run in parallel waves, so this
@@ -4353,7 +4509,7 @@
         : generation_phase === "preflight"
           ? "Checking Configuration"
           : generation_phase === "minting_inputs"
-            ? "Writing Eval Data"
+            ? "Creating Eval Dataset"
             : "Creating Simulated Users"
   $: generate_animation_description =
     generation_phase === "planning"
@@ -4366,10 +4522,10 @@
           ? `Checking that your run config, the ${
               is_multi_turn
                 ? "model that plays the user"
-                : "eval data generation model"
+                : "input generation model"
             }, and the judge all respond before creating your eval data.`
           : generation_phase === "minting_inputs"
-            ? `Writing ${planned_total} items from the approved plan.`
+            ? `Creating ${planned_total} dataset items.`
             : `Setting up ${planned_total} simulated users from the approved plan.`
 
   // The long-wait line, on exactly the stages that run one long request with
@@ -4405,6 +4561,10 @@
   <AppPage
     title={page_title}
     subtitle={page_step_line}
+    sub_subtitle={page_sub_subtitle}
+    sub_subtitle_action={review_can_show_spec
+      ? () => review_component?.show_spec_dialog()
+      : undefined}
     breadcrumbs={[{ label: "Evals", href: `/specs/${project_id}/${task_id}` }]}
     no_y_padding
     action_buttons={reset_available
@@ -4443,7 +4603,7 @@
           <FormElement
             label="What should this eval check?"
             description="Describe what to check in plain language. Kiln Pro writes the eval and generates the data to test it."
-            placeholder="e.g. The model should not hallucinate."
+            placeholder="e.g. Off-topic requests should be politely declined."
             id="description"
             inputType="textarea"
             height="medium"
@@ -4635,69 +4795,48 @@
                 warning={generate_animation_warning}
               />
               {#if generation_phase === "minting_inputs"}
-                <div class="flex flex-col items-center mt-6">
-                  <progress
-                    class="progress w-56 progress-success"
-                    value={minting_done}
-                    max={minting_total}
-                  ></progress>
-                  <div class="font-light text-xs text-center mt-1">
-                    {minting_done} of {minting_total} inputs written
-                  </div>
-                </div>
+                <ProgressCount
+                  value={minting_done}
+                  max={minting_total}
+                  noun="items created"
+                />
               {/if}
             {/if}
           {/if}
           {#if pipeline_running}
             <!-- The drive stage: the arm's animation plus the house
-                 batch-progress readout (slim bar + tiny count line,
-                 mirroring /generate's batch generation). Multi-turn's bar
-                 tracks TURNS for smooth motion (cases complete in
-                 concurrency waves), so its count line LEADS with turns;
-                 single-turn cases are one run each, so its bar counts
-                 finished cases directly. The title stays static: the live
-                 counts belong to the readout under the bar. -->
+                 batch-progress readout (bar plus its count line underneath,
+                 mirroring /generate's batch generation). Both strings are
+                 static — every live number is in the readout. -->
             {#if is_multi_turn}
+              <!-- Turns, not cases: cases finish in concurrency waves, so the
+                   turn count is the one that actually moves while the batch
+                   runs. -->
               <ConversationAnimation
-                title="Creating Eval Data"
+                title="Creating Eval Dataset"
                 description="Simulating conversations with your agent and judging each one."
                 warning={null}
               />
-              <div class="flex flex-col items-center mt-6">
-                <progress
-                  class="progress w-56 progress-success"
-                  value={multi_turn_turns_done}
-                  max={multi_turn_total_turns}
-                ></progress>
-                <!-- Turns, not cases: cases finish in concurrency waves, so
-                     the turn count is the one that actually moves while the
-                     batch runs. It's the only live count on this screen.
-                     The denominator is a ceiling, not a total: conversations
-                     that end early leave the bar short of full, so it can
-                     jump to done rather than creep there. -->
-                <div class="font-light text-xs text-center mt-1">
-                  {multi_turn_turns_done} of up to {multi_turn_total_turns} turns
-                  complete{#if pipeline_failed_count > 0},
-                    {pipeline_failed_count} failed{/if}
-                </div>
-              </div>
+              <ProgressCount
+                value={multi_turn_turns_done}
+                max={multi_turn_total_turns}
+                noun="turns complete"
+                max_is_ceiling
+                failed={pipeline_failed_count}
+              />
             {:else}
               <AnalyzingAnimation
-                title="Creating Eval Data"
+                title="Creating Eval Dataset"
                 description="Running your task on each item and judging the result."
                 warning={null}
               />
-              <div class="flex flex-col items-center mt-6">
-                <progress
-                  class="progress w-56 progress-success"
-                  value={judged_case_count + pipeline_failed_count}
-                  max={pipeline_total_cases}
-                ></progress>
-                <div class="font-light text-xs text-center mt-1">
-                  {judged_case_count} of {pipeline_total_cases} judged{#if pipeline_failed_count > 0},
-                    {pipeline_failed_count} failed{/if}
-                </div>
-              </div>
+              <ProgressCount
+                value={judged_case_count}
+                bar_value={judged_case_count + pipeline_failed_count}
+                max={pipeline_total_cases}
+                noun="judged"
+                failed={pipeline_failed_count}
+              />
             {/if}
           {/if}
           {#if preparing_review}
@@ -4711,17 +4850,11 @@
               description="Finding the examples where your judgment is most useful."
               warning={null}
             />
-            <div class="flex flex-col items-center mt-6">
-              <progress
-                class="progress w-56 progress-success"
-                value={selected_claims_resolved}
-                max={selected_trace_indices.length}
-              ></progress>
-              <div class="font-light text-xs text-center mt-1">
-                Preparing review: {selected_claims_resolved} of {selected_trace_indices.length}
-                ready
-              </div>
-            </div>
+            <ProgressCount
+              value={selected_claims_resolved}
+              max={selected_trace_indices.length}
+              noun={`${judged_noun}s ready`}
+            />
           {/if}
           <!-- The two failure surfaces are one chain so only ever one can
                render: the claims gate runs after a successful drive, so its
@@ -4737,7 +4870,7 @@
             </div>
             <div class="text-center py-4 flex justify-center gap-2">
               <button
-                class="btn btn-outline"
+                class="btn"
                 on:click={() => {
                   claims_gate_error = null
                 }}
@@ -4766,7 +4899,7 @@
                      committed lanes and the cost of this batch, so the models
                      can be changed on the way back in. -->
                 <button
-                  class="btn btn-outline"
+                  class="btn"
                   on:click={() => {
                     generation_error = null
                   }}
@@ -4784,113 +4917,139 @@
           {/if}
 
           {#if show_plan_approval && batch_plan}
-            {#if drive_stop}
-              <!-- The unified stop banner: partial failure warns, all-failed
-                   errors — same surface, message and actions scale with what
-                   happened. trusted+markdown for the in-message /run
-                   deeplink (renders target=_blank, wizard state survives). -->
-              <div class="mt-2 mb-4">
-                <Warning
-                  warning_color={drive_stop.survivors > 0 &&
-                  !drive_stop.aborted_error &&
-                  !drive_stop.preflight
-                    ? "warning"
-                    : "error"}
-                  markdown
-                  trusted
-                  warning_message={drive_stop_banner(
+            {#if drive_stop && is_partial_stop(drive_stop)}
+              <!-- A stop that left usable work behind takes over the step:
+                   how much failed, one line of diagnosis and the two ways out
+                   are the whole decision, and the plan underneath has nothing
+                   to add to it. Every other stop kind carries the full
+                   provider text and a recovery deeplink, and its way out runs
+                   through the plan (Refine Plan, testing the run config), so
+                   those stay a banner above the plan below. -->
+              <div class="flex justify-center mt-[10vh]">
+                <Intro
+                  title="Errors During Dataset Creation"
+                  description_markdown={drive_stop_banner(
                     drive_stop,
                     drive_run_config_name,
                     drive_run_config_model,
-                    case_noun,
                   )}
-                />
-              </div>
-            {/if}
-            <!-- Plan approval: the run starts only after the user approves
-                 the plan — the shared /generate batch-plan surface, on its
-                 own default header and regenerate labels so the two flows
-                 read alike. Only the subheader differs per arm, because the
-                 arms do different things to each item. The primary button
-                 opens Generation Settings rather than driving: that dialog
-                 is the single entrance, so every run passes its lanes and
-                 its cost warning. -->
-            <KilnProBatchPlan
-              plan={batch_plan}
-              header_label="Eval Dataset Proposal"
-              summary_out_of_sync={batch_plan_edited}
-              subheader={is_multi_turn
-                ? "Here's the plan for your eval dataset. Kiln will run each item as a test conversation with your agent in the next step. Refine the plan if the coverage looks off."
-                : "Here's the plan for your eval dataset. Kiln will use this guidance to generate each item in the next step. Refine the plan if the coverage looks off."}
-              on_generate_inputs={open_drive_settings}
-              on_regenerate={open_new_plan_dialog}
-              on_delete_prompt={on_delete_plan_prompt}
-              hide_generate_button={has_data_accepted}
-              generate_button_outline={has_driven_results &&
-                drive_stop !== null}
-              generate_button_label={`Generate Dataset (${batch_plan.prompts.length} items)`}
-              items_label="Items"
-              expanded_description={false}
-              column_label="Item Guidance"
-            >
-              <!-- The first plan fires without a form, so the proposal says
-                   what it was drafted under; View is the checkbox's own
-                   opener (a new tab, so the plan stays on screen). -->
-              <svelte:fragment slot="under_subheader">
-                {#if plan_drafted_with_data_guide}
-                  <div
-                    id="data_guide_plan_note"
-                    class="text-sm font-light text-gray-500"
-                  >
-                    Planned using your Data Guide.
-                    <button
-                      type="button"
-                      class="link"
-                      on:click={() =>
-                        open_data_guide_in_new_tab(project_id, task_id)}
-                    >
-                      View
-                    </button>
+                  action_buttons={stop_screen_actions}
+                >
+                  <div slot="icon" class="h-12 w-12 text-warning">
+                    <ExclaimCircleIcon />
                   </div>
-                {/if}
-              </svelte:fragment>
-            </KilnProBatchPlan>
-            <!-- Wizard chrome stays outside the shared component (it has no
-                 slots): once this exact plan has driven results, offer the
-                 way forward to review. Stepping back is the browser's Back. -->
-            {#if has_driven_results}
-              <!-- Conversations were already driven from this exact plan —
-                   returning to the results doesn't re-spend model calls.
-                   Also the survivors path from the stop banner. -->
-              <div class="flex flex-row justify-end mt-4">
-                <div class="flex flex-row items-center gap-3">
-                  <span class="font-light text-xs text-gray-500">
-                    {#if trace_claims.length < driven_plan_size}
-                      {trace_claims.length} of {driven_plan_size} eval inputs created
-                    {:else}
-                      {trace_claims.length} eval inputs created
-                    {/if}
-                  </span>
-                  <!-- The screen's single solid primary: the re-drive button
-                       on the plan surface above demotes to outline whenever
-                       this one co-renders (see generate_button_outline). -->
-                  <button
-                    class="relative btn btn-primary min-w-64 px-12"
-                    on:click={on_continue_with_survivors}
-                  >
-                    Continue
-                    <span
-                      class="absolute opacity-80 right-4 text-xs font-light"
+                </Intro>
+              </div>
+            {:else}
+              {#if drive_stop}
+                <!-- The stop kinds that keep the plan on screen: their text is
+                     raw provider output with a deeplink in it, too long for
+                     the stop screen's column, and their recovery runs through
+                     the plan below. trusted+markdown for the in-message /run
+                     deeplink (renders target=_blank, wizard state survives). -->
+                <div class="mt-2 mb-4">
+                  <!-- Always the error color: the stops that keep the plan
+                       are all failures of the run config or of the whole
+                       batch, never a run that left usable work behind. -->
+                  <Warning
+                    warning_color="error"
+                    markdown
+                    trusted
+                    warning_message={drive_stop_banner(
+                      drive_stop,
+                      drive_run_config_name,
+                      drive_run_config_model,
+                    )}
+                  />
+                </div>
+              {/if}
+              <!-- Plan approval: the run starts only after the user approves
+                   the plan — the shared /generate batch-plan surface. It
+                   overrides the header, because what it lists is a proposed
+                   eval dataset, and relabels the regenerate button, because
+                   here it refines the plan already on screen rather than
+                   starting a fresh batch plan. The primary button opens
+                   Generation Settings rather than driving: that dialog is the
+                   single entrance, so every run passes its lanes and its cost
+                   warning. -->
+              <KilnProBatchPlan
+                plan={batch_plan}
+                header_label="Eval Dataset Proposal"
+                regenerate_label="Refine Plan"
+                show_header_divider={false}
+                summary_out_of_sync={batch_plan_edited}
+                subheader="Here's a plan for your eval dataset. Refine the plan if the coverage looks off."
+                on_generate_inputs={open_drive_settings}
+                on_regenerate={open_new_plan_dialog}
+                on_delete_prompt={on_delete_plan_prompt}
+                hide_generate_button={has_data_accepted}
+                generate_button_outline={has_driven_results &&
+                  drive_stop !== null}
+                generate_button_label={`Generate Dataset (${batch_plan.prompts.length} items)`}
+                items_label="Items"
+                expanded_description="Each row will be used to seed one item of your eval dataset."
+                column_label="Item Guidance"
+              >
+                <!-- The first plan fires without a form, so the proposal says
+                     what it was drafted under. It rides on the sub-line as one
+                     sentence rather than a row of its own, and the guide opens
+                     in a new tab so the plan stays on screen. The leading
+                     {" "} is load-bearing: Svelte drops whitespace at the
+                     start of slot content, which would fuse this clause onto
+                     the sub-line's last word. -->
+                <svelte:fragment slot="under_subheader">
+                  {#if plan_drafted_with_data_guide}
+                    <span id="data_guide_plan_note"
+                      >{" "}Planned using your
+                      <button
+                        type="button"
+                        class="link"
+                        on:click={() =>
+                          open_data_guide_in_new_tab(project_id, task_id)}
+                        >data guide</button
+                      >.</span
                     >
-                      {#if isMacOS()}
-                        <span class="tracking-widest">⌘↵</span>
+                  {/if}
+                </svelte:fragment>
+              </KilnProBatchPlan>
+              <!-- Wizard chrome stays outside the shared component (it has no
+                   slots): once this exact plan has driven results, offer the
+                   way forward to review. Stepping back is the browser's Back. -->
+              {#if has_driven_results}
+                <!-- Conversations were already driven from this exact plan —
+                     returning to the results doesn't re-spend model calls.
+                     Also the survivors path from the stop banner above. -->
+                <div class="flex flex-row justify-end mt-4">
+                  <div class="flex flex-row items-center gap-3">
+                    <span class="font-light text-xs text-gray-500">
+                      {#if trace_claims.length < driven_plan_size}
+                        {trace_claims.length} of {driven_plan_size} eval inputs created
                       {:else}
-                        <span>ctrl ↵</span>
+                        {trace_claims.length} eval inputs created
                       {/if}
                     </span>
-                  </button>
+                    <!-- The screen's single solid primary: the re-drive
+                         button on the plan surface above demotes to outline
+                         whenever this one co-renders (see
+                         generate_button_outline). -->
+                    <button
+                      class="relative btn btn-primary min-w-64 px-12"
+                      on:click={on_continue_with_survivors}
+                    >
+                      Continue
+                      <span
+                        class="absolute opacity-80 right-4 text-xs font-light"
+                      >
+                        {#if isMacOS()}
+                          <span class="tracking-widest">⌘↵</span>
+                        {:else}
+                          <span>ctrl ↵</span>
+                        {/if}
+                      </span>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              {/if}
             {/if}
           {:else if !generation_loading && !generation_error && !preparing_review && !claims_gate_error && !data_guide_offer_pending}
             <div class="flex justify-end mt-8">
@@ -4948,7 +5107,7 @@
               />
             </div>
             <div class="flex justify-center gap-2 py-4">
-              <button class="btn btn-outline" on:click={() => history.back()}>
+              <button class="btn" on:click={() => history.back()}>
                 Back
               </button>
               <button class="btn btn-primary" on:click={discard_stale_results}>
@@ -4972,17 +5131,13 @@
               description="Re-checking your eval data with the improved judge."
               warning={null}
             />
-            <div class="flex flex-col items-center mt-6">
-              <progress
-                class="progress w-56 progress-success"
-                value={rejudged_done + rejudge_failed_live}
-                max={rejudge_total}
-              ></progress>
-              <div class="font-light text-xs text-center mt-1">
-                {rejudged_done} of {rejudge_total} re-checked{#if rejudge_failed_live > 0},
-                  {rejudge_failed_live} failed{/if}
-              </div>
-            </div>
+            <ProgressCount
+              value={rejudged_done}
+              bar_value={rejudged_done + rejudge_failed_live}
+              max={rejudge_total}
+              noun="re-checked"
+              failed={rejudge_failed_live}
+            />
           {:else if calibration_phase === "building_claims"}
             <!-- Same wait-for-all claims gate as the first round, held on the
                  review step: the re-review opens fully loaded. -->
@@ -4992,17 +5147,11 @@
               description="Finding the examples where your judgment is most useful."
               warning={null}
             />
-            <div class="flex flex-col items-center mt-6">
-              <progress
-                class="progress w-56 progress-success"
-                value={selected_claims_resolved}
-                max={selected_trace_indices.length}
-              ></progress>
-              <div class="font-light text-xs text-center mt-1">
-                Preparing review: {selected_claims_resolved} of {selected_trace_indices.length}
-                ready
-              </div>
-            </div>
+            <ProgressCount
+              value={selected_claims_resolved}
+              max={selected_trace_indices.length}
+              noun={`${judged_noun}s ready`}
+            />
           {:else if calibration_error}
             <!-- Retryable re-judge failure — the grades that fed the refine
                  are intact, so Retry resumes at the re-check without paying
@@ -5013,12 +5162,12 @@
             <div class="mt-2">
               <Warning
                 warning_color="error"
-                warning_message={`${calibration_error.trimEnd().replace(/\.$/, "")}. You can also go back to review and save without refining further.`}
+                warning_message={`${calibration_error.trimEnd().replace(/\.$/, "")}. You can also go back to review and choose Save Without Improving.`}
               />
             </div>
             <div class="text-center py-4 flex justify-center gap-2">
               <button
-                class="btn btn-outline"
+                class="btn"
                 on:click={() => {
                   calibration_error = null
                 }}
@@ -5043,17 +5192,37 @@
               />
             </div>
           {:else if reviewable_trace_indices.length === 0}
-            <!-- Every selected trace failed its claims build, so the subset
-                 emptied. Say so: an empty review would leave a save gate that
-                 can never be met and no explanation for it. -->
+            <!-- The subset emptied: every selected case either failed its
+                 claims build or came back without a verdict claim, so there is
+                 nothing to grade. Say both causes, because the reviewer cannot
+                 tell them apart from here. An empty review would otherwise
+                 leave a save gate that can never be met and no explanation.
+                 On a calibration round the grades from the previous round are
+                 still good, so the same opt-out the review offers is offered
+                 here: discarding the batch must not be the only way out. -->
             <div class="mt-2">
               <Warning
                 warning_color="warning"
-                warning_message={`Couldn't analyze any of these ${judged_noun}s. Create your eval data again.`}
+                warning_message={`None of these ${judged_noun}s could be reviewed. Analyzing them either failed or produced no verdict to check.${
+                  calibration_rounds_completed > 0
+                    ? ""
+                    : " Create your eval data again."
+                }`}
               />
             </div>
+            {#if calibration_rounds_completed > 0}
+              <div class="flex flex-col items-end mt-2">
+                <button
+                  type="button"
+                  class="link underline text-sm text-gray-500"
+                  on:click={save_without_refining}
+                >
+                  Save Without Improving
+                </button>
+              </div>
+            {/if}
           {:else}
-            {#if calibration_rounds_completed > 0 && rejudge_shortfall_notice(calibration_failed_count, case_noun)}
+            {#if calibration_rounds_completed > 0 && rejudge_shortfall_notice(calibration_failed_count, trace_claims.length)}
               <!-- Cases without a fresh verdict sat the round out — say so
                    instead of letting the smaller subset pass unremarked. -->
               <div class="mt-2 mb-4">
@@ -5062,19 +5231,8 @@
                   warning_icon="info"
                   warning_message={rejudge_shortfall_notice(
                     calibration_failed_count,
-                    case_noun,
+                    trace_claims.length,
                   )}
-                />
-              </div>
-            {/if}
-            {#if calibration_declined_feedback_notice}
-              <!-- Feedback the refine declined, said out loud over the round
-                   it produced — a note silently dropped reads as ignored. -->
-              <div class="mt-2 mb-4">
-                <Warning
-                  warning_color="primary"
-                  warning_icon="info"
-                  warning_message={calibration_declined_feedback_notice}
                 />
               </div>
             {/if}
@@ -5089,51 +5247,29 @@
             {:else}
               {#key calibration_rounds_completed}
                 <ClaimEvidenceReview
+                  bind:this={review_component}
                   traces={trace_claims}
                   bind:verdicts={trace_reviews}
                   selected_indices={reviewable_trace_indices}
                   {judged_noun}
                   {on_open_trace}
+                  spec_text={current_spec_text}
                   on_save={on_advance_to_save}
                   save_disabled={!save_gate_met}
-                  save_label={review_cta_state === "refine"
-                    ? "Refine Judge"
-                    : "Save"}
-                  save_tooltip={review_cta_state === "refine"
-                    ? refine_judge_tooltip(
-                        review_disagreement_count,
-                        judged_noun,
-                      )
-                    : null}
                   bind:on_last_trace={review_on_last_trace}
                 />
               {/key}
             {/if}
             {#if calibration_refine_error}
               <!-- A failed refine attempt, reported inline under the review
-                   actions. Rendered independently of the opt-out link below:
-                   editing grades can drop the save gate (a fresh disagreement
-                   without a reason yet), and the failure must not vanish
-                   while the user is reacting to it. -->
-              <div class="text-sm text-center text-error mt-2">
-                {calibration_refine_error}
-              </div>
-            {/if}
-            {#if review_cta_state === "refine" && save_gate_met && review_on_last_trace}
-              <!-- The loop's opt-out, in the wizard's quiet-link idiom (the
-                   data-guide refine flow): saves immediately with the judge
-                   the reviewer graded — no dialog. Only offered where the
-                   primary CTA itself renders — a refine on the last trace —
-                   so it never sits under a Continue button, where one unconfirmed
-                   click would save mid-review. -->
-              <div class="flex flex-col items-end mt-2">
-                <button
-                  type="button"
-                  class="link underline text-sm text-gray-500"
-                  on:click={save_without_refining}
-                >
-                  Save Without Refining Further
-                </button>
+                   actions: editing grades can drop the save gate (a fresh
+                   disagreement without a reason yet), and the failure must not
+                   vanish while the user is reacting to it. -->
+              <div class="mt-2">
+                <Warning
+                  warning_color="error"
+                  warning_message={calibration_refine_error}
+                />
               </div>
             {/if}
           {/if}
@@ -5153,36 +5289,17 @@
             </div>
           {/if}
         {:else if current_step === "done"}
-          <!-- Fallback: save succeeded but no eval_id/spec_id to redirect to.
-               Centered completion card, same idiom as the git-import done
-               screen. -->
-          <div class="flex flex-col items-center py-8 gap-4">
-            <div class="text-success">
-              <svg
-                class="w-16 h-16"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M16 9L10 15.5L7.5 13M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </div>
-            <h2 class="text-xl font-medium">Eval Created</h2>
-            <p class="text-sm text-gray-500 text-center max-w-md">
-              Your eval is ready to run.
-            </p>
-            <div class="flex flex-row gap-4 mt-4">
-              <button class="btn btn-primary btn-wide" on:click={back_to_task}>
-                Back to Evals
-              </button>
-            </div>
-          </div>
+          <!-- The save's success screen, the same control every other create
+               flow in the app finishes on. "View Eval" is the one place the
+               guide allows the word: on a success screen nothing else reads
+               right. A save that returned no id has no eval page to offer, so
+               the button goes to the list instead of promising one. -->
+          <Completed
+            title="Eval Created"
+            subtitle="You've created a new eval, including an eval dataset and aligned judge!"
+            link={created_eval_href ?? `/specs/${project_id}/${task_id}`}
+            button_text={created_eval_href ? "View Eval" : "Back to Evals"}
+          />
         {/if}
       </div>
     {/if}
@@ -5301,8 +5418,8 @@
       <RunConfigComponent
         bind:this={input_gen_config_component}
         {project_id}
-        model_label="Eval Data Generation Model"
-        model_info_description="Writes one item from each approved plan line; your task then runs on them."
+        model_label="Input Generation Model"
+        model_info_description="Writes the input for each dataset item. Your run config then produces the output that the judge scores."
         bind:model={input_gen_model_combined}
         initial_run_config_properties={input_gen_run_config}
         requires_structured_output={true}
@@ -5333,15 +5450,45 @@
          rather than the usual amber one: every case there is a whole
          conversation billed per turn on both sides, so the same item count
          costs many times what it does single-turn, and this sits directly
-         above the button that commits the spend. Filled rather than bigger:
-         the ring mark is mostly empty at this size, so the error colour reads
-         amber next to a real amber one, and Warning styles its mark, never
-         its text. The form's gap spaces it like every lane above it, and the
-         default indent keeps its text on the lanes' label line. -->
+         above the button that commits the spend. The form's gap spaces it
+         like every lane above it, and the default indent keeps its text on
+         the lanes' label line. -->
     <Warning
       warning_color={is_multi_turn ? "error" : "warning"}
-      filled_icon={is_multi_turn}
       warning_message={drive_cost_message}
     />
   </FormContainer>
+</Dialog>
+
+<!-- The forward action's fork on the last case: the reviewer disagreed with
+     the judge somewhere and said why, and that feedback can either improve the
+     judge or be kept as-is. Both are legitimate, so both are buttons, and the
+     wizard does not decide for them. Improving costs a model call and a
+     re-review; saving is final. Nothing here is destructive, so neither button
+     is an error button. -->
+<Dialog
+  bind:this={improve_judge_dialog}
+  title="Improve Judge with Feedback?"
+  action_buttons={[
+    {
+      label: "Save Without Improving",
+      action: () => {
+        save_without_refining()
+        return true
+      },
+    },
+    {
+      label: "Improve Judge",
+      isPrimary: true,
+      action: () => {
+        void run_calibration_round()
+        return true
+      },
+    },
+  ]}
+>
+  <p class="text-sm text-gray-500">
+    You disagreed with the judge and gave feedback, which we can use to improve
+    your Judge.
+  </p>
 </Dialog>

@@ -1,4 +1,3 @@
-from typing import List, Tuple
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -15,10 +14,13 @@ from kiln_ai.adapters.embedding.litellm_embedding_adapter import (
 )
 from kiln_ai.adapters.ml_embedding_model_list import (
     KilnEmbeddingModelProvider,
-    built_in_embedding_models,
     built_in_embedding_models_from_provider,
 )
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
+from kiln_ai.adapters.pytest_embedding_fanout import (
+    all_embedding_model_provider_pairs,
+    live_embedding_model_provider_pairs,
+)
 from kiln_ai.adapters.pytest_prerelease_whitelist import PRERELEASE_EMBEDDING_MODELS
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig
@@ -44,14 +46,6 @@ def mock_litellm_adapter(mock_embedding_config, mock_litellm_core_config):
     return LitellmEmbeddingAdapter(
         mock_embedding_config, litellm_core_config=mock_litellm_core_config
     )
-
-
-def get_all_embedding_models_and_providers() -> List[Tuple[ModelProviderName, str]]:
-    results = []
-    for model in built_in_embedding_models:
-        for provider in model.providers:
-            results.append((provider.name, model.name))
-    return results
 
 
 class TestEmbeddingOptions:
@@ -760,8 +754,8 @@ class TestLitellmEmbeddingAdapterEdgeCases:
 
 @pytest.mark.paid
 @pytest.mark.parametrize(
-    "provider,model_name",
-    get_all_embedding_models_and_providers(),
+    "model_name,provider",
+    live_embedding_model_provider_pairs(),
 )
 @pytest.mark.asyncio
 async def test_paid_generate_embeddings_basic(provider, model_name):
@@ -787,10 +781,10 @@ async def test_paid_generate_embeddings_basic(provider, model_name):
 
 @pytest.mark.paid
 @pytest.mark.parametrize(
-    "provider,model_name,batch_size",
+    "model_name,provider,batch_size",
     [
-        (provider, model_name, batch_size)
-        for provider, model_name in get_all_embedding_models_and_providers()
+        (model_name, provider, batch_size)
+        for model_name, provider in live_embedding_model_provider_pairs()
         for batch_size in [10, 100]
     ],
 )
@@ -1053,8 +1047,8 @@ def test_litellm_model_id_custom_provider_openai_compatible_without_base_url():
 
 @pytest.mark.paid
 @pytest.mark.parametrize(
-    "provider,model_name",
-    get_all_embedding_models_and_providers(),
+    "model_name,provider",
+    live_embedding_model_provider_pairs(),
 )
 @pytest.mark.asyncio
 async def test_paid_generate_embeddings_with_custom_dimensions_supported(
@@ -1202,7 +1196,7 @@ def test_generate_embeddings_response_not_embedding_response():
 
 
 @pytest.mark.parametrize(
-    "provider_name,model_name", get_all_embedding_models_and_providers()
+    "model_name,provider_name", all_embedding_model_provider_pairs()
 )
 def test_openrouter_transformed_into_openai_compatible(provider_name, model_name):
     if provider_name != ModelProviderName.openrouter:
