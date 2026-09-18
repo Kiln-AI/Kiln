@@ -6,27 +6,29 @@ status: draft
 
 ## Goals
 
-1. A Kiln user can connect TypeSafe AI as a provider with an API key, pick a Jev model anywhere a model is picked, and run a compatible task against it.
+1. A Kiln user can connect TypeSafe AI as a provider with an API key, pick the Jev model anywhere a model is picked, and run a compatible task against it.
 2. Compatible means: single turn, no tools, a task output schema whose every property maps onto one of Jev's three question types (choice, score, noul). Everything else fails at runtime with a clear, specific error. The UI does not pre-validate compatibility.
-3. Kiln's built-in eval judges (legacy G-Eval and LLM-as-Judge, and V2 LLM Judge) work with a Jev judge model. G-Eval uses Jev's native probabilities instead of the logprob approximation.
+3. Kiln's LLM-as-Judge evals (legacy and V2) work with a Jev judge. G-Eval is not offered for Jev in v1.
 4. The mapping is lossless in both directions: JSON schema → Jev questions → Jev answers → a JSON object that validates against the task's output schema through Kiln's normal validation path.
+5. The mapping lives in a small standalone module (`JSONSchema2Jev`, `JevResult2JsonSchema`) that can be pulled out into an open-source project unchanged.
 
 ## Non-goals (v1)
 
 - Streaming, tools, MCP, multi-turn chat, or the agent/chat UI with a Jev model. These are runtime errors.
 - Synthetic data generation and fine-tuning with Jev. Jev cannot generate text, so the model is flagged `supports_data_gen=False` and never offered as a fine-tune base.
-- Nested objects, arrays, free-form strings, floats, `anyOf`/`oneOf`, or per-enum-value descriptions in the output schema. Runtime error listing every offending property.
-- Cost estimation. Token counts are recorded; `cost` stays `None`.
+- G-Eval with a Jev judge. The Jev model entry has `supports_logprobs=False`, so the existing UI greys G-Eval out with its existing message and the V2 judge's guard rejects it. A follow-up could feed Jev's native probabilities into G-Eval scoring.
+- Nested objects, arrays, free-form strings, unbounded numbers, `anyOf`/`oneOf`, or per-enum-value descriptions in the output schema. Runtime error listing every offending property.
+- Cost estimation. The API returns token counts but no cost; `cost` stays `None`.
 - Any UI beyond the standard provider connect card and the model appearing in existing dropdowns.
-- Exposing Jev's confidence/probabilities in the UI. They are persisted (see below) but no new UI reads them.
+- Reading Jev's probabilities or confidence in the UI. They are persisted with the run (see below) but no new UI displays them.
 
 ## Background: the Jev API
 
 See `research/jev_api/summary.md` for the wire contract. Summary:
 
-- `POST /v1/systemone` with `{state, model, questions}`; `state` is any JSON; `questions` is a dict of named questions.
-- Question types: `noul` (yes/no, returns probability of yes), `choice` (labelled options, returns the argmax label plus a probability per label), `score` (ordered rubric, returns an expected value plus a probability per level, levels are 0-based indices).
-- Every question has optional `instructions`. There is no system prompt.
+- `POST /v1/systemone` with `{state, model, questions}`; `state` is any JSON; `questions` is a dict of named questions, all evaluated in parallel against the same state.
+- Question types: `noul` (yes/no, returns the probability of yes), `choice` (labelled options, returns the argmax label plus a probability per label and a confidence), `score` (ordered rubric of 2 to 10 levels, returns an expected value plus a probability per level and a confidence; levels are 0-based indices).
+- `instructions` is required for `noul`, optional for the others. There is no system prompt.
 
 ## Provider
 
@@ -46,13 +48,18 @@ Model capability flags for the Jev entry:
 |---|---|---|
 | `supports_structured_output` | True | Only structured output is possible |
 | `supports_data_gen` | False | Cannot generate text |
-| `supports_logprobs` | True | Kiln uses this flag to mean "G-Eval can get a probability-weighted score". Jev returns probabilities natively, which is strictly better. |
-| `suggested_for_evals` | False | Leave off until we have run our own comparisons. Users can still pick it. |
+| `supports_logprobs` | False | Greys out G-Eval in the UI and fails the V2 judge's `g_eval` guard, per the non-goal above |
+| `supports_function_calling` | False | No tools |
+| `suggested_for_evals` | False | Off until we have compared it against our usual judges. Users can still pick it. |
 | `structured_output_mode` | `json_schema` | Nominal. The Jev adapter ignores the mode. Chosen so the prompt builder never appends JSON formatting instructions. |
 | `reasoning_capable` | False | No reasoning, no intermediate outputs required |
 | `multimodal_capable` / doc extraction | False | Text and JSON only |
 
-The model appears in every existing model dropdown that the flags allow (run page, eval judge selection). Dropdowns that require data gen or text output already filter on the flags above.
+The model appears in every existing model dropdown that the flags allow (run page, eval judge selection). Dropdowns that require data gen, logprobs, or function calling already filter on the flags above.
+
+### Model entry and release gating
+
+Kiln's rule for new providers is that the model-list entry lands in a second PR after a client release, because remote config pushes entries to every deployed client immediately. For this project the entry is added in the same branch so the feature can be tested end to end, but it carries a `TODO` comment saying it must be removed before merge. CI enforces that no `TODO` comments reach main, so the PR cannot merge with the entry in. After the release that carries the provider, a follow-up PR re-adds the entry without the `TODO`.
 
 ## Task compatibility rules
 
@@ -60,26 +67,27 @@ Checked at run time inside the Jev adapter, before any network call, in this ord
 
 1. **Prior trace present** (multi-turn continuation): `... Jev only supports single-turn runs.`
 2. **Tools configured** on the run config: `... Jev does not support tools. Remove tools from the run config.`
-3. **No output schema** on the task: `... Jev only supports tasks with a structured output schema. Add an output JSON schema whose properties are enums, booleans, or bounded integers.`
+3. **No output schema** on the task: `... Jev only supports tasks with a structured output schema. Add an output JSON schema whose properties are enums, booleans, bounded integers, or numbers from 0 to 1.`
 4. **Schema mapping failures**: `... the output schema has properties Jev can't answer:` followed by one line per property: `- <key>: <reason>`. Reasons are listed in the mapping table below.
 5. **Zero mappable properties** (empty `properties`): `... the output schema has no properties.`
 
 Streaming entry points are not overridden; the base class raises `NotImplementedError("Streaming is not supported for this adapter type")`, which is acceptable because no Kiln UI streams a plain task run.
 
-Run config fields `temperature`, `top_p`, `thinking_level` are ignored silently. Chain-of-thought prompt generators are accepted; their thinking instructions are ignored (no `chain_of_thought` intermediate output is produced). Prompt content (simple, few-shot, multi-shot, saved prompts, fine-tune prompts, skills) is used in full.
+Run config fields `temperature`, `top_p`, `thinking_level` are ignored silently. Chain-of-thought prompt generators are accepted and their thinking instructions are ignored (there is no thinking option for Jev, and no `chain_of_thought` intermediate output is produced). Prompt content (simple, few-shot, multi-shot, saved prompts, fine-tune prompts, skills) is used in full.
 
 ## Output schema → Jev questions
 
-The task output schema must be `type: object` with `properties` (Kiln already enforces this). Each property becomes one question named exactly after the property key. Question `instructions` is the property's `description`, else its `title`, else the property key itself (Jev requires instructions on `noul` questions, and a bare key such as `is_spam` is still a usable question).
+The task output schema must be `type: object` with `properties` (Kiln already enforces this). Each property becomes one question named exactly after the property key. Question `instructions` is the property's `description`, else its `title`, else the property key itself. A bare key such as `is_spam` is still a usable question, and `noul` requires instructions.
 
-The conversion in both directions is a standalone package, `jev_jsonschema`, written so it can be lifted into its own open-source project: no Kiln imports, pydantic as its only dependency, neutral error messages. Kiln's adapter wraps its errors with the Kiln-facing prefix above.
+The conversion in both directions is a standalone package, `jev_jsonschema`, written so it can be lifted into its own open-source project: no Kiln imports, pydantic as its only dependency, neutral error messages, and the decoding knobs below exposed as options. Kiln's adapter wraps the package's errors with the Kiln-facing prefix above and uses the default options.
 
 | JSON schema property | Jev question | Answer → JSON value |
 |---|---|---|
-| `enum: [...]` where every value is a string, and `type` is absent or `"string"` | `choice` with `criteria = {value: null for value in enum}` (order preserved) | `answer.choice` verbatim |
+| `enum: [...]` where every value is a string, and `type` is absent or `"string"` | `choice` with `criteria = {value: null for value in enum}` (order preserved, bare labels) | `answer.choice` verbatim |
 | `enum: [...]` where every value is an integer, and `type` is absent or `"integer"` | `choice` with string labels `str(value)` | `int(answer.choice)` |
-| `type: "boolean"` | `noul` with `instructions` as above | `answer.noul >= 0.5` |
-| `type: "integer"` with both `minimum` and `maximum` set, `maximum - minimum + 1` between 2 and 10 inclusive | `score` with `criteria = [str(minimum), ..., str(maximum)]` (ascending, one level per integer) | `minimum + argmax(answer.probabilities)`; on a tie, the lowest level |
+| `type: "boolean"` | `noul` | `answer.noul >= threshold`; threshold is a module option, default 0.5 |
+| `type: "number"` with `minimum: 0` and `maximum: 1` exactly (inclusive bounds) | `noul` | `answer.noul` as a float. The description should read as a yes/no statement whose probability is the value, for example "The response fully answers the question." |
+| `type: "integer"` with both `minimum` and `maximum` set, `maximum - minimum + 1` between 2 and 10 inclusive | `score` with `criteria = [str(minimum), ..., str(maximum)]` (ascending, one level per integer) | `minimum + level` where `level` has the highest probability; on a tie, the lowest level |
 | Anything else | Unsupported; see reasons below | |
 
 Unsupported reasons (one per property, exact wording is the coding agent's call but each must name the property and say what would be accepted):
@@ -87,12 +95,13 @@ Unsupported reasons (one per property, exact wording is the coding agent's call 
 - `enum` with mixed or non-scalar values, or with zero values.
 - `enum` values that are strings but `type` says something other than `string` (and likewise for integers).
 - Duplicate `enum` values after string conversion.
-- `type: integer` without both `minimum` and `maximum`, or with a range of 1 or more than 10 levels. Note `exclusiveMinimum`/`exclusiveMaximum` are not honoured; they count as missing bounds.
 - `enum` with more than 255 values (Jev's choice limit).
-- `type: number`, `string` without `enum`, `array`, `object`, `null`, a list of types, or no `type` and no `enum`.
+- `type: integer` without both `minimum` and `maximum`, or with a range of 1 or more than 10 levels. `exclusiveMinimum`/`exclusiveMaximum` are not honoured; they count as missing bounds.
+- `type: number` with bounds other than exactly 0 and 1, or missing bounds.
+- `string` without `enum`, `array`, `object`, `null`, a list of types, or no `type` and no `enum`.
 - `anyOf`, `oneOf`, `allOf`, `$ref`, `const`, `not`.
 
-Properties are answered whether or not they are listed in `required`. `additionalProperties` is ignored. Property order in the request follows the schema's property order.
+Properties are answered whether or not they are listed in `required`, since Jev cannot abstain. `additionalProperties` is ignored. Property order in the request follows the schema's property order.
 
 The 10-level cap on `score` and the 255-option cap on `choice` are documented API limits and are enforced locally so the error names the property. If the API rejects a request for any other limit (question count, state size), the API's own error message is surfaced verbatim.
 
@@ -119,14 +128,12 @@ Input transforms (Jinja `input_transform` on the run config) are applied by the 
 
 The adapter assembles `{property_key: mapped_value}` for every property and returns it as a dict. The base adapter validates the dict against the task's output schema exactly as it does for any other model, so a mapping bug surfaces as the standard "This task requires a specific output schema" error rather than silently saving bad data.
 
-### Probabilities
+### Probabilities and confidence
 
-Two places, both keyed by property and by the *output-schema value* (not Jev's internal label), so consumers never need to know the question type:
+Persisted in `TaskRun.intermediate_outputs` as two JSON-encoded strings, so they travel with the run and appear wherever intermediate outputs are shown:
 
-1. `RunOutput.answer_probabilities: dict[str, dict[str, float]] | None` (new, in-memory only). For a `noul` this is `{"true": p, "false": 1 - p}`. For a `score` the keys are the integer values as strings (`"1"`…`"5"`), not the 0-based levels. For a `choice` the keys are the enum values as strings.
-2. `TaskRun.intermediate_outputs["jev_probabilities"]`: the same structure JSON-encoded as a string, so it is persisted with the run and visible wherever intermediate outputs are shown. Rounded to 4 decimal places.
-
-`confidence` values are decoded by the package but not persisted by Kiln in v1.
+- `jev_probabilities`: `{property: {output value as string: probability}}`. Keys are output-schema values, not Jev's internal labels: `"pass"`/`"fail"` for a choice, `"1"`…`"5"` for a score (after adding `minimum`), `"true"`/`"false"` for a boolean or 0..1 number noul. Rounded to 4 decimal places.
+- `jev_confidence`: `{property: confidence}`. Jev's confidence for choice and score answers; `null` for noul answers, which carry none.
 
 ## Trace and usage
 
@@ -142,12 +149,11 @@ The saved `TaskOutput.source.properties` carry the usual `adapter_name`, `model_
 
 ## Evals with a Jev judge
 
-- **Legacy G-Eval and LLM-as-Judge** (`g_eval.py`): the judge task's output schema is built by `build_score_schema(allow_float_scores=False)`, which produces only shapes in the mapping table. The adapter is selected by provider, so no change to how the eval builds the run config. The `SIMPLE_CHAIN_OF_THOUGHT` prompt id is accepted and its thinking step ignored.
-  - LLM-as-Judge: unchanged; consumes the discrete dict output.
-  - G-Eval: `build_g_eval_score` gains a fast path. When `run_output.answer_probabilities` is present, each metric's score is `Σ p(value) × score_from_token_string(value)` over that metric's distribution, normalized by the summed probability of recognized values. This reproduces exactly what the logprob path computes, but from a full distribution. The logprob path is untouched for other models.
-- **V2 LLM Judge** (`v2_eval_llm_judge.py`): same fast path. Its existing `supports_logprobs` guard passes because the Jev entry sets that flag.
+- **Legacy LLM-as-Judge** (`g_eval.py` with `config_type == llm_as_judge`): the judge task's output schema is built by `build_score_schema(allow_float_scores=False)`, which produces only shapes in the mapping table. The adapter is selected by provider, so the eval code does not change. The `SIMPLE_CHAIN_OF_THOUGHT` prompt id it uses is accepted and its thinking step ignored. Scores come from the discrete dict output as today.
+- **V2 LLM Judge** (`v2_eval_llm_judge.py`) with `g_eval=False`: same. With `g_eval=True` the existing `supports_logprobs` guard raises before running, and the UI never offers it.
+- **Legacy G-Eval** (`config_type == g_eval`) with a Jev judge cannot be created from the UI. If one is constructed via the API, scoring fails at runtime with the existing "No logprobs found for output" error.
 - **Full-trace evals**: the trace text lands in the judge prompt as today. Very long traces can exceed Jev's state limit; the API error is surfaced and the eval runner records it as a failed job like any other judge error.
-- **Eval runner retries**: transient Jev errors (429, 5xx, timeouts, connection failures) are classified retryable alongside the LiteLLM transient errors so the runner's existing two retries apply.
+- **Eval runner retries**: transient Jev errors (429, 5xx, timeouts, connection failures) are classified retryable alongside the LiteLLM transient errors so the runner's existing two retries apply. No retries happen inside the adapter itself, so interactive runs fail fast.
 
 ## Error handling
 
@@ -165,28 +171,28 @@ All errors raised inside the adapter propagate through the existing `KilnRunErro
 | Timeout / connection error | `JevApiError` (retryable) | `Could not connect to TypeSafe AI. Check your network connection.` |
 | Response missing an answer for a question, wrong answer type, or unparseable body | `RuntimeError` | `TypeSafe AI returned an unexpected response: <detail>` |
 
-Request timeout: 60 seconds total (Jev responds in well under a second; the generous value covers large states). No client-side retries in the adapter itself; retries are the caller's job (eval runner) so interactive runs fail fast.
+Request timeout: 60 seconds total (Jev responds in well under a second; the generous value covers large states).
 
 The API key is never included in error messages or logs.
 
 ## Configuration and defaults
 
-- `Config.typesafe_api_key`: the only new setting.
+- `Config.typesafe_api_key`: the only new Kiln setting.
 - No per-run options. Jev has no temperature or sampling controls.
+- The standalone module exposes decoding options (noul threshold, default 0.5; maximum score levels, default 10; score decoding strategy, default highest probability). Kiln uses the defaults and does not surface them.
 
 ## Compatibility and constraints
 
 - Python 3.10+ for `libs/core`. HTTP via the already-present `httpx` dependency, async client. No new runtime dependencies.
 - Adding a value to `ModelProviderName` changes the OpenAPI schema; regenerate `app/web_ui/src/lib/api_schema.d.ts`.
-- Remote model-list config can only reference providers the running app already knows, so the provider enum ships in the app and the model entry can later be tuned remotely like any other.
-- No changes to persisted file formats other than the new optional `intermediate_outputs` key, which existing readers ignore.
+- No changes to persisted file formats other than the two new optional `intermediate_outputs` keys, which existing readers ignore.
 
 ## Acceptance checks
 
 1. Connect TypeSafe AI with a valid key; the provider shows connected and "Jev 1.13" appears in the run page model dropdown.
-2. A task with output schema `{"rating": integer 1..5, "verdict": enum [pass, fail], "is_spam": boolean}` runs and saves a run whose output validates, with `jev_probabilities` in intermediate outputs.
+2. A task with output schema `{"rating": integer 1..5, "verdict": enum [pass, fail], "is_spam": boolean, "relevance": number 0..1}` runs and saves a run whose output validates, with `jev_probabilities` and `jev_confidence` in intermediate outputs.
 3. The same task with an added `summary: string` property fails before any network call with a message naming `summary` and the accepted shapes.
 4. A run config with a tool attached fails with the tools message.
-5. A legacy G-Eval and a V2 LLM Judge (with and without `g_eval`) configured with the Jev judge produce scores on a small eval set, and the G-Eval scores are non-integer where the judge is uncertain.
+5. A legacy LLM-as-Judge eval and a V2 LLM Judge (g_eval off) configured with the Jev judge produce scores on a small eval set. The eval UI shows G-Eval disabled for Jev.
 6. With an invalid key, connecting fails with the API's message and running fails with the authentication message.
-7. `uv run ./checks.sh --agent-mode` passes, including the OpenAPI schema check.
+7. `uv run ./checks.sh --agent-mode` passes, including the OpenAPI schema check, and the `TODO` on the model entry makes the CI TODO check fail until it is removed.
