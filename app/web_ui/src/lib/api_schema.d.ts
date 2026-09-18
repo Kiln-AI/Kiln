@@ -7240,6 +7240,8 @@ export interface components {
              * @description Tags for filtering eval inputs.
              */
             tags?: string[];
+            /** @description Reset this world with these keyword arguments before the run; the reset starts the episode the trace records. A run config that lists the world's tools runs the input in that episode; a run config listing the project's own version of a tool the world serves is refused. None runs against the project tools. */
+            world_reset?: components["schemas"]["WorldReset"] | null;
             /** Model Type */
             readonly model_type: string;
         };
