@@ -14,10 +14,13 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from kiln_ai.datamodel.code_tool import CodeTool
+from kiln_ai.datamodel.code_tool import CodeToolBase
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.task import Task
-from kiln_ai.datamodel.tool_id import ToolId, build_code_tool_id
+from kiln_ai.datamodel.tool_id import (
+    ToolId,
+    build_code_tool_id,
+)
 from kiln_ai.sandbox.worker import child_main
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
@@ -61,11 +64,11 @@ class ChildOutcome:
 
 
 class PythonCodeTool(KilnToolInterface):
-    """Wraps a :class:`CodeTool` artifact as a :class:`KilnToolInterface`."""
+    """Wraps a code-tool artifact (:class:`CodeTool`) as a :class:`KilnToolInterface`."""
 
     def __init__(
         self,
-        code_tool: CodeTool,
+        code_tool: CodeToolBase,
         project: Project,
         task: Task | None = None,
         tool_call_recorder: Callable[[ToolCallLogEntry], None] | None = None,
