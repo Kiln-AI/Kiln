@@ -8,7 +8,7 @@ status: draft
 
 1. A Kiln user can connect TypeSafe AI as a provider with an API key, pick the Jev model anywhere a model is picked, and run a compatible task against it.
 2. Compatible means: single turn, no tools, a task output schema whose every property maps onto one of Jev's three question types (choice, score, noul). Everything else fails at runtime with a clear, specific error. The UI does not pre-validate compatibility.
-3. Kiln's LLM-as-Judge evals (legacy and V2) work with a Jev judge. G-Eval with a Jev judge is an optional, opt-in final phase that feeds Jev's native probabilities into G-Eval scoring.
+3. Kiln's LLM-as-Judge evals (legacy and V2) work with a Jev judge. Probability-weighted scoring from Jev's native distributions is an optional, opt-in final phase.
 4. The mapping is lossless in both directions: JSON schema → Jev questions → Jev answers → a JSON object that validates against the task's output schema through Kiln's normal validation path.
 5. The mapping lives in a small standalone module (`JSONSchema2Jev`, `JevResult2JsonSchema`) that can be pulled out into an open-source project unchanged.
 
@@ -16,7 +16,7 @@ status: draft
 
 - Streaming, tools, MCP, multi-turn chat, or the agent/chat UI with a Jev model. These are runtime errors.
 - Synthetic data generation and fine-tuning with Jev. Jev cannot generate text, so the model is flagged `supports_data_gen=False` and never offered as a fine-tune base.
-- G-Eval with a Jev judge in the core phases. Until the optional G-Eval phase ships, the Jev model entry has `supports_logprobs=False`, so the existing UI greys G-Eval out with its existing message and the V2 judge's guard rejects it.
+- Probability-weighted scoring in the core phases. Until the optional phase ships, the Jev model entry has `supports_logprobs=False`, so the existing UI greys the G-Eval option out with its existing message and the V2 judge's `g_eval` guard rejects it.
 - Nested objects, arrays, free-form strings, unbounded numbers, `anyOf`/`oneOf`, or per-enum-value descriptions in the output schema. Runtime error listing every offending property.
 - Cost estimation. The API returns token counts but no cost; `cost` stays `None`.
 - Any UI beyond the standard provider connect card and the model appearing in existing dropdowns.
@@ -48,7 +48,7 @@ Model capability flags for the Jev entry:
 |---|---|---|
 | `supports_structured_output` | True | Only structured output is possible |
 | `supports_data_gen` | False | Cannot generate text |
-| `supports_logprobs` | False | Jev has no token logprobs. Greys out G-Eval in the UI and fails the V2 judge's `g_eval` guard until the optional G-Eval phase adds `supports_probability_scores` |
+| `supports_logprobs` | False | Jev has no token logprobs. Greys out the G-Eval option in the UI and fails the V2 judge's `g_eval` guard until the optional phase adds `supports_probability_scores` |
 | `supports_function_calling` | False | No tools |
 | `suggested_for_evals` | False | Off until we have compared it against our usual judges. Users can still pick it. |
 | `structured_output_mode` | `json_schema` | Nominal. The Jev adapter ignores the mode. Chosen so the prompt builder never appends JSON formatting instructions. |
@@ -160,15 +160,16 @@ The saved `TaskOutput.source.properties` carry the usual `adapter_name`, `model_
 - **Full-trace evals**: the trace text lands in the judge prompt as today. Very long traces can exceed Jev's state limit; the API error is surfaced and the eval runner records it as a failed job like any other judge error.
 - **Eval runner retries**: transient Jev errors (429, 5xx, timeouts, connection failures) are classified retryable alongside the LiteLLM transient errors so the runner's existing two retries apply. No retries happen inside the adapter itself, so interactive runs fail fast.
 
-### Optional final phase: G-Eval from native probabilities
+### Optional final phase: probability-weighted scoring from native distributions
 
-Opt-in: the implementation stops before this phase and asks whether to proceed. When it ships:
+Opt-in: the implementation stops before this phase and asks whether to proceed. This is not G-Eval. G-Eval is chain-of-thought plus token logprobs; Jev has neither. It is a probability-weighted expected score computed from the distribution Jev returns for each rating, which happens to be what Kiln's existing logprob scoring path approximates. When it ships:
 
 - A new model-entry flag `supports_probability_scores: bool = False` on `KilnModelProvider`, set `True` for Jev, exposed on the API's `ModelDetails`. `supports_logprobs` keeps its literal meaning (token logprobs) and stays `False` for Jev.
-- G-Eval availability becomes `supports_logprobs or supports_probability_scores` in the three places that check it: the judge form's default-algorithm logic, the model dropdown's `requires_logprobs` filter, and the V2 judge's `g_eval` guard. The judge form's disabled-state copy generalizes to "G-Eval requires token probabilities, which this model or provider does not provide."
+- The eval UI offers the probability-weighted option for a model with `supports_probability_scores`. Labelling and copy (the existing option is called "G-Eval", which is wrong for Jev) are decided in the UI design step.
+- Availability becomes `supports_logprobs or supports_probability_scores` in the three places that check it: the judge form's default-algorithm logic, the model dropdown's `requires_logprobs` filter, and the V2 judge's `g_eval` guard.
 - `RunOutput` gains an optional `answer_probabilities: dict[str, dict[str, float]]` field, keyed by property then output value (the same structure as `jev_probabilities`), populated only by the Jev adapter.
-- `build_g_eval_score` takes a fast path when `answer_probabilities` is present: each metric's score is `Σ p(value) × score(value)` over values that map through the existing `TOKEN_TO_SCORE_MAP` (`"1"`…`"5"`, `"pass"`, `"fail"`, `"critical"`), normalized by the summed probability of those values. This is the same estimator the logprob path computes. The logprob path is untouched for other models. Both the legacy `GEval` and V2 `LlmJudgeEval` call this function, so both get it.
-- Legacy G-Eval still passes `top_logprobs=10` in `AdapterConfig`; the Jev adapter ignores it.
+- Kiln's existing `build_g_eval_score` takes a fast path when `answer_probabilities` is present: each metric's score is `Σ p(value) × score(value)` over values that map through the existing `TOKEN_TO_SCORE_MAP` (`"1"`…`"5"`, `"pass"`, `"fail"`, `"critical"`), normalized by the summed probability of those values. This is the same estimator the logprob path computes. The logprob path is untouched for other models. Both the legacy and V2 judges call this function, so both get it. The stored config type stays `g_eval` for compatibility; only the presentation changes.
+- The legacy path still passes `top_logprobs=10` in `AdapterConfig`; the Jev adapter ignores it.
 
 ## Error handling
 
@@ -209,6 +210,6 @@ The API key is never included in error messages or logs.
 3. The same task with an added `summary: string` property fails before any network call with a message naming `summary` and the accepted shapes.
 4. A run config with a tool attached fails with the tools message.
 5. A legacy LLM-as-Judge eval and a V2 LLM Judge (g_eval off) configured with the Jev judge produce scores on a small eval set. The eval UI shows G-Eval disabled for Jev.
-8. (Optional phase) With `supports_probability_scores` set, the eval UI offers G-Eval for Jev, and a legacy G-Eval and a V2 judge with `g_eval` on produce non-integer scores where Jev's distribution is spread across ratings.
+8. (Optional phase) With `supports_probability_scores` set, the eval UI offers probability-weighted scoring for Jev, and both the legacy and V2 judges in that mode produce non-integer scores where Jev's distribution is spread across ratings.
 6. With an invalid key, connecting fails with the API's message and running fails with the authentication message.
 7. `uv run ./checks.sh --agent-mode` passes, including the OpenAPI schema check, and the `TODO` on the model entry makes the CI TODO check fail until it is removed.
