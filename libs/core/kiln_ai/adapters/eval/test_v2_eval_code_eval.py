@@ -408,7 +408,7 @@ class TestEpisodeHandoff:
             "reset": {"world_id": "w", "reset_kwargs": {"fixture_id": "f"}},
             "episode_id": "ep_w",
             "world_version": "w@1",
-            "reset_facts": {"frozen_time": "2026-07-14T00:00:00+00:00"},
+            "reset_metadata": {"frozen_time": "2026-07-14T00:00:00+00:00"},
             "final_state": {"notes": []},
         }
         declared = (

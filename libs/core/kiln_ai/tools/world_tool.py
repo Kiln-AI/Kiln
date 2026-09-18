@@ -58,13 +58,14 @@ class OpenEnvToolProxy(KilnToolInterface):
             self._ctx.episode, self._tool.name, dict(kwargs)
         )
         if outcome.error is not None:
+            # Every error on the observation is a failed call. OpenEnv's `error_type`
+            # is the only structure the field carries, and its whole vocabulary --
+            # `execution_error` included -- means the call did not work. An
+            # environment that wants an error of its own read as an ordinary answer
+            # returns it as a result, which is what `result` is for.
             output = render_tool_error(
                 outcome.error_code, outcome.error, outcome.error_details
             )
-            if outcome.error_code and outcome.error_code not in WORLD_FAILURE_CODES:
-                # The modelled product answering with an error of its own, which is an
-                # ordinary answer: the real system's client would return the same body.
-                return ToolCallResult(output=output)
             return ToolCallResult(
                 output=output, is_error=True, error_message=outcome.error
             )
@@ -72,16 +73,6 @@ class OpenEnvToolProxy(KilnToolInterface):
         if isinstance(outcome.result, dict) and outcome.result.get("is_error") is True:
             return ToolCallResult(output=output, is_error=True, error_message=output)
         return ToolCallResult(output=output)
-
-
-WORLD_FAILURE_CODES: frozenset[str] = frozenset(
-    {"internal", "unknown_tool", "invalid_arguments", "world_gap"}
-)
-"""Error codes that mean the world itself failed, not the product it models.
-
-Everything else is the modelled system speaking: an error the real system would also
-return, which the real tool returns as an ordinary result. Keeping the two apart is what
-lets one trace be compared against another taken against the real system."""
 
 
 def render_tool_error(code: str | None, message: str, details: Any) -> str:

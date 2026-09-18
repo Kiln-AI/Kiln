@@ -91,9 +91,9 @@ class WorldEpisode(BaseModel):
         min_length=1,
         description="The environment's name@version as its server reported it when the episode started: what produced this state. Kiln trusts a version to be immutable.",
     )
-    reset_facts: dict[str, JsonValue] = Field(
+    reset_metadata: dict[str, JsonValue] = Field(
         default_factory=dict,
-        description="What the environment reported about the starting state when the episode was reset, read from the reset observation's result or metadata: facts judges may want, such as the scenario it started from or the clock it runs on.",
+        description="What the environment reported in the observation metadata when the episode was reset: facts about the starting state that judges may want, such as the scenario it started from or the clock it runs on.",
     )
     final_state: dict[str, JsonValue] | None = Field(
         default=None,
@@ -109,7 +109,7 @@ class WorldEpisode(BaseModel):
             },
             "episode_id": self.episode_id,
             "world_version": self.world_version,
-            "reset_facts": self.reset_facts,
+            "reset_metadata": self.reset_metadata,
             "final_state": self.final_state,
         }
 

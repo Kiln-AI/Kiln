@@ -11,6 +11,7 @@ tool through the registry (so the proxy runs for real) and calls it once.
 """
 
 import asyncio
+import json
 import re
 from typing import ClassVar
 from unittest.mock import patch
@@ -54,12 +55,7 @@ from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
 from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.worlds.session_manager import OpenEnvSessionManager
-from kiln_ai.worlds.testing import (
-    ENV_NAME,
-    ControlledCounterEnv,
-    free_port,
-    serve_in_thread,
-)
+from kiln_ai.worlds.testing import ENV_NAME, free_port, serve_in_thread
 
 SCHEMA = {"type": "object", "properties": {"note": {"type": "string"}}}
 CLOCK_A = "2026-07-14T00:00:00+00:00"
@@ -115,20 +111,6 @@ def env_server():
 @pytest.fixture
 def world(project, env_server):
     w = World(name="World", parent=project, env_url=env_server)
-    w.save_to_file()
-    return w
-
-
-@pytest.fixture
-def controlled_env_server():
-    with serve_in_thread(env_factory=ControlledCounterEnv) as base_url:
-        yield base_url
-
-
-@pytest.fixture
-def controlled_world(project, controlled_env_server):
-    """A world whose environment speaks coded errors and serves control tools."""
-    w = World(name="Controlled", parent=project, env_url=controlled_env_server)
     w.save_to_file()
     return w
 
@@ -328,11 +310,8 @@ def _runner(eval_configs, run_config, session_manager, split_name="test"):
 
 
 async def _drain(runner, concurrency=25):
-    """Run to completion; returns the last progress update."""
-    last = None
-    async for last in runner.run(concurrency=concurrency):
+    async for _ in runner.run(concurrency=concurrency):
         pass
-    return last
 
 
 def _traces(task):
@@ -377,15 +356,13 @@ async def test_full_run_isolates_and_records_instances(
     assert ep_a.reset.world_id == world.id and ep_b.reset.world_id == world.id
     assert ep_a.reset.reset_kwargs == {"fixture_id": "a", "frozen_time": CLOCK_A}
     assert ep_b.reset.reset_kwargs == {"fixture_id": "b", "frozen_time": CLOCK_B}
-    assert ep_a.reset_facts["fixture_id"] == "a"
-    assert ep_a.reset_facts["frozen_time"] == CLOCK_A
-    assert ep_b.reset_facts["frozen_time"] == CLOCK_B
-    assert "env_name" not in ep_a.reset_facts
+    assert ep_a.reset_metadata["fixture_id"] == "a"
+    assert ep_a.reset_metadata["frozen_time"] == CLOCK_A
+    assert ep_b.reset_metadata["frozen_time"] == CLOCK_B
+    assert "env_name" not in ep_a.reset_metadata
     # Each episode holds only its own run's note.
     assert ep_a.final_state["notes"] == ["note for a"]
     assert ep_b.final_state["notes"] == ["note for b"]
-    # This environment serves no control tools, so the settle key is simply absent.
-    assert "changes" not in ep_a.final_state
     # Variant on the trace key separates configs.
     # Same world, same reported version: the world_version is identical and readable;
     # the inputs'
@@ -404,7 +381,7 @@ async def test_full_run_isolates_and_records_instances(
     info = by_input["note for a"].world_episode
     assert info is not None
     assert info.reset.reset_kwargs == {"fixture_id": "a", "frozen_time": CLOCK_A}
-    assert info.reset_facts["fixture_id"] == "a"
+    assert info.reset_metadata["fixture_id"] == "a"
     assert info.final_state["notes"] == ["note for a"]
     assert RecordingJudge.states["note for a"]["notes"] == ["note for a"]
 
@@ -833,7 +810,6 @@ async def test_end_episode_settles_record_before_grading(
     assert trace.world_episode is not None
     assert trace.world_episode.final_state["notes"] == ["note"]
     assert trace.world_episode.final_state["step_count"] == 1
-    assert "changes" not in trace.world_episode.final_state
 
     scorer_run = scorer.runs(readonly=True)[0]
     assert scorer_run.skipped_reason is None
@@ -909,124 +885,13 @@ async def test_tool_error_reaches_the_model_and_ends_the_episode(
     generator = ToolCallingGenerator(task, tool_id, allow_error=True)
     with patch.object(BaseV2EvalBridge, "run_task", new=generator):
         await _drain(_runner([cfg], run_config, session_manager))
-    assert generator.outputs["ei_a"] == "boom"
+    # The environment's `error_type` is rendered for the model alongside the message;
+    # `error_message` stays the message alone so an eval matching on error text is not
+    # perturbed by the type.
+    assert json.loads(generator.outputs["ei_a"]) == {
+        "error": {"code": "execution_error", "message": "boom", "details": None}
+    }
     assert generator.errors["ei_a"] == "boom"
     (trace,) = _traces(task)
     assert trace.world_episode.final_state["notes"] == []
     assert trace.world_episode.final_state["step_count"] == 1
-
-
-# ---------------------------------------------------------------------------
-# Coded errors, settled state and reset facts, on an environment that has them
-# ---------------------------------------------------------------------------
-
-
-CHANGES_SCORER = (
-    "def score(output, world_episode):\n"
-    "    final = world_episode['final_state']\n"
-    "    ok = len(final['changes']) == 1\n"
-    "    return {'accuracy': 1.0 if ok else 0.0}\n"
-)
-
-
-async def test_coded_product_error_reaches_the_model_as_a_result(
-    project, task, controlled_world, eval_, session_manager
-):
-    """A product error is an ordinary tool result: the generator's own
-    `assert not result.is_error` is the assertion that matters here."""
-    tool_id = build_world_tool_id(controlled_world.id, "fail_coded")
-    run_config = _run_config(task, [tool_id])
-    _input(task, "note", _reset(controlled_world, "a"), id="ei_a")
-    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
-    generator = ToolCallingGenerator(task, tool_id)
-    with patch.object(BaseV2EvalBridge, "run_task", new=generator):
-        await _drain(_runner([cfg], run_config, session_manager))
-    assert generator.outputs["ei_a"] == (
-        '{"error": {"code": "invalid_input", "message": "bad note", '
-        '"details": {"field": "note"}}}'
-    )
-    assert generator.errors["ei_a"] is None
-    (trace,) = _traces(task)
-    assert trace.world_episode.final_state["step_count"] == 1
-
-
-async def test_world_failure_reaches_the_model_as_an_error(
-    project, task, controlled_world, eval_, session_manager
-):
-    """The world's own failure keeps is_error: the envelope is shown, and the bare
-    message is the error."""
-    tool_id = build_world_tool_id(controlled_world.id, "fail_internal")
-    run_config = _run_config(task, [tool_id])
-    _input(task, "note", _reset(controlled_world, "a"), id="ei_a")
-    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
-    generator = ToolCallingGenerator(task, tool_id, allow_error=True)
-    with patch.object(BaseV2EvalBridge, "run_task", new=generator):
-        await _drain(_runner([cfg], run_config, session_manager))
-    assert generator.outputs["ei_a"] == (
-        '{"error": {"code": "internal", "message": "tripped", "details": null}}'
-    )
-    assert generator.errors["ei_a"] == "tripped"
-
-
-async def test_final_state_carries_changes(
-    project, task, controlled_world, eval_, session_manager
-):
-    tool_id = build_world_tool_id(controlled_world.id, "append_note")
-    run_config = _run_config(task, [tool_id])
-    _input(task, "note", _reset(controlled_world, "a"), id="ei_a")
-    cfg = _config(eval_, CodeEvalProperties(code=CHANGES_SCORER, timeout_seconds=30))
-    generator = ToolCallingGenerator(task, tool_id)
-    with patch.object(BaseV2EvalBridge, "run_task", new=generator):
-        await _drain(_runner([cfg], run_config, session_manager))
-    (trace,) = _traces(task)
-    final = trace.world_episode.final_state
-    assert final["changes"][0]["after"] == {"n": 0, "note": "note"}
-    assert cfg.runs(readonly=True)[0].scores == {"accuracy": 1.0}
-
-
-async def test_reset_facts_from_result_reach_the_judge(
-    project, task, controlled_world, eval_, session_manager
-):
-    """Facts an environment reports in the observation's result are on the record the
-    judge reads, with the metadata's value winning where the two disagree."""
-    tool_id = build_world_tool_id(controlled_world.id, "append_note")
-    run_config = _run_config(task, [tool_id])
-    _input(task, "note", _reset(controlled_world, "a"), id="ei_a")
-    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
-    generator = ToolCallingGenerator(task, tool_id)
-    with patch.object(BaseV2EvalBridge, "run_task", new=generator), _judge_patch():
-        await _drain(_runner([cfg], run_config, session_manager))
-    (trace,) = _traces(task)
-    facts = trace.world_episode.reset_facts
-    assert facts["tools"] == len(ControlledCounterEnv.TOOLS)
-    assert facts["fixture_id"] == "a"
-    (seen,) = RecordingJudge.seen
-    assert seen.world_episode.reset_facts == facts
-
-
-async def test_settle_error_is_saved_with_the_generation(
-    project, task, controlled_world, eval_, session_manager
-):
-    """A control tool that fails does not lose the trace: the generation is saved with
-    the evidence on it, and the judge that cannot find the changes fails the item rather
-    than scoring it as 'the agent wrote nothing'."""
-    tool_id = build_world_tool_id(controlled_world.id, "append_note")
-    run_config = _run_config(task, [tool_id])
-    _input(task, "poison", _reset(controlled_world, "a"), id="ei_a")
-    cfg = _config(eval_, CodeEvalProperties(code=CHANGES_SCORER, timeout_seconds=30))
-    generator = ToolCallingGenerator(task, tool_id)
-    with patch.object(BaseV2EvalBridge, "run_task", new=generator):
-        last = await _drain(_runner([cfg], run_config, session_manager))
-
-    (trace,) = _traces(task)
-    final = trace.world_episode.final_state
-    assert final["settle_error"] == {
-        "tool": "controller_changes",
-        "code": "db_error",
-        "message": "diff failed",
-    }
-    assert "changes" not in final and final["notes"] == ["poison"]
-    # The judge could not find `changes`, so the item errored rather than scoring.
-    assert (last.complete, last.errors) == (0, 1)
-    assert cfg.runs(readonly=True) == []
-    assert session_manager._sessions == {}

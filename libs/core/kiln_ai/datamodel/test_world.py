@@ -186,7 +186,7 @@ class TestEnvironmentAndInstance:
             reset=WorldReset(world_id="w1", reset_kwargs={"fixture_id": "f1"}),
             episode_id="ep_1",
             world_version="acme@1.0.0",
-            reset_facts={"fixture_id": "f1", "frozen_time": NOW.isoformat()},
+            reset_metadata={"fixture_id": "f1", "frozen_time": NOW.isoformat()},
         )
         base.update(overrides)
         return WorldEpisode(**base)
@@ -198,7 +198,7 @@ class TestEnvironmentAndInstance:
             "reset",
             "episode_id",
             "world_version",
-            "reset_facts",
+            "reset_metadata",
             "final_state",
         ]
 
@@ -216,11 +216,11 @@ class TestEnvironmentAndInstance:
             "reset",
             "episode_id",
             "world_version",
-            "reset_facts",
+            "reset_metadata",
             "final_state",
         }
         assert d["reset"] == {"world_id": "w1", "reset_kwargs": {"fixture_id": "f1"}}
-        assert d["reset_facts"] == {
+        assert d["reset_metadata"] == {
             "fixture_id": "f1",
             "frozen_time": NOW.isoformat(),
         }

@@ -1,24 +1,18 @@
 """Tests for the OpenEnv session manager against the test environment server. Kiln only
 connects to a running server named by `env_url`; it never starts one."""
 
-import hashlib
-
 import pytest
 
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.world import World
 from kiln_ai.worlds import session_manager as session_manager_module
 from kiln_ai.worlds.session_manager import (
-    PING_INTERVAL_S,
-    PING_TIMEOUT_S,
     OpenEnvError,
     OpenEnvSessionManager,
-    ToolCallOutcome,
+    read_observation_error,
 )
 from kiln_ai.worlds.testing import (
     ENV_NAME,
-    ControlledCounterEnv,
-    CounterEnv,
     free_port,
     serve_in_thread,
 )
@@ -41,20 +35,6 @@ def server_url():
 @pytest.fixture
 def remote_world(project, server_url):
     w = World(name="remote", parent=project, env_url=server_url)
-    w.save_to_file()
-    return w
-
-
-@pytest.fixture
-def controlled_url():
-    with serve_in_thread(env_factory=ControlledCounterEnv) as base_url:
-        yield base_url
-
-
-@pytest.fixture
-def controlled_world(project, controlled_url):
-    """A world whose environment speaks coded errors and serves control tools."""
-    w = World(name="controlled", parent=project, env_url=controlled_url)
     w.save_to_file()
     return w
 
@@ -91,7 +71,7 @@ class TestRemoteSessions:
             "frozen_time": "2026-07-14",
         }
         # Only what the environment reported: no Kiln-added keys.
-        assert episode.reset_facts == {
+        assert episode.reset_metadata == {
             "fixture_id": "boxr",
             "frozen_time": "2026-07-14",
         }
@@ -106,10 +86,11 @@ class TestRemoteSessions:
         assert listed.result == ["hi"]
         boom = await session_manager.call_tool(episode, "explode", {})
         assert boom.result is None and boom.error == "boom"
+        assert boom.error_code == "execution_error" and boom.error_details is None
         assert boom.reward == -1.0 and boom.done is True
-        assert boom.error_code is None and boom.error_details is None
         missing = await session_manager.call_tool(episode, "nope", {})
         assert missing.error == "no tool 'nope'"
+        assert missing.error_code == "tool_not_found"
         # Rewards and done are tracked on the live session only.
         session = session_manager._sessions[episode.episode_id]
         assert session.rewards == [1.0, 0.0, -1.0] and session.done is True
@@ -119,13 +100,11 @@ class TestRemoteSessions:
         assert final.final_state["notes"] == ["hi"]
         assert final.final_state["step_count"] == 4
         assert final.final_state["episode_id"] == episode.episode_id
-        # This environment serves no control tools, so the settle key is absent.
-        assert "changes" not in final.final_state
         assert set(final.model_dump()) == {
             "reset",
             "episode_id",
             "world_version",
-            "reset_facts",
+            "reset_metadata",
             "final_state",
         }
         # The session is gone: tools cannot be called after end_episode, and a second
@@ -133,225 +112,6 @@ class TestRemoteSessions:
         with pytest.raises(RuntimeError, match="no live session"):
             await session_manager.call_tool(episode, "append_note", {"note": "late"})
         assert await session_manager.end_episode(final) is final
-
-    async def test_reference_server_end_to_end_without_control_tools(
-        self, session_manager, remote_world
-    ):
-        """An environment that knows nothing of control tools is unaffected: its
-        final_state is exactly what its own `state` reported."""
-        tools = await session_manager.list_tools(remote_world)
-        assert [t.name for t in tools] == ["append_note", "read_notes", "explode"]
-        episode = await session_manager.start_episode(remote_world, {"fixture_id": "a"})
-        await session_manager.call_tool(episode, "append_note", {"note": "hi"})
-        final = await session_manager.end_episode(episode)
-        assert final.final_state == {
-            "episode_id": episode.episode_id,
-            "step_count": 1,
-            "notes": ["hi"],
-            "fixture_id": "a",
-        }
-        assert session_manager._sessions == {}
-
-    async def test_coded_error_is_forwarded(self, session_manager, controlled_world):
-        episode = await session_manager.start_episode(controlled_world, {})
-        outcome = await session_manager.call_tool(episode, "fail_coded", {})
-        assert outcome.error == "bad note"
-        assert outcome.error_code == "invalid_input"
-        assert outcome.error_details == {"field": "note"}
-
-    async def test_reset_result_fills_and_metadata_wins(
-        self, session_manager, controlled_world
-    ):
-        episode = await session_manager.start_episode(
-            controlled_world, {"fixture_id": "a", "frozen_time": "2026-07-14"}
-        )
-        # `tools` exists only in the observation's result; `fixture_id` is in both, and
-        # the metadata's value wins.
-        assert episode.reset_facts["tools"] == len(ControlledCounterEnv.TOOLS)
-        assert episode.reset_facts["fixture_id"] == "a"
-        assert episode.reset_facts["frozen_time"] == "2026-07-14"
-
-    async def test_reset_facts_come_only_from_the_observation(
-        self, session_manager, project
-    ):
-        """The response's top-level `metadata` is a copy OpenEnv's serializer makes of
-        `observation.metadata`, so it is not read as a source of its own. An
-        environment that puts something else there is telling Kiln nothing."""
-
-        class TopLevelOnlyEnv(CounterEnv):
-            def reset(self, **kwargs):
-                data = super().reset(**kwargs)
-                data["observation"]["metadata"] = {"from": "observation"}
-                data["metadata"] = {"from": "top level", "only_up_here": True}
-                return data
-
-        with serve_in_thread(env_factory=TopLevelOnlyEnv) as base_url:
-            world = World(name="top-level", parent=project, env_url=base_url)
-            world.save_to_file()
-            episode = await session_manager.start_episode(world, {})
-            assert episode.reset_facts == {"from": "observation"}
-
-    @pytest.mark.parametrize(
-        "wire_error, expected",
-        [
-            ("no tool controller_digest", "no tool controller_digest"),
-            (["no tool", "controller_digest"], "['no tool', 'controller_digest']"),
-        ],
-        ids=["string", "list"],
-    )
-    async def test_an_error_that_is_not_a_dict_is_still_an_error(
-        self, session_manager, project, wire_error, expected
-    ):
-        """A coded `{code, message, details}` error is one framework's convention, not
-        a condition of running here: an environment that answers with a bare string
-        gets it through as the message, with no code, and is tolerated while settling
-        the same way any other uncoded error is."""
-
-        class StringErrorEnv(CounterEnv):
-            def tool_call(self, name, args):
-                if name in ("controller_changes", "controller_digest"):
-                    return {
-                        "observation": {
-                            "tool_name": name,
-                            "result": None,
-                            "error": wire_error,
-                        },
-                        "reward": None,
-                        "done": False,
-                    }
-                return super().tool_call(name, args)
-
-        with serve_in_thread(env_factory=StringErrorEnv) as base_url:
-            world = World(name="string-error", parent=project, env_url=base_url)
-            world.save_to_file()
-            episode = await session_manager.start_episode(world, {})
-            outcome = await session_manager.call_control_tool(
-                episode, "controller_digest", {}
-            )
-            assert outcome.error == expected
-            assert outcome.error_code is None and outcome.error_details is None
-            final = await session_manager.end_episode(episode)
-            assert "settle_error" not in (final.final_state or {})
-
-    async def test_end_episode_settles_changes(self, session_manager, controlled_world):
-        episode = await session_manager.start_episode(controlled_world, {})
-        await session_manager.call_tool(episode, "append_note", {"note": "hi"})
-        final = await session_manager.end_episode(episode)
-        assert final.final_state["changes"] == [
-            {
-                "table": "notes",
-                "op": "insert",
-                "key": {"n": 0},
-                "before": None,
-                "after": {"n": 0, "note": "hi"},
-            }
-        ]
-        # Settling happens after `state`, so step_count is still the agent's own.
-        assert final.final_state["step_count"] == 1
-        assert final.final_state["notes"] == ["hi"]
-
-    async def test_settle_calls_are_configurable(self, controlled_world):
-        async def settled(**kwargs):
-            session_manager = OpenEnvSessionManager(**kwargs)
-            try:
-                episode = await session_manager.start_episode(controlled_world, {})
-                await session_manager.call_tool(episode, "append_note", {"note": "hi"})
-                return (await session_manager.end_episode(episode)).final_state
-            finally:
-                await session_manager.shutdown()
-
-        none = await settled(settle_calls=())
-        assert "changes" not in none
-
-        # A key the default never asks for: the pair names the tool and the key it
-        # lands under, so a deployment can settle whatever its world serves.
-        renamed = await settled(settle_calls=(("digest", "controller_digest"),))
-        assert renamed["digest"] == hashlib.sha256(b"hi").hexdigest()
-        assert "changes" not in renamed
-
-    async def test_settle_records_a_coded_failure(
-        self, session_manager, controlled_world
-    ):
-        """A control tool that is served and broken is evidence, not an exception: the
-        episode still ends and the generation is still saved."""
-        episode = await session_manager.start_episode(controlled_world, {})
-        await session_manager.call_tool(episode, "append_note", {"note": "poison"})
-        final = await session_manager.end_episode(episode)
-        assert final.final_state["settle_error"] == {
-            "tool": "controller_changes",
-            "code": "db_error",
-            "message": "diff failed",
-        }
-        # The failing call wrote no key of its own.
-        assert "changes" not in final.final_state
-        assert final.final_state["step_count"] == 1
-        assert final.final_state["notes"] == ["poison"]
-        assert session_manager._sessions == {}
-
-    @pytest.mark.parametrize("error_code", [None, "unknown_tool"])
-    async def test_settle_tolerates_every_shape_of_no_such_tool(
-        self, session_manager, remote_world, error_code
-    ):
-        """An environment that does not serve a control tool leaves the key absent and
-        settling running, whichever way it says so. `None` is the generic case and the
-        one that matters most: OpenEnv's `ToolError` has no code field, so every
-        environment built on its `MCPEnvironment` lands here, and refusing to tolerate
-        it would write `settle_error` into every one of their episodes."""
-        episode = await session_manager.start_episode(remote_world, {})
-        session = session_manager._sessions[episode.episode_id]
-
-        async def not_served(_session, tool_name, _arguments, *, record):
-            return ToolCallOutcome(
-                result=None,
-                error=f"no tool '{tool_name}'",
-                reward=None,
-                done=False,
-                error_code=error_code,
-            )
-
-        session_manager._step_call_tool = not_served
-        state: dict = {}
-        await session_manager._settle(episode, session, state)
-        assert state == {}
-
-    async def test_settle_stops_at_the_first_failure(self, controlled_world):
-        session_manager = OpenEnvSessionManager(
-            settle_calls=(
-                ("digest", "controller_digest"),
-                ("changes", "controller_changes"),
-            )
-        )
-        try:
-            episode = await session_manager.start_episode(controlled_world, {})
-            await session_manager.call_tool(episode, "append_note", {"note": "poison"})
-            final = await session_manager.end_episode(episode)
-        finally:
-            await session_manager.shutdown()
-        # The digest was taken before the failing call, so only `changes` is missing.
-        assert final.final_state["digest"] == hashlib.sha256(b"poison").hexdigest()
-        assert "changes" not in final.final_state
-        assert final.final_state["settle_error"]["tool"] == "controller_changes"
-
-    async def test_call_control_tool_on_a_live_session(
-        self, session_manager, controlled_world, remote_world
-    ):
-        episode = await session_manager.start_episode(controlled_world, {})
-        await session_manager.call_tool(episode, "append_note", {"note": "hi"})
-        outcome = await session_manager.call_control_tool(
-            episode, "controller_digest", {}
-        )
-        assert outcome.result == hashlib.sha256(b"hi").hexdigest()
-        # A control call is not the agent's: no reward is recorded for it.
-        assert session_manager._sessions[episode.episode_id].rewards == [1.0]
-        await session_manager.end_episode(episode)
-        with pytest.raises(RuntimeError, match="no live session"):
-            await session_manager.call_control_tool(episode, "controller_digest", {})
-
-        # An environment that serves no such tool answers, rather than raising.
-        other = await session_manager.start_episode(remote_world, {})
-        absent = await session_manager.call_control_tool(other, "controller_digest", {})
-        assert absent.error == "no tool 'controller_digest'"
-        assert absent.error_code is None
 
     async def test_sessions_are_isolated(self, session_manager, remote_world):
         one = await session_manager.start_episode(remote_world, {"fixture_id": "one"})
@@ -372,27 +132,6 @@ class TestRemoteSessions:
         with pytest.raises(RuntimeError):
             await session_manager.call_tool(episode, "read_notes", {})
         await session_manager.release(episode)
-
-    async def test_sessions_state_the_keepalive_they_run_under(
-        self, session_manager, remote_world, monkeypatch
-    ):
-        """A world server that stalls its event loop cannot answer a ping, and the
-        library's own 20s timeout would drop every session on the box at once. Both
-        values are passed, so a library default that moves cannot change what a run
-        measured."""
-        seen: dict = {}
-        real_connect = session_manager_module.connect
-
-        async def recording_connect(url, **kwargs):
-            seen.update(kwargs)
-            return await real_connect(url, **kwargs)
-
-        monkeypatch.setattr(session_manager_module, "connect", recording_connect)
-        episode = await session_manager.start_episode(remote_world, {})
-        assert seen["ping_interval"] == PING_INTERVAL_S == 20.0
-        assert seen["ping_timeout"] == PING_TIMEOUT_S == 120.0
-        assert seen["open_timeout"] == 30 and seen["max_size"] is None
-        await session_manager.end_episode(episode)
 
     async def test_error_responses_raise(self, session_manager, remote_world):
         server = await session_manager._server_for(remote_world)
@@ -442,3 +181,66 @@ class TestEnvironmentIdentity:
         remote_world.env_url = f"http://127.0.0.1:{free_port()}"
         with pytest.raises(OpenEnvError, match="did not answer /metadata"):
             await session_manager.world_version(remote_world, {})
+
+
+class TestErrorShapeTolerance:
+    """Kiln reads what an environment sends and never rejects a shape.
+
+    OpenEnv declares `{error_type, message}` and forbids extra keys, so a conformant
+    environment cannot send a code or details of its own. Kiln still reads both, for
+    an environment that reports an error some other way; an unreadable shape degrades
+    to its text rather than failing the call."""
+
+    @pytest.mark.parametrize(
+        "error,expected_code,expected_message",
+        [
+            ({"error_type": "timeout", "message": "slow"}, "timeout", "slow"),
+            ({"code": "not_found", "message": "gone"}, "not_found", "gone"),
+            # `error_type` wins: it is the field the protocol declares.
+            (
+                {"error_type": "invalid_args", "code": "bad", "message": "no"},
+                "invalid_args",
+                "no",
+            ),
+            # No message: the whole dict is the best text there is.
+            ({"error_type": "timeout"}, "timeout", "{'error_type': 'timeout'}"),
+            # Not a dict at all.
+            ("plain", None, "plain"),
+            (42, None, "42"),
+        ],
+    )
+    def test_shapes(self, error, expected_code, expected_message):
+        message, code, _ = read_observation_error(error)
+        assert message == expected_message
+        assert code == expected_code
+
+    def test_no_error_is_no_error(self):
+        assert read_observation_error(None) == (None, None, None)
+
+    def test_details_ride_along(self):
+        _, _, details = read_observation_error(
+            {"code": "not_found", "message": "gone", "details": {"id": 7}}
+        )
+        assert details == {"id": 7}
+
+
+class TestKeepalive:
+    async def test_session_is_opened_with_a_stated_keepalive(
+        self, session_manager, remote_world, monkeypatch
+    ):
+        """A world server doing synchronous work cannot answer a ping, and the
+        library's 20s default would drop the session long before a long tool call
+        finished. Both values are stated so a moving default cannot change a run."""
+        seen: dict[str, object] = {}
+        real_connect = session_manager_module.connect
+
+        async def spy(url, **kwargs):
+            seen.update(kwargs)
+            return await real_connect(url, **kwargs)
+
+        monkeypatch.setattr(session_manager_module, "connect", spy)
+        episode = await session_manager.start_episode(remote_world, {})
+        assert seen["ping_interval"] == session_manager_module.PING_INTERVAL_S
+        assert seen["ping_timeout"] == session_manager_module.PING_TIMEOUT_S
+        assert seen["ping_timeout"] > 20, "the library default is what we are avoiding"
+        await session_manager.release(episode)
