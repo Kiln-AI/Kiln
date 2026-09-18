@@ -1,6 +1,7 @@
 """Tests for resolving world tool ids through the registry, and the proxy
 they resolve to. The session manager is a fake that records calls."""
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -29,7 +30,11 @@ from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.built_in_tools.math_tools import AddTool
 from kiln_ai.tools.code_tool import PythonCodeTool
 from kiln_ai.tools.tool_registry import tool_from_id_and_project
-from kiln_ai.tools.world_tool import OpenEnvToolProxy, render_tool_result
+from kiln_ai.tools.world_tool import (
+    OpenEnvToolProxy,
+    render_tool_error,
+    render_tool_result,
+)
 from kiln_ai.worlds.session_manager import ToolCallOutcome
 
 SCHEMA = {"type": "object", "properties": {"x": {"type": "string"}}}
@@ -168,6 +173,36 @@ class TestWorldToolIds:
         assert result.is_error and result.output == "tool exploded"
         assert result.error_message == "tool exploded"
 
+    async def test_coded_error_reaches_the_model_as_a_structured_error(
+        self, world, active, session_manager
+    ):
+        """A code is rendered for the model to read, and the call is still a failure.
+
+        Every error on the observation is a failed call: OpenEnv's `error_type`
+        vocabulary, `execution_error` included, means the call did not work. An
+        environment that wants an error read as an ordinary answer returns it as a
+        result instead."""
+        session_manager.outcome = ToolCallOutcome(
+            result=None,
+            error="issue ENG-99 not found",
+            reward=None,
+            done=False,
+            error_code="execution_error",
+            error_details={"id": "ENG-99"},
+        )
+        tool = tool_from_id_and_project(build_world_tool_id(world.id, "lookup"))
+        result = await tool.run(ToolCallContext(), x="q")
+        assert result.is_error
+        assert json.loads(result.output) == {
+            "error": {
+                "code": "execution_error",
+                "message": "issue ENG-99 not found",
+                "details": {"id": "ENG-99"},
+            }
+        }
+        # The message alone, so an eval matching on error text is not perturbed.
+        assert result.error_message == "issue ENG-99 not found"
+
     async def test_fastmcp_is_error_result_is_an_error(
         self, world, active, session_manager
     ):
@@ -209,9 +244,22 @@ class TestWorldToolIds:
             tool_from_id_and_project(build_world_tool_id(world.id, "nope"))
 
 
+class TestRenderError:
+    def test_no_code_renders_the_message_alone(self):
+        # The common case against a conformant environment that reports no type.
+        assert render_tool_error(None, "boom", None) == "boom"
+        assert render_tool_error("", "boom", {"a": 1}) == "boom"
+
+    def test_a_code_renders_all_three_keys(self):
+        # Always all three, so the shape is stable whether or not there are details.
+        assert json.loads(render_tool_error("timeout", "slow", None)) == {
+            "error": {"code": "timeout", "message": "slow", "details": None}
+        }
+
+
 class TestRenderResult:
     def test_shapes(self):
-        assert render_tool_result(None) == ""
+        assert render_tool_result(None) == "null"
         assert render_tool_result("text") == "text"
         assert render_tool_result({"a": 1}) == '{"a": 1}'
         assert render_tool_result([1, 2]) == "[1, 2]"

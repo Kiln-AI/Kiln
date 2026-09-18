@@ -58,13 +58,35 @@ class OpenEnvToolProxy(KilnToolInterface):
             self._ctx.episode, self._tool.name, dict(kwargs)
         )
         if outcome.error is not None:
+            # Every error on the observation is a failed call. OpenEnv's `error_type`
+            # is the only structure the field carries, and its whole vocabulary --
+            # `execution_error` included -- means the call did not work. An
+            # environment that wants an error of its own read as an ordinary answer
+            # returns it as a result, which is what `result` is for.
+            output = render_tool_error(
+                outcome.error_code, outcome.error, outcome.error_details
+            )
             return ToolCallResult(
-                output=outcome.error, is_error=True, error_message=outcome.error
+                output=output, is_error=True, error_message=outcome.error
             )
         output = render_tool_result(outcome.result)
         if isinstance(outcome.result, dict) and outcome.result.get("is_error") is True:
             return ToolCallResult(output=output, is_error=True, error_message=output)
         return ToolCallResult(output=output)
+
+
+def render_tool_error(code: str | None, message: str, details: Any) -> str:
+    """The text the model sees for an environment's tool error.
+
+    A coded error renders as `{"error": {"code", "message", "details"}}`, always all
+    three keys so the shape is stable whether or not there are details; an environment
+    that reports no code renders the message alone."""
+    if not code:
+        return message
+    return json.dumps(
+        {"error": {"code": code, "message": message, "details": details}},
+        ensure_ascii=False,
+    )
 
 
 def render_tool_result(result: Any) -> str:
@@ -73,9 +95,10 @@ def render_tool_result(result: Any) -> str:
     A FastMCP call result (`{"content": [...], "structured_content", "data", "is_error"}`)
     renders its native `data` when present, else its text content blocks; bare
     MCP-style content blocks are flattened to their text; anything else that is not
-    already a string is serialized as JSON."""
+    already a string is serialized as JSON. `None` renders as `null`, the same text a
+    tool that serializes its own result would show for an empty body."""
     if result is None:
-        return ""
+        return "null"
     if isinstance(result, str):
         return result
     if isinstance(result, dict) and isinstance(result.get("content"), list):

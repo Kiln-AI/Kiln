@@ -49,21 +49,68 @@ logger = logging.getLogger(__name__)
 
 STEP_TIMEOUT_S = 600.0
 """How long one reset, step or state call may take. Tool calls block the LLM loop, so
-this is deliberately generous; an environment enforces its own per-tool timeouts."""
+this is deliberately generous; an environment enforces its own per-tool timeouts.
+A call that stalls the environment's event loop never reaches this ceiling: the
+keepalive below closes the session after PING_TIMEOUT_S of unanswered pings, so a
+stalled loop surfaces as a closed session at 120s, not a step timeout at 600s."""
+
+PING_INTERVAL_S = 20.0
+"""How often the websockets keepalive pings the environment. Stated rather than left to
+the library's default so a default that moves cannot silently change what a run
+measured."""
+
+PING_TIMEOUT_S = 120.0
+"""How long an unanswered ping may go before the keepalive closes the session. A world
+server doing synchronous work stalls its event loop and cannot answer a ping: the
+library's 20s timeout would drop every session on the box at once, so this matches the
+120s a world framework's own client allows for it. Stated for the same reason as the
+interval above."""
 
 
 class OpenEnvError(RuntimeError):
     """The environment answered a request with an error, or could not be reached."""
 
 
+def read_observation_error(error: Any) -> tuple[str | None, str | None, Any]:
+    """An observation's `error` as `(message, code, details)`.
+
+    Kiln never rejects a shape here. OpenEnv declares `{error_type, message}` and
+    forbids extra keys, so `error_type` is read first; a `code` is read after it, for
+    an environment that reports one instead. `details` is whatever a dict carried,
+    which a conformant environment has nowhere to put. An error that is not a dict,
+    or one with no message, degrades to its own text rather than failing the call."""
+    if error is None:
+        return None, None, None
+    if not isinstance(error, dict):
+        return str(error), None, None
+    code = error.get("error_type") or error.get("code")
+    return (
+        str(error.get("message") or error),
+        str(code) if code else None,
+        error.get("details"),
+    )
+
+
 @dataclass(frozen=True)
 class ToolCallOutcome:
-    """What one `step(CallToolAction)` came back with."""
+    """What one `step(CallToolAction)` came back with.
+
+    An environment that reports an error as a dict has whatever structure it carries
+    read out alongside the human-readable message. `error_code` is OpenEnv's own
+    `error_type` -- one of `execution_error`, `invalid_args`, `transport_error`,
+    `tool_not_found`, `timeout` -- and falls back to a `code` for an environment that
+    predates that shape or does not use it. `error_details` is whatever a `details`
+    carried, which a conformant environment does not send: `ToolError` forbids extra
+    keys, so a world with a code and details of its own puts them somewhere this field
+    does not reach. Neither is a shape Kiln insists on; an error that is not a dict at
+    all leaves both None."""
 
     result: Any
     error: str | None
     reward: float | None
     done: bool
+    error_code: str | None = None
+    error_details: Any = None
 
 
 class WorldSessionManager(Protocol):
@@ -216,16 +263,16 @@ class OpenEnvSessionManager:
             done = bool(data.get("done", False))
             session.done = session.done or done
         observation = data.get("observation") or {}
-        error = observation.get("error")
-        if isinstance(error, dict):
-            error = str(error.get("message") or error)
-        elif error is not None:
-            error = str(error)
+        error, error_code, error_details = read_observation_error(
+            observation.get("error")
+        )
         return ToolCallOutcome(
             result=observation.get("result"),
             error=error,
             reward=float(reward) if isinstance(reward, (int, float)) else None,
             done=done,
+            error_code=error_code,
+            error_details=error_details,
         )
 
     async def end_episode(self, episode: WorldEpisode) -> WorldEpisode:
@@ -307,7 +354,13 @@ class OpenEnvSessionManager:
 
     async def _open(self, server: _EnvServer) -> ClientConnection:
         try:
-            return await connect(server.ws_url, max_size=None, open_timeout=30)
+            return await connect(
+                server.ws_url,
+                max_size=None,
+                open_timeout=30,
+                ping_interval=PING_INTERVAL_S,
+                ping_timeout=PING_TIMEOUT_S,
+            )
         except (OSError, ConnectionClosed) as e:
             raise OpenEnvError(
                 f"Could not open a session on {server.base_url}: {e}"

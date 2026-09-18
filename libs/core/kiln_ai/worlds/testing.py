@@ -114,7 +114,7 @@ class CounterEnv:
                 "observation": {
                     "tool_name": name,
                     "result": None,
-                    "error": {"type": "execution_error", "message": "boom"},
+                    "error": {"error_type": "execution_error", "message": "boom"},
                 },
                 "reward": -1.0,
                 "done": True,
@@ -123,7 +123,10 @@ class CounterEnv:
             "observation": {
                 "tool_name": name,
                 "result": None,
-                "error": {"type": "tool_not_found", "message": f"no tool {name!r}"},
+                "error": {
+                    "error_type": "tool_not_found",
+                    "message": f"no tool {name!r}",
+                },
             },
             "reward": None,
             "done": False,

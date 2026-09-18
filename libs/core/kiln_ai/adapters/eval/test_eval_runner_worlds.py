@@ -11,6 +11,7 @@ tool through the registry (so the proxy runs for real) and calls it once.
 """
 
 import asyncio
+import json
 import re
 from typing import ClassVar
 from unittest.mock import patch
@@ -884,7 +885,12 @@ async def test_tool_error_reaches_the_model_and_ends_the_episode(
     generator = ToolCallingGenerator(task, tool_id, allow_error=True)
     with patch.object(BaseV2EvalBridge, "run_task", new=generator):
         await _drain(_runner([cfg], run_config, session_manager))
-    assert generator.outputs["ei_a"] == "boom"
+    # The environment's `error_type` is rendered for the model alongside the message;
+    # `error_message` stays the message alone so an eval matching on error text is not
+    # perturbed by the type.
+    assert json.loads(generator.outputs["ei_a"]) == {
+        "error": {"code": "execution_error", "message": "boom", "details": None}
+    }
     assert generator.errors["ei_a"] == "boom"
     (trace,) = _traces(task)
     assert trace.world_episode.final_state["notes"] == []

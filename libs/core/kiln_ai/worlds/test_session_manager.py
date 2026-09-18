@@ -5,9 +5,11 @@ import pytest
 
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.world import World
+from kiln_ai.worlds import session_manager as session_manager_module
 from kiln_ai.worlds.session_manager import (
     OpenEnvError,
     OpenEnvSessionManager,
+    read_observation_error,
 )
 from kiln_ai.worlds.testing import (
     ENV_NAME,
@@ -84,9 +86,11 @@ class TestRemoteSessions:
         assert listed.result == ["hi"]
         boom = await session_manager.call_tool(episode, "explode", {})
         assert boom.result is None and boom.error == "boom"
+        assert boom.error_code == "execution_error" and boom.error_details is None
         assert boom.reward == -1.0 and boom.done is True
         missing = await session_manager.call_tool(episode, "nope", {})
         assert missing.error == "no tool 'nope'"
+        assert missing.error_code == "tool_not_found"
         # Rewards and done are tracked on the live session only.
         session = session_manager._sessions[episode.episode_id]
         assert session.rewards == [1.0, 0.0, -1.0] and session.done is True
@@ -177,3 +181,66 @@ class TestEnvironmentIdentity:
         remote_world.env_url = f"http://127.0.0.1:{free_port()}"
         with pytest.raises(OpenEnvError, match="did not answer /metadata"):
             await session_manager.world_version(remote_world, {})
+
+
+class TestErrorShapeTolerance:
+    """Kiln reads what an environment sends and never rejects a shape.
+
+    OpenEnv declares `{error_type, message}` and forbids extra keys, so a conformant
+    environment cannot send a code or details of its own. Kiln still reads both, for
+    an environment that reports an error some other way; an unreadable shape degrades
+    to its text rather than failing the call."""
+
+    @pytest.mark.parametrize(
+        "error,expected_code,expected_message",
+        [
+            ({"error_type": "timeout", "message": "slow"}, "timeout", "slow"),
+            ({"code": "not_found", "message": "gone"}, "not_found", "gone"),
+            # `error_type` wins: it is the field the protocol declares.
+            (
+                {"error_type": "invalid_args", "code": "bad", "message": "no"},
+                "invalid_args",
+                "no",
+            ),
+            # No message: the whole dict is the best text there is.
+            ({"error_type": "timeout"}, "timeout", "{'error_type': 'timeout'}"),
+            # Not a dict at all.
+            ("plain", None, "plain"),
+            (42, None, "42"),
+        ],
+    )
+    def test_shapes(self, error, expected_code, expected_message):
+        message, code, _ = read_observation_error(error)
+        assert message == expected_message
+        assert code == expected_code
+
+    def test_no_error_is_no_error(self):
+        assert read_observation_error(None) == (None, None, None)
+
+    def test_details_ride_along(self):
+        _, _, details = read_observation_error(
+            {"code": "not_found", "message": "gone", "details": {"id": 7}}
+        )
+        assert details == {"id": 7}
+
+
+class TestKeepalive:
+    async def test_session_is_opened_with_a_stated_keepalive(
+        self, session_manager, remote_world, monkeypatch
+    ):
+        """A world server doing synchronous work cannot answer a ping, and the
+        library's 20s default would drop the session long before a long tool call
+        finished. Both values are stated so a moving default cannot change a run."""
+        seen: dict[str, object] = {}
+        real_connect = session_manager_module.connect
+
+        async def spy(url, **kwargs):
+            seen.update(kwargs)
+            return await real_connect(url, **kwargs)
+
+        monkeypatch.setattr(session_manager_module, "connect", spy)
+        episode = await session_manager.start_episode(remote_world, {})
+        assert seen["ping_interval"] == session_manager_module.PING_INTERVAL_S
+        assert seen["ping_timeout"] == session_manager_module.PING_TIMEOUT_S
+        assert seen["ping_timeout"] > 20, "the library default is what we are avoiding"
+        await session_manager.release(episode)
