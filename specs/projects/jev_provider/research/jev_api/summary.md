@@ -57,15 +57,22 @@ sandbox, so the limits section below comes from third-party pages and is marked 
 | `choice` | `choice: str` (highest-probability label), `confidence: float` in [0,1], `probabilities: {label: float}` summing to ~1 |
 | `score` | `score: float` (probability-weighted expected level, may be non-integer), `confidence: float`, `legend: {"0": desc, "1": desc, ...}`, `probabilities: {"0": float, ...}` keyed by level as a string |
 
-## Limits (unverified, from third-party write-ups)
+## Limits
+
+Verified against the primitives pages of the docs (fetched later via a different route):
+
+- Score: at least 2 and at most 10 levels.
+- Choice: up to 255 options.
+- Noul: the docs list `instructions` as required (the SDK models mark it optional; treat it as required).
+- Questions in one request are evaluated in parallel and all see the same state; adding questions barely changes latency but each costs tokens.
+
+Unverified, from third-party write-ups only:
 
 - ~32 questions per request
-- Choice: up to 64 (some sources say 255) options
-- Score: 2 to 10 levels
 - ~32k tokens for state plus the longest question; ~64k per request
-- Pricing is per input token; output tokens are free. Unknown whether state tokens are billed once or once per question.
+- Pricing is per input token; output tokens are free.
 
-Treat these as soft: the API returns 4xx with a descriptive error when exceeded, and Kiln should surface that error verbatim.
+The API returns 4xx with a descriptive error when a limit is exceeded, and Kiln surfaces that error verbatim.
 
 ## Behavioral notes
 

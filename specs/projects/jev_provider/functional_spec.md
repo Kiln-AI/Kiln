@@ -70,7 +70,9 @@ Run config fields `temperature`, `top_p`, `thinking_level` are ignored silently.
 
 ## Output schema → Jev questions
 
-The task output schema must be `type: object` with `properties` (Kiln already enforces this). Each property becomes one question named exactly after the property key. Question `instructions` is the property's `description`, else its `title`, else omitted.
+The task output schema must be `type: object` with `properties` (Kiln already enforces this). Each property becomes one question named exactly after the property key. Question `instructions` is the property's `description`, else its `title`, else the property key itself (Jev requires instructions on `noul` questions, and a bare key such as `is_spam` is still a usable question).
+
+The conversion in both directions is a standalone package, `jev_jsonschema`, written so it can be lifted into its own open-source project: no Kiln imports, pydantic as its only dependency, neutral error messages. Kiln's adapter wraps its errors with the Kiln-facing prefix above.
 
 | JSON schema property | Jev question | Answer → JSON value |
 |---|---|---|
@@ -86,12 +88,13 @@ Unsupported reasons (one per property, exact wording is the coding agent's call 
 - `enum` values that are strings but `type` says something other than `string` (and likewise for integers).
 - Duplicate `enum` values after string conversion.
 - `type: integer` without both `minimum` and `maximum`, or with a range of 1 or more than 10 levels. Note `exclusiveMinimum`/`exclusiveMaximum` are not honoured; they count as missing bounds.
+- `enum` with more than 255 values (Jev's choice limit).
 - `type: number`, `string` without `enum`, `array`, `object`, `null`, a list of types, or no `type` and no `enum`.
-- `anyOf`, `oneOf`, `allOf`, `$ref`, `const`.
+- `anyOf`, `oneOf`, `allOf`, `$ref`, `const`, `not`.
 
 Properties are answered whether or not they are listed in `required`. `additionalProperties` is ignored. Property order in the request follows the schema's property order.
 
-The 10-level cap on `score` comes from third-party reports and is enforced locally so the error is specific. If the API rejects a request for any other limit (question count, option count, state size), the API's own error message is surfaced verbatim.
+The 10-level cap on `score` and the 255-option cap on `choice` are documented API limits and are enforced locally so the error names the property. If the API rejects a request for any other limit (question count, state size), the API's own error message is surfaced verbatim.
 
 ### Descriptions
 
@@ -123,7 +126,7 @@ Two places, both keyed by property and by the *output-schema value* (not Jev's i
 1. `RunOutput.answer_probabilities: dict[str, dict[str, float]] | None` (new, in-memory only). For a `noul` this is `{"true": p, "false": 1 - p}`. For a `score` the keys are the integer values as strings (`"1"`…`"5"`), not the 0-based levels. For a `choice` the keys are the enum values as strings.
 2. `TaskRun.intermediate_outputs["jev_probabilities"]`: the same structure JSON-encoded as a string, so it is persisted with the run and visible wherever intermediate outputs are shown. Rounded to 4 decimal places.
 
-`confidence` values are not persisted in v1.
+`confidence` values are decoded by the package but not persisted by Kiln in v1.
 
 ## Trace and usage
 

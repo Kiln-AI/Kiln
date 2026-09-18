@@ -6,18 +6,20 @@ status: draft
 
 Two-phase spec: this doc covers the overall design, routing, adapter, eval integration, provider plumbing, errors and testing. Two components get their own docs because they carry most of the logic and most of the tests:
 
-- `components/schema_mapping.md`: JSON schema → Jev questions → JSON output, plus probability extraction.
-- `components/jev_client.md`: the HTTP client, wire models, and error mapping.
+- `components/jev_jsonschema.md`: a standalone, extractable package: JSON schema → Jev questions (`JSONSchema2Jev`), Jev answers → JSON output plus probabilities (`JevResult2JsonSchema`), and the System One wire models.
+- `components/jev_client.md`: the HTTP client and error mapping.
 
 ## Module layout
 
 ```
 libs/core/kiln_ai/adapters/jev/
   __init__.py
-  jev_client.py              # JevClient, wire models, JevApiError
-  jev_schema_mapping.py      # questions_from_output_schema, output_from_answers
+  jev_client.py              # JevClient, JevApiError (HTTP only)
   test_jev_client.py
-  test_jev_schema_mapping.py
+  jev_jsonschema/            # standalone package, no kiln_ai imports, pydantic only
+    __init__.py  README.md  py.typed
+    models.py  errors.py  options.py  to_jev.py  from_jev.py
+    test_models.py  test_to_jev.py  test_from_jev.py  test_package_isolation.py
 libs/core/kiln_ai/adapters/model_adapters/
   jev_adapter.py             # JevAdapter(BaseAdapter)
   test_jev_adapter.py
@@ -37,6 +39,7 @@ Provider plumbing touches the usual files (listed in "Provider plumbing" below).
 4. **Probabilities travel on `RunOutput`, keyed by output value.** A new optional field `answer_probabilities: dict[str, dict[str, float]] | None` is populated only by `JevAdapter`. G-Eval consumes it through one fast path in `build_g_eval_score`, which both the legacy `GEval` and the V2 `LlmJudgeEval` already call.
 5. **`supports_logprobs=True` on the Jev model entry.** Kiln uses that flag as "G-Eval is possible for this model". It gates the V2 judge's `g_eval` check and the UI's G-Eval toggle. Jev satisfies the intent (a probability distribution per rating) without logprobs. `AdapterConfig.top_logprobs` is ignored by `JevAdapter`.
 6. **Raise only `ValueError` / `RuntimeError` subclasses from the adapter**, because `format_error_message` passes those through verbatim and genericizes everything else.
+7. **The schema mapping is an extractable package.** `jev_jsonschema` has no Kiln imports, depends only on pydantic, uses relative imports, and raises neutral errors (`IncompatibleSchemaError` with structured `failures`, `UnexpectedAnswerError`). The adapter translates `IncompatibleSchemaError` into Kiln's user-facing wording. Kiln's HTTP client uses the package's wire models instead of defining its own. This keeps the OSS boundary clean from day one; extraction is a copy plus a `pyproject.toml`.
 
 ## Data flow
 
@@ -47,13 +50,13 @@ run_api / eval runner
             ├─ validate input schema, apply input_transform   (existing)
             └─ JevAdapter._run(input, trace_ref)
                  ├─ reject prior_trace / tools / missing output schema
-                 ├─ mappings = questions_from_output_schema(task.output_schema())
+                 ├─ question_set = JSONSchema2Jev().convert(task.output_schema())   # IncompatibleSchemaError → Kiln ValueError
                  ├─ system_prompt = prompt_builder.build_prompt(include_json_instructions=False, skills=...)
                  ├─ state = {"task_instructions": system_prompt, "input": input}
-                 ├─ response = await JevClient(api_key).system_one(state, model_id, questions)
-                 ├─ output, probabilities = output_from_answers(mappings, response.answers)
+                 ├─ response = await JevClient(api_key).system_one(question_set.request(state, model_id))
+                 ├─ decoded = JevResult2JsonSchema().convert(question_set, response.answers)
                  ├─ trace_ref[:] = [system, user, assistant(usage)]
-                 └─ return RunOutput(output, intermediate_outputs={"jev_probabilities": json}, answer_probabilities=probabilities, trace=trace_ref), Usage(...)
+                 └─ return RunOutput(decoded.output, intermediate_outputs={"jev_probabilities": json}, answer_probabilities=decoded.probabilities, trace=trace_ref), Usage(...)
             ├─ parse/validate output against task.output_json_schema   (existing)
             └─ generate_run + save                                       (existing)
 ```
@@ -91,13 +94,13 @@ class JevAdapter(BaseAdapter):
 1. `if prior_trace: raise ValueError(f"{ERROR_PREFIX} Jev only supports single-turn runs.")` where `ERROR_PREFIX = "Jev (TypeSafe AI) can't run this task:"`.
 2. `tools_config = as_kiln_agent_run_config(self.run_config).tools_config`; if it has any tools, raise the tools `ValueError`. (`BaseAdapter.available_tools()` would also surface unmanaged tools from `AdapterConfig`; check `self.base_adapter_config.unmanaged_tools` too.)
 3. `schema = self.task.output_schema()`; `None` → the "no output schema" `ValueError`.
-4. `mappings = questions_from_output_schema(schema)` (raises `JevIncompatibleSchemaError`, a `ValueError`, with the aggregated per-property list).
+4. `question_set = JSONSchema2Jev().convert(schema)`. Catch `IncompatibleSchemaError` and re-raise as `ValueError(f"{ERROR_PREFIX} the output schema has properties Jev can't answer:\n" + "\n".join(f"- {f.key}: {f.reason}" for f in err.failures) + "\nSupported property shapes: a string enum, an integer enum, a boolean, or an integer with minimum and maximum spanning 2 to 10 values.")`. The package's default `MappingOptions` are used (argmax score decoding, 0.5 noul threshold, key fallback for instructions).
 5. `system_prompt = self.prompt_builder.build_prompt(include_json_instructions=False, skills=self._resolve_skills())`. The prompt builder is always set because the run config is `kiln_agent`. Chain-of-thought instructions are never requested (`chain_of_thought_prompt()` is not called).
 6. `state = build_jev_state(system_prompt, input)` → `{"task_instructions": system_prompt, "input": input}`. `input` is passed as-is (dict or str). Pure function, unit tested.
 7. Resolve the client: `self._client or JevClient(api_key=Config.shared().typesafe_api_key)`; `JevClient.__init__` raises the missing-key `ValueError` when the key is falsy.
 8. `model_id = self.model_provider().model_id`; raise `ValueError` if `None`.
-9. `started = time.perf_counter()`; `response = await client.system_one(state=state, model=model_id, questions={k: m.question for k, m in mappings.items()})`; `latency_ms = int((time.perf_counter() - started) * 1000)`.
-10. `output, probabilities = output_from_answers(mappings, response.answers)` (raises `RuntimeError` on missing/mismatched answers).
+9. `started = time.perf_counter()`; `response = await client.system_one(question_set.request(state=state, model=model_id))`; `latency_ms = int((time.perf_counter() - started) * 1000)`.
+10. `decoded = JevResult2JsonSchema().convert(question_set, response.answers)`. `UnexpectedAnswerError` is a `RuntimeError`; let it propagate (message already starts with a neutral description; the adapter prefixes it with `TypeSafe AI returned an unexpected response: `).
 11. Build the trace in place:
     ```python
     trace_ref[:] = [
@@ -108,7 +111,7 @@ class JevAdapter(BaseAdapter):
     ```
     Match how `LiteLlmAdapter.all_messages_to_trace` shapes the assistant message's `usage` (a `MessageUsage`), so `MessageUsage.from_trace` sums it.
 12. `usage = Usage(input_tokens=..., output_tokens=..., total_tokens=in+out, total_llm_latency_ms=latency_ms)`; `cost=None`.
-13. Return `RunOutput(output=output, intermediate_outputs={"jev_probabilities": json.dumps(rounded(probabilities))}, answer_probabilities=probabilities, trace=trace_ref), usage`.
+13. Return `RunOutput(output=decoded.output, intermediate_outputs={"jev_probabilities": json.dumps(rounded(decoded.probabilities))}, answer_probabilities=decoded.probabilities, trace=trace_ref), usage`. `decoded.confidence` is dropped in v1.
 
 Streaming is not overridden. `_create_run_stream` inherits `NotImplementedError`.
 
@@ -233,10 +236,10 @@ Per the repo rule that bit the Featherless integration: remote config publishes 
 
 | Origin | Type | Handling |
 |---|---|---|
-| Compatibility / schema | `ValueError` (`JevIncompatibleSchemaError` is a subclass) | Verbatim to UI via `KilnRunError`. Not retried. |
+| Compatibility / schema | `ValueError` (adapter translates the package's `IncompatibleSchemaError`) | Verbatim to UI via `KilnRunError`. Not retried. |
 | Missing key | `ValueError` | Verbatim. |
 | HTTP / transport | `JevApiError(RuntimeError)` with `.status_code: int | None`, `.retryable: bool` | Verbatim message. Retried by the eval runner when `retryable`. |
-| Malformed response | `RuntimeError` | Verbatim. Not retried. |
+| Malformed response | `RuntimeError` (`UnexpectedAnswerError` from the package, or the client's own) | Verbatim. Not retried. |
 
 `JevClient` never logs request bodies (they contain user data) or the key. It logs status code and request id (`x-typesafe-request-id`) at debug level on failure.
 
@@ -244,9 +247,9 @@ Per the repo rule that bit the Featherless integration: remote config publishes 
 
 All unit tests, no network. `respx` mocks `httpx` at the transport layer for the client; the adapter tests inject a fake `JevClient`.
 
-- `test_jev_schema_mapping.py`: table-driven, see the component doc. This is where most of the risk lives.
-- `test_jev_client.py`: request body shape, header, model, every status-code branch in the error table, timeout and connection errors, answer type mismatch, forward-compat (unknown extra fields ignored).
-- `test_jev_adapter.py`: ordering of pre-flight errors (prior trace, tools, no schema, incompatible schema, then missing key), state construction with string and dict inputs, few-shot prompt content reaching `task_instructions`, JSON instructions excluded, trace shape, usage and latency, `intermediate_outputs["jev_probabilities"]` round-trips, `answer_probabilities` populated, `top_logprobs` ignored, end-to-end through `BaseAdapter.invoke` so output schema validation runs, and a mapping-bug simulation proving invalid output is rejected by the base validation.
+- `jev_jsonschema/test_*.py`: table-driven, see the component doc. This is where most of the risk lives. Includes the isolation test that fails if any `kiln_ai` import creeps into the package.
+- `test_jev_client.py`: request body shape, header, model, every status-code branch in the error table, timeout and connection errors, malformed bodies.
+- `test_jev_adapter.py`: ordering of pre-flight errors (prior trace, tools, no schema, incompatible schema with the Kiln prefix and every failing key, then missing key), state construction with string and dict inputs, few-shot prompt content reaching `task_instructions`, JSON instructions excluded, trace shape, usage and latency, `intermediate_outputs["jev_probabilities"]` round-trips, `answer_probabilities` populated, `top_logprobs` ignored, end-to-end through `BaseAdapter.invoke` so output schema validation runs, and a mapping-bug simulation proving invalid output is rejected by the base validation.
 - `test_adapter_registry.py`: `typesafe` routes to `JevAdapter`; a user-registry model on TypeSafe routes to `JevAdapter`; other providers still route to `LiteLlmAdapter`.
 - `test_eval_utils.py` / `test_g_eval.py`: `scores_from_answer_probabilities` for five_star, pass_fail, pass_fail_critical, unknown value raises, and that `build_g_eval_score` takes the fast path when `answer_probabilities` is set and the logprob path otherwise. One test runs `GEval.run_eval` and one runs `LlmJudgeEval.evaluate` (g_eval on and off) with a patched `adapter_for_task` returning a `JevAdapter` with a fake client.
 - `test_provider_tools.py`, `test_provider_api.py`, `test_litellm_adapter.py`: the standard provider-addition updates (friendly name, warnings, connect/disconnect success, invalid key, server error, exception, dispatch).
