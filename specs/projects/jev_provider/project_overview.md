@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Jev Provider (TypeSafe AI System One)
@@ -19,7 +19,7 @@ Rough shape of the work:
 * Add Jev as a provider: UI, model list, the usual
 * A new Jev `BaseAdapter`
 * Routing the task adapter depending on provider/model (likely needs work, since today everything routes to LiteLLM)
-* A set of helpers for the output (JSON schema → Jev questions → Jev answers → JSON)
+* A set of helpers for the output (JSON schema → Jev questions → Jev answers → JSON). Design these adapters (JSONSchema2Jev, JevResult2JsonSchema) as a small module that can be pulled out into an OSS project.
 * A formatter for the input (Kiln system prompt + user input → Jev "state"), possibly inside the Jev adapter
 * Anything else needed for a solid implementation
 
