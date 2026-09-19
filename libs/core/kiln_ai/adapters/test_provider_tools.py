@@ -151,6 +151,21 @@ def test_check_provider_warnings_unknown_provider():
     check_provider_warnings("unknown_provider")
 
 
+def test_check_provider_warnings_typesafe_missing_key(mock_config):
+    mock_config.return_value = None
+
+    with pytest.raises(ValueError) as exc_info:
+        check_provider_warnings(ModelProviderName.typesafe)
+
+    assert "Attempted to use TypeSafe AI without an API key set." in str(exc_info.value)
+
+
+def test_check_provider_warnings_typesafe_with_key(mock_config):
+    mock_config.return_value = "test-typesafe-key"
+
+    check_provider_warnings(ModelProviderName.typesafe)
+
+
 @pytest.mark.parametrize(
     "provider_name",
     [
@@ -209,6 +224,7 @@ def test_provider_name_from_id_case_sensitivity():
         (ModelProviderName.fireworks_ai, "Fireworks AI"),
         (ModelProviderName.siliconflow_cn, "SiliconFlow"),
         (ModelProviderName.featherless_ai, "Featherless AI"),
+        (ModelProviderName.typesafe, "TypeSafe AI"),
         (ModelProviderName.kiln_fine_tune, "Fine Tuned Models"),
         (ModelProviderName.kiln_custom_registry, "Custom Models"),
     ],
@@ -1138,6 +1154,16 @@ def test_lite_llm_core_config_incorrect_openai_compatible_provider_name(
             ModelProviderName.openai_compatible,
             "provider_that_does_not_exist_in_compatible_openai_providers",
         )
+
+
+def test_lite_llm_core_config_for_provider_typesafe_raises(
+    mock_config_for_lite_llm_core_config,
+):
+    # TypeSafe's System One API is served by its own adapter, never LiteLLM.
+    with pytest.raises(
+        ValueError, match="TypeSafe AI models do not run through LiteLLM"
+    ):
+        lite_llm_core_config_for_provider(ModelProviderName.typesafe)
 
 
 def test_lite_llm_core_config_for_provider_with_string(

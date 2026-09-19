@@ -543,6 +543,8 @@ def provider_name_from_id(id: str) -> str:
                 return "Featherless AI"
             case ModelProviderName.docker_model_runner:
                 return "Docker Model Runner"
+            case ModelProviderName.typesafe:
+                return "TypeSafe AI"
             case _:
                 # triggers pyright warning if I miss a case
                 raise_exhaustive_enum_error(enum_id)
@@ -612,6 +614,10 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
     ModelProviderName.featherless_ai: ModelProviderWarning(
         required_config_keys=["featherless_ai_api_key"],
         message="Attempted to use Featherless AI without an API key set. \nGet your API key from https://featherless.ai/account/api-keys",
+    ),
+    ModelProviderName.typesafe: ModelProviderWarning(
+        required_config_keys=["typesafe_api_key"],
+        message="Attempted to use TypeSafe AI without an API key set. \nGet your API key from https://typesafe.ai",
     ),
 }
 
@@ -806,6 +812,10 @@ def lite_llm_core_config_for_provider(
                     "api_key": api_key,
                 },
             )
+        case ModelProviderName.typesafe:
+            # TypeSafe's System One API has no chat-completions surface, so it is served
+            # by its own adapter instead of LiteLLM.
+            raise ValueError("TypeSafe AI models do not run through LiteLLM")
         # These are virtual providers that should have mapped to an actual provider upstream (using core_provider method)
         case ModelProviderName.kiln_fine_tune:
             return None
