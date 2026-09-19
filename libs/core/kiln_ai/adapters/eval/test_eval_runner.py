@@ -16,6 +16,7 @@ from kiln_ai.adapters.eval.eval_runner import (
     EvalRunner,
     _is_retryable_error,
 )
+from kiln_ai.adapters.jev import JevApiError
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel import (
     DataSource,
@@ -1167,6 +1168,16 @@ async def test_run_job_with_none_trace(
         ValueError(
             "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema."
         ),
+        JevApiError(
+            "TypeSafe AI rate limit exceeded. Wait a moment and try again.",
+            status_code=429,
+            retryable=True,
+        ),
+        JevApiError(
+            "TypeSafe AI is currently unavailable. Try again in a moment.",
+            status_code=503,
+            retryable=True,
+        ),
     ],
 )
 def test_is_retryable_error_returns_true(error):
@@ -1180,6 +1191,11 @@ def test_is_retryable_error_returns_true(error):
         RuntimeError("runtime error"),
         KeyError("missing key"),
         TypeError("type error"),
+        JevApiError(
+            "Authentication with TypeSafe AI failed. Check your API key.",
+            status_code=401,
+            retryable=False,
+        ),
     ],
 )
 def test_is_retryable_error_returns_false(error):
@@ -1194,6 +1210,21 @@ def test_is_retryable_error_unwraps_kiln_run_error():
         message="Rate limit exceeded. Wait a moment and try again.",
         partial_trace=None,
         original=litellm.RateLimitError("rate limited", "provider", "model", None),
+    )
+    assert _is_retryable_error(wrapped) is True
+
+
+def test_is_retryable_error_unwraps_jev_api_error():
+    # A Jev judge's transport failure reaches the runner wrapped by the base adapter,
+    # exactly as a LiteLLM one does, and its own `retryable` flag decides.
+    wrapped = KilnRunError(
+        message="TypeSafe AI is currently unavailable. Try again in a moment.",
+        partial_trace=None,
+        original=JevApiError(
+            "TypeSafe AI is currently unavailable. Try again in a moment.",
+            status_code=500,
+            retryable=True,
+        ),
     )
     assert _is_retryable_error(wrapped) is True
 

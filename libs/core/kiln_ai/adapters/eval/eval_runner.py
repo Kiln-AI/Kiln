@@ -9,6 +9,7 @@ from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 from kiln_ai.adapters.eval.registry import legacy_eval_adapter_from_type
 from kiln_ai.adapters.eval.trace_index import TraceIndex, TraceKey, trace_key
+from kiln_ai.adapters.jev import JevApiError
 from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
 from kiln_ai.datamodel.basemodel import ID_TYPE, generate_model_id
 from kiln_ai.datamodel.dataset_filters import (
@@ -564,6 +565,11 @@ def _is_retryable_error(e: BaseException) -> bool:
         ),
     ):
         return True
+
+    # Jev carries its own transience (429, 5xx, timeouts, connection failures). The Jev
+    # adapter never retries, so the runner's retries are the only ones a judge gets.
+    if isinstance(e, JevApiError):
+        return e.retryable
 
     # ValueError thrown by Kiln's adapter when structured output doesn't match schema
     if isinstance(

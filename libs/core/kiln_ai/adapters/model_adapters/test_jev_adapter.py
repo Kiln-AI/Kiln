@@ -27,6 +27,7 @@ from kiln_ai.adapters.model_adapters.jev_adapter import (
     JevAdapter,
     build_jev_state,
 )
+from kiln_ai.adapters.prompt_builders import PromptGenerators
 from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX
@@ -384,6 +385,42 @@ async def test_prompt_content_reaches_state(task, run_config):
     )
 
     assert "Judge without bias" in client.requests[0].state["task_instructions"]  # type: ignore[index]
+
+
+async def test_thinking_instructions_reach_state(task, run_config):
+    """Jev runs no thinking step, but a chain-of-thought prompt generator's instructions
+    are content — a legacy LLM-as-Judge config carries its eval steps there and nowhere
+    else. Composed as `build_prompt_for_ui` does, so the prompt viewer and what Jev
+    receives are the same text."""
+    task.thinking_instruction = "First, weigh the evidence on both sides."
+    client = FakeJevClient(jev_response())
+    adapter_under_test = JevAdapter(
+        kiln_task=task,
+        run_config=run_config.model_copy(
+            update={"prompt_id": PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT}
+        ),
+        client=client,
+    )
+    await adapter_under_test._run("hi", [])
+
+    instructions = client.requests[0].state["task_instructions"]  # type: ignore[index]
+    assert instructions.endswith(
+        "\n\n# Thinking Instructions\n\nFirst, weigh the evidence on both sides."
+    )
+    assert "Judge the input." in instructions
+    # The heading is duplicated from build_prompt_for_ui; this is what keeps Kiln's
+    # prompt viewer and the text Jev receives from drifting apart.
+    assert adapter_under_test.prompt_builder is not None
+    assert instructions == adapter_under_test.prompt_builder.build_prompt_for_ui()
+
+
+async def test_no_thinking_instructions_without_a_cot_prompt_generator(adapter):
+    """A prompt generator with no thinking step must not grow an empty heading."""
+    client = FakeJevClient(jev_response())
+    await adapter(client)._run("hi", [])
+
+    instructions = client.requests[0].state["task_instructions"]  # type: ignore[index]
+    assert "# Thinking Instructions" not in instructions
 
 
 async def test_request_shape(adapter):

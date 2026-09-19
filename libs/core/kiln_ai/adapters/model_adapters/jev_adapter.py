@@ -202,9 +202,19 @@ class JevAdapter(BaseAdapter):
         if self.prompt_builder is None:
             raise ValueError("JevAdapter requires a kiln_agent run config")
         # Jev never sees JSON formatting instructions: the output shape is carried by the
-        # questions. Thinking instructions are skipped too, as Jev has no reasoning step,
-        # and skills never reach here because a run config carrying one is rejected above.
-        return self.prompt_builder.build_prompt(include_json_instructions=False)
+        # questions. Skills never reach here either, as a run config carrying one is
+        # rejected above.
+        prompt = self.prompt_builder.build_prompt(include_json_instructions=False)
+
+        # Jev has no reasoning step, but thinking instructions are content, not just a
+        # procedure: a legacy LLM-as-Judge config carries its eval steps there and
+        # nowhere else, so dropping them would make every judge config on an eval the
+        # same judge. Composed exactly as build_prompt_for_ui does, so Kiln's prompt
+        # viewer and what Jev receives are the same text.
+        thinking_instructions = self.prompt_builder.chain_of_thought_prompt()
+        if thinking_instructions:
+            prompt += "\n\n# Thinking Instructions\n\n" + thinking_instructions
+        return prompt
 
 
 def _client_from_config() -> JevClient:
