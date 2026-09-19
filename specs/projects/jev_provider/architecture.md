@@ -77,7 +77,7 @@ case "kiln_agent":
             raise_exhaustive_enum_error(model_provider.adapter)
 ```
 
-`kiln_model_provider_from` is the same lookup `BaseAdapter.model_provider()` performs lazily, so the existing missing-key check (`check_provider_warnings` with the `provider_warnings` message) covers TypeSafe with no new code path. The `mock_config` fixture in `test_adapter_registry.py` already supplies keys for every provider and gains `typesafe_api_key`.
+`kiln_model_provider_from` is the same lookup `BaseAdapter.model_provider()` performs lazily. It calls `check_provider_warnings` on the built-in and custom-model paths, but a user-registry model returns from `find_user_model` before that check, so `JevAdapter` runs the check itself before building the client (see `_client_from_config`). The `mock_config` fixture in `test_adapter_registry.py` already supplies keys for every provider and gains `typesafe_api_key`.
 
 ### User-registered and custom models
 
@@ -104,7 +104,7 @@ run_api / eval runner
             └─ JevAdapter._run(input, trace_ref)
                  ├─ reject prior_trace / tools / missing output schema
                  ├─ question_set = JSONSchema2Jev().convert(task.output_schema())   # IncompatibleSchemaError → Kiln ValueError
-                 ├─ system_prompt = prompt_builder.build_prompt(include_json_instructions=False, skills=...)
+                 ├─ system_prompt = prompt_builder.build_prompt(include_json_instructions=False)
                  ├─ state = {"task_instructions": system_prompt, "input": input}
                  ├─ response = await client.system_one(question_set.request(state, model_id))
                  ├─ decoded = JevResult2JsonSchema().convert(question_set, response.answers)
@@ -142,15 +142,15 @@ class JevAdapter(BaseAdapter):
 `_run` in order:
 
 1. `if prior_trace: raise ValueError(f"{ERROR_PREFIX} Jev only supports single-turn runs.")`
-2. Tools: `as_kiln_agent_run_config(self.run_config).tools_config` has tools, or `self.base_adapter_config.unmanaged_tools` is non-empty → `ValueError(f"{ERROR_PREFIX} Jev does not support tools. Remove tools from the run config.")`.
+2. Tools: `as_kiln_agent_run_config(self.run_config).tools_config` has a non-skill tool, or `self.base_adapter_config.unmanaged_tools` is non-empty → `ValueError(f"{ERROR_PREFIX} Jev does not support tools. Remove tools from the run config.")`. Skill tool ids (`SKILL_TOOL_ID_PREFIX`) are then rejected with their own message, since the UI offers skills as a separate control (see the functional spec's rule 3).
 3. `schema = self.task.output_schema()`; `None` → `ValueError(f"{ERROR_PREFIX} Jev only supports tasks with a structured output schema. ...")`.
 4. `question_set = JSONSchema2Jev().convert(schema)`. Catch `IncompatibleSchemaError` and re-raise as `ValueError(f"{ERROR_PREFIX} the output schema has properties Jev can't answer:\n" + "\n".join(f"- {f.key}: {f.reason}" for f in err.failures) + "\n" + SUPPORTED_SHAPES)`. Default `MappingOptions`.
-5. `system_prompt = self.prompt_builder.build_prompt(include_json_instructions=False, skills=self._resolve_skills())`. Never calls `chain_of_thought_prompt()`.
+5. `system_prompt = self.prompt_builder.build_prompt(include_json_instructions=False)`. No `skills` argument: a run config carrying a skill is rejected in step 2. Never calls `chain_of_thought_prompt()`.
 6. `state = build_jev_state(system_prompt, input)` → `{"task_instructions": system_prompt, "input": input}` with `input` passed as-is (dict or str). Module-level pure function.
-7. `client = self._client or JevClient(api_key=Config.shared().typesafe_api_key)`. A missing key never reaches here: `kiln_model_provider_from` (run by `adapter_for_task` and by `model_provider()`) already calls `check_provider_warnings`, which raises the standard `provider_warnings` message for TypeSafe.
+7. `client = self._client or _client_from_config()`, which calls `check_provider_warnings(ModelProviderName.typesafe)` before constructing `JevClient(api_key=Config.shared().typesafe_api_key)`. The check is idempotent, so the built-in path repeating it is harmless, and it is the only place it runs for a user-registry model. An injected client skips it.
 8. `model_id = self.model_provider().model_id`; `None` → `ValueError`.
 9. Time the call with `time.perf_counter()`; `response = await client.system_one(question_set.request(state=state, model=model_id))`.
-10. `decoded = JevResult2JsonSchema().convert(question_set, response.answers)`; `UnexpectedAnswerError` (a `RuntimeError`) propagates.
+10. `decoded = JevResult2JsonSchema().convert(question_set, response.answers)`; `UnexpectedAnswerError` is re-raised as `RuntimeError(f"TypeSafe AI returned an unexpected response: {err}")`.
 11. Trace, in place:
     ```python
     trace_ref[:] = [
@@ -161,7 +161,7 @@ class JevAdapter(BaseAdapter):
     ```
     shaped like `LiteLlmAdapter.all_messages_to_trace` so `MessageUsage.from_trace` sums it.
 12. `usage = Usage(input_tokens, output_tokens, total_tokens=in+out, total_llm_latency_ms=latency_ms)`; `cost=None`.
-13. Return `RunOutput(output=decoded.output, intermediate_outputs={"jev_probabilities": json.dumps(round4(decoded.probabilities)), "jev_confidence": json.dumps(decoded.confidence)}, trace=trace_ref), usage`.
+13. Return `RunOutput(output=decoded.output, intermediate_outputs={"jev_probabilities": json.dumps(round4(decoded.probabilities), ensure_ascii=False), "jev_confidence": json.dumps(decoded.confidence, ensure_ascii=False)}, trace=trace_ref), usage`.
 
 Steps 1 to 4 fail before any network call. Streaming is not overridden; `_create_run_stream` inherits `NotImplementedError`.
 
@@ -253,7 +253,7 @@ All unit tests, no network. `respx` mocks `httpx` for the client; adapter tests 
 
 - `jev_jsonschema/test_*.py`: table-driven mapping and decoding, see the component doc. Most of the risk lives here.
 - `test_jev_client.py`: request shape, every status branch in the error table, transport errors, malformed bodies.
-- `test_jev_adapter.py`: pre-flight error ordering (prior trace, tools, no schema, incompatible schema with prefix and every failing key); state for str and dict inputs; few-shot prompt content reaches `task_instructions`; JSON instructions excluded; trace shape; usage and latency; both intermediate outputs round-trip; `top_logprobs` ignored; end-to-end through `BaseAdapter.invoke` so schema validation runs; a simulated mapping bug is rejected by base validation.
+- `test_jev_adapter.py`: pre-flight error ordering (prior trace, tools, skills, no schema, incompatible schema with prefix and every failing key); state for str and dict inputs; few-shot prompt content reaches `task_instructions`; JSON instructions excluded; trace shape; usage and latency; both intermediate outputs round-trip; `top_logprobs` ignored; end-to-end through `BaseAdapter.invoke` so schema validation runs; a simulated mapping bug is rejected by base validation.
 - `test_adapter_registry.py`: a provider entry with `adapter=jev` routes to `JevAdapter`; default routes to `LiteLlmAdapter`; a user-registry model under TypeSafe routes to `JevAdapter`.
 - `test_ml_model_list.py`: `adapter` defaults to `litellm` on every built-in entry except Jev.
 - `test_provider_tools.py`, `test_provider_api.py`, `test_litellm_adapter.py`: standard provider-addition updates; connect success, invalid key, server error, exception, dispatch.

@@ -15,3 +15,13 @@ with the user and closes or dismisses each one.
   will discover the bad key only on their first run. In that case, switch to the spec's
   minimal `POST /v1/systemone` fallback. Needs a human with a live key; must not reach
   merge unresolved.
+
+- **`adapter_for_task` resolves the model provider twice per run.** It resolves the provider
+  eagerly to read `.adapter`, then discards it, so `BaseAdapter.model_provider()` resolves it
+  a second time on first use. Consequences: `get_all_user_models()` re-parses the user model
+  registry twice per run, and the `logger.warning("Unexpected model/provider pair...")` in
+  `kiln_model_provider_from` now fires twice for every custom-model run, which reads as a real
+  duplicate to anyone debugging from logs. The fix is to thread the already-resolved
+  `KilnModelProvider` into the adapter to prime `BaseAdapter._model_provider`. Deferred from
+  Phase 3 review because it touches `BaseAdapter`, which every adapter depends on — not a
+  change worth making mid-phase for log noise, but it should get a deliberate look.

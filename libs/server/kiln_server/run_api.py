@@ -443,6 +443,16 @@ def connect_run_api(app: FastAPI):
         """Invoke an AI model on a task and return the result. Unlike 'Create Run', this actually executes the model."""
         task = task_from_id(project_id, task_id)
 
+        input = request.plaintext_input
+        if task.input_schema() is not None:
+            input = request.structured_input
+
+        if input is None:
+            raise HTTPException(
+                status_code=400,
+                detail="No input provided. Ensure your provided the proper format (plaintext or structured).",
+            )
+
         run_config_properties = request.run_config_properties
         skills = load_skills_for_task(task, run_config_properties)
 
@@ -455,16 +465,6 @@ def connect_run_api(app: FastAPI):
                 task_run_config_id=request.task_run_config_id,
             ),
         )
-
-        input = request.plaintext_input
-        if task.input_schema() is not None:
-            input = request.structured_input
-
-        if input is None:
-            raise HTTPException(
-                status_code=400,
-                detail="No input provided. Ensure your provided the proper format (plaintext or structured).",
-            )
 
         return await adapter.invoke(input)
 

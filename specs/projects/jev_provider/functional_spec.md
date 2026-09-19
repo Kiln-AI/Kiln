@@ -73,13 +73,16 @@ Checked at run time inside the Jev adapter, before any network call, in this ord
 
 1. **Prior trace present** (multi-turn continuation): `... Jev only supports single-turn runs.`
 2. **Tools configured** on the run config: `... Jev does not support tools. Remove tools from the run config.`
-3. **No output schema** on the task: `... Jev only supports tasks with a structured output schema. Add an output JSON schema whose properties are enums, booleans, bounded integers, or numbers from 0 to 1.`
-4. **Schema mapping failures**: `... the output schema has properties Jev can't answer:` followed by one line per property: `- <key>: <reason>`. Reasons are listed in the mapping table below.
-5. **Zero mappable properties** (empty `properties`): `... the output schema has no properties.`
+3. **Skills attached** to the run config: `... Jev does not support skills, which the model loads through a tool call. Remove the skills from the run config.` Skills are stored inside `tools_config.tools` as `kiln_tool::skill::<id>`, but the UI offers them as their own control, so they get their own message rather than being reported as tools. A config carrying both reports the tools first.
+4. **No output schema** on the task: `... Jev only supports tasks with a structured output schema. Add an output JSON schema whose properties are enums, booleans, bounded integers, or numbers from 0 to 1.`
+5. **Schema mapping failures**: `... the output schema has properties Jev can't answer:` followed by one line per property: `- <key>: <reason>`. Reasons are listed in the mapping table below.
+6. **Zero mappable properties** (empty `properties`): `... the output schema has no properties.`
 
 Streaming entry points are not overridden; the base class raises `NotImplementedError("Streaming is not supported for this adapter type")`, which is acceptable because no Kiln UI streams a plain task run.
 
-Run config fields `temperature`, `top_p`, `thinking_level` are ignored silently. Chain-of-thought prompt generators are accepted and their thinking instructions are ignored (there is no thinking option for Jev, and no `chain_of_thought` intermediate output is produced). Prompt content (simple, few-shot, multi-shot, saved prompts, fine-tune prompts, skills) is used in full.
+Run config fields `temperature`, `top_p`, `thinking_level` are ignored silently. Chain-of-thought prompt generators are accepted and their thinking instructions are ignored (there is no thinking option for Jev, and no `chain_of_thought` intermediate output is produced). Prompt content (simple, few-shot, multi-shot, saved prompts, fine-tune prompts) is used in full.
+
+Skills are rejected, not ignored: Kiln gives the model a callable `SkillTool` and the prompt section tells it to "load it with `skill(name)`". Jev answers questions and cannot call anything, so a skill's content would never be loaded and the run would silently lose it. Rejecting is the honest outcome, and it is rule 3 above.
 
 ## Output schema → Jev questions
 
@@ -178,7 +181,7 @@ All errors raised inside the adapter propagate through the existing `KilnRunErro
 | Situation | Exception | Message |
 |---|---|---|
 | Compatibility or schema-mapping failure | `ValueError` | As specified above |
-| Missing API key | `ValueError` (existing) | Kiln's existing provider check raises the standard `provider_warnings` message: `Attempted to use TypeSafe AI without an API key set. ...` No new path. |
+| Missing API key | `ValueError` (existing) | Kiln's existing provider check raises the standard `provider_warnings` message: `Attempted to use TypeSafe AI without an API key set. ...` The adapter runs this check itself before building the client, because a user-registry model resolves before the resolver's own check. |
 | HTTP 401/403 | `JevApiError(RuntimeError)` | `Authentication with TypeSafe AI failed. Check your API key.` |
 | HTTP 429 | `JevApiError` (retryable) | `TypeSafe AI rate limit exceeded. Wait a moment and try again.` |
 | HTTP 422 | `JevApiError` | `TypeSafe AI rejected the request: ` + each `detail[].msg` joined with `; ` |

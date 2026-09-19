@@ -27,6 +27,7 @@ from .models import (
     SystemOneUsage,
 )
 from .to_jev import (
+    ROOT_KEY,
     IncompatibleSchemaError,
     JSONSchema2Jev,
     MappedKind,
@@ -39,6 +40,7 @@ from .to_jev import (
 )
 
 __all__ = [
+    "ROOT_KEY",
     "ChoiceAnswer",
     "ChoiceQuestion",
     "DecodedResult",
