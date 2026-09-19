@@ -16,15 +16,19 @@ with the user and closes or dismisses each one.
   minimal `POST /v1/systemone` fallback. Needs a human with a live key; must not reach
   merge unresolved.
 
-- **`adapter_for_task` resolves the model provider twice per run.** It resolves the provider
-  eagerly to read `.adapter`, then discards it, so `BaseAdapter.model_provider()` resolves it
-  a second time on first use. Consequences: `get_all_user_models()` re-parses the user model
-  registry twice per run, and the `logger.warning("Unexpected model/provider pair...")` in
-  `kiln_model_provider_from` now fires twice for every custom-model run, which reads as a real
-  duplicate to anyone debugging from logs. The fix is to thread the already-resolved
-  `KilnModelProvider` into the adapter to prime `BaseAdapter._model_provider`. Deferred from
-  Phase 3 review because it touches `BaseAdapter`, which every adapter depends on — not a
-  change worth making mid-phase for log noise, but it should get a deliberate look.
+- **This branch makes `adapter_for_task` resolve the model provider twice per run.** Not a
+  latent cleanup: it is a behaviour regression this branch introduces to a shared hot path,
+  and it hits **every custom-model run, not only Jev**. `adapter_for_task` resolves the
+  provider eagerly to read `.adapter`, then discards it, so `BaseAdapter.model_provider()`
+  resolves it a second time on first use. Consequences: `get_all_user_models()` re-parses the
+  user model registry twice per run, and the `logger.warning("Unexpected model/provider
+  pair...")` in `kiln_model_provider_from` now fires twice per run where it fired once before,
+  which reads as a real duplicate to anyone debugging from logs. The fix is to thread the
+  already-resolved `KilnModelProvider` into the adapter to prime `BaseAdapter._model_provider`.
+  Deferred from Phase 3 review because that threading touches `BaseAdapter`, which every
+  adapter depends on — not a change worth making mid-phase for log noise, but it should get a
+  deliberate look. **Disclose in the PR description** so nobody debugging from logs chases a
+  phantom duplicate.
 
 - **The `g_eval` / `supports_logprobs` guard only fires for models with a built-in entry.**
   The V2 LLM Judge's guard in `v2_eval_llm_judge.py` raises only when

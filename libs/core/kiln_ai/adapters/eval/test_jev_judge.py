@@ -413,8 +413,15 @@ async def test_v2_llm_judge_scores_with_jev(jev_judge, judge_eval):
 
 
 async def test_v2_g_eval_rejected_before_adapter_selection(judge_eval):
-    """`supports_logprobs=False` is what keeps Jev out of G-Eval, and the guard has to
-    run before the adapter is built or the failure would come from the network."""
+    """The V2 judge's `supports_logprobs` guard has to run before the adapter is built,
+    or the failure would come from the network.
+
+    The guard only fires for a model that has a built-in entry, which is why the lookup
+    is patched here. Between Phase 6 and Phase 7 Jev has no entry, so nothing rejects a
+    Jev G-Eval judge server-side and it fails late with "No logprobs found for output";
+    the model dropdown's `requires_logprobs` filter is what keeps it out of reach in the
+    meantime. See the project backlog.
+    """
     config = _v2_config(judge_eval, g_eval=True)
     provider = KilnModelProvider(
         name=ModelProviderName.typesafe,

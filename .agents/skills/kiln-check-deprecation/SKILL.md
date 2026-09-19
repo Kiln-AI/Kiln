@@ -124,7 +124,7 @@ These don't have meaningful deprecation to check:
 - `docker_model_runner` — local
 - `azure_openai` — typically mirrors OpenAI, covered by OpenAI check
 - `huggingface` — serverless inference, model availability varies
-- `typesafe` — adapter-backed, not LiteLLM; its `/v1/models` needs a key and the catalog carries a single Jev entry
+- `typesafe` — adapter-backed, not LiteLLM; its `/v1/models` needs a key, so Jev entries can only be checked with one
 
 ---
 

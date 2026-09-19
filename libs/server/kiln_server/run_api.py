@@ -450,7 +450,7 @@ def connect_run_api(app: FastAPI):
         if input is None:
             raise HTTPException(
                 status_code=400,
-                detail="No input provided. Ensure your provided the proper format (plaintext or structured).",
+                detail="No input provided. Ensure you provided the proper format (plaintext or structured).",
             )
 
         run_config_properties = request.run_config_properties

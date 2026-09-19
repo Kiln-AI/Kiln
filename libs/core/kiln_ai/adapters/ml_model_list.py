@@ -48,7 +48,6 @@ class ModelFamily(str, Enum):
     arcee = "arcee"
     sakana = "sakana"
     thinking_machines = "thinking_machines"
-    jev = "jev"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -322,7 +321,6 @@ class ModelName(str, Enum):
     mimo_v2_5 = "mimo_v2_5"
     mimo_v2_5_pro = "mimo_v2_5_pro"
     inkling = "inkling"
-    jev_1_13 = "jev_1_13"
 
 
 class ModelParserID(str, Enum):
@@ -10303,28 +10301,6 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
-            ),
-        ],
-    ),
-    # Jev 1.13
-    # TODO: remove before merge; re-add after the client release that ships the TypeSafe
-    # provider. An older client reading the remote config would show this model in the
-    # model library labelled with the raw provider ID and offer a model it cannot connect.
-    KilnModel(
-        family=ModelFamily.jev,
-        name=ModelName.jev_1_13,
-        friendly_name="Jev 1.13",
-        editorial_notes="TypeSafe AI's classification model. No text generation: it answers a fixed set of typed questions about its input, returning a probability distribution for each. Only runs tasks whose output schema is enums, booleans, bounded integers, or numbers from 0 to 1.",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.typesafe,
-                model_id="jev-1.13.0",
-                adapter=ModelAdapterId.jev,
-                supports_structured_output=True,
-                supports_data_gen=False,
-                supports_logprobs=False,
-                supports_function_calling=False,
-                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
