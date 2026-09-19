@@ -5,19 +5,27 @@ with the user and closes or dismisses each one.
 
 ## Open
 
-- **This branch makes `adapter_for_task` resolve the model provider twice per run.** Not a
-  latent cleanup: it is a behaviour regression this branch introduces to a shared hot path,
-  and it hits **every custom-model run, not only Jev**. `adapter_for_task` resolves the
-  provider eagerly to read `.adapter`, then discards it, so `BaseAdapter.model_provider()`
-  resolves it a second time on first use. Consequences: `get_all_user_models()` re-parses the
-  user model registry twice per run, and the `logger.warning("Unexpected model/provider
-  pair...")` in `kiln_model_provider_from` now fires twice per run where it fired once before,
-  which reads as a real duplicate to anyone debugging from logs. The fix is to thread the
-  already-resolved `KilnModelProvider` into the adapter to prime `BaseAdapter._model_provider`.
-  Deferred from Phase 3 review because that threading touches `BaseAdapter`, which every
-  adapter depends on — not a change worth making mid-phase for log noise, but it should get a
-  deliberate look. **Disclose in the PR description** so nobody debugging from logs chases a
-  phantom duplicate.
+None. Phase 7 reviewed every item with the user.
+
+## Closed
+
+- **`adapter_for_task` resolves the model provider twice per run.** `adapter_for_task`
+  resolves the provider to read `.adapter`, then discards it, so
+  `BaseAdapter.model_provider()` resolves it again on first use. Two effects: one extra
+  provider lookup per run, and a duplicated `logger.warning("Unexpected model/provider
+  pair...")` from `kiln_model_provider_from`.
+
+  **Dismissed in Phase 7.** Neither effect earns a change. The lookup is in memory, not on
+  disk: `get_all_user_models()` reads the `Config.shared()` singleton and builds a
+  `UserModelEntry` per row, and the built-in path scans a list of a few hundred models, so
+  a second call is unmeasurable beside the network call that follows it. The duplicated
+  warning is narrower than this entry first claimed: it is not every custom-model run, but
+  only a run whose model and provider pair matches no built-in model and is not
+  `kiln_custom_registry`, because a user-registry model returns earlier from
+  `find_user_model`. The only fix that removes the second resolution is to thread the
+  resolved `KilnModelProvider` into the adapter, which means changing `BaseAdapter`, the
+  base class of every adapter in the repo. That is too much surface for a duplicated
+  advisory line on an edge-case path.
 
 - **The `g_eval` / `supports_logprobs` guard only fires for models with a built-in entry.**
   The V2 LLM Judge's guard in `v2_eval_llm_judge.py` raises only when
@@ -29,9 +37,14 @@ with the user and closes or dismisses each one.
   provider, and it is exactly the case the guard misses. Related and also pre-existing:
   legacy `EvalConfigType.g_eval` has no `supports_logprobs` guard at all, so a legacy
   g_eval config naming Jev fails the same late way. Both are the guard shape shared with
-  every custom model, so this is a deliberate deferral, not an oversight.
+  every custom model, so this is accepted behaviour rather than a Jev defect.
 
-## Closed
+  **Dismissed in Phase 7.** The model dropdown's `requires_logprobs` filter keeps a Jev
+  judge out of G-Eval on the default UI path, so the exposure is the API path, a
+  pre-existing eval config, or a user who overrides `supports_logprobs`. Making the guard
+  fire without a built-in entry changes behaviour for every custom model, which belongs in
+  its own project rather than in a provider pull request.
+
 
 - **Confirm `GET https://api.typesafe.ai/v1/models` rejects a bad key.** This is the
   precondition `architecture.md` sets for `connect_typesafe`. It could not be verified
