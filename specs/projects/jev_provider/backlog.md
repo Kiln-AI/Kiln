@@ -1,6 +1,6 @@
 # Backlog: Jev Provider (TypeSafe AI System One)
 
-Items found while implementing, outside the phase that found them. Phase 9 reviews these
+Items found while implementing, outside the phase that found them. Phase 7 reviews these
 with the user and closes or dismisses each one.
 
 ## Open
@@ -24,7 +24,7 @@ with the user and closes or dismisses each one.
   `built_in_models_from_provider(...)` returns non-`None`, so a `g_eval=True` judge on a
   model with no built-in entry slips past it and fails late with
   `RuntimeError("No logprobs found for output - can not calculate g-eval")`. This matters
-  for Jev specifically between Phase 6, which removes the model entry, and Phase 7, which
+  for Jev specifically between Phase 6, which removes the model entry, and Phase 8, which
   re-adds it: in that window a user-registry Jev model is the only way to use the
   provider, and it is exactly the case the guard misses. Related and also pre-existing:
   legacy `EvalConfigType.g_eval` has no `supports_logprobs` guard at all, so a legacy

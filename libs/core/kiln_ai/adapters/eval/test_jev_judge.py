@@ -417,10 +417,10 @@ async def test_v2_g_eval_rejected_before_adapter_selection(judge_eval):
     or the failure would come from the network.
 
     The guard only fires for a model that has a built-in entry, which is why the lookup
-    is patched here. Between Phase 6 and Phase 7 Jev has no entry, so nothing rejects a
-    Jev G-Eval judge server-side and it fails late with "No logprobs found for output";
-    the model dropdown's `requires_logprobs` filter is what keeps it out of reach in the
-    meantime. See the project backlog.
+    is patched here. A Jev model without one -- a user-registry model, or any Jev model
+    while the `ml_model_list.py` entry is absent -- is not rejected server-side and fails
+    late with "No logprobs found for output"; the model dropdown's `requires_logprobs`
+    filter is what keeps it out of reach. See the project backlog.
     """
     config = _v2_config(judge_eval, g_eval=True)
     provider = KilnModelProvider(
