@@ -136,6 +136,7 @@ All changes go in `libs/core/kiln_ai/adapters/ml_model_list.py`.
 | `vertex` | Usually same as gemini_api | Verify via Vertex docs |
 | `siliconflow_cn` | Vendor/model format | Verify via SiliconFlow docs |
 | `featherless_ai` | HuggingFace repo id, case-sensitive (`zai-org/GLM-5.2`) | Verify via their `/v1/models` — see [Featherless](#featherless-ai) |
+| `typesafe` | Dotted System One version (`jev-1.13.0`) | Verify via their `/v1/models` — see [TypeSafe AI](#typesafe-ai) |
 
 **Every single `model_id` must be verified from an authoritative source. No exceptions.**
 
@@ -618,6 +619,15 @@ Serverless host for HuggingFace-hosted open weights. Several hard constraints �
 - **No cost reporting.** Featherless models aren't in LiteLLM's price map (only two legacy `Qwerky` entries, on `main` too — not a version issue), and Featherless doesn't return cost in the `usage` object. Runs record tokens with `cost: null`.
 - **Not in models.dev or the LiteLLM catalog**, so their `/v1/models` endpoint is the only authoritative source. See [Lagging Providers](#lagging-providers).
 - Quality varies per deployment — verify with a paid run. Qwen 3.5 397B, for example, returns degenerate output (rambles to the token cap) and was excluded for that reason.
+
+### TypeSafe AI
+
+Serves TypeSafe's Jev models (System One API). The only provider in the catalog that does not run through LiteLLM — read this before adding an entry:
+
+- **Adapter-backed, not LiteLLM-backed.** Every provider entry must set `adapter=ModelAdapterId.jev`; `JevAdapter` calls `POST /v1/systemone` directly. `lite_llm_core_config_for_provider` and `get_litellm_provider_info` raise for `typesafe` on purpose, so the LiteLLM parametrized tests exclude it.
+- **Structured output only.** No text generation, no tools, no multi-turn. A task runs only if its output schema maps onto Jev's question types (enum, boolean, score); anything else fails before the network call. Set `supports_structured_output=True`, `supports_data_gen=False`, `supports_function_calling=False`, and `structured_output_mode=StructuredOutputMode.json_schema`.
+- **No logprobs.** `supports_logprobs=False`. Jev returns its own per-answer probabilities instead, which is what keeps it out of G-Eval.
+- **Not in models.dev or the LiteLLM catalog.** Their `GET /v1/models` is the only authoritative source for `model_id`, but it returns `{"models": [{"name", ...}]}` rather than the OpenAI `{"data": [{"id", ...}]}` shape, so the shared `fetch_openai_compat` path cannot read it. That is why `typesafe` is in `SKIP_PROVIDERS` in `.agents/scripts/provider_utils.py` rather than in `PROVIDER_CONFIG`.
 
 ### Qwen3 / Thinking Models
 - Thinking variants: `reasoning_capable=True`, `parser=ModelParserID.r1_thinking`

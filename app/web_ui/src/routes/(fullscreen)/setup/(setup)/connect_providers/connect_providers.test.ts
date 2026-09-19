@@ -168,4 +168,20 @@ describe("ConnectProviders API key dialog", () => {
     await waitFor(() => expect(screen.queryByText("Connect OpenAI")).toBeNull())
     expect(screen.queryByText(invalid_key_message)).toBeNull()
   })
+
+  it("shows TypeSafe AI as connected when a TypeSafe API key is already saved", async () => {
+    mock_fetch.mockImplementationOnce(
+      async () =>
+        ({
+          status: 200,
+          json: async () => ({ typesafe_api_key: "saved-key" }),
+        }) as unknown as Response,
+    )
+
+    await render_connect_providers()
+
+    const provider_row = screen.getByAltText("TypeSafe AI")
+      .parentElement as HTMLElement
+    expect(within(provider_row).getByAltText("Connected")).toBeTruthy()
+  })
 })

@@ -769,3 +769,9 @@ def test_oauth_token_hidden_in_git_sync_projects():
     project1_visible = visible_settings["git_sync_projects"]["project1"]
     assert project1_visible["oauth_token"] == "gho_secret_oauth_value"
     assert project1_visible["pat_token"] == "ghp_secret_pat_value"
+
+
+def test_typesafe_api_key_property():
+    prop = Config()._properties["typesafe_api_key"]
+    assert prop.env_var == "TYPESAFE_API_KEY"
+    assert prop.sensitive is True
