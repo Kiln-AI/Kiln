@@ -61,11 +61,11 @@ The model appears in every existing model dropdown that the flags allow (run pag
 
 Kiln's rule for new providers is that the model-list entry lands in a second PR after a client release, because the remote config is published from `main` and the web model library page reads it directly in the browser. An old client would otherwise show the Jev row labelled with the raw provider ID `typesafe` and offer a model it cannot connect. The Python side already drops unknown providers safely, so this is a model-library-only problem, but it is the reason the Featherless entries were rolled back.
 
-So:
+What happened:
 
-1. The entry is added on the feature branch so the feature can be tested end to end, with a `TODO` comment saying it must be removed before merge. CI enforces that no `TODO` comments reach `main`, so the PR cannot merge with the entry in.
-2. Before merge, the entry is removed. Everything else (enum, adapter, routing, UI, evals) merges in that PR.
-3. After the release that carries the provider, a follow-up PR re-adds the entry without the `TODO`, along with the prerelease whitelist and paid smoke test.
+1. The entry was added on the feature branch so the feature could be tested end to end, with a `TODO` comment saying it must be removed before merge. CI enforces that no `TODO` comments reach `main`, so while that comment was there the PR could not merge with the entry in.
+2. The entry was removed before merge as planned, then restored for manual testing, and the removal `TODO` was deleted on this branch by the user's decision — so the provider can be tested against the live API from this branch rather than after a release. The prerelease whitelist and the paid smoke test landed on the same branch — the work the original third step deferred until after the release.
+3. So the gate is no longer mechanical. Nothing in CI now stops the entry reaching `main`; what stops it is the pull request staying a work in progress until the release that carries the provider has shipped. The reason is unchanged and still binding: the remote config is published from `main`, and an old client would show the Jev row labelled with the raw provider ID `typesafe` and offer a model it cannot connect. The pull request is not a GitHub draft; the marker is the `WIP:` prefix on its title, and whoever removes that prefix owns this check.
 
 ## Task compatibility rules
 
@@ -215,4 +215,4 @@ The API key is never included in error messages or logs.
 5. A legacy LLM-as-Judge eval and a V2 LLM Judge (g_eval off) configured with the Jev judge produce scores on a small eval set. The eval UI shows G-Eval disabled for Jev.
 8. (Optional phase) With `supports_probability_scores` set, the eval UI offers probability-weighted scoring for Jev, and both the legacy and V2 judges in that mode produce non-integer scores where Jev's distribution is spread across ratings.
 6. With an invalid key, connecting fails with the API's message and running fails with the authentication message.
-7. `uv run ./checks.sh --agent-mode` passes, including the OpenAPI schema check, and the `TODO` on the model entry makes the CI TODO check fail until it is removed.
+7. `uv run ./checks.sh --agent-mode` passes, including the OpenAPI schema check. (The `TODO` on the model entry no longer gates the merge: it was deleted in Phase 8 — see "Model entry and release gating" above.)

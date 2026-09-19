@@ -10307,9 +10307,6 @@ built_in_models: List[KilnModel] = [
         ],
     ),
     # Jev 1.13
-    # TODO: remove before merge; re-add after the client release that ships the TypeSafe
-    # provider. An older client reading the remote config would show this model in the
-    # model library labelled with the raw provider ID and offer a model it cannot connect.
     KilnModel(
         family=ModelFamily.jev,
         name=ModelName.jev_1_13,

@@ -4,7 +4,7 @@ status: complete
 
 # Implementation Plan: Jev Provider (TypeSafe AI System One)
 
-Phases 1 to 6 are one PR. Phase 7 reviews the backlog; it runs ahead of the remaining phases by request, out of the usual order. Phase 8 is a separate PR merged only after a client release carries the provider (see the functional spec's release gating). Phase 9 is optional and opt-in: stop and ask before starting it.
+Phases 1 to 6 are one PR. Phase 7 reviews the backlog; it runs ahead of the remaining phases by request, out of the usual order. Phase 8 was planned as a separate PR merged only after a client release carries the provider; the user chose to land it on this branch instead so the provider can be tested (see the functional spec's release gating, which records what that costs). Phase 9 is optional and opt-in: stop and ask before starting it.
 
 ## Phases
 
@@ -15,5 +15,5 @@ Phases 1 to 6 are one PR. Phase 7 reviews the backlog; it runs ahead of the rema
 - [x] Phase 5: Web UI and docs. Provider card, status wiring, `provider_name_map`, provider image (official mark from `specs/projects/jev_provider/assets/typesafe_jev_logo.svg`), regenerated `api_schema.d.ts`, one connect-providers test, `.agents/scripts/provider_utils.py`, the three synced skill-doc copies. Run the `kiln-ui` skill before touching `.svelte` files. Full `checks.sh`.
 - [x] Phase 6: Pre-merge. Remove the Jev model entry and its `TODO` (the `ModelFamily`/`ModelName` members go with it), confirm no `TODO` remains, full `checks.sh`, open the PR.
 - [x] **Phase 7: Backlog.** Review open backlog items with the user, then close or dismiss each through the standard phase flow.
-- [ ] Phase 8 (separate PR, after release): Re-add the `ml_model_list.py` entry, confirmed against `GET /v1/models`; prerelease whitelist; a `--runpaid` smoke test (one structured task, one V2 judge) skipped without `TYPESAFE_API_KEY`.
+- [x] Phase 8 (landed on this branch by the user's decision, not a separate PR after release — see the functional spec's release gating): Re-add the `ml_model_list.py` entry, confirmed against `GET /v1/models`; prerelease whitelist; a `--runpaid` smoke test (one structured task, one V2 judge) skipped without `TYPESAFE_API_KEY`. (The `GET /v1/models` confirmation of `model_id="jev-1.13.0"` is still outstanding: the smoke test asserts it, so running the smoke test with a real key is what confirms it, and that run is the user's to do.)
 - [ ] Phase 9 (optional, opt-in, ask first): Probability-weighted scoring. `supports_probability_scores` flag and `ModelDetails` exposure, the three availability sites, "Probability-weighted" label and copy, `RunOutput.answer_probabilities`, `scores_from_answer_probabilities` fast path in `build_g_eval_score`, tests for both judges in that mode.
