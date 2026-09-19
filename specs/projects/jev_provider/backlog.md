@@ -37,3 +37,16 @@ with the user and closes or dismisses each one.
   legacy `EvalConfigType.g_eval` has no `supports_logprobs` guard at all, so a legacy
   g_eval config naming Jev fails the same late way. Both are the guard shape shared with
   every custom model, so this is a deliberate deferral, not an oversight.
+
+- **The TypeSafe AI connect dialog links to the marketing root, not an API key page.**
+  Step 1 says "Go to https://typesafe.ai", where every sibling provider deep-links to the
+  page that actually creates a key (Featherless `https://featherless.ai/account/api-keys`,
+  Cerebras `https://cloud.cerebras.ai/platform`, SiliconFlow
+  `https://cloud.siliconflow.cn/account/ak`, Together
+  `https://api.together.ai/settings/api-keys`). The user lands on a homepage and has to
+  hunt, which is the friction the three-step recipe exists to remove. No console URL was
+  substituted because none is verified: `research/jev_api/summary.md` records only
+  `api.typesafe.ai` endpoints and notes `docs.typesafe.ai` was unreachable during
+  research. Someone with a TypeSafe account should supply the real path before ship. The
+  same root URL is also used in the backend warning at `provider_tools.py:639` — change
+  both together.
