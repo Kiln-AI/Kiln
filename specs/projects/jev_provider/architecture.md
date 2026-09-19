@@ -180,7 +180,7 @@ Follow the checklist in `.claude/skills/claude-maintain-models/SKILL.md` ("Addin
 | `utils/litellm.py` `get_litellm_provider_info` | `typesafe` case raises `ValueError` |
 | `provider_api.py` | `connect_typesafe(key)`; dispatch in `connect_api_key`; clear key in `disconnect_api_key` |
 | `web_ui/src/lib/stores.ts` `provider_name_map` | `typesafe: "TypeSafe AI"` |
-| `web_ui/src/lib/ui/provider_image.ts` + `static/images/typesafe.svg` | Placeholder glyph with a `TODO` to swap in TypeSafe's official mark before merge |
+| `web_ui/src/lib/ui/provider_image.ts` + `static/images/typesafe.svg` | Official mark supplied by the boss: copy `specs/projects/jev_provider/assets/typesafe_jev_logo.svg` to `app/web_ui/static/images/typesafe.svg`, keeping the path data and viewBox as delivered. Sibling icons (`cerebras.svg`, `featherless.svg`) keep their delivered fills too, so no recolouring; drop the `width`/`height` attributes only if the card renders it at the wrong size. Map `typesafe: "/images/typesafe.svg"` in `provider_image_map`. No `TODO`. |
 | `connect_providers.svelte` | Provider card (`id: "typesafe"`, name "TypeSafe AI", one "API Key" field, short description), `status.typesafe` block, settings-key wiring |
 | `web_ui/src/lib/api_schema.d.ts` | Regenerate |
 | `.agents/scripts/provider_utils.py` | Add `typesafe` to `SKIP_PROVIDERS` |
