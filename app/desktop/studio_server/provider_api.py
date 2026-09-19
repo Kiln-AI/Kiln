@@ -1618,10 +1618,8 @@ async def connect_typesafe(key: str):
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
         }
-        # /v1/models is documented as listing the models available to the account, so it
-        # should reject a bad key without spending tokens. Not yet confirmed against a
-        # live 401 — if it turns out to be public, validate with a minimal POST to
-        # /v1/systemone instead (see the project architecture doc).
+        # /v1/models is account-scoped and rejects a bad key, and listing models spends
+        # no tokens, so it validates the key without a POST.
         response = requests.get(
             "https://api.typesafe.ai/v1/models", headers=headers, timeout=10
         )

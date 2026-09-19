@@ -4422,8 +4422,8 @@ def test_connect_api_key_featherless_success(mock_connect_featherless, client):
 
 # TypeSafe AI connection tests.
 #
-# GET /v1/models is expected to reject a bad key; both branches are mocked here, so
-# switching to the POST /v1/systemone fallback would not change these tests.
+# GET /v1/models rejects a bad key, which is the check connect_typesafe makes. Both the
+# success and the invalid-key branch are mocked here.
 
 
 def _typesafe_expected_request(key: str):

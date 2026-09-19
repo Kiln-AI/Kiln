@@ -636,7 +636,7 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
     ),
     ModelProviderName.typesafe: ModelProviderWarning(
         required_config_keys=["typesafe_api_key"],
-        message="Attempted to use TypeSafe AI without an API key set. \nGet your API key from https://typesafe.ai",
+        message="Attempted to use TypeSafe AI without an API key set. \nGet your API key from https://console.typesafe.ai/keys",
     ),
 }
 

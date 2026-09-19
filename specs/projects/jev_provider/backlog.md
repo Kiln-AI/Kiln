@@ -5,17 +5,6 @@ with the user and closes or dismisses each one.
 
 ## Open
 
-- **Confirm `GET https://api.typesafe.ai/v1/models` rejects a bad key.** This is the
-  precondition `architecture.md` sets for `connect_typesafe`. It could not be verified
-  during Phase 1 because sandbox egress to `api.typesafe.ai` is proxy-blocked, so the
-  phase took the GET branch on indirect evidence from the official SDK only. If the
-  endpoint turns out to be public — as Featherless's `/v1/models` is, which is why
-  `connect_featherless` uses a minimal POST — then `connect_typesafe` will store any
-  arbitrary string as a valid key and report "Connected to TypeSafe AI", and the user
-  will discover the bad key only on their first run. In that case, switch to the spec's
-  minimal `POST /v1/systemone` fallback. Needs a human with a live key; must not reach
-  merge unresolved.
-
 - **This branch makes `adapter_for_task` resolve the model provider twice per run.** Not a
   latent cleanup: it is a behaviour regression this branch introduces to a shared hot path,
   and it hits **every custom-model run, not only Jev**. `adapter_for_task` resolves the
@@ -42,6 +31,22 @@ with the user and closes or dismisses each one.
   g_eval config naming Jev fails the same late way. Both are the guard shape shared with
   every custom model, so this is a deliberate deferral, not an oversight.
 
+## Closed
+
+- **Confirm `GET https://api.typesafe.ai/v1/models` rejects a bad key.** This is the
+  precondition `architecture.md` sets for `connect_typesafe`. It could not be verified
+  during Phase 1 because sandbox egress to `api.typesafe.ai` is proxy-blocked, so the
+  phase took the GET branch on indirect evidence from the official SDK only. If the
+  endpoint turns out to be public — as Featherless's `/v1/models` is, which is why
+  `connect_featherless` uses a minimal POST — then `connect_typesafe` will store any
+  arbitrary string as a valid key and report "Connected to TypeSafe AI", and the user
+  will discover the bad key only on their first run. In that case the plan was to switch
+  to the spec's minimal `POST /v1/systemone` fallback.
+
+  **Resolved:** the user confirmed against the live endpoint that `GET /v1/models`
+  rejects an invalid API key, so `connect_typesafe` keeps the GET check and the
+  `POST /v1/systemone` fallback is not needed.
+
 - **The TypeSafe AI connect dialog links to the marketing root, not an API key page.**
   Step 1 says "Go to https://typesafe.ai", where every sibling provider deep-links to the
   page that actually creates a key (Featherless `https://featherless.ai/account/api-keys`,
@@ -49,8 +54,9 @@ with the user and closes or dismisses each one.
   `https://cloud.siliconflow.cn/account/ak`, Together
   `https://api.together.ai/settings/api-keys`). The user lands on a homepage and has to
   hunt, which is the friction the three-step recipe exists to remove. No console URL was
-  substituted because none is verified: `research/jev_api/summary.md` records only
+  substituted at the time because none was verified: `research/jev_api/summary.md` records only
   `api.typesafe.ai` endpoints and notes `docs.typesafe.ai` was unreachable during
-  research. Someone with a TypeSafe account should supply the real path before ship. The
-  same root URL is also used in the backend warning at `provider_tools.py:639` — change
-  both together.
+  research. The same root URL was also used in the backend warning in `provider_tools.py`.
+
+  **Resolved:** the user supplied the console keys URL `https://console.typesafe.ai/keys`,
+  now used in both the connect dialog step and the `provider_warnings` message.

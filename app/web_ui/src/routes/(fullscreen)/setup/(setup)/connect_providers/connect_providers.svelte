@@ -248,7 +248,7 @@
         "Classification models that return a probability for every answer.",
       featured: false,
       api_key_steps: [
-        "Go to https://typesafe.ai",
+        "Go to https://console.typesafe.ai/keys",
         "Create a new API Key",
         "Copy the new API Key, paste it below and click 'Connect'",
       ],

@@ -174,7 +174,7 @@ Follow the checklist in `.claude/skills/claude-maintain-models/SKILL.md` ("Addin
 | `datamodel_enums.py` `ModelProviderName` | `typesafe = "typesafe"` |
 | `utils/config.py` | `"typesafe_api_key": ConfigProperty(str, env_var="TYPESAFE_API_KEY", sensitive=True)` |
 | `provider_tools.py` `provider_name_from_id` | `"TypeSafe AI"` |
-| `provider_tools.py` `provider_warnings` | `required_config_keys=["typesafe_api_key"]`, message pointing at `https://typesafe.ai` |
+| `provider_tools.py` `provider_warnings` | `required_config_keys=["typesafe_api_key"]`, message pointing at `https://console.typesafe.ai/keys` |
 | `provider_tools.py` `lite_llm_core_config_for_provider` | `typesafe` case raises `ValueError` |
 | `provider_tools.py` | `default_adapter_for_provider`; used by `user_model_to_provider` and the custom fallback |
 | `utils/litellm.py` `get_litellm_provider_info` | `typesafe` case raises `ValueError` |
@@ -188,12 +188,11 @@ Follow the checklist in `.claude/skills/claude-maintain-models/SKILL.md` ("Addin
 
 ### Connect-flow validation (`connect_typesafe`)
 
-Featherless's `/v1/models` was public, so it could not validate a key. Before writing this function, verify with a bad key that `GET https://api.typesafe.ai/v1/models` returns 401 or 403:
+Featherless's `/v1/models` was public, so it could not validate a key. TypeSafe's is not: `GET https://api.typesafe.ai/v1/models` is account-scoped and rejects a bad key, verified against the live endpoint. The GET check is therefore the confirmed choice, and the `POST /v1/systemone` fallback this section once held in reserve is not needed.
 
-- If it does: `requests.get("/v1/models", headers=Bearer)`. 200 → store key, return 200 "Connected to TypeSafe AI". 401/403 → 401 "Failed to connect to TypeSafe AI. Invalid API key." Other non-2xx → 400 with the status. Exception → 400 with the message.
-- If it does not: validate with a minimal `POST /v1/systemone` instead (`state: "."`, one noul question `{"instructions": "Is this a test?"}`, `model: "jev-latest"`), which costs a few tokens and must return 401 for a bad key. Same response mapping.
+`requests.get("/v1/models", headers=Bearer)`. 200 → store key, return 200 "Connected to TypeSafe AI". 401/403 → 401 "Failed to connect to TypeSafe AI. Invalid API key." Other non-2xx → 400 with the status. Exception → 400 with the message.
 
-The connect test suite mocks both success and 401, so the choice is invisible to callers.
+The connect test suite mocks both success and 401.
 
 ### Model entry (`ml_model_list.py`)
 
