@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Component: Jev Client (`adapters/jev/jev_client.py`)

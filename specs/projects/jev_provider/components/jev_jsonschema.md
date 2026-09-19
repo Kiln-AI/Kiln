@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Component: `jev_jsonschema` (reusable module)
