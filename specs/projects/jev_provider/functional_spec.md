@@ -178,7 +178,7 @@ All errors raised inside the adapter propagate through the existing `KilnRunErro
 | Situation | Exception | Message |
 |---|---|---|
 | Compatibility or schema-mapping failure | `ValueError` | As specified above |
-| Missing API key | `ValueError` | `TypeSafe AI API key not set. Connect TypeSafe AI in Settings → AI Providers.` |
+| Missing API key | `ValueError` (existing) | Kiln's existing provider check raises the standard `provider_warnings` message: `Attempted to use TypeSafe AI without an API key set. ...` No new path. |
 | HTTP 401/403 | `JevApiError(RuntimeError)` | `Authentication with TypeSafe AI failed. Check your API key.` |
 | HTTP 429 | `JevApiError` (retryable) | `TypeSafe AI rate limit exceeded. Wait a moment and try again.` |
 | HTTP 422 | `JevApiError` | `TypeSafe AI rejected the request: ` + each `detail[].msg` joined with `; ` |

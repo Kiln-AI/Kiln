@@ -29,8 +29,7 @@ JEV_TIMEOUT_SECONDS = 60.0
 
 class JevClient:
     def __init__(self, api_key: str, base_url: str = JEV_BASE_URL, timeout: float = JEV_TIMEOUT_SECONDS) -> None:
-        if not api_key:
-            raise ValueError("TypeSafe AI API key not set. Connect TypeSafe AI in Settings → AI Providers.")
+        # api_key is required; Kiln's provider check has already rejected a missing key upstream.
         ...
 
     async def system_one(self, request: SystemOneRequest) -> SystemOneResponse: ...
@@ -71,5 +70,4 @@ Bodies included in messages are truncated to 500 characters and never include he
 - `test_timeout_and_connect_errors_retryable`.
 - `test_request_id_captured_on_error`.
 - `test_malformed_success_body_raises_runtime_error` (non-JSON, and JSON with an answer of unknown `type`).
-- `test_empty_api_key_rejected_at_construction`.
 - `test_body_truncated_in_message`: a 4xx with a 5,000-char body yields a message under ~600 chars.
