@@ -6,9 +6,9 @@ status: draft
 
 ## Purpose and Scope
 
-A minimal async HTTP client for `POST /v1/systemone` and a single exception type that carries HTTP status and retryability. It knows nothing about Kiln tasks or JSON schemas, and it defines no wire models: those live in the standalone `jev_jsonschema` package (`SystemOneRequest`, `SystemOneResponse`, question and answer models), which this client imports.
+A minimal async HTTP client for `POST /v1/systemone` and a single exception type that carries HTTP status and retryability. It knows nothing about Kiln tasks or JSON schemas, and it defines no wire models: those live in the reusable `jev_jsonschema` module (`SystemOneRequest`, `SystemOneResponse`, question and answer models), which this client imports.
 
-Not in scope: retries (callers decide), the `GET /v1/models` connection check (lives in `provider_api.py` using `requests`, like sibling providers), caching, streaming.
+Not in scope: retries (callers decide), the connect-flow key check (lives in `provider_api.py` using `requests`, like sibling providers; see architecture for the `/v1/models` versus minimal-POST choice), caching, streaming.
 
 ## Exception
 
