@@ -345,13 +345,16 @@ async def test_legacy_llm_as_judge_scores_with_jev(
     }
 
 
-async def test_legacy_judge_state_carries_the_eval_steps(
+async def test_legacy_judge_state_drops_the_eval_steps_by_design(
     jev_judge, legacy_eval_config, task_run
 ):
     """`eval_steps` is a legacy judge config's only required property, and it reaches the
-    model only as thinking instructions. If they were dropped, two configs differing only
-    in their steps would send identical bodies and every judge config on an eval would be
-    the same judge."""
+    model only as thinking instructions, which Jev is not sent because it has no thinking
+    step. So a legacy Jev judge does not see its own steps.
+
+    Accepted rather than worked around: no UI path creates a legacy judge config any more,
+    and the V2 judge is unaffected because its `judge_instructions` render into the prompt
+    template. Everything else about the judge prompt still arrives."""
     await GEval(legacy_eval_config, None).run_eval(task_run)
 
     assert len(jev_judge.requests) == 1
@@ -359,16 +362,22 @@ async def test_legacy_judge_state_carries_the_eval_steps(
     assert isinstance(state, dict)
     assert "evaluate a model's performance" in state["task_instructions"]
     assert "Generate a joke about a topic" in state["task_instructions"]
-    assert "Is the joke funny?" in state["task_instructions"]
-    assert "Is the content appropriate for all audiences?" in state["task_instructions"]
+    assert "Is the joke funny?" not in state["task_instructions"]
+    assert (
+        "Is the content appropriate for all audiences?"
+        not in state["task_instructions"]
+    )
     assert task_run.output.output in state["input"]
     assert list(jev_judge.requests[0].questions) == list(JUDGE_ANSWERS)
 
 
-async def test_legacy_judges_differing_only_in_eval_steps_send_different_bodies(
+async def test_legacy_judges_differing_only_in_eval_steps_send_identical_bodies(
     jev_judge, judge_eval, task_run
 ):
-    """The compare-configs workflow eval configs exist for depends on this."""
+    """The other half of the same deliberate trade-off: with the eval steps gone, two
+    legacy judge configs that differ only in their steps are the same judge to Jev, so
+    comparing them compares nothing. Legacy judge configs are unreachable from the UI, and
+    a V2 judge's instructions travel in the prompt template instead."""
     bodies = []
     for steps in (["Is the joke funny?"], ["Reject any joke mentioning animals."]):
         config = EvalConfig(
@@ -383,7 +392,7 @@ async def test_legacy_judges_differing_only_in_eval_steps_send_different_bodies(
         await GEval(config, None).run_eval(task_run)
         bodies.append(jev_judge.requests[-1].to_body())
 
-    assert bodies[0] != bodies[1]
+    assert bodies[0] == bodies[1]
 
 
 async def test_v2_llm_judge_scores_with_jev(jev_judge, judge_eval):
