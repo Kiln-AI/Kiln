@@ -31,7 +31,10 @@ def failure_reason(prop: dict[str, Any], options: MappingOptions | None = None) 
 
 @pytest.mark.parametrize("declared_type", [None, "string"])
 def test_string_enum(declared_type: str | None):
-    prop: dict[str, Any] = {"enum": ["pass", "fail", "critical"]}
+    prop: dict[str, Any] = {
+        "enum": ["pass", "fail", "critical"],
+        "description": "Is the answer accurate?",
+    }
     if declared_type:
         prop["type"] = declared_type
 
@@ -40,6 +43,9 @@ def test_string_enum(declared_type: str | None):
     assert mapping.kind == MappedKind.string_choice
     assert mapping.enum_values == ("pass", "fail", "critical")
     assert isinstance(mapping.question, ChoiceQuestion)
+    # The labels are bare, so the instructions are the only thing telling Jev what to
+    # judge — for a pass/fail eval score they carry the whole rubric.
+    assert mapping.question.instructions == "Is the answer accurate?"
     # Order preserved, bare labels.
     assert list(mapping.question.criteria.items()) == [
         ("pass", None),
@@ -50,7 +56,7 @@ def test_string_enum(declared_type: str | None):
 
 @pytest.mark.parametrize("declared_type", [None, "integer"])
 def test_integer_enum_uses_string_labels(declared_type: str | None):
-    prop: dict[str, Any] = {"enum": [1, 2, 3]}
+    prop: dict[str, Any] = {"enum": [1, 2, 3], "description": "How urgent is it?"}
     if declared_type:
         prop["type"] = declared_type
 
@@ -59,6 +65,7 @@ def test_integer_enum_uses_string_labels(declared_type: str | None):
     assert mapping.kind == MappedKind.integer_choice
     assert mapping.enum_values == (1, 2, 3)
     assert isinstance(mapping.question, ChoiceQuestion)
+    assert mapping.question.instructions == "How urgent is it?"
     assert list(mapping.question.criteria.keys()) == ["1", "2", "3"]
 
 
@@ -106,25 +113,42 @@ def test_enum_option_limit():
 
 
 @pytest.mark.parametrize(
-    "prop,expected_instructions",
+    "annotations,expected_instructions",
     [
-        (
-            {"type": "boolean", "description": "Is it spam?", "title": "Spam"},
-            "Is it spam?",
-        ),
-        ({"type": "boolean", "title": "Spam"}, "Spam"),
-        ({"type": "boolean"}, "field"),
-        ({"type": "boolean", "description": "   "}, "field"),
+        ({"description": "Is it spam?", "title": "Spam"}, "Is it spam?"),
+        ({"title": "Spam"}, "Spam"),
+        ({}, "field"),
+        ({"description": "   "}, "field"),
     ],
 )
-def test_boolean_instructions_fallback(
-    prop: dict[str, Any], expected_instructions: str
+@pytest.mark.parametrize(
+    "prop,expected_kind",
+    [
+        ({"type": "boolean"}, MappedKind.boolean_noul),
+        ({"enum": ["pass", "fail", "critical"]}, MappedKind.string_choice),
+        ({"enum": [1, 2, 3]}, MappedKind.integer_choice),
+        ({"type": "integer", "minimum": 1, "maximum": 5}, MappedKind.score),
+        ({"type": "number", "minimum": 0, "maximum": 1}, MappedKind.number_noul),
+    ],
+)
+def test_instructions_fallback(
+    prop: dict[str, Any],
+    expected_kind: MappedKind,
+    annotations: dict[str, Any],
+    expected_instructions: str,
 ):
-    mapping = map_one(prop)
+    """Every question kind takes its instructions from description, else title, else the key."""
+    mapping = map_one({**prop, **annotations})
 
-    assert mapping.kind == MappedKind.boolean_noul
-    assert isinstance(mapping.question, NoulQuestion)
+    assert mapping.kind == expected_kind
     assert mapping.question.instructions == expected_instructions
+
+
+def test_boolean_has_no_criteria():
+    """A plain boolean is a bare noul; only the 0-to-1 number attaches criteria."""
+    mapping = map_one({"type": "boolean", "description": "Is it spam?"})
+
+    assert isinstance(mapping.question, NoulQuestion)
     assert mapping.question.criteria is None
 
 
@@ -237,6 +261,20 @@ def test_integer_score_negative_minimum():
 )
 def test_integer_rejected(prop: dict[str, Any], expected_reason: str):
     assert failure_reason(prop) == expected_reason
+
+
+def test_integer_two_levels_accepted():
+    """2 levels is the documented lower bound of the score range (`MIN_SCORE_LEVELS`).
+
+    The rejection of a 1-level range is `test_integer_rejected`'s `minimum: 3, maximum: 3`
+    case.
+    """
+    mapping = map_one({"type": "integer", "minimum": 1, "maximum": 2})
+
+    assert mapping.kind == MappedKind.score
+    assert mapping.minimum == 1
+    assert isinstance(mapping.question, ScoreQuestion)
+    assert mapping.question.criteria == ["1", "2"]
 
 
 def test_integer_ten_levels_accepted():

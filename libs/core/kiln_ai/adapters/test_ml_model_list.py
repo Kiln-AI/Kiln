@@ -625,6 +625,24 @@ class TestUserModelEntry:
         assert entry.overrides["model_id"] == "different-model"
 
 
+def test_jev_entry_declares_no_logprobs():
+    """`supports_logprobs=False` on the shipped entry is what keeps Jev out of G-Eval.
+
+    The V2 judge's guard and the model dropdown's `requires_logprobs` filter both read it
+    from this entry, and Jev answers with its own probabilities rather than logprobs, so a
+    G-Eval run against it would fail late with "No logprobs found for output".
+    `supports_data_gen` is pinned alongside it: it is what keeps Jev, which cannot generate
+    text, out of the synthetic data-gen model list.
+    """
+    provider = built_in_models_from_provider(
+        ModelProviderName.typesafe, ModelName.jev_1_13
+    )
+
+    assert provider is not None
+    assert provider.supports_logprobs is False
+    assert provider.supports_data_gen is False
+
+
 def test_built_in_models_adapter_matches_provider():
     """Only TypeSafe AI entries are served by an adapter other than LiteLLM."""
     for model in built_in_models:

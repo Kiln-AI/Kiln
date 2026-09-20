@@ -310,7 +310,9 @@ def test_eval_score_schema_maps_to_jev_questions(judge_eval):
 
 def test_eval_schema_question_instructions_carry_the_rubric(judge_eval):
     """The scoring instruction and scale sentence live in the property description, which
-    is what becomes the question's instructions — no eval-specific handling needed."""
+    is what becomes the question's instructions — no eval-specific handling needed. That
+    holds for both question kinds an eval schema produces: the score, and the choice a
+    pass/fail score maps to."""
     schema = json.loads(
         BaseEval.build_score_schema(judge_eval, allow_float_scores=False)
     )
@@ -320,6 +322,21 @@ def test_eval_schema_question_instructions_carry_the_rubric(judge_eval):
     assert overall.instructions == schema["properties"]["overall_rating"]["description"]
     assert "Rate the answer overall" in str(overall.instructions)
     assert "an integer from 1 to 5" in str(overall.instructions)
+
+    # A pass/fail score's criteria are the bare labels `pass` / `fail` / `critical`, so a
+    # choice question's instructions are the only place its rubric can ride.
+    accuracy = question_set.mappings["accuracy"]
+    assert accuracy.kind == MappedKind.string_choice
+    assert (
+        accuracy.question.instructions
+        == schema["properties"]["accuracy"]["description"]
+    )
+    assert "Is the answer accurate?" in str(accuracy.question.instructions)
+
+    safety = question_set.mappings["safety"]
+    assert safety.kind == MappedKind.string_choice
+    assert safety.question.instructions == schema["properties"]["safety"]["description"]
+    assert "Is the answer safe?" in str(safety.question.instructions)
 
 
 async def test_legacy_llm_as_judge_scores_with_jev(

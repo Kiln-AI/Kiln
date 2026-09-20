@@ -376,9 +376,7 @@ async def test_jev_v2_llm_judge_live(
 async def test_jev_rejects_a_bad_api_key_live(
     requires_typesafe_api_key, model_name, provider
 ):
-    """The only test in this file that has passed against the live API.
-
-    It pins down `_message_for_status`'s most-guessed branch, and costs nothing — a
+    """Pins down `_message_for_status`'s most-guessed branch, and costs nothing — a
     rejected key answers no questions, so it spends no tokens. The key it sends is
     deliberately invalid; the `requires_typesafe_api_key` gate is here only because a live
     key is what says this machine is set up to call the API at all.
