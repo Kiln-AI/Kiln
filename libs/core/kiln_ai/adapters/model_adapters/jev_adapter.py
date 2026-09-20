@@ -110,6 +110,15 @@ class JevAdapter(BaseAdapter):
                 f"{ERROR_PREFIX} the selected model has no TypeSafe AI model ID."
             )
 
+        # Seeded before the call so a failure still shows what was sent: the whole
+        # request is derived, so the user cannot reconstruct it from their own task.
+        trace_ref[:] = [
+            ChatCompletionSystemMessageParam(role="system", content=system_prompt),
+            ChatCompletionUserMessageParam(
+                role="user", content=format_user_message(input)
+            ),
+        ]
+
         call_started_at = time.perf_counter()
         response = await client.system_one(
             question_set.request(state=state, model=model_id)
@@ -130,19 +139,16 @@ class JevAdapter(BaseAdapter):
                 response.usage.input_tokens, response.usage.output_tokens
             ),
         )
-        # Shaped like the LiteLLM adapter's trace so MessageUsage.from_trace sums it and
-        # the run details, full-trace evals and error-with-trace UI all behave as usual.
-        trace_ref[:] = [
-            ChatCompletionSystemMessageParam(role="system", content=system_prompt),
-            ChatCompletionUserMessageParam(
-                role="user", content=format_user_message(input)
-            ),
+        # Completing a three-message trace shaped like the LiteLLM adapter's, so
+        # MessageUsage.from_trace sums it and the run details, full-trace evals and
+        # error-with-trace UI all behave as usual.
+        trace_ref.append(
             ChatCompletionAssistantMessageParamWrapper(
                 role="assistant",
                 content=json.dumps(decoded.output, ensure_ascii=False),
                 usage=message_usage,
-            ),
-        ]
+            )
+        )
 
         usage = Usage(
             input_tokens=message_usage.input_tokens,

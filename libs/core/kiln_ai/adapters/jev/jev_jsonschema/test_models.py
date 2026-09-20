@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
@@ -199,3 +201,74 @@ def test_request_to_body_matches_documented_example():
             },
         },
     }
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize(
+    "build_answer",
+    [
+        pytest.param(lambda v: {"type": "noul", "noul": v}, id="noul"),
+        pytest.param(
+            lambda v: {
+                "type": "choice",
+                "choice": "pass",
+                "confidence": v,
+                "probabilities": {"pass": 1.0},
+            },
+            id="choice_confidence",
+        ),
+        pytest.param(
+            lambda v: {
+                "type": "choice",
+                "choice": "pass",
+                "confidence": 0.8,
+                "probabilities": {"pass": v},
+            },
+            id="choice_probability",
+        ),
+        pytest.param(
+            lambda v: {
+                "type": "score",
+                "score": v,
+                "confidence": 0.7,
+                "legend": {"0": "worst"},
+                "probabilities": {"0": 1.0},
+            },
+            id="score",
+        ),
+        pytest.param(
+            lambda v: {
+                "type": "score",
+                "score": 1.0,
+                "confidence": v,
+                "legend": {"0": "worst"},
+                "probabilities": {"0": 1.0},
+            },
+            id="score_confidence",
+        ),
+        pytest.param(
+            lambda v: {
+                "type": "score",
+                "score": 1.0,
+                "confidence": 0.7,
+                "legend": {"0": "worst"},
+                "probabilities": {"0": v},
+            },
+            id="score_probability",
+        ),
+    ],
+)
+def test_answers_reject_non_finite_numbers(build_answer, value: float):
+    with pytest.raises(ValidationError):
+        answer_adapter.validate_python(build_answer(value))
+
+
+def test_response_rejects_bare_nan_token_from_the_wire():
+    """`json.loads` accepts the non-standard `NaN` token; the answer models must not,
+    so it never reaches the output and the saved run stays valid JSON."""
+    payload = json.loads(
+        '{"model": "jev-1.13.0", "answers": {"a": {"type": "noul", "noul": NaN}}}'
+    )
+
+    with pytest.raises(ValidationError):
+        SystemOneResponse.model_validate(payload)

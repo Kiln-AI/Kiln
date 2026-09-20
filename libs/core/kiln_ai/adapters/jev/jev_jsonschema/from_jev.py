@@ -35,6 +35,12 @@ _ANSWER_ADAPTER: TypeAdapter[AnswerModel] = TypeAdapter(JevAnswer)
 _NOUL_KINDS = (MappedKind.boolean_noul, MappedKind.number_noul)
 _CHOICE_KINDS = (MappedKind.string_choice, MappedKind.integer_choice)
 
+MAX_ECHOED_VALUE_CHARS = 200
+"""How much of a single value from an answer an error message may quote back.
+
+Enough to recognise a label, a key or a validation message, and short enough that a
+verbose or hostile response cannot put an unbounded string in front of the user."""
+
 
 @dataclass(frozen=True)
 class DecodedResult:
@@ -116,7 +122,8 @@ class JevResult2JsonSchema:
             return _ANSWER_ADAPTER.validate_python(raw)
         except ValidationError as err:
             raise UnexpectedAnswerError(
-                f"answer for '{key}' is not a valid Jev answer: {_first_validation_message(err)}"
+                f"answer for '{key}' is not a valid Jev answer: "
+                f"{_echoed(_first_validation_message(err))}"
             ) from err
 
     def _decode_choice(
@@ -125,8 +132,8 @@ class JevResult2JsonSchema:
         values_by_label = {str(value): value for value in mapping.enum_values or ()}
         if answer.choice not in values_by_label:
             raise UnexpectedAnswerError(
-                f"answer for '{key}' chose '{answer.choice}', which is not one of the "
-                "schema's enum values"
+                f"answer for '{key}' chose '{_echoed(answer.choice)}', which is not one "
+                "of the schema's enum values"
             )
         return values_by_label[answer.choice]
 
@@ -141,12 +148,13 @@ class JevResult2JsonSchema:
                 level = int(raw_level)
             except ValueError:
                 raise UnexpectedAnswerError(
-                    f"answer for '{key}' has probability key '{raw_level}', expected a level index"
+                    f"answer for '{key}' has probability key '{_echoed(raw_level)}', "
+                    "expected a level index"
                 ) from None
             if not 0 <= level < level_count:
                 raise UnexpectedAnswerError(
-                    f"answer for '{key}' has level {level}, outside the question's "
-                    f"0 to {level_count - 1} range"
+                    f"answer for '{key}' has level {_echoed(str(level))}, outside the "
+                    f"question's 0 to {level_count - 1} range"
                 )
             levels[level] = probability
         return levels
@@ -178,6 +186,11 @@ def _score_level_count(mapping: MappedQuestion) -> int:
             f"question '{mapping.key}' is mapped as a score but is not a score question"
         )
     return len(question.criteria)
+
+
+def _echoed(value: str) -> str:
+    """Bound a value that came from the wire before it goes into an error message."""
+    return value[:MAX_ECHOED_VALUE_CHARS]
 
 
 def _first_validation_message(err: ValidationError) -> str:

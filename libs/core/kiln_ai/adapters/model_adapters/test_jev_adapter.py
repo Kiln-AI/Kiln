@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from kiln_ai import datamodel
+from kiln_ai.adapters.chat.chat_formatter import format_user_message
 from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.jev import JevApiError, JevClient
 from kiln_ai.adapters.jev.jev_jsonschema import (
@@ -442,6 +443,60 @@ async def test_trace_shape(adapter):
     assert trace_ref[1]["content"] == json.dumps({"subject": "hi"})
     assert json.loads(trace_ref[2]["content"]) == EXPECTED_OUTPUT
     assert trace_ref[2]["usage"].total_tokens == 128
+
+
+@pytest.mark.parametrize(
+    "build_client,expected_error",
+    [
+        pytest.param(
+            lambda: FakeJevClient(
+                error=JevApiError("boom", status_code=503, retryable=True)
+            ),
+            JevApiError,
+            id="api_error",
+        ),
+        pytest.param(
+            lambda: FakeJevClient(
+                jev_response(
+                    answers={k: v for k, v in ANSWERS.items() if k != "rating"}
+                )
+            ),
+            RuntimeError,
+            id="unexpected_answer",
+        ),
+    ],
+)
+async def test_partial_trace_survives_failure(adapter, build_client, expected_error):
+    """The request is derived, so a failure must still show what was sent."""
+    client = build_client()
+    trace_ref = []
+
+    with pytest.raises(expected_error):
+        await adapter(client)._run({"subject": "hi"}, trace_ref)
+
+    assert [message["role"] for message in trace_ref] == ["system", "user"]
+    assert trace_ref[0]["content"] == client.requests[0].state["task_instructions"]
+    assert trace_ref[1]["content"] == format_user_message({"subject": "hi"})
+
+
+async def test_failure_through_invoke_carries_partial_trace(task, run_config):
+    error = JevApiError(
+        "TypeSafe AI is currently unavailable. Try again in a moment.",
+        status_code=503,
+        retryable=True,
+    )
+    adapter = JevAdapter(
+        kiln_task=task, run_config=run_config, client=FakeJevClient(error=error)
+    )
+
+    with pytest.raises(KilnRunError) as err:
+        await adapter.invoke("Is this spam?")
+
+    assert err.value.partial_trace is not None
+    assert [message["role"] for message in err.value.partial_trace] == [
+        "system",
+        "user",
+    ]
 
 
 async def test_usage_from_response(adapter):

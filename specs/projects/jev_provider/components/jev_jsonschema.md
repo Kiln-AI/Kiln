@@ -69,22 +69,24 @@ class ScoreQuestion(BaseModel):
 
 JevQuestion = Annotated[NoulQuestion | ChoiceQuestion | ScoreQuestion, Field(discriminator="type")]
 
+FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]   # every number from the wire
+
 class NoulAnswer(BaseModel):
     type: Literal["noul"]
-    noul: float
+    noul: FiniteFloat
 
 class ChoiceAnswer(BaseModel):
     type: Literal["choice"]
     choice: str
-    confidence: float
-    probabilities: dict[str, float]
+    confidence: FiniteFloat
+    probabilities: dict[str, FiniteFloat]
 
 class ScoreAnswer(BaseModel):
     type: Literal["score"]
-    score: float
-    confidence: float
+    score: FiniteFloat
+    confidence: FiniteFloat
     legend: dict[str, JsonContent]
-    probabilities: dict[str, float]           # keys are 0-based level indices as strings
+    probabilities: dict[str, FiniteFloat]     # keys are 0-based level indices as strings
 
 JevAnswer = Annotated[NoulAnswer | ChoiceAnswer | ScoreAnswer, Field(discriminator="type")]
 
@@ -103,6 +105,8 @@ class SystemOneResponse(BaseModel):
     answers: dict[str, JevAnswer]
     usage: SystemOneUsage = SystemOneUsage()
 ```
+
+Every number an answer carries is a `FiniteFloat`: `json.loads` accepts the non-standard `NaN` and `Infinity` tokens, and a `NaN` would pass a JSON Schema `minimum`/`maximum` check (both comparisons are false) and be persisted, so a non-finite number is rejected at the wire boundary and surfaces as the module's usual unexpected-answer error.
 
 ### `to_jev.py`
 
@@ -234,7 +238,7 @@ For each `key, mapping` in `question_set.mappings` (schema order):
 | `number_noul` | `answer.noul` (float) | `{"true": p, "false": 1 - p}` | `None` |
 | `score` | argmax: `minimum + min(level with max p)`; expected: `clamp(round(answer.score)) + minimum`; empty `probabilities` always falls back to expected | `{str(minimum + level): p}` | `answer.confidence` |
 
-Extra answers not in the question set are ignored. Probabilities are returned unrounded.
+Extra answers not in the question set are ignored. Probabilities are returned unrounded. Any value from an answer that an `UnexpectedAnswerError` message quotes back — the chosen label, a probability key, an out-of-range level, a validation message — is truncated to `MAX_ECHOED_VALUE_CHARS` (200), so a verbose or hostile response cannot put an unbounded string into an error a user reads. That bound is for a single value, unlike the client's 500-character body cap.
 
 ## Dependencies
 
@@ -247,6 +251,7 @@ Extra answers not in the question set are ignored. Probabilities are returned un
 - Question serialization drops unset optional fields, keeps user-supplied `None` criteria descriptions.
 - `ScoreQuestion` rejects 1 and 11 levels, accepts 2 and 10. `ChoiceQuestion` rejects 0 and 256 options. `NoulQuestion` requires `instructions`.
 - Answers and response ignore unknown fields; `SystemOneResponse` parses all three answer types; `usage` defaults.
+- Every answer float rejects `nan`, `inf` and `-inf`, including a bare `NaN` token parsed by `json.loads`.
 - `SystemOneRequest.to_body()` matches the documented example request.
 
 `test_to_jev.py` (parametrize where natural)
@@ -265,4 +270,6 @@ Extra answers not in the question set are ignored. Probabilities are returned un
 - raw dict answers accepted; invalid raw dict → `UnexpectedAnswerError`.
 - missing answer, wrong type, choice outside enum → `UnexpectedAnswerError`.
 - extra answers ignored.
+- a 5,000-character choice, probability key or validation message is bounded in the error message.
+- a non-finite `noul` or `score` surfaces as `UnexpectedAnswerError`, never as a bare `ValueError` from `round`.
 - round trip: schema with all five kinds → synthetic answers → `jsonschema` validation passes.

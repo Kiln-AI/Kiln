@@ -152,6 +152,8 @@ The adapter synthesizes a two-turn OpenAI-style trace so run details, full-trace
 - `user`: the input (dict inputs JSON-encoded, as `format_user_message` does today)
 - `assistant`: the output dict JSON-encoded, carrying per-message `usage`
 
+The `system` and `user` messages are written before the HTTP call and the `assistant` message is added after the answers decode, so a failed run keeps a partial trace of what was sent. That matters more here than for other providers: the whole request is derived (system prompt, input and output schema become `state` and questions), so a user cannot reconstruct it by reading their own task.
+
 `Usage` is populated from the response: `input_tokens`, `output_tokens`, `total_tokens` (sum), `total_llm_latency_ms` (wall clock of the HTTP call), `cost=None`, `cached_tokens=None`.
 
 The saved `TaskOutput.source.properties` carry the usual `adapter_name`, `model_name`, `model_provider`, `prompt_id`, `structured_output_mode`, `temperature`, `top_p` via the existing base-class code path. `adapter_name` is `"kiln_jev_adapter"`.
@@ -184,11 +186,11 @@ All errors raised inside the adapter propagate through the existing `KilnRunErro
 | Missing API key | `ValueError` (existing) | Kiln's existing provider check raises the standard `provider_warnings` message: `Attempted to use TypeSafe AI without an API key set. ...` The adapter runs this check itself before building the client, because a user-registry model resolves before the resolver's own check. |
 | HTTP 401/403 | `JevApiError(RuntimeError)` | `Authentication with TypeSafe AI failed. Check your API key.` |
 | HTTP 429 | `JevApiError` (retryable) | `TypeSafe AI rate limit exceeded. Wait a moment and try again.` |
-| HTTP 422 | `JevApiError` | `TypeSafe AI rejected the request: ` + each `detail[].msg` joined with `; ` |
+| HTTP 422 | `JevApiError` | `TypeSafe AI rejected the request: ` + each `detail[].msg` joined with `; `, truncated to 500 chars (the raw body, also truncated, when it is not a FastAPI-style detail) |
 | Other 4xx | `JevApiError` | `TypeSafe AI rejected the request (HTTP <code>): <body, truncated to 500 chars>` |
 | 5xx | `JevApiError` (retryable) | `TypeSafe AI is currently unavailable. Try again in a moment.` |
-| Timeout / connection error | `JevApiError` (retryable) | `Could not connect to TypeSafe AI. Check your network connection.` |
-| Response missing an answer for a question, wrong answer type, or unparseable body | `RuntimeError` | `TypeSafe AI returned an unexpected response: <detail>` |
+| Timeout, or any other `httpx.RequestError` (connection failure, a proxy's mislabeled response encoding) | `JevApiError` (retryable) | `Could not connect to TypeSafe AI. Check your network connection.` A timeout adds ` (timed out)`. |
+| Response missing an answer for a question, wrong answer type, a non-finite number, or an unparseable body | `RuntimeError` | `TypeSafe AI returned an unexpected response: <detail>`, with any value quoted from the response bounded |
 
 Request timeout: 60 seconds total (Jev responds in well under a second; the generous value covers large states).
 

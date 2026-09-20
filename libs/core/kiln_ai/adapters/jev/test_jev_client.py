@@ -8,6 +8,7 @@ import respx
 
 from kiln_ai.adapters.jev.jev_client import (
     JEV_BASE_URL,
+    MAX_BODY_CHARS_IN_MESSAGE,
     JevApiError,
     JevClient,
 )
@@ -216,6 +217,12 @@ async def test_error_mapping(
             httpx.ConnectError("no route"),
             "Could not connect to TypeSafe AI. Check your network connection.",
         ),
+        # A RequestError that is not a TransportError: a proxy mislabelling the
+        # response encoding is as retryable as any other connection failure.
+        (
+            httpx.DecodingError("incorrect header check"),
+            "Could not connect to TypeSafe AI. Check your network connection.",
+        ),
     ],
 )
 async def test_transport_errors_are_retryable(
@@ -286,6 +293,38 @@ async def test_body_truncated_in_message(client: JevClient):
 
     assert len(str(exc_info.value)) < 600
     assert str(exc_info.value).endswith("x" * 500)
+
+
+async def test_validation_detail_truncated_in_message(client: JevClient):
+    """A parseable 422 detail is derived from the body, so it gets the body's cap too."""
+    body = {"detail": [{"msg": "x" * 200} for _ in range(50)]}
+    with respx.mock:
+        respx.post(SYSTEM_ONE_URL).mock(return_value=httpx.Response(422, json=body))
+
+        with pytest.raises(JevApiError) as exc_info:
+            await client.system_one(request_for())
+
+    detail = str(exc_info.value).removeprefix("TypeSafe AI rejected the request: ")
+    assert len(detail) == MAX_BODY_CHARS_IN_MESSAGE
+
+
+async def test_unexpected_response_detail_truncated(client: JevClient):
+    """The validation message echoes the server's own `type` value."""
+    with respx.mock:
+        respx.post(SYSTEM_ONE_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json={"model": "jev-latest", "answers": {"a": {"type": "v" * 5000}}},
+            )
+        )
+
+        with pytest.raises(RuntimeError, match="unexpected response") as exc_info:
+            await client.system_one(request_for())
+
+    detail = str(exc_info.value).removeprefix(
+        "TypeSafe AI returned an unexpected response: "
+    )
+    assert len(detail) == MAX_BODY_CHARS_IN_MESSAGE
 
 
 async def test_custom_base_url_and_timeout():

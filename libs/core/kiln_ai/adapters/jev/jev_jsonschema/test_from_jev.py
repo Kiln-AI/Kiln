@@ -3,7 +3,7 @@ from typing import Any
 import jsonschema
 import pytest
 
-from .from_jev import JevResult2JsonSchema
+from .from_jev import MAX_ECHOED_VALUE_CHARS, JevResult2JsonSchema
 from .models import ChoiceAnswer, NoulAnswer, NoulQuestion, ScoreAnswer
 from .to_jev import (
     JSONSchema2Jev,
@@ -309,3 +309,74 @@ def test_mismatched_hand_built_mapping_raises():
     )
     with pytest.raises(UnexpectedAnswerError, match="not a score question"):
         JevResult2JsonSchema().convert(question_set, {"field": score_answer(3.0, {})})
+
+
+LONG_WIRE_VALUE = "z" * 5000
+
+
+@pytest.mark.parametrize(
+    "prop,answer,filler",
+    [
+        pytest.param(
+            {"enum": ["pass", "fail"]},
+            choice_answer(LONG_WIRE_VALUE, {LONG_WIRE_VALUE: 1.0}),
+            "z",
+            id="choice",
+        ),
+        pytest.param(
+            {"type": "integer", "minimum": 1, "maximum": 5},
+            score_answer(1.0, {LONG_WIRE_VALUE: 1.0}),
+            "z",
+            id="probability_key",
+        ),
+        pytest.param(
+            {"enum": ["pass"]}, {"type": LONG_WIRE_VALUE}, "z", id="invalid_answer"
+        ),
+        # A key of only digits parses, so it reaches the out-of-range branch instead.
+        # int() stops at 4,300 digits, which is no bound worth having in a message.
+        pytest.param(
+            {"type": "integer", "minimum": 1, "maximum": 5},
+            score_answer(1.0, {"9" * 4000: 1.0}),
+            "9",
+            id="out_of_range_level",
+        ),
+    ],
+)
+def test_echoed_wire_values_are_bounded(prop: dict[str, Any], answer: Any, filler: str):
+    with pytest.raises(UnexpectedAnswerError) as err:
+        decode_one(prop, answer)
+
+    message = str(err.value)
+    # The offending value is still recognisable, but the message stays short enough to
+    # show a user: the prose around one echoed value is well under 120 characters.
+    assert filler * 3 in message
+    assert filler * (MAX_ECHOED_VALUE_CHARS + 1) not in message
+    assert len(message) < MAX_ECHOED_VALUE_CHARS + 120
+
+
+@pytest.mark.parametrize(
+    "prop,raw",
+    [
+        pytest.param(
+            {"type": "number", "minimum": 0, "maximum": 1},
+            {"type": "noul", "noul": float("nan")},
+            id="noul",
+        ),
+        pytest.param(
+            {"type": "integer", "minimum": 1, "maximum": 5},
+            {
+                "type": "score",
+                "score": float("nan"),
+                "confidence": 0.5,
+                "legend": {"0": "worst"},
+                "probabilities": {"0": 1.0},
+            },
+            id="score",
+        ),
+    ],
+)
+def test_non_finite_answer_is_an_unexpected_answer(prop: dict[str, Any], raw: Any):
+    """A NaN never reaches the output, so it cannot slip past the schema's range check
+    or reach `round()`, which would raise outside the UnexpectedAnswerError family."""
+    with pytest.raises(UnexpectedAnswerError, match="is not a valid Jev answer"):
+        decode_one(prop, raw)

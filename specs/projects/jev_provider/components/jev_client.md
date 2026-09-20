@@ -48,14 +48,14 @@ class JevClient:
 | Condition | `JevApiError` message | `retryable` |
 |---|---|---|
 | `httpx.TimeoutException` | `Could not connect to TypeSafe AI. Check your network connection. (timed out)` | True |
-| other `httpx.TransportError` | `Could not connect to TypeSafe AI. Check your network connection.` | True |
+| other `httpx.RequestError` (including `httpx.DecodingError`, which is not a `TransportError`) | `Could not connect to TypeSafe AI. Check your network connection.` | True |
 | 401, 403 | `Authentication with TypeSafe AI failed. Check your API key.` | False |
 | 429 | `TypeSafe AI rate limit exceeded. Wait a moment and try again.` | True |
-| 422 | `TypeSafe AI rejected the request: ` + `; `.join(d["msg"] for d in body["detail"]) when parseable, else the truncated body | False |
+| 422 | `TypeSafe AI rejected the request: ` + `; `.join(d["msg"] for d in body["detail"]) when parseable, else the raw body — truncated either way | False |
 | other 4xx | `TypeSafe AI rejected the request (HTTP <code>): <body[:500]>` | False |
 | 5xx | `TypeSafe AI is currently unavailable. Try again in a moment.` | True |
 
-Bodies included in messages are truncated to 500 characters and never include headers. The key is never logged. On failure the client logs status code and request id at debug level, never the body.
+Every string derived from a response body — including the joined 422 detail and the validation message from a malformed 2xx — is truncated to 500 characters, and messages never include headers. The key is never logged. On failure the client logs status code and request id at debug level, never the body.
 
 ## Dependencies
 
@@ -67,7 +67,9 @@ Bodies included in messages are truncated to 500 characters and never include he
 - `test_request_shape`: captures the POSTed JSON: `state` passed through for str and dict, `model`, questions serialized with `exclude_none`, `Authorization` header, path `/v1/systemone`.
 - `test_success_parses_response`: one noul, one choice, one score in the mocked response; assert a `SystemOneResponse` with typed answers, `usage`, `model`.
 - `test_error_mapping` parametrized over 401, 403, 429, 422 (with and without a parseable `detail`), 400, 404, 500, 503 → message text and `retryable` flag, `status_code` set.
-- `test_timeout_and_connect_errors_retryable`.
+- `test_transport_errors_are_retryable`: connect and read timeouts, a connect error, and a `DecodingError` (a `RequestError` that is not a `TransportError`).
 - `test_request_id_captured_on_error`.
 - `test_malformed_success_body_raises_runtime_error` (non-JSON, and JSON with an answer of unknown `type`).
 - `test_body_truncated_in_message`: a 4xx with a 5,000-char body yields a message under ~600 chars.
+- `test_validation_detail_truncated_in_message`: a 422 with 50 parseable `detail` entries is capped at 500 characters.
+- `test_unexpected_response_detail_truncated`: a 2xx whose answer `type` is 5,000 characters is capped at 500 characters.

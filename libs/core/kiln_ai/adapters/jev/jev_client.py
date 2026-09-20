@@ -74,7 +74,10 @@ class JevClient:
                 status_code=None,
                 retryable=True,
             ) from err
-        except httpx.TransportError as err:
+        # RequestError, not the narrower TransportError: a proxy that mislabels the
+        # response encoding raises httpx.DecodingError, which is a RequestError but not
+        # a TransportError, and is as retryable as any other connection failure.
+        except httpx.RequestError as err:
             raise JevApiError(
                 "Could not connect to TypeSafe AI. Check your network connection.",
                 status_code=None,
@@ -108,7 +111,7 @@ def _parse_response(response: httpx.Response) -> SystemOneResponse:
         errors = err.errors()
         detail = str(errors[0]["msg"]) if errors else str(err)
         raise RuntimeError(
-            f"TypeSafe AI returned an unexpected response: {detail}"
+            f"TypeSafe AI returned an unexpected response: {_truncated(detail)}"
         ) from err
 
 
@@ -153,8 +156,12 @@ def _validation_detail(response: httpx.Response) -> str:
         return _truncated_body(response)
     if not messages or not all(isinstance(message, str) for message in messages):
         return _truncated_body(response)
-    return "; ".join(messages)
+    return _truncated("; ".join(messages))
 
 
 def _truncated_body(response: httpx.Response) -> str:
-    return response.text[:MAX_BODY_CHARS_IN_MESSAGE]
+    return _truncated(response.text)
+
+
+def _truncated(text: str) -> str:
+    return text[:MAX_BODY_CHARS_IN_MESSAGE]

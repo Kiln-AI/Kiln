@@ -106,9 +106,10 @@ run_api / eval runner
                  ├─ question_set = JSONSchema2Jev().convert(task.output_schema())   # IncompatibleSchemaError → Kiln ValueError
                  ├─ system_prompt = prompt_builder.build_prompt(include_json_instructions=False)
                  ├─ state = {"task_instructions": system_prompt, "input": input}
+                 ├─ trace_ref[:] = [system, user]                                   # before the call, so a failure keeps a partial trace
                  ├─ response = await client.system_one(question_set.request(state, model_id))
                  ├─ decoded = JevResult2JsonSchema().convert(question_set, response.answers)
-                 ├─ trace_ref[:] = [system, user, assistant(usage)]
+                 ├─ trace_ref.append(assistant(usage))
                  └─ return RunOutput(decoded.output, intermediate_outputs={jev_probabilities, jev_confidence}, trace=trace_ref), Usage(...)
             ├─ parse/validate output against task.output_json_schema   (existing)
             └─ generate_run + save                                       (existing)
@@ -151,15 +152,18 @@ class JevAdapter(BaseAdapter):
 8. `model_id = self.model_provider().model_id`; `None` → `ValueError`.
 9. Time the call with `time.perf_counter()`; `response = await client.system_one(question_set.request(state=state, model=model_id))`.
 10. `decoded = JevResult2JsonSchema().convert(question_set, response.answers)`; `UnexpectedAnswerError` is re-raised as `RuntimeError(f"TypeSafe AI returned an unexpected response: {err}")`.
-11. Trace, in place:
+11. Trace, in place. The system and user messages are seeded before step 9, so a failed call still carries what was sent (the whole request is derived, so the user cannot reconstruct it from their own task); the assistant message is appended after step 10:
     ```python
     trace_ref[:] = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": format_user_message(input)},
-        {"role": "assistant", "content": json.dumps(decoded.output, ensure_ascii=False), "usage": message_usage},
     ]
+    ...
+    trace_ref.append(
+        {"role": "assistant", "content": json.dumps(decoded.output, ensure_ascii=False), "usage": message_usage}
+    )
     ```
-    shaped like `LiteLlmAdapter.all_messages_to_trace` so `MessageUsage.from_trace` sums it.
+    The final three-message shape is that of `LiteLlmAdapter.all_messages_to_trace`, so `MessageUsage.from_trace` sums it.
 12. `usage = Usage(input_tokens, output_tokens, total_tokens=in+out, total_llm_latency_ms=latency_ms)`; `cost=None`.
 13. Return `RunOutput(output=decoded.output, intermediate_outputs={"jev_probabilities": json.dumps(round4(decoded.probabilities), ensure_ascii=False), "jev_confidence": json.dumps(decoded.confidence, ensure_ascii=False)}, trace=trace_ref), usage`.
 
@@ -252,7 +256,7 @@ All unit tests, no network. `respx` mocks `httpx` for the client; adapter tests 
 
 - `jev_jsonschema/test_*.py`: table-driven mapping and decoding, see the component doc. Most of the risk lives here.
 - `test_jev_client.py`: request shape, every status branch in the error table, transport errors, malformed bodies.
-- `test_jev_adapter.py`: pre-flight error ordering (prior trace, tools, skills, no schema, incompatible schema with prefix and every failing key); state for str and dict inputs; few-shot prompt content reaches `task_instructions`; JSON instructions excluded; trace shape; usage and latency; both intermediate outputs round-trip; `top_logprobs` ignored; end-to-end through `BaseAdapter.invoke` so schema validation runs; a simulated mapping bug is rejected by base validation.
+- `test_jev_adapter.py`: pre-flight error ordering (prior trace, tools, skills, no schema, incompatible schema with prefix and every failing key); state for str and dict inputs; few-shot prompt content reaches `task_instructions`; JSON instructions excluded; trace shape; a partial system+user trace survives an API error and a decode error, and reaches `KilnRunError.partial_trace`; usage and latency; both intermediate outputs round-trip; `top_logprobs` ignored; end-to-end through `BaseAdapter.invoke` so schema validation runs; a simulated mapping bug is rejected by base validation.
 - `test_adapter_registry.py`: a provider entry with `adapter=jev` routes to `JevAdapter`; default routes to `LiteLlmAdapter`; a user-registry model under TypeSafe routes to `JevAdapter`.
 - `test_ml_model_list.py`: `adapter` defaults to `litellm` on every built-in entry except Jev.
 - `test_provider_tools.py`, `test_provider_api.py`, `test_litellm_adapter.py`: standard provider-addition updates; connect success, invalid key, server error, exception, dispatch.

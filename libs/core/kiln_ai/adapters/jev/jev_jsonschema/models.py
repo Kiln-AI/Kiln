@@ -13,6 +13,14 @@ from pydantic import BaseModel, ConfigDict, Field
 JsonContent = str | dict[str, Any] | list[Any]
 """Anything the API accepts where free-form content is allowed: a string, an object, or a list."""
 
+FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]
+"""A number from the wire, rejecting `NaN` and `Infinity`.
+
+`json.loads` accepts those tokens and a plain Pydantic float would keep them, but a
+non-finite answer is not a probability or a score. Rejecting it here turns it into the
+module's usual "unexpected response" error instead of a value that slips through a
+JSON Schema range check and is persisted."""
+
 MAX_CHOICE_OPTIONS = 255
 MIN_SCORE_LEVELS = 2
 MAX_SCORE_LEVELS = 10
@@ -72,7 +80,7 @@ class NoulAnswer(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     type: Literal["noul"]
-    noul: float
+    noul: FiniteFloat
 
 
 class ChoiceAnswer(BaseModel):
@@ -82,8 +90,8 @@ class ChoiceAnswer(BaseModel):
 
     type: Literal["choice"]
     choice: str
-    confidence: float
-    probabilities: dict[str, float]
+    confidence: FiniteFloat
+    probabilities: dict[str, FiniteFloat]
 
 
 class ScoreAnswer(BaseModel):
@@ -95,10 +103,10 @@ class ScoreAnswer(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     type: Literal["score"]
-    score: float
-    confidence: float
+    score: FiniteFloat
+    confidence: FiniteFloat
     legend: dict[str, JsonContent]
-    probabilities: dict[str, float]
+    probabilities: dict[str, FiniteFloat]
 
 
 JevAnswer = Annotated[
