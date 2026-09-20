@@ -16,6 +16,14 @@ sandbox, so the limits section below comes from third-party pages and is marked 
   omits it. It is account-scoped and rejects a bad key, so it is still a good authentication probe
   (that is what `connect_typesafe` uses it for).
 - Env var convention used by the SDK: `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL` (default `https://api.typesafe.ai`)
+> **Confirmed against the live API.** This document was written from the official SDK's
+> generated wire models, not from calls. The paid smoke tests in
+> `libs/core/kiln_ai/adapters/jev/test_jev_paid_smoke.py` have since run against the real
+> API and passed, so the request and response envelopes, `choice` / `score` / `noul`
+> answers and their probabilities, and the 401/403 authentication mapping are now checked
+> rather than inferred. `jev-1.13.0` is a valid pinned model id: a System One call accepted
+> it, which is the only way to confirm one, since the listing returns aliases.
+
 - Default model alias: `jev-latest`. Other names seen: `jev-1.13.0`, `jev-preview`. Kiln pins the
   concrete version `jev-1.13.0` and never uses a floating alias.
 - SDK default HTTP timeout: 10s. Responses are fast (no token generation).

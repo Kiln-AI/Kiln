@@ -21,16 +21,20 @@ question's probability keys are re-keyed from level indices the decoder has alre
 range-checked, so only the choice properties can catch a drifted wire label; and nothing
 checks the response's `model` echo.
 
-What has actually been run against the live API, so the next reader is not guessing:
+What has actually been run against the live API, so the next reader is not guessing: all
+three have run live and passed. That is what turns the rest of this project's mocks from
+belief into a checked reading of the contract. Between them they proved:
 
-- `test_jev_rejects_a_bad_api_key_live` — run live, passed. It is the only live
-  confirmation this project has of anything. It proved three things the client's error
-  table until then only asserted: TypeSafe returns 401 or 403 for a bad key, that response
-  maps to the "Authentication with TypeSafe AI failed" message, and the resulting
-  `JevApiError` is non-retryable, so the eval runner will not retry a key that cannot work.
-- `test_jev_structured_task_run_live` and `test_jev_v2_llm_judge_live` — never completed a
-  live run. The first attempt failed in a model-id preflight (since deleted) before either
-  reached a System One call, so nothing in them has met the real API yet.
+- The request envelope is accepted and the response parses into the wire models in
+  `jev_jsonschema/models.py`, for `choice`, `score` and `noul` questions together in one
+  call, with probabilities and a confidence that decode into schema values.
+- `model_id="jev-1.13.0"` is a valid pinned id. `GET /v1/models` lists only aliases, so a
+  System One call accepting the id is the only thing that can confirm it, and it did.
+- The V2 LLM Judge scores end to end with a Jev judge.
+- The client's error table where it was pure assertion: TypeSafe returns 401 or 403 for a
+  bad key, that maps to the "Authentication with TypeSafe AI failed" message, and the
+  resulting `JevApiError` is non-retryable, so the eval runner will not retry a key that
+  cannot work.
 
 They are in their own file so they can be run without pulling in any other paid test:
 
