@@ -220,7 +220,7 @@ KilnModel(
 )
 ```
 
-Confirm `model_id` against `GET /v1/models` when implementing. Unit tests do not depend on the entry: they construct the `KilnModelProvider` directly or patch `built_in_models`.
+`model_id` cannot be confirmed against `GET /v1/models`: a live call lists aliases (`jev-latest`, `jev-preview`), not pinned versions, and Kiln pins. `jev-1.13.0` is confirmed by the model answering a `POST /v1/systemone` call. Unit tests do not depend on the entry: they construct the `KilnModelProvider` directly or patch `built_in_models`.
 
 ## Eval integration (core phases)
 

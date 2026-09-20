@@ -9,9 +9,15 @@ sandbox, so the limits section below comes from third-party pages and is marked 
 
 - `POST https://api.typesafe.ai/v1/systemone`
 - Headers: `Authorization: Bearer <TYPESAFE_API_KEY>`, `Content-Type: application/json`, `Accept: application/json`
-- `GET https://api.typesafe.ai/v1/models` returns `{"models": [{"name", "description", "release_date"}]}`
+- `GET https://api.typesafe.ai/v1/models` returns `{"models": [{"name", "description", "release_date"}]}`.
+  Confirmed live: it lists **aliases, not pinned versions** — a real call returned exactly
+  `['jev-latest', 'jev-preview']`. So the listing cannot be used to validate a pinned `model_id`
+  such as `jev-1.13.0`, which the API accepts on `POST /v1/systemone` even though the listing
+  omits it. It is account-scoped and rejects a bad key, so it is still a good authentication probe
+  (that is what `connect_typesafe` uses it for).
 - Env var convention used by the SDK: `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL` (default `https://api.typesafe.ai`)
-- Default model alias: `jev-latest`. Other names seen: `jev-1.13.0`, `jev-preview`.
+- Default model alias: `jev-latest`. Other names seen: `jev-1.13.0`, `jev-preview`. Kiln pins the
+  concrete version `jev-1.13.0` and never uses a floating alias.
 - SDK default HTTP timeout: 10s. Responses are fast (no token generation).
 - Error body on 422: `{"detail": [{"loc": [...], "msg": "...", "type": "...", "input": ..., "ctx": ...}]}` (FastAPI style).
 - Rate limiting: `retry-after` / `retry-after-ms` headers; request id in `x-typesafe-request-id`.

@@ -40,7 +40,7 @@ See `research/jev_api/summary.md` for the wire contract. Summary:
 | Base URL | `https://api.typesafe.ai` (constant, not user-configurable in v1) |
 | Connect flow | Same as other key-based providers in Settings → AI Providers: enter key, Kiln validates it with `GET /v1/models`, saves on success, shows the API error on failure |
 | Disconnect | Removes the key, same as other providers |
-| Model | `ModelName.jev_1_13`, friendly name "Jev 1.13", `model_id="jev-1.13.0"` on the `typesafe` provider. Verify the exact model name against `GET /v1/models` during implementation and adjust. |
+| Model | `ModelName.jev_1_13`, friendly name "Jev 1.13", `model_id="jev-1.13.0"` on the `typesafe` provider. `GET /v1/models` cannot verify it: it lists aliases (`jev-latest`, `jev-preview`), not pinned versions. A `POST /v1/systemone` call is what confirms the pinned id. |
 
 Model capability flags for the Jev entry:
 

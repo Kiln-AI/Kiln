@@ -21,6 +21,17 @@ question's probability keys are re-keyed from level indices the decoder has alre
 range-checked, so only the choice properties can catch a drifted wire label; and nothing
 checks the response's `model` echo.
 
+What has actually been run against the live API, so the next reader is not guessing:
+
+- `test_jev_rejects_a_bad_api_key_live` — run live, passed. It is the only live
+  confirmation this project has of anything. It proved three things the client's error
+  table until then only asserted: TypeSafe returns 401 or 403 for a bad key, that response
+  maps to the "Authentication with TypeSafe AI failed" message, and the resulting
+  `JevApiError` is non-retryable, so the eval runner will not retry a key that cannot work.
+- `test_jev_structured_task_run_live` and `test_jev_v2_llm_judge_live` — never completed a
+  live run. The first attempt failed in a model-id preflight (since deleted) before either
+  reached a System One call, so nothing in them has met the real API yet.
+
 They are in their own file so they can be run without pulling in any other paid test:
 
     uv run python3 -m pytest -n0 -v --runpaid \\
@@ -31,17 +42,11 @@ import json
 import os
 from typing import Any
 
-import httpx
 import pytest
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.eval.v2_eval_llm_judge import LlmJudgeEval
-from kiln_ai.adapters.jev.jev_client import (
-    JEV_BASE_URL,
-    JEV_TIMEOUT_SECONDS,
-    JevApiError,
-    JevClient,
-)
+from kiln_ai.adapters.jev.jev_client import JevApiError, JevClient
 from kiln_ai.adapters.jev.jev_jsonschema import NoulQuestion, SystemOneRequest
 from kiln_ai.adapters.model_adapters.jev_adapter import JevAdapter
 from kiln_ai.adapters.provider_tools import kiln_model_provider_from
@@ -58,8 +63,6 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.json_schema import validate_schema
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-
-MODELS_PATH = "/v1/models"
 
 # Jev returns a probability per value, so each distribution should sum to one. The window
 # around that is deliberately loose: it is here to catch something that is not a
@@ -158,95 +161,20 @@ JUDGE_PROBABILITY_KEYS: dict[str, set[str]] = {
 
 
 @pytest.fixture
-def typesafe_api_key() -> str:
-    key = os.getenv("TYPESAFE_API_KEY", "")
-    if not key:
+def requires_typesafe_api_key() -> None:
+    """Skip unless this machine is set up to call the live API.
+
+    A gate, not a value: it deliberately returns `None` rather than the key, because pytest
+    renders fixture and parameter values in a failure's traceback header. Nothing in this
+    file needs the raw key — `JevAdapter` builds its client from
+    `Config.shared().typesafe_api_key`, the judge goes through the adapter, and the bad-key
+    test supplies its own invalid key — so no failure here can print a live credential.
+    """
+    if not os.getenv("TYPESAFE_API_KEY", ""):
         pytest.skip(
             "TYPESAFE_API_KEY not set. These tests call TypeSafe AI's live API; set the "
             "key in your environment or .env to run them."
         )
-    return key
-
-
-async def _live_model_ids(api_key: str) -> list[str]:
-    try:
-        async with httpx.AsyncClient(
-            base_url=JEV_BASE_URL, timeout=JEV_TIMEOUT_SECONDS
-        ) as client:
-            response = await client.get(
-                MODELS_PATH,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Accept": "application/json",
-                },
-            )
-    except httpx.HTTPError as err:
-        raise AssertionError(
-            f"Could not reach GET {JEV_BASE_URL}{MODELS_PATH} to confirm the Jev model "
-            f"id: {type(err).__name__}: {err}. This is the preflight, not the System One "
-            "call, so check network and proxy access to the host before reading anything "
-            "into it."
-        ) from err
-
-    assert response.is_success, (
-        f"GET {JEV_BASE_URL}{MODELS_PATH} returned HTTP {response.status_code}. Check "
-        f"TYPESAFE_API_KEY. Body: {response.text[:500]}"
-    )
-    try:
-        payload: Any = response.json()
-    except ValueError as err:
-        raise AssertionError(
-            f"GET {JEV_BASE_URL}{MODELS_PATH} returned HTTP {response.status_code} with a "
-            f"body that is not JSON: {err}. Body: {response.text[:500]}"
-        ) from err
-    # TypeSafe's listing is {"models": [{"name", "description", "release_date"}]}, not the
-    # OpenAI {"data": [{"id"}]} shape — which is why `typesafe` is in SKIP_PROVIDERS in
-    # .agents/scripts/provider_utils.py. Both are accepted so this preflight reports a
-    # wrong model id rather than failing on the envelope.
-    entries: Any = payload
-    if isinstance(payload, dict):
-        entries = payload.get("models")
-        if entries is None:
-            entries = payload.get("data")
-    assert isinstance(entries, list) and entries, (
-        f"GET {JEV_BASE_URL}{MODELS_PATH} did not return a list of models. "
-        f"Body: {response.text[:500]}"
-    )
-    ids: list[str] = []
-    for entry in entries:
-        if isinstance(entry, str):
-            ids.append(entry)
-        elif isinstance(entry, dict):
-            value = entry.get("name") or entry.get("id")
-            if isinstance(value, str):
-                ids.append(value)
-    assert ids, (
-        f"GET {JEV_BASE_URL}{MODELS_PATH} returned models with no name. "
-        f"Body: {response.text[:500]}"
-    )
-    return ids
-
-
-async def _assert_model_id_is_live(
-    model_name: str, provider: str, api_key: str
-) -> None:
-    """Fail by name if the model entry's `model_id` is not one the API offers.
-
-    `jev-1.13.0` came from SDK research and has never been confirmed against a live
-    `GET /v1/models`. Without this, a wrong id surfaces as a rejected System One request,
-    which reads like a schema or state problem.
-    """
-    model_id = kiln_model_provider_from(model_name, provider).model_id
-    assert model_id is not None, (
-        f"The {model_name} entry in ml_model_list.py has no TypeSafe AI model_id."
-    )
-
-    live_ids = await _live_model_ids(api_key)
-    assert model_id in live_ids, (
-        f"ml_model_list.py maps {model_name} to model_id {model_id!r}, which "
-        f"GET {JEV_BASE_URL}{MODELS_PATH} does not offer. It lists: {live_ids}. Fix the "
-        "entry's model_id before reading anything into the rest of this run."
-    )
 
 
 def _assert_is_distribution(
@@ -271,10 +199,8 @@ def _assert_is_distribution(
 @pytest.mark.prerelease
 @pytest.mark.parametrize("model_name,provider", PRERELEASE_JEV_MODELS)
 async def test_jev_structured_task_run_live(
-    tmp_path, typesafe_api_key, model_name, provider
+    tmp_path, requires_typesafe_api_key, model_name, provider
 ):
-    await _assert_model_id_is_live(model_name, provider, typesafe_api_key)
-
     project = Project(name="Jev Smoke", path=tmp_path / "project.kiln")
     project.save_to_file()
     task = Task(
@@ -368,9 +294,9 @@ async def test_jev_structured_task_run_live(
 @pytest.mark.paid
 @pytest.mark.prerelease
 @pytest.mark.parametrize("model_name,provider", PRERELEASE_JEV_MODELS)
-async def test_jev_v2_llm_judge_live(tmp_path, typesafe_api_key, model_name, provider):
-    await _assert_model_id_is_live(model_name, provider, typesafe_api_key)
-
+async def test_jev_v2_llm_judge_live(
+    tmp_path, requires_typesafe_api_key, model_name, provider
+):
     project = Project(name="Jev Judge Smoke", path=tmp_path / "project.kiln")
     project.save_to_file()
     task = Task(
@@ -443,13 +369,15 @@ async def test_jev_v2_llm_judge_live(tmp_path, typesafe_api_key, model_name, pro
 @pytest.mark.paid
 @pytest.mark.prerelease
 @pytest.mark.parametrize("model_name,provider", PRERELEASE_JEV_MODELS)
-async def test_jev_rejects_a_bad_api_key_live(typesafe_api_key, model_name, provider):
-    """The whole of `_message_for_status` is belief: nothing live has ever exercised it.
+async def test_jev_rejects_a_bad_api_key_live(
+    requires_typesafe_api_key, model_name, provider
+):
+    """The only test in this file that has passed against the live API.
 
-    This pins down its most-guessed branch, and costs nothing — a rejected key answers no
-    questions, so it spends no tokens. It takes the `typesafe_api_key` fixture without
-    using the key, because the fixture is what says this machine is set up to call the live
-    API at all.
+    It pins down `_message_for_status`'s most-guessed branch, and costs nothing — a
+    rejected key answers no questions, so it spends no tokens. The key it sends is
+    deliberately invalid; the `requires_typesafe_api_key` gate is here only because a live
+    key is what says this machine is set up to call the API at all.
     """
     model_id = kiln_model_provider_from(model_name, provider).model_id
     assert model_id is not None
