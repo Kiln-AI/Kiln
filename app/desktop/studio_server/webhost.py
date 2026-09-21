@@ -4,7 +4,7 @@ import os
 import sys
 
 from fastapi import FastAPI, Response
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -28,6 +28,74 @@ def studio_path():
 
 
 API_PATH_PREFIX = "/api"
+
+# Served in place of the web app when app/web_ui/build has no compiled UI in it.
+# That directory is a build artifact, and nothing in the dev server builds it, so a
+# fresh clone reaches this instead of the studio. Without it the 404 handler below
+# tries to serve a 404.html that isn't there and the request dies as a 500.
+WEB_UI_MISSING_HTML = """<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kiln &mdash; web UI not built</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        box-sizing: border-box;
+        background: #f2f2f7;
+        color: #1c1c1e;
+        font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif;
+      }
+      main { max-width: 34rem; width: 100%; }
+      h1 { font-size: 1.5rem; line-height: 1.3; margin: 0 0 0.75rem; }
+      h2 { font-size: 0.8125rem; letter-spacing: 0.04em; text-transform: uppercase;
+           opacity: 0.55; margin: 2rem 0 0.5rem; }
+      p { margin: 0 0 0.5rem; }
+      code, pre {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.875rem;
+      }
+      code { background: rgba(120, 120, 128, 0.16); padding: 0.1em 0.35em;
+             border-radius: 5px; }
+      pre { background: rgba(120, 120, 128, 0.16); padding: 0.75rem 1rem;
+            border-radius: 10px; overflow-x: auto; margin: 0; }
+      a { color: #0071e3; }
+      @media (prefers-color-scheme: dark) {
+        body { background: #1c1c1e; color: #f2f2f7; }
+        a { color: #4da3ff; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>The Kiln web UI isn&rsquo;t built yet</h1>
+      <p>
+        This server serves the compiled web UI from <code>app/web_ui/build</code>,
+        and nothing is there.
+      </p>
+
+      <h2>Working on the web UI?</h2>
+      <p>
+        Run <code>make ui</code> in a second terminal and open
+        <a href="http://localhost:5173/run">localhost:5173/run</a>. That server
+        hot-reloads your changes; this one serves a fixed build.
+      </p>
+
+      <h2>Just want the app on this port?</h2>
+      <p>Build it once, then reload this page:</p>
+      <pre>cd app/web_ui &amp;&amp; npm run build</pre>
+    </main>
+  </body>
+</html>
+"""
 
 
 def is_api_path(url_path: str) -> bool:
@@ -101,4 +169,14 @@ def connect_webhost(app: FastAPI):
                     content={"message": exc.detail},
                 )
             raise exc
-        return FileResponse(os.path.join(studio_path(), "404.html"), status_code=404)
+
+        not_found_page = os.path.join(studio_path(), "404.html")
+        if not os.path.isfile(not_found_page):
+            # 503 rather than 404: the route may well be fine, there is just no web
+            # UI to serve it with.
+            response = HTMLResponse(content=WEB_UI_MISSING_HTML, status_code=503)
+            # So the page a developer left open picks the app up once they build it.
+            add_no_cache_headers(response)
+            return response
+
+        return FileResponse(not_found_page, status_code=404)

@@ -57,6 +57,12 @@ To run the API server, Studio server, and Studio Web UI with auto-reload for dev
 
 3. Open the app: http://localhost:5173/run
 
+Use http://localhost:5173, not the Python server's own port. That server also serves
+the web UI, but only as whatever `npm run build` last wrote to `app/web_ui/build` — a
+gitignored artifact nothing in the dev loop rebuilds. So it shows stale code, and on a
+fresh clone it has nothing to show at all. It's how the packaged desktop app serves the
+UI, not a way to develop against it.
+
 ### Makefile
 
 The root `Makefile` provides convenient shortcuts for commonly used scripts (`make dev`, `make ui`, `make package`, ...).

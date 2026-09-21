@@ -206,3 +206,58 @@ def test_invalid_filename_route_served_on_real_filesystem(client):
 
     assert response.status_code == 404
     assert WEB_APP_404_BODY in response.text
+
+
+@pytest.fixture
+def unbuilt_studio():
+    # A fresh clone: connect_webhost creates the directory, but nothing built into it.
+    with tempfile.TemporaryDirectory() as d:
+        with patch("app.desktop.studio_server.webhost.studio_path", lambda: d):
+            yield d
+
+
+@pytest.fixture
+def unbuilt_client(unbuilt_studio):
+    app = FastAPI()
+
+    @app.get("/api/forced-not-found")
+    def forced_not_found():
+        raise HTTPException(status_code=404, detail="test missing resource")
+
+    connect_webhost(app)
+    return TestClient(app)
+
+
+@pytest.mark.parametrize("path", ["/", "/run", "/route-that-does-not-exist"])
+def test_unbuilt_web_ui_explains_itself(unbuilt_client, path):
+    # Without the build there is no 404.html to fall back to, which used to surface
+    # as a 500 carrying the raw file-not-found message.
+    response = unbuilt_client.get(path)
+
+    assert response.status_code == 503
+    assert response.headers.get("content-type", "").startswith("text/html")
+    assert (
+        response.headers["cache-control"]
+        == "no-store, no-cache, must-revalidate, max-age=0"
+    )
+    assert "npm run build" in response.text
+    assert "localhost:5173" in response.text
+
+
+@pytest.mark.parametrize("path", ["/api/some-unmatched-path", "/api/forced-not-found"])
+def test_unbuilt_web_ui_keeps_json_api_404s(unbuilt_client, path):
+    # The missing build says nothing about the API, which must keep answering in JSON.
+    response = unbuilt_client.get(path)
+
+    assert response.status_code == 404
+    assert response.headers.get("content-type", "").startswith("application/json")
+
+
+def test_web_ui_404_wins_once_built(unbuilt_studio, unbuilt_client):
+    with open(os.path.join(unbuilt_studio, "404.html"), "w", encoding="utf-8") as f:
+        f.write(WEB_APP_404_BODY)
+
+    response = unbuilt_client.get("/route-that-does-not-exist")
+
+    assert response.status_code == 404
+    assert WEB_APP_404_BODY in response.text

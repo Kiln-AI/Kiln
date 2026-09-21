@@ -211,6 +211,7 @@ async def test_setup_route(client):
     create_studio_test_file("index.html")
     create_studio_test_file("path.html")
     create_studio_test_file("nested/index.html")
+    create_studio_test_file("404.html")
 
     # root index.html
     response = client.get("/")
@@ -224,13 +225,11 @@ async def test_setup_route(client):
     response = client.get("/nested")
     assert response.status_code == 200
     assert response.text == "<html><body>Test</body></html>"
-    # non existing file
-
-    # expected 404
-    with pytest.raises(Exception):
-        client.get("/non_existing_file")
-    with pytest.raises(Exception):
-        client.get("/nested/non_existing_file")
+    # non existing files get the web app's 404 page
+    for path in ["/non_existing_file", "/nested/non_existing_file"]:
+        response = client.get(path)
+        assert response.status_code == 404
+        assert response.text == "<html><body>Test</body></html>"
 
 
 def test_custom_string_types_have_openapi_constraints(client):
