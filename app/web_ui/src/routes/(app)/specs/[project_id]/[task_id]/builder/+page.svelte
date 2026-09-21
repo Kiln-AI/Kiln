@@ -1048,11 +1048,8 @@
   // the Refine Plan dialog. The dialog's ceiling is the server's cap
   // (NUM_CASES_MAX in libs/core/kiln_ai/synthetic_user/runner.py, mirrored by
   // the batch-plan and pipeline routes), not this number.
-  // Sized so the batch is still useful once it is split: part becomes the
-  // human-rated answer key and the rest is dealt train:val, so a batch this
-  // size leaves enough in every slice to train on later rather than only
-  // evaluate once. Growing it does NOT grow the review ask — that is capped
-  // (review_target), so the reviewer's work stays flat as the batch scales.
+  // Sized so every split still holds enough cases once the batch is dealt.
+  // Growing it does not grow the review ask, which is a flat count.
   const NUM_CASES = 80
   // The largest batch the server will plan or drive. Mirrors NUM_CASES_MAX in
   // libs/core/kiln_ai/synthetic_user/runner.py, which the batch-plan and
