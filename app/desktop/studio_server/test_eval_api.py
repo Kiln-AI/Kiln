@@ -59,6 +59,7 @@ from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecTy
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import EvalItemSource, Usage
 from kiln_ai.datamodel.usage import MessageUsage
+from kiln_ai.datamodel.world import World, WorldReset
 from kiln_ai.tools.base_tool import ToolCallResult
 from kiln_ai.tools.sandbox_bridge import BridgeResult
 from kiln_server.custom_errors import connect_custom_errors
@@ -7830,6 +7831,68 @@ def test_create_eval_input_invalid_data(client, mock_task, mock_task_from_id):
     assert mock_task.eval_inputs(readonly=True) == []
 
 
+def test_create_eval_input_with_world_reset(client, mock_task, mock_task_from_id):
+    """A world item carries the world it runs in and the kwargs its environment resets
+    with. Both have to survive the save, not just the response: the runner reads them
+    off the stored item, and neither can be added later."""
+    world = World(name="Notebook World", parent=mock_task.parent_project())
+    world.save_to_file()
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/eval_inputs",
+        json={
+            "data": {"type": "single_turn", "user_message": {"text": "add a note"}},
+            "tags": ["corpus"],
+            "world_reset": {
+                "world_id": world.id,
+                "reset_kwargs": {"fixture_id": "f1", "seed": 7},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["world_reset"]["world_id"] == world.id
+
+    on_disk = mock_task.eval_inputs(readonly=True)[0]
+    assert on_disk.world_reset is not None
+    assert on_disk.world_reset.world_id == world.id
+    # reset_kwargs are the environment's vocabulary, passed through verbatim: they must
+    # not be normalized, filtered, or coerced on the way to disk.
+    assert on_disk.world_reset.reset_kwargs == {"fixture_id": "f1", "seed": 7}
+
+
+def test_create_eval_input_without_world_reset_is_world_free(
+    client, mock_task, mock_task_from_id
+):
+    """Omitting the reset leaves the item running against the project's own tools."""
+    response = client.post(
+        "/api/projects/project1/tasks/task1/eval_inputs",
+        json={"data": {"type": "single_turn", "user_message": {"text": "hi"}}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["world_reset"] is None
+    assert mock_task.eval_inputs(readonly=True)[0].world_reset is None
+
+
+def test_create_eval_input_unknown_world_is_rejected(
+    client, mock_task, mock_task_from_id
+):
+    """A world this project doesn't have is refused at creation. Left to run time it
+    would fail every job the item is part of, with the eval already running."""
+    response = client.post(
+        "/api/projects/project1/tasks/task1/eval_inputs",
+        json={
+            "data": {"type": "single_turn", "user_message": {"text": "add a note"}},
+            "world_reset": {"world_id": "no_such_world"},
+        },
+    )
+
+    assert response.status_code == 422
+    assert "no_such_world" in response.json()["message"]
+    assert mock_task.eval_inputs(readonly=True) == []
+
+
 def test_update_eval_input_tags(client, mock_task, mock_task_from_id):
     """A retag leaves content byte-identical."""
     eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
@@ -8016,6 +8079,39 @@ def test_update_eval_input_rejects_scenario_edits(
     on_disk = mock_task.eval_inputs(readonly=True)[0]
     assert on_disk.data.first_message.text == "seed"
     assert on_disk.reference == {"scenario": "s1", "expected_facts": ["fact one"]}
+    assert on_disk.tags == ["corpus"]
+
+
+def test_update_eval_input_rejects_world_reset_edits(
+    client, mock_task, mock_task_from_id
+):
+    """Re-resetting an item in place must fail loudly, for the reason a scenario edit
+    does: the item id stands for the item's content in the trace key, so a later eval
+    would score a trace recorded in the episode this item used to start."""
+    world = World(name="Notebook World", parent=mock_task.parent_project())
+    world.save_to_file()
+    eval_input = EvalInput(
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="add a note")),
+        tags=["corpus"],
+        world_reset=WorldReset(world_id=world.id, reset_kwargs={"fixture_id": "f1"}),
+        parent=mock_task,
+    )
+    eval_input.save_to_file()
+
+    response = client.patch(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
+        json={
+            "tags": ["corpus", "extra"],
+            "world_reset": {"world_id": world.id, "reset_kwargs": {"fixture_id": "f2"}},
+        },
+    )
+
+    assert response.status_code == 422
+
+    on_disk = mock_task.eval_inputs(readonly=True)[0]
+    assert on_disk.world_reset is not None
+    assert on_disk.world_reset.reset_kwargs == {"fixture_id": "f1"}
+    # The tags edit rode along with the refused reset, so it must not have half-applied.
     assert on_disk.tags == ["corpus"]
 
 

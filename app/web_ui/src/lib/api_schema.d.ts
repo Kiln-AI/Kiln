@@ -5791,6 +5791,8 @@ export interface components {
              * @description Tags for filtering eval inputs (matched by tag:: eval_input_filter_ids).
              */
             tags?: string[];
+            /** @description Optional world to run this item in: a world in this project, plus the keyword arguments its environment's reset() is called with. A run config that lists that world's tools runs the item in the episode the reset starts; omit it and the item runs against the project's own tools. Like the scenario, it cannot be changed afterwards — send a new item instead. */
+            world_reset?: components["schemas"]["WorldReset"] | null;
         };
         /**
          * CreateEvaluatorRequest
@@ -13599,12 +13601,14 @@ export interface components {
          * UpdateEvalInputRequest
          * @description Partial update of an eval input item. Omitted fields are left unchanged.
          *
-         *     `data` is deliberately absent, and `extra="forbid"` turns an attempt to send it into
-         *     a 422 rather than a silent no-op the caller reads as success. The scenario is the one
-         *     thing that genuinely cannot be edited in place: trace reuse (`TraceIndex`) keys on
-         *     `(source_type, item_id, run_config_id)`, so a later eval would hand a judge a
-         *     conversation generated from the scenario this item *used to* have. Changing a
-         *     scenario means POSTing a new item.
+         *     `data` and `world_reset` are deliberately absent, and `extra="forbid"` turns an
+         *     attempt to send either into a 422 rather than a silent no-op the caller reads as
+         *     success. They are what genuinely cannot be edited in place: trace reuse
+         *     (`TraceIndex`) keys on `(source_type, item_id, run_config_id, world_version)`, and
+         *     the item id stands for the item's whole content, so a later eval would hand a judge
+         *     a conversation generated from the scenario this item *used to* have — or, for a
+         *     world item, one recorded in an episode the environment was reset into differently.
+         *     Changing either means POSTing a new item.
          *
          *     `reference` does not have that problem and is editable. It keys nothing: stored
          *     scores snapshot the `reference_data` the judge actually saw (`_persist_judgment`)
