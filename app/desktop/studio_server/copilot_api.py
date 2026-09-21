@@ -19,10 +19,8 @@ from kiln_ai.datamodel.eval import (
     EvalConfigType,
     EvalDataType,
     EvalInput,
-    EvalInputSplit,
     LlmJudgeProperties,
     MultiTurnDriveConfig,
-    TaskRunSplit,
 )
 from kiln_ai.datamodel.json_schema import validate_schema
 from kiln_ai.datamodel.spec import (
@@ -41,11 +39,9 @@ from kiln_server.utils.agent_checks.policy import (
     agent_policy_require_approval,
 )
 from kiln_server.utils.spec_utils import (
+    build_spec_eval,
     generate_spec_eval_tags,
     spec_eval_data_type,
-    spec_eval_output_score,
-    spec_eval_template,
-    tag_filter_id,
 )
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing_extensions import Self
@@ -1183,16 +1179,8 @@ def connect_copilot_api(app: FastAPI):
             tags.val_tag,
             tags.golden_tag,
         )
-        train_set_filter_id = tag_filter_id(train_tag)
-        val_set_filter_id = tag_filter_id(val_tag)
-        eval_configs_filter_id = tag_filter_id(golden_tag)
-
         # Extract spec_type from properties (discriminated union)
         spec_type = request.properties["spec_type"]
-
-        # Determine eval properties
-        template = spec_eval_template(spec_type)
-        output_scores = [spec_eval_output_score(request.name)]
         evaluation_data_type = spec_eval_data_type(
             spec_type, request.evaluate_full_trace
         )
@@ -1284,27 +1272,18 @@ def connect_copilot_api(app: FastAPI):
         # paths; the eval slice is EvalInput-tagged on both, re-run per run
         # config at eval time (multi-turn re-drives it, using the drive
         # config stamped on each item).
-        eval = Eval(
-            parent=task,
+        # Priority and status live on the eval; the spec below mirrors them at
+        # creation so the spec file stays truthful.
+        eval, _tags = build_spec_eval(
+            task=task,
             name=request.name,
-            description=None,
-            template=template,
-            output_scores=output_scores,
-            # Priority and status live on the eval; the spec below mirrors
-            # them at creation so the spec file stays truthful.
+            spec_type=spec_type,
+            evaluate_full_trace=request.evaluate_full_trace,
             priority=Priority.p1,
             status=EvalStatus.active,
-            # `splits` is the single home for all three splits: the
-            # EvalInput-backed test split and the TaskRun-backed train and val
-            # splits. The deprecated flat filter fields are never written.
-            splits={
-                "test": EvalInputSplit(filter_id=f"tag::{eval_tag}"),
-                "train": TaskRunSplit(filter_id=train_set_filter_id),
-                "val": TaskRunSplit(filter_id=val_set_filter_id),
-            },
-            eval_configs_filter_id=eval_configs_filter_id,
-            template_properties=None,
-            evaluation_data_type=evaluation_data_type,
+            # The eval slice is EvalInput items this endpoint mints; train and
+            # val are runs in the dataset.
+            test_source="eval_input",
         )
 
         # 2. Create the judge eval config — V2 shape, the same judge the review

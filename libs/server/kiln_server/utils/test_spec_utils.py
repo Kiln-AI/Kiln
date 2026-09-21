@@ -5,6 +5,7 @@ from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
     EvalDataType,
+    EvalInputSplit,
     EvalTemplateId,
     TaskRunSplit,
 )
@@ -174,8 +175,33 @@ class TestSpecEvalSplits:
         assert splits["train"].filter_id == "tag::train_test"
         assert splits["val"].filter_id == "tag::val_test"
 
+    def test_a_split_can_be_eval_input_backed(self):
+        # A creator that mints its own test cases keeps train and val as runs.
+        splits = spec_eval_splits(
+            test_tag="test_test",
+            train_tag="train_test",
+            val_tag="val_test",
+            test_source="eval_input",
+        )
+
+        assert splits["test"] == EvalInputSplit(filter_id="tag::test_test")
+        assert splits["train"] == TaskRunSplit(filter_id="tag::train_test")
+        assert splits["val"] == TaskRunSplit(filter_id="tag::val_test")
+
 
 class TestBuildSpecEval:
+    def test_sources_reach_the_built_eval(self, tmp_path):
+        eval, _tags = build_spec_eval(
+            task=_task(tmp_path),
+            name="Test Spec",
+            spec_type=SpecType.desired_behaviour,
+            evaluate_full_trace=False,
+            test_source="eval_input",
+        )
+
+        assert eval.splits["test"] == EvalInputSplit(filter_id="tag::test_test_spec")
+        assert eval.splits["train"] == TaskRunSplit(filter_id="tag::train_test_spec")
+
     def test_returns_the_tags_the_evals_items_must_carry(self, tmp_path):
         eval, tags = build_spec_eval(
             task=_task(tmp_path),
