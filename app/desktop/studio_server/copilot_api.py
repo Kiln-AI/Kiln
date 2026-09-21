@@ -121,13 +121,14 @@ from app.desktop.studio_server.utils.copilot_utils import (
     build_multi_turn_eval_inputs,
     build_single_turn_batch_eval_inputs,
     create_single_turn_dataset,
+    deal_eval_inputs,
     find_multi_turn_chain_leaves,
     find_single_turn_batch_runs,
     generate_copilot_examples,
     get_copilot_api_key,
     persist_eval_slice,
     rate_reviewed_batch_runs,
-    split_and_tag_batch_runs,
+    tag_golden_batch_runs,
     task_capabilities_for_task,
     task_info_payload,
     unrate_reviewed_batch_runs,
@@ -661,9 +662,7 @@ def persist_spec_save(
     batch_eval_inputs: list[EvalInput],
     reviewed_refs: list[ReviewedChainApi],
     reviewed_leaf_ids: set[str],
-    train_tag: str,
     golden_tag: str,
-    val_tag: str,
     spec_name: str,
     rng: random.Random,
 ) -> None:
@@ -712,20 +711,16 @@ def persist_spec_save(
         spec.save_to_file()
         saved_models.append(spec)
 
-        # Wizard arms: persist the eval slice (EvalInput items minted from
-        # the driven cases or the generated inputs) and split the batch runs
-        # into disjoint golden/train/val slices, AFTER spec has saved so a
-        # failure here triggers the rollback below. tagged_leaves captures
-        # only the tags this call added, so untagging on rollback preserves
-        # any tags the run already had.
+        # Builder arms: persist the dealt cases and tag the golden runs, AFTER
+        # spec has saved so a failure here triggers the rollback below.
+        # tagged_leaves captures only the tags this call added, so untagging on
+        # rollback preserves any tags the run already had.
         if batch_leaves:
             persist_eval_slice(batch_eval_inputs, saved_models)
-            split_and_tag_batch_runs(
+            tag_golden_batch_runs(
                 batch_leaves,
                 reviewed_leaf_ids,
-                train_tag,
                 golden_tag,
-                val_tag,
                 rng=rng,
                 tagged_out=tagged_leaves,
             )
@@ -1241,7 +1236,11 @@ def connect_copilot_api(app: FastAPI):
         # Build and validate all models before saving any; persist_spec_save
         # commits them as one unit of work below.
 
-        # The batch arms' eval slice (validated here, persisted in the unit
+        # One RNG seam for every dataset split (the case deal, the golden
+        # carve, and the legacy generated pool).
+        rng = random.Random()
+
+        # The batch arms' cases (validated here, persisted in the unit
         # of work). Multi-turn: one EvalInput per driven case — 422s on a
         # malformed persona blob before anything is written. Single-turn: one
         # EvalInput per generated input; on a structured-input task each must
@@ -1268,10 +1267,17 @@ def connect_copilot_api(app: FastAPI):
                 eval_tag,
             )
 
-        # 1. Create the Eval. Golden, train and val are TaskRun slices on both
-        # paths; the eval slice is EvalInput-tagged on both, re-run per run
-        # config at eval time (multi-turn re-drives it, using the drive
-        # config stamped on each item).
+        # Deal the cases so each lands in exactly one split: test is held out
+        # from the train and val an optimizer tunes against. The legacy v1 flow
+        # mints no cases — its train items are the runs it generates, and it
+        # goes away with KIL-824.
+        builder_save = batch_eval_inputs != []
+        if builder_save:
+            deal_eval_inputs(batch_eval_inputs, eval_tag, train_tag, val_tag, rng)
+
+        # 1. Create the Eval. Its cases are the EvalInputs dealt above; golden
+        # is the reviewed runs, which stay TaskRuns because the judge is
+        # checked against the answers a human graded.
         # Priority and status live on the eval; the spec below mirrors them at
         # creation so the spec file stays truthful.
         eval, _tags = build_spec_eval(
@@ -1281,9 +1287,9 @@ def connect_copilot_api(app: FastAPI):
             evaluate_full_trace=request.evaluate_full_trace,
             priority=Priority.p1,
             status=EvalStatus.active,
-            # The eval slice is EvalInput items this endpoint mints; train and
-            # val are runs in the dataset.
             test_source="eval_input",
+            train_source="eval_input" if builder_save else "task_run",
+            val_source="eval_input" if builder_save else "task_run",
         )
 
         # 2. Create the judge eval config — V2 shape, the same judge the review
@@ -1306,10 +1312,6 @@ def connect_copilot_api(app: FastAPI):
 
         # Set as default config after ID is assigned
         eval.current_config_id = eval_config.id
-
-        # One RNG seam for every dataset split (the batch arms' run split and
-        # the legacy generated pool) — injectable so tests are deterministic.
-        rng = random.Random()
 
         # 3. Legacy v1 flow only: synthesise examples, then build the
         #    golden/train TaskRuns and the eval slice's EvalInputs from them.
@@ -1406,9 +1408,7 @@ def connect_copilot_api(app: FastAPI):
             batch_eval_inputs=batch_eval_inputs,
             reviewed_refs=reviewed_refs,
             reviewed_leaf_ids=reviewed_leaf_ids,
-            train_tag=train_tag,
             golden_tag=golden_tag,
-            val_tag=val_tag,
             spec_name=request.name,
             rng=rng,
         )

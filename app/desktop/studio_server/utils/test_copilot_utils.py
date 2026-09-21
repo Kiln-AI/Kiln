@@ -56,7 +56,8 @@ from app.desktop.studio_server.utils.copilot_utils import (
     create_single_turn_dataset,
     create_task_run_from_reviewed,
     create_task_run_from_sample,
-    deal_pool_train_val,
+    deal_eval_inputs,
+    deal_pool_test_train_val,
     delete_multi_turn_batch_chains,
     delete_single_turn_batch_runs,
     find_single_turn_batch_runs,
@@ -64,8 +65,8 @@ from app.desktop.studio_server.utils.copilot_utils import (
     persist_eval_slice,
     rate_reviewed_batch_runs,
     select_golden_runs,
-    split_and_tag_batch_runs,
     split_pool_train_eval,
+    tag_golden_batch_runs,
     tag_single_turn_drive_run,
     task_capabilities_for_task,
     task_info_payload,
@@ -793,139 +794,99 @@ def _leaf_split(leaves: list[TaskRun]) -> dict[str, list[TaskRun]]:
     }
 
 
-class TestDealPoolTrainVal:
-    """The non-golden pool is dealt train:val at 40:25 by largest remainder."""
+class TestDealPoolTestTrainVal:
+    """Cases are dealt test:train:val at 25:40:25 by largest remainder."""
 
     @pytest.mark.parametrize(
-        "pool_size,expected_train,expected_val",
+        "pool_size,expected",
         [
-            # 0 and 1 are the degenerate pools: 1 run's remainders are
-            # 40/65 vs 25/65, so the single seat goes to train.
-            (0, 0, 0),
-            (1, 1, 0),
-            (2, 1, 1),
-            # 30 * 40 // 65 = 18, 30 * 25 // 65 = 11, leftover seat to val
-            # (remainders 30 train vs 35 val) → the 18/12 the scheme wants.
-            (30, 18, 12),
-            # 65 divides exactly: no leftover seat to award.
-            (65, 40, 25),
+            (0, (0, 0, 0)),
+            # A one-case pool: the seat would go to train on remainders, but an
+            # eval whose test split is empty reports on nothing.
+            (1, (1, 0, 0)),
+            (2, (1, 1, 0)),
+            (3, (1, 1, 1)),
+            (10, (3, 4, 3)),
+            # The builder's default batch.
+            (80, (22, 36, 22)),
+            (90, (25, 40, 25)),
         ],
     )
-    def test_counts_by_largest_remainder(self, pool_size, expected_train, expected_val):
+    def test_counts_by_largest_remainder(self, pool_size, expected):
         pool = list(range(pool_size))
-        train, val = deal_pool_train_val(pool, random.Random(0))
-        assert (len(train), len(val)) == (expected_train, expected_val)
-        # Largest remainder drops nobody and duplicates nobody.
-        assert sorted(train + val) == pool
+        hands = deal_pool_test_train_val(pool, random.Random(0))
+        assert tuple(len(hand) for hand in hands) == expected
+        assert sorted(item for hand in hands for item in hand) == pool
 
     def test_does_not_mutate_input(self):
         pool = list(range(30))
-        deal_pool_train_val(pool, random.Random(1))
+        deal_pool_test_train_val(pool, random.Random(1))
         assert pool == list(range(30))
 
 
-class TestSplitAndTagMultiTurnChains:
-    def test_all_reviewed_splits_golden_cap_rest_dealt(self, multiturn_task):
-        # Mirrors the real UI: every chain reviewed before save. golden caps
-        # at 25% of 8 = 2; the 6 left over are dealt train:val (the eval slice
-        # is EvalInput items minted from the cases, not chains).
+class TestDealEvalInputs:
+    def _dealt(self, n: int, seed: int):
+        eval_inputs = build_single_turn_eval_inputs(
+            [f"input {i}" for i in range(n)], "test_tag", ["drive_batch:b1"]
+        )
+        deal_eval_inputs(
+            eval_inputs, "test_tag", "train_tag", "val_tag", random.Random(seed)
+        )
+        return eval_inputs
+
+    def test_each_case_lands_in_exactly_one_split(self):
+        split_tags = {"test_tag", "train_tag", "val_tag"}
+        cases = self._dealt(10, seed=0)
+        assert all(len(split_tags & set(c.tags)) == 1 for c in cases)
+        assert [
+            sum(tag in c.tags for c in cases)
+            for tag in ("test_tag", "train_tag", "val_tag")
+        ] == [3, 4, 3]
+
+    def test_keeps_the_tags_it_did_not_deal(self):
+        assert all("drive_batch:b1" in c.tags for c in self._dealt(10, seed=0))
+
+    def test_membership_follows_the_injected_rng(self):
+        # A deal that read the pool in order would pass the first assertion
+        # and fail the second.
+        def held_out(seed: int) -> set[str]:
+            return {
+                c.data.user_message.text
+                for c in self._dealt(30, seed)
+                if "test_tag" in c.tags
+            }
+
+        first = held_out(11)
+        assert len(first) == 9
+        assert held_out(11) == first
+        assert held_out(999) != first
+
+
+class TestTagGoldenBatchRuns:
+    def test_tags_the_capped_golden_slice_only(self, multiturn_task):
+        # Every chain reviewed: golden caps at 25% of 8 = 2, and no run carries
+        # a test, train or val tag — those live on the cases.
         leaves = _make_su_leaves(multiturn_task, 8)
         reviewed_ids = {leaf.id for leaf in leaves}
 
-        split_and_tag_batch_runs(
-            leaves,
-            reviewed_ids,
-            "train_tag",
-            "golden_tag",
-            "val_tag",
-            rng=random.Random(0),
-        )
+        tag_golden_batch_runs(leaves, reviewed_ids, "golden_tag", rng=random.Random(0))
 
         buckets = _leaf_split(leaves)
         assert len(buckets["golden"]) == 2
-        assert buckets["eval"] == []
-        # 6 * 40 // 65 = 3 train, 6 * 25 // 65 = 2 val, leftover seat to train.
-        assert len(buckets["train"]) == 4
-        assert len(buckets["val"]) == 2
-        # Golden is a subset of the reviewed leaves (rated-only answer key).
+        assert buckets["eval"] == buckets["train"] == buckets["val"] == []
         assert {x.id for x in buckets["golden"]} <= reviewed_ids
-
-    def test_each_leaf_gets_exactly_one_split_tag(self, multiturn_task):
-        leaves = _make_su_leaves(multiturn_task, 5)
-        split_and_tag_batch_runs(
-            leaves,
-            {leaves[0].id},
-            "train_tag",
-            "golden_tag",
-            "val_tag",
-            rng=random.Random(1),
-        )
-        for leaf in leaves:
-            split_tags = {"train_tag", "golden_tag", "val_tag"} & set(leaf.tags)
-            assert len(split_tags) == 1
-
-    def test_golden_capped_even_when_all_reviewed(self, multiturn_task):
-        # 4 leaves all reviewed → golden caps at 1 (not 4); the dealt slices
-        # are never starved to empty (the bug the cap fixes).
-        leaves = _make_su_leaves(multiturn_task, 4)
-        split_and_tag_batch_runs(
-            leaves,
-            {leaf.id for leaf in leaves},
-            "train_tag",
-            "golden_tag",
-            "val_tag",
-            rng=random.Random(7),
-        )
-        buckets = _leaf_split(leaves)
-        assert len(buckets["golden"]) == 1
-        assert len(buckets["train"]) == 2
-        assert len(buckets["val"]) == 1
 
     def test_zero_rated_no_golden(self, multiturn_task):
         leaves = _make_su_leaves(multiturn_task, 3)
-        split_and_tag_batch_runs(
-            leaves,
-            set(),
-            "train_tag",
-            "golden_tag",
-            "val_tag",
-            rng=random.Random(2),
-        )
-        buckets = _leaf_split(leaves)
-        assert buckets["golden"] == []
-        assert len(buckets["train"]) == 2
-        assert len(buckets["val"]) == 1
-
-    def test_deal_is_driven_by_the_injected_rng(self, multiturn_task):
-        # The injected rng, and only it, decides who is held out: the same
-        # seed reproduces a save's val membership, a different seed does not.
-        # A deal that read the pool in order instead would pass the first
-        # assertion and fail the second.
-        def tagged_val_inputs(seed: int) -> set[str]:
-            leaves = _make_su_leaves(multiturn_task, 30)
-            split_and_tag_batch_runs(
-                leaves,
-                set(),
-                "train_tag",
-                "golden_tag",
-                "val_tag",
-                rng=random.Random(seed),
-            )
-            return {leaf.input for leaf in _leaf_split(leaves)["val"]}
-
-        first = tagged_val_inputs(11)
-        assert len(first) == 12  # 30 unreviewed → 18 train / 12 val
-        assert tagged_val_inputs(11) == first
-        assert tagged_val_inputs(999) != first
+        tag_golden_batch_runs(leaves, set(), "golden_tag", rng=random.Random(2))
+        assert _leaf_split(leaves)["golden"] == []
 
     def test_preserves_existing_runner_tags(self, multiturn_task):
         leaves = _make_su_leaves(multiturn_task, 4)
-        split_and_tag_batch_runs(
+        tag_golden_batch_runs(
             leaves,
             {leaf.id for leaf in leaves},
-            "train_tag",
             "golden_tag",
-            "val_tag",
             rng=random.Random(3),
         )
         for leaf in leaves:
@@ -933,26 +894,16 @@ class TestSplitAndTagMultiTurnChains:
             assert "synthetic_user_batch:b1" in leaf.tags
 
     def test_tagged_out_captures_additions_for_rollback(self, multiturn_task):
-        leaves = _make_su_leaves(multiturn_task, 4)
+        leaves = _make_su_leaves(multiturn_task, 8)
         tagged_out: list = []
-        split_and_tag_batch_runs(
+        tag_golden_batch_runs(
             leaves,
             {leaf.id for leaf in leaves},
-            "train_tag",
             "golden_tag",
-            "val_tag",
             rng=random.Random(4),
             tagged_out=tagged_out,
         )
-        # Every leaf was mutated exactly once (one split tag added each), and
-        # val rides the same ledger as train so rollback reverses it too.
-        assert len(tagged_out) == 4
-        assert all(len(added) == 1 for _, added in tagged_out)
-        assert {tag for _, added in tagged_out for tag in added} == {
-            "golden_tag",
-            "train_tag",
-            "val_tag",
-        }
+        assert [added for _, added in tagged_out] == [{"golden_tag"}, {"golden_tag"}]
 
 
 # ───────────────── delete_multi_turn_batch_chains ─────────────────

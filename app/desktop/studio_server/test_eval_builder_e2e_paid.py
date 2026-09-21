@@ -131,7 +131,7 @@ from app.desktop.studio_server.eval_api import connect_evals_api
 from app.desktop.studio_server.eval_builder_api import connect_eval_builder_api
 from app.desktop.studio_server.multiturn_sdg_api import connect_multiturn_sdg_api
 from app.desktop.studio_server.utils.copilot_utils import (
-    deal_pool_train_val,
+    deal_pool_test_train_val,
     find_multi_turn_chain_leaves,
     get_copilot_api_key,
 )
@@ -787,15 +787,13 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
 
     leaves = find_multi_turn_chain_leaves(temp_task, batch_tag)
     _require(len(leaves) == num_driven, f"expected {num_driven} chain leaves")
+    split_tags = {eval_tag, train_tag, val_tag}
     golden_leaf_ids: set[str | None] = set()
-    train_count = 0
-    val_count = 0
     for leaf in leaves:
         tags = set(leaf.tags or [])
-        split = {train_tag, val_tag, golden_tag} & tags
         _require(
-            len(split) == 1 and eval_tag not in tags,
-            f"leaf {leaf.id} is not in exactly one chain slice: {tags}",
+            not (split_tags & tags),
+            f"leaf {leaf.id} carries a case split tag: {tags}",
         )
         # Rating + ClaimReview exist exactly on the reviewed subset's
         # leaves; the unreviewed remainder is unrated by design.
@@ -826,31 +824,37 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             )
         if golden_tag in tags:
             golden_leaf_ids.add(leaf.id)
-        train_count += 1 if train_tag in tags else 0
-        val_count += 1 if val_tag in tags else 0
 
     # Golden is drawn only from rated chains and capped at 25% of the batch;
     # the reviewed subset is sized to fill that cap exactly (review_target),
-    # so golden == min(rated, cap). Everything else is dealt train:val, and
-    # the expected counts come from the dealer itself rather than from
-    # numbers pinned to today's NUM_CASES — this is an end-to-end check that
-    # the SAVE honoured the deal, not a second copy of the deal's math (the
-    # unit tests own that).
+    # so golden == min(rated, cap).
     _require(
         golden_leaf_ids <= rated_leaf_ids,
         f"golden slice {golden_leaf_ids} is not a subset of rated {rated_leaf_ids}",
     )
     golden_target = min(len(rated_leaf_ids), num_driven // 4)
-    expected_train, expected_val = deal_pool_train_val(
-        list(range(num_driven - golden_target)), random.Random(0)
-    )
     _require(
-        len(golden_leaf_ids) == golden_target
-        and train_count == len(expected_train)
-        and val_count == len(expected_val),
-        f"chain split wrong (golden={len(golden_leaf_ids)}, "
-        f"train={train_count}, val={val_count}, n={num_driven}, "
+        len(golden_leaf_ids) == golden_target,
+        f"golden slice wrong (golden={len(golden_leaf_ids)}, n={num_driven}, "
         f"rated={len(rated_leaf_ids)})",
+    )
+
+    # The cases are dealt into disjoint splits; the expected counts come from
+    # the dealer itself rather than numbers pinned to today's NUM_CASES, so
+    # this checks the SAVE honoured the deal, not the deal's own math.
+    cases = [ei for ei in temp_task.eval_inputs() if split_tags & set(ei.tags or [])]
+    dealt = [
+        sum(tag in (ei.tags or []) for ei in cases)
+        for tag in (eval_tag, train_tag, val_tag)
+    ]
+    expected = [
+        len(hand)
+        for hand in deal_pool_test_train_val(list(range(num_driven)), random.Random(0))
+    ]
+    _require(
+        all(len(split_tags & set(ei.tags or [])) == 1 for ei in cases)
+        and dealt == expected,
+        f"cases not dealt into disjoint splits: {dealt} (expected {expected})",
     )
 
     # ── Step 7 — RUN THE SAVED EVAL (the evals UI's own endpoints) ──────
@@ -872,7 +876,8 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     saved_eval = evals[0]
     judge_config = configs[0]
     score_key = saved_eval.output_scores[0].json_key()
-    eval_input_ids = {ei.id for ei in eval_inputs}
+    # The eval runs its test split; train and val are for optimizers.
+    eval_input_ids = {ei.id for ei in eval_inputs if eval_tag in (ei.tags or [])}
     dataset_runs_before = len(temp_task.runs(include_intermediate_runs=True))
     all_runs_before = len(
         temp_task.runs(include_intermediate_runs=True, include_eval_generated=True)

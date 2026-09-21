@@ -571,6 +571,12 @@ class TestGenerateBatch:
             assert "Validation error from server" in response.json()["message"]
 
 
+# The deal's hands, in the order the counts are asserted.
+SPLIT_ORDER = ("test", "train", "val")
+MULTI_TURN_SPLIT_TAGS = {f"{split}_multi_turn_spec" for split in SPLIT_ORDER}
+SINGLE_TURN_SPLIT_TAGS = {f"{split}_single_turn_spec" for split in SPLIT_ORDER}
+
+
 class TestCreateSpecWithCopilot:
     @pytest.fixture
     def project_and_task(self, tmp_path):
@@ -1166,10 +1172,10 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert eval_obj.splits["test"] == EvalInputSplit(
             filter_id="tag::test_multi_turn_spec"
         )
-        assert eval_obj.splits["train"] == TaskRunSplit(
+        assert eval_obj.splits["train"] == EvalInputSplit(
             filter_id="tag::train_multi_turn_spec"
         )
-        assert eval_obj.splits["val"] == TaskRunSplit(
+        assert eval_obj.splits["val"] == EvalInputSplit(
             filter_id="tag::val_multi_turn_spec"
         )
         assert eval_obj.model_dump()["train_set_filter_id"] is None
@@ -1192,8 +1198,8 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert first.data.synthetic_user_info.persona == "persona 0"
         assert first.data.synthetic_user_info.goal == "goal 0"
         assert first.data.synthetic_user_info.behavior_guidance == "guidance 0"
-        assert set(first.tags) == {
-            "test_multi_turn_spec",
+        # Exact, minus the split tag the deal assigned (counted below).
+        assert set(first.tags) - MULTI_TURN_SPLIT_TAGS == {
             f"synthetic_user_batch:{self.BATCH_TAG}",
             "scenario:0",
         }
@@ -1204,39 +1210,32 @@ class TestCreateSpecWithCopilotMultiTurn:
             assert ei.data.drive_config.model_provider == "openrouter"
             assert ei.data.drive_config.turns == 5
 
-        # Chains split into DISJOINT slices: each leaf carries exactly one of
-        # golden/train/val (on top of its synthetic_user_* tags) — the eval
-        # slice lives on the EvalInputs above, not on chains. Golden caps at
-        # 25% of 8 = 2, which here equals the two rated leaves — so both
-        # become golden (the answer key). The six unreviewed leaves are dealt
-        # 4 train / 2 val at the 40:25 ratio.
-        split_tags = {
-            "train_multi_turn_spec",
-            "golden_multi_turn_spec",
-            "val_multi_turn_spec",
+        # The cases are dealt into DISJOINT splits — 8 deal 2 test / 4 train /
+        # 2 val — so nothing tuned on train or val is reported on as test.
+        assert all(len(MULTI_TURN_SPLIT_TAGS & set(ei.tags)) == 1 for ei in eval_inputs)
+        cases_by_split = {
+            tag: {ei.id for ei in eval_inputs if tag in ei.tags}
+            for tag in MULTI_TURN_SPLIT_TAGS
         }
+        assert [len(cases_by_split[f"{s}_multi_turn_spec"]) for s in SPLIT_ORDER] == [
+            2,
+            4,
+            2,
+        ]
+
+        # Chains carry golden only: the answer key, capped at 25% of 8 = 2,
+        # which here is exactly the two rated leaves.
         runs_by_id = {run.id: run for run in task.runs()}
         for leaf in task.runs():
-            assert len(split_tags & set(leaf.tags)) == 1
-            assert "test_multi_turn_spec" not in leaf.tags
+            assert MULTI_TURN_SPLIT_TAGS.isdisjoint(leaf.tags)
             assert "synthetic_user_case" in leaf.tags
-        by_tag = {
-            tag: {run.id for run in task.runs() if tag in run.tags}
-            for tag in split_tags
-        }
-        assert len(by_tag["train_multi_turn_spec"]) == 4
-        assert len(by_tag["val_multi_turn_spec"]) == 2
-        # Golden == exactly the two reviewed leaves (rated count == the 25%
-        # cap), so the deal only ever touched the unreviewed remainder.
         reviewed_ids = {
             synthetic_chain_leaves[0].id,
             synthetic_chain_leaves[1].id,
         }
-        assert by_tag["golden_multi_turn_spec"] == reviewed_ids
-        assert by_tag["val_multi_turn_spec"].isdisjoint(reviewed_ids)
-        # An unreviewed leaf is held out in one of the dealt slices, never golden.
-        unreviewed_tags = set(runs_by_id[synthetic_chain_leaves[2].id].tags)
-        assert "golden_multi_turn_spec" not in unreviewed_tags
+        assert {
+            run.id for run in task.runs() if "golden_multi_turn_spec" in run.tags
+        } == reviewed_ids
 
         # Reviewed leaves carry golden ratings matching the review clicks,
         # plus feedback + per-claim grades; the unreviewed leaf stays unrated.
@@ -1337,11 +1336,11 @@ class TestCreateSpecWithCopilotMultiTurn:
                 "filter_id": "tag::test_multi_turn_spec",
             },
             "train": {
-                "source": "task_run",
+                "source": "eval_input",
                 "filter_id": "tag::train_multi_turn_spec",
             },
             "val": {
-                "source": "task_run",
+                "source": "eval_input",
                 "filter_id": "tag::val_multi_turn_spec",
             },
         }
@@ -1485,11 +1484,7 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert len(task.eval_inputs()) == 0
         # All three split tags were on the leaves when the save blew up, and
         # rollback took every one back off — val is reversed like the others.
-        assert {
-            "train_multi_turn_spec",
-            "golden_multi_turn_spec",
-            "val_multi_turn_spec",
-        } <= tags_at_failure
+        assert "golden_multi_turn_spec" in tags_at_failure
         for leaf in task.runs():
             assert leaf.output.rating is None
             assert leaf.feedback() == []
@@ -1908,10 +1903,10 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         assert eval_obj.splits["test"] == EvalInputSplit(
             filter_id="tag::test_single_turn_spec"
         )
-        assert eval_obj.splits["train"] == TaskRunSplit(
+        assert eval_obj.splits["train"] == EvalInputSplit(
             filter_id="tag::train_single_turn_spec"
         )
-        assert eval_obj.splits["val"] == TaskRunSplit(
+        assert eval_obj.splits["val"] == EvalInputSplit(
             filter_id="tag::val_single_turn_spec"
         )
         assert eval_obj.model_dump()["train_set_filter_id"] is None
@@ -1927,51 +1922,41 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         # saved judge reads what the builder's judge read.
         assert "format_trace" in configs[0].properties.prompt_template
 
-        # The eval slice: one inputs-only EvalInput per generated input,
-        # tagged with the eval slice + the drive batch it came from.
+        # One inputs-only EvalInput per generated input, carrying the drive
+        # batch it came from and exactly one split tag.
         eval_inputs = task.eval_inputs()
         assert len(eval_inputs) == 8
         assert {ei.data.type for ei in eval_inputs} == {"single_turn"}
         assert {ei.data.user_message.text for ei in eval_inputs} == {
             f"input {i}" for i in range(8)
         }
-        assert all(
-            set(ei.tags)
-            == {
-                "test_single_turn_spec",
-                f"single_turn_drive_batch:{self.BATCH_TAG}",
+        for ei in eval_inputs:
+            assert set(ei.tags) - SINGLE_TURN_SPLIT_TAGS == {
+                f"single_turn_drive_batch:{self.BATCH_TAG}"
             }
-            for ei in eval_inputs
-        )
+            assert len(SINGLE_TURN_SPLIT_TAGS & set(ei.tags)) == 1
 
-        # Runs split into DISJOINT golden/train/val slices on top of their
-        # pipeline tags. Golden caps at 25% of 8 = 2 = the reviewed runs; the
-        # 6 unreviewed runs are dealt 4 train / 2 val at the 40:25 ratio.
-        split_tags = {
-            "train_single_turn_spec",
-            "golden_single_turn_spec",
-            "val_single_turn_spec",
-        }
+        # The cases are dealt into DISJOINT splits — 8 deal 2 test / 4 train /
+        # 2 val — so nothing tuned on train or val is reported on as test.
+        assert [
+            sum(f"{split}_single_turn_spec" in ei.tags for ei in eval_inputs)
+            for split in SPLIT_ORDER
+        ] == [2, 4, 2]
+
+        # Runs carry golden only: the answer key, capped at 25% of 8 = 2,
+        # which here is exactly the two reviewed runs.
         runs_by_id = {run.id: run for run in task.runs()}
         for run in task.runs():
-            assert len(split_tags & set(run.tags)) == 1
-            assert "test_single_turn_spec" not in run.tags
+            assert SINGLE_TURN_SPLIT_TAGS.isdisjoint(run.tags)
             assert "single_turn_drive" in run.tags
-        by_tag = {
-            tag: {run.id for run in task.runs() if tag in run.tags}
-            for tag in split_tags
-        }
-        assert len(by_tag["train_single_turn_spec"]) == 4
-        assert len(by_tag["val_single_turn_spec"]) == 2
         reviewed_ids = {batch_runs[0].id, batch_runs[1].id}
-        assert by_tag["golden_single_turn_spec"] == reviewed_ids
-        assert by_tag["val_single_turn_spec"].isdisjoint(reviewed_ids)
-        unreviewed_tags = set(runs_by_id[batch_runs[2].id].tags)
-        assert "golden_single_turn_spec" not in unreviewed_tags
+        assert {
+            run.id for run in task.runs() if "golden_single_turn_spec" in run.tags
+        } == reviewed_ids
 
         # Reviewed runs carry golden ratings matching the review clicks, plus
-        # feedback + per-claim grades; unreviewed runs stay unrated — REAL
-        # runs fill train now, so no synthesized TaskRuns exist anywhere.
+        # feedback + per-claim grades; unreviewed runs stay unrated, and no
+        # synthesized TaskRuns exist anywhere.
         rating_key = "named::Single Turn Spec"
         failed = runs_by_id[batch_runs[0].id]
         assert failed.output.rating.requirement_ratings[rating_key].value == 0.0
@@ -2016,11 +2001,11 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
                 "filter_id": "tag::test_single_turn_spec",
             },
             "train": {
-                "source": "task_run",
+                "source": "eval_input",
                 "filter_id": "tag::train_single_turn_spec",
             },
             "val": {
-                "source": "task_run",
+                "source": "eval_input",
                 "filter_id": "tag::val_single_turn_spec",
             },
         }

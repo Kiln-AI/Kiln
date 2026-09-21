@@ -4157,8 +4157,8 @@
         // Carry the human's review through save: each reviewed trace maps to
         // its chain-leaf TaskRun (leaf_run_id from run_cases_batch); the
         // studio writes the golden rating + per-claim grades onto that leaf.
-        // Only traces the human actually reviewed ride along (subset review:
-        // unreviewed chains land in the train split, unrated).
+        // Only traces the human actually reviewed ride along; they become
+        // the golden answer key. Unreviewed chains join no split.
         const reviewed_chains = trace_claims
           .map((tc, i) => ({ tc, review: trace_reviews[i] }))
           // Truthy check: the batch runner emits "" (not null) when a leaf
@@ -4246,8 +4246,8 @@
       // Carry the human's review through save: each reviewed trace maps to
       // its persisted run (leaf_run_id from the pipeline); the studio
       // writes the golden rating + per-claim grades onto that run. Only
-      // traces the human actually reviewed ride along (subset review:
-      // unreviewed runs land in the train split, unrated).
+      // traces the human actually reviewed ride along; they become the
+      // golden answer key. Unreviewed runs join no split.
       const reviewed_runs = trace_claims
         .map((tc, i) => ({ tc, review: trace_reviews[i] }))
         // Truthy check: the pipeline emits "" (not null) when a run has no
