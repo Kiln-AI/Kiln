@@ -8558,7 +8558,7 @@ built_in_models: List[KilnModel] = [
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 model_id="z-ai/glm-5.3",
-                structured_output_mode=StructuredOutputMode.json_instructions,
+                structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=False,
             ),
             KilnModelProvider(
