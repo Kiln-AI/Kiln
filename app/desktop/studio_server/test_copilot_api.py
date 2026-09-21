@@ -2034,6 +2034,26 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         # exactly the eight the pipeline drove — nothing new was minted.
         assert len(task.runs()) == 8
 
+    def test_the_same_batch_always_deals_the_same_way(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        # The deal is seeded by the batch tag, so re-saving a batch (after a
+        # failed save, say) reproduces the split rather than reshuffling it.
+        project, task = project_and_task
+
+        def test_inputs(spec_name: str) -> set[str]:
+            single_turn_request_data["name"] = spec_name
+            assert (
+                self._post(client, project, task, single_turn_request_data).status_code
+                == 200
+            )
+            tag = f"test_{spec_name.lower().replace(' ', '_')}"
+            return {
+                ei.data.user_message.text for ei in task.eval_inputs() if tag in ei.tags
+            }
+
+        assert test_inputs("Deal Once") == test_inputs("Deal Twice")
+
     def test_single_turn_save_writes_splits_natively_to_disk(
         self, client, project_and_task, batch_runs, single_turn_request_data
     ):

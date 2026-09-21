@@ -645,7 +645,6 @@ def persist_spec_save(
     reviewed_leaf_ids: set[str],
     golden_tag: str,
     spec_name: str,
-    rng: random.Random,
 ) -> None:
     """Persist every model of a spec save as one unit of work, rolling back on failure.
 
@@ -1184,8 +1183,16 @@ def connect_copilot_api(app: FastAPI):
 
         # Every model is built and validated before anything is saved.
 
-        # One rng for every split this save makes.
-        rng = random.Random()
+        # Seeded by the batch being saved, so the same batch always deals the
+        # same way.
+        batch_tag = (
+            request.multi_turn.batch_tag
+            if request.multi_turn is not None
+            else request.single_turn.batch_tag
+            if request.single_turn is not None
+            else None
+        )
+        rng = random.Random(batch_tag)
 
         # The eval builder's cases, minus the reviewed ones: those are in the
         # eval already, as their rated golden runs. Validated here so a bad
@@ -1234,8 +1241,9 @@ def connect_copilot_api(app: FastAPI):
                 )
             deal_eval_inputs(batch_eval_inputs, eval_tag, train_tag, val_tag, rng)
 
-        # 1. Create the Eval. Its splits hold the EvalInputs dealt above, while
-        # golden stays TaskRuns: the runs a human graded.
+        # 1. Create the Eval. An eval-builder save's splits hold the EvalInputs
+        # dealt above; the legacy path keeps train and val as dataset runs.
+        # Golden is TaskRuns on both: the runs a human graded.
         eval, _tags = build_spec_eval(
             task=task,
             name=request.name,
@@ -1361,7 +1369,6 @@ def connect_copilot_api(app: FastAPI):
             reviewed_leaf_ids=reviewed_leaf_ids,
             golden_tag=golden_tag,
             spec_name=request.name,
-            rng=rng,
         )
 
         return spec
