@@ -27,9 +27,9 @@ calls, so the harness starts at Step 4 with the spec text already "written":
                        user's keys. Cases flow through independently; a
                        failed case never discards the others.)
   Step 5s  SELECT      (UI: select_review_subset — a deterministic
-                       judge-stratified pick of N//4 traces for human
-                       review; the golden answer key caps at 25%, so the
-                       subset fills it exactly. The rest stay reviewable
+                       judge-stratified pick of six traces for human
+                       review, which become the golden answer key. The
+                       rest stay reviewable
                        but optional. Headless we review exactly the subset.)
   Step 5c  CLAIMS      POST .../eval_builder/build_claims  (per selected trace)
                        (UI: build_claims_for_index — kiln_server's claim
@@ -139,9 +139,10 @@ from app.desktop.studio_server.utils.copilot_utils import (
 logger = logging.getLogger(__name__)
 
 # The UI runs 40 cases x 5 turns; both are request parameters, so the
-# harness shrinks them without touching any code. Four cases keeps the run
-# cheap while leaving a case to review (the save gate asks for N // 4).
-NUM_CASES = 4
+# harness shrinks them without touching any code. Nine keeps the run cheap
+# while leaving one case for each split once the six reviewed ones are
+# golden.
+NUM_CASES = 9
 TURNS_PER_CASE = 2
 SPEC_NAME = "E2E Harness Spec"
 
@@ -296,10 +297,10 @@ def _assert_pipeline_judged(
 
 
 def _review_target(total: int) -> int:
-    """Mirror of the UI's review_target: N//4 with a floor of 1."""
+    """Mirror of the UI's review_target: six, bounded by the batch."""
     if total <= 0:
         return 0
-    return max(1, total // 4)
+    return min(6, total)
 
 
 def _select_review_subset(judge_scores: list[str]) -> list[int]:
@@ -504,9 +505,9 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         )
 
     # ── Step 5s — SELECT the review subset (UI: select_review_subset) ───
-    # Deterministic, judge-stratified N//4 pick — the same mechanical rule
-    # the UI applies. The reviewer grades exactly these; the rest of the
-    # batch stays unreviewed (and must land in train, asserted below).
+    # Deterministic, judge-stratified pick of six — the same mechanical rule
+    # the UI applies. The reviewer grades exactly these; the rest of the batch
+    # stays unreviewed and is dealt into the splits, asserted below.
     judged_order = sorted(judged)
     subset_positions = _select_review_subset(
         [judged[i]["judge_score"] for i in judged_order]
@@ -656,7 +657,7 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     # mapping for real reviews).
     #
     # SUBSET REVIEW: only the selected traces are reviewed (the UI's save
-    # gate requires N//4). Golden = the rated chains; every other chain is
+    # gate asks for six). Golden = the rated chains; every other chain is
     # unrated, and its case is minted and dealt.
     reviewed_chains = []
     for index in review_indices:
@@ -1082,8 +1083,8 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         agreements.append((judge_score == 1.0) == human_passes)
     # Agreement is a report, not a gate: with a tiny golden slice a single
     # judge/human disagreement is legitimate signal, not a pipeline break.
-    # An empty golden slice only happens when SU salvage shrank the batch
-    # below 4 driven cases (golden_target = num_driven // 4 = 0).
+    # An empty golden slice only happens when SU salvage left nothing to
+    # review.
     if agreements:
         agreement = sum(agreements) / len(agreements)
         logger.info(
