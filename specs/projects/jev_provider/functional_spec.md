@@ -105,10 +105,11 @@ Unsupported reasons (one per property, exact wording is the coding agent's call 
 - `enum` values that are strings but `type` says something other than `string` (and likewise for integers).
 - Duplicate `enum` values after string conversion.
 - `enum` with more than 255 values (Jev's choice limit).
-- `type: integer` without both `minimum` and `maximum`, or with a range of 1 or more than 10 levels. `exclusiveMinimum`/`exclusiveMaximum` are not honoured; they count as missing bounds.
+- `type: integer` without both `minimum` and `maximum`, or with a range of 1 or more than 10 levels.
 - `type: number` with bounds other than exactly 0 and 1, or missing bounds.
 - `string` without `enum`, `array`, `object`, `null`, a list of types, or no `type` and no `enum`.
 - `anyOf`, `oneOf`, `allOf`, `$ref`, `const`, `not`.
+- `multipleOf`, `exclusiveMinimum`, `exclusiveMaximum` on any property. A question offers a fixed set of answers, so a constraint that narrows them further cannot be honoured; rejecting up front beats a paid call whose answer then fails the task's own output validation.
 
 Properties are answered whether or not they are listed in `required`, since Jev cannot abstain. `additionalProperties` is ignored. Property order in the request follows the schema's property order.
 

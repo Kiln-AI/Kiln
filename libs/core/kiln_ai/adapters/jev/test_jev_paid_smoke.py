@@ -16,7 +16,7 @@ carry a confidence.
 What they still cannot falsify, so nobody reads more into a green run than it earns: the
 `noul` probability pair and its absent confidence are synthesized by `from_jev.py` rather
 than read off the wire, so their keys, their sum and the `None` confidence hold whatever
-Jev sends (only a `noul` outside 0 to 1 would show, as a negative "false"); a score
+Jev sends (a `noul` outside 0 to 1 never reaches here: the wire model rejects it); a score
 question's probability keys are re-keyed from level indices the decoder has already
 range-checked, so only the choice properties can catch a drifted wire label; and nothing
 checks the response's `model` echo.

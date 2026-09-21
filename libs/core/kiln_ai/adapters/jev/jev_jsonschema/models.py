@@ -21,6 +21,16 @@ non-finite answer is not a probability or a score. Rejecting it here turns it in
 module's usual "unexpected response" error instead of a value that slips through a
 JSON Schema range check and is persisted."""
 
+Probability = Annotated[float, Field(ge=0.0, le=1.0, allow_inf_nan=False)]
+"""A probability or confidence from the wire, which the API documents as 0 to 1.
+
+Out-of-range values are rejected rather than carried: a `noul` of 1.2 would otherwise
+decode to a "false" probability of -0.2, and every probability and confidence is
+persisted in a run's intermediate outputs."""
+
+TokenCount = Annotated[int, Field(ge=0)]
+"""A token count from the wire. A negative count would make `total_tokens` wrong."""
+
 MAX_CHOICE_OPTIONS = 255
 MIN_SCORE_LEVELS = 2
 MAX_SCORE_LEVELS = 10
@@ -80,7 +90,7 @@ class NoulAnswer(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     type: Literal["noul"]
-    noul: FiniteFloat
+    noul: Probability
 
 
 class ChoiceAnswer(BaseModel):
@@ -90,8 +100,8 @@ class ChoiceAnswer(BaseModel):
 
     type: Literal["choice"]
     choice: str
-    confidence: FiniteFloat
-    probabilities: dict[str, FiniteFloat]
+    confidence: Probability
+    probabilities: dict[str, Probability]
 
 
 class ScoreAnswer(BaseModel):
@@ -104,9 +114,9 @@ class ScoreAnswer(BaseModel):
 
     type: Literal["score"]
     score: FiniteFloat
-    confidence: FiniteFloat
+    confidence: Probability
     legend: dict[str, JsonContent]
-    probabilities: dict[str, FiniteFloat]
+    probabilities: dict[str, Probability]
 
 
 JevAnswer = Annotated[
@@ -130,8 +140,8 @@ class SystemOneRequest(BaseModel):
 class SystemOneUsage(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    input_tokens: int | None = None
-    output_tokens: int | None = None
+    input_tokens: TokenCount | None = None
+    output_tokens: TokenCount | None = None
 
 
 class SystemOneResponse(BaseModel):

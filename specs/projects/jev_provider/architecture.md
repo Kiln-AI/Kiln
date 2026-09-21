@@ -194,7 +194,7 @@ Follow the checklist in `.claude/skills/claude-maintain-models/SKILL.md` ("Addin
 
 Featherless's `/v1/models` was public, so it could not validate a key. TypeSafe's is not: `GET https://api.typesafe.ai/v1/models` is account-scoped and rejects a bad key, verified against the live endpoint. The GET check is therefore the confirmed choice, and the `POST /v1/systemone` fallback this section once held in reserve is not needed.
 
-`requests.get("/v1/models", headers=Bearer)`. 200 → store key, return 200 "Connected to TypeSafe AI". 401/403 → 401 "Failed to connect to TypeSafe AI. Invalid API key." Other non-2xx → 400 with the status. Exception → 400 with the message.
+`httpx.AsyncClient().get("/v1/models", headers=Bearer)` — the handler is `async`, so the check cannot use a blocking client without stalling every other request for its timeout. 200 → store key, return 200 "Connected to TypeSafe AI". 401/403 → 401 "Failed to connect to TypeSafe AI. Invalid API key." Other non-2xx → 400 with the status. Exception → 400 with the message.
 
 The connect test suite mocks both success and 401.
 

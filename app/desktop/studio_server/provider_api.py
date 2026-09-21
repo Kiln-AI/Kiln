@@ -1620,9 +1620,13 @@ async def connect_typesafe(key: str):
         }
         # /v1/models is account-scoped and rejects a bad key, and listing models spends
         # no tokens, so it validates the key without a POST.
-        response = requests.get(
-            "https://api.typesafe.ai/v1/models", headers=headers, timeout=10
-        )
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.typesafe.ai/v1/models",
+                headers=headers,
+                timeout=10,
+                follow_redirects=True,
+            )
 
         if response.status_code in (401, 403):
             return JSONResponse(

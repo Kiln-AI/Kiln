@@ -182,7 +182,6 @@ def test_number_probability_criteria(bounds: dict[str, Any]):
         {"type": "number", "maximum": 1},
         {"type": "number", "minimum": 1, "maximum": 5},
         {"type": "number", "minimum": 0, "maximum": 100},
-        {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
         {"type": "number", "minimum": False, "maximum": True},
     ],
 )
@@ -227,23 +226,19 @@ def test_integer_score_negative_minimum():
     [
         (
             {"type": "integer"},
-            "integer needs integer 'minimum' and 'maximum' (exclusive bounds are not supported)",
+            "integer needs integer 'minimum' and 'maximum'",
         ),
         (
             {"type": "integer", "minimum": 1},
-            "integer needs integer 'minimum' and 'maximum' (exclusive bounds are not supported)",
-        ),
-        (
-            {"type": "integer", "exclusiveMinimum": 0, "exclusiveMaximum": 6},
-            "integer needs integer 'minimum' and 'maximum' (exclusive bounds are not supported)",
+            "integer needs integer 'minimum' and 'maximum'",
         ),
         (
             {"type": "integer", "minimum": 1.5, "maximum": 5},
-            "integer needs integer 'minimum' and 'maximum' (exclusive bounds are not supported)",
+            "integer needs integer 'minimum' and 'maximum'",
         ),
         (
             {"type": "integer", "minimum": True, "maximum": 5},
-            "integer needs integer 'minimum' and 'maximum' (exclusive bounds are not supported)",
+            "integer needs integer 'minimum' and 'maximum'",
         ),
         (
             {"type": "integer", "minimum": 3, "maximum": 3},
@@ -388,8 +383,31 @@ def test_all_failures_reported_in_schema_order():
         "Schema has properties that cannot be mapped to Jev questions:\n"
         "- bad_string: type 'string' is not supported\n"
         "- bad_enum: enum has no values\n"
-        "- bad_integer: integer needs integer 'minimum' and 'maximum' "
-        "(exclusive bounds are not supported)"
+        "- bad_integer: integer needs integer 'minimum' and 'maximum'"
+    )
+
+
+@pytest.mark.parametrize(
+    "prop",
+    [
+        {"type": "integer", "minimum": 1, "maximum": 5, "multipleOf": 2},
+        {"type": "integer", "minimum": 1, "maximum": 5, "exclusiveMaximum": 5},
+        {"type": "integer", "exclusiveMinimum": 0, "exclusiveMaximum": 6},
+        {"type": "number", "minimum": 0, "maximum": 1, "multipleOf": 0.1},
+        {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+        {"enum": [2, 4, 6], "multipleOf": 2},
+    ],
+)
+def test_unimplemented_validation_keywords_rejected(prop: dict[str, Any]):
+    """A constraint the questions cannot express has to fail here, not after the call:
+    the mapper would otherwise offer answers the source schema rejects, and the run would
+    fail its own output validation once Jev has been paid to answer."""
+    reason = failure_reason({"description": "Correctness", **prop})
+
+    assert reason.endswith("which is not supported")
+    assert any(
+        keyword in reason
+        for keyword in ("multipleOf", "exclusiveMinimum", "exclusiveMaximum")
     )
 
 

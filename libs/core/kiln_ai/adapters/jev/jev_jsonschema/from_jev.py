@@ -92,7 +92,9 @@ class JevResult2JsonSchema:
                 if not isinstance(answer, ChoiceAnswer):
                     raise _wrong_answer_type(key, answer, "choice")
                 output[key] = self._decode_choice(key, mapping, answer)
-                probabilities[key] = dict(answer.probabilities)
+                probabilities[key] = self._decode_choice_probabilities(
+                    key, mapping, answer
+                )
                 confidence[key] = answer.confidence
             else:
                 if not isinstance(answer, ScoreAnswer):
@@ -136,6 +138,24 @@ class JevResult2JsonSchema:
                 "of the schema's enum values"
             )
         return values_by_label[answer.choice]
+
+    def _decode_choice_probabilities(
+        self, key: str, mapping: MappedQuestion, answer: ChoiceAnswer
+    ) -> dict[str, float]:
+        """The answer's probabilities, rejecting any label the schema cannot produce.
+
+        The same check `_decode_score_probabilities` makes on level indices: a label
+        outside the question's own options is a distribution over something other than
+        the property, not a value to persist. A missing label is not an error, since the
+        API need not send a zero."""
+        labels = {str(value) for value in mapping.enum_values or ()}
+        for label in answer.probabilities:
+            if label not in labels:
+                raise UnexpectedAnswerError(
+                    f"answer for '{key}' has probability key '{_echoed(label)}', which "
+                    "is not one of the schema's enum values"
+                )
+        return dict(answer.probabilities)
 
     def _decode_score_probabilities(
         self, key: str, answer: ScoreAnswer, level_count: int

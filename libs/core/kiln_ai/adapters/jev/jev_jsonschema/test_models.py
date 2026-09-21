@@ -14,6 +14,7 @@ from .models import (
     ScoreQuestion,
     SystemOneRequest,
     SystemOneResponse,
+    SystemOneUsage,
 )
 
 answer_adapter = TypeAdapter(JevAnswer)
@@ -203,64 +204,95 @@ def test_request_to_body_matches_documented_example():
     }
 
 
+# Every field the wire models treat as a probability, as a builder that puts the value
+# under test in that one field. Shared by the non-finite and out-of-range cases.
+PROBABILITY_ANSWER_BUILDERS = [
+    pytest.param(lambda v: {"type": "noul", "noul": v}, id="noul"),
+    pytest.param(
+        lambda v: {
+            "type": "choice",
+            "choice": "pass",
+            "confidence": v,
+            "probabilities": {"pass": 1.0},
+        },
+        id="choice_confidence",
+    ),
+    pytest.param(
+        lambda v: {
+            "type": "choice",
+            "choice": "pass",
+            "confidence": 0.8,
+            "probabilities": {"pass": v},
+        },
+        id="choice_probability",
+    ),
+    pytest.param(
+        lambda v: {
+            "type": "score",
+            "score": 1.0,
+            "confidence": v,
+            "legend": {"0": "worst"},
+            "probabilities": {"0": 1.0},
+        },
+        id="score_confidence",
+    ),
+    pytest.param(
+        lambda v: {
+            "type": "score",
+            "score": 1.0,
+            "confidence": 0.7,
+            "legend": {"0": "worst"},
+            "probabilities": {"0": v},
+        },
+        id="score_probability",
+    ),
+]
+
+# `score` is an expected level rather than a probability, so it is unbounded but still
+# has to be finite.
+SCORE_VALUE_BUILDER = pytest.param(
+    lambda v: {
+        "type": "score",
+        "score": v,
+        "confidence": 0.7,
+        "legend": {"0": "worst"},
+        "probabilities": {"0": 1.0},
+    },
+    id="score",
+)
+
+
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
 @pytest.mark.parametrize(
-    "build_answer",
-    [
-        pytest.param(lambda v: {"type": "noul", "noul": v}, id="noul"),
-        pytest.param(
-            lambda v: {
-                "type": "choice",
-                "choice": "pass",
-                "confidence": v,
-                "probabilities": {"pass": 1.0},
-            },
-            id="choice_confidence",
-        ),
-        pytest.param(
-            lambda v: {
-                "type": "choice",
-                "choice": "pass",
-                "confidence": 0.8,
-                "probabilities": {"pass": v},
-            },
-            id="choice_probability",
-        ),
-        pytest.param(
-            lambda v: {
-                "type": "score",
-                "score": v,
-                "confidence": 0.7,
-                "legend": {"0": "worst"},
-                "probabilities": {"0": 1.0},
-            },
-            id="score",
-        ),
-        pytest.param(
-            lambda v: {
-                "type": "score",
-                "score": 1.0,
-                "confidence": v,
-                "legend": {"0": "worst"},
-                "probabilities": {"0": 1.0},
-            },
-            id="score_confidence",
-        ),
-        pytest.param(
-            lambda v: {
-                "type": "score",
-                "score": 1.0,
-                "confidence": 0.7,
-                "legend": {"0": "worst"},
-                "probabilities": {"0": v},
-            },
-            id="score_probability",
-        ),
-    ],
+    "build_answer", [*PROBABILITY_ANSWER_BUILDERS, SCORE_VALUE_BUILDER]
 )
 def test_answers_reject_non_finite_numbers(build_answer, value: float):
     with pytest.raises(ValidationError):
         answer_adapter.validate_python(build_answer(value))
+
+
+@pytest.mark.parametrize("value", [-0.0001, 1.0001, -1.0, 2.0])
+@pytest.mark.parametrize("build_answer", PROBABILITY_ANSWER_BUILDERS)
+def test_answers_reject_probabilities_outside_zero_to_one(build_answer, value: float):
+    """A probability outside 0 to 1 is not a probability. `noul` shows why it matters:
+    1.2 would decode to a "false" probability of -0.2, and every probability and
+    confidence is persisted in the run's intermediate outputs."""
+    with pytest.raises(ValidationError):
+        answer_adapter.validate_python(build_answer(value))
+
+
+@pytest.mark.parametrize("value", [0.0, 1.0])
+def test_answers_accept_the_probability_bounds(value: float):
+    answer = answer_adapter.validate_python({"type": "noul", "noul": value})
+
+    assert answer.noul == value
+
+
+@pytest.mark.parametrize("field", ["input_tokens", "output_tokens"])
+def test_usage_rejects_negative_token_counts(field: str):
+    """A negative count would make `total_tokens` wrong in the run's usage."""
+    with pytest.raises(ValidationError):
+        SystemOneUsage.model_validate({field: -1})
 
 
 def test_response_rejects_bare_nan_token_from_the_wire():

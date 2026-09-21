@@ -234,6 +234,35 @@ def test_score_level_out_of_range_raises(probabilities: dict[str, float]):
         )
 
 
+@pytest.mark.parametrize(
+    "prop,probabilities",
+    [
+        ({"enum": ["pass", "fail"]}, {"pass": 0.7, "maybe": 0.3}),
+        ({"type": "integer", "enum": [1, 2, 3]}, {"1": 0.7, "4": 0.3}),
+    ],
+)
+def test_choice_probability_label_outside_the_schema_raises(
+    prop: dict[str, Any], probabilities: dict[str, float]
+):
+    """The choice mirror of the score level-range check: a label the schema cannot
+    produce means the distribution is over something other than this property, so it is
+    not persisted as if it were."""
+    choice = next(iter(probabilities))
+    with pytest.raises(UnexpectedAnswerError, match="has probability key"):
+        decode_one(prop, choice_answer(choice, probabilities))
+
+
+def test_choice_probabilities_may_omit_labels():
+    """Only unknown labels are rejected. The API need not send a zero for every option,
+    and requiring a complete distribution would fail a run over a rounding decision."""
+    decoded = decode_one(
+        {"enum": ["pass", "fail"]}, choice_answer("pass", {"pass": 1.0})
+    )
+
+    assert decoded.output == {"field": "pass"}
+    assert decoded.probabilities == {"field": {"pass": 1.0}}
+
+
 def test_score_non_numeric_probability_key_raises():
     with pytest.raises(UnexpectedAnswerError, match="expected a level index"):
         decode_one(

@@ -69,24 +69,26 @@ class ScoreQuestion(BaseModel):
 
 JevQuestion = Annotated[NoulQuestion | ChoiceQuestion | ScoreQuestion, Field(discriminator="type")]
 
-FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]   # every number from the wire
+FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]           # an unbounded number
+Probability = Annotated[float, Field(ge=0.0, le=1.0, allow_inf_nan=False)]
+TokenCount = Annotated[int, Field(ge=0)]
 
 class NoulAnswer(BaseModel):
     type: Literal["noul"]
-    noul: FiniteFloat
+    noul: Probability
 
 class ChoiceAnswer(BaseModel):
     type: Literal["choice"]
     choice: str
-    confidence: FiniteFloat
-    probabilities: dict[str, FiniteFloat]
+    confidence: Probability
+    probabilities: dict[str, Probability]
 
 class ScoreAnswer(BaseModel):
     type: Literal["score"]
-    score: FiniteFloat
-    confidence: FiniteFloat
+    score: FiniteFloat                        # an expected level, not a probability
+    confidence: Probability
     legend: dict[str, JsonContent]
-    probabilities: dict[str, FiniteFloat]     # keys are 0-based level indices as strings
+    probabilities: dict[str, Probability]     # keys are 0-based level indices as strings
 
 JevAnswer = Annotated[NoulAnswer | ChoiceAnswer | ScoreAnswer, Field(discriminator="type")]
 
@@ -97,8 +99,8 @@ class SystemOneRequest(BaseModel):
     def to_body(self) -> dict[str, Any]: return self.model_dump(exclude_none=True)
 
 class SystemOneUsage(BaseModel):
-    input_tokens: int | None = None
-    output_tokens: int | None = None
+    input_tokens: TokenCount | None = None
+    output_tokens: TokenCount | None = None
 
 class SystemOneResponse(BaseModel):
     model: str
@@ -106,7 +108,7 @@ class SystemOneResponse(BaseModel):
     usage: SystemOneUsage = SystemOneUsage()
 ```
 
-Every number an answer carries is a `FiniteFloat`: `json.loads` accepts the non-standard `NaN` and `Infinity` tokens, and a `NaN` would pass a JSON Schema `minimum`/`maximum` check (both comparisons are false) and be persisted, so a non-finite number is rejected at the wire boundary and surfaces as the module's usual unexpected-answer error.
+Every number an answer carries is finite: `json.loads` accepts the non-standard `NaN` and `Infinity` tokens, and a `NaN` would pass a JSON Schema `minimum`/`maximum` check (both comparisons are false) and be persisted, so a non-finite number is rejected at the wire boundary and surfaces as the module's usual unexpected-answer error. Every field the API documents as a probability is bounded to 0 through 1 for the same reason: a `noul` of 1.2 would otherwise decode to a "false" probability of -0.2, and every probability and confidence is persisted in a run's intermediate outputs. `score` stays unbounded, because it is an expected level rather than a probability. Token counts are non-negative, since a negative one would make the run's `total_tokens` wrong.
 
 ### `to_jev.py`
 
@@ -202,7 +204,7 @@ return QuestionSet(mappings)
 
 `_map_property(key, prop)` decision order; first match wins:
 
-1. Any of `anyOf`, `oneOf`, `allOf`, `$ref`, `const`, `not` present → "uses '<keyword>', which is not supported".
+1. Any of `anyOf`, `oneOf`, `allOf`, `$ref`, `const`, `not`, `multipleOf`, `exclusiveMinimum`, `exclusiveMaximum` present → "uses '<keyword>', which is not supported". The last three are constraints a question cannot express: an integer from 1 to 5 with `multipleOf: 2` would still offer five levels, so a 3 would come back and fail the source schema after the call.
 2. `enum` present:
    - empty → "enum has no values".
    - all `str` and `type` in (absent, `"string"`) → `string_choice`, criteria `{value: None}` in order.
@@ -217,7 +219,7 @@ return QuestionSet(mappings)
    - otherwise → "number is only supported with minimum 0 and maximum 1 (mapped to a probability)".
 5. `type == "integer"`:
    - `minimum` and `maximum` both present and integral (accept `5.0`) → `levels = maximum - minimum + 1`.
-   - a bound missing or non-integral → "integer needs integer 'minimum' and 'maximum' (exclusive bounds are not supported)".
+   - a bound missing or non-integral → "integer needs integer 'minimum' and 'maximum'".
    - `levels < 2` → "integer range must span at least 2 values"; `levels > options.max_score_levels` → "integer range spans N values; Jev score supports at most M".
    - else `score`, `ScoreQuestion(instructions=X, criteria=[str(v) for v in range(minimum, maximum + 1)])`, `minimum` stored.
 6. `type` is a list → "multiple types are not supported".
@@ -232,13 +234,13 @@ For each `key, mapping` in `question_set.mappings` (schema order):
 
 | kind | `output[key]` | `probabilities[key]` | `confidence[key]` |
 |---|---|---|---|
-| `string_choice` | `answer.choice` (must be in `enum_values`, else error) | `dict(answer.probabilities)` | `answer.confidence` |
+| `string_choice` | `answer.choice` (must be in `enum_values`, else error) | `dict(answer.probabilities)`, every key in `enum_values` or error | `answer.confidence` |
 | `integer_choice` | `int(answer.choice)` | same | `answer.confidence` |
 | `boolean_noul` | `answer.noul >= options.noul_threshold` | `{"true": p, "false": 1 - p}` | `None` |
 | `number_noul` | `answer.noul` (float) | `{"true": p, "false": 1 - p}` | `None` |
 | `score` | argmax: `minimum + min(level with max p)`; expected: `clamp(round(answer.score)) + minimum`; empty `probabilities` always falls back to expected | `{str(minimum + level): p}` | `answer.confidence` |
 
-Extra answers not in the question set are ignored. Probabilities are returned unrounded. Any value from an answer that an `UnexpectedAnswerError` message quotes back — the chosen label, a probability key, an out-of-range level, a validation message — is truncated to `MAX_ECHOED_VALUE_CHARS` (200), so a verbose or hostile response cannot put an unbounded string into an error a user reads. That bound is for a single value, unlike the client's 500-character body cap.
+Extra answers not in the question set are ignored. A probability key outside the question's own values — an unknown choice label, a level outside 0 to `level_count - 1` — is an error, but a missing one is not: the API need not send a zero, so neither distribution has to be complete. Probabilities are returned unrounded. Any value from an answer that an `UnexpectedAnswerError` message quotes back — the chosen label, a probability key, an out-of-range level, a validation message — is truncated to `MAX_ECHOED_VALUE_CHARS` (200), so a verbose or hostile response cannot put an unbounded string into an error a user reads. That bound is for a single value, unlike the client's 500-character body cap.
 
 ## Dependencies
 
@@ -252,13 +254,15 @@ Extra answers not in the question set are ignored. Probabilities are returned un
 - `ScoreQuestion` rejects 1 and 11 levels, accepts 2 and 10. `ChoiceQuestion` rejects 0 and 256 options. `NoulQuestion` requires `instructions`.
 - Answers and response ignore unknown fields; `SystemOneResponse` parses all three answer types; `usage` defaults.
 - Every answer float rejects `nan`, `inf` and `-inf`, including a bare `NaN` token parsed by `json.loads`.
+- Every probability and confidence field rejects a value outside 0 to 1 and accepts both bounds; `usage` rejects a negative token count.
 - `SystemOneRequest.to_body()` matches the documented example request.
 
 `test_to_jev.py` (parametrize where natural)
 - string enum with and without `type`; integer enum; bool/mixed/empty/duplicate/type-mismatch enums rejected; 256-value enum rejected.
 - boolean → noul with instructions from description, title, then key; no fallback and no description → rejected.
 - number 0..1 → noul with `criteria.true == X` and `criteria.false == f"inverse of {X}"`; number with other bounds or no bounds rejected; `0.0`/`1.0` accepted.
-- integer bounds → score with correct criteria and `minimum`; float-integral bounds accepted; missing bound, exclusive bounds, single value, 11 levels rejected; 10 accepted; `max_score_levels=5` honoured.
+- integer bounds → score with correct criteria and `minimum`; float-integral bounds accepted; missing bound, single value, 11 levels rejected; 10 accepted; `max_score_levels=5` honoured.
+- `multipleOf`, `exclusiveMinimum` and `exclusiveMaximum` rejected on integer, number and enum properties.
 - unsupported types and combinators rejected; root not an object / no properties rejected with key `<root>`.
 - all failures reported together, in schema order, in `err.failures` and `str(err)`.
 - `QuestionSet.questions` and `.request(state, model)` produce a serializable request.
@@ -268,7 +272,7 @@ Extra answers not in the question set are ignored. Probabilities are returned un
 - choice; integer choice casts; boolean noul threshold at 0.5 and custom; number noul returns the float; score argmax with offset; tie picks lowest; `ScoreDecode.expected` rounds and clamps; empty probabilities falls back.
 - probabilities keyed by output values for all kinds; confidence populated, `None` for noul kinds.
 - raw dict answers accepted; invalid raw dict → `UnexpectedAnswerError`.
-- missing answer, wrong type, choice outside enum → `UnexpectedAnswerError`.
+- missing answer, wrong type, choice outside enum, choice probability label outside enum → `UnexpectedAnswerError`; a choice distribution that omits a label is accepted.
 - extra answers ignored.
 - a 5,000-character choice, probability key or validation message is bounded in the error message.
 - a non-finite `noul` or `score` surfaces as `UnexpectedAnswerError`, never as a bare `ValueError` from `round`.

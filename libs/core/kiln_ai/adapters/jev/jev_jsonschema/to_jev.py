@@ -28,6 +28,14 @@ ROOT_KEY = "<root>"
 
 COMBINATOR_KEYWORDS = ("anyOf", "oneOf", "allOf", "$ref", "const", "not")
 
+UNIMPLEMENTED_KEYWORDS = ("multipleOf", "exclusiveMinimum", "exclusiveMaximum")
+"""Validation keywords a mapped question cannot express.
+
+A Jev question offers a fixed set of answers, so a constraint that narrows them further
+is not something the answer can be checked against: `multipleOf: 2` on an integer from 1
+to 5 still becomes five levels, and a 3 that comes back violates the source schema and
+fails only after the call. Rejected up front like the combinators."""
+
 
 @dataclass(frozen=True)
 class PropertyFailure:
@@ -182,7 +190,7 @@ class JSONSchema2Jev:
         if not isinstance(prop, Mapping):
             raise _Unsupported("property definition must be an object")
 
-        for keyword in COMBINATOR_KEYWORDS:
+        for keyword in COMBINATOR_KEYWORDS + UNIMPLEMENTED_KEYWORDS:
             if keyword in prop:
                 raise _Unsupported(f"uses '{keyword}', which is not supported")
 
@@ -285,9 +293,7 @@ class JSONSchema2Jev:
         minimum = _as_integer(prop.get("minimum"))
         maximum = _as_integer(prop.get("maximum"))
         if minimum is None or maximum is None:
-            raise _Unsupported(
-                "integer needs integer 'minimum' and 'maximum' (exclusive bounds are not supported)"
-            )
+            raise _Unsupported("integer needs integer 'minimum' and 'maximum'")
 
         levels = maximum - minimum + 1
         if levels < MIN_SCORE_LEVELS:
