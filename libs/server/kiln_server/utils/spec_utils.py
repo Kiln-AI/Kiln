@@ -149,17 +149,8 @@ def spec_eval_splits(
 ) -> dict[EvalSplitName, SplitRef]:
     """The splits a new spec eval is created with, each backed by its source.
 
-    A source is the store a split's items live in: tagged TaskRuns in the dataset, or
-    EvalInputs for a creator that mints its own cases. Per split, because a creator can
-    mint its test cases while its train items are ordinary runs.
-
-    Keyword-only: three same-typed tag strings whose order has to be memorized is the
-    hazard this function exists to remove, so swapping two of them is made unrepresentable
-    rather than left to a reader.
-
-    The golden set is not a split and is not returned here: it is TaskRun-only by
-    definition, and keeping it out of the splits dict is what keeps that true at the type
-    level.
+    A source is the store a split's items live in: tagged TaskRuns, or EvalInputs for a
+    creator that mints its own cases. Golden is not a split and is not returned here.
     """
     return {
         "test": _split_ref(test_tag, test_source),
@@ -191,18 +182,10 @@ def build_spec_eval(
     train_source: ItemSource = "task_run",
     val_source: ItemSource = "task_run",
 ) -> tuple[Eval, SpecEvalTags]:
-    """A new spec eval, with its test, train and val splits already set.
+    """A new spec eval with its test, train and val splits set, and its dataset tags.
 
-    Returns the eval alongside the dataset tags its items must carry, so a caller that
-    generates those items can tag them. The eval is not saved.
-
-    Every spec-eval creation path goes through here, so the three splits and the tags
-    naming their items are derived from the eval's name in one place rather than being
-    reassembled per caller.
-
-    Priority and status live on the eval. Callers that write a spec alongside it mirror
-    them there so the spec file stays truthful, but the eval is the source of truth for
-    reads and later edits.
+    Both the splits and the tags naming their items derive from `name`. The eval is not
+    saved, and a caller that generates the items tags them with the returned tags.
     """
     tags = generate_spec_eval_tags(name)
     splits = spec_eval_splits(

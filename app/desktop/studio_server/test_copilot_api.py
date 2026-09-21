@@ -1064,6 +1064,9 @@ class TestCreateSpecWithCopilotMultiTurn:
 
     @staticmethod
     def _driven_case(idx: int) -> dict:
+        # leaf_run_id names a run no fixture creates, so an unbound case is
+        # never reviewed and is always minted; _bind_cases_to_leaves points
+        # the cases at the real leaves when a test reviews some.
         return {
             "seed_prompt": f"seed prompt {idx}",
             "synthetic_user_info": (
@@ -1072,7 +1075,14 @@ class TestCreateSpecWithCopilotMultiTurn:
                 f"<behavior_guidance>guidance {idx}</behavior_guidance>"
             ),
             "scenario_index": idx,
+            "leaf_run_id": f"unbound-run-{idx}",
         }
+
+    @staticmethod
+    def _bind_cases_to_leaves(request_data: dict, leaves: list[TaskRun]) -> None:
+        """Point case i at leaf i, as a real drive does."""
+        for case, leaf in zip(request_data["multi_turn"]["cases"], leaves):
+            case["leaf_run_id"] = leaf.id
 
     @pytest.fixture
     def multi_turn_request_data(self):
@@ -1130,7 +1140,8 @@ class TestCreateSpecWithCopilotMultiTurn:
         multi_turn_request_data,
     ):
         project, task = project_and_task
-        # Two of the three chains were reviewed: one pass, one fail.
+        # Two of the eight chains were reviewed: one pass, one fail.
+        self._bind_cases_to_leaves(multi_turn_request_data, synthetic_chain_leaves)
         multi_turn_request_data["multi_turn"]["reviewed_chains"] = [
             self._reviewed_chain(synthetic_chain_leaves[0].id, meets_spec=False),
             self._reviewed_chain(synthetic_chain_leaves[1].id, meets_spec=True),
@@ -1188,20 +1199,20 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert isinstance(configs[0].properties, LlmJudgeProperties)
         assert "{{ trace | format_trace }}" in configs[0].properties.prompt_template
 
-        # The eval slice: one EvalInput per driven case, carrying the seed,
-        # the typed persona, the stamped drive config, and provenance tags
-        # (batch + scenario).
+        # One EvalInput per unreviewed case, with its persona, drive config
+        # and provenance tags. Reviewed cases are their golden runs instead.
         eval_inputs = task.eval_inputs()
-        assert len(eval_inputs) == 8
+        assert len(eval_inputs) == 6
         inputs_by_seed = {ei.data.first_message.text: ei for ei in eval_inputs}
-        first = inputs_by_seed["seed prompt 0"]
-        assert first.data.synthetic_user_info.persona == "persona 0"
-        assert first.data.synthetic_user_info.goal == "goal 0"
-        assert first.data.synthetic_user_info.behavior_guidance == "guidance 0"
+        assert set(inputs_by_seed) == {f"seed prompt {i}" for i in range(2, 8)}
+        first = inputs_by_seed["seed prompt 2"]
+        assert first.data.synthetic_user_info.persona == "persona 2"
+        assert first.data.synthetic_user_info.goal == "goal 2"
+        assert first.data.synthetic_user_info.behavior_guidance == "guidance 2"
         # Exact, minus the split tag the deal assigned (counted below).
         assert set(first.tags) - MULTI_TURN_SPLIT_TAGS == {
             f"synthetic_user_batch:{self.BATCH_TAG}",
-            "scenario:0",
+            "scenario:2",
         }
         # Every item in the slice is stamped with the batch's drive settings.
         for ei in eval_inputs:
@@ -1210,21 +1221,21 @@ class TestCreateSpecWithCopilotMultiTurn:
             assert ei.data.drive_config.model_provider == "openrouter"
             assert ei.data.drive_config.turns == 5
 
-        # The cases are dealt into DISJOINT splits — 8 deal 2 test / 4 train /
-        # 2 val — so nothing tuned on train or val is reported on as test.
+        # The 6 unreviewed cases are dealt into DISJOINT splits — 2 test /
+        # 3 train / 1 val — so nothing tuned on train or val is reported on
+        # as test.
         assert all(len(MULTI_TURN_SPLIT_TAGS & set(ei.tags)) == 1 for ei in eval_inputs)
         cases_by_split = {
-            tag: {ei.id for ei in eval_inputs if tag in ei.tags}
+            tag: {ei.data.first_message.text for ei in eval_inputs if tag in ei.tags}
             for tag in MULTI_TURN_SPLIT_TAGS
         }
         assert [len(cases_by_split[f"{s}_multi_turn_spec"]) for s in SPLIT_ORDER] == [
             2,
-            4,
-            2,
+            3,
+            1,
         ]
 
-        # Chains carry golden only: the answer key, capped at 25% of 8 = 2,
-        # which here is exactly the two rated leaves.
+        # Chains carry golden only: exactly the two rated leaves.
         runs_by_id = {run.id: run for run in task.runs()}
         for leaf in task.runs():
             assert MULTI_TURN_SPLIT_TAGS.isdisjoint(leaf.tags)
@@ -1236,6 +1247,17 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert {
             run.id for run in task.runs() if "golden_multi_turn_spec" in run.tags
         } == reviewed_ids
+
+        # The point of the mint gate: golden, test, train and val are pairwise
+        # disjoint, so the judge is never refined on a case it is scored on.
+        # Golden is named by the seed of the case its run was driven for.
+        golden_seeds = {"seed prompt 0", "seed prompt 1"}
+        hands = [golden_seeds] + [
+            cases_by_split[f"{s}_multi_turn_spec"] for s in SPLIT_ORDER
+        ]
+        for i, hand in enumerate(hands):
+            for other in hands[i + 1 :]:
+                assert hand.isdisjoint(other)
 
         # Reviewed leaves carry golden ratings matching the review clicks,
         # plus feedback + per-claim grades; the unreviewed leaf stays unrated.
@@ -1807,6 +1829,12 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
             runs.append(run)
         return runs
 
+    @staticmethod
+    def _bind_inputs_to_runs(request_data: dict, runs: list[TaskRun]) -> None:
+        """Point case i at run i, as a real pipeline drive does."""
+        for case, run in zip(request_data["single_turn"]["inputs"], runs):
+            case["leaf_run_id"] = run.id
+
     @pytest.fixture
     def single_turn_request_data(self):
         return {
@@ -1824,7 +1852,14 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
             },
             "single_turn": {
                 "batch_tag": TestCreateSpecWithCopilotSingleTurnBatch.BATCH_TAG,
-                "inputs": [f"input {i}" for i in range(8)],
+                # leaf_run_id names a run no fixture creates, so an unbound
+                # case is never reviewed and is always minted;
+                # _bind_inputs_to_runs points the cases at the real runs when
+                # a test reviews some.
+                "inputs": [
+                    {"input": f"input {i}", "leaf_run_id": f"unbound-run-{i}"}
+                    for i in range(8)
+                ],
             },
             "task_sample": {
                 "input": "What's your return window?",
@@ -1874,6 +1909,7 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
     ):
         project, task = project_and_task
         # Two of the eight runs were reviewed: one pass, one fail.
+        self._bind_inputs_to_runs(single_turn_request_data, batch_runs)
         single_turn_request_data["single_turn"]["reviewed_runs"] = [
             self._reviewed_run(batch_runs[0].id, meets_spec=False),
             self._reviewed_run(batch_runs[1].id, meets_spec=True),
@@ -1922,13 +1958,15 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         # saved judge reads what the builder's judge read.
         assert "format_trace" in configs[0].properties.prompt_template
 
-        # One inputs-only EvalInput per generated input, carrying the drive
-        # batch it came from and exactly one split tag.
+        # One inputs-only EvalInput per UNREVIEWED case, carrying the drive
+        # batch it came from and exactly one split tag. The two reviewed
+        # cases are represented by their rated golden runs, so nothing is
+        # minted for them.
         eval_inputs = task.eval_inputs()
-        assert len(eval_inputs) == 8
+        assert len(eval_inputs) == 6
         assert {ei.data.type for ei in eval_inputs} == {"single_turn"}
         assert {ei.data.user_message.text for ei in eval_inputs} == {
-            f"input {i}" for i in range(8)
+            f"input {i}" for i in range(2, 8)
         }
         for ei in eval_inputs:
             assert set(ei.tags) - SINGLE_TURN_SPLIT_TAGS == {
@@ -1936,15 +1974,20 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
             }
             assert len(SINGLE_TURN_SPLIT_TAGS & set(ei.tags)) == 1
 
-        # The cases are dealt into DISJOINT splits — 8 deal 2 test / 4 train /
-        # 2 val — so nothing tuned on train or val is reported on as test.
-        assert [
-            sum(f"{split}_single_turn_spec" in ei.tags for ei in eval_inputs)
+        # The 6 unreviewed cases are dealt into DISJOINT splits — 2 test /
+        # 3 train / 1 val — so nothing tuned on train or val is reported on
+        # as test.
+        cases_by_split = {
+            split: {
+                ei.data.user_message.text
+                for ei in eval_inputs
+                if f"{split}_single_turn_spec" in ei.tags
+            }
             for split in SPLIT_ORDER
-        ] == [2, 4, 2]
+        }
+        assert [len(cases_by_split[split]) for split in SPLIT_ORDER] == [2, 3, 1]
 
-        # Runs carry golden only: the answer key, capped at 25% of 8 = 2,
-        # which here is exactly the two reviewed runs.
+        # Runs carry golden only: exactly the two reviewed runs.
         runs_by_id = {run.id: run for run in task.runs()}
         for run in task.runs():
             assert SINGLE_TURN_SPLIT_TAGS.isdisjoint(run.tags)
@@ -1953,6 +1996,16 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         assert {
             run.id for run in task.runs() if "golden_single_turn_spec" in run.tags
         } == reviewed_ids
+
+        # The point of the mint gate: golden, test, train and val are pairwise
+        # disjoint, so the judge is never refined on a case it is scored on.
+        # Golden is named by the input of the case its run was driven for.
+        hands = [{"input 0", "input 1"}] + [
+            cases_by_split[split] for split in SPLIT_ORDER
+        ]
+        for i, hand in enumerate(hands):
+            for other in hands[i + 1 :]:
+                assert hand.isdisjoint(other)
 
         # Reviewed runs carry golden ratings matching the review clicks, plus
         # feedback + per-claim grades; unreviewed runs stay unrated, and no
@@ -2063,9 +2116,25 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         self, client, project_and_task, single_turn_request_data
     ):
         project, task = project_and_task
-        single_turn_request_data["single_turn"]["inputs"][3] = "   "
+        single_turn_request_data["single_turn"]["inputs"][3]["input"] = "   "
         response = self._post(client, project, task, single_turn_request_data)
         assert response.status_code == 422
+
+    def test_422_when_every_case_was_reviewed(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        # A reviewed case is golden and is not minted, so a batch where every
+        # case was reviewed would save an eval with nothing to run.
+        project, task = project_and_task
+        self._bind_inputs_to_runs(single_turn_request_data, batch_runs)
+        single_turn_request_data["single_turn"]["reviewed_runs"] = [
+            self._reviewed_run(run.id, meets_spec=True) for run in batch_runs
+        ]
+        response = self._post(client, project, task, single_turn_request_data)
+        assert response.status_code == 422
+        assert "no cases to run" in response.json()["message"]
+        assert len(task.evals()) == 0
+        assert len(task.eval_inputs()) == 0
 
     def test_structured_task_rejects_non_schema_input(
         self, client, project_and_task, batch_runs, single_turn_request_data
@@ -2081,8 +2150,12 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
             }
         )
         single_turn_request_data["single_turn"]["inputs"] = [
-            json.dumps({"question": f"q {i}"}) for i in range(7)
-        ] + ["not json"]
+            {
+                "input": json.dumps({"question": f"q {i}"}),
+                "leaf_run_id": f"unbound-run-{i}",
+            }
+            for i in range(7)
+        ] + [{"input": "not json", "leaf_run_id": "unbound-run-7"}]
         response = self._post(client, project, task, single_turn_request_data)
         assert response.status_code == 422
         assert "not valid JSON" in response.json()["message"]

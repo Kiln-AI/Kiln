@@ -12,12 +12,19 @@ import type { KilnAgentRunConfigProperties } from "$lib/types"
 import type { SuggestedEdit } from "../spec_utils"
 
 // A generated synthetic-user case as the wire carries it: the seed message,
-// the persona blob, and the plan scenario it came from.
+// the persona blob, and the plan scenario it came from. leaf_run_id is absent
+// until the case has been driven, which is when the run exists.
 export type SyntheticUserCaseWire = {
   seed_prompt: string
   synthetic_user_info: string
   scenario_index?: number | null
+  leaf_run_id?: string
 }
+
+// A case the save sends: the generated case plus the run it was driven in.
+// The save mints no test case for a reviewed run, so this id is what keeps
+// the golden answer key out of the test, train and val splits.
+export type DrivenCaseWire = SyntheticUserCaseWire & { leaf_run_id: string }
 
 // The generate_cases output, cached against exactly the inputs it depends
 // on (the approved prompts + the spec text — the run config plays no part

@@ -3,7 +3,7 @@
 This test IS the pipeline, readable top to bottom: it makes the exact call
 sequence the builder UI wizard makes (multi-turn path), against a REAL
 kiln_server and REAL models, with tiny constants (4 cases x 2 turns — four
-cases so the golden cap of 25% yields a non-empty answer key).
+cases so the review subset yields a non-empty answer key).
 Reading this file should be enough to understand how the builder works end to
 end.
 
@@ -54,10 +54,10 @@ calls, so the harness starts at Step 4 with the spec text already "written":
   Step 6   SAVE        POST .../spec_with_copilot
                        (UI: on_save — persists the Spec, the Eval, the V2
                        judge config, and the answer key. Only REVIEWED
-                       chains ride in reviewed_chains; golden = rated
-                       chains capped at 25%, everything else is train. The
-                       EVAL slice is EvalInput items minted from the driven
-                       cases, each stamped with the drive settings.)
+                       chains ride in reviewed_chains and become golden.
+                       Every UNREVIEWED case is minted
+                       as an EvalInput, stamped with the drive settings and
+                       dealt into test, train or val.)
   Step 7   RUN         GET .../evals/{id}/eval_config/{id}/run_comparison
                        GET .../evals/{id}/run_calibration          [SSE x2]
                        (What the user does AFTER the wizard: execute the
@@ -140,7 +140,7 @@ logger = logging.getLogger(__name__)
 
 # The UI runs 40 cases x 5 turns; both are request parameters, so the
 # harness shrinks them without touching any code. Four cases keeps the run
-# cheap while giving the 25% golden cap a non-empty answer key (4 // 4 = 1).
+# cheap while leaving a case to review (the save gate asks for N // 4).
 NUM_CASES = 4
 TURNS_PER_CASE = 2
 SPEC_NAME = "E2E Harness Spec"
@@ -656,8 +656,8 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     # mapping for real reviews).
     #
     # SUBSET REVIEW: only the selected traces are reviewed (the UI's save
-    # gate requires N//4). Golden = rated chains capped at 25%; every other
-    # chain is train, unrated; the eval slice is the EvalInputs.
+    # gate requires N//4). Golden = the rated chains; every other chain is
+    # unrated, and its case is minted and dealt.
     reviewed_chains = []
     for index in review_indices:
         event = judged[index]
@@ -676,6 +676,13 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
                 },
             }
         )
+    # The case list as the UI assembles it at drive time: the generated case
+    # plus the leaf run its conversation drove into, taken from the same
+    # case_driven event.
+    saved_cases = [
+        {**case, "leaf_run_id": pipe["leaf_by_case"][index]}
+        for index, case in enumerate(cases)
+    ]
     resp = client.post(
         "/api/projects/p/tasks/t/spec_with_copilot",
         json={
@@ -690,9 +697,11 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             "multi_turn": {
                 "batch_tag": batch_tag,
                 "reviewed_chains": reviewed_chains,
-                # The driven cases become the eval slice (EvalInputs); the
-                # drive settings ride onto the Eval for eval-time re-drives.
-                "cases": cases,
+                # Each case carries the run it was driven in, which is how
+                # the save holds the reviewed (golden) ones back from the
+                # mint; the drive settings ride onto the Eval for eval-time
+                # re-drives.
+                "cases": saved_cases,
                 "drive_config": {**SU_DRIVER, "turns": TURNS_PER_CASE},
             },
             "task_prompt_with_example": TASK_INSTRUCTION,
@@ -700,14 +709,12 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     )
     _require(resp.status_code == 200, f"save failed: {resp.text}")
 
-    # ── Persisted answer key — what the wizard leaves behind ────────────
+    # ── Persisted answer key — what the builder leaves behind ───────────
     # One Spec + one Eval + one V2 judge config (rendering the canonical
     # transcript). Only the reviewed subset's leaves are rated and carry a
-    # per-claim ClaimReview. Chains partition into DISJOINT golden (rated,
-    # capped at 25% — the answer key), train and val slices, the last two
-    # dealt off the non-golden remainder; the EVAL slice is EvalInput items
-    # minted from the driven cases, referenced via an EvalInput-backed test
-    # split, with the drive settings on the Eval.
+    # per-claim ClaimReview; those are golden and stay TaskRuns. Every other
+    # case is minted as an EvalInput and dealt into test, train or val, so all
+    # four sets are DISJOINT.
     specs = temp_task.specs()
     _require(len(specs) == 1, f"expected 1 saved spec, found {len(specs)}")
     evals = temp_task.evals()
@@ -750,19 +757,25 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         f"(eval_set={saved_eval_obj.eval_set_filter_id}, "
         f"test_split={test_split})",
     )
-    # The eval slice on disk: one EvalInput per driven case, structured
+    # The cases on disk: one EvalInput per UNREVIEWED case, structured
     # persona (no XML blob), seed = the case's opening message, the stamped
     # drive settings, provenance tags pointing back at the batch + plan
-    # scenario.
-    eval_inputs = [ei for ei in temp_task.eval_inputs() if eval_tag in (ei.tags or [])]
+    # scenario. A reviewed case is represented by its rated golden run
+    # instead, so nothing is minted for it.
+    split_tags = {eval_tag, train_tag, val_tag}
+    minted = [c for c in saved_cases if c["leaf_run_id"] not in rated_leaf_ids]
+    eval_inputs = [
+        ei for ei in temp_task.eval_inputs() if split_tags & set(ei.tags or [])
+    ]
     _require(
-        len(eval_inputs) == num_driven,
-        f"expected {num_driven} EvalInputs in the eval slice, found {len(eval_inputs)}",
+        len(eval_inputs) == len(minted),
+        f"expected {len(minted)} EvalInputs (of {num_driven} cases, "
+        f"{len(rated_leaf_ids)} reviewed), found {len(eval_inputs)}",
     )
     _require(
         {ei.data.first_message.text for ei in eval_inputs}
-        == {c["seed_prompt"] for c in cases},
-        "EvalInput seeds do not match the driven cases",
+        == {c["seed_prompt"] for c in minted},
+        "EvalInput seeds do not match the unreviewed cases",
     )
     for ei in eval_inputs:
         info = ei.data.synthetic_user_info
@@ -787,7 +800,6 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
 
     leaves = find_multi_turn_chain_leaves(temp_task, batch_tag)
     _require(len(leaves) == num_driven, f"expected {num_driven} chain leaves")
-    split_tags = {eval_tag, train_tag, val_tag}
     golden_leaf_ids: set[str | None] = set()
     for leaf in leaves:
         tags = set(leaf.tags or [])
@@ -825,34 +837,29 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         if golden_tag in tags:
             golden_leaf_ids.add(leaf.id)
 
-    # Golden is drawn only from rated chains and capped at 25% of the batch;
-    # the reviewed subset is sized to fill that cap exactly (review_target),
-    # so golden == min(rated, cap).
+    # Golden is exactly the rated chains.
     _require(
         golden_leaf_ids <= rated_leaf_ids,
         f"golden slice {golden_leaf_ids} is not a subset of rated {rated_leaf_ids}",
     )
-    golden_target = min(len(rated_leaf_ids), num_driven // 4)
     _require(
-        len(golden_leaf_ids) == golden_target,
-        f"golden slice wrong (golden={len(golden_leaf_ids)}, n={num_driven}, "
+        golden_leaf_ids == rated_leaf_ids,
+        f"golden slice wrong (golden={len(golden_leaf_ids)}, "
         f"rated={len(rated_leaf_ids)})",
     )
 
-    # The cases are dealt into disjoint splits; the expected counts come from
-    # the dealer itself rather than numbers pinned to today's NUM_CASES, so
-    # this checks the SAVE honoured the deal, not the deal's own math.
-    cases = [ei for ei in temp_task.eval_inputs() if split_tags & set(ei.tags or [])]
+    # Expected counts come from the dealer, not numbers pinned to NUM_CASES,
+    # so this checks the save honoured the deal rather than repeating its math.
     dealt = [
-        sum(tag in (ei.tags or []) for ei in cases)
+        sum(tag in (ei.tags or []) for ei in eval_inputs)
         for tag in (eval_tag, train_tag, val_tag)
     ]
     expected = [
         len(hand)
-        for hand in deal_pool_test_train_val(list(range(num_driven)), random.Random(0))
+        for hand in deal_pool_test_train_val(list(range(len(minted))), random.Random(0))
     ]
     _require(
-        all(len(split_tags & set(ei.tags or [])) == 1 for ei in cases)
+        all(len(split_tags & set(ei.tags or [])) == 1 for ei in eval_inputs)
         and dealt == expected,
         f"cases not dealt into disjoint splits: {dealt} (expected {expected})",
     )

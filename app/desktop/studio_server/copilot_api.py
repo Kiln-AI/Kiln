@@ -120,6 +120,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
     SingleTurnDataset,
     build_multi_turn_eval_inputs,
     build_single_turn_batch_eval_inputs,
+    cases_to_mint,
     create_single_turn_dataset,
     deal_eval_inputs,
     find_multi_turn_chain_leaves,
@@ -194,12 +195,10 @@ async def copilot_passthrough_payload(
 
 
 class MultiTurnSaveInfo(BaseModel):
-    """Identifies an existing multi-turn synthetic-user batch to turn into an Eval.
+    """An existing multi-turn synthetic-user batch to turn into an eval.
 
-    The endpoint splits the chains tagged with this batch_tag into golden and
-    train slices, and mints the eval slice as EvalInput items from `cases` —
-    the re-drivable inputs the eval runner regenerates conversations from,
-    per run config, using `drive_config` as the synthetic user.
+    The reviewed chains become the golden answer key; every other case is minted
+    as an EvalInput the eval runner re-drives per run config.
     """
 
     batch_tag: str = Field(
@@ -215,9 +214,9 @@ class MultiTurnSaveInfo(BaseModel):
     )
     cases: list[DrivenSyntheticCaseApi] = Field(
         min_length=1,
-        description="The driven synthetic-user cases of this batch. Each is "
-        "minted as an EvalInput — the eval slice the runner re-drives per "
-        "run config at eval time.",
+        description="The driven synthetic-user cases of this batch. Each "
+        "unreviewed one is minted as an EvalInput the runner re-drives per "
+        "run config at eval time; a reviewed one is golden instead.",
     )
     drive_config: MultiTurnDriveConfig = Field(
         description="The alignment-time drive settings (synthetic-user model "
@@ -226,21 +225,34 @@ class MultiTurnSaveInfo(BaseModel):
     )
 
 
-class SingleTurnSaveInfo(BaseModel):
-    """Identifies an existing single-turn pipeline batch to turn into an Eval.
+class SingleTurnCaseApi(BaseModel):
+    """One case the single-turn pipeline ran: its input and the run it ran in."""
 
-    The single-turn sibling of MultiTurnSaveInfo: the endpoint splits the
-    runs tagged with this batch_tag into golden and train slices (reviewed →
-    golden with ratings and claim reviews, unreviewed → train), and mints
-    the eval slice as inputs-only EvalInput items from `inputs`. Nothing is
-    generated at save time — the dataset is the runs the user just reviewed.
+    input: str = Field(
+        description="The generated task input the batch ran, as the pipeline "
+        "ran it. On a task with an input schema this is the input encoded as "
+        "a JSON string."
+    )
+    leaf_run_id: str = Field(
+        description="The id of the TaskRun this input was run in. A case "
+        "whose run the human reviewed is represented by that rated run and "
+        "is not minted. Empty when the pipeline recorded no run, which can "
+        "never have been reviewed.",
+    )
+
+
+class SingleTurnSaveInfo(BaseModel):
+    """An existing single-turn pipeline batch to turn into an eval.
+
+    The reviewed runs become the golden answer key; every other case is minted as
+    an EvalInput. Nothing is generated at save time.
     """
 
     batch_tag: str = Field(
         description="The batch_tag emitted by the single-turn pipeline "
         "(eval_builder single_turn_pipeline). Identifies the set of "
         "batch-tagged TaskRuns already persisted to disk that this Eval's "
-        "golden/train slices are split from."
+        "golden runs are taken from."
     )
     reviewed_runs: list[ReviewedChainApi] = Field(
         default_factory=list,
@@ -249,64 +261,39 @@ class SingleTurnSaveInfo(BaseModel):
         "becomes a golden RequirementRating on the run (plus Feedback / "
         "per-claim grades when present).",
     )
-    inputs: list[str] = Field(
+    inputs: list[SingleTurnCaseApi] = Field(
         min_length=1,
-        description="The generated task inputs the batch actually ran — one "
-        "EvalInput each, the eval slice the runner executes fresh per run "
-        "config at eval time. For tasks with an input schema, each entry is "
-        "the input as a JSON string (the same encoding the pipeline ran).",
+        description="The cases the batch actually ran. Each unreviewed one "
+        "becomes an EvalInput the runner executes fresh per run config at "
+        "eval time; a reviewed one is golden instead.",
     )
 
     @field_validator("inputs")
     @classmethod
-    def inputs_must_be_non_blank(cls, value: list[str]) -> list[str]:
+    def inputs_must_be_non_blank(
+        cls, value: list[SingleTurnCaseApi]
+    ) -> list[SingleTurnCaseApi]:
         # A blank input can never be run at eval time; reject the save up
         # front instead of persisting an eval item that fails every job.
-        for input_text in value:
-            if not input_text.strip():
+        for case in value:
+            if not case.input.strip():
                 raise ValueError("inputs must not contain empty entries.")
         return value
 
 
 class CreateSpecWithCopilotRequest(BaseModel):
-    """Request model for creating a spec with Kiln Copilot.
+    """Request to create a spec with Kiln Copilot, along with its eval and judge.
 
-    Three synthesis paths are supported, exactly one must be set per request:
-
-    - **Single-turn (wizard):** caller supplies `single_turn` with a
-      `batch_tag` pointing at runs already on disk (created by the eval
-      builder's single_turn_pipeline) plus the review verdicts and the
-      generated inputs. Endpoint tags the existing runs with golden/train
-      filter tags (writing the verdicts onto the golden ones) and mints one
-      EvalInput per input as the eval slice; no new TaskRuns are created and
-      nothing is generated. `evaluate_full_trace` must be True — the
-      pipeline judged the transcript, so the saved eval must too.
-
-    - **Multi-turn (wizard):** caller supplies `multi_turn` with a `batch_tag`
-      pointing at chains already on disk (created earlier by the
-      synthetic-user runner) plus the driven cases and drive settings.
-      Endpoint tags the existing chain leaves with golden/train filter tags
-      and mints one EvalInput per driven case as the eval slice; no new
-      TaskRuns are created. `evaluate_full_trace` must be True.
-
-    - **Legacy single-turn (v1 manual flow):** caller supplies
-      `sdg_session_config`. Endpoint calls `generate_copilot_examples` for
-      fresh I/O pairs, splits them into eval/train/golden datasets, and tags
-      new TaskRuns.
-
-    If you don't want copilot at all, use POST /spec instead.
-
-    The client is responsible for building:
-    - definition: the spec definition string (buildSpecDefinition on client)
-    - properties: the spec properties object (filtered, with spec_type included)
+    Exactly one synthesis path is set: `single_turn` or `multi_turn` name a batch
+    of runs already on disk, while `sdg_session_config` generates fresh examples.
+    The client builds `definition` and `properties`.
     """
 
     # Short limit: the name becomes the eval's EvalOutputScore.name (max 32)
     # — a longer name would fail deep inside Eval construction, not here.
     name: FilenameStringShort
-    # Same up-front rule as the review requests: the judge's score key derives
-    # from this name, and an empty key would persist an eval that can never
-    # run (every job would fail inside the judge).
+    # The judge's score key derives from this name, and an empty key would
+    # persist an eval that can never run.
     _name_has_json_key = field_validator("name")(spec_name_must_have_a_json_key)
     definition: str = Field(
         description="The spec definition string, built by client using buildSpecDefinition()"
@@ -325,17 +312,15 @@ class CreateSpecWithCopilotRequest(BaseModel):
     sdg_session_config: SyntheticDataGenerationSessionConfigApi | None = None
     multi_turn: MultiTurnSaveInfo | None = None
     single_turn: SingleTurnSaveInfo | None = None
-    # Legacy-arm generation context only; the wizard arms generate nothing at
-    # save time and omit it.
+    # Generation context for the `sdg_session_config` path only.
     task_prompt_with_example: str | None = None
     task_sample: TaskSample | None = None
     run_config_id: str | None = Field(
         default=None,
         description="Legacy `sdg_session_config` path only: the run config "
         "whose tools and skills describe the target task while examples are "
-        "generated. Omit to use the task's default run config. The wizard "
-        "arms generate nothing here, so they read no capabilities and this "
-        "field does not apply to them.",
+        "generated. Omit to use the task's default run config. The eval "
+        "builder generates nothing, so this does not apply to it.",
     )
 
     @model_validator(mode="after")
@@ -352,15 +337,14 @@ class CreateSpecWithCopilotRequest(BaseModel):
                 "already on disk), or `sdg_session_config` (legacy: fresh "
                 "single-turn synthesis)."
             )
-        # One rule for both wizard arms: the pipeline judges the transcript, so
-        # the saved eval must too, or the calibrated judge is not the judge that
-        # ships. A single-turn run's transcript is its one exchange.
+        # The eval builder judges the transcript, so an eval saved from a batch
+        # must too, or the judge that ships is not the one the reviewer graded.
         if (
             self.multi_turn is not None or self.single_turn is not None
         ) and not self.evaluate_full_trace:
             raise ValueError(
-                "A wizard save requires `evaluate_full_trace=True` — the "
-                "pipeline judged full traces, so the saved eval must too."
+                "An eval builder save requires `evaluate_full_trace=True` — "
+                "the builder judged full traces, so the saved eval must too."
             )
         return self
 
@@ -594,13 +578,10 @@ def _parse_csv_import(
 
 
 def _validate_structured_examples(input_json_schema: str, examples: list[str]) -> None:
-    """Validate each candidate input example against the task's input JSON
-    schema, raising HTTPException(422) listing every example that fails.
+    """Check every example is a JSON value matching the task's input schema.
 
-    For structured-input tasks each example must be a JSON value matching the
-    schema. The web UI does only a shallow check at import time; this is the
-    authoritative gate (full schema validation, mirroring the dataset import
-    path) run before the expensive draft job kicks off.
+    Raises HTTPException(422) naming every example that fails, so one request
+    reports them all.
     """
     errors: list[str] = []
     for idx, raw in enumerate(examples):
@@ -666,25 +647,11 @@ def persist_spec_save(
     spec_name: str,
     rng: random.Random,
 ) -> None:
-    """Persist all spec models as one unit of work, rolling back every mutation
-    on failure.
+    """Persist every model of a spec save as one unit of work, rolling back on failure.
 
-    Both wizard arms ride the batch-runs path: `batch_leaves` are the runs
-    already on disk (multi-turn chain leaves or single-turn pipeline runs)
-    to split into golden / train / val and rate, and `batch_eval_inputs` is
-    the arm's built eval slice. The legacy v1 manual flow instead passes
-    `single_turn_dataset` (freshly generated runs plus its own eval slice)
-    and empty batch args, so it never reaches the split and mints no val
-    items.
-
-    Owns three rollback ledgers: created models (Eval / EvalConfig / TaskRun /
-    EvalInput / Spec), tagged batch runs, and rated batch runs. On any
-    failure it reverses the run mutations (ratings first — applied last —
-    then tags) and deletes the created models in reverse order, then re-raises
-    so the caller sees the original error.
-
-    Synchronous and file-I/O heavy; call via asyncio.to_thread so the event
-    loop is not blocked.
+    An eval-builder save passes `batch_leaves` and `batch_eval_inputs`; the
+    `sdg_session_config` path passes `single_turn_dataset` instead. Synchronous
+    and file-I/O heavy, so callers run it off the event loop.
     """
     saved_models: list[Eval | EvalConfig | TaskRun | EvalInput | Spec] = []
     tagged_leaves: list[tuple[TaskRun, set[str]]] = []
@@ -698,9 +665,8 @@ def persist_spec_save(
         eval_config.save_to_file()
         saved_models.append(eval_config)
 
-        # Legacy v1 flow: the freshly generated golden and train runs (with
-        # their review children), then the eval slice split out of the same
-        # generated pool as train.
+        # The generated golden and train runs, with their review children, then
+        # the eval inputs split out of the same pool.
         if single_turn_dataset is not None:
             for run in single_turn_dataset.task_runs:
                 run.save_to_file()
@@ -711,17 +677,14 @@ def persist_spec_save(
         spec.save_to_file()
         saved_models.append(spec)
 
-        # Builder arms: persist the dealt cases and tag the golden runs, AFTER
-        # spec has saved so a failure here triggers the rollback below.
-        # tagged_leaves captures only the tags this call added, so untagging on
-        # rollback preserves any tags the run already had.
+        # The eval builder's runs are tagged after the spec saves, so a failure
+        # here still rolls the spec back.
         if batch_leaves:
             persist_eval_slice(batch_eval_inputs, saved_models)
             tag_golden_batch_runs(
                 batch_leaves,
                 reviewed_leaf_ids,
                 golden_tag,
-                rng=rng,
                 tagged_out=tagged_leaves,
             )
             # Then write the human's verdicts: golden ratings (+ feedback and
@@ -733,9 +696,8 @@ def persist_spec_save(
                 rated_out=rated_leaves,
             )
     except Exception:
-        # Reverse run mutations before deleting saved models, so a failed
-        # save doesn't leave orphan ratings or tags pointing at a
-        # now-deleted eval.
+        # Run mutations are reversed before the saved models are deleted, so no
+        # rating or tag is left pointing at a deleted eval.
         if rated_leaves:
             unrate_reviewed_batch_runs(rated_leaves)
         if tagged_leaves:
@@ -1123,35 +1085,27 @@ def connect_copilot_api(app: FastAPI):
         2. A judge EvalConfig (LLM-as-judge)
         3. The Spec itself
         Plus, per synthesis path:
-        - Wizard arms (`single_turn` / `multi_turn`): tag the batch's
-          existing runs with the golden/train filter tags — reviewed runs
-          become golden with the human's ratings and claim reviews,
-          unreviewed runs become train — and mint the eval slice as one
-          EvalInput per generated input (single-turn) or driven case
-          (multi-turn). Nothing is generated at save time.
-        - Legacy v1 flow (`sdg_session_config`): batch examples via the
-          copilot API, split into the train dataset (persisted as TaskRuns)
-          and the eval slice; the golden dataset is the request's
-          human-reviewed examples.
+        - Eval builder (`single_turn` / `multi_turn`): the reviewed runs are
+          tagged golden and carry the human's ratings and claim reviews; every
+          other case becomes an EvalInput, dealt into test, train or val.
+          Nothing is generated at save time.
+        - Legacy v1 flow (`sdg_session_config`): generate examples via the
+          copilot API and save them as TaskRuns, with the request's reviewed
+          examples as golden.
 
-        On every path the eval slice is EvalInput items, which the runner
-        runs fresh per run config at eval time — nothing stored there is
-        judged.
+        A test split is EvalInput items, answered fresh at eval time.
 
-        If you don't need copilot, use POST /spec instead.
+        If you don't need copilot, use POST /specs instead.
 
         All models are validated before any saves occur. If validation fails,
         no data is persisted.
         """
         task = task_from_id(project_id, task_id)
 
-        # Idempotency guard against re-submits after a completed save (the
-        # save is slow, so users retry). Compared via the derived eval tags,
-        # not the raw name: tags come from the lowercased, space-normalized
-        # name, so "My Spec" and "my_spec" would silently share a tag
-        # namespace (and each other's datasets) if only exact names were
-        # rejected. Two requests in flight at once can still race past this
-        # check — acceptable for a single-user studio.
+        # Compared by derived tags rather than by name: tags lowercase and
+        # normalize spacing, so "My Spec" and "my_spec" would share a tag
+        # namespace, and each other's datasets. Two requests in flight at once
+        # can still race past this check.
         requested_tags = generate_spec_eval_tags(request.name)
         if any(
             generate_spec_eval_tags(spec.name) == requested_tags
@@ -1163,10 +1117,8 @@ def connect_copilot_api(app: FastAPI):
                 "by case or spacing) already exists for this task.",
             )
 
-        # Generate tags and filter IDs. The wizard arms deal their non-golden
-        # batch runs train:val, so both tags address real items. The legacy v1
-        # arm mints no val items and leaves its val split empty (0 items, not
-        # an error) rather than giving the eval a different splits shape.
+        # The tags the eval's items carry. The `sdg_session_config` path mints
+        # no val items, leaving that split empty rather than absent.
         tags = generate_spec_eval_tags(request.name)
         eval_tag, train_tag, val_tag, golden_tag = (
             tags.test_tag,
@@ -1180,10 +1132,9 @@ def connect_copilot_api(app: FastAPI):
             spec_type, request.evaluate_full_trace
         )
 
-        # The builder's judge template never renders a reference answer, so a
-        # reference_answer eval would save fine and then mis-score every run.
-        # Not reachable from the current UI flow — this guards direct
-        # API/agent clients.
+        # The judge template built below never renders a reference answer, so a
+        # reference_answer eval would save and then mis-score every run. Only
+        # direct API clients can reach this.
         if evaluation_data_type == EvalDataType.reference_answer:
             raise HTTPException(
                 status_code=400,
@@ -1192,11 +1143,9 @@ def connect_copilot_api(app: FastAPI):
                 "answer. Create this eval from the Evals tab instead.",
             )
 
-        # Batch arms: find the existing runs up front so we 404 before
-        # creating any models if the batch_tag matches nothing. The reviewed
-        # run ids drive the split — only rated runs are eligible for golden
-        # (capped at the target fraction); the rest are dealt train:val with
-        # their ratings kept.
+        # The batch's runs are found up front, so a batch_tag that matches
+        # nothing 404s before any model is created. The reviewed ids become
+        # golden and are held back from the mint below.
         batch_leaves: list[TaskRun] = []
         reviewed_refs: list[ReviewedChainApi] = []
         reviewed_leaf_ids: set[str] = set()
@@ -1233,23 +1182,20 @@ def connect_copilot_api(app: FastAPI):
                 reviewed_refs, batch_leaves, request.single_turn.batch_tag
             )
 
-        # Build and validate all models before saving any; persist_spec_save
-        # commits them as one unit of work below.
+        # Every model is built and validated before anything is saved.
 
-        # One RNG seam for every dataset split (the case deal, the golden
-        # carve, and the legacy generated pool).
+        # One rng for every split this save makes.
         rng = random.Random()
 
-        # The batch arms' cases (validated here, persisted in the unit
-        # of work). Multi-turn: one EvalInput per driven case — 422s on a
-        # malformed persona blob before anything is written. Single-turn: one
-        # EvalInput per generated input; on a structured-input task each must
-        # match the input schema, or the saved eval would fail every job at
-        # run time — 422 up front instead.
+        # The eval builder's cases, minus the reviewed ones: those are in the
+        # eval already, as their rated golden runs. Validated here so a bad
+        # persona or an input that misses the task's schema 422s before
+        # anything is written.
         batch_eval_inputs: list[EvalInput] = []
+        builder_save = request.multi_turn is not None or request.single_turn is not None
         if request.multi_turn is not None:
             batch_eval_inputs = build_multi_turn_eval_inputs(
-                request.multi_turn.cases,
+                cases_to_mint(request.multi_turn.cases, reviewed_leaf_ids),
                 request.multi_turn.batch_tag,
                 task,
                 eval_tag,
@@ -1257,29 +1203,39 @@ def connect_copilot_api(app: FastAPI):
             )
         if request.single_turn is not None:
             if task.input_json_schema is not None:
+                # The whole payload, so the reported example numbers are the
+                # caller's own positions.
                 _validate_structured_examples(
-                    str(task.input_json_schema), request.single_turn.inputs
+                    str(task.input_json_schema),
+                    [case.input for case in request.single_turn.inputs],
                 )
             batch_eval_inputs = build_single_turn_batch_eval_inputs(
-                request.single_turn.inputs,
+                [
+                    case.input
+                    for case in cases_to_mint(
+                        request.single_turn.inputs, reviewed_leaf_ids
+                    )
+                ],
                 request.single_turn.batch_tag,
                 task,
                 eval_tag,
             )
 
-        # Deal the cases so each lands in exactly one split: test is held out
-        # from the train and val an optimizer tunes against. The legacy v1 flow
-        # mints no cases — its train items are the runs it generates, and it
-        # goes away with KIL-824.
-        builder_save = batch_eval_inputs != []
+        # Deal the cases so each lands in exactly one split, holding test out
+        # from what the optimizer and the judge are tuned on. The legacy v1
+        # flow mints no cases and goes away with KIL-824.
         if builder_save:
+            if not batch_eval_inputs:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Every case in this batch was reviewed, so the "
+                    "eval would have no cases to run. Leave at least one "
+                    "case unreviewed.",
+                )
             deal_eval_inputs(batch_eval_inputs, eval_tag, train_tag, val_tag, rng)
 
-        # 1. Create the Eval. Its cases are the EvalInputs dealt above; golden
-        # is the reviewed runs, which stay TaskRuns because the judge is
-        # checked against the answers a human graded.
-        # Priority and status live on the eval; the spec below mirrors them at
-        # creation so the spec file stays truthful.
+        # 1. Create the Eval. Its splits hold the EvalInputs dealt above, while
+        # golden stays TaskRuns: the runs a human graded.
         eval, _tags = build_spec_eval(
             task=task,
             name=request.name,
@@ -1292,10 +1248,8 @@ def connect_copilot_api(app: FastAPI):
             val_source="eval_input" if builder_save else "task_run",
         )
 
-        # 2. Create the judge eval config — V2 shape, the same judge the review
-        # step ran transiently (one judge, persisted vs transient). V2 rails
-        # give it an editable prompt_template the refine loop can write back
-        # into, instead of the legacy llm_as_judge dispatch.
+        # 2. Create the judge eval config: the judge the review step ran, in the
+        # v2 shape, whose prompt_template the refine loop can write back into.
         eval_config = EvalConfig(
             parent=eval,
             name=generate_memorable_name(),
@@ -1313,10 +1267,9 @@ def connect_copilot_api(app: FastAPI):
         # Set as default config after ID is assigned
         eval.current_config_id = eval_config.id
 
-        # 3. Legacy v1 flow only: synthesise examples, then build the
-        #    golden/train TaskRuns and the eval slice's EvalInputs from them.
-        #    Both wizard arms skip this — their runs already exist on disk,
-        #    and nothing is generated at save time.
+        # 3. The `sdg_session_config` path only: generate examples, then build
+        #    the golden and train TaskRuns and the EvalInputs from them. An
+        #    eval-builder save's runs already exist on disk.
         single_turn_dataset: SingleTurnDataset | None = None
         sdg_session_config_for_spec: SyntheticDataGenerationSessionConfig | None = None
         if request.sdg_session_config is not None:
@@ -1379,8 +1332,8 @@ def connect_copilot_api(app: FastAPI):
                 ),
             )
 
-        # 4. Create the Spec. The wizard arms leave sdg_session_config unset —
-        # the operational state lives on the Eval (full_trace + filter_ids).
+        # 4. Create the Spec. Priority and status are mirrored from the eval,
+        # which stays the source of truth for reads and edits.
         spec = Spec(
             parent=task,
             name=request.name,
@@ -1394,10 +1347,8 @@ def connect_copilot_api(app: FastAPI):
             synthetic_data_generation_session_config=sdg_session_config_for_spec,
         )
 
-        # All models are now created and validated via Pydantic. Persist them
-        # as one unit of work (all-or-nothing) off the event loop — the save is
-        # dozens-to-hundreds of serial file writes plus the batch-run
-        # mutations, all synchronous.
+        # Every model is built and validated, so persist them as one unit of
+        # work. Off the event loop: the save is hundreds of serial file writes.
         await asyncio.to_thread(
             persist_spec_save,
             eval=eval,

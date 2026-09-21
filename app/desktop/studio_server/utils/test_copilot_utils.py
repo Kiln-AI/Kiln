@@ -45,6 +45,7 @@ from app.desktop.studio_server.api_models.copilot_models import (
     TaskSkillInfoApi,
     TaskToolInfoApi,
 )
+from app.desktop.studio_server.copilot_api import SingleTurnCaseApi
 from app.desktop.studio_server.utils.copilot_utils import (
     GOLDEN_TARGET_FRACTION,
     KILN_ADAPTER_NAME,
@@ -53,6 +54,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
     build_multi_turn_eval_inputs,
     build_single_turn_batch_eval_inputs,
     build_single_turn_eval_inputs,
+    cases_to_mint,
     create_single_turn_dataset,
     create_task_run_from_reviewed,
     create_task_run_from_sample,
@@ -64,7 +66,6 @@ from app.desktop.studio_server.utils.copilot_utils import (
     get_copilot_api_key,
     persist_eval_slice,
     rate_reviewed_batch_runs,
-    select_golden_runs,
     split_pool_train_eval,
     tag_golden_batch_runs,
     tag_single_turn_drive_run,
@@ -136,43 +137,6 @@ class TestSplitPoolTrainEval:
         a = split_pool_train_eval(pool, random.Random(42))
         b = split_pool_train_eval(pool, random.Random(42))
         assert a == b
-
-
-class TestSelectGoldenLeaves:
-    """select_golden_runs carves golden (rated-only, capped at 25%) off the
-    leaves; the remainder feeds the train/eval split."""
-
-    def test_all_rated_golden_capped_at_quarter(self, multiturn_task):
-        leaves = _make_su_leaves(multiturn_task, 8)
-        rated = {leaf.id for leaf in leaves}
-        golden, remaining = select_golden_runs(leaves, rated, random.Random(0))
-        assert len(golden) == 2  # 8 // 4
-        assert len(remaining) == 6
-        # Golden is drawn from rated; disjoint from remaining; covers all.
-        assert all(leaf.id in rated for leaf in golden)
-        assert {leaf.id for leaf in golden}.isdisjoint({leaf.id for leaf in remaining})
-        assert len(golden) + len(remaining) == 8
-
-    def test_rated_below_cap_golden_is_all_rated(self, multiturn_task):
-        leaves = _make_su_leaves(multiturn_task, 8)
-        rated = {leaves[0].id}  # 1 rated, cap is 2
-        golden, remaining = select_golden_runs(leaves, rated, random.Random(0))
-        assert {leaf.id for leaf in golden} == {leaves[0].id}
-        assert len(remaining) == 7
-
-    def test_unrated_never_enters_golden(self, multiturn_task):
-        leaves = _make_su_leaves(multiturn_task, 8)
-        golden, remaining = select_golden_runs(leaves, set(), random.Random(0))
-        assert golden == []
-        assert len(remaining) == 8
-
-    def test_excess_rated_falls_into_remaining(self, multiturn_task):
-        # All 8 rated, cap 2 → 6 rated leaves land in remaining (still held out).
-        leaves = _make_su_leaves(multiturn_task, 8)
-        rated = {leaf.id for leaf in leaves}
-        golden, remaining = select_golden_runs(leaves, rated, random.Random(1))
-        assert len(golden) == 2
-        assert all(leaf.id in rated for leaf in remaining)
 
 
 class TestWarnIfGoldenBelowTarget:
@@ -863,32 +827,31 @@ class TestDealEvalInputs:
 
 
 class TestTagGoldenBatchRuns:
-    def test_tags_the_capped_golden_slice_only(self, multiturn_task):
-        # Every chain reviewed: golden caps at 25% of 8 = 2, and no run carries
-        # a test, train or val tag — those live on the cases.
+    def test_tags_every_reviewed_run(self, multiturn_task):
+        # Golden is the rated set, uncapped: a reviewer who rates more during
+        # refinement gets a bigger answer key. No run carries a case split tag.
         leaves = _make_su_leaves(multiturn_task, 8)
         reviewed_ids = {leaf.id for leaf in leaves}
 
-        tag_golden_batch_runs(leaves, reviewed_ids, "golden_tag", rng=random.Random(0))
+        tag_golden_batch_runs(leaves, reviewed_ids, "golden_tag")
 
         buckets = _leaf_split(leaves)
-        assert len(buckets["golden"]) == 2
+        assert {x.id for x in buckets["golden"]} == reviewed_ids
         assert buckets["eval"] == buckets["train"] == buckets["val"] == []
-        assert {x.id for x in buckets["golden"]} <= reviewed_ids
+
+    def test_unreviewed_runs_are_not_golden(self, multiturn_task):
+        leaves = _make_su_leaves(multiturn_task, 8)
+        tag_golden_batch_runs(leaves, {leaves[0].id}, "golden_tag")
+        assert [x.id for x in _leaf_split(leaves)["golden"]] == [leaves[0].id]
 
     def test_zero_rated_no_golden(self, multiturn_task):
         leaves = _make_su_leaves(multiturn_task, 3)
-        tag_golden_batch_runs(leaves, set(), "golden_tag", rng=random.Random(2))
+        tag_golden_batch_runs(leaves, set(), "golden_tag")
         assert _leaf_split(leaves)["golden"] == []
 
     def test_preserves_existing_runner_tags(self, multiturn_task):
         leaves = _make_su_leaves(multiturn_task, 4)
-        tag_golden_batch_runs(
-            leaves,
-            {leaf.id for leaf in leaves},
-            "golden_tag",
-            rng=random.Random(3),
-        )
+        tag_golden_batch_runs(leaves, {leaf.id for leaf in leaves}, "golden_tag")
         for leaf in leaves:
             assert "synthetic_user_case" in leaf.tags
             assert "synthetic_user_batch:b1" in leaf.tags
@@ -897,11 +860,7 @@ class TestTagGoldenBatchRuns:
         leaves = _make_su_leaves(multiturn_task, 8)
         tagged_out: list = []
         tag_golden_batch_runs(
-            leaves,
-            {leaf.id for leaf in leaves},
-            "golden_tag",
-            rng=random.Random(4),
-            tagged_out=tagged_out,
+            leaves, {leaves[0].id, leaves[1].id}, "golden_tag", tagged_out=tagged_out
         )
         assert [added for _, added in tagged_out] == [{"golden_tag"}, {"golden_tag"}]
 
@@ -1186,7 +1145,35 @@ def _driven_case(idx: int, scenario_index: int | None = None) -> DrivenSynthetic
             f"<behavior_guidance>guidance {idx}</behavior_guidance>"
         ),
         scenario_index=scenario_index,
+        leaf_run_id=f"run-{idx}",
     )
+
+
+class TestCasesToMint:
+    """Which cases become EvalInputs: the ones the human did not review."""
+
+    def test_drops_reviewed_cases_and_keeps_the_rest_in_order(self):
+        cases = [_driven_case(i) for i in range(4)]
+        kept = cases_to_mint(cases, {"run-1", "run-3"})
+        assert [case.leaf_run_id for case in kept] == ["run-0", "run-2"]
+
+    def test_keeps_everything_when_nothing_was_reviewed(self):
+        cases = [_driven_case(i) for i in range(3)]
+        assert cases_to_mint(cases, set()) == cases
+
+    def test_keeps_a_case_with_no_run_id(self):
+        # A drive that recorded no run can't have been reviewed, so its case
+        # is minted like any other rather than silently dropped.
+        case = _driven_case(0)
+        case.leaf_run_id = ""
+        assert cases_to_mint([case], {"run-0"}) == [case]
+
+    def test_serves_the_single_turn_arm_too(self):
+        cases = [
+            SingleTurnCaseApi(input="a", leaf_run_id="run-a"),
+            SingleTurnCaseApi(input="b", leaf_run_id="run-b"),
+        ]
+        assert [case.input for case in cases_to_mint(cases, {"run-a"})] == ["b"]
 
 
 _DRIVE_CONFIG = MultiTurnDriveConfig(
@@ -1225,7 +1212,7 @@ class TestBuildMultiTurnEvalInputs:
 
     def test_malformed_blob_is_422(self, multiturn_task):
         bad = DrivenSyntheticCaseApi(
-            seed_prompt="seed", synthetic_user_info="no tags at all"
+            seed_prompt="seed", synthetic_user_info="no tags at all", leaf_run_id="r"
         )
         with pytest.raises(HTTPException) as exc:
             build_multi_turn_eval_inputs(
