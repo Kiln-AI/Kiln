@@ -11,6 +11,7 @@ from kiln_ai.adapters.docker_model_runner_tools import (
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     KilnModelProvider,
+    ModelAdapterId,
     ModelParserID,
     ModelProviderName,
     StructuredOutputMode,
@@ -82,6 +83,20 @@ def check_provider_warnings(provider_name: ModelProviderName):
     for key in warning_check.required_config_keys:
         if get_config_value(key) is None:
             raise ValueError(warning_check.message)
+
+
+def default_adapter_for_provider(provider_name: ModelProviderName) -> ModelAdapterId:
+    """The adapter to use for a model built at runtime (user registry or custom model).
+
+    Built-in model entries declare their own adapter; this is the fallback for models we
+    have no entry for, and the one place provider-to-adapter knowledge lives outside the
+    model list.
+    """
+    return (
+        ModelAdapterId.jev
+        if provider_name == ModelProviderName.typesafe
+        else ModelAdapterId.litellm
+    )
 
 
 def builtin_model_from(
@@ -241,6 +256,7 @@ def kiln_model_provider_from(
         supports_data_gen=False,
         untested_model=True,
         model_id=name,
+        adapter=default_adapter_for_provider(provider),
         # The only mode that works on all models. Newer user model registry allows you to set this.
         structured_output_mode=StructuredOutputMode.json_instructions,
     )
@@ -423,6 +439,7 @@ def user_model_to_provider(entry: UserModelEntry) -> KilnModelProvider:
     base_kwargs: dict[str, Any] = {
         "name": provider_name,
         "model_id": entry.model_id,
+        "adapter": default_adapter_for_provider(provider_name),
         "untested_model": True,  # User models are untested by default
         "supports_structured_output": False,  # Conservative defaults
         "supports_data_gen": False,
@@ -441,8 +458,10 @@ def user_model_to_provider(entry: UserModelEntry) -> KilnModelProvider:
         # This allows new fields to be added to KilnModelProvider without breaking
         # existing UserModelEntry data that may have those fields in overrides
         valid_fields = set(KilnModelProvider.model_fields.keys())
-        # Remove fields that shouldn't be overridden
-        valid_fields -= {"name", "model_id"}
+        # Remove fields that shouldn't be overridden. The adapter is determined by the
+        # provider, not the user: overriding it would route a model to a client that
+        # cannot call it.
+        valid_fields -= {"name", "model_id", "adapter"}
 
         # Only include overrides that are valid fields and actually set (not None)
         # This allows the default values to be used when override is None
@@ -543,6 +562,8 @@ def provider_name_from_id(id: str) -> str:
                 return "Featherless AI"
             case ModelProviderName.docker_model_runner:
                 return "Docker Model Runner"
+            case ModelProviderName.typesafe:
+                return "TypeSafe AI"
             case _:
                 # triggers pyright warning if I miss a case
                 raise_exhaustive_enum_error(enum_id)
@@ -612,6 +633,10 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
     ModelProviderName.featherless_ai: ModelProviderWarning(
         required_config_keys=["featherless_ai_api_key"],
         message="Attempted to use Featherless AI without an API key set. \nGet your API key from https://featherless.ai/account/api-keys",
+    ),
+    ModelProviderName.typesafe: ModelProviderWarning(
+        required_config_keys=["typesafe_api_key"],
+        message="Attempted to use TypeSafe AI without an API key set. \nGet your API key from https://console.typesafe.ai/keys",
     ),
 }
 
@@ -806,6 +831,10 @@ def lite_llm_core_config_for_provider(
                     "api_key": api_key,
                 },
             )
+        case ModelProviderName.typesafe:
+            # TypeSafe's System One API has no chat-completions surface, so it is served
+            # by its own adapter instead of LiteLLM.
+            raise ValueError("TypeSafe AI models do not run through LiteLLM")
         # These are virtual providers that should have mapped to an actual provider upstream (using core_provider method)
         case ModelProviderName.kiln_fine_tune:
             return None

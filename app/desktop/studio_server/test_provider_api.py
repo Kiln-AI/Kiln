@@ -59,6 +59,7 @@ from app.desktop.studio_server.provider_api import (
     connect_provider_api,
     connect_siliconflow,
     connect_together,
+    connect_typesafe,
     connect_vertex,
     connect_wandb,
     embedding_models_from_ollama_tag,
@@ -130,6 +131,7 @@ def patched_non_builtin_available_model_sources(patch_openai_compatible: bool = 
         "together_ai",
         "siliconflow_cn",
         "featherless_ai",
+        "typesafe",
     ],
 )
 def test_connect_api_key_invalid_payload(client, provider):
@@ -2249,6 +2251,7 @@ def mock_config_all_providers():
     mock_config.bedrock_secret_key = "test_key"
     mock_config.siliconflow_cn_api_key = "test_key"
     mock_config.featherless_ai_api_key = "test_key"
+    mock_config.typesafe_api_key = "test_key"
     return mock_config
 
 
@@ -4415,3 +4418,143 @@ def test_connect_api_key_featherless_success(mock_connect_featherless, client):
 
     assert response.status_code == 200
     mock_connect_featherless.assert_called_once_with("test_key")
+
+
+# TypeSafe AI connection tests.
+#
+# GET /v1/models rejects a bad key, which is the check connect_typesafe makes. Both the
+# success and the invalid-key branch are mocked at the async client the handler uses.
+
+
+def _typesafe_expected_request(key: str):
+    return {
+        "url": "https://api.typesafe.ai/v1/models",
+        "headers": {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        },
+    }
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_typesafe_success(mock_config_shared, mock_httpx_get):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_httpx_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    result = await connect_typesafe("test_api_key")
+
+    expected = _typesafe_expected_request("test_api_key")
+    mock_httpx_get.assert_called_once_with(
+        expected["url"],
+        headers=expected["headers"],
+        timeout=10,
+        follow_redirects=True,
+    )
+    assert mock_config.typesafe_api_key == "test_api_key"
+    assert result.status_code == 200
+    assert result.body == b'{"message":"Connected to TypeSafe AI"}'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [401, 403])
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_typesafe_invalid_api_key(
+    mock_config_shared, mock_httpx_get, status_code
+):
+    mock_response = MagicMock()
+    mock_response.status_code = status_code
+    mock_httpx_get.return_value = mock_response
+
+    result = await connect_typesafe("invalid_api_key")
+
+    expected = _typesafe_expected_request("invalid_api_key")
+    mock_httpx_get.assert_called_once_with(
+        expected["url"],
+        headers=expected["headers"],
+        timeout=10,
+        follow_redirects=True,
+    )
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 401
+    assert (
+        result.body
+        == b'{"message":"Failed to connect to TypeSafe AI. Invalid API key."}'
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [400, 429, 500, 503])
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_typesafe_other_error(
+    mock_config_shared, mock_httpx_get, status_code
+):
+    """Anything other than a clean 200 is inconclusive — don't save the key."""
+    mock_response = MagicMock()
+    mock_response.status_code = status_code
+    mock_httpx_get.return_value = mock_response
+
+    result = await connect_typesafe("test_api_key")
+
+    mock_httpx_get.assert_called_once()
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 400
+    assert (
+        result.body
+        == f'{{"message":"Failed to connect to TypeSafe AI. Error: [{status_code}]"}}'.encode()
+    )
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_typesafe_request_exception(mock_config_shared, mock_httpx_get):
+    mock_httpx_get.side_effect = httpx.RequestError("Connection error")
+
+    result = await connect_typesafe("test_api_key")
+
+    mock_httpx_get.assert_called_once()
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 400
+    assert (
+        result.body
+        == b'{"message":"Failed to connect to TypeSafe AI. Error: Connection error"}'
+    )
+
+
+@pytest.mark.asyncio
+async def test_disconnect_api_key_typesafe(client, mock_config_all_providers):
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config.return_value = mock_config_all_providers
+
+        response = client.post(
+            "/api/provider/disconnect_api_key",
+            params={"provider_id": "typesafe"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "Provider disconnected"}
+        assert mock_config_all_providers.typesafe_api_key is None
+
+        # Check it didn't unset the other providers
+        assert mock_config_all_providers.open_ai_api_key is not None
+
+
+@patch("app.desktop.studio_server.provider_api.connect_typesafe")
+def test_connect_api_key_typesafe_success(mock_connect_typesafe, client):
+    mock_connect_typesafe.return_value = {"message": "Connected to TypeSafe AI"}
+
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "typesafe", "key_data": {"API Key": "test_key"}},
+    )
+
+    assert response.status_code == 200
+    mock_connect_typesafe.assert_called_once_with("test_key")
