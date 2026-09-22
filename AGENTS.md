@@ -73,7 +73,7 @@ Write it for a person who has not read your working notes and will not scroll up
 
 **Repeat yourself a little.** The reader may have read the last recap days ago, or skipped it. Carry enough context forward that this recap makes sense by itself. One clause is usually enough. A small amount of repetition between recaps is correct, not waste.
 
-**Stay inside the recaps.** A recap may rely on plain English, on standard terms for this repo's stack, and on what earlier recaps said. It may not rely on anything that exists only in your working notes.
+**Stay inside the recaps.** Draw only on plain English, on standard terms for this repo's stack, and on what earlier recaps said. Never draw on something that exists only in your working notes. Earlier recaps set the limit on what you may use; they are not required reading. Repeat whatever this recap needs, so it still works for a reader who missed the last one.
 
 **Draw a picture when it helps.** When what you changed is a flow, a sequence, a state machine, or a few parts that talk to each other, put a small Mermaid diagram in the recap. Keep it to about eight boxes. Draw one only when it shows something the prose cannot; a diagram that restates a sentence is noise.
 
@@ -92,7 +92,7 @@ Write it for a person who has not read your working notes and will not scroll up
 
 **Honesty.** `Outcome` reports what actually happened. If tests failed, say so and quote what failed. If you skipped part of the task, name the part and the reason. If the result is not what we wanted, say that first, not last. Never describe work as finished when it is not.
 
-**Recap log.** Append each recap to `recaps.md` in your scratchpad directory. The log is your own index, not a deliverable. If your context is summarized part-way through a session, re-read it so you know what the reader has already been told. Keep this file out of the repo.
+**Recap log.** Append each recap to `recaps.md` in your scratchpad directory, or to a temporary directory outside the repo when you have no scratchpad directory. The log is your own index, not a deliverable. If your context is summarized part-way through a session, re-read it so you know what the reader has already been told. Keep this file out of the repo.
 
 ### Code Review Guidelines
 
