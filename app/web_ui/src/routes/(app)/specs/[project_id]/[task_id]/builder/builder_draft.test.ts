@@ -21,6 +21,7 @@ import {
 } from "./builder_draft"
 import type { KilnAgentRunConfigProperties } from "$lib/types"
 import { restore_turns_per_case } from "./plan_flow"
+import { restore_batch_size, DEFAULT_BATCH_SIZE } from "./batch_profiles"
 
 // The input generator's committed run config, as the component hands it over.
 const INPUT_GEN_RUN_CONFIG: KilnAgentRunConfigProperties = {
@@ -65,6 +66,7 @@ const full_draft: BuilderDraft = {
       reason_for_edit: "Broadened to cover guessing.",
     },
   },
+  batch_size: { profile: "deep", custom_count: 90 },
   batch_plan: {
     prompts: ["Customer asks about a return window.", "Warranty question."],
     summary: "Two fabrication-bait scenarios.",
@@ -838,6 +840,16 @@ describe("conversation length (turns_per_case)", () => {
 
   it("reset drops the choice back to the default", () => {
     expect(reset_draft_keeping_tags(full_draft).turns_per_case).toBeNull()
+  })
+})
+
+describe("dataset size (batch_size)", () => {
+  it("restores Standard from a draft stored without the key", () => {
+    const { batch_size: _size, ...legacy } = full_draft
+    const legacy_restored = JSON.parse(JSON.stringify(legacy)) as BuilderDraft
+    expect(restore_batch_size(legacy_restored.batch_size)).toEqual(
+      DEFAULT_BATCH_SIZE,
+    )
   })
 })
 

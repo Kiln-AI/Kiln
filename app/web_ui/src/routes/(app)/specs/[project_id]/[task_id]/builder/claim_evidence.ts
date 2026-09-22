@@ -875,7 +875,7 @@ export function user_says_meets_spec(
 // How many traces the reviewer rates. Every rated trace becomes part of the
 // golden answer key, which is a handful of human labels whatever the batch
 // size: a judge check, not a measurement. Bounded by the traces there are.
-const GOLDEN_TARGET = 6
+export const GOLDEN_TARGET = 6
 
 export function review_target(total: number): number {
   if (total <= 0) return 0
