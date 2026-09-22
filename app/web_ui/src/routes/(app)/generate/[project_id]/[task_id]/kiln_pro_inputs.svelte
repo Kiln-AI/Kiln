@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from "svelte"
   import { get } from "svelte/store"
   import { client } from "$lib/api_client"
+  import { is_eval_input_split, save_eval_input } from "./eval_input_save"
   import posthog from "posthog-js"
   import type { components } from "$lib/api_schema"
   import { isKilnAgentRunConfig } from "$lib/types"
@@ -51,6 +52,12 @@
     output_error: string | null
     // Set once persisted; also the dataset id the "Saved" status links to.
     saved_id: string | null
+    // Set instead of saved_id when the row's split holds eval inputs, so the input was
+    // written to the eval rather than saved as a run.
+    eval_input_id: string | null
+    // The split this row was dealt, drawn once when its input arrives. Re-drawing it per
+    // save attempt would let a retry write the row to the other store.
+    split_tag: string | null
   }
 
   let rows: Row[] = plan.prompts.map((p) => ({
@@ -61,6 +68,8 @@
     input_error: null,
     output_error: null,
     saved_id: null,
+    eval_input_id: null,
+    split_tag: null,
   }))
 
   $: task = guidance_data.task
@@ -85,6 +94,8 @@
   let saving = false
   let save_progress = 0
   let save_target = 0
+  // How many of those saves went to the eval's inputs rather than the dataset.
+  let eval_input_count = 0
   let save_errors: KilnError[] = []
   let total_saved = 0
   let show_save_errors = false
@@ -96,7 +107,7 @@
   $: inputs_done = inputs_status !== null && inputs_status !== "running"
   $: outputs_done = outputs_status !== null && outputs_status !== "running"
   $: outputs_savable = rows.filter(
-    (r) => r.task_run !== null && !r.saved_id,
+    (r) => r.task_run !== null && !r.saved_id && !r.eval_input_id,
   ).length
   // Rows that have an input but no output — the targets of Generate Outputs,
   // whether they've never been run, failed, or had their output removed.
@@ -105,12 +116,15 @@
   ).length
   $: generating = !inputs_done || (outputs_started && !outputs_done)
   // A full reset would orphan anything already written to the dataset.
-  $: any_saved = rows.some((r) => r.saved_id)
+  $: any_saved = rows.some((r) => r.saved_id || r.eval_input_id)
   // A row with an input or an output that never made it to the dataset is work
   // the user would lose by navigating away. Rows whose input failed hold nothing
   // worth keeping, so they don't count.
   $: unsaved_samples = rows.some(
-    (r) => !r.saved_id && (r.input !== null || r.task_run !== null),
+    (r) =>
+      !r.saved_id &&
+      !r.eval_input_id &&
+      (r.input !== null || r.task_run !== null),
   )
 
   // Before outputs run, warn about inputs that failed to generate — the retry
@@ -154,7 +168,9 @@
     // Nothing left to generate and nothing left to save: the batch is done.
     if (saved_any && savable === 0) {
       return {
-        message: "All items saved into your Dataset.",
+        // Not "into your Dataset": a case whose split holds eval inputs went to the eval
+        // instead. The save dialog gives the breakdown.
+        message: "All items saved.",
         color: "success",
         icon: "check",
       }
@@ -358,6 +374,7 @@
           if (!row) continue
           if (r.input !== null && r.input !== undefined) {
             row.input = r.input
+            row.split_tag = row.split_tag ?? random_split_tag() ?? null
           }
           if (r.error) row.input_error = r.error
         }
@@ -495,7 +512,9 @@
   // mirror the legacy flow: show progress, collect per-item errors, and leave
   // failed rows unsaved so a re-click retries just those.
   async function save_all() {
-    const to_save = rows.filter((r) => r.task_run && !r.saved_id)
+    const to_save = rows.filter(
+      (r) => r.task_run && !r.saved_id && !r.eval_input_id,
+    )
     if (to_save.length === 0) return
     posthog.capture("kiln_pro_save_data", {
       count: to_save.length,
@@ -508,32 +527,53 @@
     // already persisted carry a saved_id and never re-post, so a later save of
     // one straggler must say "1", not the running total.
     total_saved = 0
+    eval_input_count = 0
     save_target = to_save.length
     // Open straight away — the dialog shows the spinner, then flips to the
     // success state when the save finishes.
     save_dialog?.show()
+    const eval_input_tags = get(guidance_data.eval_input_splits)
     for (const row of to_save) {
       try {
-        const split_tag = random_split_tag()
-        const to_post = split_tag
-          ? {
-              ...row.task_run,
-              tags: [...(row.task_run?.tags ?? []), split_tag],
-            }
-          : row.task_run
-        const { data, error } = await client.POST(
-          "/api/projects/{project_id}/tasks/{task_id}/save_sample",
-          {
-            params: { path: { project_id, task_id } },
-            // The batch status returns the Output variant; save_sample accepts
-            // the Input variant. They round-trip the same object on the server.
-            body: to_post as unknown as components["schemas"]["TaskRun-Input"],
-          },
-        )
-        if (error) throw error
-        if (!data?.id) throw new KilnError("Save failed: no id returned.", null)
-        row.saved_id = data.id
-        total_saved++
+        const split_tag = row.split_tag
+        if (split_tag && is_eval_input_split(split_tag, eval_input_tags)) {
+          // The split holds eval inputs, so the input goes to the eval and the run this
+          // row already produced isn't saved.
+          if (row.input === null) {
+            throw new KilnError("Save failed: no input to save.", null)
+          }
+          row.eval_input_id = await save_eval_input(
+            project_id,
+            task_id,
+            row.input,
+            split_tag,
+            session_id,
+          )
+          total_saved++
+          eval_input_count++
+        } else {
+          const to_post = split_tag
+            ? {
+                ...row.task_run,
+                tags: [...(row.task_run?.tags ?? []), split_tag],
+              }
+            : row.task_run
+          const { data, error } = await client.POST(
+            "/api/projects/{project_id}/tasks/{task_id}/save_sample",
+            {
+              params: { path: { project_id, task_id } },
+              // The batch status returns the Output variant; save_sample accepts
+              // the Input variant. They round-trip the same object on the server.
+              body: to_post as unknown as components["schemas"]["TaskRun-Input"],
+            },
+          )
+          if (error) throw error
+          if (!data?.id) {
+            throw new KilnError("Save failed: no id returned.", null)
+          }
+          row.saved_id = data.id
+          total_saved++
+        }
       } catch (e) {
         save_errors = [...save_errors, createKilnError(e)]
       }
@@ -722,12 +762,17 @@
                     {
                       label: "Remove Output",
                       onclick: () => remove_output(i),
-                      hidden: generating || !!row.saved_id || !row.task_run,
+                      hidden:
+                        generating ||
+                        !!row.saved_id ||
+                        !!row.eval_input_id ||
+                        !row.task_run,
                     },
                     {
                       label: "Remove Sample",
                       onclick: () => delete_row(i),
-                      hidden: generating || !!row.saved_id,
+                      hidden:
+                        generating || !!row.saved_id || !!row.eval_input_id,
                     },
                   ]}
                 />
@@ -770,10 +815,19 @@
         Saved {total_saved} new {total_saved === 1 ? "item" : "items"}.
       </div>
       <div class="font-light text-sm">
-        These are now available in the <a
-          href={`/dataset/${project_id}/${task_id}`}
-          class="link">dataset tab</a
-        >.
+        {#if eval_input_count > 0}
+          {total_saved - eval_input_count}
+          {total_saved - eval_input_count === 1 ? "is" : "are"} in the
+          <a href={`/dataset/${project_id}/${task_id}`} class="link"
+            >dataset tab</a
+          >. The other {eval_input_count} went to the eval's inputs, which the eval
+          answers fresh when it runs.
+        {:else}
+          These are now available in the <a
+            href={`/dataset/${project_id}/${task_id}`}
+            class="link">dataset tab</a
+          >.
+        {/if}
       </div>
       {#if session_id}
         <div class="font-light text-xs mt-4 text-gray-500">

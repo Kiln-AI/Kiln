@@ -413,20 +413,30 @@ describe("add-eval-data entry points", () => {
     path.dirname(fileURLToPath(import.meta.url)),
     "../..",
   )
+  //
+  // The synthetic data intro asks for the sibling that also allocates to eval-input splits;
+  // the other two send the user to /dataset/add_data, which writes runs, so they ask for the
+  // task-run-only helper. Both live here, so neither can drift from the weights.
   const entry_points = {
-    "synthetic data generation intro":
-      "routes/(app)/generate/[project_id]/[task_id]/data_gen_intro.svelte",
-    "eval detail page":
-      "routes/(app)/specs/[project_id]/[task_id]/[spec_id]/[eval_id]/+page.svelte",
-    "compare page":
-      "routes/(app)/specs/[project_id]/[task_id]/compare/+page.svelte",
+    "synthetic data generation intro": {
+      path: "routes/(app)/generate/[project_id]/[task_id]/data_gen_intro.svelte",
+      helper: "build_synth_generation_splits(",
+    },
+    "eval detail page": {
+      path: "routes/(app)/specs/[project_id]/[task_id]/[spec_id]/[eval_id]/+page.svelte",
+      helper: "build_eval_generation_splits_param(",
+    },
+    "compare page": {
+      path: "routes/(app)/specs/[project_id]/[task_id]/compare/+page.svelte",
+      helper: "build_eval_generation_splits_param(",
+    },
   }
 
-  for (const [name, relative_path] of Object.entries(entry_points)) {
+  for (const [name, entry_point] of Object.entries(entry_points)) {
     it(`the ${name} builds its splits param with the shared helper`, () => {
-      const source = readFileSync(path.join(src_dir, relative_path), "utf-8")
+      const source = readFileSync(path.join(src_dir, entry_point.path), "utf-8")
 
-      expect(source).toContain("build_eval_generation_splits_param(")
+      expect(source).toContain(entry_point.helper)
       // No literal allocation anywhere: `tag:0.8,tag:0.2` and the rag-only `tag:1.0` are
       // exactly what these files used to write.
       expect(source).not.toMatch(/params\.set\(\s*"splits",\s*`/)
