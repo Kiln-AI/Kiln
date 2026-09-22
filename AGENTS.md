@@ -71,13 +71,17 @@ A recap is written for a person who has not read your working notes and will not
 
 **Vocabulary rule.** A recap may only use words that are (a) plain English, (b) standard terms for this repo's stack, or (c) already explained in an earlier recap in this same conversation. Anything else you explain the first time you use it, under `New terms`. After that you can use it bare. Never carry a nickname over from your working notes without explaining it.
 
+**Repeat yourself a little.** The vocabulary rule says which words you are allowed to use. It does not say "assume they remember". You are writing for a person, not for a machine with perfect recall — they may have read the last recap three days ago, or skipped it. So carry enough context forward that this recap makes sense by itself. One clause is usually enough: remind them what a thing is as you use it, rather than sending them back to find it. A small amount of repetition across recaps is correct, not waste.
+
+**Draw a picture when it helps.** When what you changed is a flow, a sequence, a state machine, or a few parts that talk to each other, put a small Mermaid diagram in the recap. Keep it to about eight boxes. Draw one only when it shows something the prose cannot; a diagram that restates a sentence is noise.
+
 **Format.** Use these headings, in this order. Drop any heading you have nothing real to say under. Do not reorder or rename them. Answer each one in prose.
 
 ```
 <recap>
 **Goal** — what you were asked for.
 **What I did** — the change, in plain words.
-**How** — the approach, at a level a reviewer can judge without reading the diff.
+**How** — the approach, at a level a reviewer can judge without reading the diff. Put a diagram here when one helps.
 **Outcome** — what happened, and plainly whether it is what we wanted.
 **Questions for you** — what you need answered before you can continue.
 **FYI** — worth knowing, but not blocking.
