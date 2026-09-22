@@ -815,13 +815,16 @@
         Saved {total_saved} new {total_saved === 1 ? "item" : "items"}.
       </div>
       <div class="font-light text-sm">
-        {#if eval_input_count > 0}
+        {#if eval_input_count > 0 && total_saved > eval_input_count}
           {total_saved - eval_input_count}
           {total_saved - eval_input_count === 1 ? "is" : "are"} in the
           <a href={`/dataset/${project_id}/${task_id}`} class="link"
             >dataset tab</a
           >. The other {eval_input_count} went to the eval's inputs, which the eval
           answers fresh when it runs.
+        {:else if eval_input_count > 0}
+          These went to the eval's inputs, which the eval answers fresh when it
+          runs.
         {:else}
           These are now available in the <a
             href={`/dataset/${project_id}/${task_id}`}

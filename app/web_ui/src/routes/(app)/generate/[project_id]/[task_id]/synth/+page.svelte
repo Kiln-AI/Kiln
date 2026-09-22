@@ -1425,7 +1425,7 @@
           >
         {/if}
         <div class="font-medium">Saved {saved_count} new items.</div>
-        {#if eval_input_count > 0}
+        {#if eval_input_count > 0 && saved_count > eval_input_count}
           <div class="font-light text-sm">
             {saved_count - eval_input_count}
             {saved_count - eval_input_count === 1 ? "is" : "are"} in the
@@ -1433,6 +1433,11 @@
               >dataset tab</a
             >. The other {eval_input_count} went to the eval's inputs, which the
             eval answers fresh when it runs.
+          </div>
+        {:else if eval_input_count > 0}
+          <div class="font-light text-sm">
+            These went to the eval's inputs, which the eval answers fresh when
+            it runs.
           </div>
         {:else}
           <div class="font-light text-sm">
