@@ -1,19 +1,10 @@
 <script lang="ts">
-  // The batch form rows shared by every synthetic data surface: a count
-  // stepper and a guidance box. This is rows only — no form container, no
-  // submit button, no header — because each surface wraps them differently
-  // (a page form here, a dialog elsewhere) and owns its own submit. The
-  // Guidance label and description are hardcoded so the wording stays
-  // identical wherever the rows appear.
-  import IncrementUi from "$lib/ui/increment_ui.svelte"
+  // The guidance row shared by every synthetic data surface. No form
+  // container, submit button or header: each surface wraps the row and owns
+  // its own submit. The Guidance label and description are hardcoded so the
+  // wording stays identical wherever the row appears.
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
-
-  export let count: number
-  export let count_max = 200
-  // The noun in the count row. Each surface counts a different thing
-  // (samples, traces, conversations), so only the noun varies.
-  export let count_label = "Sample Count"
 
   export let guidance: string
   // The guidance field's DOM id. Overridable because two instances can be
@@ -49,10 +40,6 @@
   }
 </script>
 
-<div class="flex flex-row items-center gap-4">
-  <div class="flex-grow font-medium text-sm">{count_label}</div>
-  <IncrementUi bind:value={count} max={count_max} />
-</div>
 <FormElement
   id={guidance_id}
   label="Guidance"
