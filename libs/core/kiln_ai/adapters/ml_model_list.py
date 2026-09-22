@@ -75,6 +75,8 @@ class ModelName(str, Enum):
     llama_4_maverick = "llama_4_maverick"
     llama_4_scout = "llama_4_scout"
     gpt_6_astra = "gpt_6_astra"
+    gpt_6_sol = "gpt_6_sol"
+    gpt_6_luna = "gpt_6_luna"
     gpt_5_6_sol = "gpt_5_6_sol"
     gpt_5_6_terra = "gpt_5_6_terra"
     gpt_5_6_luna = "gpt_5_6_luna"
@@ -531,6 +533,17 @@ GPT_6_ASTRA_OPENAI_THINKING_LEVELS = {
     "Max": "max",
 }
 
+# GPT-6 Sol and Luna support the same levels as Astra plus `none`, and default
+# to medium. https://developers.openai.com/api/docs/models/gpt-6-sol
+GPT_6_OPENAI_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
+}
+
 GPT_5_1_OPENAI_THINKING_LEVELS = {
     "Off/None": "none",
     "Low": "low",
@@ -774,18 +787,135 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # GPT 5.6 Sol
+    # GPT 6 Sol
     KilnModel(
         family=ModelFamily.gpt,
-        name=ModelName.gpt_5_6_sol,
-        friendly_name="GPT-5.6 Sol",
+        name=ModelName.gpt_6_sol,
+        friendly_name="GPT-6 Sol",
         featured_rank=4,
-        editorial_notes="OpenAI's most capable GPT model. Powerful reasoning and multimodal.",
+        editorial_notes="OpenAI's balanced GPT-6 model. Strong reasoning and multimodal at a mid-tier price.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
+                model_id="gpt-6-sol",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
+                # for gpt-5.4+. Disable function calling until Kiln routes these
+                # models to /v1/responses.
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="openai/gpt-6-sol",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 6 Luna
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_luna,
+        friendly_name="GPT-6 Luna",
+        featured_rank=13,
+        editorial_notes="OpenAI's fast, cost-efficient GPT-6 model. Optimized for speed and high-volume tasks.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="gpt-6-luna",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
+                # for gpt-5.4+. Disable function calling until Kiln routes these
+                # models to /v1/responses.
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="openai/gpt-6-luna",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 5.6 Sol
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_5_6_sol,
+        friendly_name="GPT-5.6 Sol",
+        editorial_notes="OpenAI's previous-generation flagship GPT model. Powerful reasoning and multimodal.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
                 model_id="gpt-5.6-sol",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
@@ -809,8 +939,6 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 model_id="openai/gpt-5.6-sol",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
@@ -899,13 +1027,10 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_6_luna,
         friendly_name="GPT-5.6 Luna",
-        featured_rank=13,
-        editorial_notes="OpenAI's fast, cost-efficient GPT-5.6 model. Optimized for speed and high-volume tasks.",
+        editorial_notes="OpenAI's previous-generation fast, cost-efficient model. Optimized for speed and high-volume tasks.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 model_id="gpt-5.6-luna",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
@@ -929,8 +1054,6 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 model_id="openai/gpt-5.6-luna",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
