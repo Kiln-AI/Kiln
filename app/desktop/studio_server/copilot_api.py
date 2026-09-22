@@ -39,9 +39,12 @@ from kiln_server.utils.agent_checks.policy import (
     agent_policy_require_approval,
 )
 from kiln_server.utils.spec_utils import (
+    ALL_SPLIT_NAMES,
+    SplitShare,
     build_spec_eval,
     generate_spec_eval_tags,
     spec_eval_data_type,
+    split_names,
 )
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing_extensions import Self
@@ -309,6 +312,13 @@ class CreateSpecWithCopilotRequest(BaseModel):
         "shape (and, from the builder, the same values) the review step ran, "
         "so the calibrated judge is the one that ships."
     )
+    splits: list[SplitShare] | None = Field(
+        default=None,
+        min_length=1,
+        description="The splits the eval is created with, each with its relative "
+        "share of the unreviewed cases; list order wins a leftover case. Must "
+        "name test. Required on a single_turn or multi_turn save.",
+    )
     sdg_session_config: SyntheticDataGenerationSessionConfigApi | None = None
     multi_turn: MultiTurnSaveInfo | None = None
     single_turn: SingleTurnSaveInfo | None = None
@@ -322,6 +332,16 @@ class CreateSpecWithCopilotRequest(BaseModel):
         "generated. Omit to use the task's default run config. The eval "
         "builder generates nothing, so this does not apply to it.",
     )
+
+    @field_validator("splits")
+    @classmethod
+    def splits_must_name_test_once(
+        cls, value: list[SplitShare] | None
+    ) -> list[SplitShare] | None:
+        if value is None:
+            return value
+        split_names(value)
+        return value
 
     @model_validator(mode="after")
     def validate_synthesis_path(self) -> Self:
@@ -345,6 +365,14 @@ class CreateSpecWithCopilotRequest(BaseModel):
             raise ValueError(
                 "An eval builder save requires `evaluate_full_trace=True` — "
                 "the builder judged full traces, so the saved eval must too."
+            )
+        if (
+            self.multi_turn is not None or self.single_turn is not None
+        ) and self.splits is None:
+            raise ValueError("An eval builder save requires `splits`.")
+        if self.sdg_session_config is not None and self.splits is not None:
+            raise ValueError(
+                "`sdg_session_config` deals its own splits; omit `splits`."
             )
         return self
 
@@ -1086,8 +1114,8 @@ def connect_copilot_api(app: FastAPI):
         Plus, per synthesis path:
         - Eval builder (`single_turn` / `multi_turn`): the reviewed runs are
           tagged golden and carry the human's ratings and claim reviews; every
-          other case becomes an EvalInput, dealt into test, train or val.
-          Nothing is generated at save time.
+          other case becomes an EvalInput, dealt into the splits the request
+          names. Nothing is generated at save time.
         - Legacy v1 flow (`sdg_session_config`): generate examples via the
           copilot API and save them as TaskRuns, with the request's reviewed
           examples as golden.
@@ -1119,10 +1147,9 @@ def connect_copilot_api(app: FastAPI):
         # The tags the eval's items carry. The `sdg_session_config` path mints
         # no val items, leaving that split empty rather than absent.
         tags = generate_spec_eval_tags(request.name)
-        eval_tag, train_tag, val_tag, golden_tag = (
+        eval_tag, train_tag, golden_tag = (
             tags.test_tag,
             tags.train_tag,
-            tags.val_tag,
             tags.golden_tag,
         )
         # Extract spec_type from properties (discriminated union)
@@ -1231,7 +1258,8 @@ def connect_copilot_api(app: FastAPI):
         # Deal the cases so each lands in exactly one split, holding test out
         # from what the optimizer and the judge are tuned on. The legacy v1
         # flow mints no cases and goes away with KIL-824.
-        if builder_save:
+        shares = request.splits
+        if shares is not None:
             if not batch_eval_inputs:
                 raise HTTPException(
                     status_code=422,
@@ -1239,11 +1267,19 @@ def connect_copilot_api(app: FastAPI):
                     "eval would have no cases to run. Leave at least one "
                     "case unreviewed.",
                 )
-            deal_eval_inputs(batch_eval_inputs, eval_tag, train_tag, val_tag, rng)
+            hands = deal_eval_inputs(batch_eval_inputs, shares, tags, rng)
+            if not hands["test"]:
+                raise HTTPException(
+                    status_code=422,
+                    detail="The deal left the test split with no case, so the "
+                    "eval would run nothing. Put test first in `splits`, or "
+                    "save more cases.",
+                )
 
         # 1. Create the Eval. An eval-builder save's splits hold the EvalInputs
         # dealt above; the legacy path keeps train and val as dataset runs.
         # Golden is TaskRuns on both: the runs a human graded.
+        names = split_names(shares) if shares is not None else ALL_SPLIT_NAMES
         eval, _tags = build_spec_eval(
             task=task,
             name=request.name,
@@ -1254,6 +1290,7 @@ def connect_copilot_api(app: FastAPI):
             test_source="eval_input",
             train_source="eval_input" if builder_save else "task_run",
             val_source="eval_input" if builder_save else "task_run",
+            split_names=names,
         )
 
         # 2. Create the judge eval config: the judge the review step ran, in the

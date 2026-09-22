@@ -8,6 +8,7 @@ spec creation workflow.
 import logging
 import random
 import time
+from collections.abc import Sequence
 from typing import Any, Protocol, TypeVar
 
 from fastapi import HTTPException
@@ -16,6 +17,7 @@ from kiln_ai.datamodel import ClaimReview, Feedback, FeedbackSource, Task, TaskR
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
     EvalInput,
+    EvalSplitName,
     MultiTurnDriveConfig,
     MultiTurnSyntheticEvalInputData,
     SingleTurnEvalInputData,
@@ -38,6 +40,7 @@ from kiln_ai.synthetic_user.parser import (
 from kiln_ai.tools.mcp_session_manager import mcp_session_scope
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
+from kiln_server.utils.spec_utils import SpecEvalTags, SplitShare
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     generate_batch_v1_copilot_generate_batch_post,
@@ -94,12 +97,6 @@ NUM_TOPICS = 15
 TRAIN_SPLIT_WEIGHT = 2
 EVAL_SPLIT_WEIGHT = 1
 GOLDEN_TARGET_FRACTION = 0.25
-
-# Shares the eval builder deals its cases into; golden is not dealt, it is the
-# reviewed runs. Mirrored in web_ui/src/lib/utils/eval_generation_splits.ts.
-TEST_DEAL_WEIGHT = 25
-TRAIN_DEAL_WEIGHT = 40
-VAL_DEAL_WEIGHT = 25
 
 
 def spec_rating_key(spec_name: str) -> str:
@@ -828,36 +825,31 @@ def tag_golden_batch_runs(
     tag_batch_runs(golden, golden_tag, tagged_out)
 
 
-def deal_pool_test_train_val(
-    pool: list[T], rng: random.Random
-) -> tuple[list[T], list[T], list[T]]:
-    """Deal a pool into disjoint (test, train, val) hands at the deal weights.
+def deal_pool(
+    pool: list[T], shares: Sequence[SplitShare], rng: random.Random
+) -> dict[EvalSplitName, list[T]]:
+    """Deal a pool across the shares into disjoint hands.
 
-    Sizes are largest remainder with ties to test, and a non-empty pool always
-    yields a test item. The input list is not mutated.
+    Sizes are largest remainder, ties by position, so the caller's order decides
+    who wins a leftover case. The input list is not mutated.
     """
     shuffled = list(pool)
     rng.shuffle(shuffled)
     size = len(shuffled)
-    # Test first so the stable sort below breaks remainder ties its way.
-    weights = (
-        ("test", TEST_DEAL_WEIGHT),
-        ("train", TRAIN_DEAL_WEIGHT),
-        ("val", VAL_DEAL_WEIGHT),
-    )
-    total_weight = sum(weight for _, weight in weights)
-    counts = {name: size * weight // total_weight for name, weight in weights}
+    total_weight = sum(share.weight for share in shares)
+    counts = {share.split: size * share.weight // total_weight for share in shares}
     leftover = size - sum(counts.values())
-    for name, _ in sorted(weights, key=lambda pair: -(size * pair[1] % total_weight))[
+    for share in sorted(shares, key=lambda s: -(size * s.weight % total_weight))[
         :leftover
     ]:
-        counts[name] += 1
-    if size and not counts["test"]:
-        # Only a one-item pool can floor test to zero.
-        counts["test"], counts["train"], counts["val"] = 1, 0, 0
-    train_start = counts["test"]
-    val_start = train_start + counts["train"]
-    return shuffled[:train_start], shuffled[train_start:val_start], shuffled[val_start:]
+        counts[share.split] += 1
+
+    hands: dict[EvalSplitName, list[T]] = {}
+    dealt = 0
+    for share in shares:
+        hands[share.split] = shuffled[dealt : dealt + counts[share.split]]
+        dealt += counts[share.split]
+    return hands
 
 
 def cases_to_mint(
@@ -875,24 +867,23 @@ def cases_to_mint(
 
 def deal_eval_inputs(
     eval_inputs: list[EvalInput],
-    test_tag: str,
-    train_tag: str,
-    val_tag: str,
+    shares: Sequence[SplitShare],
+    tags: SpecEvalTags,
     rng: random.Random,
-) -> None:
-    """Deal the minted cases, retagging the train and val hands.
+) -> dict[EvalSplitName, list[EvalInput]]:
+    """Deal the minted cases across the shares and return the hands.
 
-    The cases arrive tagged for the test split; dealing them here is what
-    holds test out from the train and val an optimizer tunes against. Mutates
-    the unsaved items, which persist_eval_slice then writes.
+    The train and val hands are retagged on the unsaved items, which
+    persist_eval_slice then writes.
     """
-    _, train, val = deal_pool_test_train_val(eval_inputs, rng)
-    for hand, tag in ((train, train_tag), (val, val_tag)):
-        for eval_input in hand:
+    hands = deal_pool(eval_inputs, shares, rng)
+    for split, tag in (("train", tags.train_tag), ("val", tags.val_tag)):
+        for eval_input in hands.get(split, []):
             eval_input.tags = [
-                tag if existing == test_tag else existing
+                tag if existing == tags.test_tag else existing
                 for existing in eval_input.tags
             ]
+    return hands
 
 
 def tag_batch_runs(

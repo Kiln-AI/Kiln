@@ -1043,14 +1043,8 @@
   // always free.
   let reviewed_identity: string | null = null
 
-  // Default size of one batch (conversations to drive, or single-turn inputs
-  // to run) — what the first plan asks for before the user picks a size in
-  // the Refine Plan dialog. The dialog's ceiling is the server's cap
-  // (NUM_CASES_MAX in libs/core/kiln_ai/synthetic_user/runner.py, mirrored by
-  // the batch-plan and pipeline routes), not this number.
-  // Sized so every split still holds enough cases once the batch is dealt.
-  // Growing it does not grow the review ask, which is a flat count.
-  const NUM_CASES = 80
+  // Standard's 60 dealt cases plus the six the reviewer rates.
+  const NUM_CASES = 66
   // The largest batch the server will plan or drive. Mirrors NUM_CASES_MAX in
   // libs/core/kiln_ai/synthetic_user/runner.py, which the batch-plan and
   // pipeline routes enforce — asking for more is rejected before anything
@@ -4083,6 +4077,12 @@
   // ── Step 6 state — save
   let saving = false
   let save_error: string | null = null
+  // The saved eval's shape: three splits, dealt evenly.
+  const EVEN_SPLITS = [
+    { split: "test" as const, weight: 1 },
+    { split: "train" as const, weight: 1 },
+    { split: "val" as const, weight: 1 },
+  ]
 
   async function on_save() {
     saving = true
@@ -4191,6 +4191,7 @@
               properties: spec_properties,
               evaluate_full_trace: true,
               judge_info: save_judge,
+              splits: EVEN_SPLITS,
               multi_turn: {
                 batch_tag: saved_batch_tag,
                 reviewed_chains,
@@ -4282,6 +4283,7 @@
             // too, or the calibrated judge is not the judge that ships.
             evaluate_full_trace: true,
             judge_info: save_judge,
+            splits: EVEN_SPLITS,
             single_turn: {
               batch_tag: saved_batch_tag,
               reviewed_runs,

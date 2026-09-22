@@ -4,6 +4,7 @@ This module contains helper functions for creating specs and their associated ev
 These functions are used by both the core spec API and the desktop copilot API.
 """
 
+from collections.abc import Sequence
 from typing import NamedTuple
 
 from kiln_ai.datamodel.datamodel_enums import (
@@ -26,6 +27,38 @@ from kiln_ai.datamodel.eval_splits import ItemSource
 from kiln_ai.datamodel.spec_properties import SpecType
 from kiln_ai.datamodel.task import Task
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from pydantic import BaseModel, Field
+
+# The splits a spec eval is created with when the caller names no shape.
+ALL_SPLIT_NAMES: tuple[EvalSplitName, ...] = ("test", "train", "val")
+
+
+class SplitShare(BaseModel):
+    """One split of a new eval and its relative share of the dealt cases."""
+
+    split: EvalSplitName
+    weight: int = Field(
+        ge=1,
+        description="Relative share. No sum rule; 20/20/20 and 1/1/1 are the same deal.",
+    )
+
+
+def split_names(shares: Sequence[SplitShare]) -> list[EvalSplitName]:
+    """The splits a shares list names, in order.
+
+    Raises ValueError on a missing test split or a split named twice.
+    """
+    names: list[EvalSplitName] = [share.split for share in shares]
+    if "test" not in names:
+        raise ValueError(
+            "`splits` must name the test split: it is the split the eval runs."
+        )
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        raise ValueError(
+            f"`splits` names a split more than once: {', '.join(duplicates)}."
+        )
+    return names
 
 
 def spec_eval_output_score(spec_name: str) -> EvalOutputScore:
@@ -146,17 +179,21 @@ def spec_eval_splits(
     test_source: ItemSource = "task_run",
     train_source: ItemSource = "task_run",
     val_source: ItemSource = "task_run",
+    split_names: Sequence[EvalSplitName] = ALL_SPLIT_NAMES,
 ) -> dict[EvalSplitName, SplitRef]:
     """The splits a new spec eval is created with, each backed by its source.
 
     A source is the store a split's items live in: tagged TaskRuns, or EvalInputs for a
-    creator that mints its own cases. Golden is not a split and is not returned here.
+    creator that mints its own cases. A split the caller leaves out of `split_names` is
+    absent from the eval rather than present and empty. Golden is not a split and is not
+    returned here.
     """
-    return {
-        "test": _split_ref(test_tag, test_source),
-        "train": _split_ref(train_tag, train_source),
-        "val": _split_ref(val_tag, val_source),
+    tagged_sources: dict[EvalSplitName, tuple[str, ItemSource]] = {
+        "test": (test_tag, test_source),
+        "train": (train_tag, train_source),
+        "val": (val_tag, val_source),
     }
+    return {name: _split_ref(*tagged_sources[name]) for name in split_names}
 
 
 def _split_ref(tag: str, source: ItemSource) -> SplitRef:
@@ -181,8 +218,9 @@ def build_spec_eval(
     test_source: ItemSource = "task_run",
     train_source: ItemSource = "task_run",
     val_source: ItemSource = "task_run",
+    split_names: Sequence[EvalSplitName] = ALL_SPLIT_NAMES,
 ) -> tuple[Eval, SpecEvalTags]:
-    """A new spec eval with its test, train and val splits set, and its dataset tags.
+    """A new spec eval with the splits `split_names` asks for, and its dataset tags.
 
     Both the splits and the tags naming their items derive from `name`. The eval is not
     saved, and a caller that generates the items tags them with the returned tags.
@@ -195,6 +233,7 @@ def build_spec_eval(
         test_source=test_source,
         train_source=train_source,
         val_source=val_source,
+        split_names=split_names,
     )
     # Eval.splits is keyed by str, and dict key types are invariant, so the narrower
     # mapping has to be widened rather than passed through.

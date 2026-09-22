@@ -123,7 +123,7 @@ from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.datamodel_enums import TurnMode
 from kiln_server.custom_errors import connect_custom_errors
-from kiln_server.utils.spec_utils import generate_spec_eval_tags
+from kiln_server.utils.spec_utils import SplitShare, generate_spec_eval_tags
 
 from app.desktop.studio_server.batch_plan_api import connect_batch_plan_api
 from app.desktop.studio_server.copilot_api import connect_copilot_api
@@ -131,7 +131,7 @@ from app.desktop.studio_server.eval_api import connect_evals_api
 from app.desktop.studio_server.eval_builder_api import connect_eval_builder_api
 from app.desktop.studio_server.multiturn_sdg_api import connect_multiturn_sdg_api
 from app.desktop.studio_server.utils.copilot_utils import (
-    deal_pool_test_train_val,
+    deal_pool,
     find_multi_turn_chain_leaves,
     get_copilot_api_key,
 )
@@ -145,6 +145,13 @@ logger = logging.getLogger(__name__)
 NUM_CASES = 9
 TURNS_PER_CASE = 2
 SPEC_NAME = "E2E Harness Spec"
+
+# The split shape the builder saves with: three splits, an even share each.
+EVEN_SPLITS = [
+    SplitShare(split="test", weight=1),
+    SplitShare(split="train", weight=1),
+    SplitShare(split="val", weight=1),
+]
 
 # Mirrors the UI's model choices: haiku as the target agent and as the SU
 # driver (SU_DRIVER_DEFAULT), the shared default judge shape on top.
@@ -695,6 +702,7 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             # The refined judge is what ships: the wizard persists whichever
             # judge produced the verdicts the reviewer last graded.
             "judge_info": shipped_judge,
+            "splits": [share.model_dump() for share in EVEN_SPLITS],
             "multi_turn": {
                 "batch_tag": batch_tag,
                 "reviewed_chains": reviewed_chains,
@@ -855,10 +863,8 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         sum(tag in (ei.tags or []) for ei in eval_inputs)
         for tag in (eval_tag, train_tag, val_tag)
     ]
-    expected = [
-        len(hand)
-        for hand in deal_pool_test_train_val(list(range(len(minted))), random.Random(0))
-    ]
+    hands = deal_pool(list(range(len(minted))), EVEN_SPLITS, random.Random(0))
+    expected = [len(hands[split]) for split in ("test", "train", "val")]
     _require(
         all(len(split_tags & set(ei.tags or [])) == 1 for ei in eval_inputs)
         and dealt == expected,

@@ -3280,8 +3280,8 @@ export interface paths {
          *     Plus, per synthesis path:
          *     - Eval builder (`single_turn` / `multi_turn`): the reviewed runs are
          *       tagged golden and carry the human's ratings and claim reviews; every
-         *       other case becomes an EvalInput, dealt into test, train or val.
-         *       Nothing is generated at save time.
+         *       other case becomes an EvalInput, dealt into the splits the request
+         *       names. Nothing is generated at save time.
          *     - Legacy v1 flow (`sdg_session_config`): generate examples via the
          *       copilot API and save them as TaskRuns, with the request's reviewed
          *       examples as golden.
@@ -6076,6 +6076,11 @@ export interface components {
             reviewed_examples?: components["schemas"]["ReviewedExample"][];
             /** @description The judge to persist as the eval's V2 config — the same shape (and, from the builder, the same values) the review step ran, so the calibrated judge is the one that ships. */
             judge_info: components["schemas"]["JudgeConfig"];
+            /**
+             * Splits
+             * @description The splits the eval is created with, each with its relative share of the unreviewed cases; list order wins a leftover case. Must name test. Required on a single_turn or multi_turn save.
+             */
+            splits?: components["schemas"]["SplitShare"][] | null;
             sdg_session_config?: components["schemas"]["SyntheticDataGenerationSessionConfigApi"] | null;
             multi_turn?: components["schemas"]["MultiTurnSaveInfo"] | null;
             single_turn?: components["schemas"]["SingleTurnSaveInfo"] | null;
@@ -12072,6 +12077,22 @@ export interface components {
             spec_field_current_values: {
                 [key: string]: string;
             };
+        };
+        /**
+         * SplitShare
+         * @description One split of a new eval and its relative share of the dealt cases.
+         */
+        SplitShare: {
+            /**
+             * Split
+             * @enum {string}
+             */
+            split: "train" | "val" | "test";
+            /**
+             * Weight
+             * @description Relative share. No sum rule; 20/20/20 and 1/1/1 are the same deal.
+             */
+            weight: number;
         };
         /** StartBatchJobOutput */
         StartBatchJobOutput: {
