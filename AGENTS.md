@@ -59,6 +59,34 @@ These prompts can be accessed from the `get_prompt` tool, and you may request se
 - Use `TODO` comments to mark any temporary code, placeholders, or items that must be addressed before merging to main. CI enforces that no `TODO` comments remain on main, so they are a safe way to flag work-in-progress during development. Clean up all `TODO` comments before the final PR.
 - Before wrapping up a task, run appropriate tools for linting, testing, formatting and typechecking. Fix any issues you introduced.
 
+### Reporting Back: End-of-Turn Recaps
+
+End every turn in which you did work (wrote code, ran checks, investigated something) with a recap wrapped in `<recap>` tags. A turn that is pure conversation needs no recap.
+
+A recap is written for a reader who has not read your working notes and will not scroll up to decode them. It must stand on its own.
+
+**Vocabulary rule.** A recap may only use words that are (a) plain English, (b) standard terms for this repo's stack, or (c) already defined in an earlier recap in this same conversation. Every other name, short form or coined phrase must be defined on first use, under `New terms`. Once a term appears there, later recaps may use it bare. Never carry a nickname over from your working notes without defining it.
+
+Write in simplified technical English: short sentences, one idea each, active voice. Precise technical terms are welcome and are better than vague ones; unexplained shorthand is not.
+
+**Format.** Use these headings, in this order. Drop a heading that has nothing under it. Do not reorder or rename them.
+
+```
+<recap>
+**Goal** — what was asked for.
+**What I did** — the change, in plain words.
+**How** — the approach, at a level a reviewer can judge without reading the diff.
+**Outcome** — what happened, and plainly whether it is what we wanted.
+**Questions for you** — what you need answered before you can continue.
+**FYI** — worth knowing, but not blocking.
+**New terms** — each name used here for the first time, with a one-line meaning.
+</recap>
+```
+
+**Honesty.** `Outcome` reports what actually happened. If tests failed, say so and quote what failed. If you skipped part of the task, name the part and the reason. If the result is not what we wanted, say that first, not last. Never describe work as finished when it is not.
+
+**Recap log.** Append each recap verbatim to `recaps.md` in your scratchpad directory, keeping a running list of defined terms at the top of that file. This log is your own index, not a deliverable. If your context is summarized part-way through a session, re-read it so you know which terms the reader already has and the chain of recaps stays unbroken. Keep this file out of the repo.
+
 ### Code Review Guidelines
 
 If asked to perform a code review, read our [code review guidelines](.agents/code_review_guidelines.md).
