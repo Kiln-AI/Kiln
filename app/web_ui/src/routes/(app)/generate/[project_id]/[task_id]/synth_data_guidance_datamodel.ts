@@ -27,6 +27,9 @@ export class SynthDataGuidanceDataModel {
   private default_judge: EvalConfig | null = null
   public gen_type: "training" | "eval" | null = null
   public splits: Writable<Record<string, number>> = writable({})
+  // The subset of `splits` whose tags hold eval inputs. A case rolled onto one of these is
+  // written to the task's eval inputs instead of being run and saved as a run.
+  public eval_input_splits: Writable<string[]> = writable([])
   public task: Task | null = null
   private unsubscribe_template: (() => void) | null = null
 
@@ -74,6 +77,7 @@ export class SynthDataGuidanceDataModel {
     task: Task,
     splits: Record<string, number>,
     data_guide: string = "",
+    eval_input_splits: string[] = [],
   ): Promise<void> {
     this.eval_id = eval_id
     this.project_id = project_id
@@ -81,6 +85,7 @@ export class SynthDataGuidanceDataModel {
     this.gen_type = gen_type
     this.task = task
     this.splits.set(splits)
+    this.eval_input_splits.set(eval_input_splits)
     this.data_guide.set(data_guide)
     this.use_data_guide.set(!!data_guide)
 

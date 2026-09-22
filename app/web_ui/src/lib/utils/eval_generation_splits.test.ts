@@ -6,6 +6,7 @@ import type { Eval } from "$lib/types"
 import {
   build_eval_generation_splits,
   build_eval_generation_splits_param,
+  build_synth_generation_splits,
 } from "./eval_generation_splits"
 
 function make_eval(fields: Partial<Eval>): Eval {
@@ -21,6 +22,10 @@ function make_eval(fields: Partial<Eval>): Eval {
 
 function task_run(filter_id: string) {
   return { source: "task_run" as const, filter_id }
+}
+
+function eval_input(filter_id: string) {
+  return { source: "eval_input" as const, filter_id }
 }
 
 describe("build_eval_generation_splits", () => {
@@ -258,6 +263,143 @@ describe("build_eval_generation_splits_param", () => {
         make_eval({ splits: { train: task_run("tag::train_tag") } }),
       ),
     ).toBeUndefined()
+  })
+})
+
+describe("build_synth_generation_splits", () => {
+  it("allocates to an eval builder eval's splits and names them as eval inputs", () => {
+    // Every split holds eval inputs, so all three are targetable and the whole allocation
+    // goes to them.
+    const result = build_synth_generation_splits(
+      make_eval({
+        splits: {
+          train: eval_input("tag::train_tag"),
+          val: eval_input("tag::val_tag"),
+          test: eval_input("tag::test_tag"),
+        },
+        eval_configs_filter_id: "tag::golden_tag",
+      }),
+    )
+
+    expect(result?.splits).toEqual({
+      train_tag: 0.4,
+      val_tag: 0.25,
+      test_tag: 0.25,
+      golden_tag: 0.1,
+    })
+    expect(result?.eval_input_tags).toEqual([
+      "train_tag",
+      "val_tag",
+      "test_tag",
+    ])
+  })
+
+  it("gives an eval builder eval's golden the same share as any other eval's", () => {
+    // Golden is a tag on runs whatever the other splits hold, so generation fills it here
+    // exactly as it does for an eval whose splits all hold runs.
+    const result = build_synth_generation_splits(
+      make_eval({
+        splits: { test: eval_input("tag::test_tag") },
+        eval_configs_filter_id: "tag::golden_tag",
+      }),
+    )
+
+    expect(result?.splits).toEqual({ test_tag: 0.71, golden_tag: 0.29 })
+    // Golden holds runs, so it is not one of the tags the caller writes as eval inputs.
+    expect(result?.eval_input_tags).toEqual(["test_tag"])
+  })
+
+  it("allocates a legacy eval exactly as the task-run-only helper does", () => {
+    const legacy = make_eval({
+      eval_set_filter_id: "tag::test_tag",
+      eval_configs_filter_id: "tag::golden_tag",
+      splits: {},
+    })
+
+    const result = build_synth_generation_splits(legacy)
+
+    expect(result?.splits).toEqual({ test_tag: 0.71, golden_tag: 0.29 })
+    expect(result?.splits).toEqual(build_eval_generation_splits(legacy))
+    expect(result?.eval_input_tags).toEqual([])
+  })
+
+  it("handles the mixed eval the legacy copilot flow creates", () => {
+    // That flow writes the test cases as eval inputs and the train cases as runs. Both are
+    // targetable, each through its own store, and golden still stays out.
+    const result = build_synth_generation_splits(
+      make_eval({
+        splits: {
+          test: eval_input("tag::test_tag"),
+          train: task_run("tag::train_tag"),
+        },
+        eval_configs_filter_id: "tag::golden_tag",
+      }),
+    )
+
+    expect(result?.splits).toEqual({
+      train_tag: 0.54,
+      test_tag: 0.33,
+      golden_tag: 0.13,
+    })
+    expect(result?.eval_input_tags).toEqual(["test_tag"])
+  })
+
+  it("gives a rag eval no golden share, matching the task-run-only helper", () => {
+    const result = build_synth_generation_splits(
+      make_eval({
+        template: "rag",
+        eval_set_filter_id: "tag::test_tag",
+        eval_configs_filter_id: "tag::golden_tag",
+        splits: {},
+      }),
+    )
+
+    expect(result?.splits).toEqual({ test_tag: 1 })
+    expect(result?.eval_input_tags).toEqual([])
+  })
+
+  it("refuses when the test split names no tag, whichever store backs it", () => {
+    expect(
+      build_synth_generation_splits(
+        make_eval({ splits: { test: eval_input("all") } }),
+      ),
+    ).toBeUndefined()
+    expect(
+      build_synth_generation_splits(
+        make_eval({ splits: { test: eval_input("tag::") } }),
+      ),
+    ).toBeUndefined()
+    expect(
+      build_synth_generation_splits(
+        make_eval({ splits: { train: eval_input("tag::train_tag") } }),
+      ),
+    ).toBeUndefined()
+  })
+
+  it("always produces splits that sum to 1", () => {
+    const evals = [
+      make_eval({
+        splits: {
+          train: eval_input("tag::a"),
+          val: eval_input("tag::b"),
+          test: eval_input("tag::c"),
+        },
+        eval_configs_filter_id: "tag::d",
+      }),
+      make_eval({
+        splits: { train: task_run("tag::a"), test: eval_input("tag::c") },
+        eval_configs_filter_id: "tag::d",
+      }),
+      make_eval({
+        splits: { val: eval_input("tag::b"), test: eval_input("tag::c") },
+      }),
+    ]
+
+    for (const evaluator of evals) {
+      const splits = build_synth_generation_splits(evaluator)?.splits ?? {}
+      const total = Object.values(splits).reduce((sum, v) => sum + v, 0)
+      expect(total).toBeCloseTo(1, 10)
+    }
   })
 })
 
