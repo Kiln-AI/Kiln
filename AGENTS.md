@@ -63,17 +63,17 @@ These prompts can be accessed from the `get_prompt` tool, and you may request se
 
 End every turn in which you did work (wrote code, ran checks, investigated something) with a recap wrapped in `<recap>` tags. A turn that is pure conversation needs no recap.
 
-A recap is written for a person who has not read your working notes and will not scroll up to decode them. It has to stand on its own.
+Write it for a person who has not read your working notes and will not scroll up. The recap has to make sense on its own.
 
-**Tone.** Write it the way you would explain the work to a colleague who just walked over to your desk. Use full sentences and ordinary prose. Be direct and friendly. A recap is not a status table, a changelog, or a list of every noun you touched — it is you telling a person what happened. Two clear sentences beat six dense bullet points. If a heading has nothing real under it, drop the heading rather than padding it out.
+**No jargon.** Do not invent a name, a short form or a label for anything. If you need to refer to something specific, describe it in ordinary words, and describe it again the next time you mention it. A short description repeated is better than a name the reader has to remember. Real names are fine and are often the clearest choice: a file, a function, a command, a tool, an error. A name you made up is not.
 
-**Plain words.** Short sentences, one idea each, active voice. Precise technical terms are welcome and are better than vague ones; unexplained shorthand is not.
+**Say what you mean.** Short sentences. One idea each. Active voice. No metaphors, no analogies, no flourishes, no jokes, no filler. Do not write a sentence whose only job is to set up the next sentence. Cut any sentence that loses nothing when removed.
 
-**Do not invent jargon.** The first choice is always to describe the thing in ordinary words. Do not coin a name for something so that you can refer to it later. A name you invented is a word the reader has to learn, and learning it costs them more than reading the plain description twice. Name something only when you will refer to it many times and the plain description is genuinely long. Most recaps should introduce no new names at all. `New terms` is an escape hatch for the rare case, not a slot to fill; explaining a term does not make your writing clear, and not needing the term does.
+**Sound like a person.** Plain and direct, not stiff. Write the way you would explain it to a colleague who asked. Contractions are fine. This is not a status report or a changelog.
 
-**Vocabulary rule.** A recap may only use words that are (a) plain English, (b) standard terms for this repo's stack, or (c) already explained in an earlier recap in this same conversation. If you truly need a word that fits none of these, explain it the first time you use it, under `New terms`; after that you can use it bare. Never carry a nickname over from your working notes. Usually the fix is to drop the nickname and say what you mean.
+**Repeat yourself a little.** The reader may have read the last recap days ago, or skipped it. Carry enough context forward that this recap makes sense by itself. One clause is usually enough. A small amount of repetition between recaps is correct, not waste.
 
-**Repeat yourself a little.** The vocabulary rule says which words you are allowed to use. It does not say "assume they remember". You are writing for a person, not for a machine with perfect recall — they may have read the last recap three days ago, or skipped it. So carry enough context forward that this recap makes sense by itself. One clause is usually enough: remind them what a thing is as you use it, rather than sending them back to find it. A small amount of repetition across recaps is correct, not waste.
+**Stay inside the recaps.** A recap may rely on plain English, on standard terms for this repo's stack, and on what earlier recaps said. It may not rely on anything that exists only in your working notes.
 
 **Draw a picture when it helps.** When what you changed is a flow, a sequence, a state machine, or a few parts that talk to each other, put a small Mermaid diagram in the recap. Keep it to about eight boxes. Draw one only when it shows something the prose cannot; a diagram that restates a sentence is noise.
 
@@ -87,13 +87,12 @@ A recap is written for a person who has not read your working notes and will not
 **Outcome** — what happened, and plainly whether it is what we wanted.
 **Questions for you** — what you need answered before you can continue.
 **FYI** — worth knowing, but not blocking.
-**New terms** — only a name you could not avoid, one line each. Usually there are none, and you drop the heading. A long list means you named too many things.
 </recap>
 ```
 
 **Honesty.** `Outcome` reports what actually happened. If tests failed, say so and quote what failed. If you skipped part of the task, name the part and the reason. If the result is not what we wanted, say that first, not last. Never describe work as finished when it is not.
 
-**Recap log.** Append each recap to `recaps.md` in your scratchpad directory, and keep a running list of explained terms at the top of that file. The log is your own index, not a deliverable. If your context is summarized part-way through a session, re-read it so you know which terms the reader already has and the chain of recaps stays unbroken. Keep this file out of the repo.
+**Recap log.** Append each recap to `recaps.md` in your scratchpad directory. The log is your own index, not a deliverable. If your context is summarized part-way through a session, re-read it so you know what the reader has already been told. Keep this file out of the repo.
 
 ### Code Review Guidelines
 
