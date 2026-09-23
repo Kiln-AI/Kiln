@@ -53,6 +53,7 @@ def _ok_response(num_cases: int = 1) -> Response:
                 f"<goal>goal-{i}</goal>"
                 f"<behavior_guidance>guidance-{i}</behavior_guidance>"
             ),
+            scenario_index=i,
         )
         for i in range(num_cases)
     ]
@@ -85,7 +86,7 @@ async def test_generate_happy_path_returns_cases(
     cases = await _make_client().generate(
         target_task_prompt="prompt",
         target_specification="spec",
-        num_cases=3,
+        case_scenarios=["a", "b", "c"],
     )
 
     assert len(cases) == 3
@@ -109,38 +110,15 @@ async def test_generate_passes_request_body_correctly(
     await _make_client().generate(
         target_task_prompt="my task prompt",
         target_specification="my spec",
-        num_cases=5,
-    )
-
-    assert len(captured) == 1
-    sent = captured[0]
-    assert sent.target_task_prompt == "my task prompt"
-    assert sent.target_specification == "my spec"
-    assert sent.num_cases == 5
-    # No scenarios given → the field is omitted from the wire body entirely.
-    assert "case_scenarios" not in sent.to_dict()
-
-
-@pytest.mark.asyncio
-async def test_generate_passes_case_scenarios_through(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: list = []
-
-    async def _capture(*, client, body):
-        captured.append(body)
-        return _ok_response()
-
-    _patch_generate(monkeypatch, AsyncMock(side_effect=_capture))
-
-    await _make_client().generate(
-        target_task_prompt="prompt",
-        target_specification="spec",
-        num_cases=2,
         case_scenarios=["scenario A", "scenario B"],
     )
 
-    assert captured[0].to_dict()["case_scenarios"] == ["scenario A", "scenario B"]
+    assert len(captured) == 1
+    assert captured[0].to_dict() == {
+        "target_task_prompt": "my task prompt",
+        "target_specification": "my spec",
+        "case_scenarios": ["scenario A", "scenario B"],
+    }
 
 
 # ───────────────────────── 502 (typed code) ─────────────────────────
@@ -158,7 +136,7 @@ async def test_generate_502_llm_unavailable_surfaces_typed_code(
 
     with pytest.raises(SyntheticUserServerError) as exc:
         await _make_client().generate(
-            target_task_prompt="p", target_specification="s", num_cases=1
+            target_task_prompt="p", target_specification="s", case_scenarios=["s"]
         )
 
     assert exc.value.code == "llm_unavailable"
@@ -178,7 +156,7 @@ async def test_generate_502_upstream_invalid_output_surfaces_typed_code(
 
     with pytest.raises(SyntheticUserServerError) as exc:
         await _make_client().generate(
-            target_task_prompt="p", target_specification="s", num_cases=1
+            target_task_prompt="p", target_specification="s", case_scenarios=["s"]
         )
 
     assert exc.value.code == "upstream_invalid_output"
@@ -197,7 +175,7 @@ async def test_generate_500_with_code(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(SyntheticUserServerError) as exc:
         await _make_client().generate(
-            target_task_prompt="p", target_specification="s", num_cases=1
+            target_task_prompt="p", target_specification="s", case_scenarios=["s"]
         )
 
     assert exc.value.code == "internal_error"
@@ -217,7 +195,7 @@ async def test_generate_500_with_unset_code_falls_back(
 
     with pytest.raises(SyntheticUserServerError) as exc:
         await _make_client().generate(
-            target_task_prompt="p", target_specification="s", num_cases=1
+            target_task_prompt="p", target_specification="s", case_scenarios=["s"]
         )
 
     assert exc.value.code == "http_500"
@@ -240,7 +218,7 @@ async def test_generate_401_surfaces_as_request_error(
 
     with pytest.raises(SyntheticUserRequestError) as exc:
         await _make_client().generate(
-            target_task_prompt="p", target_specification="s", num_cases=1
+            target_task_prompt="p", target_specification="s", case_scenarios=["s"]
         )
 
     assert exc.value.code == "unauthorized"
@@ -257,8 +235,8 @@ async def test_generate_422_renders_validation_detail(
     parsed = HTTPValidationError(
         detail=[
             ValidationError(
-                loc=["body", "num_cases"],
-                msg="value is greater than 50",
+                loc=["body", "case_scenarios"],
+                msg="List should have at most 50 items",
                 type_="value_error",
             ),
             ValidationError(
@@ -272,13 +250,13 @@ async def test_generate_422_renders_validation_detail(
 
     with pytest.raises(SyntheticUserRequestError) as exc:
         await _make_client().generate(
-            target_task_prompt="p", target_specification="s", num_cases=999
+            target_task_prompt="p", target_specification="s", case_scenarios=["s"]
         )
 
     # Code is the http_422 sentinel; message carries the structured detail.
     assert exc.value.code == "http_422"
-    assert "num_cases" in exc.value.message
-    assert "value is greater than 50" in exc.value.message
+    assert "case_scenarios" in exc.value.message
+    assert "List should have at most 50 items" in exc.value.message
     assert "target_specification" in exc.value.message
 
 
@@ -293,7 +271,7 @@ async def test_generate_422_with_no_detail_returns_generic(
 
     with pytest.raises(SyntheticUserRequestError) as exc:
         await _make_client().generate(
-            target_task_prompt="p", target_specification="s", num_cases=1
+            target_task_prompt="p", target_specification="s", case_scenarios=["s"]
         )
 
     assert exc.value.code == "http_422"
@@ -312,7 +290,7 @@ async def test_generate_unparseable_4xx_falls_back_to_request_error(
 
     with pytest.raises(SyntheticUserRequestError) as exc:
         await _make_client().generate(
-            target_task_prompt="p", target_specification="s", num_cases=1
+            target_task_prompt="p", target_specification="s", case_scenarios=["s"]
         )
 
     assert exc.value.code == "http_400"
@@ -327,7 +305,7 @@ async def test_generate_unparseable_5xx_falls_back_to_server_error(
 
     with pytest.raises(SyntheticUserServerError) as exc:
         await _make_client().generate(
-            target_task_prompt="p", target_specification="s", num_cases=1
+            target_task_prompt="p", target_specification="s", case_scenarios=["s"]
         )
 
     assert exc.value.code == "http_503"
@@ -353,7 +331,7 @@ async def test_generate_does_not_retry_on_502(
 
     with pytest.raises(SyntheticUserServerError):
         await _make_client().generate(
-            target_task_prompt="p", target_specification="s", num_cases=1
+            target_task_prompt="p", target_specification="s", case_scenarios=["s"]
         )
 
     # Exactly one call — no retry budget consumed.

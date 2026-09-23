@@ -444,7 +444,6 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         "/api/projects/p/tasks/t/multiturn_sdg/generate_cases",
         json={
             "target_specification": SPEC_TEXT,
-            "num_cases": NUM_CASES,
             "case_prompts": prompts,
         },
     )
@@ -1252,7 +1251,6 @@ def test_eval_builder_pipeline_tools_e2e(preflight, temp_tool_task, client):
         "/api/projects/p/tasks/t/multiturn_sdg/generate_cases",
         json={
             "target_specification": TOOL_SPEC_TEXT,
-            "num_cases": TOOL_NUM_CASES,
             "case_prompts": TOOL_SCENARIOS,
         },
     )

@@ -112,7 +112,7 @@ def patch_eval_api_task_from_id():
         yield m
 
 
-def _sdk_cases(n: int, with_indices: bool = False) -> list[SyntheticUserCase]:
+def _sdk_cases(n: int) -> list[SyntheticUserCase]:
     return [
         SyntheticUserCase(
             seed_prompt=f"seed-{i}",
@@ -121,20 +121,17 @@ def _sdk_cases(n: int, with_indices: bool = False) -> list[SyntheticUserCase]:
                 f"<goal>goal-{i}</goal>"
                 f"<behavior_guidance>guide-{i}</behavior_guidance>"
             ),
-            scenario_index=i if with_indices else None,
+            scenario_index=i,
         )
         for i in range(n)
     ]
 
 
-def _chunk_sdk_cases(
-    scenarios: list[str] | None, num_cases: int
-) -> list[SyntheticUserCase]:
+def _chunk_sdk_cases(scenarios: list[str]) -> list[SyntheticUserCase]:
     """What kiln_server hands back for ONE chunk: cases numbered from 0 against
     the scenario slice that chunk was given, not against the caller's plan.
     Seed prompts echo the scenario so a stitched response can be checked for
     order as well as for index."""
-    labels = scenarios if scenarios is not None else [str(i) for i in range(num_cases)]
     return [
         SyntheticUserCase(
             seed_prompt=f"seed-{label}",
@@ -143,9 +140,9 @@ def _chunk_sdk_cases(
                 f"<goal>goal-{label}</goal>"
                 f"<behavior_guidance>guide-{label}</behavior_guidance>"
             ),
-            scenario_index=i if scenarios is not None else None,
+            scenario_index=i,
         )
-        for i, label in enumerate(labels)
+        for i, label in enumerate(scenarios)
     ]
 
 
@@ -153,25 +150,19 @@ def _chunked_generate() -> AsyncMock:
     """A `client.generate` stub that answers every chunk in full."""
 
     async def _generate(
-        *, num_cases: int, case_scenarios: list[str] | None = None, **_: Any
+        *, case_scenarios: list[str], **_: Any
     ) -> list[SyntheticUserCase]:
-        return _chunk_sdk_cases(case_scenarios, num_cases)
+        return _chunk_sdk_cases(case_scenarios)
 
     return AsyncMock(side_effect=_generate)
 
 
 def _generate_cases_body(num: int = 3) -> dict:
+    """A generate_cases body carrying a `num`-item approved plan."""
     return {
         "target_specification": "agent waives policy under pressure",
-        "num_cases": num,
+        "case_prompts": [f"scenario-{i}" for i in range(num)],
     }
-
-
-def _plan_body(count: int) -> dict:
-    """A generate_cases body carrying a `count`-item approved plan."""
-    body = _generate_cases_body(num=count)
-    body["case_prompts"] = [f"scenario-{i}" for i in range(count)]
-    return body
 
 
 def _run_cases_batch_body(num: int = 3) -> dict:
@@ -219,30 +210,6 @@ def _parse_sse(response_text: str) -> list[dict | str]:
 
 
 # ───────────────────────── generate_cases ─────────────────────────
-
-
-def test_generate_cases_happy_path(
-    client: TestClient, patch_task_from_id, patch_api_key
-) -> None:
-    patch_task_from_id.return_value = _multiturn_task()
-    with patch(
-        "app.desktop.studio_server.multiturn_sdg_api.SyntheticUserClient"
-    ) as MockClient:
-        instance = MockClient.return_value
-        instance.generate = AsyncMock(return_value=_sdk_cases(3))
-
-        resp = client.post(
-            "/api/projects/proj-1/tasks/task-1/multiturn_sdg/generate_cases",
-            json=_generate_cases_body(num=3),
-        )
-
-    assert resp.status_code == 200
-    body = resp.json()
-    assert len(body["cases"]) == 3
-    # Cases ride the wire as the SDK shape (seed_prompt + opaque blob).
-    case0 = body["cases"][0]
-    assert case0["seed_prompt"] == "seed-0"
-    assert "<persona>persona-0</persona>" in case0["synthetic_user_info"]
 
 
 def test_generate_cases_rejects_single_turn_task_with_400(
@@ -320,19 +287,29 @@ def test_generate_cases_request_error_surfaces_as_400(
     assert resp.json()["message"]["code"] == "unsupported_model"
 
 
-def test_generate_cases_validates_num_cases_upper_bound(
-    client: TestClient, patch_task_from_id, patch_api_key
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"target_specification": "spec"},
+        {"target_specification": "spec", "case_prompts": []},
+        _generate_cases_body(num=NUM_CASES_MAX + 1),
+    ],
+    ids=["missing", "empty", "over_max"],
+)
+def test_generate_cases_rejects_invalid_case_prompts(
+    client: TestClient, patch_task_from_id, patch_api_key, body: dict
 ) -> None:
-    """Pydantic should reject NUM_CASES_MAX + 1 before reaching the body."""
+    """Pydantic should reject a missing, empty or oversized plan before
+    reaching the body."""
     patch_task_from_id.return_value = _multiturn_task()
     resp = client.post(
         "/api/projects/proj-1/tasks/task-1/multiturn_sdg/generate_cases",
-        json={"target_specification": "spec", "num_cases": NUM_CASES_MAX + 1},
+        json=body,
     )
     assert resp.status_code == 422
 
 
-def test_generate_cases_accepts_num_cases_at_upper_bound(
+def test_generate_cases_accepts_case_prompts_at_upper_bound(
     client: TestClient, patch_task_from_id, patch_api_key
 ) -> None:
     """The bound is inclusive: a full-size batch is a valid request. It is far
@@ -352,9 +329,9 @@ def test_generate_cases_accepts_num_cases_at_upper_bound(
 
     assert resp.status_code == 200, resp.text
     assert len(resp.json()["cases"]) == NUM_CASES_MAX
-    assert [c.kwargs["num_cases"] for c in instance.generate.await_args_list] == [
-        SU_CASES_PER_CALL
-    ] * (NUM_CASES_MAX // SU_CASES_PER_CALL)
+    assert [
+        len(c.kwargs["case_scenarios"]) for c in instance.generate.await_args_list
+    ] == [SU_CASES_PER_CALL] * (NUM_CASES_MAX // SU_CASES_PER_CALL)
 
 
 # ─────────────── generate_cases with per-case prompts (batch plan) ───────────────
@@ -373,7 +350,7 @@ def test_generate_cases_with_case_prompts_under_chunk_size_makes_one_call(
         "app.desktop.studio_server.multiturn_sdg_api.SyntheticUserClient"
     ) as MockClient:
         instance = MockClient.return_value
-        instance.generate = AsyncMock(return_value=_sdk_cases(3, with_indices=True))
+        instance.generate = AsyncMock(return_value=_sdk_cases(3))
 
         body = _generate_cases_body(num=3)
         body["case_prompts"] = prompts
@@ -385,11 +362,12 @@ def test_generate_cases_with_case_prompts_under_chunk_size_makes_one_call(
     assert resp.status_code == 200
     cases = resp.json()["cases"]
     assert [c["seed_prompt"] for c in cases] == ["seed-0", "seed-1", "seed-2"]
+    # Cases ride the wire as the SDK shape (seed_prompt + opaque blob).
+    assert "<persona>persona-0</persona>" in cases[0]["synthetic_user_info"]
     assert [c["scenario_index"] for c in cases] == [0, 1, 2]
     assert instance.generate.await_count == 1
     call = instance.generate.await_args
     assert call.kwargs["case_scenarios"] == prompts
-    assert call.kwargs["num_cases"] == 3
     assert call.kwargs["target_specification"] == "agent waives policy under pressure"
 
 
@@ -399,7 +377,7 @@ def test_generate_cases_salvaged_batch_keeps_scenario_index(
     """A scenario batch may come back short (upstream salvage) — the response
     passes the survivors through with their scenario_index mapping intact."""
     patch_task_from_id.return_value = _multiturn_task()
-    survivors = _sdk_cases(3, with_indices=True)
+    survivors = _sdk_cases(3)
     del survivors[1]  # scenario 1's case degraded upstream
 
     with patch(
@@ -420,19 +398,6 @@ def test_generate_cases_salvaged_batch_keeps_scenario_index(
     assert [c["scenario_index"] for c in cases] == [0, 2]
 
 
-def test_generate_cases_case_prompts_length_mismatch_is_422(
-    client: TestClient, patch_task_from_id, patch_api_key
-) -> None:
-    patch_task_from_id.return_value = _multiturn_task()
-    body = _generate_cases_body(num=3)
-    body["case_prompts"] = ["only one prompt"]
-    resp = client.post(
-        "/api/projects/proj-1/tasks/task-1/multiturn_sdg/generate_cases",
-        json=body,
-    )
-    assert resp.status_code == 422
-
-
 def test_generate_cases_blank_case_prompt_is_422(
     client: TestClient, patch_task_from_id, patch_api_key
 ) -> None:
@@ -446,33 +411,6 @@ def test_generate_cases_blank_case_prompt_is_422(
     assert resp.status_code == 422
 
 
-def test_generate_cases_scenario_batch_upstream_error_passes_through_typed(
-    client: TestClient, patch_task_from_id, patch_api_key
-) -> None:
-    """An upstream chunk's typed failure IS the request's failure (no partial
-    batch on the wire)."""
-    patch_task_from_id.return_value = _multiturn_task()
-    with patch(
-        "app.desktop.studio_server.multiturn_sdg_api.SyntheticUserClient"
-    ) as MockClient:
-        instance = MockClient.return_value
-        instance.generate = AsyncMock(
-            side_effect=SyntheticUserServerError(
-                "llm_unavailable", "upstream timed out", status_code=502
-            )
-        )
-
-        body = _generate_cases_body(num=3)
-        body["case_prompts"] = ["a", "b", "c"]
-        resp = client.post(
-            "/api/projects/proj-1/tasks/task-1/multiturn_sdg/generate_cases",
-            json=body,
-        )
-
-    assert resp.status_code == 502
-    assert resp.json()["message"]["code"] == "llm_unavailable"
-
-
 # ─────────────── generate_cases chunking (plans over one call) ───────────────
 
 
@@ -483,7 +421,7 @@ def test_generate_cases_splits_a_full_plan_into_chunks(
     cannot go up whole: it is split into consecutive chunks, each asking for
     exactly the slice of the plan it carries."""
     patch_task_from_id.return_value = _multiturn_task()
-    body = _plan_body(80)
+    body = _generate_cases_body(num=80)
 
     with patch(
         "app.desktop.studio_server.multiturn_sdg_api.SyntheticUserClient"
@@ -499,7 +437,6 @@ def test_generate_cases_splits_a_full_plan_into_chunks(
     assert resp.status_code == 200, resp.text
     calls = instance.generate.await_args_list
     assert len(calls) == 4
-    assert [c.kwargs["num_cases"] for c in calls] == [20, 20, 20, 20]
     assert [c.kwargs["case_scenarios"] for c in calls] == [
         body["case_prompts"][0:20],
         body["case_prompts"][20:40],
@@ -514,7 +451,7 @@ def test_generate_cases_last_chunk_carries_the_remainder(
     """A plan that isn't a multiple of the chunk size ends in a short chunk —
     the last call asks only for what's left, never for padding."""
     patch_task_from_id.return_value = _multiturn_task()
-    body = _plan_body(45)
+    body = _generate_cases_body(num=45)
 
     with patch(
         "app.desktop.studio_server.multiturn_sdg_api.SyntheticUserClient"
@@ -529,7 +466,6 @@ def test_generate_cases_last_chunk_carries_the_remainder(
 
     assert resp.status_code == 200, resp.text
     calls = instance.generate.await_args_list
-    assert [c.kwargs["num_cases"] for c in calls] == [20, 20, 5]
     assert [len(c.kwargs["case_scenarios"]) for c in calls] == [20, 20, 5]
     assert calls[2].kwargs["case_scenarios"] == body["case_prompts"][40:45]
 
@@ -541,7 +477,7 @@ def test_generate_cases_offsets_chunk_scenario_indexes_back_to_the_plan(
     scenario slice. The response must be plan-relative, so every chunk's index
     gets its plan offset added back — and the chunks stitch in plan order."""
     patch_task_from_id.return_value = _multiturn_task()
-    body = _plan_body(45)
+    body = _generate_cases_body(num=45)
 
     with patch(
         "app.desktop.studio_server.multiturn_sdg_api.SyntheticUserClient"
@@ -572,13 +508,13 @@ def test_generate_cases_salvaged_chunk_does_not_shift_later_chunks(
     and it must not renumber anything: later chunks keep their own offsets, so
     every surviving case still points at the scenario it was written for."""
     patch_task_from_id.return_value = _multiturn_task()
-    body = _plan_body(45)
+    body = _generate_cases_body(num=45)
 
     async def _generate(
-        *, num_cases: int, case_scenarios: list[str] | None = None, **_: Any
+        *, case_scenarios: list[str], **_: Any
     ) -> list[SyntheticUserCase]:
-        chunk = _chunk_sdk_cases(case_scenarios, num_cases)
-        if case_scenarios is not None and case_scenarios[0] == "scenario-20":
+        chunk = _chunk_sdk_cases(case_scenarios)
+        if case_scenarios[0] == "scenario-20":
             del chunk[5]  # the middle chunk's 6th case degraded upstream
         return chunk
 
@@ -607,13 +543,15 @@ def test_generate_cases_one_failing_chunk_fails_the_request(
     patch_task_from_id.return_value = _multiturn_task()
 
     async def _generate(
-        *, num_cases: int, case_scenarios: list[str] | None = None, **_: Any
+        *, case_scenarios: list[str], **_: Any
     ) -> list[SyntheticUserCase]:
-        if case_scenarios is not None and case_scenarios[0] == "scenario-20":
+        if case_scenarios[0] == "scenario-20":
             raise SyntheticUserRequestError(
-                "http_422", "body.num_cases: less than or equal to 50", status_code=422
+                "http_422",
+                "body.case_scenarios: List should have at most 50 items",
+                status_code=422,
             )
-        return _chunk_sdk_cases(case_scenarios, num_cases)
+        return _chunk_sdk_cases(case_scenarios)
 
     with patch(
         "app.desktop.studio_server.multiturn_sdg_api.SyntheticUserClient"
@@ -623,12 +561,12 @@ def test_generate_cases_one_failing_chunk_fails_the_request(
 
         resp = client.post(
             "/api/projects/proj-1/tasks/task-1/multiturn_sdg/generate_cases",
-            json=_plan_body(45),
+            json=_generate_cases_body(num=45),
         )
 
     assert resp.status_code == 422
     assert resp.json()["message"]["code"] == "http_422"
-    assert "less than or equal to 50" in resp.json()["message"]["message"]
+    assert "at most 50 items" in resp.json()["message"]["message"]
 
 
 def test_generate_cases_bounds_how_many_chunks_are_in_flight(
@@ -643,7 +581,7 @@ def test_generate_cases_bounds_how_many_chunks_are_in_flight(
     peak = 0
 
     async def _generate(
-        *, num_cases: int, case_scenarios: list[str] | None = None, **_: Any
+        *, case_scenarios: list[str], **_: Any
     ) -> list[SyntheticUserCase]:
         nonlocal live, peak
         live += 1
@@ -653,7 +591,7 @@ def test_generate_cases_bounds_how_many_chunks_are_in_flight(
         await asyncio.sleep(0)
         await asyncio.sleep(0)
         live -= 1
-        return _chunk_sdk_cases(case_scenarios, num_cases)
+        return _chunk_sdk_cases(case_scenarios)
 
     with patch(
         "app.desktop.studio_server.multiturn_sdg_api.SyntheticUserClient"
@@ -663,7 +601,7 @@ def test_generate_cases_bounds_how_many_chunks_are_in_flight(
 
         resp = client.post(
             "/api/projects/proj-1/tasks/task-1/multiturn_sdg/generate_cases",
-            json=_plan_body(plan_size),
+            json=_generate_cases_body(num=plan_size),
         )
 
     assert resp.status_code == 200, resp.text
