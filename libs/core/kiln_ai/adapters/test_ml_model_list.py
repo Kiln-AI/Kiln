@@ -655,3 +655,24 @@ def test_built_in_models_adapter_matches_provider():
             assert provider.adapter == expected, (
                 f"{model.name} / {provider.name} has adapter {provider.adapter}"
             )
+
+
+def test_judge_models_with_thinking_levels_default_to_reasoning():
+    """Judge-tagged models that support thinking levels must default to a reasoning level.
+
+    The V2 LLM judge runner builds its run config without a thinking_level, so the
+    adapter falls back to the provider's default_thinking_level. A default of "none"
+    means the judge never reasons.
+    """
+    for model in built_in_models:
+        for provider in model.providers:
+            if not provider.suggested_for_evals:
+                continue
+            if provider.available_thinking_levels is None:
+                continue
+            assert provider.default_thinking_level not in (None, "none"), (
+                f"{model.name} / {provider.name} is suggested_for_evals and supports "
+                f"thinking levels, but default_thinking_level is "
+                f"{provider.default_thinking_level!r}. Judge models must default to a "
+                f'reasoning level ("medium" when offered, else "low").'
+            )
