@@ -73,13 +73,7 @@ def sync_detailed(
 ) -> Response[GenerateJudgePromptOutput | HTTPValidationError | UnauthorizedResponse]:
     """Generate Judge Prompt
 
-     Author a judge prompt from a spec, for a declared trace shape.
-
-    trace_type is required, not defaulted: the task authors different rubrics
-    for single-turn pairs vs multi-turn transcripts, and a default would
-    silently mis-author the shape the caller forgot to declare. Returns the
-    prompt only — the judge model is the caller's choice, since the studio
-    can offer models this server cannot reach.
+     Author a judge prompt from a spec. The judge model is the caller's choice.
 
     Args:
         body (GenerateJudgePromptApiInput): Request payload for the judge prompt authoring
@@ -111,13 +105,7 @@ def sync(
 ) -> GenerateJudgePromptOutput | HTTPValidationError | UnauthorizedResponse | None:
     """Generate Judge Prompt
 
-     Author a judge prompt from a spec, for a declared trace shape.
-
-    trace_type is required, not defaulted: the task authors different rubrics
-    for single-turn pairs vs multi-turn transcripts, and a default would
-    silently mis-author the shape the caller forgot to declare. Returns the
-    prompt only — the judge model is the caller's choice, since the studio
-    can offer models this server cannot reach.
+     Author a judge prompt from a spec. The judge model is the caller's choice.
 
     Args:
         body (GenerateJudgePromptApiInput): Request payload for the judge prompt authoring
@@ -144,13 +132,7 @@ async def asyncio_detailed(
 ) -> Response[GenerateJudgePromptOutput | HTTPValidationError | UnauthorizedResponse]:
     """Generate Judge Prompt
 
-     Author a judge prompt from a spec, for a declared trace shape.
-
-    trace_type is required, not defaulted: the task authors different rubrics
-    for single-turn pairs vs multi-turn transcripts, and a default would
-    silently mis-author the shape the caller forgot to declare. Returns the
-    prompt only — the judge model is the caller's choice, since the studio
-    can offer models this server cannot reach.
+     Author a judge prompt from a spec. The judge model is the caller's choice.
 
     Args:
         body (GenerateJudgePromptApiInput): Request payload for the judge prompt authoring
@@ -180,13 +162,7 @@ async def asyncio(
 ) -> GenerateJudgePromptOutput | HTTPValidationError | UnauthorizedResponse | None:
     """Generate Judge Prompt
 
-     Author a judge prompt from a spec, for a declared trace shape.
-
-    trace_type is required, not defaulted: the task authors different rubrics
-    for single-turn pairs vs multi-turn transcripts, and a default would
-    silently mis-author the shape the caller forgot to declare. Returns the
-    prompt only — the judge model is the caller's choice, since the studio
-    can offer models this server cannot reach.
+     Author a judge prompt from a spec. The judge model is the caller's choice.
 
     Args:
         body (GenerateJudgePromptApiInput): Request payload for the judge prompt authoring

@@ -108,18 +108,13 @@ def sync_detailed(
 ]:
     """Generate
 
-     Return up to `num_cases` synthetic-user cases for the authoring UX.
-
-    See `GenerateSyntheticUsersResponse` for the salvage contract: response
-    may contain 1 ≤ len(cases) ≤ num_cases; 0 usable cases or a batch parse
-    failure surfaces as 502 `upstream_invalid_output`.
+     Generate one synthetic-user case per scenario.
 
     Args:
         body (GenerateSyntheticUsersRequest): Request body for POST /v1/synthetic_user/generate.
 
-            Generates `num_cases` synthetic-user cases designed to probe
-            `target_specification` against the agent described by `target_task_prompt`,
-            across multi-turn conversations.
+            One case per entry in `case_scenarios`, each probing `target_specification`
+            against the agent described by `target_task_prompt`.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -154,18 +149,13 @@ def sync(
 ):
     """Generate
 
-     Return up to `num_cases` synthetic-user cases for the authoring UX.
-
-    See `GenerateSyntheticUsersResponse` for the salvage contract: response
-    may contain 1 ≤ len(cases) ≤ num_cases; 0 usable cases or a batch parse
-    failure surfaces as 502 `upstream_invalid_output`.
+     Generate one synthetic-user case per scenario.
 
     Args:
         body (GenerateSyntheticUsersRequest): Request body for POST /v1/synthetic_user/generate.
 
-            Generates `num_cases` synthetic-user cases designed to probe
-            `target_specification` against the agent described by `target_task_prompt`,
-            across multi-turn conversations.
+            One case per entry in `case_scenarios`, each probing `target_specification`
+            against the agent described by `target_task_prompt`.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -194,18 +184,13 @@ async def asyncio_detailed(
 ]:
     """Generate
 
-     Return up to `num_cases` synthetic-user cases for the authoring UX.
-
-    See `GenerateSyntheticUsersResponse` for the salvage contract: response
-    may contain 1 ≤ len(cases) ≤ num_cases; 0 usable cases or a batch parse
-    failure surfaces as 502 `upstream_invalid_output`.
+     Generate one synthetic-user case per scenario.
 
     Args:
         body (GenerateSyntheticUsersRequest): Request body for POST /v1/synthetic_user/generate.
 
-            Generates `num_cases` synthetic-user cases designed to probe
-            `target_specification` against the agent described by `target_task_prompt`,
-            across multi-turn conversations.
+            One case per entry in `case_scenarios`, each probing `target_specification`
+            against the agent described by `target_task_prompt`.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -238,18 +223,13 @@ async def asyncio(
 ):
     """Generate
 
-     Return up to `num_cases` synthetic-user cases for the authoring UX.
-
-    See `GenerateSyntheticUsersResponse` for the salvage contract: response
-    may contain 1 ≤ len(cases) ≤ num_cases; 0 usable cases or a batch parse
-    failure surfaces as 502 `upstream_invalid_output`.
+     Generate one synthetic-user case per scenario.
 
     Args:
         body (GenerateSyntheticUsersRequest): Request body for POST /v1/synthetic_user/generate.
 
-            Generates `num_cases` synthetic-user cases designed to probe
-            `target_specification` against the agent described by `target_task_prompt`,
-            across multi-turn conversations.
+            One case per entry in `case_scenarios`, each probing `target_specification`
+            against the agent described by `target_task_prompt`.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
