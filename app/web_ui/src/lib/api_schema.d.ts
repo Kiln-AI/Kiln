@@ -6001,6 +6001,11 @@ export interface components {
              */
             judge_instructions?: string[] | null;
             /**
+             * Thinking Level
+             * @description The judge model's thinking level. Must be one the model's provider offers. If unset, the provider's default applies.
+             */
+            thinking_level?: string | null;
+            /**
              * Name
              * @description The name of the eval config.
              */
@@ -9502,6 +9507,11 @@ export interface components {
              * @description User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from.
              */
             judge_instructions?: string[] | null;
+            /**
+             * Thinking Level
+             * @description The judge model's thinking level. Must be one the model's provider offers. If unset, the provider's default applies.
+             */
+            thinking_level?: string | null;
         };
         /** LlmJudgeProperties */
         LlmJudgeProperties: {
@@ -9532,6 +9542,8 @@ export interface components {
             g_eval: boolean;
             /** Judge Instructions */
             judge_instructions?: string[] | null;
+            /** Thinking Level */
+            thinking_level?: string | null;
         };
         /** LocalServerProperties */
         LocalServerProperties: {
