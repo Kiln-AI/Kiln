@@ -11,7 +11,7 @@ the stable UI-facing models so the endpoints and UI never see SDK types.
 """
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 from fastapi import HTTPException
 from kiln_ai.adapters.eval.base_eval import conditionally_raw_wrap
@@ -365,24 +365,15 @@ async def build_claims_for_trace(
 async def author_judge_prompt(
     target_specification: str,
     target_task_prompt: str,
-    trace_type: Literal["multi_turn", "single_turn"],
     task_tools: list[TaskToolInfoApi] | None = None,
     task_skills: list[TaskSkillInfoApi] | None = None,
 ) -> AuthorJudgeApiOutput:
     """Author a spec-tailored judge prompt via kiln_server.
 
-    Thin remote passthrough: marshal → SDK call → map back. The authoring
-    (LLM) runs on kiln_server and returns the PROMPT only — the judge model
-    stays the caller's choice. `trace_type` selects which authoring prompt
-    the server uses. Both arms here judge a transcript, so both send
-    multi_turn, the transcript-aware one; single_turn resolves the server's
-    default, which is written for a bare input/output pair.
-    `task_tools` / `task_skills` describe the
-    target task's capability surface so the rubric can reason about tool and
-    skill use; None (the default) omits them and authors exactly as before.
-    Authoring is REQUIRED for a drive: an error here surfaces to the client,
-    which stops the drive on a retryable error (no server, no eval — there is
-    no fallback judge).
+    Returns the prompt only; the judge model is the caller's choice.
+    `task_tools` and `task_skills` let the rubric reason about tool and skill
+    use; None omits them. There is no fallback judge, so an error here stops
+    the drive.
     """
     api_key = get_copilot_api_key()
     client = get_authenticated_client(api_key)
@@ -391,7 +382,6 @@ async def author_judge_prompt(
         {
             "target_specification": target_specification,
             "target_task_prompt": target_task_prompt,
-            "trace_type": trace_type,
             # Flat rather than nested: this payload has no task info block.
             **capability_payload_fields(task_tools, task_skills),
         }
