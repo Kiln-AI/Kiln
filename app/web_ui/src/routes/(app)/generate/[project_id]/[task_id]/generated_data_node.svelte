@@ -566,6 +566,9 @@
           href={`/dataset/${guidance_data.project_id}/${guidance_data.task_id}/${sample.saved_id}/run`}
           class="hover:underline">Saved</a
         >
+      {:else if sample.eval_input_id}
+        <!-- An eval input isn't in the dataset, so there's no run page to link to. -->
+        Saved
       {:else if sample.output}
         Unsaved
       {:else}
@@ -578,7 +581,7 @@
           {
             label: "Remove Sample",
             onclick: () => delete_sample(sample),
-            hidden: !!sample.saved_id,
+            hidden: !!sample.saved_id || !!sample.eval_input_id,
           },
           {
             label: "Remove Output",
