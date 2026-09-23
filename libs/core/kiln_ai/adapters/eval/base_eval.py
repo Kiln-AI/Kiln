@@ -471,6 +471,7 @@ def materialize_llm_judge_properties(
     judge_prompt: str | None = None,
     system_prompt: str | None = None,
     judge_instructions: list[str] | None = None,
+    thinking_level: str | None = None,
 ) -> LlmJudgeProperties:
     """Assemble LlmJudgeProperties with a backend-baked prompt template.
 
@@ -516,6 +517,7 @@ def materialize_llm_judge_properties(
         g_eval=g_eval,
         judge_instructions=cleaned_instructions,
         reference_keys=reference_keys,
+        thinking_level=thinking_level,
     )
 
 
