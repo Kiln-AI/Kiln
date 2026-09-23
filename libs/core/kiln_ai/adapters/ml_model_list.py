@@ -977,7 +977,7 @@ built_in_models: List[KilnModel] = [
                 model_id="gpt-5.6-terra",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
-                default_thinking_level="none",
+                default_thinking_level="medium",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -1002,7 +1002,7 @@ built_in_models: List[KilnModel] = [
                 model_id="openai/gpt-5.6-terra",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
-                default_thinking_level="none",
+                default_thinking_level="medium",
                 # Use OpenRouter's reasoning object so reasoning is preserved
                 # when tools are sent (the bare reasoning_effort param is
                 # silently dropped on tool calls for these models).
@@ -2737,7 +2737,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 openrouter_reasoning_object=True,
                 available_thinking_levels=CLAUDE_SONNET_5_OPENROUTER_THINKING_LEVELS,
-                default_thinking_level="none",
+                default_thinking_level="medium",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,

@@ -155,7 +155,7 @@ Then **cross-check against the predecessor**. The predecessor tells you *how* Ki
 
 **Common flags:**
 - `structured_output_mode` – how the model handles JSON output
-- `suggested_for_evals` / `suggested_for_data_gen` – see **zero-sum rule** below
+- `suggested_for_evals` / `suggested_for_data_gen` – see **zero-sum rule** below. If the entry also sets `available_thinking_levels`, its `default_thinking_level` must be a reasoning level — see [Judge Models Must Reason by Default](#judge-models-must-reason-by-default)
 - `multimodal_capable` / `supports_vision` / `supports_doc_extraction` – see **multimodal rules** below
 - `reasoning_capable` – for thinking/reasoning models. **Default new models to `reasoning_capable=False`** unless the model *always* emits its reasoning (see [Reasoning Capable Default](#reasoning-capable-default))
 - `temp_top_p_exclusive` – Anthropic models that can't have both temp and top_p
@@ -243,6 +243,7 @@ If the model supports configurable reasoning effort (not just on/off), add `avai
 - Reuse an existing `_THINKING_LEVELS` constant if the levels match exactly
 - Create a new constant only if levels differ; name it `{MODEL}_{PROVIDER_CONTEXT}_THINKING_LEVELS`
 - `default_thinking_level` must be one of the values in `available_thinking_levels`
+- If the entry sets `suggested_for_evals=True`, `default_thinking_level` must be `"medium"` (or `"low"` if the model has no medium level) — never `"none"`. See [Judge Models Must Reason by Default](#judge-models-must-reason-by-default)
 
 ---
 
@@ -453,6 +454,7 @@ Use `gh pr create` against `main`. The PR body must follow this exact format:
 - [ ] Flags inherited from predecessor and adjusted for quirks
 - [ ] `reasoning_capable` defaulted to `False` for adaptive-reasoning models (only `True` for always-emits-reasoning models — see [Reasoning Capable Default](#reasoning-capable-default))
 - [ ] Thinking levels configured if model supports reasoning effort (see [Thinking Levels Reference](#thinking-levels-reference))
+- [ ] Every `suggested_for_evals` entry with thinking levels defaults to `"medium"` (or `"low"`), never `"none"` (see [Judge Models Must Reason by Default](#judge-models-must-reason-by-default))
 - [ ] Preserve existing comments from predecessor (e.g. reasoning notes, MIME type groupings)
 - [ ] Zero-sum applied if model is suggested for evals/data gen
 - [ ] RAG config templates updated if the new model replaces one used in `app/web_ui/src/routes/(app)/docs/rag_configs/[project_id]/add_search_tool/rag_config_templates.ts`
@@ -661,6 +663,16 @@ No API provides the available thinking levels programmatically — they must be 
    If `reasoning` is absent, the model does not support effort levels — skip thinking levels entirely.
 
 5. **Smoke test** — as a last resort, send a request with an invalid effort level and check the error message, which often enumerates the valid values.
+
+### Judge Models Must Reason by Default
+
+**If a provider entry sets both `suggested_for_evals=True` and `available_thinking_levels`, set `default_thinking_level` to `"medium"` when the model offers a medium level, else `"low"`. Never leave it at `"none"` or unset.**
+
+The V2 LLM judge runner builds the judge model's run config without a `thinking_level`, so the adapter falls back to the provider entry's `default_thinking_level`. A default of `"none"` therefore ships a judge that never reasons, and the eval results page shows no thinking for it.
+
+This applies only to judge-tagged entries. A non-judge entry of the same model may keep `"none"` — the two are set independently per provider entry.
+
+`test_judge_models_with_thinking_levels_default_to_reasoning` in `libs/core/kiln_ai/adapters/test_ml_model_list.py` enforces this across the whole list.
 
 ### Important Distinctions
 
