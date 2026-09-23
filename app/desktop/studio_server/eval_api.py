@@ -322,6 +322,10 @@ class LlmJudgeBuilderInput(BaseModel):
         default=None,
         description="User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from.",
     )
+    thinking_level: str | None = Field(
+        default=None,
+        description="The judge model's thinking level. Must be one the model's provider offers. If unset, the provider's default applies.",
+    )
 
 
 class DefaultLlmJudgePromptResponse(BaseModel):
@@ -1884,6 +1888,7 @@ def connect_evals_api(app: FastAPI):
                 judge_prompt=request.judge_prompt,
                 system_prompt=request.system_prompt,
                 judge_instructions=request.judge_instructions,
+                thinking_level=request.thinking_level,
             )
             eval_config = EvalConfig(
                 name=name,
@@ -1956,6 +1961,7 @@ def connect_evals_api(app: FastAPI):
                     judge_prompt=builder.judge_prompt,
                     system_prompt=builder.system_prompt,
                     judge_instructions=builder.judge_instructions,
+                    thinking_level=builder.thinking_level,
                 )
             elif request.properties is not None:
                 properties = request.properties

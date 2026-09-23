@@ -13,6 +13,7 @@ from pydantic import (
     SerializationInfo,
     SerializerFunctionWrapHandler,
     ValidationInfo,
+    field_validator,
     model_serializer,
     model_validator,
 )
@@ -111,6 +112,19 @@ class LlmJudgeProperties(BaseModel):
     # prompt template is rendered. Used by evals with no spec or template to
     # derive default steps from.
     judge_instructions: list[str] | None = None
+    # The judge model's thinking level (e.g. "none", "low", "medium"). None keeps the
+    # provider's default thinking level, which for some models is "none".
+    thinking_level: str | None = None
+
+    @field_validator("thinking_level")
+    @classmethod
+    def validate_thinking_level(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("thinking_level must be a non-empty string when provided")
+        return normalized
 
 
 class ExactMatchProperties(BaseModel):
