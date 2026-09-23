@@ -6435,6 +6435,12 @@ built_in_models: List[KilnModel] = [
                 model_id="Qwen/Qwen3.8-27B",
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="qwen-3.8-27b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+            ),
         ],
     ),
     # Qwen 3.7 Max
