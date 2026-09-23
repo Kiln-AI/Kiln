@@ -14,7 +14,6 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     GenerateSyntheticUsersResponse,
     GenerateV1SyntheticUserGeneratePostResponse500,
     GenerateV1SyntheticUserGeneratePostResponse502,
-    GenerateV1SyntheticUserGeneratePostResponse502Code,
     HTTPValidationError,
     SyntheticUserCase,
     UnauthorizedResponse,
@@ -121,36 +120,14 @@ async def test_generate_passes_request_body_correctly(
     }
 
 
-# ───────────────────────── 502 (typed code) ─────────────────────────
+# ───────────────────────── 502 ─────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_generate_502_llm_unavailable_surfaces_typed_code(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_generate_502_with_code(monkeypatch: pytest.MonkeyPatch) -> None:
     parsed = GenerateV1SyntheticUserGeneratePostResponse502(
-        message="provider timed out",
-        code=GenerateV1SyntheticUserGeneratePostResponse502Code.LLM_UNAVAILABLE,
-    )
-    _patch_generate(monkeypatch, AsyncMock(return_value=_err_response(502, parsed)))
-
-    with pytest.raises(SyntheticUserServerError) as exc:
-        await _make_client().generate(
-            target_task_prompt="p", target_specification="s", case_scenarios=["s"]
-        )
-
-    assert exc.value.code == "llm_unavailable"
-    assert exc.value.message == "provider timed out"
-    assert exc.value.status_code == 502
-
-
-@pytest.mark.asyncio
-async def test_generate_502_upstream_invalid_output_surfaces_typed_code(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    parsed = GenerateV1SyntheticUserGeneratePostResponse502(
-        message="model returned unparseable output",
-        code=GenerateV1SyntheticUserGeneratePostResponse502Code.UPSTREAM_INVALID_OUTPUT,
+        message="The generator produced no usable cases.",
+        code="upstream_invalid_output",
     )
     _patch_generate(monkeypatch, AsyncMock(return_value=_err_response(502, parsed)))
 
@@ -160,6 +137,24 @@ async def test_generate_502_upstream_invalid_output_surfaces_typed_code(
         )
 
     assert exc.value.code == "upstream_invalid_output"
+    assert exc.value.message == "The generator produced no usable cases."
+    assert exc.value.status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_generate_502_without_code_falls_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parsed = GenerateV1SyntheticUserGeneratePostResponse502(message="kaboom")
+    _patch_generate(monkeypatch, AsyncMock(return_value=_err_response(502, parsed)))
+
+    with pytest.raises(SyntheticUserServerError) as exc:
+        await _make_client().generate(
+            target_task_prompt="p", target_specification="s", case_scenarios=["s"]
+        )
+
+    assert exc.value.code == "http_502"
+    assert exc.value.status_code == 502
 
 
 # ───────────────────────── 500 ─────────────────────────
@@ -324,7 +319,7 @@ async def test_generate_does_not_retry_on_502(
     """
     parsed = GenerateV1SyntheticUserGeneratePostResponse502(
         message="boom",
-        code=GenerateV1SyntheticUserGeneratePostResponse502Code.LLM_UNAVAILABLE,
+        code="upstream_invalid_output",
     )
     mock = AsyncMock(return_value=_err_response(502, parsed))
     _patch_generate(monkeypatch, mock)

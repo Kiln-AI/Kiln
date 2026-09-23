@@ -5,9 +5,7 @@ Owns two concerns the SDK leaves to callers:
 1. Error classification. The SDK parses 200/401/422/500/502 into typed
    models; we translate those into the wrapper's typed exception hierarchy
    so callers never inspect raw HTTP status codes.
-2. No retry. `/generate` is a once-per-batch authoring call, and
-   kiln_server already retries transient provider failures internally
-   before returning 502. A 502 reaching us is a genuine failure.
+2. No retry. kiln_server already retries once before returning a 5xx.
 """
 
 import logging
@@ -40,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 class SyntheticUserError(Exception):
     """Base class for SyntheticUserClient errors. Carries the kiln_server
-    error code (e.g. `llm_unavailable`, `upstream_invalid_output`) when
+    error code (e.g. `upstream_invalid_output`) when
     available, plus the HTTP status for debugging.
     """
 
@@ -59,9 +57,8 @@ class SyntheticUserRequestError(SyntheticUserError):
 
 
 class SyntheticUserServerError(SyntheticUserError):
-    """Raised on 5xx. 500 is a server bug; 502 is the kiln_server pipeline
-    giving up on the upstream provider after its own internal retry. Not
-    retryable at this layer — bubble up as a per-batch failure.
+    """Raised on 5xx: 500 for a server or provider failure, 502 for generator
+    output the server could not use. Not retryable here; the batch fails.
     """
 
 
@@ -110,11 +107,9 @@ class SyntheticUserClient:
 
         # Typed error bodies the SDK parses for us.
         if isinstance(parsed, GenerateV1SyntheticUserGeneratePostResponse502):
-            # `code` is a typed enum on 502; surface its string value so
-            # downstream callers can discriminate llm_unavailable from
-            # upstream_invalid_output without importing the SDK type.
+            # `code` is a plain string the server may omit.
             raise SyntheticUserServerError(
-                code=parsed.code.value,
+                code=_code_or_default(parsed.code, f"http_{status}"),
                 message=parsed.message,
                 status_code=status,
             )

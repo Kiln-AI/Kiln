@@ -251,7 +251,9 @@ def test_generate_cases_server_error_surfaces_with_status(
         instance = MockClient.return_value
         instance.generate = AsyncMock(
             side_effect=SyntheticUserServerError(
-                "llm_unavailable", "upstream timed out", status_code=502
+                "upstream_invalid_output",
+                "The generator produced no usable cases.",
+                status_code=502,
             )
         )
 
@@ -261,7 +263,7 @@ def test_generate_cases_server_error_surfaces_with_status(
         )
 
     assert resp.status_code == 502
-    assert resp.json()["message"]["code"] == "llm_unavailable"
+    assert resp.json()["message"]["code"] == "upstream_invalid_output"
 
 
 def test_generate_cases_request_error_surfaces_as_400(
