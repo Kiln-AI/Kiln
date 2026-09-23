@@ -51,6 +51,7 @@
     type BuilderDraft,
     type CachedMintedInputs,
     type CachedSuCases,
+    type DrivenCaseWire,
     type SyntheticUserCaseWire,
   } from "./builder_draft"
   import { isKilnAgentRunConfig } from "$lib/types"
@@ -1047,11 +1048,8 @@
   // the Refine Plan dialog. The dialog's ceiling is the server's cap
   // (NUM_CASES_MAX in libs/core/kiln_ai/synthetic_user/runner.py, mirrored by
   // the batch-plan and pipeline routes), not this number.
-  // Sized so the batch is still useful once it is split: part becomes the
-  // human-rated answer key and the rest is dealt train:val, so a batch this
-  // size leaves enough in every slice to train on later rather than only
-  // evaluate once. Growing it does NOT grow the review ask — that is capped
-  // (review_target), so the reviewer's work stays flat as the batch scales.
+  // Sized so every split still holds enough cases once the batch is dealt.
+  // Growing it does not grow the review ask, which is a flat count.
   const NUM_CASES = 80
   // The largest batch the server will plan or drive. Mirrors NUM_CASES_MAX in
   // libs/core/kiln_ai/synthetic_user/runner.py, which the batch-plan and
@@ -1194,9 +1192,9 @@
   let minting_total = 0
 
   // The cases whose conversations were actually driven (chains exist on
-  // disk). Save mints one EvalInput per driven case — the eval slice the
-  // runner re-drives per run config.
-  let driven_cases: SyntheticUserCaseWire[] = []
+  // disk), each carrying the run it drove into. Save mints one EvalInput per
+  // unreviewed case and leaves the reviewed ones to the golden answer key.
+  let driven_cases: DrivenCaseWire[] = []
   // The current batch's item list (cases on multi-turn, minted inputs on
   // single-turn) and its per-slot results, kept across drives so a retry
   // can TOP OFF the missing slots — drive only them, into the same batch
@@ -2465,7 +2463,15 @@
           const slot = drive_plan.slot_of_stream_index[event.case_index]
           if (slot !== undefined && !driven_slots.has(slot)) {
             driven_slots.add(slot)
-            driven_cases = [...driven_cases, drive_plan.items[event.case_index]]
+            // The run id comes from the event, not the case's position:
+            // driven_cases is appended in event order.
+            driven_cases = [
+              ...driven_cases,
+              {
+                ...drive_plan.items[event.case_index],
+                leaf_run_id: event.leaf_run_id,
+              },
+            ]
           }
           // Chains exist on disk under this batch's tag from here on —
           // record it immediately so an abort can't orphan the batch.
@@ -3366,8 +3372,8 @@
   let trace_reviews: TraceReview[] = []
   // Which traces the reviewer is asked to review (indices into trace_claims):
   // a judge-stratified subset on both arms. The review surfaces exactly this
-  // subset — unselected traces are not shown; they land in the train split
-  // unrated.
+  // subset — unselected traces are not shown, and their cases are dealt into
+  // test, train or val.
   let selected_trace_indices: number[] = []
   // What the reviewer actually walks (see reviewable_subset). Every claims
   // build is resolved before either gate opens a review, and an excluded trace
@@ -4128,8 +4134,8 @@
       // late rewrite the reviewer never saw.
       const save_judge = review_judge_config
 
-      // Multi-turn save: golden/train tags land on the driven chains; the
-      // eval slice is minted server-side as EvalInputs from the driven cases.
+      // Multi-turn save: the golden tag and the ratings land on the reviewed
+      // chains; the server mints the other cases as EvalInputs.
       if (is_multi_turn) {
         if (multi_turn_batch_tag === null || driven_cases.length === 0) {
           save_error = "Nothing was generated. Go back to Step 4."
@@ -4157,8 +4163,8 @@
         // Carry the human's review through save: each reviewed trace maps to
         // its chain-leaf TaskRun (leaf_run_id from run_cases_batch); the
         // studio writes the golden rating + per-claim grades onto that leaf.
-        // Only traces the human actually reviewed ride along (subset review:
-        // unreviewed chains land in the train split, unrated).
+        // Only traces the human actually reviewed ride along; they become
+        // the golden answer key. Unreviewed chains join no split.
         const reviewed_chains = trace_claims
           .map((tc, i) => ({ tc, review: trace_reviews[i] }))
           // Truthy check: the batch runner emits "" (not null) when a leaf
@@ -4246,8 +4252,8 @@
       // Carry the human's review through save: each reviewed trace maps to
       // its persisted run (leaf_run_id from the pipeline); the studio
       // writes the golden rating + per-claim grades onto that run. Only
-      // traces the human actually reviewed ride along (subset review:
-      // unreviewed runs land in the train split, unrated).
+      // traces the human actually reviewed ride along; they become the
+      // golden answer key. Unreviewed runs join no split.
       const reviewed_runs = trace_claims
         .map((tc, i) => ({ tc, review: trace_reviews[i] }))
         // Truthy check: the pipeline emits "" (not null) when a run has no
@@ -4279,10 +4285,16 @@
             single_turn: {
               batch_tag: saved_batch_tag,
               reviewed_runs,
-              // The eval slice: the inputs the surviving runs were driven
-              // on, byte-identical to what the judge scored (raw_input
-              // echoes the request input on every round).
-              inputs: trace_claims.map((tc) => tc.raw_input),
+              // The cases: the inputs the surviving runs were driven on,
+              // byte-identical to what the judge scored (raw_input echoes
+              // the request input on every round), each with the run it ran
+              // in so the reviewed ones stay out of the minted splits.
+              inputs: trace_claims.map((tc) => ({
+                input: tc.raw_input,
+                // Empty when the pipeline recorded no run; such a case can't
+                // have been reviewed, so it is minted like any other.
+                leaf_run_id: tc.leaf_run_id ?? "",
+              })),
             },
             // The auto-picked sample that grounded planning and input
             // minting, recorded on the Spec for provenance (v1 parity).

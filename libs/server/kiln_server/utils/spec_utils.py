@@ -15,14 +15,17 @@ from kiln_ai.datamodel.dataset_filters import DatasetFilterId
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalDataType,
+    EvalInputSplit,
     EvalOutputScore,
     EvalSplitName,
     EvalTemplateId,
     SplitRef,
     TaskRunSplit,
 )
+from kiln_ai.datamodel.eval_splits import ItemSource
 from kiln_ai.datamodel.spec_properties import SpecType
 from kiln_ai.datamodel.task import Task
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
 def spec_eval_output_score(spec_name: str) -> EvalOutputScore:
@@ -136,23 +139,35 @@ def tag_filter_id(tag: str) -> DatasetFilterId:
 
 
 def spec_eval_splits(
-    *, test_tag: str, train_tag: str, val_tag: str
+    *,
+    test_tag: str,
+    train_tag: str,
+    val_tag: str,
+    test_source: ItemSource = "task_run",
+    train_source: ItemSource = "task_run",
+    val_source: ItemSource = "task_run",
 ) -> dict[EvalSplitName, SplitRef]:
-    """The splits a new spec eval is created with, all backed by tagged TaskRuns.
+    """The splits a new spec eval is created with, each backed by its source.
 
-    Keyword-only: three same-typed tag strings whose order has to be memorized is the
-    hazard this function exists to remove, so swapping two of them is made unrepresentable
-    rather than left to a reader.
-
-    The golden set is not a split and is not returned here: it is TaskRun-only by
-    definition, and keeping it out of the splits dict is what keeps that true at the type
-    level.
+    A source is the store a split's items live in: tagged TaskRuns, or EvalInputs for a
+    creator that mints its own cases. Golden is not a split and is not returned here.
     """
     return {
-        "test": TaskRunSplit(filter_id=tag_filter_id(test_tag)),
-        "train": TaskRunSplit(filter_id=tag_filter_id(train_tag)),
-        "val": TaskRunSplit(filter_id=tag_filter_id(val_tag)),
+        "test": _split_ref(test_tag, test_source),
+        "train": _split_ref(train_tag, train_source),
+        "val": _split_ref(val_tag, val_source),
     }
+
+
+def _split_ref(tag: str, source: ItemSource) -> SplitRef:
+    """The split reference for one tag, in the store the source names."""
+    match source:
+        case "task_run":
+            return TaskRunSplit(filter_id=tag_filter_id(tag))
+        case "eval_input":
+            return EvalInputSplit(filter_id=tag_filter_id(tag))
+        case _:
+            raise_exhaustive_enum_error(source)
 
 
 def build_spec_eval(
@@ -163,23 +178,23 @@ def build_spec_eval(
     evaluate_full_trace: bool,
     priority: Priority | None = None,
     status: EvalStatus | None = None,
+    test_source: ItemSource = "task_run",
+    train_source: ItemSource = "task_run",
+    val_source: ItemSource = "task_run",
 ) -> tuple[Eval, SpecEvalTags]:
-    """A new spec eval, with its test, train and val splits already set.
+    """A new spec eval with its test, train and val splits set, and its dataset tags.
 
-    Returns the eval alongside the dataset tags its items must carry, so a caller that
-    generates those items can tag them. The eval is not saved.
-
-    Every spec-eval creation path goes through here, so the three splits and the tags
-    naming their items are derived from the eval's name in one place rather than being
-    reassembled per caller.
-
-    Priority and status live on the eval. Callers that write a spec alongside it mirror
-    them there so the spec file stays truthful, but the eval is the source of truth for
-    reads and later edits.
+    Both the splits and the tags naming their items derive from `name`. The eval is not
+    saved, and a caller that generates the items tags them with the returned tags.
     """
     tags = generate_spec_eval_tags(name)
     splits = spec_eval_splits(
-        test_tag=tags.test_tag, train_tag=tags.train_tag, val_tag=tags.val_tag
+        test_tag=tags.test_tag,
+        train_tag=tags.train_tag,
+        val_tag=tags.val_tag,
+        test_source=test_source,
+        train_source=train_source,
+        val_source=val_source,
     )
     # Eval.splits is keyed by str, and dict key types are invariant, so the narrower
     # mapping has to be widened rather than passed through.

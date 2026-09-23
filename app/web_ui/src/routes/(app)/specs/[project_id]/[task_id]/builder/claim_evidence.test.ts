@@ -204,21 +204,18 @@ describe("human_verdict / user_says_meets_spec", () => {
 })
 
 describe("review_target", () => {
-  it("is N//4 with a floor of one", () => {
-    expect(review_target(40)).toBe(10)
-    expect(review_target(38)).toBe(9)
-    expect(review_target(4)).toBe(1)
-    expect(review_target(3)).toBe(1)
-    expect(review_target(1)).toBe(1)
-    expect(review_target(0)).toBe(0)
+  it("is six, whatever the batch size", () => {
+    // The answer key is a fixed handful of human labels: a batch ten times
+    // larger is not ten times the reviewing.
+    expect(review_target(40)).toBe(6)
+    expect(review_target(80)).toBe(6)
+    expect(review_target(200)).toBe(6)
   })
 
-  it("stops growing past ten, so a bigger batch is not more review", () => {
-    // The default batch is 80, where a quarter would be 20. Reviewing is human
-    // work that does not scale with the batch, so the ask stays at ten and the
-    // answer key is simply shorter than the server's 25% ceiling.
-    expect(review_target(80)).toBe(10)
-    expect(review_target(200)).toBe(10)
+  it("cannot ask for more traces than there are", () => {
+    expect(review_target(4)).toBe(4)
+    expect(review_target(1)).toBe(1)
+    expect(review_target(0)).toBe(0)
   })
 })
 
@@ -233,41 +230,43 @@ describe("select_review_subset", () => {
     expect(select_review_subset(batch(["pass"]))).toEqual([0])
   })
 
-  it("prefers a judge-fail for a tiny batch's single slot", () => {
-    expect(select_review_subset(batch(["pass", "fail", "pass"]))).toEqual([1])
+  it("selects the whole batch when it is smaller than the target", () => {
+    expect(select_review_subset(batch(["pass", "fail", "pass"]))).toEqual([
+      0, 1, 2,
+    ])
   })
 
   it("stratifies ~50/50 across judge verdicts at 40", () => {
-    // 20 passes then 20 fails: 10 selected, 5 from each bucket.
+    // 20 passes then 20 fails: 6 selected, 3 from each bucket.
     const traces = batch([
       ...Array(20).fill("pass"),
       ...Array(20).fill("fail"),
     ] as ("pass" | "fail")[])
     const picked = select_review_subset(traces)
-    expect(picked).toHaveLength(10)
+    expect(picked).toHaveLength(6)
     const fails = picked.filter((i) => traces[i].judge_score === "fail")
-    expect(fails).toHaveLength(5)
+    expect(fails).toHaveLength(3)
     // Spread across plan order, not clustered at the front.
     expect(picked.some((i) => i >= 30)).toBe(true)
     expect(picked.some((i) => i < 10)).toBe(true)
   })
 
   it("tops up from the other bucket when one is short", () => {
-    // 39 passes, 1 fail: the fail is always picked, passes fill to 10.
+    // 39 passes, 1 fail: the fail is always picked, passes fill to 6.
     const traces = batch([...Array(39).fill("pass"), "fail"] as (
       | "pass"
       | "fail"
     )[])
     const picked = select_review_subset(traces)
-    expect(picked).toHaveLength(10)
+    expect(picked).toHaveLength(6)
     expect(picked).toContain(39)
   })
 
   it("handles single-verdict batches (all pass)", () => {
     const traces = batch(Array(12).fill("pass") as ("pass" | "fail")[])
     const picked = select_review_subset(traces)
-    expect(picked).toHaveLength(3)
-    expect(new Set(picked).size).toBe(3)
+    expect(picked).toHaveLength(6)
+    expect(new Set(picked).size).toBe(6)
   })
 
   it("is deterministic", () => {
@@ -1136,7 +1135,7 @@ function rejudge_result(judge_score: "pass" | "fail"): RejudgeCaseResult {
 }
 
 describe("select_calibration_subset", () => {
-  // 16 traces, alternating fail/pass → target floor(16/4) = 4.
+  // 16 traces, alternating fail/pass → the flat target of 6.
   const sixteen = score_traces(
     Array.from({ length: 16 }, (_, i) => (i % 2 === 0 ? "fail" : "pass")),
   )
@@ -1149,37 +1148,38 @@ describe("select_calibration_subset", () => {
       reviewed: [10, 11, 12],
       judged: all_judged,
     })
-    expect(subset).toHaveLength(4)
+    expect(subset).toHaveLength(6)
     expect(subset).toContain(10)
     expect(subset).toContain(2)
     expect(subset).toContain(12)
-    // The remaining slot is a fresh never-reviewed trace.
+    // The remaining slots are fresh never-reviewed traces.
     const fresh = subset.filter((i) => ![2, 10, 12].includes(i))
-    expect(fresh).toHaveLength(1)
-    expect([10, 11, 12]).not.toContain(fresh[0])
+    expect(fresh).toHaveLength(3)
+    for (const i of fresh) expect([10, 11, 12]).not.toContain(i)
   })
 
   it("overflow: disagreed beat flips beat fresh, in stable plan order", () => {
-    // 8 traces → target 2; three disagreements overflow the target.
-    const eight = score_traces(Array.from({ length: 8 }, () => "pass"))
+    // 12 traces, target 6: seven disagreements overflow it, so the six
+    // earliest win and the flips never get a slot.
+    const twelve = score_traces(Array.from({ length: 12 }, () => "pass"))
+    const judged = twelve.map((_, i) => i)
     expect(
-      select_calibration_subset(eight, {
-        disagreed: [5, 1, 7],
-        flipped: [0, 2],
-        reviewed: [1, 5, 7],
-        judged: eight.map((_, i) => i),
+      select_calibration_subset(twelve, {
+        disagreed: [9, 1, 7, 3, 11, 5, 0],
+        flipped: [2, 4],
+        reviewed: [0, 1, 3, 5, 7, 9, 11],
+        judged,
       }),
-    ).toEqual([1, 5])
-    // One disagreement + overflowing flips: the flip slot goes to the
-    // earliest flipped index.
+    ).toEqual([0, 1, 3, 5, 7, 9])
+    // Two disagreements leave four slots, and the earliest flips take them.
     expect(
-      select_calibration_subset(eight, {
-        disagreed: [3],
-        flipped: [6, 0, 4],
-        reviewed: [3],
-        judged: eight.map((_, i) => i),
+      select_calibration_subset(twelve, {
+        disagreed: [8, 2],
+        flipped: [10, 0, 6, 4, 1],
+        reviewed: [0, 1, 2, 4, 6, 8, 10],
+        judged,
       }),
-    ).toEqual([0, 3])
+    ).toEqual([0, 1, 2, 4, 6, 8])
   })
 
   it("excludes cases without a fresh verdict from every stratum", () => {
@@ -1191,7 +1191,7 @@ describe("select_calibration_subset", () => {
       reviewed: [1, 2],
       judged,
     })
-    expect(subset).toHaveLength(2)
+    expect(subset).toHaveLength(5)
     for (const i of subset) expect(judged).toContain(i)
   })
 
@@ -1202,7 +1202,7 @@ describe("select_calibration_subset", () => {
       reviewed: [0, 1],
       judged: all_judged,
     })
-    expect(subset).toHaveLength(4)
+    expect(subset).toHaveLength(6)
     // Never-reviewed only.
     expect(subset).not.toContain(0)
     expect(subset).not.toContain(1)
@@ -1212,7 +1212,7 @@ describe("select_calibration_subset", () => {
     expect(scores).toContain("pass")
   })
 
-  it("uses the same target math as the first round (floor(N/4), min 1)", () => {
+  it("uses the same target as the first round, bounded by the batch", () => {
     const three = score_traces(["pass", "fail", "pass"])
     const subset = select_calibration_subset(three, {
       disagreed: [],
@@ -1220,7 +1220,7 @@ describe("select_calibration_subset", () => {
       reviewed: [],
       judged: [0, 1, 2],
     })
-    expect(subset).toHaveLength(1)
+    expect(subset).toHaveLength(3)
   })
 
   it("returns fewer than target when the eligible pool is smaller", () => {
@@ -1230,7 +1230,7 @@ describe("select_calibration_subset", () => {
       reviewed: all_judged,
       judged: [2, 4],
     })
-    // Target is 4 but only two traces re-judged, and every trace was
+    // Target is 6 but only two traces re-judged, and every trace was
     // already reviewed — no fresh candidates exist.
     expect(subset).toEqual([2])
   })
@@ -1312,20 +1312,20 @@ describe("reviewable_subset — what the reviewer is really shown", () => {
     // Three numbers are drawn from these two values: the save gate's target,
     // the step header's "reviewing N of M", and the review's own "1 of N".
     const traces = states(...Array<"built">(38).fill("built"), "error", "error")
-    const walked = reviewable_subset(traces, [0, 1, 2, 3, 4, 5, 6, 7, 38, 39])
+    const walked = reviewable_subset(traces, [0, 1, 2, 3, 38, 39])
     const target = calibration_gate_target(traces.length, walked.length)
 
     expect(target).toBe(walked.length)
-    // Uncapped, the target is a pure function of the batch size, so it would
-    // still demand ten reviews of a walk that only offers eight.
-    expect(review_target(traces.length)).toBe(10)
-    expect(target).toBe(8)
+    // Uncapped, the target is the flat six, so it would still demand six
+    // reviews of a walk that only offers four.
+    expect(review_target(traces.length)).toBe(6)
+    expect(target).toBe(4)
   })
 })
 
 describe("calibration_gate_target — save gate during rounds", () => {
   it("keeps the standard target when the round surfaced a full subset", () => {
-    expect(calibration_gate_target(40, 10)).toBe(10)
+    expect(calibration_gate_target(40, 6)).toBe(6)
   })
 
   it("caps the demand at the subset size on a re-judge shortfall", () => {
@@ -1335,8 +1335,8 @@ describe("calibration_gate_target — save gate during rounds", () => {
     expect(calibration_gate_target(40, 1)).toBe(1)
   })
 
-  it("keeps the floor-1 target when the subset covers it", () => {
-    expect(calibration_gate_target(3, 3)).toBe(1)
+  it("asks for the whole batch when it is smaller than the target", () => {
+    expect(calibration_gate_target(3, 3)).toBe(3)
   })
 
   it("is zero only for the empty subset the wizard never lets reach review", () => {

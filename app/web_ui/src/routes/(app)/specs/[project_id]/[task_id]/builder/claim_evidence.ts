@@ -872,18 +872,14 @@ export function user_says_meets_spec(
 
 // ── Subset review (both arms) ────────────────────────────────────────────
 
-// How many traces the reviewer must rate. The human-rated golden answer key is
-// capped at 25% of the batch runs server-side, so N//4 is what would fill it
-// exactly — but rating is human work and does not get cheaper as the batch
-// grows, so it stops at REVIEW_TARGET_MAX. Past that the answer key is
-// deliberately smaller than the server would allow: the server never pads
-// golden with unrated items, so a short rated set simply yields a shorter key.
-// Floor of 1 — a batch with no rated trace has no answer key at all.
-const REVIEW_TARGET_MAX = 10
+// How many traces the reviewer rates. Every rated trace becomes part of the
+// golden answer key, which is a handful of human labels whatever the batch
+// size: a judge check, not a measurement. Bounded by the traces there are.
+const GOLDEN_TARGET = 6
 
 export function review_target(total: number): number {
   if (total <= 0) return 0
-  return Math.min(REVIEW_TARGET_MAX, Math.max(1, Math.floor(total / 4)))
+  return Math.min(GOLDEN_TARGET, total)
 }
 
 // The reviews the save gate demands during a calibration round: the standard

@@ -162,8 +162,9 @@ class ReviewedChainApi(BaseModel):
 class DrivenSyntheticCaseApi(BaseModel):
     """One driven synthetic-user case from the builder session.
 
-    The save path mints an EvalInput from each — the re-drivable input the
-    eval runner regenerates a conversation from, per run config.
+    The save path mints an EvalInput from each unreviewed case — the
+    re-drivable input the eval runner regenerates a conversation from, per
+    run config. A reviewed case is the golden answer key instead.
     """
 
     seed_prompt: str = Field(
@@ -182,6 +183,12 @@ class DrivenSyntheticCaseApi(BaseModel):
         "scenario plan identifying the scenario this case was generated "
         "from. Recorded on the minted EvalInput as a `scenario:{index}` "
         "provenance tag; omit when the case has no plan scenario.",
+    )
+    leaf_run_id: str = Field(
+        description="The id of the chain-leaf TaskRun this case was driven "
+        "in. A case whose run the human reviewed is represented by that "
+        "rated run and is not minted. Empty when the drive recorded no run, "
+        "which can never have been reviewed.",
     )
 
 
