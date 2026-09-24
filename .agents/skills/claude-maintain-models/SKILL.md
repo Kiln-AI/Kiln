@@ -404,6 +404,8 @@ Use `gh pr create` against `main`. Follow Rule 0 and Rule 1 of the `open-pr` ski
 Replace the `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `` placeholder under `# Agentic PR Summary` with the test results, in this exact format:
 
 ```
+## What does this PR do?
+
  Test Results
 
 [Two paragraphs of nuance — describe any unusual findings, things you tried and reverted, known pre-existing failures vs new failures, API quirks discovered, and any config adjustments made during testing.]
