@@ -36,4 +36,4 @@ I, @<your-github-username>, confirm that I have read and agree to the [Contribut
 
 ----
 # Agentic PR Summary
-`Insert AI summary of PR using TOOL NAME`
+`Insert AI summary of PR using .agents/skills/open-pr/SKILL.md`

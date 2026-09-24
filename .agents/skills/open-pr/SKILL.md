@@ -205,15 +205,15 @@ Build the description in this order:
 1. The human header. Copy it from the template exactly as Rule 0 says. Remove the CLA
    section only when Rule 1 says to.
 2. The `----` line and the `# Agentic PR Summary` heading, exactly as in the template.
-3. Your summary, in place of the `` `Insert AI summary of PR using TOOL NAME` ``
-   placeholder. Start with a line that names your tool, for example
-   `_Summary by Claude Code._`. Then write the parts in 4.1 to 4.7.
+3. Your summary, in place of the
+   `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `` placeholder. Write
+   the parts in 4.1 to 4.7.
 
 Write nothing of your own above the `# Agentic PR Summary` heading.
 
 ### 4.1 The first line is a TLDR
 
-The summary starts with one line, after the line that names your tool. That line gives:
+The summary starts with one line. That line gives:
 
 1. Why the PR exists (the intent).
 2. What the PR does.
@@ -514,7 +514,6 @@ removal. Only a human fills it in.
 
 ----
 # Agentic PR Summary
-_Summary by Claude Code._
 
 **TLDR:** Two tools with the same `tool_name` were rejected for a full project, which
 blocked a second version of a tool. This PR moves the check to the run config, where the
@@ -575,7 +574,7 @@ team can delete it after this PR closes.
       in a placeholder, no added note.
 - [ ] The CLA is not signed. The CLA section is removed only when the author is
       `scosman`, `sfierro`, `leonardmq`, `tawnymanticore`, or `chiang-daniel`.
-- [ ] All of your text is below the `# Agentic PR Summary` heading, and it names your tool.
+- [ ] All of your text is below the `# Agentic PR Summary` heading.
 - [ ] The first line of the summary is a TLDR with the intent, the change, and the
       target branch.
 - [ ] The companion branches and the merge order are named.

@@ -401,11 +401,9 @@ Use `gh pr create` against `main`. Follow Rule 0 and Rule 1 of the `open-pr` ski
 - The title is `WIP: ` followed by the usual model-list subject, for example `WIP: Add GLM 5.1 to model list`. Only a human removes the prefix.
 - Copy everything above `# Agentic PR Summary` from `.github/pull_request_template.md` with no change. Never fill in a placeholder or tick a box there, and never sign the CLA. Remove the `## Contributor License Agreement` section only when the PR author's GitHub username is `scosman`, `sfierro`, `leonardmq`, `tawnymanticore`, or `chiang-daniel`. Keep it, unsigned, for any other author.
 
-Replace the `` `Insert AI summary of PR using TOOL NAME` `` placeholder under `# Agentic PR Summary` with the test results, in this exact format:
+Replace the `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `` placeholder under `# Agentic PR Summary` with the test results, in this exact format:
 
 ```
-_Summary by Claude Code._
-
  Test Results
 
 [Two paragraphs of nuance — describe any unusual findings, things you tried and reverted, known pre-existing failures vs new failures, API quirks discovered, and any config adjustments made during testing.]
