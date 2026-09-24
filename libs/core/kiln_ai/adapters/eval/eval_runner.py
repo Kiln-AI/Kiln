@@ -215,7 +215,7 @@ class EvalRunner:
        Scoped by the `split` it is given, whose items may come from either store.
        Multi-turn synthetic EvalInputs are re-driven as a full conversation per run
        config using the drive config stamped on each item; stored multi-turn TaskRun
-       chains are judged on their stored trace instead.
+       chains are skipped.
     """
 
     def __init__(
@@ -622,33 +622,18 @@ class EvalRunner:
                 job, evaluator, job.item, job.item.data, seed
             )
 
-        if isinstance(job.item, TaskRun) and job.item.parent_task_run_id is not None:
-            # Multi-turn chain leaf: a conversation can't be regenerated in
-            # a single model call, so both run modes evaluate the stored
-            # trace. In task_run_eval mode the scores are therefore a property
-            # of the stored conversation, identical across run configs —
-            # re-driving per run config needs a synthetic-user seed + persona,
-            # which EvalInput-sourced cases carry (branch above) but stored
-            # TaskRun chains do not.
-            #
-            # The leaf is a curated dataset item that already holds its whole
-            # conversation, so there is nothing to generate and nothing to
-            # index — and no eval_source stamp, which would pull the item off
-            # dataset surfaces. The score is a pointer record at the leaf.
-            leaf = job.item
-            if not leaf.trace:
-                # The run exists but recorded no conversation, so the skip
-                # still names what it could not score.
-                return await self._persist_score(
-                    job,
-                    scored_run_id=leaf.id,
-                    skipped_reason=SkippedReason.missing_trace.value,
-                    skipped_detail="Multi-turn task run has no stored trace to evaluate",
-                )
-
-            eval_task_input = EvalTaskInput.from_task_run(leaf)
-            result = await evaluator.evaluate(eval_task_input)
-            return await self._persist_judgment(job, leaf, result)
+        # Both skips come before `_resolve_trace`, so a job that can never be scored
+        # never pays for a generation.
+        if (
+            isinstance(job.item, TaskRun)
+            and job.item.parent_task_run_id is not None
+            and job.type == "task_run_eval"
+        ):
+            return await self._persist_skip(
+                job,
+                SkippedReason.incompatible_input_shape,
+                "Stored multi-turn conversations can't be re-run for a run config",
+            )
 
         trace = await self._resolve_trace(job, evaluator)
         eval_task_input = EvalTaskInput.from_trace(trace, job.item)

@@ -1922,35 +1922,6 @@ class TestRunV2Job:
         assert saved.task_run_trace is None
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("trace", [None, []])
-    async def test_multi_turn_task_run_without_trace_skipped(
-        self, mock_v2_runner, mock_v2_eval_config, data_source, trace
-    ):
-        task_run = make_multi_turn_leaf(mock_v2_runner.task, data_source, trace=trace)
-        job = EvalJob(
-            item=task_run,
-            eval_config=mock_v2_eval_config,
-            type="eval_config_eval",
-        )
-        with patch(
-            "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
-            return_value=StubV2Eval(mock_v2_eval_config),
-        ):
-            result = await mock_v2_runner.run_job(job)
-        assert result is True
-        runs = mock_v2_eval_config.runs(readonly=True)
-        assert len(runs) == 1
-        saved = runs[0]
-        assert saved.scores == {}
-        assert saved.skipped_reason == SkippedReason.missing_trace.value
-        assert "no stored trace" in saved.skipped_detail
-        # The run exists even though its trace doesn't, so the skip still
-        # points at what it could not score.
-        assert saved.scored_run_id == task_run.id
-        assert saved.input is None
-        assert saved.output is None
-
-    @pytest.mark.asyncio
     async def test_multi_turn_task_run_adapter_skip_persists(
         self, mock_v2_runner, mock_v2_eval_config, data_source
     ):
@@ -2227,15 +2198,15 @@ class TestV2FreshGeneration:
         assert saved.output is None
 
     @pytest.mark.asyncio
-    async def test_task_run_eval_multi_turn_scores_stored_trace_without_regen(
+    async def test_task_run_eval_skips_a_stored_multi_turn_run(
         self,
         mock_v2_task_run_eval_runner,
         mock_v2_task_run_eval_config,
         mock_run_config,
         data_source,
     ):
-        """Multi-turn leaves can't be regenerated single-shot; task_run_eval
-        mode scores the stored trace and never calls run_task."""
+        """A stored conversation can't be re-run for a run config, so task_run_eval
+        mode records a skip without generating or judging anything."""
         leaf = make_multi_turn_leaf(mock_v2_task_run_eval_runner.task, data_source)
         job = EvalJob(
             item=leaf,
@@ -2257,78 +2228,17 @@ class TestV2FreshGeneration:
             result = await mock_v2_task_run_eval_runner.run_job(job)
 
         assert result is True
-        assert len(stub.seen_inputs) == 1
-        assert stub.seen_inputs[0].trace == MULTI_TURN_TRACE
+        assert stub.seen_inputs == []
 
         runs = mock_v2_task_run_eval_config.runs(readonly=True)
         assert len(runs) == 1
         saved = runs[0]
         assert saved.dataset_id == leaf.id
-        assert saved.scores == {"accuracy": 1.0}
+        assert saved.scores == {}
         assert saved.eval_config_eval is False
         assert saved.task_run_config_id == mock_run_config.id
-        assert saved.skipped_reason is None
-        # Pointer record at the stored leaf: no inline copy of what was scored.
-        assert saved.scored_run_id == leaf.id
-        assert saved.input is None
-        assert saved.output is None
-        assert saved.task_run_trace is None
-        # And the leaf stays an unstamped dataset item, visible as before.
-        # Checked on the saved bytes.
-        assert json.loads(leaf.path.read_text()).get("eval_source") is None
-
-    @pytest.mark.asyncio
-    async def test_task_run_eval_multi_turn_full_trace_judges_in_memory_usage(
-        self,
-        mock_v2_task_run_eval_runner,
-        mock_v2_task_run_eval_config,
-        mock_run_config,
-        data_source,
-    ):
-        """A stored trace whose assistant turns carry MessageUsage objects (not
-        plain JSON) must reach the judge intact, and the record stays a pointer
-        — nothing serializes the conversation onto it."""
-        mock_v2_task_run_eval_config.parent.evaluation_data_type = (
-            EvalDataType.full_trace
-        )
-        mock_v2_task_run_eval_config.parent.save_to_file()
-
-        trace_with_usage: list[ChatCompletionMessageParam] = [
-            {"role": "user", "content": "turn 1"},
-            {
-                "role": "assistant",
-                "content": "reply",
-                "usage": MessageUsage(input_tokens=5, output_tokens=7),
-            },
-        ]
-        leaf = make_multi_turn_leaf(
-            mock_v2_task_run_eval_runner.task, data_source, trace=trace_with_usage
-        )
-        job = EvalJob(
-            item=leaf,
-            eval_config=mock_v2_task_run_eval_config,
-            type="task_run_eval",
-            task_run_config=mock_run_config,
-        )
-        stub = RecordingStubV2Eval(mock_v2_task_run_eval_config)
-        with patch(
-            "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
-            return_value=stub,
-        ):
-            result = await mock_v2_task_run_eval_runner.run_job(job)
-
-        assert result is True
-        assert len(stub.seen_inputs) == 1
-        judged_trace = stub.seen_inputs[0].trace
-        assert [m["role"] for m in judged_trace] == ["user", "assistant"]
-        assert judged_trace[1]["content"] == "reply"
-
-        runs = mock_v2_task_run_eval_config.runs(readonly=True)
-        assert len(runs) == 1
-        saved = runs[0]
-        assert saved.scores == {"accuracy": 1.0}
-        assert saved.scored_run_id == leaf.id
-        assert saved.task_run_trace is None
+        assert saved.skipped_reason == SkippedReason.incompatible_input_shape.value
+        assert saved.scored_run_id is None
 
     async def test_calibration_scores_the_golden_item_itself(
         self,
@@ -4752,8 +4662,8 @@ class TestValidateReadinessSourceGating:
     def test_task_run_source_is_noop(
         self, mock_task, multi_turn_eval_input, data_source
     ):
-        """A stored-TaskRun-sourced split never re-drives (chain leaves judge
-        their stored trace), so validation must not block the run — even with
+        """A stored-TaskRun-sourced split never re-drives (its chain leaves are
+        skipped), so validation must not block the run — even with
         run-config problems it would otherwise flag, and even while stamped
         multi-turn items exist elsewhere under the task."""
         TaskRun(
