@@ -406,7 +406,7 @@ Replace the `` `Insert AI summary of PR using TOOL NAME` `` placeholder under `#
 ```
 _Summary by Claude Code._
 
-Test Results
+ Test Results
 
 [Two paragraphs of nuance — describe any unusual findings, things you tried and reverted, known pre-existing failures vs new failures, API quirks discovered, and any config adjustments made during testing.]
 
