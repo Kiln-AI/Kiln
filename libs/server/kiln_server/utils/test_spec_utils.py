@@ -12,12 +12,14 @@ from kiln_ai.datamodel.eval import (
 from kiln_ai.datamodel.spec_properties import SpecType
 from kiln_server.utils.spec_utils import (
     SpecEvalTags,
+    SplitShare,
     build_spec_eval,
     generate_spec_eval_tags,
     spec_eval_data_type,
     spec_eval_output_score,
     spec_eval_splits,
     spec_eval_template,
+    split_names,
     tag_filter_id,
 )
 
@@ -160,6 +162,29 @@ class TestGenerateSpecEvalTags:
         assert len(set(tags)) == len(tags)
 
 
+class TestSplitNames:
+    def test_returns_the_names_in_list_order(self):
+        shares = [
+            SplitShare(split="train", weight=2),
+            SplitShare(split="test", weight=1),
+        ]
+
+        assert split_names(shares) == ["train", "test"]
+
+    def test_refuses_a_shape_with_no_test_split(self):
+        with pytest.raises(ValueError, match="must name the test split"):
+            split_names([SplitShare(split="train", weight=1)])
+
+    def test_refuses_a_split_named_twice(self):
+        shares = [
+            SplitShare(split="test", weight=1),
+            SplitShare(split="test", weight=2),
+        ]
+
+        with pytest.raises(ValueError, match="more than once: test"):
+            split_names(shares)
+
+
 class TestSpecEvalSplits:
     def test_tag_filter_id_prefixes_the_tag(self):
         assert tag_filter_id("my_tag") == "tag::my_tag"
@@ -188,6 +213,18 @@ class TestSpecEvalSplits:
         assert splits["train"] == TaskRunSplit(filter_id="tag::train_test")
         assert splits["val"] == TaskRunSplit(filter_id="tag::val_test")
 
+    def test_a_split_the_caller_does_not_name_is_absent(self):
+        # A smoke-test batch has no train or val data, and an absent split
+        # reads as "not configured" rather than as an empty one.
+        splits = spec_eval_splits(
+            test_tag="test_test",
+            train_tag="train_test",
+            val_tag="val_test",
+            split_names=["test"],
+        )
+
+        assert splits == {"test": TaskRunSplit(filter_id="tag::test_test")}
+
 
 class TestBuildSpecEval:
     def test_sources_reach_the_built_eval(self, tmp_path):
@@ -201,6 +238,17 @@ class TestBuildSpecEval:
 
         assert eval.splits["test"] == EvalInputSplit(filter_id="tag::test_test_spec")
         assert eval.splits["train"] == TaskRunSplit(filter_id="tag::train_test_spec")
+
+    def test_the_eval_gets_only_the_splits_named(self, tmp_path):
+        eval, _tags = build_spec_eval(
+            task=_task(tmp_path),
+            name="Test Spec",
+            spec_type=SpecType.desired_behaviour,
+            evaluate_full_trace=False,
+            split_names=["test"],
+        )
+
+        assert eval.splits == {"test": TaskRunSplit(filter_id="tag::test_test_spec")}
 
     def test_returns_the_tags_the_evals_items_must_carry(self, tmp_path):
         eval, tags = build_spec_eval(

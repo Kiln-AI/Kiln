@@ -32,6 +32,7 @@ from kiln_ai.run_context import (
     get_agent_run_id,
     set_agent_run_id,
 )
+from kiln_server.utils.spec_utils import SpecEvalTags, SplitShare
 from mcp.types import ListToolsResult
 from mcp.types import Tool as MCPTool
 
@@ -59,7 +60,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
     create_task_run_from_reviewed,
     create_task_run_from_sample,
     deal_eval_inputs,
-    deal_pool_test_train_val,
+    deal_pool,
     delete_multi_turn_batch_chains,
     delete_single_turn_batch_runs,
     find_single_turn_batch_runs,
@@ -758,33 +759,80 @@ def _leaf_split(leaves: list[TaskRun]) -> dict[str, list[TaskRun]]:
     }
 
 
-class TestDealPoolTestTrainVal:
-    """Cases are dealt test:train:val at 25:40:25 by largest remainder."""
+EVEN_SPLITS = [
+    SplitShare(split="test", weight=1),
+    SplitShare(split="train", weight=1),
+    SplitShare(split="val", weight=1),
+]
+BATCH_TAGS = SpecEvalTags(
+    test_tag="test_tag",
+    train_tag="train_tag",
+    val_tag="val_tag",
+    golden_tag="golden_tag",
+)
+
+
+class TestDealPool:
+    """Cases are dealt across the caller's shares by largest remainder."""
 
     @pytest.mark.parametrize(
         "pool_size,expected",
         [
             (0, (0, 0, 0)),
-            # A one-case pool: the seat would go to train on remainders, but an
-            # eval whose test split is empty reports on nothing.
             (1, (1, 0, 0)),
             (2, (1, 1, 0)),
             (3, (1, 1, 1)),
-            (10, (3, 4, 3)),
-            # The builder's default batch.
-            (80, (22, 36, 22)),
-            (90, (25, 40, 25)),
+            (10, (4, 3, 3)),
+            # Standard's dealt count.
+            (60, (20, 20, 20)),
         ],
     )
-    def test_counts_by_largest_remainder(self, pool_size, expected):
+    def test_even_shares_by_largest_remainder(self, pool_size, expected):
         pool = list(range(pool_size))
-        hands = deal_pool_test_train_val(pool, random.Random(0))
-        assert tuple(len(hand) for hand in hands) == expected
-        assert sorted(item for hand in hands for item in hand) == pool
+
+        hands = deal_pool(pool, EVEN_SPLITS, random.Random(0))
+
+        assert (
+            tuple(len(hands[split]) for split in ("test", "train", "val")) == expected
+        )
+        assert sorted(item for hand in hands.values() for item in hand) == pool
+
+    def test_uneven_shares_divide_the_pool_by_weight(self):
+        shares = [
+            SplitShare(split="test", weight=40),
+            SplitShare(split="train", weight=25),
+            SplitShare(split="val", weight=25),
+        ]
+
+        hands = deal_pool(list(range(91)), shares, random.Random(0))
+
+        assert [len(hands[split]) for split in ("test", "train", "val")] == [41, 25, 25]
+
+    def test_a_leftover_case_goes_to_the_earlier_entry(self):
+        # Order is the caller's tiebreak: the same weights listed the other
+        # way round hand the one case to the other split.
+        shares = [
+            SplitShare(split="train", weight=1),
+            SplitShare(split="test", weight=1),
+        ]
+
+        hands = deal_pool([0], shares, random.Random(0))
+
+        assert (len(hands["train"]), len(hands["test"])) == (1, 0)
+
+    def test_only_the_named_splits_get_a_hand(self):
+        hands = deal_pool(
+            list(range(5)), [SplitShare(split="test", weight=1)], random.Random(0)
+        )
+
+        assert set(hands) == {"test"}
+        assert len(hands["test"]) == 5
 
     def test_does_not_mutate_input(self):
         pool = list(range(30))
-        deal_pool_test_train_val(pool, random.Random(1))
+
+        deal_pool(pool, EVEN_SPLITS, random.Random(1))
+
         assert pool == list(range(30))
 
 
@@ -793,9 +841,7 @@ class TestDealEvalInputs:
         eval_inputs = build_single_turn_eval_inputs(
             [f"input {i}" for i in range(n)], "test_tag", ["drive_batch:b1"]
         )
-        deal_eval_inputs(
-            eval_inputs, "test_tag", "train_tag", "val_tag", random.Random(seed)
-        )
+        deal_eval_inputs(eval_inputs, EVEN_SPLITS, BATCH_TAGS, random.Random(seed))
         return eval_inputs
 
     def test_each_case_lands_in_exactly_one_split(self):
@@ -805,7 +851,7 @@ class TestDealEvalInputs:
         assert [
             sum(tag in c.tags for c in cases)
             for tag in ("test_tag", "train_tag", "val_tag")
-        ] == [3, 4, 3]
+        ] == [4, 3, 3]
 
     def test_keeps_the_tags_it_did_not_deal(self):
         assert all("drive_batch:b1" in c.tags for c in self._dealt(10, seed=0))
@@ -821,7 +867,7 @@ class TestDealEvalInputs:
             }
 
         first = held_out(11)
-        assert len(first) == 9
+        assert len(first) == 10
         assert held_out(11) == first
         assert held_out(999) != first
 

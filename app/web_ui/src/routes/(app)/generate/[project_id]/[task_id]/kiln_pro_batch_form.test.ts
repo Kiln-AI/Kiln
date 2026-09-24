@@ -18,15 +18,12 @@ afterEach(cleanup)
 
 function setup(props: Record<string, unknown> = {}) {
   const utils = render(KilnProBatchForm, {
-    props: { count: 50, guidance: "", ...props },
+    props: { guidance: "", ...props },
   })
-  const count_input = utils.container.querySelector(
-    'input[aria-label="Count"]',
-  ) as HTMLInputElement
   const guidance_box = utils.container.querySelector(
     "textarea",
   ) as HTMLTextAreaElement
-  return { ...utils, count_input, guidance_box }
+  return { ...utils, guidance_box }
 }
 
 // The badge FormElement puts in a field's label row when it is optional.
@@ -57,29 +54,6 @@ function bound_prop<T>(component: unknown, name: string): T {
 }
 
 describe("KilnProBatchForm", () => {
-  it("renders the count row with the shipped layout and label", () => {
-    const { container, count_input } = setup()
-    const row = container.firstElementChild as HTMLElement
-    expect(row.className).toBe("flex flex-row items-center gap-4")
-    const label = row.firstElementChild as HTMLElement
-    expect(label.className).toBe("flex-grow font-medium text-sm")
-    expect(label.textContent).toBe("Sample Count")
-    expect(count_input).not.toBeNull()
-    expect(count_input.value).toBe("50")
-  })
-
-  it("caps the count at 200 by default", async () => {
-    const { count_input } = setup()
-    await fireEvent.input(count_input, { target: { value: "9999" } })
-    expect(count_input.value).toBe("200")
-  })
-
-  it("honours a count_max override", async () => {
-    const { count_input } = setup({ count_max: 20 })
-    await fireEvent.input(count_input, { target: { value: "9999" } })
-    expect(count_input.value).toBe("20")
-  })
-
   it("renders the guidance field with the shipped label and description", () => {
     const { container, guidance_box } = setup()
     expect(guidance_box).not.toBeNull()
@@ -113,12 +87,6 @@ describe("KilnProBatchForm", () => {
   it("uses a guidance_id override for the field's id", () => {
     const { guidance_box } = setup({ guidance_id: "eval_batch_guidance" })
     expect(guidance_box.id).toBe("eval_batch_guidance")
-  })
-
-  it("uses count_label as the noun in the count row", () => {
-    const { container } = setup({ count_label: "Trace Count" })
-    const label = container.firstElementChild?.firstElementChild as HTMLElement
-    expect(label.textContent).toBe("Trace Count")
   })
 
   it("hides Reset when there is no guidance template", () => {
@@ -166,16 +134,18 @@ describe("KilnProBatchForm", () => {
     )
   })
 
-  it("propagates count and guidance edits to the bound props", async () => {
-    const { container, component, guidance_box } = setup()
-    const increase = container.querySelector(
-      'button[aria-label="Increase"]',
-    ) as HTMLButtonElement
-    await fireEvent.click(increase)
-    expect(bound_prop<number>(component, "count")).toBe(51)
-
+  it("propagates guidance edits to the bound prop", async () => {
+    const { component, guidance_box } = setup()
     await fireEvent.input(guidance_box, { target: { value: "be terse" } })
     expect(bound_prop<string>(component, "guidance")).toBe("be terse")
+  })
+
+  it("renders no count row of its own", () => {
+    // Each surface places its own size control, so the shared rows start at
+    // Guidance.
+    const { container } = setup()
+    expect(container.querySelector('input[aria-label="Count"]')).toBeNull()
+    expect(container.firstElementChild?.textContent).toContain("Guidance")
   })
 
   it("treats guidance as required by default, with no Optional badge", () => {
@@ -197,7 +167,7 @@ describe("KilnProBatchForm inside a form", () => {
   function submit_setup(props: Record<string, unknown> = {}) {
     const on_submit = vi.fn()
     const utils = render(KilnProBatchFormInFormContainer, {
-      props: { count: 50, guidance: "", ...props },
+      props: { guidance: "", ...props },
     })
     utils.component.$on("submit", on_submit)
     const submit = utils.container.querySelector(

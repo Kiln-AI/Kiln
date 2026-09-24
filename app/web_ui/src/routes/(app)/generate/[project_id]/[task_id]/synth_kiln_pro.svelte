@@ -14,6 +14,7 @@
   import type { KilnAgentRunConfigProperties } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import SynthDataGuide from "./synth_data_guide.svelte"
+  import KilnProBatchCountRow from "./kiln_pro_batch_count_row.svelte"
   import KilnProBatchForm from "./kiln_pro_batch_form.svelte"
   import KilnProBatchPlan from "./kiln_pro_batch_plan.svelte"
   import KilnProInputs from "./kiln_pro_inputs.svelte"
@@ -257,8 +258,12 @@
       bind:submitting={batch_submitting}
       on:submit={submit_batch}
     >
+      <KilnProBatchCountRow
+        label="Sample Count"
+        bind:value={num_inputs}
+        max={200}
+      />
       <KilnProBatchForm
-        bind:count={num_inputs}
         bind:guidance={batch_guidance}
         guidance_template={batch_guidance_template}
       />

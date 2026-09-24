@@ -575,6 +575,8 @@ class TestGenerateBatch:
 SPLIT_ORDER = ("test", "train", "val")
 MULTI_TURN_SPLIT_TAGS = {f"{split}_multi_turn_spec" for split in SPLIT_ORDER}
 SINGLE_TURN_SPLIT_TAGS = {f"{split}_single_turn_spec" for split in SPLIT_ORDER}
+# The shape the builder sends: the three splits, an even share each.
+EVEN_SPLITS = [{"split": split, "weight": 1} for split in SPLIT_ORDER]
 
 
 class TestCreateSpecWithCopilot:
@@ -1006,6 +1008,26 @@ class TestCreateSpecWithCopilot:
         assert task.runs() == []
         assert task.eval_inputs() == []
 
+    def test_a_split_shape_is_refused_on_this_path(
+        self, client, project_and_task, copilot_request_data
+    ):
+        """This path deals its own splits, so a shape is refused, not ignored."""
+        project, task = project_and_task
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json={**copilot_request_data, "splits": EVEN_SPLITS},
+            )
+
+        assert response.status_code == 422
+        assert "deals its own splits" in response.text
+        assert task.evals() == []
+        assert task.specs() == []
+
 
 class TestCreateSpecWithCopilotMultiTurn:
     """Multi-turn save path: tag existing chain leaves (golden/train) and mint
@@ -1099,6 +1121,7 @@ class TestCreateSpecWithCopilotMultiTurn:
                 "model_name": "gpt-4",
                 "model_provider": "openai",
             },
+            "splits": EVEN_SPLITS,
             "multi_turn": {
                 "batch_tag": TestCreateSpecWithCopilotMultiTurn.BATCH_TAG,
                 "cases": [self._driven_case(i) for i in range(8)],
@@ -1221,9 +1244,8 @@ class TestCreateSpecWithCopilotMultiTurn:
             assert ei.data.drive_config.model_provider == "openrouter"
             assert ei.data.drive_config.turns == 5
 
-        # The 6 unreviewed cases are dealt into DISJOINT splits — 2 test /
-        # 3 train / 1 val — so nothing tuned on train or val is reported on
-        # as test.
+        # The splits are disjoint, so nothing tuned on train or val is
+        # reported on as test.
         assert all(len(MULTI_TURN_SPLIT_TAGS & set(ei.tags)) == 1 for ei in eval_inputs)
         cases_by_split = {
             tag: {ei.data.first_message.text for ei in eval_inputs if tag in ei.tags}
@@ -1231,8 +1253,8 @@ class TestCreateSpecWithCopilotMultiTurn:
         }
         assert [len(cases_by_split[f"{s}_multi_turn_spec"]) for s in SPLIT_ORDER] == [
             2,
-            3,
-            1,
+            2,
+            2,
         ]
 
         # Chains carry golden only: exactly the two rated leaves.
@@ -1316,6 +1338,34 @@ class TestCreateSpecWithCopilotMultiTurn:
 
         assert response.status_code == 200, response.text
         mock_capabilities.assert_not_awaited()
+
+    def test_a_test_only_shape_creates_an_eval_with_only_a_test_split(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        # The arms mint differently, so the shape is pinned on both.
+        project, task = project_and_task
+        multi_turn_request_data["splits"] = [{"split": "test", "weight": 35}]
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 200, response.text
+        assert task.evals()[0].splits == {
+            "test": EvalInputSplit(filter_id="tag::test_multi_turn_spec")
+        }
+        eval_inputs = task.eval_inputs()
+        assert len(eval_inputs) == 8
+        assert all("test_multi_turn_spec" in ei.tags for ei in eval_inputs)
 
     def test_multi_turn_save_writes_splits_natively_to_disk(
         self,
@@ -1783,6 +1833,8 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
     """
 
     BATCH_TAG = "st1234abcd56"
+    # A body with no `splits` key at all, as against one sending an explicit null.
+    OMITTED: ClassVar[object] = object()
 
     @pytest.fixture
     def project_and_task(self, tmp_path):
@@ -1850,6 +1902,7 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
                 "model_name": "gpt-4",
                 "model_provider": "openai",
             },
+            "splits": EVEN_SPLITS,
             "single_turn": {
                 "batch_tag": TestCreateSpecWithCopilotSingleTurnBatch.BATCH_TAG,
                 # leaf_run_id names a run no fixture creates, so an unbound
@@ -1974,9 +2027,8 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
             }
             assert len(SINGLE_TURN_SPLIT_TAGS & set(ei.tags)) == 1
 
-        # The 6 unreviewed cases are dealt into DISJOINT splits — 2 test /
-        # 3 train / 1 val — so nothing tuned on train or val is reported on
-        # as test.
+        # The splits are disjoint, so nothing tuned on train or val is
+        # reported on as test.
         cases_by_split = {
             split: {
                 ei.data.user_message.text
@@ -1985,7 +2037,7 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
             }
             for split in SPLIT_ORDER
         }
-        assert [len(cases_by_split[split]) for split in SPLIT_ORDER] == [2, 3, 1]
+        assert [len(cases_by_split[split]) for split in SPLIT_ORDER] == [2, 2, 2]
 
         # Runs carry golden only: exactly the two reviewed runs.
         runs_by_id = {run.id: run for run in task.runs()}
@@ -2053,6 +2105,86 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
             }
 
         assert test_inputs("Deal Once") == test_inputs("Deal Twice")
+
+    def test_a_test_only_shape_creates_an_eval_with_only_a_test_split(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        # A smoke-test batch buys no train or val data, so those splits are
+        # absent from the eval rather than present and empty.
+        project, task = project_and_task
+        single_turn_request_data["splits"] = [{"split": "test", "weight": 35}]
+
+        assert (
+            self._post(client, project, task, single_turn_request_data).status_code
+            == 200
+        )
+
+        assert task.evals()[0].splits == {
+            "test": EvalInputSplit(filter_id="tag::test_single_turn_spec")
+        }
+        eval_inputs = task.eval_inputs()
+        assert len(eval_inputs) == 8
+        assert all("test_single_turn_spec" in ei.tags for ei in eval_inputs)
+
+    @pytest.mark.parametrize(
+        "splits,expected_detail",
+        [
+            (OMITTED, "requires `splits`"),
+            (None, "requires `splits`"),
+            ([{"split": "train", "weight": 1}], "must name the test split"),
+            (
+                [{"split": "test", "weight": 1}, {"split": "test", "weight": 2}],
+                "more than once: test",
+            ),
+            ([{"split": "test", "weight": 0}], "greater than or equal to 1"),
+            ([], "at least 1 item"),
+        ],
+    )
+    def test_a_malformed_shape_is_refused(
+        self,
+        client,
+        project_and_task,
+        batch_runs,
+        single_turn_request_data,
+        splits,
+        expected_detail,
+    ):
+        project, task = project_and_task
+        if splits is self.OMITTED:
+            del single_turn_request_data["splits"]
+        else:
+            single_turn_request_data["splits"] = splits
+
+        response = self._post(client, project, task, single_turn_request_data)
+
+        assert response.status_code == 422
+        assert expected_detail in response.text
+        assert task.evals() == []
+        assert task.specs() == []
+
+    def test_a_deal_that_starves_test_is_refused_before_anything_is_written(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        # Two cases across three splits, test listed last: the leftovers go to
+        # the earlier entries and test is left with nothing to run. Refused
+        # rather than silently reordered.
+        project, task = project_and_task
+        single_turn_request_data["splits"] = [
+            {"split": "train", "weight": 1},
+            {"split": "val", "weight": 1},
+            {"split": "test", "weight": 1},
+        ]
+        single_turn_request_data["single_turn"]["inputs"] = [
+            {"input": f"input {i}", "leaf_run_id": f"unbound-run-{i}"} for i in range(2)
+        ]
+
+        response = self._post(client, project, task, single_turn_request_data)
+
+        assert response.status_code == 422
+        assert "left the test split with no case" in response.text
+        assert task.evals() == []
+        assert task.specs() == []
+        assert task.eval_inputs() == []
 
     def test_single_turn_save_writes_splits_natively_to_disk(
         self, client, project_and_task, batch_runs, single_turn_request_data
