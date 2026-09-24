@@ -399,7 +399,7 @@ After all tests pass, commit the changes and open a PR against `main`.
 Use `gh pr create` against `main`. Follow Rule 0 and Rule 1 of the `open-pr` skill (`.agents/skills/open-pr/SKILL.md`) for the human header and the CLA:
 
 - The title is `WIP: ` followed by the usual model-list subject, for example `WIP: Add GLM 5.1 to model list`. Only a human removes the prefix.
-- Copy everything above `# Agentic PR Summary` from `.github/pull_request_template.md` with no change. Never fill in a placeholder or tick a box there, and never sign the CLA. Remove the `## Contributor License Agreement` section only when the PR author is a Kiln employee, as the `open-pr` skill lists.
+- Copy everything above `# Agentic PR Summary` from `.github/pull_request_template.md` with no change. Never fill in a placeholder or tick a box there, and never sign the CLA. Remove the `## Contributor License Agreement` section only when the PR author's GitHub username is `scosman`, `sfierro`, `leonardmq`, `tawnymanticore`, or `chiang-daniel`. Keep it, unsigned, for any other author.
 
 Replace the `` `Insert AI summary of PR using TOOL NAME` `` placeholder under `# Agentic PR Summary` with the test results, in this exact format:
 

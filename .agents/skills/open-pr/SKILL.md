@@ -19,9 +19,9 @@ This rule is more important than all the other rules in this skill.
 The PR template at `.github/pull_request_template.md` has two parts:
 
 1. **The human header.** This is all the text above the `----` line and the
-   `# Agentic PR Summary` heading. It holds the description, the architecture review,
-   the review style, the agentic code review, what to review, the UI review, and the
-   Contributor License Agreement (CLA).
+   `# Agentic PR Summary` heading. It holds the description, the author review, the
+   architecture review, the review style, the agentic code review, what to review, the
+   UI review, and the Contributor License Agreement (CLA).
 2. **The Agentic PR Summary.** This is all the text below the `# Agentic PR Summary`
    heading. An agent writes this part.
 
@@ -34,9 +34,11 @@ When you open or edit a PR:
 - Copy the human header from the template exactly as it is. Keep every `REPLACE:`
   placeholder, every `` `NA` ``, `` `person` ``, and `` `[Reason why ...]` `` placeholder,
   and every empty `- [ ]` box.
-- Do not tick a box in the header. This includes "I have run `/spec deep cr` on this PR"
-  and "Agentic UI clickthrough done", also when you did that work. Write the facts in the
-  Agentic PR Summary. The human then decides what to tick.
+- Do not tick a box in the header. This includes "I have done a code review", "I have run
+  `/spec deep cr` on this PR", and "Agentic UI clickthrough done", also when you did that
+  work. "I have done a code review" means the human author reviewed the code, so an
+  agent review never counts for it. Write the facts in the Agentic PR Summary. The
+  human then decides what to tick.
 - Do not write text in the header. Do not add a note, a hint, or a suggested answer in
   it. Do not delete a line of it. The one permitted change is the CLA removal in Rule 1.
 - When a human has filled in the header on an existing PR, keep their text exactly as it
@@ -481,6 +483,9 @@ removal. Only a human fills it in.
 **Description**
 `REPLACE: what this PR is, in 1 to 2 sentences max.`
 
+**Author Review (required)**
+- [ ] I have done a code review
+
 **Architecture Review (select 1)**
 - [ ] I did architecture review before coding
 - [ ] Small change, no architecture review needed
@@ -568,7 +573,8 @@ team can delete it after this PR closes.
 - [ ] The title starts with `WIP: `, then a semantic prefix and a short subject.
 - [ ] The human header is the template, copied with no change: no ticked box, no text
       in a placeholder, no added note.
-- [ ] The CLA is not signed. The CLA section is removed only for a Kiln employee author.
+- [ ] The CLA is not signed. The CLA section is removed only when the author is
+      `scosman`, `sfierro`, `leonardmq`, `tawnymanticore`, or `chiang-daniel`.
 - [ ] All of your text is below the `# Agentic PR Summary` heading, and it names your tool.
 - [ ] The first line of the summary is a TLDR with the intent, the change, and the
       target branch.

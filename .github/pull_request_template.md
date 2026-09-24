@@ -1,6 +1,9 @@
 **Description**
 `REPLACE: what this PR is, in 1 to 2 sentences max.`
 
+**Author Review (required)**
+- [ ] I have done a code review
+
 **Architecture Review (select 1)**
 - [ ] I did architecture review before coding
 - [ ] Small change, no architecture review needed
