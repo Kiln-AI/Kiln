@@ -1,6 +1,6 @@
 import logging
-from dataclasses import dataclass, field
-from typing import Any, AsyncGenerator, Callable, Dict, List, Literal, Set, Tuple
+from dataclasses import dataclass
+from typing import Any, AsyncGenerator, Callable, Dict, List, Literal, Set
 
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
 from kiln_ai.adapters.chat.chat_formatter import (
@@ -8,10 +8,7 @@ from kiln_ai.adapters.chat.chat_formatter import (
     is_two_message_cot_strategy,
 )
 from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
-from kiln_ai.adapters.eval.registry import (
-    legacy_eval_adapter_from_type,
-    v2_eval_type_available,
-)
+from kiln_ai.adapters.eval.registry import legacy_eval_adapter_from_type
 from kiln_ai.adapters.eval.trace_index import TraceIndex, TraceKey, trace_key
 from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
@@ -73,10 +70,6 @@ class EvalJob:
     type: Literal["task_run_eval", "eval_config_eval"]
     eval_config: EvalConfig
     task_run_config: TaskRunConfig | None = None
-    # Recoverable-skip records this job replaces (their blocking condition
-    # has lifted). Deleted after the job persists its record — leaving them
-    # would put two records on one item and read paths take the first found.
-    superseded_tombstones: List[EvalRun] = field(default_factory=list)
 
 
 def _calibration_item(job: EvalJob) -> TaskRun | None:
@@ -380,29 +373,21 @@ class EvalRunner:
 
         # already_run[eval_config_id][dataset_id]
         already_run: Dict[ID_TYPE, Set[ID_TYPE]] = {}
-        superseded: Dict[Tuple[ID_TYPE, ID_TYPE], List[EvalRun]] = {}
         for eval_config in self.eval_configs:
             already_run[eval_config.id] = set()
             for run in eval_config.runs(readonly=True):
-                # Only calibration records mark a golden item done (or supersede
-                # its tombstones): the same eval config also accumulates
-                # task_run_eval records, and a golden TaskRun that was scored as
-                # a test item must still be calibrated.
+                # Only calibration records mark a golden item done: the same eval
+                # config also accumulates task_run_eval records, and a golden
+                # TaskRun that was scored as a test item must still be calibrated.
                 if not run.eval_config_eval:
                     continue
-                if self._counts_as_already_run(run, eval_config):
-                    already_run[eval_config.id].add(run.dataset_id)
-                else:
-                    superseded.setdefault((eval_config.id, run.dataset_id), []).append(
-                        run
-                    )
+                already_run[eval_config.id].add(run.dataset_id)
 
         return [
             EvalJob(
                 item=task_run,
                 eval_config=eval_config,
                 type="eval_config_eval",
-                superseded_tombstones=superseded.get((eval_config.id, task_run.id), []),
             )
             for task_run in self.task.runs(readonly=True)
             if filter(task_run)
@@ -425,11 +410,6 @@ class EvalRunner:
 
         # already_run[eval_config_id][run_config_id][item_key]
         already_run: Dict[ID_TYPE, Dict[ID_TYPE, Set[ItemKey]]] = {}
-        # superseded[(eval_config_id, run_config_id, item_key)] -> recoverable-skip
-        # tombstones for that item, deleted after a successful re-run persists.
-        # Keyed on ItemKey: the split's items may come from either store, and a
-        # bare id could collide across stores.
-        superseded: Dict[Tuple[ID_TYPE, ID_TYPE, ItemKey], List[EvalRun]] = {}
         for eval_config in self.eval_configs:
             already_run[eval_config.id] = {
                 run_config.id: set() for run_config in self.run_configs or []
@@ -441,23 +421,12 @@ class EvalRunner:
                 # `str | None`, so a run config whose file carries a null id would make
                 # None a real key and fold every calibration record into its set.
                 if (
-                    run.task_run_config_id is None
-                    or run.task_run_config_id not in already_run[eval_config.id]
+                    run.task_run_config_id is not None
+                    and run.task_run_config_id in already_run[eval_config.id]
                 ):
-                    continue
-                if self._counts_as_already_run(run, eval_config):
                     already_run[eval_config.id][run.task_run_config_id].add(
                         eval_run_item_key(run)
                     )
-                else:
-                    superseded.setdefault(
-                        (
-                            eval_config.id,
-                            run.task_run_config_id,
-                            eval_run_item_key(run),
-                        ),
-                        [],
-                    ).append(run)
 
         return [
             EvalJob(
@@ -465,9 +434,6 @@ class EvalRunner:
                 task_run_config=run_config,
                 type="task_run_eval",
                 eval_config=eval_config,
-                superseded_tombstones=superseded.get(
-                    (eval_config.id, run_config.id, (self.split.source, item.id)), []
-                ),
             )
             for item in self.split.items
             for eval_config in self.eval_configs
@@ -475,52 +441,6 @@ class EvalRunner:
             if (self.split.source, item.id)
             not in already_run[eval_config.id][run_config.id]
         ]
-
-    def _counts_as_already_run(self, run: EvalRun, eval_config: EvalConfig) -> bool:
-        """Whether a persisted record makes its item "done" for dedup.
-
-        Most records do — including skips, which are terminal verdicts about
-        the input itself (missing_trace, extraction_failed, ...). The
-        recoverable skips mark a blocked PRECONDITION instead: once the
-        condition is lifted, treating the tombstone as done would freeze the
-        item out forever, so it stops counting and the item is collected
-        again. A still-blocked item keeps deduping, so re-triggering never
-        piles up duplicate tombstones.
-        """
-        if run.skipped_reason == SkippedReason.missing_drive_config.value:
-            # Blocked until the ITEM carries a drive config, which only a
-            # replacement item can provide (items are immutable once minted).
-            # eval_config_eval has no split and never re-drives, so a stray
-            # record of this shape there stays a terminal verdict.
-            if self.split is None:
-                return True
-            for item in self.split.items:
-                if (
-                    isinstance(item, EvalInput)
-                    and item.id == run.eval_input_id
-                    and isinstance(item.data, MultiTurnSyntheticEvalInputData)
-                ):
-                    return item.data.drive_config is None
-            return True
-        if run.skipped_reason == SkippedReason.incompatible_input_shape.value:
-            # Two writers share this reason. The empty-seed guard's records are
-            # terminal (items are immutable, a seedless item never gains one).
-            # Earlier Kiln versions also skipped EVERY multi-turn synthetic item
-            # with it before re-driving existed; a multi-turn item that carries
-            # a seed can run now, so its tombstone must not freeze it out.
-            if self.split is None:
-                return True
-            for item in self.split.items:
-                if (
-                    isinstance(item, EvalInput)
-                    and item.id == run.eval_input_id
-                    and isinstance(item.data, MultiTurnSyntheticEvalInputData)
-                ):
-                    return item.data.first_message is None
-            return True
-        if run.skipped_reason == SkippedReason.type_not_available.value:
-            return not v2_eval_type_available(eval_config)
-        return True
 
     def validate_multi_turn_drive_readiness(
         self, check_run_configs: bool = True
@@ -633,12 +553,9 @@ class EvalRunner:
     async def run_job(self, job: EvalJob) -> bool:
         try:
             if job.eval_config.config_type == EvalConfigType.v2:
-                done = await self._run_v2_job(job)
+                return await self._run_v2_job(job)
             else:
-                done = await self._run_legacy_job(job)
-            if done:
-                await self._delete_superseded_tombstones(job)
-            return done
+                return await self._run_legacy_job(job)
         except RetryableError as e:
             # Already classified by whoever raised it: this is a deliberate, expected
             # ask for another attempt (an unusable generation the retry replaces), not a
@@ -660,26 +577,6 @@ class EvalRunner:
                 exc_info=True,
             )
             raise
-
-    async def _delete_superseded_tombstones(self, job: EvalJob) -> None:
-        """Remove the recoverable-skip records this job just replaced. Runs
-        only after the replacement record persisted, so an errored job leaves
-        the tombstone in place (the item stays re-collectable). Deletion
-        failures are logged, never raised: the fresh record is already the
-        one read paths should prefer, a leftover duplicate is the lesser
-        problem."""
-        if not job.superseded_tombstones:
-            return
-        async with self._save_context():
-            for run in job.superseded_tombstones:
-                try:
-                    run.delete()
-                except Exception:
-                    logger.warning(
-                        f"Failed to delete superseded skip record {run.id} for "
-                        f"dataset item {job.item.id}",
-                        exc_info=True,
-                    )
 
     async def _run_legacy_job(self, job: EvalJob) -> bool:
         if not isinstance(job.item, TaskRun):

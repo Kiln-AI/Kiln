@@ -590,8 +590,7 @@ def test_golden_item_scored_as_test_item_still_calibrates(
 ):
     """Only calibration records mark a golden item done. The same eval config
     accumulates task_run_eval records too — a golden TaskRun that was scored as
-    a test item (or tombstoned in the test lane) must still be calibrated, and
-    the test lane's tombstones must not ride (or be deleted by) calibration."""
+    a test item (or skipped in the test lane) must still be calibrated."""
     golden_run = TaskRun(
         parent=mock_task,
         input="test",
@@ -605,9 +604,8 @@ def test_golden_item_scored_as_test_item_still_calibrates(
     mock_eval.eval_configs_filter_id = "tag::tag1"
     mock_eval.save_to_file()
 
-    # Test-lane records on the same golden item: a real score and a tombstone
-    # (terminal in the calibration runner, which has no split to recover
-    # against). Neither is a calibration record.
+    # Test-lane records on the same golden item: a real score and a skip.
+    # Neither is a calibration record.
     EvalRun(
         parent=mock_eval_config,
         dataset_id=golden_run.id,
@@ -626,7 +624,7 @@ def test_golden_item_scored_as_test_item_still_calibrates(
         output=None,
         scores={},
         skipped_reason=SkippedReason.missing_drive_config.value,
-        skipped_detail="test tombstone",
+        skipped_detail="test skip",
     ).save_to_file()
 
     runner = EvalRunner(
@@ -636,7 +634,6 @@ def test_golden_item_scored_as_test_item_still_calibrates(
     )
     jobs = runner.collect_tasks()
     assert [job.item.id for job in jobs] == [golden_run.id]
-    assert jobs[0].superseded_tombstones == []
 
     # A real calibration record does mark it done.
     EvalRun(
@@ -4094,7 +4091,7 @@ class TestRunV2MultiTurnRedrive:
 
 
 # -------------------------------------------------------------------
-# Recoverable-skip re-collection tests
+# Skip records count as done
 # -------------------------------------------------------------------
 
 
@@ -4103,58 +4100,29 @@ def _skip_run(
     run_config_id: str | None,
     reason: SkippedReason,
     eval_input_id: str | None = None,
-    dataset_id: str | None = None,
 ) -> EvalRun:
     run = EvalRun(
         parent=eval_config,
         eval_input_id=eval_input_id,
-        dataset_id=dataset_id,
         task_run_config_id=run_config_id,
         eval_config_eval=False,
         scores={},
         input="input",
         output=None,
         skipped_reason=reason.value,
-        skipped_detail="test tombstone",
+        skipped_detail="test skip",
     )
     run.save_to_file()
     return run
 
 
-class TestRecoverableSkipRecollection:
-    """Recoverable skips (missing_drive_config / type_not_available / the multi-turn incompatible_input_shape skips older builds wrote) stop
-    deduping once their blocking condition is lifted; while still blocked
-    they keep deduping so re-triggers never write duplicate tombstones."""
+class TestSkipRecordsCountAsDone:
+    """A skip record marks its item done like a score does, so re-triggers never
+    write duplicate skip records."""
 
-    def test_missing_drive_config_recollected_once_item_stamped(
-        self,
-        mock_v2_redrive_config,
-        mock_run_config,
-        mock_eval_inputs,
-        multi_turn_eval_input,
-    ):
-        # Tombstone written while the item carried no drive config; the item
-        # is stamped now, so it must be collected again.
-        _skip_run(
-            mock_v2_redrive_config,
-            mock_run_config.id,
-            SkippedReason.missing_drive_config,
-            eval_input_id="ei_redrive",
-        )
-        runner = EvalRunner(
-            eval_configs=[mock_v2_redrive_config],
-            run_configs=[mock_run_config],
-            eval_run_type="task_run_eval",
-            split=_test_split([mock_v2_redrive_config]),
-        )
-        collected = {j.item.id for j in runner.collect_tasks()}
-        assert collected == {"ei_1", "ei_2", "ei_redrive"}
-
-    def test_missing_drive_config_still_deduped_while_item_unstamped(
+    def test_a_missing_drive_config_skip_dedupes(
         self, mock_task, mock_v2_eval_config, mock_run_config, mock_eval_inputs
     ):
-        # The item is still unstamped: the condition holds, so the tombstone
-        # keeps deduping (no duplicate skip records per trigger).
         EvalInput(
             id="ei_unstamped_dedupe",
             data=MultiTurnSyntheticEvalInputData(
@@ -4178,59 +4146,9 @@ class TestRecoverableSkipRecollection:
         collected = {j.item.id for j in runner.collect_tasks()}
         assert collected == {"ei_1", "ei_2"}
 
-    @pytest.mark.parametrize("available_now", [True, False])
-    def test_type_not_available_follows_adapter_availability(
-        self, mock_v2_eval_config, mock_run_config, mock_eval_inputs, available_now
-    ):
-        _skip_run(
-            mock_v2_eval_config,
-            mock_run_config.id,
-            SkippedReason.type_not_available,
-            eval_input_id="ei_1",
-        )
-        runner = EvalRunner(
-            eval_configs=[mock_v2_eval_config],
-            run_configs=[mock_run_config],
-            eval_run_type="task_run_eval",
-            split=_test_split([mock_v2_eval_config]),
-        )
-        with patch(
-            "kiln_ai.adapters.eval.eval_runner.v2_eval_type_available",
-            return_value=available_now,
-        ):
-            collected = {j.item.id for j in runner.collect_tasks()}
-        assert collected == ({"ei_1", "ei_2"} if available_now else {"ei_2"})
-
-    def test_incompatible_shape_recollected_when_the_item_carries_a_seed(
-        self,
-        mock_v2_redrive_config,
-        mock_run_config,
-        mock_eval_inputs,
-        multi_turn_eval_input,
-    ):
-        # Earlier Kiln versions skipped every multi-turn synthetic item with
-        # incompatible_input_shape before re-driving existed. This item has a
-        # seed, so it can run now — the tombstone must not freeze it out.
-        _skip_run(
-            mock_v2_redrive_config,
-            mock_run_config.id,
-            SkippedReason.incompatible_input_shape,
-            eval_input_id="ei_redrive",
-        )
-        runner = EvalRunner(
-            eval_configs=[mock_v2_redrive_config],
-            run_configs=[mock_run_config],
-            eval_run_type="task_run_eval",
-            split=_test_split([mock_v2_redrive_config]),
-        )
-        collected = {j.item.id for j in runner.collect_tasks()}
-        assert collected == {"ei_1", "ei_2", "ei_redrive"}
-
-    def test_incompatible_shape_still_deduped_while_the_item_has_no_seed(
+    def test_an_incompatible_input_shape_skip_dedupes(
         self, mock_task, mock_v2_redrive_config, mock_run_config, mock_eval_inputs
     ):
-        # A seedless item is genuinely incompatible (items are immutable, the
-        # seed never appears), so its tombstone keeps deduping.
         EvalInput(
             id="ei_seedless",
             data=MultiTurnSyntheticEvalInputData(
@@ -4258,15 +4176,13 @@ class TestRecoverableSkipRecollection:
         collected = {j.item.id for j in runner.collect_tasks()}
         assert collected == {"ei_1", "ei_2"}
 
-    def test_terminal_skips_still_dedupe(
+    def test_an_extraction_failed_skip_dedupes(
         self,
         mock_v2_redrive_config,
         mock_run_config,
         mock_eval_inputs,
         multi_turn_eval_input,
     ):
-        # Non-recoverable skips are verdicts about the input itself — a
-        # runnable item must not resurrect them.
         _skip_run(
             mock_v2_redrive_config,
             mock_run_config.id,
@@ -4281,39 +4197,6 @@ class TestRecoverableSkipRecollection:
         )
         collected = {j.item.id for j in runner.collect_tasks()}
         assert collected == {"ei_1", "ei_2"}
-
-    def test_task_run_lane_recollects_recoverable_skips(
-        self, mock_task, mock_v2_task_run_eval_config, mock_run_config, data_source
-    ):
-        # Same semantics on the TaskRun-sourced lane (eval_set_filter_id).
-        task_run = TaskRun(
-            input="test input",
-            output=TaskOutput(output="out", source=data_source),
-            parent=mock_task,
-        )
-        task_run.save_to_file()
-        tombstone = _skip_run(
-            mock_v2_task_run_eval_config,
-            mock_run_config.id,
-            SkippedReason.type_not_available,
-            dataset_id=task_run.id,
-        )
-        runner = EvalRunner(
-            eval_configs=[mock_v2_task_run_eval_config],
-            run_configs=[mock_run_config],
-            eval_run_type="task_run_eval",
-            split=_test_split([mock_v2_task_run_eval_config]),
-        )
-        with patch(
-            "kiln_ai.adapters.eval.eval_runner.v2_eval_type_available",
-            return_value=True,
-        ):
-            jobs = runner.collect_tasks()
-        assert {j.item.id for j in jobs} == {task_run.id}
-        # The recovered tombstone rides the job (parity with the EvalInput
-        # lane) so the replacement record can delete it instead of leaving
-        # two records on one item.
-        assert [t.id for t in jobs[0].superseded_tombstones] == [tombstone.id]
 
 
 # -------------------------------------------------------------------
@@ -4865,84 +4748,6 @@ class TestValidateMultiTurnDriveReadiness:
             runner.validate_multi_turn_drive_readiness()
 
 
-class TestSupersededTombstoneDeletion:
-    @pytest.mark.asyncio
-    async def test_replacement_run_deletes_tombstone(
-        self,
-        mock_task,
-        mock_run_config,
-        mock_v2_redrive_config,
-        multi_turn_eval_input,
-        data_source,
-    ):
-        """Once a re-collected item persists its fresh record, the old
-        tombstone is deleted — two records on one item would race in
-        first-found read paths (the fresh score could be masked)."""
-        tombstone = _skip_run(
-            mock_v2_redrive_config,
-            mock_run_config.id,
-            SkippedReason.missing_drive_config,
-            eval_input_id="ei_redrive",
-        )
-        tombstone_path = tombstone.path
-        runner = EvalRunner(
-            eval_configs=[mock_v2_redrive_config],
-            run_configs=[mock_run_config],
-            eval_run_type="task_run_eval",
-            split=_test_split([mock_v2_redrive_config]),
-        )
-        jobs = runner.collect_tasks()
-        job = next(j for j in jobs if j.item.id == "ei_redrive")
-        assert [t.id for t in job.superseded_tombstones] == [tombstone.id]
-
-        with (
-            patch(
-                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
-                return_value=StubV2Eval(mock_v2_redrive_config),
-            ),
-            patch(
-                "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
-                new=AsyncMock(return_value=_fresh_leaf(mock_task, data_source)),
-            ),
-        ):
-            assert await runner.run_job(job) is True
-
-        assert not tombstone_path.exists()
-        runs = mock_v2_redrive_config.runs(readonly=True)
-        assert len(runs) == 1
-        assert runs[0].skipped_reason is None
-        assert runs[0].eval_input_id == "ei_redrive"
-
-    def test_still_blocked_tombstone_not_marked_superseded(
-        self, mock_task, mock_v2_eval_config, mock_run_config, mock_eval_inputs
-    ):
-        """While the item stays unstamped, the tombstone dedupes: the item is
-        not re-collected and no job carries the tombstone for deletion."""
-        EvalInput(
-            id="ei_still_unstamped",
-            data=MultiTurnSyntheticEvalInputData(
-                first_message=UserMessage(text="hi"),
-                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
-            ),
-            parent=mock_task,
-        ).save_to_file()
-        _skip_run(
-            mock_v2_eval_config,
-            mock_run_config.id,
-            SkippedReason.missing_drive_config,
-            eval_input_id="ei_still_unstamped",
-        )
-        runner = EvalRunner(
-            eval_configs=[mock_v2_eval_config],
-            run_configs=[mock_run_config],
-            eval_run_type="task_run_eval",
-            split=_test_split([mock_v2_eval_config]),
-        )
-        jobs = runner.collect_tasks()
-        assert not any(j.item.id == "ei_still_unstamped" for j in jobs)
-        assert all(j.superseded_tombstones == [] for j in jobs)
-
-
 class TestValidateReadinessSourceGating:
     def test_task_run_source_is_noop(
         self, mock_task, multi_turn_eval_input, data_source
@@ -5268,60 +5073,6 @@ class TestCollectTasksOverArbitrarySplits:
 
         assert [job.item.id for job in jobs] == [shared_id]
         assert isinstance(jobs[0].item, EvalInput)
-
-    def test_tombstones_key_on_the_item_source_not_the_bare_id(
-        self,
-        mock_task,
-        mock_v2_eval_input_task_run_eval,
-        mock_v2_ei_tr_eval_config,
-        mock_run_config,
-    ):
-        """A tombstone recorded against a TaskRun must not attach to (or
-        dedupe) a job for an EvalInput that shares the bare id."""
-        shared_id = "collide_2"
-        TaskRun(
-            id=shared_id,
-            parent=mock_task,
-            input="task run with the colliding id",
-            input_source=DataSource(
-                type=DataSourceType.synthetic,
-                properties={
-                    "model_name": "gpt-4",
-                    "model_provider": "openai",
-                    "adapter_name": "test_adapter",
-                },
-            ),
-            output=TaskOutput(output="out"),
-        ).save_to_file()
-        EvalInput(
-            id=shared_id,
-            data=SingleTurnEvalInputData(user_message=UserMessage(text="eval input")),
-            parent=mock_task,
-        ).save_to_file()
-
-        # Tombstone keyed to the TASK RUN store (dataset_id, not eval_input_id).
-        tombstone = EvalRun(
-            parent=mock_v2_ei_tr_eval_config,
-            dataset_id=shared_id,
-            task_run_config_id=mock_run_config.id,
-            eval_config_eval=False,
-            input="task run with the colliding id",
-            output=None,
-            scores={},
-            skipped_reason=SkippedReason.missing_drive_config.value,
-            skipped_detail="test tombstone",
-        )
-        tombstone.save_to_file()
-
-        jobs = build_task_run_eval_runner(
-            [mock_v2_ei_tr_eval_config], [mock_run_config]
-        ).collect_tasks()
-
-        ei_jobs = [j for j in jobs if j.item.id == shared_id]
-        assert len(ei_jobs) == 1
-        assert isinstance(ei_jobs[0].item, EvalInput)
-        # The TaskRun-store tombstone must not attach to the EvalInput's job.
-        assert ei_jobs[0].superseded_tombstones == []
 
     def test_overlapping_splits_reuse_already_scored_items(
         self, mock_eval, mock_task, mock_eval_config, mock_run_config, data_source
