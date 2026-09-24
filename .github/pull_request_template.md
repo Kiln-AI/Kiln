@@ -15,7 +15,7 @@
 - [ ] Full human
 
 **Agentic Code Review (must check all before requesting CR)**
-- [ ] I have run `/spec deep cr` on this PR
+- [ ] I have run `/spec deep cr` on this PR or used `/spec` CRs throughout
 - [ ] I have addressed on AI feedback (“deep cr”, CodeRabbit, etc)
 
 **What to Review**

@@ -35,10 +35,10 @@ When you open or edit a PR:
   placeholder, every `` `NA` ``, `` `person` ``, and `` `[Reason why ...]` `` placeholder,
   and every empty `- [ ]` box.
 - Do not tick a box in the header. This includes "I have done a code review", "I have run
-  `/spec deep cr` on this PR", and "Agentic UI clickthrough done", also when you did that
-  work. "I have done a code review" means the human author reviewed the code, so an
-  agent review never counts for it. Write the facts in the Agentic PR Summary. The
-  human then decides what to tick.
+  `/spec deep cr` on this PR or used `/spec` CRs throughout", and "Agentic UI clickthrough
+  done", also when you did that work. "I have done a code review" means the human author
+  reviewed the code, so an agent review never counts for it. Write the facts in the
+  Agentic PR Summary. The human then decides what to tick.
 - Do not write text in the header. Do not add a note, a hint, or a suggested answer in
   it. Do not delete a line of it. The one permitted change is the CLA removal in Rule 1.
 - When a human has filled in the header on an existing PR, keep their text exactly as it
@@ -497,7 +497,7 @@ removal. Only a human fills it in.
 - [ ] Full human
 
 **Agentic Code Review (must check all before requesting CR)**
-- [ ] I have run `/spec deep cr` on this PR
+- [ ] I have run `/spec deep cr` on this PR or used `/spec` CRs throughout
 - [ ] I have addressed on AI feedback (“deep cr”, CodeRabbit, etc)
 
 **What to Review**
