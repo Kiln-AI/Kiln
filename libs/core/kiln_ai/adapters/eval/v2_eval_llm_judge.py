@@ -184,18 +184,7 @@ class LlmJudgeEval(BaseV2EvalBridge):
 
         if props.g_eval:
             model_provider = built_in_models_from_provider(provider, model_name)
-            if model_provider is None:
-                # Fail before spending on the judge call: without a built-in
-                # entry, logprobs support can't be verified and the call would
-                # fail deterministically anyway.
-                raise ValueError(
-                    f"g_eval=True requires logprobs support, but model "
-                    f"'{model_name}' is not a built-in model for provider "
-                    f"'{props.model_provider}', so logprobs support can't be "
-                    f"verified. Use a built-in model that supports logprobs, "
-                    f"or disable G-Eval for this judge."
-                )
-            if not model_provider.supports_logprobs:
+            if model_provider is not None and not model_provider.supports_logprobs:
                 raise ValueError(
                     f"g_eval=True requires logprobs support, but provider "
                     f"'{props.model_provider}' for model '{model_name}' does not "
