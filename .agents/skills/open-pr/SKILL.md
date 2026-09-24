@@ -498,7 +498,7 @@ removal. Only a human fills it in.
 
 **Agentic Code Review (must check all before requesting CR)**
 - [ ] I have run `/spec deep cr` on this PR or used `/spec` CRs throughout
-- [ ] I have addressed on AI feedback (“deep cr”, CodeRabbit, etc)
+- [ ] I have addressed all AI feedback (“deep cr”, CodeRabbit, etc)
 
 **What to Review**
 - Key decisions to review
