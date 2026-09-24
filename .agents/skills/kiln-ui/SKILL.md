@@ -41,7 +41,7 @@ Reference screens (what "looks like Kiln" means): the Edit Task form (`routes/(a
 
 ## 2. Component plan, before code (required)
 
-Write a component plan before the first edit (in the PR description, or a `COMPONENT_PLAN.md` beside your notes; never committed to the app). One row per visible element on every screen state you touch:
+Write a component plan before the first edit (in the PR's Agentic PR Summary, or a `COMPONENT_PLAN.md` beside your notes; never committed to the app). One row per visible element on every screen state you touch:
 
 ```
 | Element | House control used | Sibling screen it matches | Justification if custom |
@@ -104,7 +104,7 @@ Style findings under this lens are valid findings.
 
 ## 7. Handback contract (the reviewer signs off on these, not on pixels)
 
-The PR description or handback carries, in this order:
+The PR's Agentic PR Summary (never the human header above it) or the handback carries, in this order:
 1. The component plan, final (every row resolved).
 2. The gate output for `--range <base>..<tip>`, verbatim, with each FAIL/WARN mapped to a plan row.
 3. A side-by-side screenshot: the new screen next to its named sibling, same window width.

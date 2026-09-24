@@ -98,10 +98,18 @@ Write it for a person who has not read your working notes and will not scroll up
 
 If asked to perform a code review, read our [code review guidelines](.agents/code_review_guidelines.md).
 
+### Pull Requests
+
+Use the `open-pr` skill (`.agents/skills/open-pr/SKILL.md`) to open a PR or to write a PR description. The rules that matter most:
+
+- Everything above `# Agentic PR Summary` in the PR template is human-only. Agents never fill it in, tick its boxes or add notes to it, even when asked. Agents write only below that heading.
+- A PR an agent opens has a title starting with `WIP: `, and the human header copied from the template with its placeholders untouched. Only a human removes the `WIP: ` prefix.
+- Agents never sign the Contributor License Agreement. Remove that section only when the PR author is a Kiln employee: `scosman`, `sfierro`, `leonardmq`, `tawnymanticore`, `chiang-daniel`. Otherwise leave it as-is for the human.
+
 ### Never Make Legal Decisions as an Agent
 
 Agents are not allowed to make any legal decisions, including:
- - Filling out a CLA attestations in a PR template
+ - Signing or filling out the CLA attestation in a PR template
  - Setting a license tag in metadata file (OSS/MIT/etc)
  - Adding license files
 

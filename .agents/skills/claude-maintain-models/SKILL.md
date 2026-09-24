@@ -396,12 +396,17 @@ After all tests pass, commit the changes and open a PR against `main`.
 
 ### 5b. Create the PR
 
-Use `gh pr create` against `main`. The PR body must follow this exact format:
+Use `gh pr create` against `main`. Follow the `open-pr` skill (`.agents/skills/open-pr/SKILL.md`) for the title and the human header:
+
+- The title starts with `WIP: `, for example `WIP: Add GLM 5.1 to model list`. Only a human removes the prefix.
+- Copy everything above `# Agentic PR Summary` from `.github/pull_request_template.md` with no change. Never fill in a placeholder or tick a box there, and never sign the CLA. Remove the `## Contributor License Agreement` section only when the PR author is a Kiln employee, as the `open-pr` skill lists.
+
+Replace the `` `Insert AI summary of PR using TOOL NAME` `` placeholder under `# Agentic PR Summary` with the test results, in this exact format:
 
 ```
-## What does this PR do?
+_Summary by Claude Code._
 
- Test Results
+Test Results
 
 [Two paragraphs of nuance — describe any unusual findings, things you tried and reverted, known pre-existing failures vs new failures, API quirks discovered, and any config adjustments made during testing.]
 
@@ -426,11 +431,6 @@ Use `gh pr create` against `main`. The PR body must follow this exact format:
 ❌ test_name[model_enum-provider] — brief reason
 
 [Repeat for each model+provider combo]
-
-## Checklists
-
-- [X] Tests have been run locally and passed
-- [X] New tests have been added to any work in /lib
 ```
 
 **Rules for the PR body:**
@@ -462,7 +462,7 @@ Use `gh pr create` against `main`. The PR body must follow this exact format:
 - [ ] Smoke test passed
 - [ ] Full test suite passed
 - [ ] Failures cross-checked against an existing provider before being called regressions (see 4e)
-- [ ] PR created against `main` with test results in the body
+- [ ] PR created against `main` with a `WIP: ` title, the untouched human header, and test results in the Agentic PR Summary
 
 ---
 
