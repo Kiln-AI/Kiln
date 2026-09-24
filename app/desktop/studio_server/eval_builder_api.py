@@ -1606,12 +1606,6 @@ def connect_eval_builder_api(app: FastAPI):
         return await author_judge_prompt(
             target_specification=input.target_specification,
             target_task_prompt=input.target_task_prompt,
-            # Constant on purpose: both arms judge a transcript, so both
-            # rubrics are authored against one. "multi_turn" names the
-            # authoring prompt that teaches the transcript's vocabulary — the
-            # role labels, the tool-call blocks, and that a missing tool call
-            # is evidence — not the turn mode of the task being judged.
-            trace_type="multi_turn",
             task_tools=task_tools,
             task_skills=task_skills,
         )

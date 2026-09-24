@@ -2284,7 +2284,6 @@
             params: { path: { project_id, task_id } },
             body: {
               target_specification: spec_text(),
-              num_cases: approved_prompts.length,
               case_prompts: approved_prompts,
             },
             signal: new_copilot_abort_signal(),
