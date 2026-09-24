@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Callable, Dict, List, Literal, Set
+from typing import Any, AsyncGenerator, Dict, List, Literal, Set
 
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
 from kiln_ai.adapters.chat.chat_formatter import (
@@ -115,41 +115,21 @@ def _has_text_content(content: Any) -> bool:
 def conversation_health_problem(
     trace: list[ChatCompletionMessageParam] | None,
     required_turns: int,
-    *,
-    ended_by_su: bool = False,
 ) -> str | None:
-    """Why `trace` is not a complete conversation for an item wanting `required_turns`
-    turns, or None when it is complete.
+    """Why `trace` is not a complete conversation of `required_turns` turns, or None when
+    it is complete.
 
     Structural completeness only, never error-freeness: a conversation whose tool calls
     failed is a legitimate thing to evaluate (judging how an agent handles errors is a
     first-class eval), so error-bearing tool messages say nothing about health here. What
-    it does catch is a conversation that stopped short — a drive that died mid-way, or a
-    partial record from an older writer — which would otherwise be judged as if the agent
-    had simply finished.
-
-    Health is a relationship between a trace and the item asking for it, not a property of
-    the trace: the same conversation is complete for a two-turn item and short for a
-    three-turn one, so the required count is always passed in by the caller.
-
-    `ended_by_su` says the synthetic user chose to end this conversation, which makes
-    `required_turns` a ceiling instead of an exact count: anything from one turn up to the
-    ceiling is a finished conversation, and only an empty one or one somehow longer than
-    the ceiling is a problem. It is for readers of a STORED trace, where all that survives
-    of the drive is a tag — a short conversation the synthetic user chose and one a crash
-    left behind look identical on disk, so the trace alone cannot say which it is. A caller
-    that still holds the drive knows how many turns actually ran and should pass that count
-    instead, keeping the exact check. The flag defaults to False so any caller that knows
-    nothing about early ending keeps the strict gate it had before.
+    it does catch is a conversation that stopped short, which would otherwise be judged
+    as if the agent had simply finished.
     """
     messages = trace or []
     user_turns = sum(
         1 for message in messages if _message_field(message, "role") == "user"
     )
-    if ended_by_su:
-        if user_turns < 1 or user_turns > required_turns:
-            return f"expected 1 to {required_turns} user turns, found {user_turns}"
-    elif user_turns != required_turns:
+    if user_turns != required_turns:
         return f"expected {required_turns} user turns, found {user_turns}"
     if not messages:
         return "the conversation is empty"
@@ -310,45 +290,7 @@ class EvalRunner:
         # Live, not precomputed like `already_run`: a trace persisted by one job has to be
         # visible to the next, whether that next job is running concurrently under a
         # different eval config or is this job's own retry (functional spec 4.2, 4.3).
-        self._trace_index = TraceIndex(self.task, vet=self._build_trace_vet())
-
-    def _build_trace_vet(self) -> Callable[[TraceKey, TaskRun], str | None] | None:
-        """The completeness check the trace index applies to reuse candidates, or None
-        when this run has no multi-turn conversations for it to check. Answers None for a
-        usable candidate, or why it is unusable — the index logs the reason alongside the
-        file it rejected.
-
-        Required turn counts come from the split's own items, so every candidate is judged
-        against the item asking for it. Anything the map doesn't name — single-turn
-        generations, and items outside this run's split — is accepted: neither has a turn
-        contract to fall short of. A candidate tagged as one the synthetic user chose to
-        end is accepted at any length up to its item's turn count; the tag is the only
-        record of that choice by the time a later run reads the file.
-        """
-        if self.split is None:
-            return None
-        required_turns: Dict[ItemKey, int] = {
-            item_key(item): item.data.drive_config.turns
-            for item in self.split.items
-            if isinstance(item, EvalInput)
-            and isinstance(item.data, MultiTurnSyntheticEvalInputData)
-            and item.data.drive_config is not None
-        }
-        if not required_turns:
-            return None
-
-        def vet_conversation(key: TraceKey, trace: TaskRun) -> str | None:
-            source_type, source_id, _ = key
-            turns = required_turns.get((source_type, source_id))
-            if turns is None:
-                return None
-            return conversation_health_problem(
-                trace.trace,
-                turns,
-                ended_by_su=TAG_SU_ENDED_CONVERSATION in trace.tags,
-            )
-
-        return vet_conversation
+        self._trace_index = TraceIndex(self.task)
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":
@@ -975,10 +917,6 @@ class EvalRunner:
         Stamped from `key` rather than re-derived, for the same reason as
         `_generate_and_persist`: the run must file itself under exactly the key
         the index filed it under, or it is never found again.
-
-        `ended_by_su` is written as a tag rather than kept in memory because the
-        completeness gate that needs it runs again on every later reuse of this
-        file, when the drive that produced it is long gone.
         """
         source_type, source_id, run_config_id = key
         leaf = drive_result.chain[-1]

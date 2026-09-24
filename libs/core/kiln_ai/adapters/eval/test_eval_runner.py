@@ -5211,7 +5211,7 @@ def test_collect_tasks_ignores_calibration_runs_when_a_run_config_has_no_id(
 
 
 # -------------------------------------------------------------------
-# Conversation completeness: the gate on saving and reusing a driven trace
+# Conversation completeness: the gate on saving a driven trace
 # -------------------------------------------------------------------
 
 TWO_TURN_CONVERSATION: list[ChatCompletionMessageParam] = [
@@ -5337,60 +5337,6 @@ class TestConversationHealthProblem:
         assert conversation_health_problem(trace, 1) is None
 
 
-class TestAnSUEndedConversationIsCompleteBelowTheCeiling:
-    """`required_turns` is a ceiling for a conversation the synthetic user chose to
-    end, so a short one is finished rather than truncated. Every other check the gate
-    makes still applies. This is the stored-trace path — the vet, where the drive is
-    gone and the tag is all that is left; a caller still holding the drive passes the
-    turns that ran and gets the exact check."""
-
-    @pytest.mark.parametrize("required_turns", [3, 10])
-    def test_fewer_turns_than_required_is_complete(self, required_turns):
-        assert (
-            conversation_health_problem(
-                TWO_TURN_CONVERSATION, required_turns, ended_by_su=True
-            )
-            is None
-        )
-
-    @pytest.mark.parametrize("trace", [None, []])
-    def test_no_conversation_at_all_is_still_incomplete(self, trace):
-        """Ending the conversation still means saying something first; an empty
-        trace is a drive that produced nothing, not a short one."""
-        assert (
-            conversation_health_problem(trace, 3, ended_by_su=True)
-            == "expected 1 to 3 user turns, found 0"
-        )
-
-    def test_more_turns_than_required_is_still_incomplete(self):
-        """The ceiling is enforced from above either way: a conversation the
-        synthetic user ended cannot have outrun the limit it stopped short of, so a
-        longer one means the trace is not the drive's."""
-        assert (
-            conversation_health_problem(TWO_TURN_CONVERSATION, 1, ended_by_su=True)
-            == "expected 1 to 1 user turns, found 2"
-        )
-
-    def test_a_conversation_ending_on_the_user_is_still_incomplete(self):
-        trace: list[ChatCompletionMessageParam] = [
-            {"role": "user", "content": "turn 1"},
-            {"role": "assistant", "content": "hi"},
-            {"role": "user", "content": "turn 2"},
-        ]
-        assert conversation_health_problem(trace, 5, ended_by_su=True) == (
-            "the conversation ends with a 'user' message, not an assistant reply"
-        )
-
-    def test_a_final_assistant_message_with_no_text_is_still_incomplete(self):
-        trace: list[ChatCompletionMessageParam] = [
-            {"role": "user", "content": "turn 1"},
-            {"role": "assistant", "content": ""},
-        ]
-        assert conversation_health_problem(trace, 3, ended_by_su=True) == (
-            "the final assistant message has no text content"
-        )
-
-
 class TestDrivenConversationIsVettedBeforeSaving:
     @pytest.mark.asyncio
     async def test_a_short_drive_saves_nothing_and_raises_retryably(
@@ -5456,8 +5402,8 @@ class TestDrivenConversationIsVettedBeforeSaving:
         caplog,
     ):
         """A drive shorter than the ceiling because the synthetic user ended it is a
-        finished conversation, so it is judged and kept — carrying the tag that lets
-        a later run tell it apart from a truncated record."""
+        finished conversation, so it is judged and kept, tagged as one the synthetic
+        user ended."""
         runner = build_task_run_eval_runner([mock_v2_redrive_config], [mock_run_config])
         job = EvalJob(
             item=multi_turn_eval_input,
@@ -5542,8 +5488,8 @@ class TestDrivenConversationIsVettedBeforeSaving:
         multi_turn_eval_input,
         data_source,
     ):
-        """The tag has to mean something, so a drive that used its whole ceiling must
-        not carry it — otherwise every stored trace would pass the gate."""
+        """A drive that used its whole ceiling was not ended early, so it must not
+        carry the tag."""
         runner = build_task_run_eval_runner([mock_v2_redrive_config], [mock_run_config])
         job = EvalJob(
             item=multi_turn_eval_input,
@@ -5679,243 +5625,3 @@ class TestDrivenConversationIsVettedBeforeSaving:
         assert drive.await_count == 3
         assert eval_traces(mock_task) == []
         assert mock_v2_redrive_config.runs(readonly=True) == []
-
-
-def _stored_conversation(
-    task: Task,
-    run_config: TaskRunConfig,
-    trace: list[ChatCompletionMessageParam] | None,
-    *,
-    source_id: str = "ei_redrive",
-    output: str = "stored reply",
-    tags: list[str] | None = None,
-) -> TaskRun:
-    """An eval trace already on disk for an item and run config, as a previous eval
-    run (or the migration) would have left it."""
-    run = TaskRun(
-        tags=tags or [],
-        parent=task,
-        input="opening message",
-        output=TaskOutput(
-            output=output,
-            source=DataSource(
-                type=DataSourceType.synthetic,
-                properties={
-                    "model_name": "gpt-4",
-                    "model_provider": "openai",
-                    "adapter_name": "test_adapter",
-                },
-                run_config_id=run_config.id,
-            ),
-        ),
-        trace=trace,
-        eval_source=EvalItemSource(source_type="eval_input", source_id=source_id),
-    )
-    run.save_to_file()
-    return run
-
-
-class TestStoredConversationsAreVettedBeforeReuse:
-    @pytest.mark.asyncio
-    async def test_a_stored_conversation_short_for_its_item_is_re_driven(
-        self,
-        mock_task,
-        mock_run_config,
-        mock_v2_redrive_config,
-        multi_turn_eval_input,
-        data_source,
-    ):
-        """The reuse key says nothing about what is inside the file. A partial
-        conversation at the right key must not be served to the judge."""
-        stump = _stored_conversation(mock_task, mock_run_config, STUMP_CONVERSATION)
-        assert stump.path is not None
-        bytes_before = stump.path.read_bytes()
-
-        runner = build_task_run_eval_runner([mock_v2_redrive_config], [mock_run_config])
-        job = EvalJob(
-            item=multi_turn_eval_input,
-            eval_config=mock_v2_redrive_config,
-            type="task_run_eval",
-            task_run_config=mock_run_config,
-        )
-        stub = RecordingStubV2Eval(mock_v2_redrive_config)
-        with (
-            patch(
-                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
-                return_value=stub,
-            ),
-            patch(
-                "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
-                new=AsyncMock(return_value=_fresh_leaf(mock_task, data_source)),
-            ) as drive,
-        ):
-            assert await runner.run_job(job) is True
-
-        drive.assert_awaited_once()
-        assert stub.seen_inputs[0].trace == MULTI_TURN_TRACE
-        fresh = next(t for t in eval_traces(mock_task) if t.id != stump.id)
-        assert mock_v2_redrive_config.runs(readonly=True)[0].scored_run_id == fresh.id
-
-        # The rejected conversation is left exactly where it was: a trace is never
-        # deleted or rewritten on this path.
-        assert stump.path.exists()
-        assert stump.path.read_bytes() == bytes_before
-
-    @pytest.mark.asyncio
-    async def test_a_stored_conversation_complete_for_its_item_is_reused(
-        self,
-        mock_task,
-        mock_run_config,
-        mock_v2_redrive_config,
-        multi_turn_eval_input,
-        data_source,
-    ):
-        """The other half: vetting must not cost a re-drive of a conversation that is
-        whole, which is the entire point of reusing them."""
-        stored = _stored_conversation(mock_task, mock_run_config, MULTI_TURN_TRACE)
-
-        runner = build_task_run_eval_runner([mock_v2_redrive_config], [mock_run_config])
-        job = EvalJob(
-            item=multi_turn_eval_input,
-            eval_config=mock_v2_redrive_config,
-            type="task_run_eval",
-            task_run_config=mock_run_config,
-        )
-        with (
-            patch(
-                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
-                return_value=StubV2Eval(mock_v2_redrive_config),
-            ),
-            patch(
-                "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
-                new=AsyncMock(),
-            ) as drive,
-        ):
-            assert await runner.run_job(job) is True
-
-        drive.assert_not_awaited()
-        assert [t.id for t in eval_traces(mock_task)] == [stored.id]
-        assert mock_v2_redrive_config.runs(readonly=True)[0].scored_run_id == stored.id
-
-    @pytest.mark.asyncio
-    async def test_single_turn_items_have_no_turn_contract_to_fail(
-        self,
-        mock_task,
-        mock_run_config,
-        mock_v2_redrive_config,
-        multi_turn_eval_input,
-    ):
-        """A single-turn item's stored trace is reused whatever shape it has: the
-        completeness check belongs to items that declare a turn count."""
-        single_turn_item = EvalInput(
-            id="ei_single",
-            data=SingleTurnEvalInputData(user_message=UserMessage(text="hello")),
-            parent=mock_task,
-        )
-        single_turn_item.save_to_file()
-        stored = _stored_conversation(
-            mock_task,
-            mock_run_config,
-            STUMP_CONVERSATION,
-            source_id="ei_single",
-        )
-
-        runner = build_task_run_eval_runner([mock_v2_redrive_config], [mock_run_config])
-        # The vet is installed — the split still holds a multi-turn item — so this is
-        # permissiveness, not absence.
-        assert runner._build_trace_vet() is not None
-
-        job = EvalJob(
-            item=single_turn_item,
-            eval_config=mock_v2_redrive_config,
-            type="task_run_eval",
-            task_run_config=mock_run_config,
-        )
-        generator = TraceGenerator(mock_task)
-        with generating(generator):
-            assert await runner.run_job(job) is True
-
-        assert generator.calls == []
-        record = next(
-            r
-            for r in mock_v2_redrive_config.runs(readonly=True)
-            if r.eval_input_id == "ei_single"
-        )
-        assert record.scored_run_id == stored.id
-
-    def test_the_vet_judges_only_the_items_it_has_turn_counts_for(
-        self,
-        mock_task,
-        mock_run_config,
-        mock_v2_redrive_config,
-        multi_turn_eval_input,
-        data_source,
-    ):
-        unstamped = EvalInput(
-            id="ei_unstamped",
-            data=MultiTurnSyntheticEvalInputData(
-                first_message=UserMessage(text="opening message"),
-                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
-            ),
-            parent=mock_task,
-        )
-        unstamped.save_to_file()
-        runner = build_task_run_eval_runner([mock_v2_redrive_config], [mock_run_config])
-        vet = runner._build_trace_vet()
-        assert vet is not None
-
-        stump = _stored_conversation(mock_task, mock_run_config, STUMP_CONVERSATION)
-        whole = _stored_conversation(mock_task, mock_run_config, MULTI_TURN_TRACE)
-        rc_id = mock_run_config.id
-
-        assert vet(("eval_input", "ei_redrive", rc_id), whole) is None
-        # A rejection answers with the reason, which is what the index logs.
-        assert vet(("eval_input", "ei_redrive", rc_id), stump) == (
-            "expected 3 user turns, found 1"
-        )
-        # An item from another eval's split: this runner has no turn count for it, and
-        # never looks it up either.
-        assert vet(("eval_input", "ei_elsewhere", rc_id), stump) is None
-        # Ids come from one generator shared by every model type, so a TaskRun can carry
-        # an EvalInput's id. Matching on the id alone would check the wrong contract.
-        assert vet(("task_run", "ei_redrive", rc_id), stump) is None
-        # An item with no drive config is skipped by the readiness path before it ever
-        # drives, so there is no turn count to hold its traces to.
-        assert vet(("eval_input", "ei_unstamped", rc_id), stump) is None
-
-    def test_the_vet_reads_the_tag_to_accept_a_short_stored_conversation(
-        self,
-        mock_task,
-        mock_run_config,
-        mock_v2_redrive_config,
-        multi_turn_eval_input,
-        data_source,
-    ):
-        """The tag is the only thing on disk that says a short conversation is one
-        the synthetic user ended, so the same trace is reusable with it and a
-        truncated record without it."""
-        ended = _stored_conversation(
-            mock_task,
-            mock_run_config,
-            STUMP_CONVERSATION,
-            tags=[TAG_SU_ENDED_CONVERSATION],
-        )
-        truncated = _stored_conversation(mock_task, mock_run_config, STUMP_CONVERSATION)
-        runner = build_task_run_eval_runner([mock_v2_redrive_config], [mock_run_config])
-        vet = runner._build_trace_vet()
-        assert vet is not None
-        rc_id = mock_run_config.id
-
-        assert vet(("eval_input", "ei_redrive", rc_id), ended) is None
-        assert vet(("eval_input", "ei_redrive", rc_id), truncated) == (
-            "expected 3 user turns, found 1"
-        )
-
-    def test_a_run_with_no_multi_turn_items_installs_no_vet(
-        self, mock_v2_task_run_eval_runner, mock_v2_runner
-    ):
-        """Single-turn splits and calibration runs (which have no split at all) build
-        their index exactly as before."""
-        assert mock_v2_task_run_eval_runner._build_trace_vet() is None
-        assert mock_v2_runner.split is None
-        assert mock_v2_runner._build_trace_vet() is None

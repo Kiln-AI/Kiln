@@ -24,12 +24,9 @@ EARLY_STOP_SENTINEL = "<DONE>"
 
 # The tag written on a conversation the SU ended with the sentinel: the
 # persisted counterpart of the string above, marking a trace that is complete
-# even though it holds fewer turns than the item asked for. It is on disk
-# because the eval runner's completeness gate has to tell such a trace apart
-# from a truncated one (a partial record, a drive that died mid-way) long after
-# the drive that produced it is gone, and the trace alone cannot say which it
-# is. It lives beside the sentinel — same concept, same lifetime — so a reader
-# of a stored trace need not import the batch runner for one string.
+# even though it holds fewer turns than the item asked for. It lives beside the
+# sentinel — same concept, same lifetime — so a reader of a stored trace need
+# not import the batch runner for one string.
 TAG_SU_ENDED_CONVERSATION = "synthetic_user_ended_conversation"
 
 

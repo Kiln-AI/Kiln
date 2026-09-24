@@ -351,8 +351,7 @@ async def test_leaf_is_tagged_when_the_su_ends_the_conversation_early(
     fake_task: Mock, monkeypatch: pytest.MonkeyPatch, caplog
 ) -> None:
     """The tag is the only durable record that this conversation is short because
-    the synthetic user finished, not because the drive broke — the eval runner's
-    completeness gate reads it back off disk long afterwards.
+    the synthetic user finished, not because the drive broke.
     """
     leaf = _fake_run("leaf")
     _patch_adapter_for_task(monkeypatch, [leaf])
