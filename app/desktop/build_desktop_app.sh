@@ -100,6 +100,8 @@ elif [ "$(uname)" == "Linux" ]; then
   echo "Building Linux App"
   cp desktop/mac_taskbar.png desktop/build/taskbar.png
   PLATFORM_OPTS="--windowed --onefile --splash=../win_splash.png --icon=../mac_icon.png"
+  # StatusNotifierItem tray: D-Bus client and the icons the panel recolors
+  PLATFORM_OPTS="$PLATFORM_OPTS --add-data ../linux_tray/icons:./linux_tray/icons --hidden-import=app.desktop.linux_tray.sni_tray --hidden-import=jeepney.io.threading"
 else
   echo "Unsupported operating system: $(uname)"
   exit 1
