@@ -703,9 +703,8 @@ class EvalRunWithTrace(BaseModel):
             if trace is not None and trace.trace
             else None,
             # Raw per-record usage, not the summary's blended figure: it omits
-            # synthetic_user_usage and is last-turn-only for chain leaves. No UI
-            # renders it today; a surface that reports cost should use the
-            # summary's blend, not this field.
+            # synthetic_user_usage. No UI renders it today; a surface that
+            # reports cost should use the summary's blend, not this field.
             task_run_usage=trace.usage if trace is not None else None,
         )
 
@@ -943,11 +942,6 @@ class EvalResultSummary(BaseModel):
         description="Percent of dataset processed per run config."
     )
     dataset_size: int = Field(description="Total size of the eval dataset.")
-    multi_turn_item_count: int = Field(
-        description="Items in the eval dataset that are stored multi-turn "
-        "conversations. These are scored from their saved conversation, so "
-        "every run config receives identical scores for them."
-    )
 
 
 class EvalResultsSummaryEvalInfo(BaseModel):
@@ -1135,12 +1129,8 @@ def scored_trace_usage_for_run_config(
 def scored_trace_usage(trace: TaskRun) -> Usage | None:
     """The full generation spend of one scored TaskRun, as a summary reports it.
 
-    Two record shapes need more than `trace.usage`:
+    One record shape needs more than `trace.usage`:
 
-    - A multi-turn chain leaf from the dataset (`parent_task_run_id` set) stores
-      last-turn-only usage; its conversation totals live in `cumulative_usage`.
-      Latency still reads from `usage` — `cumulative_usage` deliberately carries
-      none, since per-message latencies don't aggregate meaningfully.
     - An eval-driven conversation stores the synthetic-user driver model's spend
       in `synthetic_user_usage`, beside the assistant-only `usage`. Only its
       **cost** is blended in here, deliberately, even though the field carries
@@ -1166,21 +1156,7 @@ def scored_trace_usage(trace: TaskRun) -> Usage | None:
     None when the record has nothing to report, so it contributes nothing to an
     average instead of counting as a zero.
     """
-    if trace.parent_task_run_id is not None:
-        cumulative = trace.cumulative_usage
-        base: Usage | None = Usage(
-            input_tokens=cumulative.input_tokens if cumulative else None,
-            output_tokens=cumulative.output_tokens if cumulative else None,
-            total_tokens=cumulative.total_tokens if cumulative else None,
-            cost=cumulative.cost if cumulative else None,
-            cached_tokens=cumulative.cached_tokens if cumulative else None,
-            total_llm_latency_ms=trace.usage.total_llm_latency_ms
-            if trace.usage
-            else None,
-        )
-    else:
-        base = trace.usage
-
+    base = trace.usage
     if trace.synthetic_user_usage is not None:
         # Cost only — see the docstring. Adding the whole object would fold the
         # driver's tokens and latency into the agent's figures.
@@ -1677,30 +1653,12 @@ def compute_score_summary(
     averaged into a TaskRun-backed split's mean, which no reader could then detect
     (functional spec 5.3).
     """
-    # Stored multi-turn conversations (runs with parent_task_run_id set) are
-    # judged on their saved trace, so their scores can't vary across run
-    # configs; the UI calls this out per summary. Only a TaskRun-backed split
-    # can contain them — EvalInput items are re-driven per run config.
-    # getattr rather than direct access: split.items is a TaskRun/EvalInput
-    # union (and test stubs), and only TaskRuns can be chain leaves. The
-    # positive-case tests below pin the field name against renames.
-    multi_turn_item_count = (
-        sum(
-            1
-            for item in split.items
-            if getattr(item, "parent_task_run_id", None) is not None
-        )
-        if split.source == "task_run"
-        else 0
-    )
-
     split_items = split.item_keys()
     if len(split_items) == 0:
         return EvalResultSummary(
             results={},
             run_config_percent_complete={},
             dataset_size=0,
-            multi_turn_item_count=multi_turn_item_count,
         )
 
     remaining_expected_items: Dict[ID_TYPE, Set[ItemKey]] = {
@@ -1778,7 +1736,6 @@ def compute_score_summary(
         results=results,
         run_config_percent_complete=run_config_percent_complete,
         dataset_size=len(split_items),
-        multi_turn_item_count=multi_turn_item_count,
     )
 
 
@@ -3309,9 +3266,8 @@ def connect_evals_api(app: FastAPI):
                 total_eval_runs += 1
 
                 # The evaluated task's usage: on the scored TaskRun for pointer records
-                # (as scored_trace_usage reports it - conversation totals for multi-turn
-                # chain leaves, synthetic-user spend blended in for driven traces),
-                # inline on legacy ones.
+                # (as scored_trace_usage reports it - synthetic-user spend blended in for
+                # driven traces), inline on legacy ones.
                 usage = eval_run_task_usage(eval_run, usage_by_scored_run_id)
                 if usage:
                     if usage.input_tokens is not None:

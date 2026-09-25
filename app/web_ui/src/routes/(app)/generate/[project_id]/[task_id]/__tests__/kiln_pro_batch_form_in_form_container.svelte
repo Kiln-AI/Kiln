@@ -7,7 +7,6 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import KilnProBatchForm from "../kiln_pro_batch_form.svelte"
 
-  export let count: number = 50
   export let guidance: string = ""
   // Left undefined unless a test sets it, so the rows fall back to their own
   // default and a test can pin what an unconfigured caller gets.
@@ -15,5 +14,5 @@
 </script>
 
 <FormContainer submit_label="Submit" focus_on_mount={false} on:submit>
-  <KilnProBatchForm bind:count bind:guidance {guidance_optional} />
+  <KilnProBatchForm bind:guidance {guidance_optional} />
 </FormContainer>

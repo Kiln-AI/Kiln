@@ -14,7 +14,6 @@ from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
     TaskOutputRatingType,
-    TurnMode,
 )
 from kiln_ai.datamodel.eval import (
     EvalConfigType,
@@ -606,33 +605,6 @@ class TestAuthorJudge:
             assert response.status_code == 200
             assert "fabrication fails" in response.json()["judge_prompt"]
 
-    @pytest.mark.parametrize("turn_mode", [TurnMode.multiturn, TurnMode.single_turn])
-    def test_author_judge_authors_against_the_transcript_for_both_arms(
-        self, client, author_judge_input, mock_api_key, author_judge_task, turn_mode
-    ):
-        """Both arms judge a transcript, so both must author the rubric that
-        knows what one looks like. The rubric routing on kiln_server hangs
-        entirely on this field: sending single_turn would author against a
-        bare input/output pair, and the judge would then meet role labels and
-        tool-call blocks its rubric never mentioned."""
-        author_judge_task.return_value = _task_mock(turn_mode)
-        mock_output = MagicMock(spec=GenerateJudgePromptOutput)
-        mock_output.judge_evaluation_prompt = "1. Check the transcript."
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.parsed = mock_output
-
-        with patch(
-            "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ) as mock_post:
-            client.post(AUTHOR_JUDGE_URL, json=author_judge_input)
-
-        body = mock_post.call_args.kwargs["body"]
-        assert body.trace_type.value == "multi_turn"
-        assert body.target_specification == author_judge_input["target_specification"]
-
     def test_author_judge_omits_uncollected_capabilities(
         self, client, author_judge_input, mock_api_key, author_judge_task
     ):
@@ -652,9 +624,10 @@ class TestAuthorJudge:
         ) as mock_post:
             client.post(AUTHOR_JUDGE_URL, json=author_judge_input)
 
-        body_dict = mock_post.call_args.kwargs["body"].to_dict()
-        assert "task_tools" not in body_dict
-        assert "task_skills" not in body_dict
+        assert mock_post.call_args.kwargs["body"].to_dict() == {
+            "target_specification": author_judge_input["target_specification"],
+            "target_task_prompt": author_judge_input["target_task_prompt"],
+        }
 
     def test_author_judge_sends_the_tasks_capabilities(
         self, client, author_judge_input, mock_api_key, author_judge_task
@@ -2691,9 +2664,7 @@ class TestSingleTurnPipeline:
     ):
         """A run slower than the soft log threshold completes and is
         judged, with the watchdog warning making the slowness visible in
-        logs. The single-turn path has no seam that could prove the absence
-        of a run budget; that property is pinned on the multi-turn runner's
-        wait_for (test_no_case_timeout_by_default)."""
+        logs."""
         slow_input = single_turn_request["inputs"][0]
 
         def fake_adapter(task, run_config, base_adapter_config=None):

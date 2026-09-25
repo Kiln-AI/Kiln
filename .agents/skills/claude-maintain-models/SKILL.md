@@ -136,6 +136,7 @@ All changes go in `libs/core/kiln_ai/adapters/ml_model_list.py`.
 | `vertex` | Usually same as gemini_api | Verify via Vertex docs |
 | `siliconflow_cn` | Vendor/model format | Verify via SiliconFlow docs |
 | `featherless_ai` | HuggingFace repo id, case-sensitive (`zai-org/GLM-5.2`) | Verify via their `/v1/models` — see [Featherless](#featherless-ai) |
+| `typesafe` | Dotted System One version (`jev-1.13.0`) | Their `/v1/models` lists aliases only — verify by `POST /v1/systemone`, see [TypeSafe AI](#typesafe-ai) |
 
 **Every single `model_id` must be verified from an authoritative source. No exceptions.**
 
@@ -154,7 +155,7 @@ Then **cross-check against the predecessor**. The predecessor tells you *how* Ki
 
 **Common flags:**
 - `structured_output_mode` – how the model handles JSON output
-- `suggested_for_evals` / `suggested_for_data_gen` – see **zero-sum rule** below
+- `suggested_for_evals` / `suggested_for_data_gen` – see **zero-sum rule** below. If the entry also sets `available_thinking_levels`, its `default_thinking_level` must be a reasoning level — see [Judge Models Must Reason by Default](#judge-models-must-reason-by-default)
 - `multimodal_capable` / `supports_vision` / `supports_doc_extraction` – see **multimodal rules** below
 - `reasoning_capable` – for thinking/reasoning models. **Default new models to `reasoning_capable=False`** unless the model *always* emits its reasoning (see [Reasoning Capable Default](#reasoning-capable-default))
 - `temp_top_p_exclusive` – Anthropic models that can't have both temp and top_p
@@ -242,6 +243,7 @@ If the model supports configurable reasoning effort (not just on/off), add `avai
 - Reuse an existing `_THINKING_LEVELS` constant if the levels match exactly
 - Create a new constant only if levels differ; name it `{MODEL}_{PROVIDER_CONTEXT}_THINKING_LEVELS`
 - `default_thinking_level` must be one of the values in `available_thinking_levels`
+- If the entry sets `suggested_for_evals=True`, `default_thinking_level` must be `"medium"` (or `"low"` if the model has no medium level) — never `"none"`. See [Judge Models Must Reason by Default](#judge-models-must-reason-by-default)
 
 ---
 
@@ -394,7 +396,12 @@ After all tests pass, commit the changes and open a PR against `main`.
 
 ### 5b. Create the PR
 
-Use `gh pr create` against `main`. The PR body must follow this exact format:
+Use `gh pr create` against `main`. Follow Rule 0, Rule 1 and Step 3 of the `open-pr` skill (`.agents/skills/open-pr/SKILL.md`) for the human header, the CLA and the title:
+
+- The title is `WIP: chore: ` followed by the model-list subject, for example `WIP: chore: add GLM 5.1 to model list`. Use `chore`, because adding a model is maintenance work, not a new feature. Only a human removes the `WIP: ` prefix.
+- Copy everything above `# Agentic PR Summary` from `.github/pull_request_template.md` with no change. Never fill in a placeholder or tick a box there, and never sign the CLA. Remove the `## Contributor License Agreement` section only when the PR author's GitHub username is `scosman`, `sfierro`, `leonardmq`, `tawnymanticore`, or `chiang-daniel`. Keep it, unsigned, for any other author.
+
+Replace the `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `` placeholder under `# Agentic PR Summary` with the test results, in this exact format:
 
 ```
 ## What does this PR do?
@@ -424,18 +431,13 @@ Use `gh pr create` against `main`. The PR body must follow this exact format:
 ❌ test_name[model_enum-provider] — brief reason
 
 [Repeat for each model+provider combo]
-
-## Checklists
-
-- [X] Tests have been run locally and passed
-- [X] New tests have been added to any work in /lib
 ```
 
 **Rules for the PR body:**
 - Every test that ran must appear in the per-test dump, using the full pytest parametrize ID
 - Group tests by `[Model Name] ([provider]):` headers
 - The summary section at the top gives a quick pass/skip/fail count per model+provider
-- The detailed section below the `---` lists every individual test result
+- The detailed section below the `---` inside the summary (not the `----` above `# Agentic PR Summary`) lists every individual test result
 - Use ⚠️ for content quality flakes (not real failures), ❌ for real errors
 
 ---
@@ -452,6 +454,7 @@ Use `gh pr create` against `main`. The PR body must follow this exact format:
 - [ ] Flags inherited from predecessor and adjusted for quirks
 - [ ] `reasoning_capable` defaulted to `False` for adaptive-reasoning models (only `True` for always-emits-reasoning models — see [Reasoning Capable Default](#reasoning-capable-default))
 - [ ] Thinking levels configured if model supports reasoning effort (see [Thinking Levels Reference](#thinking-levels-reference))
+- [ ] Every `suggested_for_evals` entry with thinking levels defaults to `"medium"` (or `"low"`), never `"none"` (see [Judge Models Must Reason by Default](#judge-models-must-reason-by-default))
 - [ ] Preserve existing comments from predecessor (e.g. reasoning notes, MIME type groupings)
 - [ ] Zero-sum applied if model is suggested for evals/data gen
 - [ ] RAG config templates updated if the new model replaces one used in `app/web_ui/src/routes/(app)/docs/rag_configs/[project_id]/add_search_tool/rag_config_templates.ts`
@@ -459,7 +462,7 @@ Use `gh pr create` against `main`. The PR body must follow this exact format:
 - [ ] Smoke test passed
 - [ ] Full test suite passed
 - [ ] Failures cross-checked against an existing provider before being called regressions (see 4e)
-- [ ] PR created against `main` with test results in the body
+- [ ] PR created against `main` with a `WIP: ` title, the untouched human header, and test results in the Agentic PR Summary
 
 ---
 
@@ -619,6 +622,15 @@ Serverless host for HuggingFace-hosted open weights. Several hard constraints �
 - **Not in models.dev or the LiteLLM catalog**, so their `/v1/models` endpoint is the only authoritative source. See [Lagging Providers](#lagging-providers).
 - Quality varies per deployment — verify with a paid run. Qwen 3.5 397B, for example, returns degenerate output (rambles to the token cap) and was excluded for that reason.
 
+### TypeSafe AI
+
+Serves TypeSafe's Jev models (System One API). The only provider in the catalog that does not run through LiteLLM — read this before adding an entry:
+
+- **Adapter-backed, not LiteLLM-backed.** Every provider entry must set `adapter=ModelAdapterId.jev`; `JevAdapter` calls `POST /v1/systemone` directly. `lite_llm_core_config_for_provider` and `get_litellm_provider_info` raise for `typesafe` on purpose, so the LiteLLM parametrized tests exclude it.
+- **Structured output only.** No text generation, no tools, no multi-turn. A task runs only if its output schema maps onto Jev's question types (enum, boolean, score); anything else fails before the network call. Set `supports_structured_output=True`, `supports_data_gen=False`, `supports_function_calling=False`, and `structured_output_mode=StructuredOutputMode.json_schema`.
+- **No logprobs.** `supports_logprobs=False`. Jev returns its own per-answer probabilities instead, which is what keeps it out of G-Eval.
+- **Not in models.dev or the LiteLLM catalog, and `GET /v1/models` cannot confirm a `model_id`.** It lists aliases (`jev-latest`, `jev-preview`), not the pinned versions Kiln registers, and it returns `{"models": [{"name", ...}]}` rather than the OpenAI `{"data": [{"id", ...}]}` shape, so the shared `fetch_openai_compat` path cannot read it either. That is why `typesafe` is in `SKIP_PROVIDERS` in `.agents/scripts/provider_utils.py` rather than in `PROVIDER_CONFIG`. The authoritative check for a pinned id is a `POST /v1/systemone` round trip that the API accepts — that is how `jev-1.13.0` was confirmed. (The listing is still what the connect flow uses to validate a key; it is account-scoped and rejects a bad one.)
+
 ### Qwen3 / Thinking Models
 - Thinking variants: `reasoning_capable=True`, `parser=ModelParserID.r1_thinking`
 - No-thinking variants: `formatter=ModelFormatterID.qwen3_style_no_think`
@@ -651,6 +663,16 @@ No API provides the available thinking levels programmatically — they must be 
    If `reasoning` is absent, the model does not support effort levels — skip thinking levels entirely.
 
 5. **Smoke test** — as a last resort, send a request with an invalid effort level and check the error message, which often enumerates the valid values.
+
+### Judge Models Must Reason by Default
+
+**If a provider entry sets both `suggested_for_evals=True` and `available_thinking_levels`, set `default_thinking_level` to `"medium"` when the model offers a medium level, else `"low"`. Never leave it at `"none"` or unset.**
+
+The V2 LLM judge runner builds the judge model's run config without a `thinking_level`, so the adapter falls back to the provider entry's `default_thinking_level`. A default of `"none"` therefore ships a judge that never reasons, and the eval results page shows no thinking for it.
+
+This applies only to judge-tagged entries. A non-judge entry of the same model may keep `"none"` — the two are set independently per provider entry.
+
+`test_judge_models_with_thinking_levels_default_to_reasoning` in `libs/core/kiln_ai/adapters/test_ml_model_list.py` enforces this across the whole list.
 
 ### Important Distinctions
 

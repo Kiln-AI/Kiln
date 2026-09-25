@@ -3335,22 +3335,17 @@ export interface paths {
          *     2. A judge EvalConfig (LLM-as-judge)
          *     3. The Spec itself
          *     Plus, per synthesis path:
-         *     - Wizard arms (`single_turn` / `multi_turn`): tag the batch's
-         *       existing runs with the golden/train filter tags — reviewed runs
-         *       become golden with the human's ratings and claim reviews,
-         *       unreviewed runs become train — and mint the eval slice as one
-         *       EvalInput per generated input (single-turn) or driven case
-         *       (multi-turn). Nothing is generated at save time.
-         *     - Legacy v1 flow (`sdg_session_config`): batch examples via the
-         *       copilot API, split into the train dataset (persisted as TaskRuns)
-         *       and the eval slice; the golden dataset is the request's
-         *       human-reviewed examples.
+         *     - Eval builder (`single_turn` / `multi_turn`): the reviewed runs are
+         *       tagged golden and carry the human's ratings and claim reviews; every
+         *       other case becomes an EvalInput, dealt into the splits the request
+         *       names. Nothing is generated at save time.
+         *     - Legacy v1 flow (`sdg_session_config`): generate examples via the
+         *       copilot API and save them as TaskRuns, with the request's reviewed
+         *       examples as golden.
          *
-         *     On every path the eval slice is EvalInput items, which the runner
-         *     runs fresh per run config at eval time — nothing stored there is
-         *     judged.
+         *     A test split is EvalInput items, answered fresh at eval time.
          *
-         *     If you don't need copilot, use POST /spec instead.
+         *     If you don't need copilot, use POST /specs instead.
          *
          *     All models are validated before any saves occur. If validation fails,
          *     no data is persisted.
@@ -6112,36 +6107,11 @@ export interface components {
         };
         /**
          * CreateSpecWithCopilotRequest
-         * @description Request model for creating a spec with Kiln Copilot.
+         * @description Request to create a spec with Kiln Copilot, along with its eval and judge.
          *
-         *     Three synthesis paths are supported, exactly one must be set per request:
-         *
-         *     - **Single-turn (wizard):** caller supplies `single_turn` with a
-         *       `batch_tag` pointing at runs already on disk (created by the eval
-         *       builder's single_turn_pipeline) plus the review verdicts and the
-         *       generated inputs. Endpoint tags the existing runs with golden/train
-         *       filter tags (writing the verdicts onto the golden ones) and mints one
-         *       EvalInput per input as the eval slice; no new TaskRuns are created and
-         *       nothing is generated. `evaluate_full_trace` must be True — the
-         *       pipeline judged the transcript, so the saved eval must too.
-         *
-         *     - **Multi-turn (wizard):** caller supplies `multi_turn` with a `batch_tag`
-         *       pointing at chains already on disk (created earlier by the
-         *       synthetic-user runner) plus the driven cases and drive settings.
-         *       Endpoint tags the existing chain leaves with golden/train filter tags
-         *       and mints one EvalInput per driven case as the eval slice; no new
-         *       TaskRuns are created. `evaluate_full_trace` must be True.
-         *
-         *     - **Legacy single-turn (v1 manual flow):** caller supplies
-         *       `sdg_session_config`. Endpoint calls `generate_copilot_examples` for
-         *       fresh I/O pairs, splits them into eval/train/golden datasets, and tags
-         *       new TaskRuns.
-         *
-         *     If you don't want copilot at all, use POST /spec instead.
-         *
-         *     The client is responsible for building:
-         *     - definition: the spec definition string (buildSpecDefinition on client)
-         *     - properties: the spec properties object (filtered, with spec_type included)
+         *     Exactly one synthesis path is set: `single_turn` or `multi_turn` name a batch
+         *     of runs already on disk, while `sdg_session_config` generates fresh examples.
+         *     The client builds `definition` and `properties`.
          */
         CreateSpecWithCopilotRequest: {
             /** Name */
@@ -6165,6 +6135,11 @@ export interface components {
             reviewed_examples?: components["schemas"]["ReviewedExample"][];
             /** @description The judge to persist as the eval's V2 config — the same shape (and, from the builder, the same values) the review step ran, so the calibrated judge is the one that ships. */
             judge_info: components["schemas"]["JudgeConfig"];
+            /**
+             * Splits
+             * @description The splits the eval is created with, each with its relative share of the unreviewed cases; list order wins a leftover case. Must name test. Required on a single_turn or multi_turn save.
+             */
+            splits?: components["schemas"]["SplitShare"][] | null;
             sdg_session_config?: components["schemas"]["SyntheticDataGenerationSessionConfigApi"] | null;
             multi_turn?: components["schemas"]["MultiTurnSaveInfo"] | null;
             single_turn?: components["schemas"]["SingleTurnSaveInfo"] | null;
@@ -6173,7 +6148,7 @@ export interface components {
             task_sample?: components["schemas"]["TaskSample"] | null;
             /**
              * Run Config Id
-             * @description Legacy `sdg_session_config` path only: the run config whose tools and skills describe the target task while examples are generated. Omit to use the task's default run config. The wizard arms generate nothing here, so they read no capabilities and this field does not apply to them.
+             * @description Legacy `sdg_session_config` path only: the run config whose tools and skills describe the target task while examples are generated. Omit to use the task's default run config. The eval builder generates nothing, so this does not apply to it.
              */
             run_config_id?: string | null;
         };
@@ -6770,8 +6745,9 @@ export interface components {
          * DrivenSyntheticCaseApi
          * @description One driven synthetic-user case from the builder session.
          *
-         *     The save path mints an EvalInput from each — the re-drivable input the
-         *     eval runner regenerates a conversation from, per run config.
+         *     The save path mints an EvalInput from each unreviewed case — the
+         *     re-drivable input the eval runner regenerates a conversation from, per
+         *     run config. A reviewed case is the golden answer key instead.
          */
         DrivenSyntheticCaseApi: {
             /**
@@ -6789,6 +6765,11 @@ export interface components {
              * @description Zero-based index into the builder's user-approved scenario plan identifying the scenario this case was generated from. Recorded on the minted EvalInput as a `scenario:{index}` provenance tag; omit when the case has no plan scenario.
              */
             scenario_index?: number | null;
+            /**
+             * Leaf Run Id
+             * @description The id of the chain-leaf TaskRun this case was driven in. A case whose run the human reviewed is represented by that rated run and is not minted. Empty when the drive recorded no run, which can never have been reviewed.
+             */
+            leaf_run_id: string;
         };
         /**
          * EmbeddingConfig
@@ -7387,11 +7368,6 @@ export interface components {
              * @description Total size of the eval dataset.
              */
             dataset_size: number;
-            /**
-             * Multi Turn Item Count
-             * @description Items in the eval dataset that are stored multi-turn conversations. These are scored from their saved conversation, so every run config receives identical scores for them.
-             */
-            multi_turn_item_count: number;
         };
         /**
          * EvalResultsSummaryEvalInfo
@@ -8591,19 +8567,17 @@ export interface components {
         GenerateCasesApiInput: {
             /** Target Specification */
             target_specification: string;
-            /** Num Cases */
-            num_cases: number;
             /**
              * Case Prompts
-             * @description Optional per-case scenario prompts (e.g. from an approved batch plan). When provided, case i is designed around prompt i and each returned case carries scenario_index. Under the upstream salvage contract a flaky case is dropped rather than failing the batch, so the response may hold fewer cases than prompts — scenario_index, not position, maps a case to its prompt. Length must equal num_cases.
+             * @description One scenario prompt per case (e.g. from an approved batch plan). A case that fails to generate is dropped, so the response can hold fewer cases than prompts; scenario_index maps each case to its prompt.
              */
-            case_prompts?: string[] | null;
+            case_prompts: string[];
         };
         /** GenerateCasesApiOutput */
         GenerateCasesApiOutput: {
             /**
              * Cases
-             * @description A SyntheticUserCase. Shape: {seed_prompt: str, synthetic_user_info: str, scenario_index?: int | null}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser. scenario_index is set only on scenario batches (generate_cases with case_prompts) and maps the case back to its plan prompt.
+             * @description A SyntheticUserCase. Shape: {seed_prompt: str, synthetic_user_info: str, scenario_index?: int | null}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser. scenario_index maps the case back to its plan prompt.
              */
             cases: {
                 [key: string]: unknown;
@@ -9827,7 +9801,7 @@ export interface components {
          * @description Enumeration of supported AI model providers.
          * @enum {string}
          */
-        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner" | "featherless_ai";
+        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner" | "featherless_ai" | "typesafe";
         /**
          * MultiTurnDriveConfig
          * @description Settings for re-driving a multi-turn synthetic input at eval time.
@@ -9883,7 +9857,7 @@ export interface components {
             target_run_config_id?: string | null;
             /**
              * Cases
-             * @description Cases as returned by /generate_cases, optionally edited. A SyntheticUserCase. Shape: {seed_prompt: str, synthetic_user_info: str, scenario_index?: int | null}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser. scenario_index is set only on scenario batches (generate_cases with case_prompts) and maps the case back to its plan prompt.
+             * @description Cases as returned by /generate_cases, optionally edited. A SyntheticUserCase. Shape: {seed_prompt: str, synthetic_user_info: str, scenario_index?: int | null}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser. scenario_index maps the case back to its plan prompt.
              */
             cases: {
                 [key: string]: unknown;
@@ -9904,12 +9878,10 @@ export interface components {
         };
         /**
          * MultiTurnSaveInfo
-         * @description Identifies an existing multi-turn synthetic-user batch to turn into an Eval.
+         * @description An existing multi-turn synthetic-user batch to turn into an eval.
          *
-         *     The endpoint splits the chains tagged with this batch_tag into golden and
-         *     train slices, and mints the eval slice as EvalInput items from `cases` —
-         *     the re-drivable inputs the eval runner regenerates conversations from,
-         *     per run config, using `drive_config` as the synthetic user.
+         *     The reviewed chains become the golden answer key; every other case is minted
+         *     as an EvalInput the eval runner re-drives per run config.
          */
         MultiTurnSaveInfo: {
             /**
@@ -9924,7 +9896,7 @@ export interface components {
             reviewed_chains?: components["schemas"]["ReviewedChainApi"][];
             /**
              * Cases
-             * @description The driven synthetic-user cases of this batch. Each is minted as an EvalInput — the eval slice the runner re-drives per run config at eval time.
+             * @description The driven synthetic-user cases of this batch. Each unreviewed one is minted as an EvalInput the runner re-drives per run config at eval time; a reviewed one is golden instead.
              */
             cases: components["schemas"]["DrivenSyntheticCaseApi"][];
             /** @description The alignment-time drive settings (synthetic-user model + turn count), stamped on each minted EvalInput so eval-time re-drives match the conversations the judge was calibrated on. */
@@ -11312,7 +11284,7 @@ export interface components {
             target_run_config_id?: string | null;
             /**
              * Cases
-             * @description Cases as returned by /generate_cases, optionally edited. A SyntheticUserCase. Shape: {seed_prompt: str, synthetic_user_info: str, scenario_index?: int | null}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser. scenario_index is set only on scenario batches (generate_cases with case_prompts) and maps the case back to its plan prompt.
+             * @description Cases as returned by /generate_cases, optionally edited. A SyntheticUserCase. Shape: {seed_prompt: str, synthetic_user_info: str, scenario_index?: int | null}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser. scenario_index maps the case back to its plan prompt.
              */
             cases: {
                 [key: string]: unknown;
@@ -11801,6 +11773,22 @@ export interface components {
              */
             mode: "subset" | "superset" | "equal";
         };
+        /**
+         * SingleTurnCaseApi
+         * @description One case the single-turn pipeline ran: its input and the run it ran in.
+         */
+        SingleTurnCaseApi: {
+            /**
+             * Input
+             * @description The generated task input the batch ran, as the pipeline ran it. On a task with an input schema this is the input encoded as a JSON string.
+             */
+            input: string;
+            /**
+             * Leaf Run Id
+             * @description The id of the TaskRun this input was run in. A case whose run the human reviewed is represented by that rated run and is not minted. Empty when the pipeline recorded no run, which can never have been reviewed.
+             */
+            leaf_run_id: string;
+        };
         /** SingleTurnEvalInputData */
         SingleTurnEvalInputData: {
             /**
@@ -11858,18 +11846,15 @@ export interface components {
         };
         /**
          * SingleTurnSaveInfo
-         * @description Identifies an existing single-turn pipeline batch to turn into an Eval.
+         * @description An existing single-turn pipeline batch to turn into an eval.
          *
-         *     The single-turn sibling of MultiTurnSaveInfo: the endpoint splits the
-         *     runs tagged with this batch_tag into golden and train slices (reviewed →
-         *     golden with ratings and claim reviews, unreviewed → train), and mints
-         *     the eval slice as inputs-only EvalInput items from `inputs`. Nothing is
-         *     generated at save time — the dataset is the runs the user just reviewed.
+         *     The reviewed runs become the golden answer key; every other case is minted as
+         *     an EvalInput. Nothing is generated at save time.
          */
         SingleTurnSaveInfo: {
             /**
              * Batch Tag
-             * @description The batch_tag emitted by the single-turn pipeline (eval_builder single_turn_pipeline). Identifies the set of batch-tagged TaskRuns already persisted to disk that this Eval's golden/train slices are split from.
+             * @description The batch_tag emitted by the single-turn pipeline (eval_builder single_turn_pipeline). Identifies the set of batch-tagged TaskRuns already persisted to disk that this Eval's golden runs are taken from.
              */
             batch_tag: string;
             /**
@@ -11879,9 +11864,9 @@ export interface components {
             reviewed_runs?: components["schemas"]["ReviewedChainApi"][];
             /**
              * Inputs
-             * @description The generated task inputs the batch actually ran — one EvalInput each, the eval slice the runner executes fresh per run config at eval time. For tasks with an input schema, each entry is the input as a JSON string (the same encoding the pipeline ran).
+             * @description The cases the batch actually ran. Each unreviewed one becomes an EvalInput the runner executes fresh per run config at eval time; a reviewed one is golden instead.
              */
-            inputs: string[];
+            inputs: components["schemas"]["SingleTurnCaseApi"][];
         };
         /**
          * SkillContentResponse
@@ -12148,6 +12133,22 @@ export interface components {
             spec_field_current_values: {
                 [key: string]: string;
             };
+        };
+        /**
+         * SplitShare
+         * @description One split of a new eval and its relative share of the dealt cases.
+         */
+        SplitShare: {
+            /**
+             * Split
+             * @enum {string}
+             */
+            split: "train" | "val" | "test";
+            /**
+             * Weight
+             * @description Relative share. No sum rule; 20/20/20 and 1/1/1 are the same deal.
+             */
+            weight: number;
         };
         /** StartBatchJobOutput */
         StartBatchJobOutput: {

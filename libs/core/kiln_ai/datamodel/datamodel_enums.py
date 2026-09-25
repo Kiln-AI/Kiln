@@ -133,6 +133,7 @@ class ModelProviderName(str, Enum):
     cerebras = "cerebras"
     docker_model_runner = "docker_model_runner"
     featherless_ai = "featherless_ai"
+    typesafe = "typesafe"
 
 
 class KilnMimeType(str, Enum):

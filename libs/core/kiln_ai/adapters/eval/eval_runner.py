@@ -1,5 +1,5 @@
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import (
     Any,
     AsyncGenerator,
@@ -9,7 +9,6 @@ from typing import (
     List,
     Literal,
     Set,
-    Tuple,
 )
 
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
@@ -18,10 +17,7 @@ from kiln_ai.adapters.chat.chat_formatter import (
     is_two_message_cot_strategy,
 )
 from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
-from kiln_ai.adapters.eval.registry import (
-    legacy_eval_adapter_from_type,
-    v2_eval_type_available,
-)
+from kiln_ai.adapters.eval.registry import legacy_eval_adapter_from_type
 from kiln_ai.adapters.eval.trace_index import TraceIndex, TraceKey, trace_key
 from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
@@ -104,10 +100,6 @@ class EvalJob:
     type: Literal["task_run_eval", "eval_config_eval"]
     eval_config: EvalConfig
     task_run_config: TaskRunConfig | None = None
-    # Recoverable-skip records this job replaces (their blocking condition
-    # has lifted). Deleted after the job persists its record — leaving them
-    # would put two records on one item and read paths take the first found.
-    superseded_tombstones: List[EvalRun] = field(default_factory=list)
 
 
 def _calibration_item(job: EvalJob) -> TaskRun | None:
@@ -123,15 +115,6 @@ def _calibration_item(job: EvalJob) -> TaskRun | None:
     if not isinstance(job.item, TaskRun):
         raise ValueError("Calibration items are always TaskRuns")
     return job.item
-
-
-def _message_field(message: Any, key: str) -> Any:
-    """One field of a trace message, or None for anything that isn't a message dict.
-
-    A stored trace is a list of message dicts, but an in-memory one can hold provider
-    objects too; reading through this keeps the health check from raising on them.
-    """
-    return message.get(key) if isinstance(message, dict) else None
 
 
 def _has_text_content(content: Any) -> bool:
@@ -153,48 +136,26 @@ def _has_text_content(content: Any) -> bool:
 def conversation_health_problem(
     trace: list[ChatCompletionMessageParam] | None,
     required_turns: int,
-    *,
-    ended_by_su: bool = False,
 ) -> str | None:
-    """Why `trace` is not a complete conversation for an item wanting `required_turns`
-    turns, or None when it is complete.
+    """Why `trace` is not a complete conversation of `required_turns` turns, or None when
+    it is complete.
 
     Structural completeness only, never error-freeness: a conversation whose tool calls
     failed is a legitimate thing to evaluate (judging how an agent handles errors is a
     first-class eval), so error-bearing tool messages say nothing about health here. What
-    it does catch is a conversation that stopped short — a drive that died mid-way, or a
-    partial record from an older writer — which would otherwise be judged as if the agent
-    had simply finished.
-
-    Health is a relationship between a trace and the item asking for it, not a property of
-    the trace: the same conversation is complete for a two-turn item and short for a
-    three-turn one, so the required count is always passed in by the caller.
-
-    `ended_by_su` says the synthetic user chose to end this conversation, which makes
-    `required_turns` a ceiling instead of an exact count: anything from one turn up to the
-    ceiling is a finished conversation, and only an empty one or one somehow longer than
-    the ceiling is a problem. It is for readers of a STORED trace, where all that survives
-    of the drive is a tag — a short conversation the synthetic user chose and one a crash
-    left behind look identical on disk, so the trace alone cannot say which it is. A caller
-    that still holds the drive knows how many turns actually ran and should pass that count
-    instead, keeping the exact check. The flag defaults to False so any caller that knows
-    nothing about early ending keeps the strict gate it had before.
+    it does catch is a conversation that stopped short, which would otherwise be judged
+    as if the agent had simply finished.
     """
     messages = trace or []
-    user_turns = sum(
-        1 for message in messages if _message_field(message, "role") == "user"
-    )
-    if ended_by_su:
-        if user_turns < 1 or user_turns > required_turns:
-            return f"expected 1 to {required_turns} user turns, found {user_turns}"
-    elif user_turns != required_turns:
+    user_turns = sum(1 for message in messages if message.get("role") == "user")
+    if user_turns != required_turns:
         return f"expected {required_turns} user turns, found {user_turns}"
     if not messages:
         return "the conversation is empty"
-    last_role = _message_field(messages[-1], "role")
+    last_role = messages[-1].get("role")
     if last_role != "assistant":
         return f"the conversation ends with a '{last_role}' message, not an assistant reply"
-    if not _has_text_content(_message_field(messages[-1], "content")):
+    if not _has_text_content(messages[-1].get("content")):
         return "the final assistant message has no text content"
     return None
 
@@ -378,7 +339,7 @@ class EvalRunner:
        Scoped by the `split` it is given, whose items may come from either store.
        Multi-turn synthetic EvalInputs are re-driven as a full conversation per run
        config using the drive config stamped on each item; stored multi-turn TaskRun
-       chains are judged on their stored trace instead.
+       chains are skipped.
     """
 
     def __init__(
@@ -454,48 +415,10 @@ class EvalRunner:
         # Live, not precomputed like `already_run`: a trace persisted by one job has to be
         # visible to the next, whether that next job is running concurrently under a
         # different eval config or is this job's own retry (functional spec 4.2, 4.3).
-        self._trace_index = TraceIndex(self.task, vet=self._build_trace_vet())
+        self._trace_index = TraceIndex(self.task)
         # A session manager passed in replaces the process-wide OpenEnv session manager (tests use a
         # fake, or point the real one at a temporary cache).
         self._world_session_manager_override = world_session_manager
-
-    def _build_trace_vet(self) -> Callable[[TraceKey, TaskRun], str | None] | None:
-        """The completeness check the trace index applies to reuse candidates, or None
-        when this run has no multi-turn conversations for it to check. Answers None for a
-        usable candidate, or why it is unusable — the index logs the reason alongside the
-        file it rejected.
-
-        Required turn counts come from the split's own items, so every candidate is judged
-        against the item asking for it. Anything the map doesn't name — single-turn
-        generations, and items outside this run's split — is accepted: neither has a turn
-        contract to fall short of. A candidate tagged as one the synthetic user chose to
-        end is accepted at any length up to its item's turn count; the tag is the only
-        record of that choice by the time a later run reads the file.
-        """
-        if self.split is None:
-            return None
-        required_turns: Dict[ItemKey, int] = {
-            item_key(item): item.data.drive_config.turns
-            for item in self.split.items
-            if isinstance(item, EvalInput)
-            and isinstance(item.data, MultiTurnSyntheticEvalInputData)
-            and item.data.drive_config is not None
-        }
-        if not required_turns:
-            return None
-
-        def vet_conversation(key: TraceKey, trace: TaskRun) -> str | None:
-            source_type, source_id, _, _ = key
-            turns = required_turns.get((source_type, source_id))
-            if turns is None:
-                return None
-            return conversation_health_problem(
-                trace.trace,
-                turns,
-                ended_by_su=TAG_SU_ENDED_CONVERSATION in trace.tags,
-            )
-
-        return vet_conversation
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":
@@ -520,29 +443,21 @@ class EvalRunner:
 
         # already_run[eval_config_id][dataset_id]
         already_run: Dict[ID_TYPE, Set[ID_TYPE]] = {}
-        superseded: Dict[Tuple[ID_TYPE, ID_TYPE], List[EvalRun]] = {}
         for eval_config in self.eval_configs:
             already_run[eval_config.id] = set()
             for run in eval_config.runs(readonly=True):
-                # Only calibration records mark a golden item done (or supersede
-                # its tombstones): the same eval config also accumulates
-                # task_run_eval records, and a golden TaskRun that was scored as
-                # a test item must still be calibrated.
+                # Only calibration records mark a golden item done: the same eval
+                # config also accumulates task_run_eval records, and a golden
+                # TaskRun that was scored as a test item must still be calibrated.
                 if not run.eval_config_eval:
                     continue
-                if self._counts_as_already_run(run, eval_config):
-                    already_run[eval_config.id].add(run.dataset_id)
-                else:
-                    superseded.setdefault((eval_config.id, run.dataset_id), []).append(
-                        run
-                    )
+                already_run[eval_config.id].add(run.dataset_id)
 
         return [
             EvalJob(
                 item=task_run,
                 eval_config=eval_config,
                 type="eval_config_eval",
-                superseded_tombstones=superseded.get((eval_config.id, task_run.id), []),
             )
             for task_run in self.task.runs(readonly=True)
             if filter(task_run)
@@ -565,11 +480,6 @@ class EvalRunner:
 
         # already_run[eval_config_id][run_config_id][item_key]
         already_run: Dict[ID_TYPE, Dict[ID_TYPE, Set[ItemKey]]] = {}
-        # superseded[(eval_config_id, run_config_id, item_key)] -> recoverable-skip
-        # tombstones for that item, deleted after a successful re-run persists.
-        # Keyed on ItemKey: the split's items may come from either store, and a
-        # bare id could collide across stores.
-        superseded: Dict[Tuple[ID_TYPE, ID_TYPE, ItemKey], List[EvalRun]] = {}
         for eval_config in self.eval_configs:
             already_run[eval_config.id] = {
                 run_config.id: set() for run_config in self.run_configs or []
@@ -581,23 +491,12 @@ class EvalRunner:
                 # `str | None`, so a run config whose file carries a null id would make
                 # None a real key and fold every calibration record into its set.
                 if (
-                    run.task_run_config_id is None
-                    or run.task_run_config_id not in already_run[eval_config.id]
+                    run.task_run_config_id is not None
+                    and run.task_run_config_id in already_run[eval_config.id]
                 ):
-                    continue
-                if self._counts_as_already_run(run, eval_config):
                     already_run[eval_config.id][run.task_run_config_id].add(
                         eval_run_item_key(run)
                     )
-                else:
-                    superseded.setdefault(
-                        (
-                            eval_config.id,
-                            run.task_run_config_id,
-                            eval_run_item_key(run),
-                        ),
-                        [],
-                    ).append(run)
 
         return [
             EvalJob(
@@ -605,9 +504,6 @@ class EvalRunner:
                 task_run_config=run_config,
                 type="task_run_eval",
                 eval_config=eval_config,
-                superseded_tombstones=superseded.get(
-                    (eval_config.id, run_config.id, (self.split.source, item.id)), []
-                ),
             )
             for item in self.split.items
             for eval_config in self.eval_configs
@@ -615,52 +511,6 @@ class EvalRunner:
             if (self.split.source, item.id)
             not in already_run[eval_config.id][run_config.id]
         ]
-
-    def _counts_as_already_run(self, run: EvalRun, eval_config: EvalConfig) -> bool:
-        """Whether a persisted record makes its item "done" for dedup.
-
-        Most records do — including skips, which are terminal verdicts about
-        the input itself (missing_trace, extraction_failed, ...). The
-        recoverable skips mark a blocked PRECONDITION instead: once the
-        condition is lifted, treating the tombstone as done would freeze the
-        item out forever, so it stops counting and the item is collected
-        again. A still-blocked item keeps deduping, so re-triggering never
-        piles up duplicate tombstones.
-        """
-        if run.skipped_reason == SkippedReason.missing_drive_config.value:
-            # Blocked until the ITEM carries a drive config, which only a
-            # replacement item can provide (items are immutable once minted).
-            # eval_config_eval has no split and never re-drives, so a stray
-            # record of this shape there stays a terminal verdict.
-            if self.split is None:
-                return True
-            for item in self.split.items:
-                if (
-                    isinstance(item, EvalInput)
-                    and item.id == run.eval_input_id
-                    and isinstance(item.data, MultiTurnSyntheticEvalInputData)
-                ):
-                    return item.data.drive_config is None
-            return True
-        if run.skipped_reason == SkippedReason.incompatible_input_shape.value:
-            # Two writers share this reason. The empty-seed guard's records are
-            # terminal (items are immutable, a seedless item never gains one).
-            # Earlier Kiln versions also skipped EVERY multi-turn synthetic item
-            # with it before re-driving existed; a multi-turn item that carries
-            # a seed can run now, so its tombstone must not freeze it out.
-            if self.split is None:
-                return True
-            for item in self.split.items:
-                if (
-                    isinstance(item, EvalInput)
-                    and item.id == run.eval_input_id
-                    and isinstance(item.data, MultiTurnSyntheticEvalInputData)
-                ):
-                    return item.data.first_message is None
-            return True
-        if run.skipped_reason == SkippedReason.type_not_available.value:
-            return not v2_eval_type_available(eval_config)
-        return True
 
     def validate_multi_turn_drive_readiness(
         self, check_run_configs: bool = True
@@ -773,12 +623,9 @@ class EvalRunner:
     async def run_job(self, job: EvalJob) -> bool:
         try:
             if job.eval_config.config_type == EvalConfigType.v2:
-                done = await self._run_v2_job(job)
+                return await self._run_v2_job(job)
             else:
-                done = await self._run_legacy_job(job)
-            if done:
-                await self._delete_superseded_tombstones(job)
-            return done
+                return await self._run_legacy_job(job)
         except RetryableError as e:
             # Already classified by whoever raised it: this is a deliberate, expected
             # ask for another attempt (an unusable generation the retry replaces), not a
@@ -800,26 +647,6 @@ class EvalRunner:
                 exc_info=True,
             )
             raise
-
-    async def _delete_superseded_tombstones(self, job: EvalJob) -> None:
-        """Remove the recoverable-skip records this job just replaced. Runs
-        only after the replacement record persisted, so an errored job leaves
-        the tombstone in place (the item stays re-collectable). Deletion
-        failures are logged, never raised: the fresh record is already the
-        one read paths should prefer, a leftover duplicate is the lesser
-        problem."""
-        if not job.superseded_tombstones:
-            return
-        async with self._save_context():
-            for run in job.superseded_tombstones:
-                try:
-                    run.delete()
-                except Exception:
-                    logger.warning(
-                        f"Failed to delete superseded skip record {run.id} for "
-                        f"dataset item {job.item.id}",
-                        exc_info=True,
-                    )
 
     async def _run_legacy_job(self, job: EvalJob) -> bool:
         if not isinstance(job.item, TaskRun):
@@ -974,33 +801,18 @@ class EvalRunner:
             result = await evaluator.evaluate(eval_task_input)
             return await self._persist_judgment(job, trace, result)
 
-        if isinstance(job.item, TaskRun) and job.item.parent_task_run_id is not None:
-            # Multi-turn chain leaf: a conversation can't be regenerated in
-            # a single model call, so both run modes evaluate the stored
-            # trace. In task_run_eval mode the scores are therefore a property
-            # of the stored conversation, identical across run configs —
-            # re-driving per run config needs a synthetic-user seed + persona,
-            # which EvalInput-sourced cases carry (branch above) but stored
-            # TaskRun chains do not.
-            #
-            # The leaf is a curated dataset item that already holds its whole
-            # conversation, so there is nothing to generate and nothing to
-            # index — and no eval_source stamp, which would pull the item off
-            # dataset surfaces. The score is a pointer record at the leaf.
-            leaf = job.item
-            if not leaf.trace:
-                # The run exists but recorded no conversation, so the skip
-                # still names what it could not score.
-                return await self._persist_score(
-                    job,
-                    scored_run_id=leaf.id,
-                    skipped_reason=SkippedReason.missing_trace.value,
-                    skipped_detail="Multi-turn task run has no stored trace to evaluate",
-                )
-
-            eval_task_input = EvalTaskInput.from_task_run(leaf)
-            result = await evaluator.evaluate(eval_task_input)
-            return await self._persist_judgment(job, leaf, result)
+        # Both skips come before `_resolve_trace`, so a job that can never be scored
+        # never pays for a generation.
+        if (
+            isinstance(job.item, TaskRun)
+            and job.item.parent_task_run_id is not None
+            and job.type == "task_run_eval"
+        ):
+            return await self._persist_skip(
+                job,
+                SkippedReason.incompatible_input_shape,
+                "Stored multi-turn conversations can't be re-run for a run config",
+            )
 
         trace = await self._resolve_trace(job, evaluator)
         eval_task_input = EvalTaskInput.from_trace(trace, job.item)
@@ -1382,10 +1194,6 @@ class EvalRunner:
         Stamped from `key` rather than re-derived, for the same reason as
         `_generate_and_persist`: the run must file itself under exactly the key
         the index filed it under, or it is never found again.
-
-        `ended_by_su` is written as a tag rather than kept in memory because the
-        completeness gate that needs it runs again on every later reuse of this
-        file, when the drive that produced it is long gone.
         """
         source_type, source_id, run_config_id, _ = key
         leaf = drive_result.chain[-1]

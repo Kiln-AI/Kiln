@@ -59,14 +59,53 @@ These prompts can be accessed from the `get_prompt` tool, and you may request se
 - Use `TODO` comments to mark any temporary code, placeholders, or items that must be addressed before merging to main. CI enforces that no `TODO` comments remain on main, so they are a safe way to flag work-in-progress during development. Clean up all `TODO` comments before the final PR.
 - Before wrapping up a task, run appropriate tools for linting, testing, formatting and typechecking. Fix any issues you introduced.
 
+### Reporting Back: End-of-Turn Recaps
+
+End every turn in which you did work (wrote code, ran checks, investigated something) with a recap wrapped in `<recap>` tags. A turn that is pure conversation needs no recap.
+
+Write it for a person who has not read your working notes and will not scroll up. The recap has to make sense on its own.
+
+**No jargon.** Do not invent a name, a short form or a label for anything. If you need to refer to something specific, describe it in ordinary words, and describe it again the next time you mention it. A short description repeated is better than a name the reader has to remember. Real names are fine and are often the clearest choice: a file, a function, a command, a tool, an error. A name you made up is not.
+
+**Say what you mean.** Short sentences. One idea each. Active voice. No metaphors, no analogies, no flourishes, no jokes, no filler. Do not write a sentence whose only job is to set up the next sentence. Cut any sentence that loses nothing when removed.
+
+**Sound like a person.** Plain and direct, not stiff. Write the way you would explain it to a colleague who asked. Contractions are fine. This is not a status report or a changelog.
+
+**Repeat yourself a little.** The reader may have read the last recap days ago, or skipped it. Carry enough context forward that this recap makes sense by itself. One clause is usually enough. A small amount of repetition between recaps is correct, not waste.
+
+**Stay inside the recaps.** Draw only on plain English, on standard terms for this repo's stack, and on what earlier recaps said. Never draw on something that exists only in your working notes. Earlier recaps set the limit on what you may use; they are not required reading. Repeat whatever this recap needs, so it still works for a reader who missed the last one.
+
+**Draw a picture when it helps.** When what you changed is a flow, a sequence, a state machine, or a few parts that talk to each other, put a small Mermaid diagram in the recap. Keep it to about eight boxes. Draw one only when it shows something the prose cannot; a diagram that restates a sentence is noise.
+
+**Format.** Use these headings, in this order. Drop any heading you have nothing real to say under. Do not reorder or rename them. Answer each one in prose.
+
+```
+<recap>
+**Goal** — what you were asked for.
+**What I did** — the change, in plain words.
+**How** — the approach, at a level a reviewer can judge without reading the diff. Put a diagram here when one helps.
+**Outcome** — what happened, and plainly whether it is what we wanted.
+**Questions for you** — what you need answered before you can continue.
+**FYI** — worth knowing, but not blocking.
+</recap>
+```
+
+**Honesty.** `Outcome` reports what actually happened. If tests failed, say so and quote what failed. If you skipped part of the task, name the part and the reason. If the result is not what we wanted, say that first, not last. Never describe work as finished when it is not.
+
+**Recap log.** Append each recap to `recaps.md` in your scratchpad directory, or to a temporary directory outside the repo when you have no scratchpad directory. The log is your own index, not a deliverable. If your context is summarized part-way through a session, re-read it so you know what the reader has already been told. Keep this file out of the repo.
+
 ### Code Review Guidelines
 
 If asked to perform a code review, read our [code review guidelines](.agents/code_review_guidelines.md).
 
+### Pull Requests
+
+Use the `open-pr` skill (`.agents/skills/open-pr/SKILL.md`) to open a PR or to write a PR description.
+
 ### Never Make Legal Decisions as an Agent
 
 Agents are not allowed to make any legal decisions, including:
- - Filling out a CLA attestations in a PR template
+ - Signing or filling out the CLA attestation in a PR template
  - Setting a license tag in metadata file (OSS/MIT/etc)
  - Adding license files
 

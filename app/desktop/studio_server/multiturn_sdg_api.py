@@ -106,38 +106,29 @@ _CASE_DICT_DESCRIPTION = (
     "scenario_index?: int | null}. The synthetic_user_info value is an "
     "XML-tagged blob: "
     "<persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. "
-    "Parsed client-side by kiln_ai.synthetic_user.parser. scenario_index is "
-    "set only on scenario batches (generate_cases with case_prompts) and maps "
+    "Parsed client-side by kiln_ai.synthetic_user.parser. scenario_index maps "
     "the case back to its plan prompt."
 )
 
 
 class GenerateCasesApiInput(BaseModel):
     target_specification: str = Field(..., min_length=1)
-    num_cases: int = Field(..., ge=1, le=NUM_CASES_MAX)
-    case_prompts: list[str] | None = Field(
-        default=None,
+    case_prompts: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=NUM_CASES_MAX,
         description=(
-            "Optional per-case scenario prompts (e.g. from an approved batch "
-            "plan). When provided, case i is designed around prompt i and "
-            "each returned case carries scenario_index. Under the upstream "
-            "salvage contract a flaky case is dropped rather than failing "
-            "the batch, so the response may hold fewer cases than prompts — "
-            "scenario_index, not position, maps a case to its prompt. Length "
-            "must equal num_cases."
+            "One scenario prompt per case (e.g. from an approved batch plan). "
+            "A case that fails to generate is dropped, so the response can "
+            "hold fewer cases than prompts; scenario_index maps each case to "
+            "its prompt."
         ),
     )
 
     @model_validator(mode="after")
-    def _case_prompts_match_num_cases(self) -> "GenerateCasesApiInput":
-        if self.case_prompts is not None:
-            if len(self.case_prompts) != self.num_cases:
-                raise ValueError(
-                    "case_prompts length must equal num_cases "
-                    f"({len(self.case_prompts)} != {self.num_cases})."
-                )
-            if any(not p.strip() for p in self.case_prompts):
-                raise ValueError("case_prompts entries must be non-empty.")
+    def _case_prompts_non_empty(self) -> "GenerateCasesApiInput":
+        if any(not p.strip() for p in self.case_prompts):
+            raise ValueError("case_prompts entries must be non-empty.")
         return self
 
 
@@ -384,41 +375,21 @@ def _to_http_exception(
     )
 
 
-def _case_chunks(
-    num_cases: int, case_prompts: list[str] | None
-) -> list[tuple[int, int, list[str] | None]]:
-    """Split a case request into `(plan offset, count, scenarios)` chunks of at
-    most SU_CASES_PER_CALL, in plan order.
-
-    The offset is where the chunk starts in the caller's plan — it's what turns
-    the chunk-relative indexes upstream returns back into plan-relative ones.
-    With no plan there are no scenarios to slice, so those chunks carry a count
-    only.
-    """
-    chunks: list[tuple[int, int, list[str] | None]] = []
-    for start in range(0, num_cases, SU_CASES_PER_CALL):
-        if case_prompts is None:
-            chunks.append((start, min(SU_CASES_PER_CALL, num_cases - start), None))
-        else:
-            scenarios = case_prompts[start : start + SU_CASES_PER_CALL]
-            chunks.append((start, len(scenarios), scenarios))
-    return chunks
+def _case_chunks(case_prompts: list[str]) -> list[tuple[int, list[str]]]:
+    """Split the plan into `(plan offset, scenarios)` chunks of at most
+    SU_CASES_PER_CALL, in plan order. The offset turns the chunk-relative
+    indexes upstream returns back into plan-relative ones."""
+    return [
+        (start, case_prompts[start : start + SU_CASES_PER_CALL])
+        for start in range(0, len(case_prompts), SU_CASES_PER_CALL)
+    ]
 
 
 def _case_dict_at_plan_offset(case: SdkCase, start: int) -> SyntheticUserCaseDict:
-    """The case as a wire dict, with scenario_index moved from chunk-relative to
-    plan-relative.
-
-    Upstream numbers each case against the scenario list its own call was given,
-    so the first case of every chunk comes back as index 0; adding the chunk's
-    plan offset restores the plan numbering the caller sent. A case with no
-    index (a batch generated without a plan) passes through untouched — under
-    salvage, position is not a scenario mapping, so an index is never invented.
-    """
+    """The case as a wire dict, with scenario_index shifted by the chunk's plan
+    offset: upstream numbers each chunk's cases from 0."""
     case_dict = case.to_dict()
-    index = case_dict.get("scenario_index")
-    if isinstance(index, int):
-        case_dict["scenario_index"] = index + start
+    case_dict["scenario_index"] = case.scenario_index + start
     return case_dict
 
 
@@ -463,13 +434,12 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
         in_flight = asyncio.Semaphore(SU_CALLS_IN_FLIGHT)
 
         async def generate_chunk(
-            start: int, count: int, scenarios: list[str] | None
+            start: int, scenarios: list[str]
         ) -> list[SyntheticUserCaseDict]:
             async with in_flight:
                 chunk_cases = await client.generate(
                     target_task_prompt=task.instruction,
                     target_specification=input.target_specification,
-                    num_cases=count,
                     case_scenarios=scenarios,
                 )
             return [_case_dict_at_plan_offset(c, start) for c in chunk_cases]
@@ -481,10 +451,8 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
             # did, rather than shipping a partial batch.
             by_chunk = await asyncio.gather(
                 *(
-                    generate_chunk(start, count, scenarios)
-                    for start, count, scenarios in _case_chunks(
-                        input.num_cases, input.case_prompts
-                    )
+                    generate_chunk(start, scenarios)
+                    for start, scenarios in _case_chunks(input.case_prompts)
                 )
             )
         except (SyntheticUserRequestError, SyntheticUserServerError) as exc:

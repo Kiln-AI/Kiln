@@ -912,6 +912,8 @@ def connect_provider_api(app: FastAPI):
                 return await connect_cerebras(parse_api_key(key_data))
             case ModelProviderName.featherless_ai:
                 return await connect_featherless(parse_api_key(key_data))
+            case ModelProviderName.typesafe:
+                return await connect_typesafe(parse_api_key(key_data))
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
@@ -987,6 +989,8 @@ def connect_provider_api(app: FastAPI):
                     Config.shared().cerebras_api_key = None
                 case ModelProviderName.featherless_ai:
                     Config.shared().featherless_ai_api_key = None
+                case ModelProviderName.typesafe:
+                    Config.shared().typesafe_api_key = None
                 case (
                     ModelProviderName.kiln_custom_registry
                     | ModelProviderName.kiln_fine_tune
@@ -1607,6 +1611,49 @@ async def connect_featherless(key: str):
         return JSONResponse(
             status_code=400,
             content={"message": f"Failed to connect to Featherless AI. Error: {e!s}"},
+        )
+
+
+async def connect_typesafe(key: str):
+    try:
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        # /v1/models is account-scoped and rejects a bad key, and listing models spends
+        # no tokens, so it validates the key without a POST.
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.typesafe.ai/v1/models",
+                headers=headers,
+                timeout=10,
+                follow_redirects=True,
+            )
+
+        if response.status_code in (401, 403):
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "message": "Failed to connect to TypeSafe AI. Invalid API key."
+                },
+            )
+        elif response.status_code != 200:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to connect to TypeSafe AI. Error: [{response.status_code}]"
+                },
+            )
+        else:
+            Config.shared().typesafe_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to TypeSafe AI"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to TypeSafe AI. Error: {e!s}"},
         )
 
 

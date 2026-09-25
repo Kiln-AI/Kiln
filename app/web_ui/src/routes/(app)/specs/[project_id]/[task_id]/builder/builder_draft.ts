@@ -10,14 +10,22 @@
 import type { ModelChoice } from "$lib/eval/default_judge"
 import type { KilnAgentRunConfigProperties } from "$lib/types"
 import type { SuggestedEdit } from "../spec_utils"
+import type { BatchSize } from "./batch_profiles"
 
 // A generated synthetic-user case as the wire carries it: the seed message,
-// the persona blob, and the plan scenario it came from.
+// the persona blob, and the plan scenario it came from. leaf_run_id is absent
+// until the case has been driven, which is when the run exists.
 export type SyntheticUserCaseWire = {
   seed_prompt: string
   synthetic_user_info: string
   scenario_index?: number | null
+  leaf_run_id?: string
 }
+
+// A case the save sends: the generated case plus the run it was driven in.
+// The save mints no test case for a reviewed run, so this id is what keeps
+// the golden answer key out of the test, train and val splits.
+export type DrivenCaseWire = SyntheticUserCaseWire & { leaf_run_id: string }
 
 // The generate_cases output, cached against exactly the inputs it depends
 // on (the approved prompts + the spec text — the run config plays no part
@@ -170,6 +178,9 @@ export type BuilderDraft = {
   property_values: Record<string, string | null>
   refined_property_values: Record<string, string | null>
   suggested_edits: Record<string, SuggestedEdit>
+  // Step 4 — the dataset size the user chose, and what the save deals by.
+  // Null on drafts written before the picker existed; they restore as Standard.
+  batch_size: BatchSize | null
   // Step 4 — the approved plan (minutes of copilot work to recreate).
   batch_plan: { prompts: string[]; summary: string } | null
   batch_plan_edited: boolean
@@ -242,6 +253,7 @@ export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   property_values: {},
   refined_property_values: {},
   suggested_edits: {},
+  batch_size: null,
   batch_plan: null,
   batch_plan_edited: false,
   cached_su_cases: null,

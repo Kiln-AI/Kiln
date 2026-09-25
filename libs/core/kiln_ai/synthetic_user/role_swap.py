@@ -8,7 +8,7 @@ the synthetic user.
       user      = synthetic user        assistant = synthetic user
       assistant = target agent          user      = target agent
 
-The driver filters `visible_message_roles` upstream, so a system or tool
+The driver keeps only user and assistant turns upstream, so a system or tool
 turn reaching here is an internal invariant violation — fail loud rather
 than silently drop.
 """

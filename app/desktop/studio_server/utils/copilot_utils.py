@@ -8,7 +8,8 @@ spec creation workflow.
 import logging
 import random
 import time
-from typing import Any, TypeVar
+from collections.abc import Sequence
+from typing import Any, Protocol, TypeVar
 
 from fastapi import HTTPException
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
@@ -16,6 +17,7 @@ from kiln_ai.datamodel import ClaimReview, Feedback, FeedbackSource, Task, TaskR
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
     EvalInput,
+    EvalSplitName,
     MultiTurnDriveConfig,
     MultiTurnSyntheticEvalInputData,
     SingleTurnEvalInputData,
@@ -38,6 +40,7 @@ from kiln_ai.synthetic_user.parser import (
 from kiln_ai.tools.mcp_session_manager import mcp_session_scope
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
+from kiln_server.utils.spec_utils import SpecEvalTags, SplitShare
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     generate_batch_v1_copilot_generate_batch_post,
@@ -89,42 +92,11 @@ KILN_ADAPTER_NAME = "kiln-adapter"
 NUM_SAMPLES_PER_TOPIC = 20
 NUM_TOPICS = 15
 
-# Dataset split — the 50/25/25 spec (train / eval / golden). Golden is the
-# human-rated answer key, filled from RATED items only (never padded with
-# unrated ones). On both arms the eval slice is EvalInput items — inputs the
-# runner executes fresh per run config — so golden, train and val are the
-# slices stored as TaskRuns. Both wizard arms split their batch runs the same
-# way: golden is capped at GOLDEN_TARGET_FRACTION of the batch
-# (select_golden_runs) and the remainder is dealt train:val
-# (deal_pool_train_val). The legacy v1 manual flow's single-turn save instead
-# takes its reviewed examples as golden (structurally small, no cap needed)
-# and splits the generated pool train:eval at 2:1 (the 50:25), minting no val
-# items at all. If fewer than the target fraction are rated the answer key is
-# simply smaller (warned). One owner so the golden fraction can't drift
-# between the splitters.
+# How a generated pool is split on the sdg_session_config path, and the golden
+# share warn_if_golden_below_target warns below.
 TRAIN_SPLIT_WEIGHT = 2
 EVAL_SPLIT_WEIGHT = 1
-GOLDEN_SPLIT_WEIGHT = 1
 GOLDEN_TARGET_FRACTION = 0.25
-
-# The non-golden pool's train:val deal, from the agreed
-# train/val/test/golden = 40/25/25/10 scheme. Only the train:val ratio of that
-# scheme lives here: the test slice is EvalInput items minted separately and
-# golden is carved by select_golden_runs, so neither is in this pool to deal.
-# Kept apart from the *_SPLIT_WEIGHT constants above, which do the golden/eval
-# math and must not move when this ratio does. The same two weights drive the
-# dataset-generation allocator in
-# app/web_ui/src/lib/utils/eval_generation_splits.ts (TRAIN_SPLIT_WEIGHT /
-# VAL_SPLIT_WEIGHT there); the two must move together or generated data and
-# wizard-saved data land in the splits at different ratios.
-#
-# Known limitation of this dealing: val runs share their inputs with the test
-# slice (the same driven cases feed both), which is honest for judge
-# iteration but leaks eval inputs into any optimizer loop that trains against
-# val. Fixing that requires partitioning the input pool before the drive, a
-# design change rather than a ratio change.
-TRAIN_DEAL_WEIGHT = 40
-VAL_DEAL_WEIGHT = 25
 
 
 def spec_rating_key(spec_name: str) -> str:
@@ -405,6 +377,15 @@ async def generate_copilot_examples(
 T = TypeVar("T")
 
 
+class SaveCase(Protocol):
+    """A save-payload case, on either arm, naming the run it was driven in."""
+
+    leaf_run_id: str
+
+
+CaseT = TypeVar("CaseT", bound=SaveCase)
+
+
 def split_pool_train_eval(pool: list[T], rng: random.Random) -> tuple[list[T], list[T]]:
     """Divide the non-golden pool into (train, eval) at 2:1 — the 50:25 of
     the split. Golden never comes from this pool: it is the human-reviewed
@@ -645,18 +626,10 @@ def build_single_turn_eval_inputs(
     eval_tag: str,
     extra_tags: list[str],
 ) -> list[EvalInput]:
-    """Mint one EvalInput per input string — the single-turn eval slice.
+    """One EvalInput per input string, carrying a task input and no output.
 
-    Each carries a generated task INPUT only (structured-task inputs as JSON
-    strings), tagged with the eval-slice tag plus provenance (the drive
-    batch, or the legacy flow's generation session). No output on purpose:
-    the runner produces a fresh output per run config at eval time and
-    judges that, so a stored output would only be a misleading artifact of
-    the machine that wrote the input.
-
-    Models are built and validated here, unsaved — persistence happens in
-    persist_eval_slice inside the save unit-of-work (mirrors the multi-turn
-    producer).
+    An input for a task with an input schema is a JSON string. The eval runner
+    produces the output per run config at eval time. Built unsaved.
     """
     return [
         EvalInput(
@@ -673,12 +646,11 @@ def build_single_turn_batch_eval_inputs(
     task: Task,
     eval_tag: str,
 ) -> list[EvalInput]:
-    """The wizard single-turn save's eval slice: one EvalInput per generated
-    input the pipeline ran, tagged with the eval-slice tag plus the drive
-    batch it came from — the single-turn sibling of
-    build_multi_turn_eval_inputs, with the same build-unsaved contract
-    (persistence happens in persist_eval_slice inside the save
-    unit-of-work)."""
+    """One EvalInput per input a single-turn batch ran, parented to the task.
+
+    Tagged with `eval_tag` plus the drive batch the input was run in. Built
+    unsaved.
+    """
     eval_inputs = build_single_turn_eval_inputs(
         inputs, eval_tag, [f"{_TAG_PREFIX_SINGLE_TURN_DRIVE_BATCH}{batch_tag}"]
     )
@@ -839,105 +811,79 @@ def delete_single_turn_batch_runs(task: Task, batch_tag: str) -> int:
     return deleted
 
 
-def split_and_tag_batch_runs(
+def tag_golden_batch_runs(
     leaves: list[TaskRun],
     reviewed_leaf_ids: set[str],
-    train_tag: str,
     golden_tag: str,
-    val_tag: str,
-    rng: random.Random | None = None,
     tagged_out: list[tuple[TaskRun, set[str]]] | None = None,
 ) -> None:
-    """Assign each batch run to exactly ONE split (golden XOR train XOR val).
+    """Tag every reviewed run golden: the human-rated answer key.
 
-    Both arms' save writer: `leaves` are the multi-turn chain leaves or the
-    single-turn pipeline's batch-tagged runs. Golden = the human-rated runs
-    (the answer key), capped at the target fraction; everything left over is
-    dealt train:val. The runs carry no eval slice — the eval set is EvalInput
-    items minted separately (from the driven cases or the generated inputs)
-    and re-run fresh at eval time, so reusing a golden run's input there is
-    not circular: golden validates the judge on the STORED result while the
-    eval set scores NEW ones.
-
-    `rng` is injected for deterministic tests. If `tagged_out` is provided,
-    each run actually mutated is appended as `(run, {tag_added})` so the
-    caller can reverse the mutation on failure via
-    `untag_batch_runs_for_eval` without disturbing pre-existing tags.
-    Mutates each run in place and persists via save_to_file.
+    `tagged_out` records each tag added so a failed save can remove it.
     """
-    rng = rng or random.Random()
-    golden, pool = select_golden_runs(leaves, reviewed_leaf_ids, rng)
-    train, val = deal_pool_train_val(pool, rng)
-
+    golden = [leaf for leaf in leaves if leaf.id in reviewed_leaf_ids]
     tag_batch_runs(golden, golden_tag, tagged_out)
-    tag_batch_runs(train, train_tag, tagged_out)
-    tag_batch_runs(val, val_tag, tagged_out)
-
-    warn_if_golden_below_target(len(golden), len(leaves))
 
 
-def deal_pool_train_val(pool: list[T], rng: random.Random) -> tuple[list[T], list[T]]:
-    """Deal the non-golden pool into (train, val) at TRAIN:VAL weights.
+def deal_pool(
+    pool: list[T], shares: Sequence[SplitShare], rng: random.Random
+) -> dict[EvalSplitName, list[T]]:
+    """Deal a pool across the shares into disjoint hands.
 
-    The pool must be re-shuffled here even though select_golden_runs shuffles:
-    it shuffles only the RATED runs and returns rated-leftovers ahead of the
-    unrated ones in disk order, so dealing that order by prefix would send
-    every over-cap rated run to the same bucket every time. Shuffling through
-    the injected rng keeps the deal random in production and reproducible
-    under a seeded rng. The input list is not mutated.
-
-    Sizes are apportioned by largest remainder so no run is dropped: both
-    shares are floored, and the at-most-one leftover seat goes to the larger
-    fractional remainder. The two remainders always sum to 0 or to
-    TRAIN + VAL, because the exact shares sum to the pool size; a leftover
-    seat exists exactly in the second case, where both are nonzero and sum to
-    an odd 65. So whenever there is a seat to award the remainders cannot be
-    equal, and the deal has no arbitrary tie-break to get wrong.
+    Sizes are largest remainder, ties by position, so the caller's order decides
+    who wins a leftover case. The input list is not mutated.
     """
     shuffled = list(pool)
     rng.shuffle(shuffled)
     size = len(shuffled)
-    total_weight = TRAIN_DEAL_WEIGHT + VAL_DEAL_WEIGHT
-    train_count = size * TRAIN_DEAL_WEIGHT // total_weight
-    val_count = size * VAL_DEAL_WEIGHT // total_weight
-    # The two floors leave at most one seat unassigned; largest remainder
-    # gives it to whichever bucket was rounded down harder. Val takes the
-    # rest of the pool, so only train's count has to move.
-    if train_count + val_count < size and (
-        size * TRAIN_DEAL_WEIGHT % total_weight > size * VAL_DEAL_WEIGHT % total_weight
-    ):
-        train_count += 1
-    return shuffled[:train_count], shuffled[train_count:]
+    total_weight = sum(share.weight for share in shares)
+    counts = {share.split: size * share.weight // total_weight for share in shares}
+    leftover = size - sum(counts.values())
+    for share in sorted(shares, key=lambda s: -(size * s.weight % total_weight))[
+        :leftover
+    ]:
+        counts[share.split] += 1
+
+    hands: dict[EvalSplitName, list[T]] = {}
+    dealt = 0
+    for share in shares:
+        hands[share.split] = shuffled[dealt : dealt + counts[share.split]]
+        dealt += counts[share.split]
+    return hands
 
 
-def select_golden_runs(
-    leaves: list[TaskRun],
+def cases_to_mint(
+    cases: list[CaseT],
     reviewed_leaf_ids: set[str],
-    rng: random.Random,
-) -> tuple[list[TaskRun], list[TaskRun]]:
-    """Carve the golden answer-key slice off the batch runs.
+) -> list[CaseT]:
+    """The cases that become EvalInputs: every case the human did not review.
 
-    Golden is up to GOLDEN_TARGET_FRACTION of the runs, drawn from RATED
-    runs only (the answer key is human-rated by definition). Under the
-    pooled stratified review both arms rate ~25% of the batch, so golden is
-    normally every reviewed run; a reviewer who grades extra runs beyond the
-    cap sends the extras back into the pool with their ratings kept, where
-    they can land in either dealt slice. Returns (golden, remaining):
-    remaining holds the rated runs beyond the cap plus the unrated runs — the
-    pool that deal_pool_train_val splits train:val. Only the golden slice is
-    the answer key the judge is calibrated against.
+    A reviewed case is already in the eval as the rated run behind the golden
+    answer key, so minting it too would put one case in golden and in a dealt
+    split, and the judge would be refined on what it is then scored on.
     """
-    golden_target = (
-        len(leaves)
-        * GOLDEN_SPLIT_WEIGHT
-        // (TRAIN_SPLIT_WEIGHT + EVAL_SPLIT_WEIGHT + GOLDEN_SPLIT_WEIGHT)
-    )
-    rated = [leaf for leaf in leaves if leaf.id in reviewed_leaf_ids]
-    unrated = [leaf for leaf in leaves if leaf.id not in reviewed_leaf_ids]
-    rng.shuffle(rated)
-    golden = rated[:golden_target]
-    remaining = rated[golden_target:] + unrated
-    return golden, remaining
+    return [case for case in cases if case.leaf_run_id not in reviewed_leaf_ids]
+
+
+def deal_eval_inputs(
+    eval_inputs: list[EvalInput],
+    shares: Sequence[SplitShare],
+    tags: SpecEvalTags,
+    rng: random.Random,
+) -> dict[EvalSplitName, list[EvalInput]]:
+    """Deal the minted cases across the shares and return the hands.
+
+    The train and val hands are retagged on the unsaved items, which
+    persist_eval_slice then writes.
+    """
+    hands = deal_pool(eval_inputs, shares, rng)
+    for split, tag in (("train", tags.train_tag), ("val", tags.val_tag)):
+        for eval_input in hands.get(split, []):
+            eval_input.tags = [
+                tag if existing == tags.test_tag else existing
+                for existing in eval_input.tags
+            ]
+    return hands
 
 
 def tag_batch_runs(
@@ -963,20 +909,11 @@ def build_multi_turn_eval_inputs(
     eval_tag: str,
     drive_config: MultiTurnDriveConfig,
 ) -> list[EvalInput]:
-    """Mint one EvalInput per driven case — the multi-turn eval slice.
+    """One EvalInput per driven case: its seed message, persona and drive config.
 
-    Each carries the case's seed message, the parsed synthetic-user persona
-    (the structured submodel; the XML blob never persists), and the drive
-    settings the batch's conversations ran with — stamped per item so every
-    item is a self-contained replication recipe for eval-time re-drives.
-    Tagged with the eval-slice tag and its provenance: the synthetic-user
-    batch the case was driven in and, when known, the batch-plan scenario it
-    came from.
-
-    Models are built and validated here, unsaved — persistence happens in
-    persist_eval_slice inside the save unit-of-work. Raises
-    HTTPException(422) when a case's persona blob doesn't parse, so a
-    malformed request fails before anything is written.
+    Drive settings are stamped per item so an eval-time re-drive replays the same
+    synthetic user. Built unsaved; raises HTTPException(422) on an unparsable
+    persona.
     """
     eval_inputs: list[EvalInput] = []
     for position, case in enumerate(cases):
@@ -1008,12 +945,10 @@ def persist_eval_slice(
     eval_inputs: list[EvalInput],
     saved_out: list,
 ) -> None:
-    """Materialize an eval slice by persisting its EvalInput items.
+    """Write a save's EvalInput items to disk.
 
-    Shared by both arms: the items differ (a driven case's seed + persona vs a
-    generated single-turn input) but the persistence and rollback contract is
-    the same. Each item is appended to `saved_out` the moment it hits disk so
-    a failed save rolls it back with the other created models.
+    Each item is appended to `saved_out` the moment it lands so a failed save
+    rolls it back with the other created models.
     """
     for eval_input in eval_inputs:
         eval_input.save_to_file()
@@ -1023,12 +958,10 @@ def persist_eval_slice(
 def untag_batch_runs_for_eval(
     tagged_leaves: list[tuple[TaskRun, set[str]]],
 ) -> None:
-    """Reverse the tagging done by split_and_tag_batch_runs.
+    """Remove the tags a save added, leaving the tags each run already had.
 
-    Removes only the tags that THIS save added (passed in via `tagged_out`),
-    so pre-existing tags on the run are preserved. Best-effort: a per-run
-    save failure is logged and the loop continues — the original save error
-    that triggered cleanup is the one the user needs to see.
+    Best-effort: a per-run save failure is logged and the loop continues so the
+    original save error stays visible.
     """
     for leaf, added_tags in tagged_leaves:
         try:

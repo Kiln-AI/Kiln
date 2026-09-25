@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-from ..models.generate_judge_prompt_api_input_trace_type import GenerateJudgePromptApiInputTraceType
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
@@ -25,9 +24,6 @@ class GenerateJudgePromptApiInput:
         target_specification (str): The specification describing what behavior the Target Task should exhibit or avoid
         target_task_prompt (str): Complete prompt for the Target Task including system instructions and few-shot
             examples
-        trace_type (GenerateJudgePromptApiInputTraceType): Shape of the traces the judge will grade. Selects the
-            authoring prompt: multi-turn rubrics reason over turn-labelled transcripts and tool activity, single-turn
-            rubrics grade one input/output pair.
         task_tools (list[TaskToolInfo] | None | Unset): Tools available to the Target Task, rendered into the task
             prompt so the authored rubric can reason about tool use. Omit if the caller did not collect them; send [] if the
             task has none.
@@ -38,7 +34,6 @@ class GenerateJudgePromptApiInput:
 
     target_specification: str
     target_task_prompt: str
-    trace_type: GenerateJudgePromptApiInputTraceType
     task_tools: list[TaskToolInfo] | None | Unset = UNSET
     task_skills: list[TaskSkillInfo] | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -47,8 +42,6 @@ class GenerateJudgePromptApiInput:
         target_specification = self.target_specification
 
         target_task_prompt = self.target_task_prompt
-
-        trace_type = self.trace_type.value
 
         task_tools: list[dict[str, Any]] | None | Unset
         if isinstance(self.task_tools, Unset):
@@ -80,7 +73,6 @@ class GenerateJudgePromptApiInput:
             {
                 "target_specification": target_specification,
                 "target_task_prompt": target_task_prompt,
-                "trace_type": trace_type,
             }
         )
         if task_tools is not UNSET:
@@ -99,8 +91,6 @@ class GenerateJudgePromptApiInput:
         target_specification = d.pop("target_specification")
 
         target_task_prompt = d.pop("target_task_prompt")
-
-        trace_type = GenerateJudgePromptApiInputTraceType(d.pop("trace_type"))
 
         def _parse_task_tools(data: object) -> list[TaskToolInfo] | None | Unset:
             if data is None:
@@ -149,7 +139,6 @@ class GenerateJudgePromptApiInput:
         generate_judge_prompt_api_input = cls(
             target_specification=target_specification,
             target_task_prompt=target_task_prompt,
-            trace_type=trace_type,
             task_tools=task_tools,
             task_skills=task_skills,
         )

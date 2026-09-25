@@ -324,7 +324,7 @@ class PipelineCaseFailedEvent(BaseModel):
     message: str
     # Exception class name behind a provider or unexpected failure, so clients
     # can aggregate by type instead of parsing `message`. Always None on
-    # deterministic failures (invalid_input, missing_output, case_timeout,
+    # deterministic failures (invalid_input, missing_output,
     # bad_synthetic_user_info): `code` already names those, and it does so even
     # where an exception triggered them.
     error_type: str | None = None

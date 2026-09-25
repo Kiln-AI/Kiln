@@ -9,6 +9,7 @@ the synthetic-user batch runner).
 import litellm
 
 from kiln_ai.adapters.errors import KilnRunError, StructuredOutputParseError
+from kiln_ai.adapters.jev import JevApiError
 from kiln_ai.adapters.model_adapters.adapter_stream import (
     EMPTY_RESPONSE_ERROR_MESSAGE,
 )
@@ -48,6 +49,11 @@ def is_retryable_error(e: BaseException) -> bool:
         ),
     ):
         return True
+
+    # Jev carries its own transience (429, 5xx, timeouts, connection failures). The Jev
+    # adapter never retries, so the runner's retries are the only ones a judge gets.
+    if isinstance(e, JevApiError):
+        return e.retryable
 
     # The model's output wasn't the JSON object a structured-output task
     # requires (unparseable, or valid JSON of the wrong shape). Same

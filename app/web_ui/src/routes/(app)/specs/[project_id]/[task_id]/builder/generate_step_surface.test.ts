@@ -193,7 +193,7 @@ describe("plan drafting screen", () => {
         '"Kiln is planning a diverse batch of eval data, tailored to your task and guidance."',
       ),
     ).toBe(true)
-    expect(planning_copy).not.toContain("${eval_input_count}")
+    expect(planning_copy).not.toContain("planned_count(")
   })
 })
 
@@ -680,16 +680,13 @@ describe("Refine Plan dialog", () => {
     expect(new_plan_dialog).not.toContain("Generate Dataset")
   })
 
-  it("wraps the shared batch form with the ruled count label", () => {
-    expect(normalize(new_plan_dialog)).toContain('count_label="Item Count"')
+  it("asks for the size above the shared batch form's rows", () => {
+    // Size first, then the steer: the order the dialog reads in, and the
+    // reason the picker is a sibling of the form rather than inside it.
+    expect(normalize(new_plan_dialog)).toContain(
+      "<BatchSizePicker bind:size={staged_batch_size} /> <KilnProBatchForm",
+    )
     expect(normalize(new_plan_dialog)).toContain('guidance_id="plan_steer"')
-  })
-
-  it("caps the stepper at the server's batch cap", () => {
-    // The stepper must stop where the routes reject, so the user can't compose
-    // a request that can only 422.
-    expect(contains("const NUM_CASES_MAX = 200")).toBe(true)
-    expect(normalize(new_plan_dialog)).toContain("count_max={NUM_CASES_MAX}")
   })
 
   it("binds the guidance box to the steer rather than prefilling a template", () => {
@@ -726,7 +723,10 @@ describe("Refine Plan dialog", () => {
   })
 
   it("sends the committed steer, never the dialog's draft", () => {
-    const request = region("compose_plan_guidance(", "count: eval_input_count,")
+    const request = region(
+      "compose_plan_guidance(",
+      "count: planned_count(batch_size),",
+    )
     expect(request).toMatch(/\bpending_plan_steer\b/)
     expect(request).not.toMatch(/(?<!pending_)\bplan_steer\b/)
   })
@@ -741,15 +741,23 @@ describe("Refine Plan dialog", () => {
     ).toBeLessThan(plan.indexOf('pending_plan_steer = ""'))
   })
 
-  it("reseeds the count from the last request when no plan is on screen", () => {
-    // After a failed regenerate there is no plan to read the size from;
-    // eval_input_count still holds what that attempt asked for, so the dialog
-    // and Retry agree instead of the stepper snapping back to the default.
-    const open = function_body("function open_new_plan_dialog() {")
-    expect(open).toContain(
-      "if (batch_plan) eval_input_count = batch_plan.prompts.length",
+  it("discards a picked size when the dialog closes without submitting", () => {
+    // The picker is a DRAFT, like the steer beside it: the size that plans and
+    // that the save deals by only changes on a submit.
+    expect(function_body("function open_new_plan_dialog() {")).toContain(
+      "staged_batch_size = { ...batch_size }",
     )
-    expect(open).not.toContain("NUM_CASES")
+    expect(function_body("function discard_plan_steer_draft() {")).toContain(
+      "staged_batch_size = { ...batch_size }",
+    )
+    expect(function_body("function submit_new_plan() {")).toContain(
+      "batch_size = { ...staged_batch_size }",
+    )
+  })
+
+  it("deals the save by the size the user chose", () => {
+    // Both arms build the same eval shape, so neither may pin its own splits.
+    expect(mentions("splits: shares_for(batch_size),")).toBe(2)
   })
 })
 

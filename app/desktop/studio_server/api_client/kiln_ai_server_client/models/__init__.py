@@ -71,15 +71,11 @@ from .generate_batch_input import GenerateBatchInput
 from .generate_batch_output import GenerateBatchOutput
 from .generate_batch_output_data_by_topic import GenerateBatchOutputDataByTopic
 from .generate_judge_prompt_api_input import GenerateJudgePromptApiInput
-from .generate_judge_prompt_api_input_trace_type import GenerateJudgePromptApiInputTraceType
 from .generate_judge_prompt_output import GenerateJudgePromptOutput
 from .generate_synthetic_users_request import GenerateSyntheticUsersRequest
 from .generate_synthetic_users_response import GenerateSyntheticUsersResponse
 from .generate_v1_synthetic_user_generate_post_response_500 import GenerateV1SyntheticUserGeneratePostResponse500
 from .generate_v1_synthetic_user_generate_post_response_502 import GenerateV1SyntheticUserGeneratePostResponse502
-from .generate_v1_synthetic_user_generate_post_response_502_code import (
-    GenerateV1SyntheticUserGeneratePostResponse502Code,
-)
 from .get_session_v1_chat_sessions_session_id_get_response_400 import GetSessionV1ChatSessionsSessionIdGetResponse400
 from .get_session_v1_chat_sessions_session_id_get_response_404 import GetSessionV1ChatSessionsSessionIdGetResponse404
 from .get_session_v1_chat_sessions_session_id_get_response_426 import GetSessionV1ChatSessionsSessionIdGetResponse426
@@ -225,13 +221,11 @@ __all__ = (
     "GenerateBatchOutput",
     "GenerateBatchOutputDataByTopic",
     "GenerateJudgePromptApiInput",
-    "GenerateJudgePromptApiInputTraceType",
     "GenerateJudgePromptOutput",
     "GenerateSyntheticUsersRequest",
     "GenerateSyntheticUsersResponse",
     "GenerateV1SyntheticUserGeneratePostResponse500",
     "GenerateV1SyntheticUserGeneratePostResponse502",
-    "GenerateV1SyntheticUserGeneratePostResponse502Code",
     "GetSessionV1ChatSessionsSessionIdGetResponse400",
     "GetSessionV1ChatSessionsSessionIdGetResponse404",
     "GetSessionV1ChatSessionsSessionIdGetResponse426",

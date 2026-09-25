@@ -51,6 +51,7 @@
     type BuilderDraft,
     type CachedMintedInputs,
     type CachedSuCases,
+    type DrivenCaseWire,
     type SyntheticUserCaseWire,
   } from "./builder_draft"
   import { isKilnAgentRunConfig } from "$lib/types"
@@ -66,8 +67,8 @@
   // Step 4 plan approval reuses the /generate batch-plan components — one
   // plan-review surface across the app rather than a builder-local fork.
   import KilnProBatchPlan from "../../../../generate/[project_id]/[task_id]/kiln_pro_batch_plan.svelte"
-  // The Refine Plan dialog reuses /generate's batch form rows (count
-  // stepper + guidance box) so both flows ask for a batch the same way.
+  // The Refine Plan dialog reuses /generate's batch form rows (guidance box,
+  // warning); the Dataset Size picker above them is this flow's own.
   import KilnProBatchForm from "../../../../generate/[project_id]/[task_id]/kiln_pro_batch_form.svelte"
   // The Data Guide offer and checkbox are synthetic data generation's own,
   // shared: the single-turn arm generates task inputs for the same reason
@@ -91,6 +92,16 @@
     multiturn_plan_guidance,
     single_turn_plan_guidance,
   } from "./batch_plan_guidance"
+  // The Step 4 dataset sizes: what the planner is asked for, and the splits
+  // the save deals into.
+  import {
+    planned_count,
+    restore_batch_size,
+    shares_for,
+    DEFAULT_BATCH_SIZE,
+    type BatchSize,
+  } from "./batch_profiles"
+  import BatchSizePicker from "./batch_size_picker.svelte"
   // Dataset grounding (single-turn): auto-pick a real task run to anchor the
   // planner's and input generator's sense of what an input looks like.
   import {
@@ -417,6 +428,7 @@
         property_values,
         refined_property_values,
         suggested_edits,
+        batch_size,
         batch_plan,
         batch_plan_edited,
         cached_su_cases,
@@ -520,6 +532,7 @@
         saved.suggested_edits,
         RENDERED_REFINE_FIELDS,
       )
+      batch_size = restore_batch_size(saved.batch_size)
       batch_plan = saved.batch_plan
       batch_plan_edited = saved.batch_plan_edited
       cached_su_cases = saved.cached_su_cases ?? null
@@ -1042,23 +1055,6 @@
   // always free.
   let reviewed_identity: string | null = null
 
-  // Default size of one batch (conversations to drive, or single-turn inputs
-  // to run) — what the first plan asks for before the user picks a size in
-  // the Refine Plan dialog. The dialog's ceiling is the server's cap
-  // (NUM_CASES_MAX in libs/core/kiln_ai/synthetic_user/runner.py, mirrored by
-  // the batch-plan and pipeline routes), not this number.
-  // Sized so the batch is still useful once it is split: part becomes the
-  // human-rated answer key and the rest is dealt train:val, so a batch this
-  // size leaves enough in every slice to train on later rather than only
-  // evaluate once. Growing it does NOT grow the review ask — that is capped
-  // (review_target), so the reviewer's work stays flat as the batch scales.
-  const NUM_CASES = 80
-  // The largest batch the server will plan or drive. Mirrors NUM_CASES_MAX in
-  // libs/core/kiln_ai/synthetic_user/runner.py, which the batch-plan and
-  // pipeline routes enforce — asking for more is rejected before anything
-  // runs, so the stepper stops here rather than letting the user compose a
-  // request that can only fail.
-  const NUM_CASES_MAX = 200
   // Batch plan for Step 4 — one prompt per unit of work (a conversation
   // scenario or a single-turn test input), drafted by the copilot batch
   // planner and approved (with edits/deletions) by the user before anything
@@ -1124,9 +1120,9 @@
     use_data_guide,
     has_guide: data_guide_text !== null,
   })
-  // Approved plan length drives the batch size; before a plan exists it is
-  // the size that was requested, which the user may have changed.
-  $: planned_total = batch_plan?.prompts.length ?? eval_input_count
+  // The approved plan's length is the batch; before a plan exists it is what
+  // the chosen dataset size will ask for.
+  $: planned_total = batch_plan?.prompts.length ?? planned_count(batch_size)
   // What the approved plan will cost to run, shown in the settings dialog
   // directly above the button that spends it. Quotes the STAGED length, so the
   // number moves with the stepper the user is holding rather than with the
@@ -1194,9 +1190,9 @@
   let minting_total = 0
 
   // The cases whose conversations were actually driven (chains exist on
-  // disk). Save mints one EvalInput per driven case — the eval slice the
-  // runner re-drives per run config.
-  let driven_cases: SyntheticUserCaseWire[] = []
+  // disk), each carrying the run it drove into. Save mints one EvalInput per
+  // unreviewed case and leaves the reviewed ones to the golden answer key.
+  let driven_cases: DrivenCaseWire[] = []
   // The current batch's item list (cases on multi-turn, minted inputs on
   // single-turn) and its per-slot results, kept across drives so a retry
   // can TOP OFF the missing slots — drive only them, into the same batch
@@ -1436,12 +1432,12 @@
   // to plan and what to steer the planner toward.
   let new_plan_dialog: Dialog | null = null
   let new_plan_submitting = false
-  // How many traces the next plan asks for, and the count the last plan was
-  // REQUESTED with. Seeded from the plan on screen each time the dialog opens,
-  // so "regenerate" defaults to the size the user is already looking at; with
-  // no plan on screen (the last attempt failed) it keeps what was asked for,
-  // so the dialog and Retry agree on the size.
-  let eval_input_count = NUM_CASES
+  // The dataset size in force: what the next plan asks for, and the split
+  // shape the save sends. Rides the draft.
+  let batch_size: BatchSize = DEFAULT_BATCH_SIZE
+  // The dialog's own size, a draft until submit like the steer below: closing
+  // the dialog any other way puts it back to the committed choice.
+  let staged_batch_size: BatchSize = DEFAULT_BATCH_SIZE
   // The steer the NEXT plan request will send, appended to the arm's base
   // guidance. Committed from the dialog's box on submit and cleared only once
   // a plan arrives, so a failed attempt's Retry re-sends what was asked for.
@@ -1927,7 +1923,7 @@
                 : single_turn_plan_guidance(spec_text()),
               pending_plan_steer,
             ),
-            count: eval_input_count,
+            count: planned_count(batch_size),
             // The Data Guide and the grounding sample ride the planner's
             // data-guide param (multi-turn plans scenarios, not inputs — no
             // guide there).
@@ -1945,7 +1941,7 @@
       const prompts = data.prompts
         .map((p) => p.trim())
         .filter(Boolean)
-        .slice(0, eval_input_count)
+        .slice(0, planned_count(batch_size))
       if (prompts.length === 0) {
         generation_error = `The planner returned no usable ${plan_noun}. Retry.`
         return
@@ -2061,10 +2057,7 @@
   })
 
   function open_new_plan_dialog() {
-    // Default to the size of the plan on screen. With no plan (the last
-    // attempt failed) eval_input_count still holds the size that attempt
-    // asked for, so the dialog and Retry never disagree about it.
-    if (batch_plan) eval_input_count = batch_plan.prompts.length
+    staged_batch_size = { ...batch_size }
     use_data_guide_draft = use_data_guide
     new_plan_dialog?.show()
   }
@@ -2075,6 +2068,7 @@
   // restores verbatim.
   function discard_plan_steer_draft() {
     plan_steer = pending_plan_steer
+    staged_batch_size = { ...batch_size }
     use_data_guide_draft = use_data_guide
   }
 
@@ -2083,6 +2077,7 @@
     // Commit the typed steer: from here it survives failed attempts (Retry
     // re-sends it) until a plan actually arrives.
     pending_plan_steer = plan_steer
+    batch_size = { ...staged_batch_size }
     // Off plus Refine Plan re-plans without the guide; the mint follows the
     // plan, since both send the same value.
     use_data_guide = use_data_guide_draft
@@ -2286,7 +2281,6 @@
             params: { path: { project_id, task_id } },
             body: {
               target_specification: spec_text(),
-              num_cases: approved_prompts.length,
               case_prompts: approved_prompts,
             },
             signal: new_copilot_abort_signal(),
@@ -2465,7 +2459,15 @@
           const slot = drive_plan.slot_of_stream_index[event.case_index]
           if (slot !== undefined && !driven_slots.has(slot)) {
             driven_slots.add(slot)
-            driven_cases = [...driven_cases, drive_plan.items[event.case_index]]
+            // The run id comes from the event, not the case's position:
+            // driven_cases is appended in event order.
+            driven_cases = [
+              ...driven_cases,
+              {
+                ...drive_plan.items[event.case_index],
+                leaf_run_id: event.leaf_run_id,
+              },
+            ]
           }
           // Chains exist on disk under this batch's tag from here on —
           // record it immediately so an abort can't orphan the batch.
@@ -3366,8 +3368,8 @@
   let trace_reviews: TraceReview[] = []
   // Which traces the reviewer is asked to review (indices into trace_claims):
   // a judge-stratified subset on both arms. The review surfaces exactly this
-  // subset — unselected traces are not shown; they land in the train split
-  // unrated.
+  // subset — unselected traces are not shown, and their cases are dealt into
+  // test, train or val.
   let selected_trace_indices: number[] = []
   // What the reviewer actually walks (see reviewable_subset). Every claims
   // build is resolved before either gate opens a review, and an excluded trace
@@ -4128,8 +4130,8 @@
       // late rewrite the reviewer never saw.
       const save_judge = review_judge_config
 
-      // Multi-turn save: golden/train tags land on the driven chains; the
-      // eval slice is minted server-side as EvalInputs from the driven cases.
+      // Multi-turn save: the golden tag and the ratings land on the reviewed
+      // chains; the server mints the other cases as EvalInputs.
       if (is_multi_turn) {
         if (multi_turn_batch_tag === null || driven_cases.length === 0) {
           save_error = "Nothing was generated. Go back to Step 4."
@@ -4157,8 +4159,8 @@
         // Carry the human's review through save: each reviewed trace maps to
         // its chain-leaf TaskRun (leaf_run_id from run_cases_batch); the
         // studio writes the golden rating + per-claim grades onto that leaf.
-        // Only traces the human actually reviewed ride along (subset review:
-        // unreviewed chains land in the train split, unrated).
+        // Only traces the human actually reviewed ride along; they become
+        // the golden answer key. Unreviewed chains join no split.
         const reviewed_chains = trace_claims
           .map((tc, i) => ({ tc, review: trace_reviews[i] }))
           // Truthy check: the batch runner emits "" (not null) when a leaf
@@ -4185,6 +4187,7 @@
               properties: spec_properties,
               evaluate_full_trace: true,
               judge_info: save_judge,
+              splits: shares_for(batch_size),
               multi_turn: {
                 batch_tag: saved_batch_tag,
                 reviewed_chains,
@@ -4246,8 +4249,8 @@
       // Carry the human's review through save: each reviewed trace maps to
       // its persisted run (leaf_run_id from the pipeline); the studio
       // writes the golden rating + per-claim grades onto that run. Only
-      // traces the human actually reviewed ride along (subset review:
-      // unreviewed runs land in the train split, unrated).
+      // traces the human actually reviewed ride along; they become the
+      // golden answer key. Unreviewed runs join no split.
       const reviewed_runs = trace_claims
         .map((tc, i) => ({ tc, review: trace_reviews[i] }))
         // Truthy check: the pipeline emits "" (not null) when a run has no
@@ -4276,13 +4279,20 @@
             // too, or the calibrated judge is not the judge that ships.
             evaluate_full_trace: true,
             judge_info: save_judge,
+            splits: shares_for(batch_size),
             single_turn: {
               batch_tag: saved_batch_tag,
               reviewed_runs,
-              // The eval slice: the inputs the surviving runs were driven
-              // on, byte-identical to what the judge scored (raw_input
-              // echoes the request input on every round).
-              inputs: trace_claims.map((tc) => tc.raw_input),
+              // The cases: the inputs the surviving runs were driven on,
+              // byte-identical to what the judge scored (raw_input echoes
+              // the request input on every round), each with the run it ran
+              // in so the reviewed ones stay out of the minted splits.
+              inputs: trace_claims.map((tc) => ({
+                input: tc.raw_input,
+                // Empty when the pipeline recorded no run; such a case can't
+                // have been reviewed, so it is minted like any other.
+                leaf_run_id: tc.leaf_run_id ?? "",
+              })),
             },
             // The auto-picked sample that grounded planning and input
             // minting, recorded on the Spec for provenance (v1 parity).
@@ -5306,9 +5316,9 @@
   </AppPage>
 </div>
 
-<!-- The Refine Plan dialog: /generate's batch form rows (count stepper +
-     guidance box) wrapped in a form this page owns, so the destructive
-     warning, the size and the steer are all settled by one click. The title
+<!-- The Refine Plan dialog: the Dataset Size picker above /generate's batch
+     form rows, both in a form this page owns, so the destructive warning,
+     the size and the steer are all settled by one click. The title
      names the action, because that is all this dialog does: it re-plans, it
      generates nothing. The guidance box starts EMPTY — a prefilled
      template invites editing a prompt the user didn't write, and a
@@ -5326,10 +5336,8 @@
     on:submit={submit_new_plan}
     keyboard_submit={false}
   >
+    <BatchSizePicker bind:size={staged_batch_size} />
     <KilnProBatchForm
-      bind:count={eval_input_count}
-      count_max={NUM_CASES_MAX}
-      count_label="Item Count"
       bind:guidance={plan_steer}
       guidance_id="plan_steer"
       guidance_optional={true}
