@@ -1,36 +1,24 @@
 import base64
-import io
-import os
 import tkinter
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from PIL import Image, ImageChops, ImageFilter
 from PyInstaller.building import splash_templates
 from PyInstaller.building.splash import Splash
 
-from app.desktop import pyinstaller_build
+from app.desktop import generate_splash_images, pyinstaller_build
 from app.desktop.pyinstaller_build import (
     IMAGE_SIZING_LINE,
     SCALE_PICKER_PROCS_TCL,
+    SPLASH_VARIANTS,
     insert_before_image_sizing,
+    install_splash_script_addition,
     main,
-    prepare_splash,
-    render_splash_png,
+    read_splash_variants,
     scaled_variant_picker_tcl,
-    scaled_variants,
-    splash_pixel_size,
     tcl_variant_list,
 )
-
-SPLASH_MASTER_PATH = os.path.join(os.path.dirname(__file__), "splash@3x.png")
-
-
-@pytest.fixture
-def master():
-    with Image.open(SPLASH_MASTER_PATH) as image:
-        yield image
 
 
 @pytest.fixture
@@ -45,56 +33,11 @@ def tcl():
     return interpreter
 
 
-def png_size(png: bytes) -> tuple[int, int]:
-    with Image.open(io.BytesIO(png)) as image:
-        return image.size
-
-
-def test_splash_master_is_3x_of_a_splash_under_400_logical_px(master):
-    width, height = splash_pixel_size(master.size, 1.0)
-    assert 340 <= width <= 400
-    assert height < width
-
-
-@pytest.mark.parametrize(
-    "scale, expected",
-    [
-        (1.0, (373, 227)),
-        (1.5, (560, 340)),
-        (2.0, (747, 453)),
-        (3.0, (1120, 680)),
-    ],
-)
-def test_splash_pixel_size(scale, expected):
-    assert splash_pixel_size((1120, 680), scale) == expected
-
-
-def test_render_splash_png_downscales_to_opaque_rgb(master):
-    png = render_splash_png(master, 1.0)
-    with Image.open(io.BytesIO(png)) as rendered:
-        assert rendered.format == "PNG"
-        assert rendered.mode == "RGB"
-        assert rendered.size == splash_pixel_size(master.size, 1.0)
-
-
-@pytest.mark.parametrize("scale", pyinstaller_build.DISPLAY_SCALES)
-def test_render_splash_png_has_no_halo_around_edges(master, scale):
-    with Image.open(io.BytesIO(render_splash_png(master, scale))) as rendered:
-        source = master.convert("RGB")
-        window = 2 * round(pyinstaller_build.MASTER_SCALE / scale) + 1
-        darkest = source.filter(ImageFilter.MinFilter(window))
-        brightest = source.filter(ImageFilter.MaxFilter(window))
-        darkest = darkest.resize(rendered.size, Image.Resampling.NEAREST)
-        brightest = brightest.resize(rendered.size, Image.Resampling.NEAREST)
-        assert ImageChops.subtract(rendered, brightest).getbbox() is None
-        assert ImageChops.subtract(darkest, rendered).getbbox() is None
-
-
-def test_scaled_variants_render_every_display_scale(master):
-    variants = scaled_variants(master)
-    assert list(variants) == list(pyinstaller_build.DISPLAY_SCALES)
-    for scale, png in variants.items():
-        assert png_size(png) == splash_pixel_size(master.size, scale)
+def test_splash_variants_are_the_generated_high_dpi_images():
+    generated = dict(generate_splash_images.SPLASH_IMAGES)
+    assert generated.pop(1.0) == "splash.png"
+    assert SPLASH_VARIANTS == generated
+    assert set(read_splash_variants()) == set(SPLASH_VARIANTS)
 
 
 @pytest.mark.parametrize(
@@ -116,17 +59,17 @@ def test_scale_from_xresources(tcl, resources, expected_scale):
     "display_scale, expected_variant",
     [
         (1.0, ""),
-        (1.1, ""),
-        (1.125, ""),
-        (1.2, "1.25x"),
+        (1.2, ""),
+        (1.25, ""),
+        (1.3, "1.5x"),
         (1.5, "1.5x"),
+        (1.8, "2x"),
         (2.0, "2x"),
-        (2.6, "2.5x"),
-        (4.0, "3x"),
+        (3.0, "2x"),
     ],
 )
 def test_closest_splash_variant(tcl, display_scale, expected_variant):
-    variants = {1.25: b"1.25x", 1.5: b"1.5x", 2.0: b"2x", 2.5: b"2.5x", 3.0: b"3x"}
+    variants = {1.5: b"1.5x", 2.0: b"2x"}
     tcl.setvar("variants", tcl_variant_list(variants))
     picked = tcl.eval(f"kiln_closest_splash_variant {display_scale} $variants")
     assert base64.b64decode(picked) == expected_variant.encode()
@@ -153,11 +96,10 @@ def test_insert_before_image_sizing_fails_when_pyinstaller_script_changes():
 
 
 def test_pyinstaller_splash_script_gets_picker_before_image_sizing(
-    restore_build_script, tmp_path, master
+    restore_build_script, tmp_path
 ):
-    splash_path = prepare_splash(SPLASH_MASTER_PATH, str(tmp_path))
-    with Image.open(splash_path) as splash:
-        assert splash.size == splash_pixel_size(master.size, 1.0)
+    variants = read_splash_variants()
+    install_splash_script_addition(scaled_variant_picker_tcl(variants))
 
     pyinstaller_splash_settings = SimpleNamespace(
         text_pos=None,
@@ -173,37 +115,17 @@ def test_pyinstaller_splash_script_gets_picker_before_image_sizing(
         < image_swap
         < script.index(IMAGE_SIZING_LINE)
     )
-    for png in scaled_variants(master).values():
+    for png in variants.values():
         assert base64.b64encode(png).decode("ascii") in script
 
 
-@pytest.mark.parametrize(
-    "extra_args",
-    [
-        [],
-        ["--add-data", "./taskbar.png:.", "-n", "Kiln", "./desktop/desktop.py"],
-    ],
-)
-def test_main_swaps_splash_master_for_rendered_splash(extra_args):
+def test_main_adds_splash_variants_and_passes_args_through():
+    args = ["--windowed", "--splash=../splash/splash.png", "./desktop/desktop.py"]
     with (
-        patch.object(
-            pyinstaller_build, "prepare_splash", return_value="/tmp/splash.png"
-        ) as prepare,
-        patch("PyInstaller.__main__.run") as run,
-    ):
-        main(["--windowed", "--splash-master=desktop/splash@3x.png", *extra_args])
-
-    assert prepare.call_args.args[0] == "desktop/splash@3x.png"
-    run.assert_called_once_with(["--splash=/tmp/splash.png", "--windowed", *extra_args])
-
-
-def test_main_without_splash_master_passes_args_through():
-    args = ["--onedir", "--icon=../mac_icon.png", "./desktop/desktop.py"]
-    with (
-        patch.object(pyinstaller_build, "prepare_splash") as prepare,
+        patch.object(pyinstaller_build, "install_splash_script_addition") as install,
         patch("PyInstaller.__main__.run") as run,
     ):
         main(args)
 
-    prepare.assert_not_called()
+    install.assert_called_once_with(scaled_variant_picker_tcl(read_splash_variants()))
     run.assert_called_once_with(args)

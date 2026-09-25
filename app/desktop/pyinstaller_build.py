@@ -1,33 +1,27 @@
 """
-Runs PyInstaller for the desktop app, rendering the splash screen image first.
+Runs PyInstaller for the desktop app, adding high-DPI variants of the splash image to its splash screen.
 
 PyInstaller's splash screen is a Tk window drawn by the bootloader before Python starts. Tk draws the image one
-image pixel per screen pixel and never rescales it, so the image must be rendered at the pixel size it should
-occupy on screen:
+image pixel per screen pixel and never rescales it, and PyInstaller takes a single image (`--splash`, the 1x
+image). The splash script PyInstaller generates has no hook for more, so this adds Tcl to it that swaps in the
+checked-in variant closest to the display's scale before the window is shown. The scale comes from the screen DPI
+on Windows (the executable is declared DPI aware in win_manifest.xml, otherwise Windows reports 96 and
+bitmap-stretches the window), and from the desktop's Xft.dpi resource on X11 (the same source Tk 9 uses).
 
-- The bundled splash image is the master downscaled to its size on a standard-DPI (100%) display.
-- Renders for common display scale factors are embedded in the splash script, which swaps in the one closest to
-  the display's scale before the window is shown. The scale comes from the screen DPI on Windows (the executable
-  is declared DPI aware in win_manifest.xml, otherwise Windows reports 96 and bitmap-stretches the window), and
-  from the desktop's Xft.dpi resource on X11 (the same source Tk 9 uses).
+The splash images are made by generate_splash_images.py; nothing is rendered at build time.
 
 Usage, from the `app` directory:
-    python desktop/pyinstaller_build.py --splash-master=desktop/splash@3x.png [pyinstaller args...]
+    python desktop/pyinstaller_build.py [pyinstaller args...]
 """
 
-import argparse
 import base64
-import io
 import os
 import sys
-import tempfile
 from collections.abc import Sequence
 from typing import Any
 
-from PIL import Image
-
-MASTER_SCALE = 3
-DISPLAY_SCALES = (1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 3.0)
+SPLASH_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "splash")
+SPLASH_VARIANTS = {1.5: "splash@1.5x.png", 2.0: "splash@2x.png"}
 
 # The line of PyInstaller's splash script (6.22.3) that reads the image size to lay out the window.
 IMAGE_SIZING_LINE = "set image_width [image width splash_image]"
@@ -62,26 +56,12 @@ proc kiln_closest_splash_variant {display_scale variants} {
 """
 
 
-def splash_pixel_size(
-    master_size: tuple[int, int], display_scale: float
-) -> tuple[int, int]:
-    width, height = master_size
-    return (
-        round(width * display_scale / MASTER_SCALE),
-        round(height * display_scale / MASTER_SCALE),
-    )
-
-
-def render_splash_png(master: Image.Image, display_scale: float) -> bytes:
-    size = splash_pixel_size(master.size, display_scale)
-    rendered = master.convert("RGB").resize(size, Image.Resampling.BOX)
-    png = io.BytesIO()
-    rendered.save(png, format="PNG", optimize=True)
-    return png.getvalue()
-
-
-def scaled_variants(master: Image.Image) -> dict[float, bytes]:
-    return {scale: render_splash_png(master, scale) for scale in DISPLAY_SCALES}
+def read_splash_variants() -> dict[float, bytes]:
+    variants = {}
+    for scale, file_name in SPLASH_VARIANTS.items():
+        with open(os.path.join(SPLASH_DIR, file_name), "rb") as png:
+            variants[scale] = png.read()
+    return variants
 
 
 def tcl_variant_list(variants: dict[float, bytes]) -> str:
@@ -130,36 +110,11 @@ def install_splash_script_addition(tcl: str) -> None:
     setattr(splash_templates, "build_script", build_script)
 
 
-def prepare_splash(master_path: str, out_dir: str) -> str:
-    """
-    Writes the 1x splash image into out_dir and returns its path. Installs the script addition that swaps in
-    a sharper variant on high-DPI displays.
-    """
-    splash_path = os.path.join(out_dir, "splash.png")
-    with Image.open(master_path) as master:
-        with open(splash_path, "wb") as splash_file:
-            splash_file.write(render_splash_png(master, 1.0))
-        install_splash_script_addition(
-            scaled_variant_picker_tcl(scaled_variants(master))
-        )
-    return splash_path
-
-
 def main(argv: Sequence[str]) -> None:
-    parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
-    parser.add_argument(
-        "--splash-master",
-        help=f"Splash image drawn at {MASTER_SCALE}x its on-screen size. Replaces pyinstaller's --splash.",
-    )
-    args, pyinstaller_args = parser.parse_known_args(argv)
-
     import PyInstaller.__main__
 
-    with tempfile.TemporaryDirectory() as splash_dir:
-        if args.splash_master:
-            splash_path = prepare_splash(args.splash_master, splash_dir)
-            pyinstaller_args = [f"--splash={splash_path}", *pyinstaller_args]
-        PyInstaller.__main__.run(pyinstaller_args)
+    install_splash_script_addition(scaled_variant_picker_tcl(read_splash_variants()))
+    PyInstaller.__main__.run(list(argv))
 
 
 if __name__ == "__main__":

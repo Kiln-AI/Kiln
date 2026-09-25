@@ -95,18 +95,18 @@ if [ "$(uname)" == "Darwin" ]; then
 elif [[ "$(uname)" =~ ^MINGW64_NT-10.0 ]] || [[ "$(uname)" =~ ^MSYS_NT-10.0 ]]; then
   echo "Building Windows App"
   cp desktop/win_taskbar.png desktop/build/taskbar.png
-  PLATFORM_OPTS="--windowed --splash-master=desktop/splash@3x.png --manifest=../win_manifest.xml --icon=../win_icon.ico"
+  PLATFORM_OPTS="--windowed --splash=../splash/splash.png --manifest=../win_manifest.xml --icon=../win_icon.ico"
 elif [ "$(uname)" == "Linux" ]; then
   echo "Building Linux App"
   cp desktop/mac_taskbar.png desktop/build/taskbar.png
-  PLATFORM_OPTS="--windowed --onefile --splash-master=desktop/splash@3x.png --icon=../mac_icon.png"
+  PLATFORM_OPTS="--windowed --onefile --splash=../splash/splash.png --icon=../mac_icon.png"
 else
   echo "Unsupported operating system: $(uname)"
   exit 1
 fi
 
-# Builds the desktop app. pyinstaller_build.py runs pyinstaller, first rendering --splash-master to the
-# splash screen image (see its docstring for how the splash is sized for high-DPI displays).
+# Builds the desktop app. pyinstaller_build.py runs pyinstaller, adding the high-DPI splash images to the
+# splash screen (see its docstring).
 # We should use a spec instead of a long-winded command line
 # eval_helpers is imported only by user scorer code at runtime (the code-eval
 # examples embed the import as a string), so PyInstaller can't discover it.
