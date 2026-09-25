@@ -592,6 +592,27 @@ def _appindicator_themed_subclass(base: Any, theme_path: str, icon_name: str) ->
     return ThemedTray
 
 
+def guard_pystray_notifier() -> None:
+    """pystray's GTK backends create an org.freedesktop.Notifications proxy with
+    D-Bus auto-start inside run_detached(). If the daemon is missing, or its .service
+    file can't start (e.g. KDE's installed under XFCE), that raises after a 25s block
+    and takes the whole tray down. Kiln never sends notifications: replace it with a no-op."""
+    try:
+        from pystray._util import gtk as pystray_gtk  # type: ignore
+    except Exception:
+        return
+
+    class NoopNotifier:
+        def notify(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def hide(self) -> None:
+            pass
+
+    setattr(pystray_gtk.notify_dbus, "Notifier", NoopNotifier)
+    log.info("pystray notifier replaced with no-op")
+
+
 def start_glib_thread() -> None:
     from gi.repository import GLib  # type: ignore
 
@@ -614,6 +635,8 @@ def create_tray(
     if OPTIONS.backend == "sni":
         return create_sni_tray(resource_path, taskbar, name, title, menu)
     backend = log_backend_report()
+    if backend in ("appindicator", "gtk"):
+        guard_pystray_notifier()
     variant = OPTIONS.variant or "baseline"
     size = OPTIONS.size or 64
     cls = base
