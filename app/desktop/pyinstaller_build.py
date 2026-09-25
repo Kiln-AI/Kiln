@@ -74,7 +74,7 @@ def splash_pixel_size(
 
 def render_splash_png(master: Image.Image, display_scale: float) -> bytes:
     size = splash_pixel_size(master.size, display_scale)
-    rendered = master.convert("RGB").resize(size, Image.Resampling.LANCZOS)
+    rendered = master.convert("RGB").resize(size, Image.Resampling.BOX)
     png = io.BytesIO()
     rendered.save(png, format="PNG", optimize=True)
     return png.getvalue()

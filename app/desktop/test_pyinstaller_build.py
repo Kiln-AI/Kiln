@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageChops, ImageFilter
 from PyInstaller.building import splash_templates
 from PyInstaller.building.splash import Splash
 
@@ -75,6 +75,19 @@ def test_render_splash_png_downscales_to_opaque_rgb(master):
         assert rendered.format == "PNG"
         assert rendered.mode == "RGB"
         assert rendered.size == splash_pixel_size(master.size, 1.0)
+
+
+@pytest.mark.parametrize("scale", pyinstaller_build.DISPLAY_SCALES)
+def test_render_splash_png_has_no_halo_around_edges(master, scale):
+    with Image.open(io.BytesIO(render_splash_png(master, scale))) as rendered:
+        source = master.convert("RGB")
+        window = 2 * round(pyinstaller_build.MASTER_SCALE / scale) + 1
+        darkest = source.filter(ImageFilter.MinFilter(window))
+        brightest = source.filter(ImageFilter.MaxFilter(window))
+        darkest = darkest.resize(rendered.size, Image.Resampling.NEAREST)
+        brightest = brightest.resize(rendered.size, Image.Resampling.NEAREST)
+        assert ImageChops.subtract(rendered, brightest).getbbox() is None
+        assert ImageChops.subtract(darkest, rendered).getbbox() is None
 
 
 def test_scaled_variants_render_every_display_scale(master):
