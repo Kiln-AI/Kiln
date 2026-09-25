@@ -1,6 +1,6 @@
 ---
 name: open-pr
-description: Open a pull request on the Kiln repo with a semantic-commit title and a structured description (one-line TLDR, summary, implementation bullets, warnings, optional Mermaid diagram, collapsible examples and screenshots). Also covers the short watch window for review-bot comments and CI. Use when the user asks to open, create, or raise a PR, to write or rewrite a PR description, or to update a PR after a push.
+description: Open a pull request on the Kiln repo for a human to complete. The title gets a `WIP: ` prefix and a semantic-commit type. The description keeps the human-only header of the PR template as empty placeholders, and the agent writes only the Agentic PR Summary below it (one-line TLDR, summary, implementation bullets, warnings, optional Mermaid diagram, collapsible examples and screenshots). The agent never signs the CLA. Also covers the short watch window for review-bot comments and CI. Use when the user asks to open, create, or raise a PR, to write or rewrite a PR description, or to update a PR after a push.
 ---
 
 # Open a Pull Request
@@ -12,7 +12,69 @@ Open a PR only when the user asks for one.
 
 ---
 
-## Rule 1 — Write in Simplified Technical English
+## Rule 0 — The human header is for humans only
+
+This rule is more important than all the other rules in this skill.
+
+The PR template at `.github/pull_request_template.md` has two parts:
+
+1. **The human header.** This is all the text above the `----` line and the
+   `# Agentic PR Summary` heading. It holds the description, the author review, the
+   architecture review, the review style, the agentic code review, what to review, the
+   UI review, and the Contributor License Agreement (CLA).
+2. **The Agentic PR Summary.** This is all the text below the `# Agentic PR Summary`
+   heading. An agent writes this part.
+
+Only a human fills in the human header. An agent must never fill it in, even when the
+user asks for it, and even when the agent knows the answer. The header records what a
+human decided and what a human did. An agent that fills it in makes a false record.
+
+When you open or edit a PR:
+
+- Copy the human header from the template exactly as it is. Keep every `REPLACE:`
+  placeholder, every `` `NA` ``, `` `person` ``, and `` `[Reason why ...]` `` placeholder,
+  and every empty `- [ ]` box.
+- Do not tick a box in the header. This includes "I have done a code review", "I have run
+  `/spec deep cr` on this PR or used `/spec` CRs throughout", and "Agentic UI clickthrough
+  done", also when you did that work. "I have done a code review" means the human author
+  reviewed the code, so an agent review never counts for it. Write the facts in the
+  Agentic PR Summary. The human then decides what to tick.
+- Do not write text in the header. Do not add a note, a hint, or a suggested answer in
+  it. Do not delete a line of it. The one permitted change is the CLA removal in Rule 1.
+- When a human has filled in the header on an existing PR, keep their text exactly as it
+  is. Change only the part below `# Agentic PR Summary`.
+- If the user asks you to fill in the header, refuse. Tell the user that the header is
+  for humans only, and offer to put the information in the Agentic PR Summary.
+
+Because the header is empty, a PR that an agent opens is not complete. So the title of
+every PR that an agent opens starts with `WIP: ` (see Step 3). The human removes the
+`WIP: ` prefix after they complete the header. An agent never removes it.
+
+---
+
+## Rule 1 — Never sign the CLA
+
+An agent must not make a legal decision. The CLA section is a legal statement by a human.
+
+- Never sign the CLA. Do not put a username in `@<your-github-username>`. Do not write
+  that anyone agrees. Do not change the CLA text.
+- Remove the full `## Contributor License Agreement` section (the heading and the
+  statement) when the PR author is a Kiln employee. These GitHub usernames are Kiln
+  employees:
+  - `scosman`
+  - `sfierro`
+  - `leonardmq`
+  - `tawnymanticore`
+  - `chiang-daniel`
+- The PR author is the GitHub account that opens the PR. Find its username with
+  `mcp__github__get_me`, or with `gh api user --jq .login`.
+- Keep the CLA section exactly as it is in the template in all other cases. This
+  includes a bot account, an external contributor, and an author that you cannot
+  identify. The human signs it or removes it.
+
+---
+
+## Rule 2 — Write in Simplified Technical English
 
 Write the title, the description, and all PR comments in ASD-STE100 Simplified
 Technical English (STE). Markdown and Mermaid are permitted.
@@ -35,7 +97,7 @@ The goal is a description that a new team member reads one time and understands.
 
 ---
 
-## Rule 2 — Keep the private repo private
+## Rule 3 — Keep the private repo private
 
 `Kiln-AI/Kiln` is open source. `Kiln-AI/kiln_server` is a private repo.
 
@@ -97,12 +159,16 @@ or after this one, in this repo or in the private server repo.
 
 ## Step 3 — Write the title
 
-Use a basic semantic commit prefix, then a short subject.
+Start with `WIP: `. Then use a basic semantic commit prefix, then a short subject.
 
 ```
-<type>: <subject>
-<type>(<scope>): <subject>
+WIP: <type>: <subject>
+WIP: <type>(<scope>): <subject>
 ```
+
+The `WIP: ` prefix is mandatory for every PR that an agent opens, because the human
+header is not complete (see Rule 0). Keep the prefix on each later update. Only a human
+removes it. If a human already removed it, do not add it again.
 
 | Type | Use it for |
 |---|---|
@@ -119,22 +185,35 @@ Use a basic semantic commit prefix, then a short subject.
 
 Rules for the subject:
 
-- Write a maximum of 70 characters.
+- Write a maximum of 70 characters, without the `WIP: ` prefix.
 - Start with a verb in the imperative: "add", "reject", "show".
 - Do not end with a period.
-- Name the thing that changed. Write `fix: reject duplicate tool names per run config`,
-  not `fix: bug fix`.
+- Name the thing that changed. Write `WIP: fix: reject duplicate tool names per run config`,
+  not `WIP: fix: bug fix`.
 
 ---
 
 ## Step 4 — Write the description
 
-The repo has a PR template at `.github/pull_request_template.md`. Keep its headings.
-Put the structure below inside the `## What does this PR do?` section.
+### 4.0 The layout
+
+Read `.github/pull_request_template.md` from the base branch each time. Do not use a copy
+from memory. The template can change.
+
+Build the description in this order:
+
+1. The human header. Copy it from the template exactly as Rule 0 says. Remove the CLA
+   section only when Rule 1 says to.
+2. The `----` line and the `# Agentic PR Summary` heading, exactly as in the template.
+3. Your summary, in place of the
+   `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `` placeholder. Write
+   the parts in 4.1 to 4.7.
+
+Write nothing of your own above the `# Agentic PR Summary` heading.
 
 ### 4.1 The first line is a TLDR
 
-The description starts with one line. That line gives:
+The summary starts with one line. That line gives:
 
 1. Why the PR exists (the intent).
 2. What the PR does.
@@ -207,7 +286,7 @@ Do not add a diagram that only repeats the bullet points.
 ### 4.6 Examples and screenshots (collapsible, at the end)
 
 Put examples, command output, and screenshots in a collapsible panel. Put the panels
-after the main content, before the template's `## Related Issues` section.
+at the end of the Agentic PR Summary.
 
 ```html
 <details>
@@ -230,13 +309,16 @@ To host a screenshot:
 
 Do not commit screenshots to the PR branch itself.
 
-### 4.7 The template sections
+### 4.7 Related issues and checks
 
-- `## Related Issues` — link the Linear ticket or the GitHub issue. Link the related PRs.
-- `## Contributor License Agreement` — **never complete this**. An agent must not make a
-  legal decision. Write `_Left for the PR author to complete._` in place of the text.
-- `## Checklists` — tick a box only when you did the work. Name the evidence, for example
-  "`checks.sh` green".
+- Add a `**Related**` line when there is a Linear ticket, a GitHub issue, or a related PR.
+  Link each one.
+- Add a `**Checks**` line with the checks that you ran and the result, for example
+  "`checks.sh` green". Also name other review work that you did, for example
+  "`/spec deep cr` ran; all findings fixed" or "Agentic UI clickthrough done". Write
+  only work that you did.
+- Put these lines in the Agentic PR Summary, before the collapsible panels. They never go
+  in the human header.
 
 ---
 
@@ -245,8 +327,8 @@ Do not commit screenshots to the PR branch itself.
 Use the GitHub MCP tools (`mcp__github__create_pull_request`) when they are available.
 Use `gh pr create` only in a session that has the `gh` CLI.
 
-Give the tool the head branch, the base branch that you found in Step 2, the title, and
-the body.
+Give the tool the head branch, the base branch that you found in Step 2, the title with
+the `WIP: ` prefix, and the body.
 
 After the PR opens, give the user the full link, for example
 [Kiln-AI/Kiln#1737](https://github.com/Kiln-AI/Kiln/pull/1737).
@@ -259,6 +341,10 @@ Do not approve the PR. Do not merge the PR.
 
 The description tells the reader what the PR contains now. It does not tell the history
 of the PR. Read the title and the description again each time you push a change.
+
+Before each update, read the current title and body from GitHub. A human can edit them
+at any time. Change only the part below `# Agentic PR Summary`. Keep the human header
+exactly as it is on GitHub now, whether it is empty or filled in (Rule 0).
 
 **Update them when the change is meaningful.** These changes are meaningful:
 
@@ -288,11 +374,17 @@ When you update:
 - Edit the sections that are wrong. Keep the structure from Step 4.
 - Rewrite the TLDR only when the intent, the target branch, or a companion branch changes.
   Keep it to one line.
-- Change the title when the subject or the type is no longer correct.
+- Change the title when the subject or the type is no longer correct. Keep the `WIP: `
+  prefix if the title has it. Do not add it again if a human removed it.
 - Keep each warning that still applies.
 - Do not add a list of your edits to the PR. The commit history holds that record.
 
 Use `mcp__github__update_pull_request` to write the new title and the new body.
+
+If the user asks you to write or rewrite the description of a PR that a human opened,
+use the same rules. Write only the Agentic PR Summary. If the body has no
+`# Agentic PR Summary` heading, add the `----` line and the heading at the end of the
+body, then your summary below it.
 
 ---
 
@@ -382,8 +474,46 @@ _Generated by [Claude Code](https://claude.ai/code)_
 
 ## Full example of a description
 
+The PR author in this example is `scosman`, a Kiln employee, so the CLA section is
+removed (Rule 1). The title is `WIP: fix: reject duplicate tool names per run config`.
+Everything above `----` is the template, copied with no change other than the CLA
+removal. Only a human fills it in.
+
 ````markdown
-## What does this PR do?
+**Description**
+`REPLACE: what this PR is, in 1 to 2 sentences max.`
+
+**Author Review (required)**
+- [ ] I have done a code review
+
+**Architecture Review (select 1)**
+- [ ] I did architecture review before coding
+- [ ] Small change, no architecture review needed
+- [ ] Requesting architecture review exception for other reason: `NA`
+
+**Review Style Requested (select 1)**
+- [ ] Full Agentic: only AI Review. `[Reason why if selecting this option]`
+- [ ] Mixed: AI for some areas, human sign-off on others
+- [ ] Full human
+
+**Agentic Code Review (must check all before requesting CR)**
+- [ ] I have run `/spec deep cr` on this PR or used `/spec` CRs throughout
+- [ ] I have addressed all AI feedback (“deep cr”, CodeRabbit, etc)
+
+**What to Review**
+- Key decisions to review
+  - `REPLACE: 1-4 decisions you made.`
+- Paths to review
+  - `REPLACE: List of paths/files to review. example libs/code/adapters/KevAdapter.py`
+
+**UI Review (select all that apply)**
+- [ ] Agentic UI clickthrough done
+- [ ] Requires UI review as part of this review
+- [ ] UI review already done by: `person`
+- [ ] No UI
+
+----
+# Agentic PR Summary
 
 **TLDR:** Two tools with the same `tool_name` were rejected for a full project, which
 blocked a second version of a tool. This PR moves the check to the run config, where the
@@ -416,6 +546,10 @@ flowchart LR
     B -->|No| D[Save]
 ```
 
+**Related:** [KIL-800](https://linear.app/kiln-ai/issue/KIL-800). Builds on #1735.
+
+**Checks:** `checks.sh` green. New tests for the save-time check in `libs/server`.
+
 <details>
 <summary><b>Screenshots</b></summary>
 
@@ -427,19 +561,6 @@ team can delete it after this PR closes.
 ![save error](https://raw.githubusercontent.com/Kiln-AI/Kiln/704c5d0/screenshots/save_error.png)
 
 </details>
-
-## Related Issues
-
-[KIL-800](https://linear.app/kiln-ai/issue/KIL-800). Builds on #1735.
-
-## Contributor License Agreement
-
-_Left for the PR author to complete._
-
-## Checklists
-
-- [x] Tests have been run locally and passed (`checks.sh` green)
-- [x] New tests have been added to any work in /lib
 ````
 
 ---
@@ -448,8 +569,13 @@ _Left for the PR author to complete._
 
 - [ ] `uv run ./checks.sh --agent-mode` is green.
 - [ ] No `TODO` comment is left in the diff.
-- [ ] The title has a semantic prefix and a short subject.
-- [ ] The first line of the description is a TLDR with the intent, the change, and the
+- [ ] The title starts with `WIP: `, then a semantic prefix and a short subject.
+- [ ] The human header is the template, copied with no change: no ticked box, no text
+      in a placeholder, no added note.
+- [ ] The CLA is not signed. The CLA section is removed only when the author is
+      `scosman`, `sfierro`, `leonardmq`, `tawnymanticore`, or `chiang-daniel`.
+- [ ] All of your text is below the `# Agentic PR Summary` heading.
+- [ ] The first line of the summary is a TLDR with the intent, the change, and the
       target branch.
 - [ ] The companion branches and the merge order are named.
 - [ ] The summary gives the state before and the state after.
@@ -457,5 +583,4 @@ _Left for the PR author to complete._
 - [ ] A warning block exists, if there is something to flag.
 - [ ] The examples and the screenshots are in a collapsible panel at the end.
 - [ ] No internals of the private server repo are in the text or in an image.
-- [ ] The CLA section is left for the human author.
 - [ ] The text follows Simplified Technical English.
