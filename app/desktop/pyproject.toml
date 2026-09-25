@@ -11,6 +11,8 @@ dependencies = [
     "kiln-server",
     "pillow>=11.0.0",
     "pystray>=0.19.5",
+    # Linux tray: StatusNotifierItem over D-Bus, without bundling GTK
+    "jeepney>=0.9.0; sys_platform == 'linux'",
     "pyinstaller==6.22.3",
     # scipy 1.15.x ships a _propack extension whose Mach-O has a zero-fill
     # __DATA/__thread_bss section with a non-zero offset, which macOS 27's dyld
