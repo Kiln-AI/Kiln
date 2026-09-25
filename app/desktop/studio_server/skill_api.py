@@ -1,21 +1,63 @@
+import base64
 import logging
 from datetime import datetime
-from typing import Annotated, List
+from typing import Annotated, List, Literal
 
-from fastapi import FastAPI, HTTPException, Path
-from kiln_ai.datamodel.skill import Skill
+from fastapi import FastAPI, HTTPException, Path, Query
+from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
+from kiln_ai.datamodel.skill import ResourceTooLargeError, Skill
+from kiln_ai.datamodel.skill_bundle import (
+    MAX_BUNDLE_BYTES,
+    MAX_BUNDLE_FILE_COUNT,
+    SkillBundleValidationError,
+    clone_skill,
+    create_skill_with_files,
+)
 from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.validation import SkillNameString
 from kiln_server.document_api import OpenFileResponse
 from kiln_server.project_api import project_from_id
+from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     DENY_AGENT,
     agent_policy_require_approval,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 logger = logging.getLogger(__name__)
+
+# Cap on how much file content the resource_content endpoint will read into
+# memory and base64-encode into a JSON response. Installed bundles cap files at
+# 512KB, but hand-added files (via the enclosing folder) can be any size.
+MAX_RESOURCE_CONTENT_BYTES = 10 * 1024 * 1024
+
+# Request content caps, checked at parse time so oversized payloads are
+# rejected before being base64-decoded and staged (the raw body is still
+# buffered by the server; these bound the expensive work after parsing).
+# Per-file: sized above the base64 encoding of MAX_RESOURCE_FILE_BYTES
+# including 76-column MIME line wrapping. Aggregate: sized above the wrapped
+# base64 encoding of MAX_BUNDLE_BYTES. The real byte caps are enforced in
+# core.
+MAX_FILE_CONTENT_CHARS = 800_000
+MAX_TOTAL_CONTENT_CHARS = 3_000_000
+
+
+class SkillFileParam(BaseModel):
+    """A resource file to include in a skill bundle."""
+
+    path: str = Field(
+        description="Path within the skill bundle, starting with 'references/' or 'assets/'. Forward slashes only."
+    )
+    content: str = Field(
+        max_length=MAX_FILE_CONTENT_CHARS,
+        description="File content: plain text for utf-8 encoding, base64 string for base64 encoding.",
+    )
+    encoding: Literal["utf-8", "base64"] = Field(
+        default="utf-8",
+        description="How the content field is encoded. Use base64 for binary files.",
+    )
 
 
 class SkillCreationRequest(BaseModel):
@@ -28,6 +70,67 @@ class SkillCreationRequest(BaseModel):
         description="What the skill does and when to use it.",
     )
     body: str = Field(min_length=1, description="The markdown body of the skill.")
+    files: List[SkillFileParam] = Field(
+        default_factory=list,
+        max_length=MAX_BUNDLE_FILE_COUNT,
+        description="Optional resource files (references/… and assets/…) installed atomically with the skill.",
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this skill exists and what it was derived from.",
+    )
+
+    @model_validator(mode="after")
+    def check_total_content_size(self) -> "SkillCreationRequest":
+        total_chars = sum(len(file.content) for file in self.files)
+        if total_chars > MAX_TOTAL_CONTENT_CHARS:
+            raise ValueError(
+                f"total file content is {total_chars} characters, over the "
+                f"{MAX_TOTAL_CONTENT_CHARS} character cap (bundles are capped "
+                f"at {MAX_BUNDLE_BYTES} bytes)"
+            )
+        return self
+
+
+class SkillCloneRequest(BaseModel):
+    """Request to clone a skill, copying all its reference and asset files."""
+
+    name: SkillNameString = Field(description="The name of the new skill.")
+    description: str = Field(
+        min_length=1,
+        max_length=1024,
+        description="What the skill does and when to use it.",
+    )
+    body: str | None = Field(
+        default=None,
+        description="The markdown body of the new skill. Defaults to the source skill's body.",
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description=(
+            "Provenance for the clone. Lineage is not stamped automatically: set "
+            "derived_from_ids to the source skill's id to record it."
+        ),
+    )
+
+
+class SkillResourceInfo(BaseModel):
+    """A resource file within a skill bundle."""
+
+    path: str = Field(
+        description="Bundle-relative path, starting with 'references/' or 'assets/'."
+    )
+    size_bytes: int = Field(description="File size in bytes.")
+
+
+class SkillResourceContentResponse(BaseModel):
+    """The content of a single skill resource file."""
+
+    path: str = Field(description="Bundle-relative path of the file.")
+    encoding: Literal["utf-8", "base64"] = Field(
+        description="How content is encoded: utf-8 for text files, base64 for binary."
+    )
+    content: str = Field(description="The file content in the stated encoding.")
 
 
 class SkillUpdateRequest(BaseModel):
@@ -55,6 +158,10 @@ class SkillResponse(BaseModel):
     created_at: datetime | None = Field(
         default=None, description="When the skill was created."
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Why this skill exists and what it was derived from, if recorded.",
+    )
 
 
 class SkillContentResponse(BaseModel):
@@ -67,15 +174,63 @@ class SkillContentResponse(BaseModel):
 
 
 def skill_to_response(skill: Skill) -> SkillResponse:
-    return SkillResponse.model_validate(skill.model_dump())
+    # Validate under the loading_from_file context so a forward/back-compat
+    # provenance already on disk (unknown origin, over-length notes) is returned
+    # as-is instead of 500-ing on read. Create-time strictness still applies at
+    # the create endpoint (request parsing + validate_provenance_or_400).
+    return SkillResponse.model_validate(
+        skill.model_dump(), context={"loading_from_file": True}
+    )
 
 
-def _get_skill(project_id: str, skill_id: str) -> Skill:
+def _get_project_and_skill(project_id: str, skill_id: str) -> tuple[Project, Skill]:
     project = project_from_id(project_id)
     skill = Skill.from_id_and_parent_path(skill_id, project.path)
     if skill is None:
         raise HTTPException(status_code=404, detail="Skill not found")
+    return project, skill
+
+
+def _get_skill(project_id: str, skill_id: str) -> Skill:
+    _project, skill = _get_project_and_skill(project_id, skill_id)
     return skill
+
+
+def _decode_files(
+    files: List[SkillFileParam],
+) -> tuple[dict[str, bytes], list[str]]:
+    """Decode request files to bytes, keyed by bundle-relative path.
+
+    Returns (decoded, errors). Errors are accumulated, not raised, so they can
+    join the bundle validation errors in one report to the caller.
+    """
+    errors: list[str] = []
+    decoded: dict[str, bytes] = {}
+    seen_paths: set[str] = set()
+    for file in files:
+        if file.path in seen_paths:
+            errors.append(f"duplicate file path: {file.path!r}")
+            continue
+        seen_paths.add(file.path)
+        if file.encoding == "utf-8":
+            try:
+                decoded[file.path] = file.content.encode("utf-8")
+            except UnicodeEncodeError:
+                errors.append(
+                    f"file content is not encodable as UTF-8 (contains lone "
+                    f"surrogates): {file.path!r}"
+                )
+        else:
+            try:
+                # Tolerate line-wrapped base64 (MIME encoders and the base64
+                # CLI wrap at 76 columns) by stripping whitespace first.
+                decoded[file.path] = base64.b64decode(
+                    "".join(file.content.split()), validate=True
+                )
+            except ValueError:
+                # binascii.Error is a ValueError subclass
+                errors.append(f"file content is not valid base64: {file.path!r}")
+    return decoded, errors
 
 
 def connect_skill_api(app: FastAPI):
@@ -119,10 +274,7 @@ def connect_skill_api(app: FastAPI):
             str, Path(description="The unique identifier of the skill.")
         ],
     ) -> SkillContentResponse:
-        project = project_from_id(project_id)
-        skill = Skill.from_id_and_parent_path(skill_id, project.path)
-        if skill is None:
-            raise HTTPException(status_code=404, detail="Skill not found")
+        skill = _get_skill(project_id, skill_id)
         try:
             skill_md = skill.skill_md_raw()
         except FileNotFoundError:
@@ -144,14 +296,124 @@ def connect_skill_api(app: FastAPI):
         skill_data: SkillCreationRequest,
     ) -> SkillResponse:
         project = project_from_id(project_id)
-        skill = Skill(
-            name=skill_data.name,
-            description=skill_data.description,
-            parent=project,
-        )
-        skill.save_to_file()
-        skill.save_skill_md(skill_data.body)
+        # Lineage is checked before anything is staged, so a bad parent id can't
+        # leave a half-installed bundle behind. The new skill's id is generated
+        # inside the install, so it can't be passed here — the self-reference arm
+        # is unreachable for a create anyway (an id that doesn't exist yet is
+        # already rejected by the sibling-existence check).
+        validate_provenance_or_400(skill_data.provenance, None, Skill, project.path)
+        decoded_files, decode_errors = _decode_files(skill_data.files)
+        try:
+            skill = create_skill_with_files(
+                project,
+                name=skill_data.name,
+                description=skill_data.description,
+                body=skill_data.body,
+                files=decoded_files,
+                extra_errors=decode_errors,
+                provenance=skill_data.provenance,
+            )
+        except SkillBundleValidationError as e:
+            raise HTTPException(status_code=422, detail="; ".join(e.errors)) from e
         return skill_to_response(skill)
+
+    @app.post(
+        "/api/projects/{project_id}/skills/{skill_id}/clone",
+        tags=["Skills"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def clone_skill_endpoint(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        skill_id: Annotated[
+            str, Path(description="The unique identifier of the skill to clone.")
+        ],
+        clone_data: SkillCloneRequest,
+    ) -> SkillResponse:
+        project, source = _get_project_and_skill(project_id, skill_id)
+        validate_provenance_or_400(clone_data.provenance, None, Skill, project.path)
+        body = clone_data.body
+        if body is None:
+            try:
+                body = source.body()
+            except (FileNotFoundError, ValueError) as e:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Source skill has no readable body; provide one: {e}",
+                ) from e
+        try:
+            skill = clone_skill(
+                project,
+                source,
+                name=clone_data.name,
+                description=clone_data.description,
+                body=body,
+                provenance=clone_data.provenance,
+            )
+        except SkillBundleValidationError as e:
+            raise HTTPException(status_code=422, detail="; ".join(e.errors)) from e
+        return skill_to_response(skill)
+
+    @app.get(
+        "/api/projects/{project_id}/skills/{skill_id}/resources",
+        tags=["Skills"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_skill_resources(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        skill_id: Annotated[
+            str, Path(description="The unique identifier of the skill.")
+        ],
+    ) -> List[SkillResourceInfo]:
+        skill = _get_skill(project_id, skill_id)
+        return [
+            SkillResourceInfo(path=resource_path, size_bytes=size_bytes)
+            for resource_path, size_bytes in skill.list_resources_with_sizes()
+        ]
+
+    @app.get(
+        "/api/projects/{project_id}/skills/{skill_id}/resource_content",
+        tags=["Skills"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_skill_resource_content(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        skill_id: Annotated[
+            str, Path(description="The unique identifier of the skill.")
+        ],
+        path: Annotated[
+            str,
+            Query(
+                description="Bundle-relative resource path, starting with 'references/' or 'assets/'."
+            ),
+        ],
+    ) -> SkillResourceContentResponse:
+        skill = _get_skill(project_id, skill_id)
+        try:
+            data = skill.read_resource_bytes(path, max_bytes=MAX_RESOURCE_CONTENT_BYTES)
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=404, detail=f"Resource not found: {path}"
+            ) from None
+        except ResourceTooLargeError as e:
+            raise HTTPException(status_code=413, detail=str(e)) from e
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        try:
+            return SkillResourceContentResponse(
+                path=path, encoding="utf-8", content=data.decode("utf-8")
+            )
+        except UnicodeDecodeError:
+            return SkillResourceContentResponse(
+                path=path,
+                encoding="base64",
+                content=base64.b64encode(data).decode("ascii"),
+            )
 
     @app.patch(
         "/api/projects/{project_id}/skills/{skill_id}",
@@ -174,7 +436,12 @@ def connect_skill_api(app: FastAPI):
         update_fields = updates.model_dump(exclude_none=True)
         merged = skill.model_dump()
         merged.update(update_fields)
-        updated = Skill.model_validate(merged)
+        # loading_from_file context keeps the stored provenance validation lenient:
+        # merged carries provenance as a dict, so a plain model_validate would re-run
+        # the create-strict provenance validators and 500 on a forward-compat file.
+        # provenance stays immutable (it's not in update_fields); this only edits
+        # name/is_archived.
+        updated = Skill.model_validate(merged, context={"loading_from_file": True})
         updated.path = skill.path
         updated.save_to_file()
 

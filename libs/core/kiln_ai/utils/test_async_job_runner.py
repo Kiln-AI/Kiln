@@ -8,6 +8,7 @@ from kiln_ai.utils.async_job_runner import (
     AsyncJobRunnerObserver,
     Progress,
     RetryableError,
+    jittered_backoff_delay,
 )
 
 
@@ -358,15 +359,29 @@ async def test_async_job_runner_retry_delay():
         retry_delay=0.5,
     )
 
-    with patch(
-        "kiln_ai.utils.async_job_runner.asyncio.sleep", new_callable=AsyncMock
-    ) as mock_sleep:
+    with (
+        patch(
+            "kiln_ai.utils.async_job_runner.asyncio.sleep", new_callable=AsyncMock
+        ) as mock_sleep,
+        patch("kiln_ai.utils.async_job_runner.random.uniform", return_value=1.0),
+    ):
         updates = [progress async for progress in runner.run()]
         assert updates[-1].complete == 1
         assert updates[-1].errors == 0
         assert call_count == 3
         assert mock_sleep.await_count == 2
-        mock_sleep.assert_awaited_with(0.5)
+        # Exponential backoff: base delay, then 2x (jitter factor patched to 1.0).
+        assert [c.args[0] for c in mock_sleep.await_args_list] == [0.5, 1.0]
+
+
+def test_jittered_backoff_delay_exponential_with_jitter_bounds():
+    # delay * 2^attempt scaled by a jitter factor in [0.5, 1.5), so concurrent
+    # workers throttled at the same moment don't retry in lockstep.
+    for attempt in range(4):
+        base = 2.0 * (2**attempt)
+        for _ in range(25):
+            delay = jittered_backoff_delay(2.0, attempt)
+            assert base * 0.5 <= delay < base * 1.5
 
 
 @pytest.mark.asyncio

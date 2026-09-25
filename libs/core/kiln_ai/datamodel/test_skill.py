@@ -467,3 +467,108 @@ class TestAssets:
         skill = make_skill()
         with pytest.raises(ValueError, match="Skill must be saved"):
             skill.assets_dir()
+
+
+# -- Resource listing and binary read tests --
+
+
+@pytest.fixture
+def skill_with_resources(mock_project):
+    skill = save_skill_with_body(mock_project)
+    (skill.references_dir() / "guide.md").write_text("guide", encoding="utf-8")
+    nested = skill.references_dir() / "api"
+    nested.mkdir()
+    (nested / "endpoints.md").write_text("endpoints", encoding="utf-8")
+    (skill.assets_dir() / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00binary")
+    return skill
+
+
+def test_list_resources_with_sizes_empty(mock_project):
+    skill = save_skill_with_body(mock_project)
+    assert skill.list_resources_with_sizes() == []
+
+
+def test_read_resource_bytes_binary(skill_with_resources):
+    data = skill_with_resources.read_resource_bytes("assets/logo.png")
+    assert data == b"\x89PNG\r\n\x1a\n\x00binary"
+
+
+def test_read_resource_bytes_text(skill_with_resources):
+    assert skill_with_resources.read_resource_bytes("references/guide.md") == b"guide"
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["", "guide.md", "scripts/run.py", "references/", "references"],
+)
+def test_read_resource_bytes_invalid_prefix(skill_with_resources, path):
+    with pytest.raises(ValueError, match="must start with"):
+        skill_with_resources.read_resource_bytes(path)
+
+
+def test_read_resource_bytes_traversal(skill_with_resources):
+    with pytest.raises(ValueError, match="traversal"):
+        skill_with_resources.read_resource_bytes("references/../skill.kiln")
+
+
+def test_read_resource_bytes_missing(skill_with_resources):
+    with pytest.raises(FileNotFoundError):
+        skill_with_resources.read_resource_bytes("references/nope.md")
+
+
+def test_read_resource_bytes_max_bytes_under_cap(skill_with_resources):
+    data = skill_with_resources.read_resource_bytes("assets/logo.png", max_bytes=1024)
+    assert data == b"\x89PNG\r\n\x1a\n\x00binary"
+
+
+def test_read_resource_bytes_max_bytes_over_cap(skill_with_resources):
+    from kiln_ai.datamodel.skill import ResourceTooLargeError
+
+    with pytest.raises(ResourceTooLargeError, match="byte limit"):
+        skill_with_resources.read_resource_bytes("assets/logo.png", max_bytes=3)
+
+
+def test_list_resources_with_sizes(skill_with_resources):
+    listing = skill_with_resources.list_resources_with_sizes()
+    assert listing == [
+        ("assets/logo.png", len(b"\x89PNG\r\n\x1a\n\x00binary")),
+        ("references/api/endpoints.md", len(b"endpoints")),
+        ("references/guide.md", len(b"guide")),
+    ]
+
+
+def test_list_resources_skips_vanished_file(skill_with_resources, monkeypatch):
+    import os as os_mod
+    from pathlib import Path as PathCls
+
+    # A file yielded by the walk but deleted before it is examined must be
+    # skipped, not raise.
+    real_walk = os_mod.walk
+
+    def fake_walk(top, **kwargs):
+        for root, dirs, files in real_walk(top, **kwargs):
+            if PathCls(root) == skill_with_resources.assets_dir():
+                files = [*files, "ghost.png"]
+            yield root, dirs, files
+
+    monkeypatch.setattr("kiln_ai.datamodel.skill.os.walk", fake_walk)
+    paths = [p for p, _ in skill_with_resources.list_resources_with_sizes()]
+    assert "assets/ghost.png" not in paths
+    assert "assets/logo.png" in paths
+
+
+def test_symlinked_resource_root_rejected(mock_project, tmp_path):
+    skill = save_skill_with_body(mock_project)
+    outside = tmp_path / "private"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("secret", encoding="utf-8")
+    # Replace the assets dir with a symlink pointing outside the skill
+    skill.assets_dir().rmdir()
+    skill.assets_dir().symlink_to(outside)
+
+    with pytest.raises(ValueError, match="symlink"):
+        skill.read_resource_bytes("assets/secret.txt")
+    with pytest.raises(ValueError, match="symlink"):
+        skill.read_asset("secret.txt")
+    # Listing skips the symlinked root rather than walking outside
+    assert skill.list_resources_with_sizes() == []

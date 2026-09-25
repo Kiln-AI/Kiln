@@ -23,7 +23,8 @@ from kiln_ai.datamodel.basemodel import (
     KilnParentModel,
 )
 from kiln_ai.datamodel.chunk import ChunkedDocument
-from kiln_ai.utils.validation import NonEmptyString
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
+from kiln_ai.utils.validation import NonEmptyString, validate_tags
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +177,10 @@ class ExtractorConfig(KilnParentedModel):
         # the discriminator refers to the properties->extractor_type key (not the extractor_type field on the parent model)
         discriminator="extractor_type",
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Why this artifact exists and what it was derived from.",
+    )
 
     @model_validator(mode="before")
     def upgrade_missing_discriminator_properties(
@@ -283,13 +288,8 @@ class Document(
     )
 
     @model_validator(mode="after")
-    def validate_tags(self) -> Self:
-        for tag in self.tags:
-            if not tag:
-                raise ValueError("Tags cannot be empty strings")
-            if " " in tag:
-                raise ValueError("Tags cannot contain spaces. Try underscores.")
-
+    def _validate_tags(self) -> Self:
+        validate_tags(self.tags)
         return self
 
     # Workaround to return typed parent without importing Project

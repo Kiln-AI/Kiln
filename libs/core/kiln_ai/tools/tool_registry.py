@@ -6,6 +6,7 @@ from kiln_ai.datamodel.tool_id import (
     KILN_TASK_TOOL_ID_PREFIX,
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
+    MEMORY_TOOL_ID_PREFIX,
     RAG_TOOL_ID_PREFIX,
     SKILL_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
@@ -15,6 +16,8 @@ from kiln_ai.datamodel.tool_id import (
     rag_config_id_from_id,
 )
 from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallDefinition
+from kiln_ai.tools.built_in_tools.disable_auto_mode_tool import DisableAutoModeTool
+from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import EnableAutoModeTool
 from kiln_ai.tools.built_in_tools.kiln_api_call_tool import KilnApiCallTool
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
@@ -57,6 +60,10 @@ def tool_from_id_and_project(
                         "kiln_local_api_base_url is not configured. The server must set this before starting."
                     )
                 return KilnApiCallTool(api_base_url=api_base_url)
+            case KilnBuiltInToolId.ENABLE_AUTO_MODE:
+                return EnableAutoModeTool()
+            case KilnBuiltInToolId.DISABLE_AUTO_MODE:
+                return DisableAutoModeTool()
             case KilnBuiltInToolId.LLM:
                 # Lazy import to avoid the tools -> adapter -> tool_registry cycle.
                 from kiln_ai.tools.built_in_tools.llm_tools import LlmTool
@@ -161,6 +168,17 @@ def tool_from_id_and_project(
         from kiln_ai.tools.code_tool import PythonCodeTool
 
         return PythonCodeTool(code_tool, project, task)
+
+    elif tool_id.startswith(MEMORY_TOOL_ID_PREFIX):
+        if project is None:
+            raise ValueError(
+                f"Unable to resolve tool from id: {tool_id}. Requires a parent project/task."
+            )
+
+        # Lazy import to avoid circular dependency
+        from kiln_ai.tools.memory_tools import memory_tool_from_id
+
+        return memory_tool_from_id(tool_id, project)
 
     elif tool_id.startswith(SKILL_TOOL_ID_PREFIX):
         raise ValueError(

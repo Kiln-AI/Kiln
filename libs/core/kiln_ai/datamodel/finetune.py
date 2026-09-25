@@ -9,6 +9,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     FineTuneStatusType,
     StructuredOutputMode,
 )
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
 if TYPE_CHECKING:
@@ -88,6 +89,10 @@ class Finetune(KilnParentedModel):
     run_config: KilnAgentRunConfigProperties | None = Field(
         default=None,
         description="The run configuration for this fine-tune.",
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Why this artifact exists and what it was derived from.",
     )
 
     # Workaround to return typed parent without importing Task

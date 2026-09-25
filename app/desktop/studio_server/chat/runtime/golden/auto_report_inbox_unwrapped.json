@@ -1,0 +1,26 @@
+{
+  "scenario": "auto_report_inbox_unwrapped",
+  "bodies": [
+    {
+      "trace_id": "tr-0",
+      "messages": [
+        {
+          "role": "tool",
+          "tool_call_id": "enable-1",
+          "content": "{\"status\": \"enabled\"}"
+        }
+      ],
+      "auto_mode": true
+    },
+    {
+      "trace_id": "tr-1",
+      "messages": [
+        {
+          "role": "user",
+          "content": "<subagent_report id=\"sa_fixed\" agent_type=\"general\" status=\"completed\" title=\"Helper\">\nAll done.\n</subagent_report>"
+        }
+      ],
+      "auto_mode": true
+    }
+  ]
+}

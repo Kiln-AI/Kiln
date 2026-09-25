@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Annotated, Any, Dict, List
 
@@ -314,6 +315,12 @@ def connect_task_api(app: FastAPI):
         task.instruction values. Unlike typical list endpoints, entries here are
         intentionally lossy — the shape is tuned for LLM-agent context efficiency,
         not for driving UIs that need the full Task model."""
+        # Off the event loop: loads every project and task file in the
+        # workspace, which would stall every other request on this
+        # single-loop server.
+        return await asyncio.to_thread(build_task_summaries)
+
+    def build_task_summaries() -> TaskSummariesResponse:
         project_paths = Config.shared().projects or []
         projects: list[TaskSummariesProject] = []
         for project_path in project_paths:

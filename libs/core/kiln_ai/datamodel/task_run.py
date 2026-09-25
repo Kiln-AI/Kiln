@@ -15,6 +15,7 @@ from kiln_ai.utils.open_ai_types import (
 )
 from kiln_ai.utils.usage import MessageUsage as MessageUsage
 from kiln_ai.utils.usage import Usage as Usage
+from kiln_ai.utils.validation import validate_tags
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.eval_splits import ItemKey
@@ -269,11 +270,6 @@ class TaskRun(
         return self
 
     @model_validator(mode="after")
-    def validate_tags(self) -> Self:
-        for tag in self.tags:
-            if not tag:
-                raise ValueError("Tags cannot be empty strings")
-            if " " in tag:
-                raise ValueError("Tags cannot contain spaces. Try underscores.")
-
+    def _validate_tags(self) -> Self:
+        validate_tags(self.tags)
         return self

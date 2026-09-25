@@ -1,236 +1,352 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
-import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
+import { describe, expect, it } from "vitest"
 import {
-  streamChat,
-  chatExecuteToolsUrl,
-  traceIdForNextChatRequest,
-  type ChatMessage,
+  autoModeConsentPayloadFromEvent,
+  normalizeContextUsage,
+  StreamEventProcessor,
+  type ContextUsage,
+  type StreamEvent,
 } from "./streaming_chat"
 
-describe("traceIdForNextChatRequest", () => {
-  it("returns the latest assistant traceId", () => {
-    const msgs: ChatMessage[] = [
-      { id: "1", role: "user", content: "hi" },
-      { id: "2", role: "assistant", parts: [], traceId: "a" },
-      { id: "3", role: "user", content: "again" },
-      { id: "4", role: "assistant", parts: [], traceId: "b" },
-    ]
-    expect(traceIdForNextChatRequest(msgs)).toBe("b")
+// Phase 5 note: the traceIdForNextChatRequest suite died with the function —
+// the browser keys conversations on session ids and never derives a
+// continuation key from message trace ids (functional spec §4).
+
+describe("normalizeContextUsage", () => {
+  it("returns null for absent payload", () => {
+    expect(normalizeContextUsage(null)).toBeNull()
+    expect(normalizeContextUsage(undefined)).toBeNull()
+    expect(normalizeContextUsage({})).toBeNull()
   })
 
-  it("returns undefined when no assistant has traceId", () => {
-    const msgs: ChatMessage[] = [
-      { id: "1", role: "user", content: "hi" },
-      { id: "2", role: "assistant", parts: [] },
-    ]
-    expect(traceIdForNextChatRequest(msgs)).toBeUndefined()
+  it("normalizes a full payload", () => {
+    expect(
+      normalizeContextUsage({
+        context_tokens: 100,
+        context_limit: 1000,
+        context_percent: 0.1,
+        compacted: true,
+      }),
+    ).toEqual({
+      context_tokens: 100,
+      context_limit: 1000,
+      context_percent: 0.1,
+      compacted: true,
+    })
+  })
+
+  it("defaults missing numbers to 0 and compacted to false", () => {
+    expect(normalizeContextUsage({ context_percent: 0.5 })).toEqual({
+      context_tokens: 0,
+      context_limit: 0,
+      context_percent: 0.5,
+      compacted: false,
+    })
   })
 })
 
-describe("streamChat", () => {
-  // Always restore globals, even if an assertion throws mid-test, so a stubbed
-  // fetch can't leak into later tests.
-  afterEach(() => {
-    vi.unstubAllGlobals()
+describe("StreamEventProcessor context_usage", () => {
+  function makeProcessor(onContextUsage: (u: ContextUsage) => void) {
+    return new StreamEventProcessor({
+      onAssistantMessage: () => {},
+      onContextUsage,
+    })
+  }
+
+  it("fires onContextUsage when kiln_chat_trace carries context_usage", () => {
+    const usages: ContextUsage[] = []
+    const traces: string[] = []
+    const processor = new StreamEventProcessor({
+      onAssistantMessage: () => {},
+      onChatTrace: (t) => traces.push(t),
+      onContextUsage: (u) => usages.push(u),
+    })
+    const event: StreamEvent = {
+      type: "kiln_chat_trace",
+      trace_id: "trace-1",
+      context_usage: {
+        context_tokens: 90,
+        context_limit: 100,
+        context_percent: 0.9,
+        compacted: true,
+      },
+    }
+    processor.handleEvent(event)
+    expect(traces).toEqual(["trace-1"])
+    expect(usages).toEqual([
+      {
+        context_tokens: 90,
+        context_limit: 100,
+        context_percent: 0.9,
+        compacted: true,
+      },
+    ])
   })
 
-  it("includes trace_id in POST body when traceId option is set", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      body: {
-        getReader: () =>
-          ({
-            read: () => Promise.resolve({ done: true, value: undefined }),
-          }) as ReadableStreamDefaultReader<Uint8Array>,
+  it("does not fire onContextUsage when context_usage is absent", () => {
+    const usages: ContextUsage[] = []
+    const processor = makeProcessor((u) => usages.push(u))
+    processor.handleEvent({ type: "kiln_chat_trace", trace_id: "trace-2" })
+    expect(usages).toHaveLength(0)
+  })
+
+  it("normalizes a partial context_usage without throwing", () => {
+    const usages: ContextUsage[] = []
+    const processor = makeProcessor((u) => usages.push(u))
+    processor.handleEvent({
+      type: "kiln_chat_trace",
+      trace_id: "trace-3",
+      context_usage: { context_percent: 0.42 },
+    })
+    expect(usages).toEqual([
+      {
+        context_tokens: 0,
+        context_limit: 0,
+        context_percent: 0.42,
+        compacted: false,
       },
-    })
-    vi.stubGlobal("fetch", fetchMock)
+    ])
+  })
+})
 
-    await streamChat({
-      apiUrl: "https://example.test/api/chat",
-      messages: [{ id: "u1", role: "user", content: "hi" }],
-      traceId: "tid-1",
-      onAssistantMessage: () => {},
-      onFinish: () => {},
-      onError: () => {},
+describe("autoModeConsentPayloadFromEvent", () => {
+  it("maps the legacy enable-only shape (no trigger) to the enable variant", () => {
+    // Pre-FR2 desktops emit only enable_tool_call_id/reason/siblings; the
+    // parsed payload must read as the enable trigger with the gating id
+    // falling back to the enable id.
+    const payload = autoModeConsentPayloadFromEvent({
+      type: "auto-mode-consent-required",
+      enable_tool_call_id: "call_enable",
+      reason: "let me work",
+      sibling_tool_calls: [],
     })
-
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    const init = fetchMock.mock.calls[0][1] as RequestInit
-    expect(JSON.parse(init.body as string)).toEqual({
-      messages: [{ role: "user", content: "hi" }],
-      trace_id: "tid-1",
+    expect(payload).toEqual({
+      trigger: "enable_auto_mode",
+      gatingToolCallId: "call_enable",
+      reason: "let me work",
+      spawn: null,
+      siblingToolCalls: [],
     })
   })
 
-  it("posts execute-tools when tool-calls-pending is received", async () => {
-    const lines = [
-      'data: {"type":"kiln_chat_trace","trace_id":"trace-1"}\n\n',
-      'data: {"type":"tool-calls-pending","items":[{"toolCallId":"tc1","toolName":"t","input":{},"requiresApproval":true}]}\n\n',
-    ]
-    let i = 0
-    const fetchMock = vi
-      .fn()
-      .mockImplementation((url: string, init?: RequestInit) => {
-        if (url.endsWith("/execute-tools")) {
-          expect(init?.method).toBe("POST")
-          const body = JSON.parse(init?.body as string) as {
-            trace_id: string
-            tool_calls: Array<{ toolCallId: string; requiresApproval: boolean }>
-            decisions: Record<string, boolean>
-          }
-          expect(body.trace_id).toBe("trace-1")
-          expect(body.tool_calls).toHaveLength(1)
-          expect(body.tool_calls[0].toolCallId).toBe("tc1")
-          expect(body.decisions).toEqual({ tc1: true })
-          return Promise.resolve({
-            ok: true,
-            body: {
-              getReader: () => ({
-                read: () => Promise.resolve({ done: true, value: undefined }),
-              }),
-            },
-          })
-        }
-        return Promise.resolve({
-          ok: true,
-          body: {
-            getReader: () => ({
-              read: () => {
-                if (i >= lines.length) {
-                  return Promise.resolve({ done: true, value: undefined })
-                }
-                const enc = new TextEncoder()
-                const line = lines[i]
-                i += 1
-                return Promise.resolve({
-                  done: false,
-                  value: enc.encode(line),
-                })
-              },
-            }),
-          },
-        })
-      })
-    vi.stubGlobal("fetch", fetchMock)
-
-    await streamChat({
-      apiUrl: "https://example.test/api/chat",
-      messages: [{ id: "u1", role: "user", content: "hi" }],
-      onAssistantMessage: () => {},
-      onToolCallsPending: async (payload) => {
-        const out: Record<string, boolean> = {}
-        for (const it of payload.items) {
-          if (it.requiresApproval) {
-            out[it.toolCallId] = true
-          }
-        }
-        return out
-      },
-      onFinish: () => {},
-      onError: () => {},
+  it("prefers gating_tool_call_id when both spellings are present", () => {
+    const payload = autoModeConsentPayloadFromEvent({
+      type: "auto-mode-consent-required",
+      trigger: "enable_auto_mode",
+      gating_tool_call_id: "call_gating",
+      enable_tool_call_id: "call_enable_fallback",
+      reason: null,
     })
+    expect(payload.gatingToolCallId).toBe("call_gating")
+    expect(payload.reason).toBeNull()
+  })
 
-    expect(fetchMock.mock.calls.length).toBe(2)
-    expect(chatExecuteToolsUrl("https://example.test/api/chat")).toBe(
-      "https://example.test/api/chat/execute-tools",
+  it("maps the spawn trigger with its spawn info and no reason", () => {
+    const sibling = {
+      toolCallId: "tc_sib",
+      toolName: "add",
+      input: {},
+      requiresApproval: false,
+    }
+    const payload = autoModeConsentPayloadFromEvent({
+      type: "auto-mode-consent-required",
+      trigger: "spawn_subagent",
+      gating_tool_call_id: "call_spawn",
+      spawn: { agent_type: "general", name: "Helper", prompt: "do things" },
+      sibling_tool_calls: [sibling],
+    })
+    expect(payload).toEqual({
+      trigger: "spawn_subagent",
+      gatingToolCallId: "call_spawn",
+      reason: null,
+      spawn: {
+        agentType: "general",
+        name: "Helper",
+        prompt: "do things",
+        rawInput: {
+          agent_type: "general",
+          name: "Helper",
+          prompt: "do things",
+        },
+      },
+      siblingToolCalls: [sibling],
+    })
+  })
+
+  it("preserves unknown spawn fields verbatim in rawInput (schema growth)", () => {
+    const wireSpawn = {
+      agent_type: "general",
+      name: "Helper",
+      prompt: "do things",
+      max_rounds: 7,
+      model: "future-field",
+    }
+    const payload = autoModeConsentPayloadFromEvent({
+      type: "auto-mode-consent-required",
+      trigger: "spawn_subagent",
+      gating_tool_call_id: "call_spawn",
+      spawn: wireSpawn as unknown as { name?: string },
+    })
+    expect(payload.spawn?.rawInput).toEqual(wireSpawn)
+  })
+
+  it("tolerates a malformed spawn value without throwing", () => {
+    const payload = autoModeConsentPayloadFromEvent({
+      type: "auto-mode-consent-required",
+      trigger: "spawn_subagent",
+      gating_tool_call_id: "call_spawn",
+      spawn: "not-an-object" as unknown as { name?: string },
+    })
+    expect(payload.trigger).toBe("spawn_subagent")
+    expect(payload.spawn).toBeNull()
+  })
+
+  it("treats an unknown trigger as the enable variant (forward compat)", () => {
+    const payload = autoModeConsentPayloadFromEvent({
+      type: "auto-mode-consent-required",
+      trigger: "something_new",
+      gating_tool_call_id: "call_x",
+      spawn: { name: "ignored" },
+    })
+    expect(payload.trigger).toBe("enable_auto_mode")
+    expect(payload.spawn).toBeNull()
+    expect(payload.gatingToolCallId).toBe("call_x")
+  })
+})
+
+describe("StreamEventProcessor kiln_compaction_status (Phase 5)", () => {
+  function makeProcessor(onCompactionStatus: (c: boolean) => void) {
+    return new StreamEventProcessor({
+      onAssistantMessage: () => {},
+      onCompactionStatus,
+    })
+  }
+
+  it("sets compacting=true on a started status event", () => {
+    const states: boolean[] = []
+    const processor = makeProcessor((c) => states.push(c))
+    processor.handleEvent({ type: "kiln_compaction_status", state: "started" })
+    expect(states).toEqual([true])
+  })
+
+  it("clears compacting on the next text content event", () => {
+    const states: boolean[] = []
+    const processor = makeProcessor((c) => states.push(c))
+    processor.handleEvent({ type: "kiln_compaction_status", state: "started" })
+    processor.handleEvent({ type: "text-start" })
+    processor.handleEvent({ type: "text-delta", delta: "hi" })
+    expect(states[0]).toBe(true)
+    // The first content event clears it; later content events keep it cleared.
+    expect(states.slice(1).every((s) => s === false)).toBe(true)
+    expect(states).toContain(false)
+  })
+
+  it("clears compacting on the snapshot (kiln_chat_trace) event", () => {
+    const states: boolean[] = []
+    const processor = makeProcessor((c) => states.push(c))
+    processor.handleEvent({ type: "kiln_compaction_status", state: "started" })
+    processor.handleEvent({ type: "kiln_chat_trace", trace_id: "trace-1" })
+    expect(states[0]).toBe(true)
+    expect(states[states.length - 1]).toBe(false)
+  })
+
+  it("does NOT clear compacting on a finished status event (stays up until content)", () => {
+    // A fast/buffered started→finished pair must not collapse the visible
+    // window. Only real assistant content clears the indicator, so a "finished"
+    // event on its own is ignored (no clear emitted).
+    const states: boolean[] = []
+    const processor = makeProcessor((c) => states.push(c))
+    processor.handleEvent({ type: "kiln_compaction_status", state: "started" })
+    processor.handleEvent({ type: "kiln_compaction_status", state: "finished" })
+    // Only the "started" → true was emitted; "finished" produced no callback.
+    expect(states).toEqual([true])
+  })
+
+  it("stays compacting through a started→finished pair, clears on first content", () => {
+    const states: boolean[] = []
+    const processor = makeProcessor((c) => states.push(c))
+    processor.handleEvent({ type: "kiln_compaction_status", state: "started" })
+    processor.handleEvent({ type: "kiln_compaction_status", state: "finished" })
+    expect(states).toEqual([true])
+    // The first real assistant content is what clears it.
+    processor.handleEvent({ type: "text-start" })
+    expect(states[states.length - 1]).toBe(false)
+  })
+
+  it("clears compacting on an error event", () => {
+    const states: boolean[] = []
+    const processor = new StreamEventProcessor({
+      onAssistantMessage: () => {},
+      onCompactionStatus: (c) => states.push(c),
+      onInlineError: () => {},
+    })
+    processor.handleEvent({ type: "kiln_compaction_status", state: "started" })
+    processor.handleEvent({ type: "error", message: "boom" })
+    expect(states[0]).toBe(true)
+    expect(states[states.length - 1]).toBe(false)
+  })
+})
+
+describe("StreamEventProcessor kiln-chat-retry", () => {
+  function makeProcessor(
+    onRetry: (attempt: number, max: number) => void,
+    onRetryClear: () => void,
+  ) {
+    return new StreamEventProcessor({
+      onAssistantMessage: () => {},
+      onRetry,
+      onRetryClear,
+    })
+  }
+
+  it("fires onRetry with attempt/max on a kiln-chat-retry event", () => {
+    const retries: Array<[number, number]> = []
+    let clears = 0
+    const processor = makeProcessor(
+      (a, m) => retries.push([a, m]),
+      () => {
+        clears += 1
+      },
     )
+    processor.handleEvent({
+      type: "kiln-chat-retry",
+      attempt: 3,
+      max_attempts: 10,
+      status_code: 503,
+    })
+    expect(retries).toEqual([[3, 10]])
+    expect(clears).toBe(0)
   })
 
-  it("calls onInlineError with code when response has chat_client_version_too_old", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 400,
-      statusText: "Bad Request",
-      text: () =>
-        Promise.resolve(
-          JSON.stringify({
-            message: {
-              message: "Update required",
-              code: CHAT_CLIENT_VERSION_TOO_OLD,
-            },
-          }),
-        ),
-    })
-    vi.stubGlobal("fetch", fetchMock)
-
-    const inlineErrorSpy = vi.fn()
-
-    await streamChat({
-      apiUrl: "https://example.test/api/chat",
-      messages: [{ id: "u1", role: "user", content: "hi" }],
-      onAssistantMessage: () => {},
-      onInlineError: inlineErrorSpy,
-      onFinish: () => {},
-      onError: () => {},
-    })
-
-    expect(inlineErrorSpy).toHaveBeenCalledOnce()
-    expect(inlineErrorSpy.mock.calls[0][2]).toBe(CHAT_CLIENT_VERSION_TOO_OLD)
-  })
-
-  it("calls onError for non-version error responses", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-      statusText: "Internal Server Error",
-      text: () => Promise.resolve("server error"),
-    })
-    vi.stubGlobal("fetch", fetchMock)
-
-    const errorSpy = vi.fn()
-    const inlineErrorSpy = vi.fn()
-
-    await streamChat({
-      apiUrl: "https://example.test/api/chat",
-      messages: [{ id: "u1", role: "user", content: "hi" }],
-      onAssistantMessage: () => {},
-      onInlineError: inlineErrorSpy,
-      onFinish: () => {},
-      onError: errorSpy,
-    })
-
-    expect(errorSpy).toHaveBeenCalledOnce()
-    expect(inlineErrorSpy).not.toHaveBeenCalled()
-  })
-
-  it("calls onVersionNudge for kiln_client_upgrade_nudge events", async () => {
-    const lines = [
-      'data: {"type":"kiln_client_upgrade_nudge","preferred_version":"1.2.3"}\n\n',
-      'data: {"type":"kiln_chat_trace","trace_id":"trace-1"}\n\n',
-    ]
-    let i = 0
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      body: {
-        getReader: () => ({
-          read: () => {
-            if (i >= lines.length) {
-              return Promise.resolve({ done: true, value: undefined })
-            }
-            const value = new TextEncoder().encode(lines[i])
-            i += 1
-            return Promise.resolve({ done: false, value })
-          },
-        }),
+  it("clears exactly once on the next non-retry event (not per token)", () => {
+    const retries: Array<[number, number]> = []
+    let clears = 0
+    const processor = makeProcessor(
+      (a, m) => retries.push([a, m]),
+      () => {
+        clears += 1
       },
+    )
+    processor.handleEvent({
+      type: "kiln-chat-retry",
+      attempt: 1,
+      max_attempts: 10,
     })
-    vi.stubGlobal("fetch", fetchMock)
+    // The recovered round streams several tokens — clear must fire just once.
+    processor.handleEvent({ type: "text-start" })
+    processor.handleEvent({ type: "text-delta", delta: "a" })
+    processor.handleEvent({ type: "text-delta", delta: "b" })
+    expect(clears).toBe(1)
+  })
 
-    const versionNudgeSpy = vi.fn()
-    const errorSpy = vi.fn()
-
-    await streamChat({
-      apiUrl: "https://example.test/api/chat",
-      messages: [{ id: "u1", role: "user", content: "hi" }],
-      onAssistantMessage: () => {},
-      onVersionNudge: versionNudgeSpy,
-      onFinish: () => {},
-      onError: errorSpy,
-    })
-
-    expect(versionNudgeSpy).toHaveBeenCalledOnce()
-    expect(versionNudgeSpy).toHaveBeenCalledWith("1.2.3")
-    expect(errorSpy).not.toHaveBeenCalled()
+  it("does not clear when no retry is active", () => {
+    let clears = 0
+    const processor = makeProcessor(
+      () => {},
+      () => {
+        clears += 1
+      },
+    )
+    processor.handleEvent({ type: "text-delta", delta: "hi" })
+    expect(clears).toBe(0)
   })
 })
