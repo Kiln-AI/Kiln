@@ -87,15 +87,6 @@ def _calibration_item(job: EvalJob) -> TaskRun | None:
     return job.item
 
 
-def _message_field(message: Any, key: str) -> Any:
-    """One field of a trace message, or None for anything that isn't a message dict.
-
-    A stored trace is a list of message dicts, but an in-memory one can hold provider
-    objects too; reading through this keeps the health check from raising on them.
-    """
-    return message.get(key) if isinstance(message, dict) else None
-
-
 def _has_text_content(content: Any) -> bool:
     """Whether a message's content carries any text.
 
@@ -126,17 +117,15 @@ def conversation_health_problem(
     as if the agent had simply finished.
     """
     messages = trace or []
-    user_turns = sum(
-        1 for message in messages if _message_field(message, "role") == "user"
-    )
+    user_turns = sum(1 for message in messages if message.get("role") == "user")
     if user_turns != required_turns:
         return f"expected {required_turns} user turns, found {user_turns}"
     if not messages:
         return "the conversation is empty"
-    last_role = _message_field(messages[-1], "role")
+    last_role = messages[-1].get("role")
     if last_role != "assistant":
         return f"the conversation ends with a '{last_role}' message, not an assistant reply"
-    if not _has_text_content(_message_field(messages[-1], "content")):
+    if not _has_text_content(messages[-1].get("content")):
         return "the final assistant message has no text content"
     return None
 

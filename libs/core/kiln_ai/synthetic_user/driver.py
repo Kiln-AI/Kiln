@@ -1,7 +1,7 @@
 """Per-turn synthetic-user driver.
 
 Wraps a kiln_ai LiteLLM adapter and exposes a single async `respond()` that:
-1. Filters the eval-frame conversation to `visible_message_roles`.
+1. Filters the eval-frame conversation to its user and assistant turns.
 2. Role-swaps user/assistant so the LLM is generating the SU's reply.
 3. Calls the adapter with the persona system prompt prepended as
    `prior_trace` and the latest swapped user turn as `input`.
@@ -100,12 +100,8 @@ class SyntheticUserDriver:
         None when the provider reported nothing — distinct from a zeroed Usage,
         which would read as a genuinely free call rather than an unmeasured one.
         """
-        # 1) Filter to visible roles (drop system/tool if present).
-        visible = [
-            m
-            for m in conversation
-            if m["role"] in self._driver_config.visible_message_roles
-        ]
+        # 1) Keep user and assistant turns (drop system/tool if present).
+        visible = [m for m in conversation if m["role"] in ("user", "assistant")]
         # 2) Drop tool-dispatch-only assistant turns (falsy content).
         #    See _is_tool_dispatch_only for rationale.
         visible = [m for m in visible if not _is_tool_dispatch_only(m)]

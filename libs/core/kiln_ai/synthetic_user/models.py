@@ -3,18 +3,14 @@
 `SyntheticUserInfo` is declared in the datamodel (it persists on multi-turn
 eval inputs) and re-exported here for the runtime side: the parser produces
 it from the tagged wire blob and `prompt.render_system_prompt` consumes it.
-`SyntheticUserDriverConfig` carries the per-eval runtime config — model,
-provider, role visibility.
+`SyntheticUserDriverConfig` carries the per-eval runtime config — model and
+provider.
 """
 
-from typing import Literal
-
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.eval import SyntheticUserInfo as SyntheticUserInfo
-
-VisibleMessageRole = Literal["user", "assistant"]
 
 # The exact message the SU sends, alone and with nothing else, to end a
 # conversation before the turn ceiling is reached. It lives in this leaf module
@@ -41,6 +37,3 @@ class SyntheticUserDriverConfig(BaseModel):
 
     model_name: str
     model_provider_name: ModelProviderName
-    visible_message_roles: list[VisibleMessageRole] = Field(
-        default_factory=lambda: ["user", "assistant"]
-    )

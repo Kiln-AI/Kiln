@@ -1,4 +1,4 @@
-"""Parse / build the tagged synthetic_user_info blob.
+"""Parse the tagged synthetic_user_info blob.
 
 The blob is a serialization format only — persisted eval inputs store
 the parsed SyntheticUserInfo, never the blob.
@@ -47,14 +47,3 @@ def parse_synthetic_user_info(blob: str) -> SyntheticUserInfo:
         goal=goal,
         behavior_guidance=behavior_guidance,
     )
-
-
-def build_synthetic_user_info(info: SyntheticUserInfo) -> str:
-    """Inverse of parse — for tests and any callers that need to construct a blob."""
-    parts = [
-        f"<persona>{info.persona}</persona>",
-        f"<goal>{info.goal}</goal>",
-    ]
-    if info.behavior_guidance:
-        parts.append(f"<behavior_guidance>{info.behavior_guidance}</behavior_guidance>")
-    return "".join(parts)
