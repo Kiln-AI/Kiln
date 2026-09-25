@@ -242,6 +242,19 @@
       api_key_fields: ["API Key"],
     },
     {
+      name: "TypeSafe AI",
+      id: "typesafe",
+      description:
+        "Classification models that return a probability for every answer.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://console.typesafe.ai/keys",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
       name: "Weights & Biases",
       id: "wandb",
       hide_in_onboarding: true,
@@ -379,6 +392,12 @@
       custom_description: null,
     },
     featherless_ai: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    typesafe: {
       connected: false,
       connecting: false,
       error: null,
@@ -788,6 +807,9 @@
       }
       if (data["featherless_ai_api_key"]) {
         status.featherless_ai.connected = true
+      }
+      if (data["typesafe_api_key"]) {
+        status.typesafe.connected = true
       }
       if (data["kiln_copilot_api_key"]) {
         status.kiln_copilot.connected = true

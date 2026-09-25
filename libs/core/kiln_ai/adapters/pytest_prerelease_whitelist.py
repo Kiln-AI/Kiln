@@ -29,6 +29,16 @@ PRERELEASE_CHAT_MODELS: list[tuple[str, str]] = [
     ("deepseek_4_flash", ModelProviderName.together_ai.value),
 ]
 
+# (model_name, provider_name) — used by the Jev paid smoke tests in
+# kiln_ai/adapters/jev/test_jev_paid_smoke.py. Its own list rather than an entry in
+# PRERELEASE_CHAT_MODELS above, because that list pins the LiteLLM chat models and Jev does
+# not go through LiteLLM at all: lite_llm_core_config_for_provider and
+# get_litellm_provider_info both raise for typesafe on purpose, so an entry there would
+# fail by construction rather than tell us anything about Jev.
+PRERELEASE_JEV_MODELS: list[tuple[str, str]] = [
+    ("jev_1_13", ModelProviderName.typesafe.value),
+]
+
 # (model_name, provider_name) — used by the embedding prerelease smoke tests
 # in both test_ml_embedding_model_list.py and test_litellm_embedding_adapter.py.
 # At least one entry per embedding-supporting provider.
