@@ -10,6 +10,8 @@
 #
 # Output: app/desktop/build/dist-<gi|nogi>/Kiln (onefile, like production)
 # Assumes app/web_ui/build exists (run the web build, or build_desktop_app.sh, first).
+# No --splash: the uv-managed Python ships Tcl/Tk 9 (libtcl9tk9.0.so), which
+# PyInstaller 6.22 splash detection rejects ("Could not determine the path to Tcl").
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -42,7 +44,7 @@ mkdir -p desktop/build
 cp desktop/mac_taskbar.png desktop/build/taskbar.png
 
 # shellcheck disable=SC2086
-uv run --no-sync pyinstaller --windowed $MODE --splash=../win_splash.png --icon=../mac_icon.png \
+uv run --no-sync pyinstaller --windowed $MODE --icon=../mac_icon.png \
   --add-data "./taskbar.png:." --add-data "../../web_ui/build:./web_ui/build" \
   --add-data "../tray_icons:./tray_icons" \
   --noconfirm --distpath="./desktop/build/dist-$GI" --workpath="./desktop/build/work-$GI" \

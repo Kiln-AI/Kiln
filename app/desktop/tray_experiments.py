@@ -61,7 +61,7 @@ ASSET_VARIANTS = {
     "mono-white-edge",
     "mono-black-edge",
 }
-BACKENDS = ["appindicator", "gtk", "xorg"]
+BACKENDS = ["appindicator", "gtk", "xorg", "sni"]
 PR1814_BG = (68, 70, 60, 255)
 DARK_PANEL_GUESS = (0x1D, 0x1D, 0x1D)
 LIGHT_PANEL_GUESS = (0xF6, 0xF5, 0xF4)
@@ -130,7 +130,7 @@ def early_init(argv: list[str] | None = None) -> TrayOptions:
         return OPTIONS
 
     _setup_logger()
-    if OPTIONS.backend:
+    if OPTIONS.backend and OPTIONS.backend != "sni":
         os.environ["PYSTRAY_BACKEND"] = OPTIONS.backend
     log.info("options: %s", OPTIONS)
     log_environment()
@@ -285,7 +285,7 @@ def log_backend_report() -> str | None:
     chosen = pystray.Icon.__module__.rsplit("._", 1)[-1]
     log.info("pystray backend LOADED: %s (%s)", chosen, pystray.Icon.__module__)
     for name in BACKENDS:
-        if name == chosen:
+        if name == chosen or name == "sni":
             continue
         try:
             importlib.import_module(f"pystray._{name}")
@@ -357,9 +357,9 @@ def _gsettings_color_scheme() -> int | None:
         return None
     if "prefer-dark" in out:
         return 1
-    if "prefer-light" in out or "default" in out:
+    if "prefer-light" in out:
         return 2
-    return None
+    return 0
 
 
 def color_scheme() -> int | None:
@@ -368,6 +368,19 @@ def color_scheme() -> int | None:
     if scheme in (1, 2):
         return scheme
     return _gsettings_color_scheme()
+
+
+def _xfce_panel_dark() -> tuple[bool, str] | None:
+    mode = _run(["xfconf-query", "-c", "xfce4-panel", "-p", "/panels/dark-mode"])
+    theme = _run(["xfconf-query", "-c", "xsettings", "-p", "/Net/ThemeName"])
+    log.info("mono-auto: xfconf panel dark-mode=%s gtk theme=%s", mode, theme)
+    if mode is None and theme is None:
+        return None
+    if mode == "true":
+        return True, "xfce4-panel dark-mode=true"
+    if theme and "dark" in theme.lower():
+        return True, f"GTK theme {theme} is dark"
+    return False, "xfce4-panel dark-mode off and GTK theme not dark"
 
 
 def decide_panel_is_dark(scheme: int | None = None) -> bool:
@@ -380,6 +393,8 @@ def decide_panel_is_dark(scheme: int | None = None) -> bool:
         dark, why = True, "GNOME/Unity top bar is always dark"
     elif "cinnamon" in parts:
         dark, why = True, "Cinnamon panel default is dark"
+    elif "xfce" in parts and (xfce := _xfce_panel_dark()) is not None:
+        dark, why = xfce
     elif scheme == 1:
         dark, why = True, "color-scheme=1 (prefer dark)"
     elif scheme == 2:
@@ -596,6 +611,8 @@ def create_tray(
     menu: Any,
 ) -> Any:
     """Build the tray icon object for the selected experiment."""
+    if OPTIONS.backend == "sni":
+        return create_sni_tray(resource_path, taskbar, name, title, menu)
     backend = log_backend_report()
     variant = OPTIONS.variant or "baseline"
     size = OPTIONS.size or 64
@@ -674,6 +691,92 @@ def create_tray(
                 state["set"] = new_set
                 tray._icon_data = None
                 tray.icon = load_asset(resource_path, new_set, size)
+
+        watch_color_scheme(on_change)
+    return tray
+
+
+def load_all_sizes(
+    resource_path: Callable[[str], str], set_name: str
+) -> list[Image.Image]:
+    d = icons_dir(resource_path) / set_name
+    return [
+        Image.open(p).convert("RGBA")
+        for p in sorted(d.glob("kiln-*.png"), key=lambda p: int(p.stem.split("-")[1]))
+    ]
+
+
+def create_sni_tray(
+    resource_path: Callable[[str], str],
+    taskbar: Any,
+    name: str,
+    title: str,
+    menu: Any,
+) -> Any:
+    """Pure D-Bus StatusNotifierItem (no GTK/gi), see tray_sni.py."""
+    from app.desktop.tray_sni import SniTray
+
+    variant = OPTIONS.variant or "baseline"
+    icon_name = ""
+    theme_path = ""
+    set_name: str | None = None
+    if variant == "baseline":
+        pixmaps = [taskbar.convert("RGBA")]
+    elif variant == "pr1814":
+        pixmaps = [pr1814_image(taskbar).convert("RGBA")]
+    elif variant in ASSET_VARIANTS:
+        set_name = variant
+    elif variant in ("mono-auto", "symbolic"):
+        set_name = mono_auto_set()
+    elif variant == "themed":
+        set_name = "color"
+    else:
+        raise ValueError(variant)
+    if set_name:
+        pixmaps = load_all_sizes(resource_path, set_name)
+    if variant == "symbolic":
+        icon_name, theme_path = (
+            "kiln-symbolic",
+            str(icons_dir(resource_path) / "symbolic"),
+        )
+    elif variant == "themed":
+        icon_name, theme_path = (
+            "kiln-tray-color",
+            str(icons_dir(resource_path) / "themed"),
+        )
+
+    items = list(menu)
+    tray: Any = None
+
+    def activate() -> None:
+        items[0](tray)
+
+    tray = SniTray(
+        name,
+        title,
+        items,
+        pixmaps,
+        icon_name=icon_name,
+        icon_theme_path=theme_path,
+        activate=activate,
+    )
+    log.info(
+        "tray: backend=sni variant=%s set=%s pixmaps=%s icon_name=%r theme_path=%r",
+        variant,
+        set_name,
+        [p.size[0] for p in pixmaps],
+        icon_name,
+        theme_path,
+    )
+    if variant == "mono-auto":
+        state = {"set": set_name}
+
+        def on_change(scheme: int) -> None:
+            new_set = mono_auto_set(scheme)
+            if new_set != state["set"]:
+                log.info("mono-auto: swapping %s -> %s", state["set"], new_set)
+                state["set"] = new_set
+                tray.set_pixmaps(load_all_sizes(resource_path, new_set))
 
         watch_color_scheme(on_change)
     return tray
