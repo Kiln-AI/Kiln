@@ -2664,9 +2664,7 @@ class TestSingleTurnPipeline:
     ):
         """A run slower than the soft log threshold completes and is
         judged, with the watchdog warning making the slowness visible in
-        logs. The single-turn path has no seam that could prove the absence
-        of a run budget; that property is pinned on the multi-turn runner's
-        wait_for (test_no_case_timeout_by_default)."""
+        logs."""
         slow_input = single_turn_request["inputs"][0]
 
         def fake_adapter(task, run_config, base_adapter_config=None):

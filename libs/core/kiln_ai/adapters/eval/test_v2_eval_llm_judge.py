@@ -445,19 +445,32 @@ class TestLlmJudgeEvalGEvalFailFast:
         assert result.skipped_reason is None
 
     @pytest.mark.asyncio
-    async def test_g_eval_raises_when_model_unknown(self):
-        # Unknown model: logprobs support can't be verified, so the preflight
-        # must fail loudly before spending on the judge call.
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_g_eval_proceeds_when_provider_unknown(self, mock_adapter_for_task):
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.return_value = (
+            _judge_run(),
+            RunOutput(output={"quality": "5"}, intermediate_outputs=None),
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+
         props = _make_props(g_eval=True)
         cfg = _make_config(props)
-        adapter = LlmJudgeEval(cfg)
 
-        with patch(
-            "kiln_ai.adapters.eval.v2_eval_llm_judge.built_in_models_from_provider",
-            return_value=None,
+        with (
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_llm_judge.built_in_models_from_provider",
+                return_value=None,
+            ),
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_llm_judge.build_g_eval_score"
+            ) as mock_g_eval_score,
         ):
-            with pytest.raises(ValueError, match="not a built-in model"):
-                await adapter.evaluate(_inp())
+            mock_g_eval_score.return_value = {"quality": 4.3}
+            result = await LlmJudgeEval(cfg).evaluate(_inp())
+
+        assert result.scores == {"quality": 4.3}
+        assert result.skipped_reason is None
 
 
 class TestLlmJudgeEvalMissingReferenceData:

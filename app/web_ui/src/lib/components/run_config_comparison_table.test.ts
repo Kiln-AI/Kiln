@@ -79,7 +79,6 @@ function makeSummary(
       [rc_id]: percent_complete,
     },
     dataset_size: n_used + n_excluded,
-    multi_turn_item_count: 0,
   }
 }
 

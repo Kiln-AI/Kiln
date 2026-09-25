@@ -191,7 +191,7 @@ async def test_respond_role_swaps_and_prepends_system_prompt(
 
 
 @pytest.mark.asyncio
-async def test_respond_filters_visible_message_roles(
+async def test_respond_keeps_only_user_and_assistant_turns(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A system turn in the conversation must be dropped before role-swap."""
@@ -327,36 +327,6 @@ async def test_respond_keeps_assistant_turns_with_text_and_tool_calls(
     assert call.args[0] == "Let me look that up."
 
 
-@pytest.mark.asyncio
-async def test_respond_with_custom_visible_roles(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Custom visibility set is honored — the driver doesn't hardcode the default."""
-    adapter = _patch_adapter(monkeypatch, _fake_run_output("ok"))
-    drv = SyntheticUserDriver(
-        _INFO,
-        SyntheticUserDriverConfig(
-            model_name="x",
-            model_provider_name=ModelProviderName.openrouter,
-            visible_message_roles=["assistant"],
-        ),
-    )
-    # Only assistant turns visible — the user turn gets filtered out, leaving
-    # only the assistant for /respond. After filter, the conversation is a
-    # single "assistant" message, which IS the required ends-on-assistant
-    # shape: visible=[asst]; swap→[user]; last is input; prior_trace=[sys].
-    conversation: list[ChatCompletionMessageParam] = [
-        {"role": "user", "content": "u1"},
-        {"role": "assistant", "content": "a1"},
-    ]
-
-    await drv.respond(conversation)
-
-    call = adapter.invoke_returning_run_output.await_args
-    assert call.args[0] == "a1"
-    assert len(call.kwargs["prior_trace"]) == 1  # just the system prompt
-
-
 # ───────────────────────── respond — invariants ─────────────────────────
 
 
@@ -366,7 +336,7 @@ async def test_respond_raises_when_no_visible_messages(
 ) -> None:
     _patch_adapter(monkeypatch, _fake_run_output())
     drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
-    # All messages filtered out by visible_message_roles.
+    # All messages filtered out: the driver keeps only user and assistant turns.
     conversation: list[ChatCompletionMessageParam] = [
         {"role": "system", "content": "sys"},
     ]

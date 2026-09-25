@@ -169,7 +169,7 @@ async def test_drive_case_threads_prior_trace_and_parent_run() -> None:
 @pytest.mark.asyncio
 async def test_drive_case_passes_full_trace_to_su_driver() -> None:
     """The SU driver's `respond` receives the full cumulative trace —
-    the driver itself filters to visible_message_roles.
+    the driver itself filters to user and assistant turns.
     """
     invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3"])
     su = _su_driver_with_replies(["u2", "u3"])
