@@ -31,11 +31,25 @@ from app.desktop.util.resource_limits import setup_resource_limits
 
 logger = logging.getLogger(__name__)
 
+LINUX_TRAY_SIZE = (24, 24)
+# pystray's XEmbed backend discards alpha while copying the icon onto a black
+# RGB image. Give Linux an opaque background matching the intended tray icon
+# so transparent pixels cannot turn into a jagged black bitmap.
+LINUX_TRAY_BACKGROUND = (68, 70, 60, 255)
+
 # Set writeable cache directories as soon as we start
 os.environ["LLAMA_INDEX_CACHE_DIR"] = os.path.join(
     Config.settings_dir(), "cache", "llama_index_cache"
 )
 os.environ["NLTK_DATA"] = os.path.join(Config.settings_dir(), "cache", "nltk_data")
+
+
+def prepare_linux_tray_image(image: Image.Image) -> Image.Image:
+    """Return an opaque, tray-sized icon safe for Linux pystray backends."""
+    rgba_image = image.convert("RGBA")
+    background = Image.new("RGBA", rgba_image.size, LINUX_TRAY_BACKGROUND)
+    background.alpha_composite(rgba_image)
+    return background.convert("RGB").resize(LINUX_TRAY_SIZE, Image.Resampling.LANCZOS)
 
 
 class DesktopApp:
@@ -119,10 +133,8 @@ class DesktopApp:
 
         tray_image = Image.open(self.resource_path("taskbar.png"))
 
-        # taskbar.png is sized for macOS/Windows; Linux trays typically render icons
-        # at ~22-24px, so the source image looks oversized/blurry there unless scaled down.
         if sys.platform.startswith("linux"):
-            tray_image = tray_image.resize((24, 24), Image.Resampling.LANCZOS)
+            tray_image = prepare_linux_tray_image(tray_image)
 
         # Use default on Windows to get "left click to open" behaviour.
         # It looks ugly on MacOS (just a bold effect Apple never uses), so don't use it there

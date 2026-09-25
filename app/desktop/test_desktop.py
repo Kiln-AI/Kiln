@@ -9,7 +9,12 @@ from PIL import Image
 from uvicorn import Config as UvicornConfig
 
 import app.desktop.desktop_server as desktop_server
-from app.desktop.desktop import DesktopApp, DesktopServer
+from app.desktop.desktop import (
+    LINUX_TRAY_BACKGROUND,
+    DesktopApp,
+    DesktopServer,
+    prepare_linux_tray_image,
+)
 
 TEST_PORT = 8123
 
@@ -179,7 +184,10 @@ class TestDesktopApp:
         """Test run_tray when tray doesn't exist yet."""
         app = DesktopApp(port=TEST_PORT)
 
-        with patch.object(app, "resource_path", return_value="taskbar.png"):
+        with (
+            patch.object(app, "resource_path", return_value="taskbar.png"),
+            patch("app.desktop.desktop.prepare_linux_tray_image"),
+        ):
             app.run_tray()
 
             # Verify menu items are created
@@ -238,25 +246,37 @@ class TestDesktopApp:
             assert menu_calls[0][1]["default"] is False
 
     @patch("app.desktop.desktop.sys.platform", "linux")
-    def test_run_tray_linux_icon_scaling(
+    def test_run_tray_linux_icon_preparation(
         self, mock_tk_root, mock_image, mock_kiln_menu_item
     ):
-        """Test run_tray scales the tray icon down on Linux."""
+        """Test run_tray prepares the icon for Linux backends."""
         app = DesktopApp(port=TEST_PORT)
 
         with (
             patch.object(app, "resource_path", return_value="taskbar.png"),
             patch("app.desktop.desktop.KilnTray") as mock_kiln_tray_class,
+            patch("app.desktop.desktop.prepare_linux_tray_image") as mock_prepare_image,
         ):
             app.run_tray()
 
-            mock_image.resize.assert_called_once()
-            mock_image.resize.assert_called_once_with(
-                (24, 24), Image.Resampling.LANCZOS
-            )
-            resized_image = mock_image.resize.return_value
+            mock_prepare_image.assert_called_once_with(mock_image)
             mock_kiln_tray_class.assert_called_once()
-            assert mock_kiln_tray_class.call_args.args[1] is resized_image
+            assert (
+                mock_kiln_tray_class.call_args.args[1]
+                is mock_prepare_image.return_value
+            )
+
+    def test_prepare_linux_tray_image_composites_alpha_before_scaling(self):
+        """Linux gets an opaque RGB icon instead of backend-discarded alpha."""
+        source = Image.new("RGBA", (48, 48), (0, 0, 0, 0))
+        source.paste((255, 255, 255, 255), (12, 12, 36, 36))
+
+        result = prepare_linux_tray_image(source)
+
+        assert result.mode == "RGB"
+        assert result.size == (24, 24)
+        assert result.getpixel((0, 0)) == LINUX_TRAY_BACKGROUND[:3]
+        assert result.getpixel((12, 12)) == (255, 255, 255)
 
     @patch("app.desktop.desktop.sys.platform", "win32")
     def test_run_tray_windows_no_icon_scaling(
