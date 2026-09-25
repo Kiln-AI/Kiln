@@ -12,7 +12,10 @@ try:
 
     IconBase: Type[Any] = pystray.Icon
     MenuItemBase: Type[Any] = pystray.MenuItem
-except Exception:
+except Exception as e:
+    from app.desktop.tray_experiments import record_pystray_import_error
+
+    record_pystray_import_error(e)
     # For CI, we should mock KilnTray in tests
     IconBase = object
     MenuItemBase = object

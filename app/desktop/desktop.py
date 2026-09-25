@@ -4,6 +4,11 @@ from app.desktop.studio_server.setup_certs import setup_certs  # isort:skip
 # setup_certs must run before imports to register root certs
 setup_certs()
 
+# Tray experiment flags must be parsed before pystray is imported (custom_tray)
+from app.desktop import tray_experiments  # isort:skip
+
+tray_experiments.early_init()
+
 import contextlib
 import logging
 import os
@@ -130,11 +135,18 @@ class DesktopApp:
             KilnMenuItem("Quit", self.on_quit),
         )
 
-        self.tray = KilnTray("kiln", tray_image, "Kiln", menu)
+        if sys.platform.startswith("linux"):
+            self.tray = tray_experiments.create_tray(
+                KilnTray, self.resource_path, tray_image, "kiln", "Kiln", menu
+            )
+        else:
+            self.tray = KilnTray("kiln", tray_image, "Kiln", menu)
 
         try:
             # running detached since we use tk mainloop to get events from dock icon
             self.tray.run_detached()
+            if sys.platform.startswith("linux"):
+                tray_experiments.after_run_detached(self.tray)
         except Exception:
             logger.error("Error running tray", exc_info=True)
             # Tray not starting on MacOS or Windows is critical.
@@ -212,6 +224,9 @@ if __name__ == "__main__":
             # Can't start. Likely the port is already in use (app already running). Show the existing web app and exit.
             app.show_studio()
             app.on_quit()
+
+        if tray_experiments.OPTIONS.exit_after:
+            app.root.after(int(tray_experiments.OPTIONS.exit_after * 1000), app.on_quit)
 
         # start the desktop app once the server is running. It will keep running until the tk mainloop exits (quit menu item usually)
         app.start()
