@@ -98,10 +98,14 @@ Write it for a person who has not read your working notes and will not scroll up
 
 If asked to perform a code review, read our [code review guidelines](.agents/code_review_guidelines.md).
 
+### Pull Requests
+
+Use the `open-pr` skill (`.agents/skills/open-pr/SKILL.md`) to open a PR or to write a PR description.
+
 ### Never Make Legal Decisions as an Agent
 
 Agents are not allowed to make any legal decisions, including:
- - Filling out a CLA attestations in a PR template
+ - Signing or filling out the CLA attestation in a PR template
  - Setting a license tag in metadata file (OSS/MIT/etc)
  - Adding license files
 

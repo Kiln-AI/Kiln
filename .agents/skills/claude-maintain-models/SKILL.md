@@ -396,7 +396,12 @@ After all tests pass, commit the changes and open a PR against `main`.
 
 ### 5b. Create the PR
 
-Use `gh pr create` against `main`. The PR body must follow this exact format:
+Use `gh pr create` against `main`. Follow Rule 0, Rule 1 and Step 3 of the `open-pr` skill (`.agents/skills/open-pr/SKILL.md`) for the human header, the CLA and the title:
+
+- The title is `WIP: chore: ` followed by the model-list subject, for example `WIP: chore: add GLM 5.1 to model list`. Use `chore`, because adding a model is maintenance work, not a new feature. Only a human removes the `WIP: ` prefix.
+- Copy everything above `# Agentic PR Summary` from `.github/pull_request_template.md` with no change. Never fill in a placeholder or tick a box there, and never sign the CLA. Remove the `## Contributor License Agreement` section only when the PR author's GitHub username is `scosman`, `sfierro`, `leonardmq`, `tawnymanticore`, or `chiang-daniel`. Keep it, unsigned, for any other author.
+
+Replace the `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `` placeholder under `# Agentic PR Summary` with the test results, in this exact format:
 
 ```
 ## What does this PR do?
@@ -426,18 +431,13 @@ Use `gh pr create` against `main`. The PR body must follow this exact format:
 ❌ test_name[model_enum-provider] — brief reason
 
 [Repeat for each model+provider combo]
-
-## Checklists
-
-- [X] Tests have been run locally and passed
-- [X] New tests have been added to any work in /lib
 ```
 
 **Rules for the PR body:**
 - Every test that ran must appear in the per-test dump, using the full pytest parametrize ID
 - Group tests by `[Model Name] ([provider]):` headers
 - The summary section at the top gives a quick pass/skip/fail count per model+provider
-- The detailed section below the `---` lists every individual test result
+- The detailed section below the `---` inside the summary (not the `----` above `# Agentic PR Summary`) lists every individual test result
 - Use ⚠️ for content quality flakes (not real failures), ❌ for real errors
 
 ---
@@ -462,7 +462,7 @@ Use `gh pr create` against `main`. The PR body must follow this exact format:
 - [ ] Smoke test passed
 - [ ] Full test suite passed
 - [ ] Failures cross-checked against an existing provider before being called regressions (see 4e)
-- [ ] PR created against `main` with test results in the body
+- [ ] PR created against `main` with a `WIP: ` title, the untouched human header, and test results in the Agentic PR Summary
 
 ---
 
