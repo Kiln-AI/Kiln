@@ -154,7 +154,7 @@ def _run(cmd: list[str], timeout: float = 3) -> str | None:
 
 def _probe_gi() -> None:
     try:
-        import gi
+        import gi  # type: ignore
 
         log.info("gi: OK version=%s file=%s", gi.__version__, gi.__file__)
     except Exception as e:
