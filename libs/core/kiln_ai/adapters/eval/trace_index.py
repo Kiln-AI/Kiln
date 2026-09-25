@@ -28,16 +28,22 @@ from kiln_ai.utils.lock import AsyncLockManager
 
 logger = logging.getLogger(__name__)
 
-TraceKey = Tuple[ItemSource, str, str]
-"""What identifies a reusable eval trace: `(source_type, source_id, run_config_id)`.
+TraceKey = Tuple[ItemSource, str, str, str]
+"""What identifies a reusable eval trace: `(source_type, source_id, run_config_id, world_version)`.
 
 `str` rather than the `ID_TYPE` (`Optional[str]`) the id fields carry, because this tuple
 is a dict key: an id-less item and an id-less run config would produce one
-`(source_type, None, None)` key that every id-less job collides on, handing them each
-other's traces. `trace_key()` is where that impossibility is enforced."""
+`(source_type, None, None, "")` key that every id-less job collides on, handing them each
+other's traces. `trace_key()` is where that impossibility is enforced.
+
+`world_version` separates generations of the same item under the same run config made in
+different versions of a world. It is read from the run's `world_episode` record, and is `""` for
+runs without one, so ordinary traces keep matching the jobs that produced them."""
 
 
-def trace_key(item: ItemKey, run_config_id: ID_TYPE) -> TraceKey:
+def trace_key(
+    item: ItemKey, run_config_id: ID_TYPE, world_version: str | None = None
+) -> TraceKey:
     """The trace key for running `item` under `run_config_id`.
 
     The one place `ID_TYPE`'s nullability is resolved, so callers holding an `item.id` or
@@ -52,7 +58,7 @@ def trace_key(item: ItemKey, run_config_id: ID_TYPE) -> TraceKey:
             f"(got item={item}, run_config_id={run_config_id}). Traces are looked up by "
             "the pair, so a missing half would match every other record missing it."
         )
-    return (source_type, source_id, run_config_id)
+    return (source_type, source_id, run_config_id, world_version or "")
 
 
 def _stored_trace_key(run: TaskRun) -> TraceKey | None:
@@ -66,7 +72,11 @@ def _stored_trace_key(run: TaskRun) -> TraceKey | None:
     run_config_id = run.output.source.run_config_id if run.output.source else None
     if not run_config_id:
         return None
-    return trace_key(eval_item_key(run.eval_source), run_config_id)
+    return trace_key(
+        eval_item_key(run.eval_source),
+        run_config_id,
+        run.world_episode.world_version if run.world_episode is not None else None,
+    )
 
 
 class TraceIndex:

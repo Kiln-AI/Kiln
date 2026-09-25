@@ -11,6 +11,7 @@ from kiln_ai.datamodel.reranker import RerankerConfig
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.vector_store import VectorStoreConfig
+from kiln_ai.datamodel.world import World
 
 
 class Project(
@@ -27,6 +28,7 @@ class Project(
         "reranker_configs": RerankerConfig,
         "skills": Skill,
         "code_tools": CodeTool,
+        "worlds": World,
     },
 ):
     """
@@ -75,3 +77,6 @@ class Project(
 
     def code_tools(self, readonly: bool = False) -> list[CodeTool]:
         return super().code_tools(readonly=readonly)  # type: ignore
+
+    def worlds(self, readonly: bool = False) -> list[World]:
+        return super().worlds(readonly=readonly)  # type: ignore
