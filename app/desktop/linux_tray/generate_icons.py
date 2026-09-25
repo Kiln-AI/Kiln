@@ -16,6 +16,7 @@ Writes into app/desktop/linux_tray/icons/:
 
 import math
 import re
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -246,4 +247,4 @@ def generate(out_dir: Path, logo_svg: Path = LOGO_SVG) -> None:
 
 if __name__ == "__main__":
     generate(ICON_DIR)
-    print(f"Wrote Linux tray icons to {ICON_DIR}")
+    sys.stdout.write(f"Wrote Linux tray icons to {ICON_DIR}\n")
