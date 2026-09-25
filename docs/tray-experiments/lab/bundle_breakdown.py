@@ -39,7 +39,9 @@ for k, v in added.items():
         g = "other"
     groups[g] += v
 print(f"entries: nogi={len(a)} gi={len(b)} added={len(added)}")
-print(f"uncompressed bytes: nogi={sum(a.values()) / 1e6:.1f}MB gi={sum(b.values()) / 1e6:.1f}MB added={sum(added.values()) / 1e6:.1f}MB")
+print(
+    f"uncompressed bytes: nogi={sum(a.values()) / 1e6:.1f}MB gi={sum(b.values()) / 1e6:.1f}MB added={sum(added.values()) / 1e6:.1f}MB"
+)
 for g, v in sorted(groups.items(), key=lambda x: -x[1]):
     print(f"  {g:28s} {v / 1e6:7.1f} MB")
 big = sorted(added.items(), key=lambda x: -x[1])[:15]

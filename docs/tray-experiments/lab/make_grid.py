@@ -30,6 +30,9 @@ for i, (label, c) in enumerate(crops):
     x = col * (label_w + cw + 10)
     y = 30 + row * (ch + 6)
     d.text((x + 6, y + ch // 2 - 8), label, fill="black", font=font)
-    sheet.paste(c.resize((c.width * zoom, c.height * zoom), Image.Resampling.NEAREST), (x + label_w, y))
+    sheet.paste(
+        c.resize((c.width * zoom, c.height * zoom), Image.Resampling.NEAREST),
+        (x + label_w, y),
+    )
 sheet.save(out, optimize=True)
 print(out, sheet.size)
