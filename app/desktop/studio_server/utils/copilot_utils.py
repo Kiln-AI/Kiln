@@ -63,6 +63,7 @@ from app.desktop.studio_server.api_models.copilot_models import (
     TaskSkillInfoApi,
     TaskToolInfoApi,
 )
+from app.desktop.studio_server.eval_api import task_run_config_from_id
 from app.desktop.studio_server.utils.response_utils import unwrap_response
 
 logger = logging.getLogger(__name__)
@@ -131,22 +132,13 @@ async def task_capabilities_for_task(
     task: Task,
     run_config_id: str | None = None,
 ) -> tuple[list[TaskToolInfoApi] | None, list[TaskSkillInfoApi] | None]:
-    """The tools and skills one of the task's run configs gives the model.
+    """Return the names and descriptions of the tools and skills a run config
+    gives the model.
 
-    `run_config_id` names the config the caller is asking about — the one an
-    eval is being written against, say. Without it the task's DEFAULT run
-    config is read. Exactly one config is read either way: unioning across
-    configs would describe a capability surface no single run of the task
-    actually has.
-
-    Names and descriptions only: enough for the copilot prompts to reason about
-    what the task can do, without shipping tool parameter schemas or skill
-    bodies.
-
-    Returns (None, None) when the capabilities could not be collected (no
-    resolvable default run config, or the collection itself failed). Callers
-    must keep that distinct from ([], []), which means the task genuinely has
-    none.
+    run_config_id picks the run config. Without it, the task's default saved
+    run config is used. Returns (None, None) if there's no run config to read,
+    which is different from ([], []), a run config with no tools or skills.
+    Raises if the run config's tools or skills can't be read.
     """
     started = time.monotonic()
     try:
@@ -156,22 +148,12 @@ async def task_capabilities_for_task(
         async with mcp_session_scope():
             tools, skills = await _collect_task_capabilities(task, run_config_id)
     except HTTPException:
-        # A named run config that does not exist is the caller's mistake, not
-        # an unreadable capability surface. Degrading it to "uncollected"
-        # below would build the prompt against a config the caller never
-        # asked for, and say nothing about it.
         raise
-    except Exception:
-        # Collection reads run configs and skills off disk, so one corrupt or
-        # forward-versioned file would otherwise fail a whole spec-building
-        # request. Falling back to uncollected keeps the caller working with
-        # the prompt it got before capabilities existed.
-        logger.warning(
-            "Could not collect capabilities for task %s; continuing without them",
-            task.id,
-            exc_info=True,
-        )
-        return None, None
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Couldn't read the run config's tools and skills: {e}",
+        ) from e
 
     # Resolving a tool can dial its MCP server, so these callers now make
     # network calls they never used to. Logged rather than capped: the cost
@@ -189,31 +171,37 @@ async def task_capabilities_for_task(
 def _capability_run_config(
     task: Task, run_config_id: str | None
 ) -> TaskRunConfig | None:
-    """The run config whose capabilities answer this request: the one the
-    caller named, or the task's default.
+    """Return the run config to read the task's tools and skills from.
 
-    None means the default was asked for and none is resolvable, which the
-    caller reports as an uncollected surface. A named config that is not on
-    the task raises instead — see the caller.
+    run_config_id can be a saved run config or a fine-tune. Raises 404 if it
+    isn't found. Without run_config_id, returns the task's default saved run
+    config, or None if there isn't one.
     """
     if run_config_id is not None:
         # Presence, not truthiness: an empty id is a real (bad) id and must
         # not quietly fall back to the default config, whose tools and skills
         # are not the ones the caller asked about.
-        run_config = next(
-            (
-                candidate
-                for candidate in task.run_configs(readonly=True)
-                if candidate.id == run_config_id
-            ),
-            None,
-        )
-        if run_config is None:
+        parent_project = task.parent_project()
+        if parent_project is None:
+            raise HTTPException(status_code=500, detail="Task has no parent project")
+        if not parent_project.id or not task.id:
+            raise HTTPException(
+                status_code=500, detail="Task has no parent project or task"
+            )
+        try:
+            # A fine-tune's run config isn't saved on the task. This lookup
+            # also loads it from the fine-tune, the same way the drive does.
+            return task_run_config_from_id(parent_project.id, task.id, run_config_id)
+        except ValueError as exc:
+            # Loading a fine-tune raises ValueError if it's missing or hasn't
+            # finished training, so treat that as not found. For any other id,
+            # it means a run config file couldn't be read.
+            if not run_config_id.startswith("finetune_run_config::"):
+                raise
             raise HTTPException(
                 status_code=404,
                 detail=f"Task run config not found. ID: {run_config_id}",
-            )
-        return run_config
+            ) from exc
 
     if not task.default_run_config_id:
         return None
@@ -260,16 +248,8 @@ async def _collect_task_capabilities(
                     description=await tool.description(),
                 )
             )
-        except Exception:
-            # A tool reference that no longer resolves (a removed MCP server, a
-            # deleted code tool) must not take down spec building; the rest of
-            # the surface is still worth describing.
-            logger.warning(
-                "Skipping tool %s for task %s: could not resolve it",
-                tool_id,
-                task.id,
-                exc_info=True,
-            )
+        except Exception as e:
+            raise ValueError(f"Couldn't load tool {tool_id}: {e}") from e
 
     # Sorted by name so the same task always produces the same payload — the
     # skill loader returns an unordered map.
