@@ -88,9 +88,6 @@ const DataGenIntro = (await import("./data_gen_intro.svelte")).default
 const NOT_READY =
   "This eval is not ready yet. Please configure its judge first."
 
-const EVAL_INPUTS_BACKED =
-  "This eval uses our new eval dataset format, which can't be generated from this UI."
-
 const NOT_TAG_SHAPED =
   "We can't generate synthetic data for this eval because its test set isn't " +
   "defined by a tag filter. Select an eval which uses tags to define its datasets."
@@ -160,11 +157,16 @@ async function pick_eval(name: string): Promise<void> {
   await tick()
 }
 
-/** The `splits` query param of the navigation the dialog performed, if any. */
-function navigated_splits(): string | null {
+/** A query param of the navigation the dialog performed, if any. */
+function navigated_param(name: string): string | null {
   expect(mockGoto).toHaveBeenCalledTimes(1)
   const url = new URL(mockGoto.mock.calls[0][0] as string, "http://localhost")
-  return url.searchParams.get("splits")
+  return url.searchParams.get(name)
+}
+
+/** The `splits` query param of the navigation the dialog performed, if any. */
+function navigated_splits(): string | null {
+  return navigated_param("splits")
 }
 
 const OUTPUT_SCORES = [{ name: "accuracy", type: "five_star" }]
@@ -179,25 +181,6 @@ describe("data gen intro — eval refusals", () => {
     await pick_eval("Unconfigured Spec")
 
     expect(alerts).toEqual([NOT_READY])
-    expect(mockGoto).not.toHaveBeenCalled()
-  })
-
-  it("refuses an eval-input-backed test split, naming the store as the problem", async () => {
-    // Generation appends TaskRuns to the dataset, so there is no tag on an EvalInput
-    // split for it to target. Telling this user to switch to tag filters would be
-    // useless advice — the store is the problem, not the filter's form.
-    setEvals([
-      {
-        id: "eval1",
-        name: "Inputs Eval",
-        splits: { test: { source: "eval_input", filter_id: "tag::inputs" } },
-        output_scores: OUTPUT_SCORES,
-      },
-    ])
-
-    await pick_eval("Inputs Eval")
-
-    expect(alerts).toEqual([EVAL_INPUTS_BACKED])
     expect(mockGoto).not.toHaveBeenCalled()
   })
 
@@ -237,18 +220,14 @@ describe("data gen intro — eval refusals", () => {
   it("MISLEADING COPY: an eval with no test split at all is told its filter isn't a tag", async () => {
     // KNOWN WRONG MESSAGE, DOCUMENTED NOT FIXED.
     //
-    // build_eval_generation_splits returns undefined for more than one reason — no test
-    // split, and a test split that isn't tag-shaped — and this dialog picks its message
-    // by branch order rather than by cause. The eval_input branch runs first and catches
-    // its own case, so the remaining two both land on the not-tag-shaped wording. An eval
-    // with no test split therefore reads "its test set isn't defined by a tag filter" and
-    // is told to "select an eval which uses tags", when the truth is that it has no test
-    // set at all and needs one created.
+    // build_synth_generation_splits returns undefined for more than one reason — no test
+    // split, and a test split that isn't tag-shaped — and this dialog has one message for
+    // both. An eval with no test split therefore reads "its test set isn't defined by a
+    // tag filter" and is told to "select an eval which uses tags", when the truth is that
+    // it has no test set at all and needs one created.
     //
     // This shape should be unreachable from the server (Eval.validate_splits requires a
-    // test split), so the wrong wording is latent rather than live — but the dispatch is
-    // one reordering away from also mis-diagnosing the eval_input case, which IS
-    // reachable. Reported, not fixed: this is a test-only change.
+    // test split), so the wrong wording is latent rather than live.
     setEvals([
       {
         id: "eval1",
@@ -263,13 +242,6 @@ describe("data gen intro — eval refusals", () => {
 
     expect(alerts).toEqual([NOT_TAG_SHAPED])
     expect(mockGoto).not.toHaveBeenCalled()
-  })
-
-  it("keeps the two refusals distinct, so neither can absorb the other's case", async () => {
-    expect(EVAL_INPUTS_BACKED).not.toEqual(NOT_TAG_SHAPED)
-    // The eval-inputs message must not offer the tag advice; that is the whole reason
-    // it is a separate string.
-    expect(EVAL_INPUTS_BACKED).not.toContain("tag")
   })
 })
 
@@ -298,6 +270,58 @@ describe("data gen intro — evals it accepts", () => {
     expect(navigated_splits()).toBe(
       "train_x:0.4,val_x:0.25,test_x:0.25,golden_x:0.1",
     )
+    // Every split holds runs, so the synth page has no tag to write as an eval input.
+    expect(navigated_param("eval_input_splits")).toBeNull()
+  })
+
+  it("accepts an eval built by the eval builder and names its eval-input tags", async () => {
+    // The bug this fixes: the dialog used to refuse these outright, which also kept the
+    // user off the synth page and away from the Data Guide setup it offers.
+    setEvals([
+      {
+        id: "eval1",
+        name: "Builder Eval",
+        splits: {
+          test: { source: "eval_input", filter_id: "tag::test_x" },
+          train: { source: "eval_input", filter_id: "tag::train_x" },
+          val: { source: "eval_input", filter_id: "tag::val_x" },
+        },
+        eval_configs_filter_id: "tag::golden_x",
+        output_scores: OUTPUT_SCORES,
+      },
+    ])
+
+    await pick_eval("Builder Eval")
+
+    expect(alerts).toEqual([])
+    expect(mockGoto.mock.calls[0][0]).toContain(
+      "/generate/proj1/task1/synth?reason=eval",
+    )
+    expect(navigated_splits()).toBe(
+      "train_x:0.4,val_x:0.25,test_x:0.25,golden_x:0.1",
+    )
+    expect(navigated_param("eval_input_splits")).toBe("train_x,val_x,test_x")
+  })
+
+  it("names only the eval-input tags when an eval mixes the two stores", async () => {
+    setEvals([
+      {
+        id: "eval1",
+        name: "Mixed Eval",
+        splits: {
+          test: { source: "eval_input", filter_id: "tag::test_x" },
+          train: { source: "task_run", filter_id: "tag::train_x" },
+        },
+        eval_configs_filter_id: "tag::golden_x",
+        output_scores: OUTPUT_SCORES,
+      },
+    ])
+
+    await pick_eval("Mixed Eval")
+
+    expect(alerts).toEqual([])
+    expect(navigated_splits()).toBe("train_x:0.54,test_x:0.33,golden_x:0.13")
+    expect(navigated_param("eval_input_splits")).toBe("test_x")
   })
 
   it("accepts a legacy eval whose test split is still in the flat field", async () => {
