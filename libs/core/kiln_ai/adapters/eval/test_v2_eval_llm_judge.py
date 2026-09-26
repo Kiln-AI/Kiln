@@ -888,3 +888,101 @@ class TestLlmJudgeE2EMessageConstruction:
 
         assert result.scores == {"quality": 4.0, "correctness": 1.0}
         assert result.skipped_reason is None
+
+
+class TestLlmJudgeThinkingLevel:
+    """The judge's thinking level. Unset must keep the provider default (older configs
+    behave as before); set must reach the model call, and an unknown level must fail
+    rather than be sent or silently dropped."""
+
+    @staticmethod
+    def _mock_adapter(mock_adapter_for_task) -> None:
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.return_value = (
+            _judge_run(),
+            RunOutput(output={"quality": "4"}, intermediate_outputs=None),
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_unset_keeps_provider_default(self, mock_adapter_for_task):
+        self._mock_adapter(mock_adapter_for_task)
+        props = _make_props(model_name="gpt_5_6_terra", model_provider="openrouter")
+        await LlmJudgeEval(_make_config(props)).evaluate(_inp())
+
+        run_config = mock_adapter_for_task.call_args.kwargs["run_config_properties"]
+        assert "thinking_level" not in run_config.model_fields_set
+        assert run_config.thinking_level is None
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_set_level_reaches_the_model_call(self, mock_adapter_for_task):
+        self._mock_adapter(mock_adapter_for_task)
+        props = _make_props(
+            model_name="gpt_5_6_terra",
+            model_provider="openrouter",
+            thinking_level="medium",
+        )
+        await LlmJudgeEval(_make_config(props)).evaluate(_inp())
+
+        run_config = mock_adapter_for_task.call_args.kwargs["run_config_properties"]
+        assert "thinking_level" in run_config.model_fields_set
+        assert run_config.thinking_level == "medium"
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_unknown_level_raises(self, mock_adapter_for_task):
+        self._mock_adapter(mock_adapter_for_task)
+        props = _make_props(
+            model_name="gpt_5_6_terra",
+            model_provider="openrouter",
+            thinking_level="ultra",
+        )
+        with pytest.raises(ValueError, match="not available"):
+            await LlmJudgeEval(_make_config(props)).evaluate(_inp())
+        mock_adapter_for_task.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_level_on_model_without_levels_raises(self, mock_adapter_for_task):
+        self._mock_adapter(mock_adapter_for_task)
+        props = _make_props(
+            model_name="gpt_4o", model_provider="openai", thinking_level="low"
+        )
+        with pytest.raises(ValueError, match="has no thinking levels"):
+            await LlmJudgeEval(_make_config(props)).evaluate(_inp())
+        mock_adapter_for_task.assert_not_called()
+
+    def test_blank_level_rejected_and_value_stripped(self):
+        with pytest.raises(ValueError, match="non-empty"):
+            _make_props(thinking_level="  ")
+        assert _make_props(thinking_level=" low ").thinking_level == "low"
+
+    def test_materialize_carries_level(self):
+        eval_obj = Mock()
+        with (
+            patch(
+                "kiln_ai.adapters.eval.base_eval.build_default_llm_judge_prompt",
+                return_value="prompt",
+            ),
+            patch(
+                "kiln_ai.adapters.eval.base_eval.derived_reference_keys",
+                return_value=[],
+            ),
+        ):
+            props = materialize_llm_judge_properties(
+                eval=eval_obj,
+                model_name="gpt_5_6_terra",
+                model_provider="openrouter",
+                g_eval=False,
+                thinking_level="low",
+            )
+            default_props = materialize_llm_judge_properties(
+                eval=eval_obj,
+                model_name="gpt_5_6_terra",
+                model_provider="openrouter",
+                g_eval=False,
+            )
+        assert props.thinking_level == "low"
+        assert default_props.thinking_level is None
