@@ -10,6 +10,7 @@ import pygit2
 import pygit2.enums
 import pytest
 from fastapi import FastAPI, HTTPException
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
@@ -61,6 +62,7 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
     JudgeConfig,
     OverviewApi,
 )
+from app.desktop.studio_server.batch_plan_api import connect_batch_plan_api
 from app.desktop.studio_server.eval_builder_api import (
     JUDGE_MAX_RETRIES,
     JUDGE_RETRY_DELAY_SECONDS,
@@ -68,6 +70,7 @@ from app.desktop.studio_server.eval_builder_api import (
     connect_eval_builder_api,
     run_judge_with_retry,
 )
+from app.desktop.studio_server.multiturn_sdg_api import connect_multiturn_sdg_api
 from app.desktop.studio_server.utils.eval_builder_utils import (
     JudgeVerdict,
     build_judge_prompt_template,
@@ -3063,3 +3066,24 @@ class TestPipelinesInGitSyncedProject:
             for run in runs
             if run.parent_task_run_id is not None
         )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/build_claims",
+        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/preflight_model",
+        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/author_judge",
+        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/refine_judge",
+        "/api/projects/{project_id}/tasks/{task_id}/copilot/batch_plan",
+        "/api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/generate_cases",
+    ],
+)
+def test_remote_call_routes_skip_the_git_sync_lock(path):
+    """These routes write nothing, so they never hold the git-sync lock."""
+    app = FastAPI()
+    connect_eval_builder_api(app)
+    connect_batch_plan_api(app)
+    connect_multiturn_sdg_api(app)
+    route = next(r for r in app.routes if isinstance(r, APIRoute) and r.path == path)
+    assert getattr(route.endpoint, "_git_sync_no_write_lock", False)

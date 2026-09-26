@@ -1473,6 +1473,7 @@ def connect_eval_builder_api(app: FastAPI):
             "Build claim/evidence for a trace?"
         ),
     )
+    @no_write_lock  # writes nothing; the lock would be held through the remote call
     async def build_claims(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1509,6 +1510,7 @@ def connect_eval_builder_api(app: FastAPI):
             "(negligible cost)"
         ),
     )
+    @no_write_lock  # writes nothing; the lock would be held through the model call
     async def preflight_model(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1569,6 +1571,7 @@ def connect_eval_builder_api(app: FastAPI):
             "Author a judge prompt tailored to the spec?"
         ),
     )
+    @no_write_lock  # writes nothing; the lock would be held through the remote call
     async def author_judge(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1609,6 +1612,7 @@ def connect_eval_builder_api(app: FastAPI):
             "Refine the judge prompt from the reviewer's grades?"
         ),
     )
+    @no_write_lock  # writes nothing; the lock would be held through the remote call
     async def refine_judge(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
