@@ -20,6 +20,7 @@ from kiln_ai.adapters.retry_classification import (
     is_retryable_error,
     unwrap_kiln_run_error,
 )
+from kiln_ai.datamodel.basemodel import generate_model_id
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType
@@ -109,7 +110,7 @@ class CaseCompletedEvent:
     # surviving chain only).
     total_cost: float
     # Real provider spend of this case's earlier failed attempts — their
-    # chains were deleted, but the billing happened. Add to total_cost for
+    # chains were discarded, but the billing happened. Add to total_cost for
     # what the case actually cost end to end.
     discarded_attempts_cost: float = 0.0
 
@@ -203,7 +204,7 @@ async def run_cases_batch(
     # `None` is the end-of-stream sentinel pushed when all cases finish.
     queue: asyncio.Queue[BatchEvent | None] = asyncio.Queue()
     # Real spend of failed attempts, keyed by case index. Outlives retries
-    # (each attempt banks its spend before its chain is deleted) so the
+    # (each attempt banks its spend before its chain is discarded) so the
     # case's completion/failure event can report what was actually billed.
     failed_attempt_spend: dict[int, float] = {}
 
@@ -366,17 +367,14 @@ async def _drive_one_case_and_emit(
     Failures RAISE instead of emitting: transient provider errors become
     RetryableError (the job runner re-runs the case), everything else
     becomes _CaseFailure, and case_failed is emitted once — by the runner's
-    on_error observer, after the last attempt. Any turns a failed or
-    cancelled attempt persisted are removed before raising, so a retry
-    starts clean — but the attempt's real spend is banked in
-    `failed_attempt_spend` first, so cost events stay honest about billing.
+    on_error observer, after the last attempt. A failed or cancelled
+    attempt leaves nothing on disk. Its spend is still banked in
+    `failed_attempt_spend`.
     """
-    # Runs persist per turn (adapter autosave) but the batch tag only lands
-    # on the leaf after a successful drive, so a mid-drive failure would
-    # strand an untagged chain no downstream consumer can find — discovery
-    # is tag-based. The invoker wrapper below tracks each run the moment it
-    # persists so the failure arms can remove the full chain.
-    persisted_runs: dict[str, TaskRun] = {}
+    # Turns stay in memory until the drive ends. The chain is then saved in
+    # one save_ctx block.
+    driven_runs: dict[str, TaskRun] = {}
+    saved_runs: list[TaskRun] = []
     # SU spend of THIS attempt, accumulated per turn via the hook —
     # drive_case's own total is lost when it raises mid-case.
     attempt_su_cost = 0.0
@@ -407,16 +405,14 @@ async def _drive_one_case_and_emit(
             prior_trace: list[ChatCompletionMessageParam] | None,
             parent_task_run: TaskRun | None,
         ) -> TaskRun:
-            # Record each run the moment it exists on disk (the adapter
-            # autosaves inside invoke) — cleanup must see a mid-turn persist
-            # even when the turn's SU half never runs.
+            # Record each turn now: spend banking needs it if the SU reply fails.
             run = await adapter_invoker(
                 input=input,
                 prior_trace=prior_trace,
                 parent_task_run=parent_task_run,
             )
             if run.id is not None:
-                persisted_runs[str(run.id)] = run
+                driven_runs[str(run.id)] = run
             return run
 
         turns_completed = 0
@@ -467,12 +463,13 @@ async def _drive_one_case_and_emit(
                 case_index,
             )
 
-        # Tag the leaf so eval-time loaders can find it. Inside the try
-        # so a tag-save failure (full disk, validator rejection on a
-        # malformed batch_tag) surfaces as case_failed, not a silent drop.
+        # Tag the leaf so loaders can find it, then save the chain root first.
         leaf = result.chain[-1]
+        _tag_leaf(leaf, batch_tag, ended_by_su=ended_by_su)
         async with save_ctx():
-            _tag_leaf(leaf, batch_tag, ended_by_su=ended_by_su)
+            for run in result.chain:
+                run.save_to_file()
+                saved_runs.append(run)
 
         await queue.put(
             CaseCompletedEvent(
@@ -490,28 +487,23 @@ async def _drive_one_case_and_emit(
         # Raised above before anything persisted (parse) — pass through.
         raise
     except asyncio.CancelledError:
-        # Stopping the batch cancels in-flight cases mid-drive; their
-        # persisted turns must not outlive the case as untagged orphans.
-        # Shield the delete so the cancellation unwinding this task can't
-        # kill it mid-chain, then re-raise — cooperative cancellation must
-        # always propagate.
+        # Delete what the final write saved, shielded so the cancel can't
+        # interrupt it. Then re-raise.
         _bank_attempt_spend(
-            failed_attempt_spend, case_index, persisted_runs, attempt_su_cost
+            failed_attempt_spend, case_index, driven_runs, attempt_su_cost
         )
-        await asyncio.shield(_delete_partial_chain(persisted_runs, save_ctx))
+        await asyncio.shield(_delete_partial_chain(saved_runs, save_ctx))
         raise
     except Exception as e:
-        # Adapter network errors, model misconfig, save_to_file blow-up,
-        # anything unexpected. Log with full traceback; clean this attempt's
-        # partial chain, then classify: transient errors retry, the rest
-        # fail the case.
+        # Log, delete what the final write saved, then classify: transient
+        # errors retry, the rest fail the case.
         logger.exception(
             "synthetic_user runner: unexpected error in case %d", case_index
         )
         _bank_attempt_spend(
-            failed_attempt_spend, case_index, persisted_runs, attempt_su_cost
+            failed_attempt_spend, case_index, driven_runs, attempt_su_cost
         )
-        await _delete_partial_chain(persisted_runs, save_ctx)
+        await _delete_partial_chain(saved_runs, save_ctx)
         # The adapter's KilnRunError message is genericized user-facing
         # text — unwrap so failure events name the real provider failure
         # instead of the generic wrapper text.
@@ -528,48 +520,44 @@ async def _drive_one_case_and_emit(
 def _bank_attempt_spend(
     failed_attempt_spend: dict[int, float],
     case_index: int,
-    persisted_runs: dict[str, TaskRun],
+    driven_runs: dict[str, TaskRun],
     attempt_su_cost: float,
 ) -> None:
-    """Bank a failed attempt's real spend before its chain is deleted.
+    """Bank a failed attempt's real spend before its chain is discarded.
 
-    The deepest persisted run's `cumulative_usage` already rolls up the
-    whole chain's target cost; the SU side is accumulated per turn by the
-    caller. Deleting the chain erases the only on-disk record, so this
-    accumulator is how a discarded attempt's billing reaches cost events.
+    The deepest driven run's `cumulative_usage` holds the chain's target cost.
+    The caller adds the SU cost.
     """
     target_cost = 0.0
-    if persisted_runs:
-        target_cost = _cumulative_cost(next(reversed(persisted_runs.values())))
+    if driven_runs:
+        target_cost = _cumulative_cost(next(reversed(driven_runs.values())))
     failed_attempt_spend[case_index] = (
         failed_attempt_spend.get(case_index, 0.0) + target_cost + attempt_su_cost
     )
 
 
 async def _delete_partial_chain(
-    persisted_runs: dict[str, TaskRun], save_ctx: SaveContext
+    saved_runs: list[TaskRun], save_ctx: SaveContext
 ) -> None:
-    """Best-effort removal of a failed attempt's partially-driven chain.
+    """Delete the runs a failed chain write already saved. Never raises.
 
-    A chain only becomes discoverable through the leaf's batch tag, applied
-    after a successful drive — runs a failed attempt persisted would
-    otherwise be permanent on-disk orphans (and a retry would drive on top
-    of them). Never raises: the terminal failure the caller is about to
-    raise is the event that matters.
+    Runs no longer on disk are skipped: a save context that rolls back its
+    failed write has already removed them.
     """
-    if not persisted_runs:
+    on_disk = [run for run in saved_runs if run.path is not None and run.path.exists()]
+    if not on_disk:
         return
     try:
         async with save_ctx():
             # Newest first: remove the dangling end of the chain before its
             # ancestors so an interrupted cleanup can't orphan a child run.
-            for run in reversed(list(persisted_runs.values())):
+            for run in reversed(on_disk):
                 run.delete()
     except Exception:
         logger.exception(
             "synthetic_user runner: failed to clean up a failed case's "
             "partial chain (%d runs)",
-            len(persisted_runs),
+            len(on_disk),
         )
 
 
@@ -605,8 +593,11 @@ def _make_target_invoker(
         target_run_config,
         # task_run_config_id stamps each run's output source with the saved
         # config it came from, exactly as a manual run of that config would.
+        # allow_saving=False: the caller saves the finished chain.
         base_adapter_config=AdapterConfig(
-            skills=skills, task_run_config_id=task_run_config_id
+            allow_saving=False,
+            skills=skills,
+            task_run_config_id=task_run_config_id,
         ),
     )
     turn_index = 0
@@ -626,12 +617,17 @@ def _make_target_invoker(
             turn_index=turn_index,
             is_root=(turn_index == 1),
         )
-        return await adapter.invoke(
+        run = await adapter.invoke(
             input=input,
             input_source=input_source,
             prior_trace=prior_trace,
             parent_task_run=parent_task_run,
         )
+        # The adapter clears an unsaved run's id. The next turn needs it as
+        # its parent id.
+        if run.id is None:
+            run.id = generate_model_id()
+        return run
 
     return _invoker
 
@@ -693,22 +689,12 @@ def _cumulative_cost(run: TaskRun) -> float:
 
 
 def _tag_leaf(leaf: TaskRun, batch_tag: str, *, ended_by_su: bool) -> None:
-    """Add the runner's discovery tags to the leaf TaskRun and persist.
+    """Add the runner's discovery tags to the leaf TaskRun, in memory.
 
     `ended_by_su` says the synthetic user ended this conversation before the
     turn ceiling, which earns the leaf TAG_SU_ENDED_CONVERSATION. The caller
     decides — a short chain is the only evidence, and only the drive knows why
     it is short.
-
-    Tags are deduplicated (treated as a set then sorted) so re-runs
-    against an already-tagged leaf are idempotent. A save_to_file
-    exception surfaces to the caller (which converts to CaseFailedEvent).
-
-    Reentrancy: the read-modify-write on `leaf.tags` assumes a single
-    writer per leaf. The current call shape guarantees this (each case
-    has its own leaf), so concurrent tagging across cases always hits
-    distinct files. A future refactor that shares leaves across cases
-    would need to re-introduce locking here.
     """
     tags = set(leaf.tags or [])
     tags.add(_TAG_SU_CASE)
@@ -716,4 +702,3 @@ def _tag_leaf(leaf: TaskRun, batch_tag: str, *, ended_by_su: bool) -> None:
     if ended_by_su:
         tags.add(TAG_SU_ENDED_CONVERSATION)
     leaf.tags = sorted(tags)
-    leaf.save_to_file()

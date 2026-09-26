@@ -67,9 +67,9 @@ from app.desktop.studio_server.utils.copilot_utils import (
     get_copilot_api_key,
     persist_eval_slice,
     rate_reviewed_batch_runs,
+    single_turn_drive_tags,
     split_pool_train_eval,
     tag_golden_batch_runs,
-    tag_single_turn_drive_run,
     task_capabilities_for_task,
     task_info_payload,
     unrate_reviewed_batch_runs,
@@ -1075,16 +1075,15 @@ def _single_turn_source() -> DataSource:
 
 
 def _build_single_turn_run(task: Task, batch_tag: str, i: int = 0) -> TaskRun:
-    """One driven run shaped like the single-turn pipeline's output: saved,
-    then tagged through the real tagging helper."""
+    """A run shaped like the single-turn pipeline's: tagged, saved once."""
     run = TaskRun(
         parent=task,
         input=f"input {i}",
         input_source=_single_turn_source(),
         output=TaskOutput(output=f"output {i}", source=_single_turn_source()),
+        tags=single_turn_drive_tags(batch_tag),
     )
     run.save_to_file()
-    tag_single_turn_drive_run(run, batch_tag)
     return run
 
 
@@ -1104,21 +1103,6 @@ def singleturn_task(tmp_path):
 
 
 class TestSingleTurnDriveTags:
-    def test_tags_and_persists(self, singleturn_task):
-        run = _build_single_turn_run(singleturn_task, "batch42")
-        reloaded = singleturn_task.runs()[0]
-        assert reloaded.tags == sorted(
-            ["single_turn_drive", "single_turn_drive_batch:batch42"]
-        )
-        assert str(reloaded.id) == str(run.id)
-
-    def test_retagging_is_idempotent(self, singleturn_task):
-        run = _build_single_turn_run(singleturn_task, "batch42")
-        tag_single_turn_drive_run(run, "batch42")
-        assert run.tags == sorted(
-            ["single_turn_drive", "single_turn_drive_batch:batch42"]
-        )
-
     def test_find_returns_only_the_batch(self, singleturn_task):
         run_a = _build_single_turn_run(singleturn_task, "batch-a", 0)
         _build_single_turn_run(singleturn_task, "batch-b", 1)

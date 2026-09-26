@@ -47,6 +47,7 @@ from kiln_ai.adapters.retry_classification import (
     is_retryable_error,
     unwrap_kiln_run_error,
 )
+from kiln_ai.datamodel.basemodel import generate_model_id
 from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
@@ -111,7 +112,6 @@ from app.desktop.studio_server.utils.copilot_utils import (
     delete_single_turn_batch_runs,
     get_copilot_api_key,
     single_turn_drive_tags,
-    tag_single_turn_drive_run,
     task_capabilities_for_task,
 )
 from app.desktop.studio_server.utils.eval_builder_utils import (
@@ -988,11 +988,9 @@ class SingleTurnPipelineRun(JudgeStreamBase):
     The run stage is the one-turn sibling of the multi-turn drive: the task
     runs once per generated input on the target run config — tools live, the
     user's keys — through the same AsyncJobRunner fan-out and retry posture
-    as the SU runner. Each run persists (adapter autosave) and is
-    batch-tagged so save and delete-on-redrive can find it; a failed
-    attempt deletes its own persisted run before retrying or dying, banking
-    the spend first. Completed runs pipe straight into the inherited judge
-    unit — no stage barrier.
+    as the SU runner. Each run is saved once, batch-tagged, inside the save
+    context. Completed runs pipe straight into the inherited judge unit — no
+    stage barrier.
     """
 
     _stream_name = "single_turn_pipeline"
@@ -1113,9 +1111,8 @@ class SingleTurnPipelineRun(JudgeStreamBase):
         RetryableError (the job runner re-runs the case), everything else
         becomes _RunFailure, and case_failed is emitted once — by the
         runner's on_error observer, after the last attempt. A failed or
-        cancelled attempt deletes the run it persisted (banking its real
-        spend first), so a retry starts clean and no untagged orphan
-        outlives its case.
+        cancelled attempt deletes its run if it was saved, and banks the
+        spend.
         """
         case_index, input_text = job
         run: TaskRun | None = None
@@ -1137,14 +1134,13 @@ class SingleTurnPipelineRun(JudgeStreamBase):
             # A fresh adapter per attempt, like the drive runner's per-case
             # invoker; task_run_config_id stamps the run's output source
             # with the saved config it came from, exactly as a manual run
-            # of that config would. default_tags lands the discovery tags in
-            # the SAME save that persists the run, so a run orphaned by a
-            # cancel mid-invoke stays discoverable (the next replace pass
-            # sweeps it) instead of sitting untagged on disk forever.
+            # of that config would. allow_saving=False: the run is saved
+            # below, inside the save context.
             adapter = adapter_for_task(
                 self._task,
                 self._target_run_config,
                 base_adapter_config=AdapterConfig(
+                    allow_saving=False,
                     skills=skills,
                     task_run_config_id=self._target_run_config_id,
                     default_tags=single_turn_drive_tags(self._batch_tag),
@@ -1164,12 +1160,11 @@ class SingleTurnPipelineRun(JudgeStreamBase):
                 raise _RunFailure(
                     "missing_output", "The run produced no output to judge."
                 )
-            # Belt-and-braces tagging (normally a no-op — default_tags above
-            # already landed the tags in the run's own save). Inside the
-            # try: a failure here surfaces as case_failed, never a silent
-            # drop.
+            # The adapter clears an unsaved run's id.
+            if run.id is None:
+                run.id = generate_model_id()
             async with self._save_context():
-                tag_single_turn_drive_run(run, self._batch_tag)
+                run.save_to_file()
             case_cost = _run_cost(run)
             self._total_cost += case_cost
             # The judge scores the REQUEST's input string, verbatim: the
@@ -1204,11 +1199,8 @@ class SingleTurnPipelineRun(JudgeStreamBase):
             await self._delete_partial_run(run)
             raise
         except asyncio.CancelledError:
-            # Stopping the batch cancels in-flight cases; a persisted run
-            # must not outlive its case as an untagged orphan. Shield the
-            # delete so the cancellation unwinding this task can't kill it
-            # mid-write, then re-raise — cooperative cancellation must
-            # always propagate.
+            # Delete the run if it was saved, shielded so the cancel can't
+            # interrupt it. Then re-raise.
             await asyncio.shield(self._delete_partial_run(run))
             raise
         except Exception as e:
@@ -1239,13 +1231,13 @@ class SingleTurnPipelineRun(JudgeStreamBase):
             ) from e
 
     async def _delete_partial_run(self, run: TaskRun | None) -> None:
-        """Best-effort removal of a failed attempt's persisted run, banking
-        its real spend first — the billing happened even though the run is
-        discarded. Never raises: the terminal failure the caller is about
-        to raise is the event that matters."""
+        """Bank a failed attempt's spend, and delete its run if it is still
+        on disk. Never raises."""
         if run is None:
             return
         self._total_cost += _run_cost(run)
+        if run.path is None or not run.path.exists():
+            return
         try:
             async with self._save_context():
                 run.delete()
@@ -1481,6 +1473,7 @@ def connect_eval_builder_api(app: FastAPI):
             "Build claim/evidence for a trace?"
         ),
     )
+    @no_write_lock  # writes nothing; the lock would be held through the remote call
     async def build_claims(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1517,6 +1510,7 @@ def connect_eval_builder_api(app: FastAPI):
             "(negligible cost)"
         ),
     )
+    @no_write_lock  # writes nothing; the lock would be held through the model call
     async def preflight_model(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1577,6 +1571,7 @@ def connect_eval_builder_api(app: FastAPI):
             "Author a judge prompt tailored to the spec?"
         ),
     )
+    @no_write_lock  # writes nothing; the lock would be held through the remote call
     async def author_judge(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1617,6 +1612,7 @@ def connect_eval_builder_api(app: FastAPI):
             "Refine the judge prompt from the reviewer's grades?"
         ),
     )
+    @no_write_lock  # writes nothing; the lock would be held through the remote call
     async def refine_judge(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
