@@ -1932,7 +1932,9 @@
         },
       )
       if (error || !data) {
-        generation_error = "Failed to draft a batch plan."
+        generation_error = `Couldn't draft a batch plan: ${createKilnError(
+          error,
+        ).getMessage()}`
         return
       }
       // Clamp: the planner is an LLM and can over-deliver or emit blanks;
@@ -4897,34 +4899,32 @@
               </button>
             </div>
           {:else if generation_error}
-            <div class="mt-2">
-              <Warning
-                warning_color="error"
-                warning_message={generation_error}
-              />
-            </div>
-            <div class="text-center py-4 flex justify-center gap-2">
-              {#if batch_plan !== null}
-                <!-- Drive failed after approval — let the user rework the plan
-                     instead of only retrying it verbatim. Retry itself opens
-                     Generation Settings (the drive's single entrance) with the
-                     committed lanes and the cost of this batch, so the models
-                     can be changed on the way back in. -->
+            <div
+              class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+            >
+              <div class="font-medium">Error Creating Eval Dataset</div>
+              <div class="text-error text-sm">{generation_error}</div>
+              <div class="flex justify-center gap-2 mt-4">
+                {#if batch_plan !== null}
+                  <!-- After an approved plan, the user can go back and rework
+                       it. Retry opens Generation Settings, where the models
+                       can be changed. -->
+                  <button
+                    class="btn"
+                    on:click={() => {
+                      generation_error = null
+                    }}
+                  >
+                    Back to Plan
+                  </button>
+                {/if}
                 <button
-                  class="btn"
-                  on:click={() => {
-                    generation_error = null
-                  }}
+                  class="btn btn-primary"
+                  on:click={on_continue_from_generate_step}
                 >
-                  Back to Plan
+                  Retry
                 </button>
-              {/if}
-              <button
-                class="btn btn-primary"
-                on:click={on_continue_from_generate_step}
-              >
-                Retry
-              </button>
+              </div>
             </div>
           {/if}
 
