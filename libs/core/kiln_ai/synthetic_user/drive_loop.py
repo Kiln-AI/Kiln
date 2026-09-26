@@ -7,11 +7,8 @@ the `EARLY_STOP_SENTINEL` message and nothing else, which is how the SU
 says the conversation is over. Any other reply — including one that merely
 mentions the sentinel inside a sentence — is an ordinary user message.
 
-Persistence is fully delegated to `target_invoker(...)`: the batch runner's
-invoker writes each TaskRun to disk (with `parent_task_run_id` chaining),
-while the eval-time invoker keeps the chain in memory. Either way the
-returned runs carry `trace` and `cumulative_usage`. The SU side is
-in-memory only and produces no TaskRuns.
+Nothing here touches disk. `target_invoker(...)` returns in-memory TaskRuns
+that carry `trace` and `cumulative_usage`. The SU side produces no TaskRuns.
 """
 
 from dataclasses import dataclass
@@ -46,7 +43,7 @@ class TurnHook(Protocol):
 
     The runner uses this to translate per-turn outcomes into BatchEvents
     without coupling drive_case to the event shape. The hook fires after both
-    the assistant turn is persisted AND the SU's next message is produced.
+    the assistant turn returns AND the SU's next message is produced.
     `su_message` is None on two kinds of turn: the case's last allowed turn,
     where no SU call is made at all, and the turn where the SU ended the
     conversation, where the sentinel is swallowed rather than passed on (it

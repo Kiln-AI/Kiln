@@ -8,6 +8,7 @@ ordering / per-case bookkeeping.
 """
 
 import asyncio
+import contextlib
 import logging
 import re
 from typing import Any
@@ -76,10 +77,10 @@ def _target_run_config() -> KilnAgentRunConfigProperties:
     )
 
 
-def _fake_run(run_id: str, cost: float = 0.0) -> Mock:
-    """Stand-in for a persisted TaskRun. drive_case reads `.trace`; runner
-    reads `.id` + `.cumulative_usage.cost`; `_tag_leaf` writes `.tags`
-    and calls `.save_to_file()`.
+def _fake_run(run_id: str | None, cost: float = 0.0) -> Mock:
+    """Stand-in for a driven TaskRun. drive_case reads `.trace`; runner
+    reads `.id` + `.cumulative_usage.cost`; `_tag_leaf` writes `.tags` and
+    the chain write calls `.save_to_file()`.
     """
     run = Mock(spec=TaskRun)
     run.id = run_id
@@ -91,6 +92,9 @@ def _fake_run(run_id: str, cost: float = 0.0) -> Mock:
     run.cumulative_usage = Mock(cost=cost)
     run.tags = []
     run.save_to_file = Mock()
+    # Cleanup deletes only runs still on disk.
+    run.path = Mock()
+    run.path.exists.return_value = True
     return run
 
 
@@ -512,6 +516,55 @@ async def test_skills_preloaded_once_and_injected_into_every_adapter(
     assert all(cfg.task_run_config_id == "rc-42" for cfg in adapter_configs)
 
 
+@pytest.mark.asyncio
+async def test_chain_is_written_root_first_in_one_save_context(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The adapter never saves. The finished chain is saved root first in one
+    save block."""
+    # The adapter clears the id of a run it did not save.
+    runs = [_fake_run(None), _fake_run(None)]
+    adapter = Mock()
+    adapter.invoke = AsyncMock(side_effect=runs)
+    adapter_configs: list[Any] = []
+
+    def _fake_adapter_for_task(task, run_config, base_adapter_config=None):
+        adapter_configs.append(base_adapter_config)
+        return adapter
+
+    monkeypatch.setattr(runner_mod, "adapter_for_task", _fake_adapter_for_task)
+    _patch_su_driver(monkeypatch, replies_per_case=["x"])
+    log: list[str] = []
+    for run in runs:
+        run.save_to_file = Mock(side_effect=lambda r=run: log.append(f"save {r.id}"))
+
+    @contextlib.asynccontextmanager
+    async def recording_ctx():
+        log.append("enter")
+        yield
+        log.append("exit")
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=2,
+            save_context=recording_ctx,
+        )
+    )
+
+    assert [cfg.allow_saving for cfg in adapter_configs] == [False]
+    root_id, leaf_id = runs[0].id, runs[1].id
+    assert root_id and leaf_id and root_id != leaf_id
+    assert adapter.invoke.call_args_list[1].kwargs["parent_task_run"] is runs[0]
+    assert log == ["enter", f"save {root_id}", f"save {leaf_id}", "exit"]
+    completed = next(e for e in events if isinstance(e, CaseCompletedEvent))
+    assert completed.chain_run_ids == [root_id, leaf_id]
+    assert completed.leaf_run_id == leaf_id
+
+
 # ───────────────────────── per-case failure isolation ─────────────────────────
 
 
@@ -611,45 +664,18 @@ async def test_terminal_provider_error_names_its_class_on_the_event(
 
 
 @pytest.mark.asyncio
-async def test_tag_leaf_failure_surfaces_as_case_failed(
-    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("rolled_back", [False, True])
+async def test_chain_write_failure_fails_the_case_and_removes_what_it_wrote(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch, rolled_back: bool
 ) -> None:
-    """If save_to_file fails (e.g., disk full, validator rejects the tag),
-    the case becomes case_failed instead of silently vanishing.
-    """
+    """A failed chain write fails the case and deletes the turns it saved,
+    unless the save context already rolled them back."""
+    root = _fake_run("root")
+    root.path.exists.return_value = not rolled_back
     bad_leaf = _fake_run("bad-leaf")
     bad_leaf.save_to_file = Mock(side_effect=OSError("disk full"))
-    _patch_adapter_for_task(monkeypatch, [bad_leaf])
+    _patch_adapter_for_task(monkeypatch, [root, bad_leaf])
     _patch_su_driver(monkeypatch, replies_per_case=["x"])
-
-    events = await _collect(
-        run_cases_batch(
-            cases=[_case()],
-            target_task=fake_task,
-            target_run_config=_target_run_config(),
-            su_driver_config=_su_driver_config(),
-            turns=1,
-        )
-    )
-
-    failed = next(e for e in events if isinstance(e, CaseFailedEvent))
-    assert failed.error_code == "unexpected_error"
-    assert "disk full" in failed.message
-    # The fully-driven chain never got its batch tag, so nothing could ever
-    # find it again — the failure arm must remove it from disk.
-    bad_leaf.delete.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_failed_case_deletes_partial_chain(
-    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A mid-drive failure deletes the turns already persisted — an untagged
-    partial chain would otherwise be invisible to eval loaders AND to
-    delete-on-redrive, accumulating forever."""
-    turn_one = _fake_run("turn-1")
-    _patch_adapter_for_task(monkeypatch, [turn_one, RuntimeError("kaboom")])
-    _patch_su_driver(monkeypatch, replies_per_case=["x", "y"])
 
     events = await _collect(
         run_cases_batch(
@@ -663,29 +689,33 @@ async def test_failed_case_deletes_partial_chain(
 
     failed = next(e for e in events if isinstance(e, CaseFailedEvent))
     assert failed.error_code == "unexpected_error"
-    turn_one.delete.assert_called_once()
+    assert "disk full" in failed.message
+    assert root.delete.call_count == (0 if rolled_back else 1)
+    bad_leaf.delete.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_su_failure_deletes_chain_including_just_persisted_run(
-    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("fails_in", ["target", "synthetic_user"])
+async def test_mid_drive_failure_writes_nothing(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch, fails_in: str
 ) -> None:
-    """A failure in the SU half of turn N strikes AFTER run N persisted but
-    BEFORE the turn hook fired — cleanup must delete runs 1..N, not just
-    the turns that fully completed."""
+    """A case that dies mid-drive saves and deletes nothing."""
     run_one = _fake_run("turn-1")
     run_two = _fake_run("turn-2")
-    _patch_adapter_for_task(monkeypatch, [run_one, run_two])
+    if fails_in == "target":
+        _patch_adapter_for_task(monkeypatch, [run_one, RuntimeError("kaboom")])
+        _patch_su_driver(monkeypatch, replies_per_case=["x", "y"])
+    else:
+        _patch_adapter_for_task(monkeypatch, [run_one, run_two])
 
-    def _ctor(info, config):
-        instance = Mock(spec=SyntheticUserDriver)
-        # Turn 1's SU reply succeeds; turn 2's SU call dies mid-case.
-        instance.respond = AsyncMock(
-            side_effect=[("u2", None), ValueError("su blew up")]
-        )
-        return instance
+        def _ctor(info, config):
+            instance = Mock(spec=SyntheticUserDriver)
+            instance.respond = AsyncMock(
+                side_effect=[("u2", None), ValueError("su blew up")]
+            )
+            return instance
 
-    monkeypatch.setattr(runner_mod, "SyntheticUserDriver", _ctor)
+        monkeypatch.setattr(runner_mod, "SyntheticUserDriver", _ctor)
 
     events = await _collect(
         run_cases_batch(
@@ -699,8 +729,9 @@ async def test_su_failure_deletes_chain_including_just_persisted_run(
 
     failed = next(e for e in events if isinstance(e, CaseFailedEvent))
     assert failed.error_code == "unexpected_error"
-    run_one.delete.assert_called_once()
-    run_two.delete.assert_called_once()
+    for run in (run_one, run_two):
+        run.save_to_file.assert_not_called()
+        run.delete.assert_not_called()
 
 
 # ───────────────────────── retry behavior ─────────────────────────
@@ -787,12 +818,11 @@ async def test_transient_error_exhausts_retries_then_fails_once(
 
 
 @pytest.mark.asyncio
-async def test_each_failed_attempt_cleans_its_partial_chain(
+async def test_each_failed_attempt_writes_nothing_and_restarts_turns(
     fake_task: Mock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """turns=2: every attempt persists turn 1 then dies on turn 2 — each
-    attempt's orphan chain must be deleted, and turn events restart at 1
-    per attempt (turn_index is per-attempt, not cumulative)."""
+    """Failed attempts write nothing, and turn numbers restart at 1 per
+    attempt."""
     monkeypatch.setattr(runner_mod, "DRIVE_RETRY_DELAY_SECONDS", 0)
     monkeypatch.setattr(
         runner_mod, "is_retryable_error", lambda e: isinstance(e, RuntimeError)
@@ -823,7 +853,8 @@ async def test_each_failed_attempt_cleans_its_partial_chain(
 
     assert len([e for e in events if isinstance(e, CaseFailedEvent)]) == 1
     for run in runs:
-        run.delete.assert_called_once()
+        run.save_to_file.assert_not_called()
+        run.delete.assert_not_called()
     turn_indexes = [e.turn_index for e in events if isinstance(e, TurnCompletedEvent)]
     assert turn_indexes == [1, 1, 1]
 
@@ -839,7 +870,7 @@ async def test_retried_case_batch_total_includes_both_attempts_costs(
     monkeypatch.setattr(
         runner_mod, "is_retryable_error", lambda e: isinstance(e, RuntimeError)
     )
-    # Attempt 1: turn 1 persists ($0.03 target), turn 2 dies transiently.
+    # Attempt 1: turn 1 is driven ($0.03 target), turn 2 dies transiently.
     # Attempt 2: full chain; leaf's cumulative target cost $0.08.
     _patch_adapter_for_task(
         monkeypatch,
@@ -872,7 +903,7 @@ async def test_retried_case_batch_total_includes_both_attempts_costs(
     completed = next(e for e in events if isinstance(e, CaseCompletedEvent))
     # Surviving conversation: leaf target $0.08 + SU $0.01.
     assert completed.total_cost == pytest.approx(0.09)
-    # Attempt 1's real spend: persisted turn $0.03 + SU $0.01.
+    # Attempt 1's real spend: driven turn $0.03 + SU $0.01.
     assert completed.discarded_attempts_cost == pytest.approx(0.04)
     batch = next(e for e in events if isinstance(e, BatchCompletedEvent))
     assert batch.total_cost == pytest.approx(0.13)
@@ -1150,12 +1181,12 @@ async def test_consumer_cancellation_cancels_in_flight_case_tasks(
 
 
 @pytest.mark.asyncio
-async def test_cancelled_case_deletes_partial_chain_and_reraises(
+async def test_cancelled_case_writes_nothing_and_reraises(
     fake_task: Mock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Stopping a batch cancels in-flight cases mid-drive; a cancelled case
-    must remove its already-persisted turns AND re-raise the CancelledError —
-    swallowing it would break cooperative teardown."""
+    writes nothing AND re-raises the CancelledError — swallowing it would
+    break cooperative teardown."""
     run_one = _fake_run("turn-1")
     reached_turn_two = asyncio.Event()
     calls = {"n": 0}
@@ -1193,16 +1224,16 @@ async def test_cancelled_case_deletes_partial_chain_and_reraises(
 
     with pytest.raises(asyncio.CancelledError):
         await task
-    run_one.delete.assert_called_once()
+    run_one.save_to_file.assert_not_called()
+    run_one.delete.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_consumer_disconnect_cleans_cancelled_cases_partial_chains(
+async def test_consumer_disconnect_mid_case_writes_nothing(
     fake_task: Mock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """End-to-end teardown: closing the batch generator mid-case must leave
-    no persisted turns behind — the cancelled case's cleanup runs (shielded)
-    before the generator's teardown completes."""
+    """End-to-end teardown: closing the batch generator mid-case cancels the
+    case before its chain write, so nothing lands on disk."""
     run_one = _fake_run("turn-1")
     reached_turn_two = asyncio.Event()
     calls = {"n": 0}
@@ -1232,4 +1263,5 @@ async def test_consumer_disconnect_cleans_cancelled_cases_partial_chains(
     # Simulates the consumer disconnect / stop button.
     await gen.aclose()
 
-    run_one.delete.assert_called_once()
+    run_one.save_to_file.assert_not_called()
+    run_one.delete.assert_not_called()

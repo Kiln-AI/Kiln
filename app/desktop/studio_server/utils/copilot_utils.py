@@ -747,30 +747,10 @@ def delete_multi_turn_batch_chains(task: Task, batch_tag: str) -> int:
 
 
 def single_turn_drive_tags(batch_tag: str) -> list[str]:
-    """The single-turn pipeline's discovery tags for one batch — the one
-    producer of the scheme, shared by the adapter's save-time default_tags
-    and the explicit tagger so the two paths can't drift."""
+    """The single-turn pipeline's discovery tags for one batch."""
     return sorted(
         [_TAG_SINGLE_TURN_DRIVE, f"{_TAG_PREFIX_SINGLE_TURN_DRIVE_BATCH}{batch_tag}"]
     )
-
-
-def tag_single_turn_drive_run(run: TaskRun, batch_tag: str) -> None:
-    """Ensure a driven run carries the pipeline's discovery tags and persist.
-
-    Normally a no-op belt-and-braces pass (the adapter's default_tags land
-    the same tags in the run's own save); it exists so a run persisted by an
-    adapter without them can never slip through untagged. Tags are
-    deduplicated (treated as a set then sorted) so re-tagging is idempotent.
-    A save_to_file exception surfaces to the caller (which converts it to a
-    case failure) — an untagged run is invisible to save and cleanup, so
-    silence here would strand it.
-    """
-    tags = set(run.tags or []) | set(single_turn_drive_tags(batch_tag))
-    if sorted(tags) == (run.tags or []):
-        return
-    run.tags = sorted(tags)
-    run.save_to_file()
 
 
 def find_single_turn_batch_runs(task: Task, batch_tag: str) -> list[TaskRun]:
