@@ -5,10 +5,16 @@ from unittest.mock import Mock, patch
 
 import pytest
 import requests
+from PIL import Image
 from uvicorn import Config as UvicornConfig
 
 import app.desktop.desktop_server as desktop_server
-from app.desktop.desktop import DesktopApp, DesktopServer
+from app.desktop.desktop import (
+    LINUX_TRAY_BACKGROUND,
+    DesktopApp,
+    DesktopServer,
+    prepare_linux_tray_image,
+)
 
 TEST_PORT = 8123
 
@@ -32,9 +38,9 @@ def mock_tk_root():
 @pytest.fixture
 def mock_image():
     """Mock PIL Image."""
-    with patch("app.desktop.desktop.Image") as mock_img:
+    with patch("app.desktop.desktop.Image.open") as mock_image_open:
         mock_image_obj = Mock()
-        mock_img.open.return_value = mock_image_obj
+        mock_image_open.return_value = mock_image_obj
         yield mock_image_obj
 
 
@@ -178,7 +184,10 @@ class TestDesktopApp:
         """Test run_tray when tray doesn't exist yet."""
         app = DesktopApp(port=TEST_PORT)
 
-        with patch.object(app, "resource_path", return_value="taskbar.png"):
+        with (
+            patch.object(app, "resource_path", return_value="taskbar.png"),
+            patch("app.desktop.desktop.prepare_linux_tray_image"),
+        ):
             app.run_tray()
 
             # Verify menu items are created
@@ -235,6 +244,51 @@ class TestDesktopApp:
             # Check first menu item has default=False
             menu_calls = mock_kiln_menu_item.call_args_list
             assert menu_calls[0][1]["default"] is False
+
+    @patch("app.desktop.desktop.sys.platform", "linux")
+    def test_run_tray_linux_icon_preparation(
+        self, mock_tk_root, mock_image, mock_kiln_menu_item
+    ):
+        """Test run_tray prepares the icon for Linux backends."""
+        app = DesktopApp(port=TEST_PORT)
+
+        with (
+            patch.object(app, "resource_path", return_value="taskbar.png"),
+            patch("app.desktop.desktop.KilnTray") as mock_kiln_tray_class,
+            patch("app.desktop.desktop.prepare_linux_tray_image") as mock_prepare_image,
+        ):
+            app.run_tray()
+
+            mock_prepare_image.assert_called_once_with(mock_image)
+            mock_kiln_tray_class.assert_called_once()
+            assert (
+                mock_kiln_tray_class.call_args.args[1]
+                is mock_prepare_image.return_value
+            )
+
+    def test_prepare_linux_tray_image_composites_alpha_before_scaling(self):
+        """Linux gets an opaque RGB icon instead of backend-discarded alpha."""
+        source = Image.new("RGBA", (48, 48), (0, 0, 0, 0))
+        source.paste((255, 255, 255, 255), (12, 12, 36, 36))
+
+        result = prepare_linux_tray_image(source)
+
+        assert result.mode == "RGB"
+        assert result.size == (24, 24)
+        assert result.getpixel((0, 0)) == LINUX_TRAY_BACKGROUND[:3]
+        assert result.getpixel((12, 12)) == (255, 255, 255)
+
+    @patch("app.desktop.desktop.sys.platform", "win32")
+    def test_run_tray_windows_no_icon_scaling(
+        self, mock_tk_root, mock_image, mock_kiln_tray, mock_kiln_menu_item
+    ):
+        """Test run_tray does not scale the tray icon on Windows."""
+        app = DesktopApp(port=TEST_PORT)
+
+        with patch.object(app, "resource_path", return_value="taskbar.png"):
+            app.run_tray()
+
+            mock_image.resize.assert_not_called()
 
     def test_close_splash_with_pyi_splash(self, mock_tk_root):
         """Test close_splash when pyi_splash is available."""
