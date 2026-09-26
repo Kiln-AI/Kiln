@@ -750,7 +750,7 @@
   // regeneration gate below.
   let question_set_source: string | null = null
   let questions_loading = false
-  let questions_error: string | null = null
+  let questions_error: KilnError | null = null
   let questions_form_error: KilnError | null = null
   let questions_submitting = false
   // Bound to the Questions component so selections survive remounts when
@@ -794,7 +794,7 @@
         signal: new_copilot_abort_signal(),
       })
       if (error || !data) {
-        questions_error = "Failed to load clarifying questions."
+        questions_error = createKilnError(error)
         return
       }
       // Record nothing for a response that cannot render: derive the per-question
@@ -809,8 +809,7 @@
       other_texts = next_other_texts
     } catch (e) {
       if (is_abort_error(e)) return
-      questions_error =
-        e instanceof Error ? e.message : "Failed to load questions."
+      questions_error = createKilnError(e)
     } finally {
       questions_loading = false
     }
@@ -4658,14 +4657,17 @@
               description="Analyzing your criteria for areas that could use more clarity."
             />
           {:else if questions_error}
-            <div class="mt-2">
-              <Warning
-                warning_color="error"
-                warning_message={questions_error}
-              />
-            </div>
-            <div class="text-center py-4 flex justify-center gap-2">
-              <button class="btn btn-primary" on:click={() => load_questions()}>
+            <div
+              class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+            >
+              <div class="font-medium">Error Loading Questions</div>
+              <div class="text-error text-sm">
+                {questions_error.getMessage() || "An unknown error occurred"}
+              </div>
+              <button
+                class="btn btn-primary mt-4"
+                on:click={() => load_questions()}
+              >
                 Retry
               </button>
             </div>
