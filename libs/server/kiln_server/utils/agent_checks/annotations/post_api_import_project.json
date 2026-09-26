@@ -5,5 +5,28 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Allow agent to import a project? Kiln projects can contain code that runs on your machine."
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {},
+    "query": {
+      "project_path": {
+        "type": "string",
+        "description": "File path to the project.kiln file to import.",
+        "title": "Project Path"
+      },
+      "remove_conflicting_id": {
+        "type": "boolean",
+        "description": "When true and a duplicate project ID conflict is detected, remove the existing project registration before importing.",
+        "default": false,
+        "title": "Remove Conflicting Id"
+      },
+      "trusted": {
+        "type": "boolean",
+        "description": "Must be true to confirm trust before importing. Kiln projects can contain code that runs on your machine.",
+        "default": false,
+        "title": "Trusted"
+      }
+    }
   }
 }

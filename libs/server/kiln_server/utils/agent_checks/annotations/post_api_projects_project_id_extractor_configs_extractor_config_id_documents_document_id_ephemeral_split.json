@@ -5,5 +5,61 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Run ephemeral document split? This triggers backend processing."
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "chunk_size": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "exclusiveMinimum": 0.0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Chunk Size",
+          "description": "The size of each chunk in tokens. If None, return a single chunk with the full extraction output."
+        },
+        "chunk_overlap": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0.0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Chunk Overlap",
+          "description": "The overlap between chunks in tokens. If None, use the default overlap for the chunker."
+        }
+      },
+      "type": "object",
+      "title": "EphemeralSplitRequest"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "extractor_config_id": {
+        "type": "string",
+        "description": "The unique identifier of the extractor configuration.",
+        "title": "Extractor Config Id"
+      },
+      "document_id": {
+        "type": "string",
+        "description": "The unique identifier of the document.",
+        "title": "Document Id"
+      }
+    },
+    "query": {}
   }
 }

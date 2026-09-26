@@ -4,5 +4,18 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Payload"
+    }
+  },
+  "parameters": {
+    "path": {},
+    "query": {}
   }
 }

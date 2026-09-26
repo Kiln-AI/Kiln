@@ -4,5 +4,51 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Name",
+          "description": "The name of the skill."
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Description",
+          "description": "What the skill does and when to use it."
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "title": "Body",
+          "description": "The markdown body of the skill."
+        }
+      },
+      "type": "object",
+      "required": [
+        "name",
+        "description",
+        "body"
+      ],
+      "title": "SkillCreationRequest",
+      "description": "Request to create a new skill."
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      }
+    },
+    "query": {}
   }
 }

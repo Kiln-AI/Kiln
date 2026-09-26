@@ -5,5 +5,45 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Draft a data guide from input examples with Copilot?"
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "input_examples": {
+          "items": {
+            "type": "string",
+            "maxLength": 200000
+          },
+          "type": "array",
+          "maxItems": 200,
+          "minItems": 1,
+          "title": "Input Examples",
+          "description": "Heterogeneous list of input examples \u2014 short manual entries, the input portion of selected task runs, or full text of uploaded text documents (txt, md, csv). Every entry is a string and is treated as a candidate reference input regardless of source."
+        }
+      },
+      "type": "object",
+      "required": [
+        "input_examples"
+      ],
+      "title": "StartDataGuideJobApiInput",
+      "description": "Input to kick off the input data guide draft job.\n\nCarries only the input examples. All task info the job needs \u2014 the runtime\nprompt and the input JSON schema \u2014 is derived server-side from the task\nidentified by the route, so the client can't supply a manipulated prompt or\nschema, and the output schema / description never reach the guide LLM."
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      }
+    },
+    "query": {}
   }
 }

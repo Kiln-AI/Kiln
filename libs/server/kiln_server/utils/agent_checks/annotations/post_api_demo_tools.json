@@ -4,5 +4,16 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {},
+    "query": {
+      "enable_demo_tools": {
+        "type": "boolean",
+        "description": "Whether to enable demo tools.",
+        "title": "Enable Demo Tools"
+      }
+    }
   }
 }
