@@ -3119,11 +3119,9 @@ class TestPassthroughTaskCapabilities:
         assert response.status_code == 200
         assert sdk_mock.await_args.kwargs["body"].to_dict() == self.QUESTION_SPEC_BODY
 
-    def test_question_spec_survives_unreadable_task_storage(
+    def test_question_spec_fails_on_unreadable_task_storage(
         self, client, capable_task, mock_api_key
     ):
-        """Capability collection is best effort: a task whose storage cannot be
-        read still gets its spec built, on the un-enriched payload."""
         project, task = capable_task
         sdk_mock = AsyncMock(return_value=self._question_set_response())
 
@@ -3148,8 +3146,9 @@ class TestPassthroughTaskCapabilities:
                 },
             )
 
-        assert response.status_code == 200
-        assert sdk_mock.await_args.kwargs["body"].to_dict() == self.QUESTION_SPEC_BODY
+        assert response.status_code == 500
+        assert "corrupt run_config.kiln" in response.json()["message"]
+        sdk_mock.assert_not_awaited()
 
     def test_question_spec_rejects_half_a_task_reference(self, client, mock_api_key):
         """One id without the other is a caller bug. Rejecting beats silently
