@@ -727,6 +727,22 @@ QWEN_3P6_GROQ_THINKING_LEVELS = {
     "On": "default",
 }
 
+QWEN_3P8_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+}
+
+# Groq caps Qwen 3.8 27B output at 2048 tokens unless max_completion_tokens is
+# set, and `high` reasoning alone exceeds that (finish_reason "length", empty
+# content), so Groq omits it.
+QWEN_3P8_GROQ_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+}
+
 
 built_in_models: List[KilnModel] = [
     # GPT 6 Astra
@@ -6732,6 +6748,26 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MD,
                 ],
                 multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.groq,
+                model_id="qwen/qwen3.8-27b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                available_thinking_levels=QWEN_3P8_GROQ_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Groq serves this model with image input, but no Groq provider in
+                # Kiln is wired for multimodal yet, so it stays text-only here.
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="qwen-3.8-27b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                available_thinking_levels=QWEN_3P8_THINKING_LEVELS,
+                default_thinking_level="medium",
             ),
             KilnModelProvider(
                 name=ModelProviderName.featherless_ai,

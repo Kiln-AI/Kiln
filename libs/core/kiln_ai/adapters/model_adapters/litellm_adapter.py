@@ -4,7 +4,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 import litellm
 from litellm.types.utils import (
@@ -67,6 +67,32 @@ from kiln_ai.utils.open_ai_types import (
 
 MAX_CALLS_PER_TURN = 10
 MAX_TOOL_CALLS_PER_TURN = 100
+
+# Cerebras validates assistant messages strictly and rejects the reasoning fields
+# LiteLLM attaches to responses from reasoning models, so prior assistant turns are
+# sent back without them.
+CEREBRAS_UNSUPPORTED_ASSISTANT_FIELDS = frozenset(
+    {"reasoning_content", "provider_specific_fields"}
+)
+
+
+def strip_assistant_fields_for_cerebras(messages: Iterable[Any]) -> list[Any]:
+    """Return a copy of ``messages`` with ``CEREBRAS_UNSUPPORTED_ASSISTANT_FIELDS``
+    removed from assistant entries. LiteLLM ``Message`` objects are converted to
+    dicts the same way LiteLLM does before the request is sent."""
+    stripped: list[Any] = []
+    for message in messages:
+        if isinstance(message, LiteLLMMessage):
+            message = message.model_dump(exclude_none=True)
+        if isinstance(message, dict) and message.get("role") == "assistant":
+            message = {
+                k: v
+                for k, v in message.items()
+                if k not in CEREBRAS_UNSUPPORTED_ASSISTANT_FIELDS
+            }
+        stripped.append(message)
+    return stripped
+
 
 logger = logging.getLogger(__name__)
 
@@ -776,7 +802,10 @@ class LiteLlmAdapter(BaseAdapter):
         if len(allowed_openai_params) > 0:
             completion_kwargs["allowed_openai_params"] = allowed_openai_params
 
-        completion_kwargs["messages"] = sanitize_messages_for_provider(messages)
+        provider_messages = sanitize_messages_for_provider(messages)
+        if provider.name == ModelProviderName.cerebras:
+            provider_messages = strip_assistant_fields_for_cerebras(provider_messages)
+        completion_kwargs["messages"] = provider_messages
 
         return completion_kwargs
 
