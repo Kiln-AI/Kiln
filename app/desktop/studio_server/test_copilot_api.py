@@ -3291,28 +3291,39 @@ class TestPassthroughTaskCapabilities:
         ]
         assert "project_id" not in body and "task_id" not in body
 
-    @pytest.fixture
-    def second_run_config(self, capable_task, agent_run_config_properties):
-        """A saved config on the same task that is NOT the default, giving the
-        task `multiply` and no skills."""
-        _, task = capable_task
+    @pytest.fixture(params=["saved", "finetune"])
+    def second_run_config_id(
+        self,
+        request,
+        capable_task,
+        agent_run_config_properties,
+        save_finetune_run_config,
+    ):
+        """A config on the same task that is NOT the default, giving the task
+        `multiply` and no skills: a saved config, or a fine-tune's config."""
+        project, task = capable_task
+        tools_config = ToolsRunConfig(tools=["kiln_tool::multiply_numbers"])
+        if request.param == "finetune":
+            return save_finetune_run_config(project, task, tools_config)
         run_config = TaskRunConfig(
             name="other",
             run_config_properties=agent_run_config_properties(
-                tools_config=ToolsRunConfig(tools=["kiln_tool::multiply_numbers"])
+                tools_config=tools_config
             ),
             parent=task,
         )
         run_config.save_to_file()
-        return run_config
+        return run_config.id
 
     def test_question_spec_reads_the_named_run_config(
-        self, client, capable_task, second_run_config, mock_api_key
+        self, client, capable_task, second_run_config_id, mock_api_key
     ):
         """The eval is written about one run config, so the prompts must see
         that config's surface rather than the task's default. The id itself is
         studio-local and never reaches kiln_server."""
         project, task = capable_task
+        # Named ids resolve by project lookup, which reads the mocked config.
+        mock_api_key.projects = [str(project.path)]
         sdk_mock = AsyncMock(return_value=self._question_set_response())
 
         with (
@@ -3328,7 +3339,7 @@ class TestPassthroughTaskCapabilities:
                     **self.QUESTION_SPEC_BODY,
                     "project_id": str(project.id),
                     "task_id": str(task.id),
-                    "run_config_id": str(second_run_config.id),
+                    "run_config_id": second_run_config_id,
                 },
             )
 
@@ -3349,6 +3360,8 @@ class TestPassthroughTaskCapabilities:
         """Fail loud rather than quietly describing the default config, which
         is not the one the eval is being written against."""
         project, task = capable_task
+        # Named ids resolve by project lookup, which reads the mocked config.
+        mock_api_key.projects = [str(project.path)]
         sdk_mock = AsyncMock(return_value=self._question_set_response())
 
         with (
@@ -3369,6 +3382,10 @@ class TestPassthroughTaskCapabilities:
             )
 
         assert response.status_code == 404
+        assert (
+            response.json()["message"]
+            == "Task run config not found. ID: no-such-config"
+        )
         sdk_mock.assert_not_awaited()
 
     def test_question_spec_rejects_a_run_config_without_its_task(

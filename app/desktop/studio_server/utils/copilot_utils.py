@@ -63,6 +63,7 @@ from app.desktop.studio_server.api_models.copilot_models import (
     TaskSkillInfoApi,
     TaskToolInfoApi,
 )
+from app.desktop.studio_server.eval_api import task_run_config_from_id
 from app.desktop.studio_server.utils.response_utils import unwrap_response
 
 logger = logging.getLogger(__name__)
@@ -189,31 +190,38 @@ async def task_capabilities_for_task(
 def _capability_run_config(
     task: Task, run_config_id: str | None
 ) -> TaskRunConfig | None:
-    """The run config whose capabilities answer this request: the one the
-    caller named, or the task's default.
+    """Return the run config to read the task's tools and skills from.
 
-    None means the default was asked for and none is resolvable, which the
-    caller reports as an uncollected surface. A named config that is not on
-    the task raises instead — see the caller.
+    run_config_id can be a saved run config or a fine-tune. Raises 404 if it
+    isn't found. Without run_config_id, returns the task's default saved run
+    config, or None if there isn't one.
     """
     if run_config_id is not None:
         # Presence, not truthiness: an empty id is a real (bad) id and must
         # not quietly fall back to the default config, whose tools and skills
         # are not the ones the caller asked about.
-        run_config = next(
-            (
-                candidate
-                for candidate in task.run_configs(readonly=True)
-                if candidate.id == run_config_id
-            ),
-            None,
-        )
-        if run_config is None:
+        parent_project = task.parent_project()
+        if parent_project is None:
+            raise HTTPException(status_code=500, detail="Task has no parent project")
+        if not parent_project.id or not task.id:
+            raise HTTPException(
+                status_code=500, detail="Task has no parent project or task"
+            )
+        try:
+            # A fine-tune's run config isn't saved on the task. This lookup
+            # also loads it from the fine-tune, the same way the drive does.
+            return task_run_config_from_id(parent_project.id, task.id, run_config_id)
+        except ValueError as exc:
+            # Loading a fine-tune raises ValueError if it's missing or hasn't
+            # finished training, so treat that as not found. For any other id,
+            # it means a run config file couldn't be read, and the caller
+            # carries on without tools and skills.
+            if not run_config_id.startswith("finetune_run_config::"):
+                raise
             raise HTTPException(
                 status_code=404,
                 detail=f"Task run config not found. ID: {run_config_id}",
-            )
-        return run_config
+            ) from exc
 
     if not task.default_run_config_id:
         return None

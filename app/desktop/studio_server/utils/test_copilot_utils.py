@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException
+from kiln_ai.adapters.fine_tune.finetune_run_config_id import finetune_run_config_id
 from kiln_ai.datamodel import GradedClaim, Project, Task, TaskRun
 from kiln_ai.datamodel.datamodel_enums import (
     FeedbackSource,
@@ -32,6 +33,7 @@ from kiln_ai.run_context import (
     get_agent_run_id,
     set_agent_run_id,
 )
+from kiln_ai.utils.config import Config
 from kiln_server.utils.spec_utils import SpecEvalTags, SplitShare
 from mcp.types import ListToolsResult
 from mcp.types import Tool as MCPTool
@@ -1290,9 +1292,11 @@ class TestPersistEvalSlice:
 @pytest.fixture
 def project_and_task(tmp_path):
     """An empty saved project + task — the starting point for the capability
-    tests, which build their own run config on top."""
+    tests, which build their own run config on top. The project is registered,
+    so a run config named by id resolves by lookup."""
     project = Project(name="Capability Project", path=tmp_path / "project.kiln")
     project.save_to_file()
+    Config.shared().projects = [str(project.path)]
     task = Task(name="Capability Task", instruction="Do the thing.", parent=project)
     task.save_to_file()
     return project, task
@@ -1559,6 +1563,35 @@ class TestTaskCapabilitiesForANamedRunConfig:
             await task_capabilities_for_task(task, run_config_id)
 
         assert exc.value.status_code == 404
+        assert exc.value.detail == f"Task run config not found. ID: {run_config_id}"
+
+    async def test_a_missing_finetune_is_404(self, project_and_task):
+        """A fine-tune id whose fine-tune is gone is a bad id, not an
+        unreadable capability surface."""
+        project, task = project_and_task
+        run_config_id = finetune_run_config_id(
+            str(project.id), str(task.id), "no-such-finetune"
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            await task_capabilities_for_task(task, run_config_id)
+
+        assert exc.value.status_code == 404
+        assert exc.value.detail == f"Task run config not found. ID: {run_config_id}"
+
+    async def test_unreadable_storage_still_degrades_a_named_config(
+        self, task_with_a_second_run_config
+    ):
+        """Naming a config does not turn a corrupt or forward-versioned file
+        into a 404: the request still goes out, un-enriched."""
+        task, other = task_with_a_second_run_config
+
+        with patch.object(
+            type(task), "run_configs", side_effect=ValueError("corrupt run_config.kiln")
+        ):
+            result = await task_capabilities_for_task(task, other.id)
+
+        assert result == (None, None)
 
 
 class TestTaskCapabilitiesRunContext:

@@ -572,6 +572,36 @@ def author_judge_task():
         yield mock_task
 
 
+@pytest.fixture
+def saved_task(tmp_path, give_task_one_tool_and_skill):
+    """A task on disk whose default run config gives it `add` and a skill, for
+    tests that resolve a named run config by lookup rather than on a mock."""
+    project = Project(name="Support", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(
+        name="Support Agent",
+        instruction="You are a customer support agent.",
+        parent=project,
+    )
+    task.save_to_file()
+    give_task_one_tool_and_skill(project, task)
+    return project, task
+
+
+@pytest.fixture
+def multiply_finetune_run_config_id(saved_task, save_finetune_run_config):
+    """A fine-tune on the saved task whose config gives it `multiply` and no
+    skills."""
+    project, task = saved_task
+    return save_finetune_run_config(
+        project, task, ToolsRunConfig(tools=["kiln_tool::multiply_numbers"])
+    )
+
+
+def _author_judge_url(project: Project, task: Task) -> str:
+    return f"/api/projects/{project.id}/tasks/{task.id}/eval_builder/author_judge"
+
+
 class TestAuthorJudge:
     def test_author_judge_no_api_key(self, client, author_judge_input):
         """Fail-fast: a keyless caller gets a clean 401 before the remote call."""
@@ -711,21 +741,69 @@ class TestAuthorJudge:
         assert response.status_code == 200
         assert mock_capabilities.await_args.args[1] == expected_run_config_id
 
+    def test_author_judge_reads_a_finetune_run_config(
+        self,
+        client,
+        author_judge_input,
+        saved_task,
+        multiply_finetune_run_config_id,
+        mock_api_key,
+    ):
+        """The builder offers completed fine-tunes as the eval's target, so the
+        rubric grades the fine-tune's tools, not the task default's."""
+        project, task = saved_task
+        # Named ids resolve by project lookup, which reads the mocked config.
+        mock_api_key.projects = [str(project.path)]
+        mock_output = MagicMock(spec=GenerateJudgePromptOutput)
+        mock_output.judge_evaluation_prompt = "1. Check the transcript."
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = mock_output
+
+        with patch(
+            "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ) as mock_post:
+            response = client.post(
+                _author_judge_url(project, task),
+                json={
+                    **author_judge_input,
+                    "run_config_id": multiply_finetune_run_config_id,
+                },
+            )
+
+        assert response.status_code == 200
+        body_dict = mock_post.call_args.kwargs["body"].to_dict()
+        assert body_dict["task_tools"] == [
+            {
+                "name": "multiply",
+                "description": "Multiply two numbers together and return the result",
+            }
+        ]
+        assert body_dict["task_skills"] == []
+
     def test_author_judge_unresolvable_run_config_404s(
-        self, client, author_judge_input, mock_api_key, author_judge_task
+        self, client, author_judge_input, saved_task, mock_api_key
     ):
         """An id that names no config on the task stops the request rather
         than authoring a rubric against the default config's surface."""
+        project, task = saved_task
+        mock_api_key.projects = [str(project.path)]
         with patch(
             "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
             new_callable=AsyncMock,
         ) as mock_post:
             response = client.post(
-                AUTHOR_JUDGE_URL,
+                _author_judge_url(project, task),
                 json={**author_judge_input, "run_config_id": "no-such-config"},
             )
 
         assert response.status_code == 404
+        assert (
+            response.json()["message"]
+            == "Task run config not found. ID: no-such-config"
+        )
         mock_post.assert_not_awaited()
 
     def test_author_judge_reports_a_task_with_no_capabilities(
