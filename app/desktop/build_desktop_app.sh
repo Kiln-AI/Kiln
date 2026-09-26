@@ -95,21 +95,22 @@ if [ "$(uname)" == "Darwin" ]; then
 elif [[ "$(uname)" =~ ^MINGW64_NT-10.0 ]] || [[ "$(uname)" =~ ^MSYS_NT-10.0 ]]; then
   echo "Building Windows App"
   cp desktop/win_taskbar.png desktop/build/taskbar.png
-  PLATFORM_OPTS="--windowed --splash=../win_splash.png --icon=../win_icon.ico"
+  PLATFORM_OPTS="--windowed --splash=../splash/splash.png --manifest=../win_manifest.xml --icon=../win_icon.ico"
 elif [ "$(uname)" == "Linux" ]; then
   echo "Building Linux App"
   cp desktop/mac_taskbar.png desktop/build/taskbar.png
-  PLATFORM_OPTS="--windowed --onefile --splash=../win_splash.png --icon=../mac_icon.png"
+  PLATFORM_OPTS="--windowed --onefile --splash=../splash/splash.png --icon=../mac_icon.png"
 else
   echo "Unsupported operating system: $(uname)"
   exit 1
 fi
 
-# Builds the desktop app
+# Builds the desktop app. pyinstaller_build.py runs pyinstaller, adding the high-DPI splash images to the
+# splash screen (see its docstring).
 # We should use a spec instead of a long-winded command line
 # eval_helpers is imported only by user scorer code at runtime (the code-eval
 # examples embed the import as a string), so PyInstaller can't discover it.
-pyinstaller $(printf %s "$PLATFORM_OPTS")  \
+python desktop/pyinstaller_build.py $(printf %s "$PLATFORM_OPTS")  \
   --add-data "./taskbar.png:." --add-data "../../web_ui/build:./web_ui/build" \
   --noconfirm --distpath=./desktop/build/dist --workpath=./desktop/build/work \
   -n Kiln --specpath=./desktop/build --hidden-import=tiktoken_ext.openai_public --hidden-import=tiktoken_ext \
