@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException
+from kiln_ai.adapters.fine_tune.finetune_run_config_id import finetune_run_config_id
 from kiln_ai.datamodel import GradedClaim, Project, Task, TaskRun
 from kiln_ai.datamodel.datamodel_enums import (
     FeedbackSource,
@@ -32,6 +33,7 @@ from kiln_ai.run_context import (
     get_agent_run_id,
     set_agent_run_id,
 )
+from kiln_ai.utils.config import Config
 from kiln_server.utils.spec_utils import SpecEvalTags, SplitShare
 from mcp.types import ListToolsResult
 from mcp.types import Tool as MCPTool
@@ -1290,9 +1292,11 @@ class TestPersistEvalSlice:
 @pytest.fixture
 def project_and_task(tmp_path):
     """An empty saved project + task — the starting point for the capability
-    tests, which build their own run config on top."""
+    tests, which build their own run config on top. The project is registered,
+    so a run config named by id resolves by lookup."""
     project = Project(name="Capability Project", path=tmp_path / "project.kiln")
     project.save_to_file()
+    Config.shared().projects = [str(project.path)]
     task = Task(name="Capability Task", instruction="Do the thing.", parent=project)
     task.save_to_file()
     return project, task
@@ -1363,22 +1367,17 @@ class TestTaskCapabilitiesForTask:
         task.save_to_file()
         assert await task_capabilities_for_task(task) == (None, None)
 
-    async def test_unreadable_storage_degrades_to_not_collected(
-        self, project_and_task, caplog
-    ):
-        """Collection reads run configs and skills off disk. A corrupt or
-        forward-versioned file must degrade to the un-enriched prompt rather
-        than failing the whole spec-building request."""
+    async def test_unreadable_storage_fails(self, project_and_task):
         _, task = project_and_task
         task.default_run_config_id = "rc-1"
         with patch.object(
             type(task), "run_configs", side_effect=ValueError("corrupt run_config.kiln")
         ):
-            with caplog.at_level(logging.WARNING):
-                result = await task_capabilities_for_task(task)
+            with pytest.raises(HTTPException) as exc:
+                await task_capabilities_for_task(task)
 
-        assert result == (None, None)
-        assert "corrupt run_config.kiln" in caplog.text
+        assert exc.value.status_code == 500
+        assert "corrupt run_config.kiln" in exc.value.detail
 
     async def test_non_agent_run_config_has_no_capabilities(
         self, project_and_task, set_default_run_config
@@ -1426,15 +1425,12 @@ class TestTaskCapabilitiesForTask:
             TaskSkillInfoApi(name="escalation", description="When to escalate.")
         ]
 
-    async def test_unresolvable_tool_is_skipped(
+    async def test_unresolvable_tool_fails_naming_the_tool(
         self,
         project_and_task,
         agent_run_config_properties,
         set_default_run_config,
-        caplog,
     ):
-        """A broken tool reference must not take down spec building; the rest
-        of the surface is still reported."""
         _, task = project_and_task
         set_default_run_config(
             task,
@@ -1445,11 +1441,11 @@ class TestTaskCapabilitiesForTask:
             ),
         )
 
-        with caplog.at_level(logging.WARNING):
-            tools, _ = await task_capabilities_for_task(task)
+        with pytest.raises(HTTPException) as exc:
+            await task_capabilities_for_task(task)
 
-        assert [tool.name for tool in tools or []] == ["add"]
-        assert "mcp::local::gone::vanished" in caplog.text
+        assert exc.value.status_code == 500
+        assert "mcp::local::gone::vanished" in exc.value.detail
 
     async def test_skills_are_sorted_by_name(
         self,
@@ -1559,6 +1555,35 @@ class TestTaskCapabilitiesForANamedRunConfig:
             await task_capabilities_for_task(task, run_config_id)
 
         assert exc.value.status_code == 404
+        assert exc.value.detail == f"Task run config not found. ID: {run_config_id}"
+
+    async def test_a_missing_finetune_is_404(self, project_and_task):
+        """A fine-tune id whose fine-tune is gone is a bad id, not an
+        unreadable capability surface."""
+        project, task = project_and_task
+        run_config_id = finetune_run_config_id(
+            str(project.id), str(task.id), "no-such-finetune"
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            await task_capabilities_for_task(task, run_config_id)
+
+        assert exc.value.status_code == 404
+        assert exc.value.detail == f"Task run config not found. ID: {run_config_id}"
+
+    async def test_unreadable_storage_fails_a_named_config(
+        self, task_with_a_second_run_config
+    ):
+        task, other = task_with_a_second_run_config
+
+        with patch.object(
+            type(task), "run_configs", side_effect=ValueError("corrupt run_config.kiln")
+        ):
+            with pytest.raises(HTTPException) as exc:
+                await task_capabilities_for_task(task, other.id)
+
+        assert exc.value.status_code == 500
+        assert "corrupt run_config.kiln" in exc.value.detail
 
 
 class TestTaskCapabilitiesRunContext:
@@ -1682,7 +1707,7 @@ class TestTaskCapabilitiesRunContext:
         assert get_agent_run_id() is None
 
     async def test_session_is_cleaned_up_when_collection_fails(
-        self, project_and_task, give_task_one_tool_and_skill, caplog
+        self, project_and_task, give_task_one_tool_and_skill
     ):
         """The scope still has to close on the failure path: the collection
         may already have opened sessions before it failed, and the manager has
@@ -1697,14 +1722,12 @@ class TestTaskCapabilitiesRunContext:
             patch.object(
                 type(task), "run_configs", side_effect=ValueError("corrupt file")
             ),
-            caplog.at_level(logging.WARNING),
         ):
             mock_scope_manager_cls.shared.return_value.cleanup_session = cleanup_mock
-            assert await task_capabilities_for_task(task) == (None, None)
+            with pytest.raises(HTTPException) as exc:
+                await task_capabilities_for_task(task)
 
-        # The degrade came from the failing read, not from an earlier return
-        # that would never have opened a scope at all.
-        assert "corrupt file" in caplog.text
+        assert "corrupt file" in exc.value.detail
         cleanup_mock.assert_called_once_with("run_collection")
         assert get_agent_run_id() is None
 
