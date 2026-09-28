@@ -48,7 +48,7 @@ There's no new UX beyond the existing connect-provider screen and model picker.
 
 The env var names match the ones LiteLLM and models.dev use for the first two fields.
 
-The connect screen's help text tells users where to find each value, and which token permissions to grant.
+The connect screen's help text tells users where to find each value, and which token permissions to grant. The approved strings are in [ui_design.md](./ui_design.md).
 
 ## Connect Flow
 
@@ -133,8 +133,25 @@ Requirements:
 
 ## Rate Limits and Concurrency
 
-- No Cloudflare-specific concurrency settings. All entries use Kiln's default parallelism. Cloudflare's 429 errors are shown as-is.
+- No Cloudflare-specific concurrency settings. All entries use Kiln's default parallelism.
 - For reference, Cloudflare's documented limits (verified in the `cloudflare-docs` source, `workers-ai/platform/limits.mdx`, 2026-09-28) are 300 requests per minute for text generation. The exception is models that need Workers Paid: they're limited to 20 requests per minute per account per model, or 50 with prepaid AI Gateway credits. Users running large evals or synthetic data jobs on those models will hit 429s. That's Cloudflare's limit, not Kiln's.
+
+### Rate-limit errors must be recognized as rate limits
+
+Rate limits are expected with Cloudflare, so Kiln's existing rate-limit handling must work for it. Several callers treat a rate limit differently from other errors. They recognize it by the exception type `litellm.RateLimitError`:
+
+- `is_retryable_error` in `adapters/retry_classification.py` marks it retryable. The eval runner, the synthetic-user runner and the eval builder then retry it with backoff.
+- `is_batch_fatal_error` must *not* match it. That function aborts a whole batch on errors like bad credentials (`AuthenticationError`, `PermissionDeniedError`, `NotFoundError`). If a Cloudflare rate limit arrived as one of those, one throttled call would abort an entire eval run.
+- `format_error_message` in `adapters/errors.py` shows the standard "Rate limit exceeded" message.
+
+Requirements:
+
+1. A Cloudflare rate limit must reach Kiln's callers as `litellm.RateLimitError` (unwrapped from `KilnRunError` as usual), both with and without a gateway ID.
+2. A rate limit must never surface as an authentication, permission or not-found error.
+3. The architecture confirms this with a live test that triggers a real 429 (for example, a burst of tiny requests to a model limited to 20 requests per minute), and records the status code, Cloudflare error code and LiteLLM exception type for each path. If LiteLLM doesn't produce `RateLimitError`, the Cloudflare provider path maps the error itself.
+4. Unit tests cover the mapping, using the recorded error bodies.
+
+Cloudflare uses 429 for more than one condition: per-model rate limits, out of capacity (code 3040), and the free plan's daily quota being used up (code 3036). All three are treated as rate limits. The daily-quota case won't clear on retry, but Kiln's retry counts are small, so the cost is a few wasted attempts before the error shows. That's accepted, and it matches how Kiln handles other providers' quota errors.
 
 ## Model List Maintenance
 
@@ -185,3 +202,4 @@ These need a live account to answer. The architecture step must answer or design
 - Is the gateway header truly optional for Workers AI calls? The docs contradict each other.
 - Do the included models truncate output when Kiln sends no max-token value?
 - Does Qwen 3.8 27B work on the OpenAI-compatible endpoint?
+- What does a real Cloudflare rate limit look like (status, error code, LiteLLM exception type), directly and through a gateway? See [Rate-limit errors](#rate-limit-errors-must-be-recognized-as-rate-limits).
