@@ -67,10 +67,15 @@ from app.desktop.studio_server.eval_builder_api import (
     JUDGE_MAX_RETRIES,
     JUDGE_RETRY_DELAY_SECONDS,
     SingleTurnPipelineRequest,
+    SingleTurnPipelineRun,
     connect_eval_builder_api,
     run_judge_with_retry,
 )
 from app.desktop.studio_server.multiturn_sdg_api import connect_multiturn_sdg_api
+from app.desktop.studio_server.utils.copilot_utils import (
+    find_multi_turn_chain_leaves,
+    find_single_turn_batch_runs,
+)
 from app.desktop.studio_server.utils.eval_builder_utils import (
     JudgeVerdict,
     build_judge_prompt_template,
@@ -2672,21 +2677,47 @@ class TestSingleTurnPipeline:
         # batch total alongside the surviving case's 0.05.
         assert _events_of(events, "batch_completed")[0]["total_cost"] == 0.1
 
-    def test_failure_after_the_save_deletes_the_saved_run(
+    def test_save_failure_fails_the_case_and_deletes_nothing(
         self, client, single_turn_request, single_turn_seams
     ):
-        """A case that dies after its run was saved deletes that run."""
-        with patch(
-            "app.desktop.studio_server.eval_builder_api.trace_or_echo",
-            side_effect=RuntimeError("frame blew up"),
-        ):
-            resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
-        failed = _events_of(_parse_sse(resp.text), "case_failed")
-        assert {f["case_index"] for f in failed} == {0, 1}
-        for text in single_turn_request["inputs"]:
-            run = single_turn_seams["runs_by_input"][text]
-            run.save_to_file.assert_called_once()
-            run.delete.assert_called_once()
+        run = single_turn_seams["runs_by_input"][single_turn_request["inputs"][0]]
+        run.save_to_file = Mock(side_effect=OSError("disk full"))
+        events = _parse_sse(client.post(SINGLE_TURN_URL, json=single_turn_request).text)
+        failed = _events_of(events, "case_failed")
+        assert [(f["case_index"], f["stage"]) for f in failed] == [(0, "run")]
+        assert "disk full" in failed[0]["message"]
+        run.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "state, expected_cost, deleted",
+        [
+            ("no_run", 0.0, False),
+            ("never_saved", 0.05, False),
+            ("rolled_back", 0.05, False),
+            ("on_disk", 0.05, True),
+        ],
+    )
+    async def test_delete_partial_run_banks_spend_and_deletes_only_saved_runs(
+        self, single_turn_request, state, expected_cost, deleted
+    ):
+        """A save context that rolled back its own write already removed the
+        run, so only a run still on disk is deleted."""
+        stream = SingleTurnPipelineRun(
+            project_id="p1",
+            task_id="t1",
+            task=_task_mock(TurnMode.single_turn),
+            input=SingleTurnPipelineRequest(**single_turn_request),
+            save_context=None,
+        )
+        run = None if state == "no_run" else _fake_single_turn_run(0)
+        if state in ("rolled_back", "on_disk"):
+            run.path = Mock(spec=Path)
+            run.path.exists.return_value = state == "on_disk"
+        await stream._delete_partial_run(run)
+        assert stream._total_cost == expected_cost
+        if run is not None:
+            assert run.delete.called == deleted
 
     def test_slow_run_completes_and_logs(
         self, client, single_turn_request, single_turn_seams, monkeypatch, caplog
@@ -3025,10 +3056,10 @@ class TestPipelinesInGitSyncedProject:
     """Every run a drive writes is committed, never stashed."""
 
     @pytest.mark.parametrize(
-        "arm, request_fixture, expected_runs",
+        "arm, request_fixture, expected_runs, expected_parent_links",
         [
-            ("multi_turn", "pipeline_request", 4),
-            ("single_turn", "single_turn_request", 2),
+            ("multi_turn", "pipeline_request", 4, 2),
+            ("single_turn", "single_turn_request", 2, 0),
         ],
     )
     def test_drive_commits_every_run_and_stashes_nothing(
@@ -3039,6 +3070,7 @@ class TestPipelinesInGitSyncedProject:
         arm,
         request_fixture,
         expected_runs,
+        expected_parent_links,
     ):
         clone, remote, tasks = synced_project
         task = tasks[arm]
@@ -3049,7 +3081,8 @@ class TestPipelinesInGitSyncedProject:
         )
 
         assert resp.status_code == 200
-        completed = _events_of(_parse_sse(resp.text), "batch_completed")
+        events = _parse_sse(resp.text)
+        completed = _events_of(events, "batch_completed")
         assert completed[0]["judged"] == 2
         assert completed[0]["failed"] == 0
         repo = pygit2.Repository(str(clone))
@@ -3061,11 +3094,18 @@ class TestPipelinesInGitSyncedProject:
         runs = task.runs(include_intermediate_runs=True)
         assert len(runs) == expected_runs
         run_ids = {run.id for run in runs}
-        assert all(
-            run.parent_task_run_id in run_ids
-            for run in runs
-            if run.parent_task_run_id is not None
+        linked = [run for run in runs if run.parent_task_run_id is not None]
+        assert len(linked) == expected_parent_links
+        assert all(run.parent_task_run_id in run_ids for run in linked)
+        # Save finds the batch by its tag, so the saved runs must carry it.
+        batch_tag = _events_of(events, "batch_started")[0]["batch_tag"]
+        find = (
+            find_multi_turn_chain_leaves
+            if arm == "multi_turn"
+            else find_single_turn_batch_runs
         )
+        driven = {e["leaf_run_id"] for e in _events_of(events, "case_driven")}
+        assert {run.id for run in find(task, batch_tag)} == driven
 
 
 @pytest.mark.parametrize(

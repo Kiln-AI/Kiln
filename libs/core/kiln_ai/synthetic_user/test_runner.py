@@ -536,7 +536,9 @@ async def test_chain_is_written_root_first_in_one_save_context(
     _patch_su_driver(monkeypatch, replies_per_case=["x"])
     log: list[str] = []
     for run in runs:
-        run.save_to_file = Mock(side_effect=lambda r=run: log.append(f"save {r.id}"))
+        run.save_to_file = Mock(
+            side_effect=lambda r=run: log.append(f"save {r.id} {sorted(r.tags)}")
+        )
 
     @contextlib.asynccontextmanager
     async def recording_ctx():
@@ -559,7 +561,9 @@ async def test_chain_is_written_root_first_in_one_save_context(
     root_id, leaf_id = runs[0].id, runs[1].id
     assert root_id and leaf_id and root_id != leaf_id
     assert adapter.invoke.call_args_list[1].kwargs["parent_task_run"] is runs[0]
-    assert log == ["enter", f"save {root_id}", f"save {leaf_id}", "exit"]
+    batch_tag = next(e for e in events if isinstance(e, BatchStartedEvent)).batch_tag
+    leaf_tags = sorted(["synthetic_user_case", f"synthetic_user_batch:{batch_tag}"])
+    assert log == ["enter", f"save {root_id} []", f"save {leaf_id} {leaf_tags}", "exit"]
     completed = next(e for e in events if isinstance(e, CaseCompletedEvent))
     assert completed.chain_run_ids == [root_id, leaf_id]
     assert completed.leaf_run_id == leaf_id
@@ -865,7 +869,7 @@ async def test_retried_case_batch_total_includes_both_attempts_costs(
 ) -> None:
     """A retried case's discarded first attempt still billed the provider.
     total_cost stays per-conversation; discarded_attempts_cost carries the
-    deleted attempt's spend; the batch total covers both."""
+    discarded attempt's spend; the batch total covers both."""
     monkeypatch.setattr(runner_mod, "DRIVE_RETRY_DELAY_SECONDS", 0)
     monkeypatch.setattr(
         runner_mod, "is_retryable_error", lambda e: isinstance(e, RuntimeError)

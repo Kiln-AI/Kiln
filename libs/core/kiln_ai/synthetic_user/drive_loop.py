@@ -24,9 +24,8 @@ from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 class TargetInvoker(Protocol):
     """Callable that invokes the target task for one turn. The runner
     wraps `adapter_for_task(task, run_config).invoke` to satisfy this;
-    tests pass in a fake. Keeps the drive loop target-agnostic — it just
-    cares about the TaskRun that comes back, persisted or in-memory per
-    the invoker.
+    tests pass in a fake. Keeps the drive loop target-agnostic: it only
+    reads the TaskRun that comes back.
     """
 
     async def __call__(

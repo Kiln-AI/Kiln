@@ -456,8 +456,7 @@ class JudgeStreamBase:
         finally:
             # Consumer disconnect (or any exit): stop the producer and any
             # in-flight judges so abandoned LLM calls stop spending. A
-            # cancelled drive cancels its own workers, and each cancelled
-            # case cleans up its own partial writes as it unwinds.
+            # cancelled case removes any run it saved.
             producer.cancel()
             for t in self._review_tasks:
                 t.cancel()
@@ -581,11 +580,9 @@ class JudgeStreamBase:
         self, stage: Literal["drive", "run", "judge"], error: BaseException
     ) -> None:
         """First batch-fatal failure wins: emit ONE batch_aborted frame and
-        close the queue — events()' finally then runs the consumer-disconnect
-        teardown (producer and in-flight judges cancelled). On the pipeline
-        stream each cancelled case deletes its own partial chain as it
-        unwinds (runner-side cleanup), so an abort leaves no orphan runs
-        behind; the disk-reload stream has nothing to clean."""
+        close the queue. events()' finally then cancels the producer and any
+        in-flight judges. A cancelled case removes any run it saved, so an
+        abort leaves no orphan runs."""
         if self._aborted:
             return
         self._aborted = True
