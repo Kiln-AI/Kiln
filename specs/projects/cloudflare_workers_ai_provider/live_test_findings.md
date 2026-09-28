@@ -79,17 +79,29 @@ Burst of `max_tokens: 1` calls to `@cf/meta/llama-3.2-1b-instruct` through LiteL
 
 The wrong account ID returns 401 on chat but 403 on models-search.
 
+## Paid Plan Results (After Upgrade)
+
+The account was upgraded to Workers Paid. For a few minutes afterwards, requests alternated between success and 403 / 5035 while the upgrade propagated.
+
+**Aliasing:** a successful non-streaming call to `@cf/moonshotai/kimi-k2.5` returned `"model": "@cf/moonshotai/kimi-k2.5"`. Cloudflare echoes the requested ID even though K2.6 runs; streamed chunks do the same. No response header names the model. **A runtime no-substitution check isn't possible.**
+
+**Output length, no `max_tokens`, non-streaming through LiteLLM `openai/`:** all complete, 700/700, `finish_reason: stop`. LiteLLM exposed `reasoning_content` for all of them.
+
+| Model | Seconds | Completion tokens |
+|---|---|---|
+| DeepSeek V4 Pro | 142 | 5,268 |
+| DeepSeek V4 Flash | 61 | 5,225 |
+| GLM 5.3 | 30 | 3,741 |
+| GLM 5.3 Flash | 47 | 1,916 |
+| GLM 5.2 | 75 | 5,788 |
+| Kimi K2.6 | 34 | 1,511 |
+
+**Qwen 3.8 timeout:** a long non-streaming request failed after 121 s with **HTTP 408, code 3046**. LiteLLM raises `litellm.Timeout`: retryable, not batch-fatal.
+
+**Smaller connect call:** `models/search?search=kiln-connection-check` returns an empty result (about 120 bytes) with 200. A bad token still gives 401, and a wrong account still gives 403.
+
+The 20 requests/min limit on paid-only models was not tested, by decision. Burst tests aren't worth the cost, and the 429 / 3021 shape is already recorded.
+
 ## Still Open
 
-Needs a Workers Paid account:
-
-- Whether an aliased ID's successful response reports the requested or the actual model. This decides the optional runtime no-substitution check.
-- Output length and `/v1` behavior for the seven paid-only models.
-- The 20 requests/min limit on paid-only models. Expected to be the same 429 / 3021, but unconfirmed.
-
-Needs the dashboard, or a token with AI Gateway permission:
-
-
-Not captured:
-
-- The HTTP status for timeout code 3046 (it decides whether LiteLLM treats it as retryable).
+- Whether gateway-routed requests appear in the gateway's logs. This doesn't affect the design.
