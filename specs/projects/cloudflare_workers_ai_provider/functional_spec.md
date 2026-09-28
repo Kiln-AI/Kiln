@@ -96,7 +96,7 @@ All of these already exist in Kiln's model list. Each gets a Cloudflare provider
 
 Models that need the Workers Paid plan are included. On a free account, the call fails with Cloudflare's error.
 
-Qwen 3.8 27B's launch post names only the native endpoint. If it fails on the OpenAI-compatible endpoint in tests, drop it.
+Qwen 3.8 27B works on the OpenAI-compatible endpoint (confirmed live) and stays in. It's slow (about 23 tokens per second), so very long non-streaming generations can hit Cloudflare's server-side timeout (code 3046). That's accepted.
 
 ### Excluded older models
 

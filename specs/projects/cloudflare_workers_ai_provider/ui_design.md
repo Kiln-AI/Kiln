@@ -39,7 +39,7 @@ The UI is the standard provider entry on the connect-provider screen (`connect_p
 |---|---|
 | Bad account ID | `Failed to connect to Cloudflare. Invalid Account ID.` |
 | Bad token, or token without access to this account | `Failed to connect to Cloudflare. Invalid API Token, or the token doesn't have Workers AI access for this Account ID.` |
-| Bad gateway ID, or token without gateway access | `Failed to connect to Cloudflare. AI Gateway '<id>' not found, or your token doesn't have AI Gateway access. Fix permissions, or remove the gateway ID.` |
+| Gateway ID not found | `Failed to connect to Cloudflare. AI Gateway '<id>' not found. Check the gateway ID, or remove it.` |
 | Anything else | `Failed to connect to Cloudflare. Error: [<status>] <response text>` |
 
 If live testing shows Cloudflare can't tell two of these cases apart, the architecture merges the affected rows and keeps the wording as close to these as possible.
