@@ -10,9 +10,9 @@ Inform the functional spec and architecture for the `cloudflare_workers_ai_provi
 
 ## Subtopics
 
-- [ ] Workers AI API, auth and LiteLLM support — how Kiln would call it and validate credentials
-- [ ] Model catalog and discovery — static vs per-account list, machine-readable sources, model IDs, capabilities, lifecycle
-- [ ] AI Gateway — what it is, how it relates to Workers AI, and whether Kiln should support it (one provider or two)
+- [x] Workers AI API, auth and LiteLLM support — how Kiln would call it and validate credentials
+- [x] Model catalog and discovery — static vs per-account list, machine-readable sources, model IDs, capabilities, lifecycle
+- [x] AI Gateway — what it is, how it relates to Workers AI, and whether Kiln should support it (one provider or two)
 
 ## Focus Details
 
