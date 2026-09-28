@@ -5891,8 +5891,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
-                suggested_for_synthetic_user=True,
                 model_id="accounts/fireworks/models/deepseek-v4-flash-0731",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
@@ -9019,6 +9019,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/routers/glm-5p2-fast",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
@@ -9545,6 +9546,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/kimi-k2p6",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 multimodal_capable=True,
