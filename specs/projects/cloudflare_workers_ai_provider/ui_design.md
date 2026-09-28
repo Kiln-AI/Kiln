@@ -13,7 +13,7 @@ The UI is the standard provider entry on the connect-provider screen (`connect_p
 ## Provider Card
 
 - **Name:** `Cloudflare`
-- **Description:** `Open models like GLM, Kimi and DeepSeek, on Cloudflare.`
+- **Description:** `Open models on the edge, plus an AI gateway.`
 
 ## Connect Steps
 
