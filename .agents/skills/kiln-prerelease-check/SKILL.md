@@ -40,7 +40,7 @@ libs/core/kiln_ai/adapters/pytest_prerelease_whitelist.py
 
 Whitelisted lists:
 
-- `PRERELEASE_CHAT_MODELS` — handful of chat models, one per major provider (OpenAI + GPT-5, Anthropic + Claude Sonnet/Haiku, Gemini, OpenRouter, Groq, Fireworks, Together).
+- `PRERELEASE_CHAT_MODELS` — handful of chat models, one per major provider (OpenAI + GPT-5, Anthropic + Claude Sonnet/Haiku, Gemini, OpenRouter, Groq, Fireworks, Together, Cloudflare).
 - `PRERELEASE_EMBEDDING_MODELS` — one embedding model per embedding-supporting provider.
 - `PRERELEASE_EXTRACTION_MODELS` — one multimodal model per major vendor (OpenAI, Anthropic, Gemini).
 - `PRERELEASE_EXTRACTION_MIME_PROBES` — three mime probes (PDF, PNG, MP3) for the extraction smoke; the full paid test sweeps all 13 mime types per model.
@@ -59,7 +59,7 @@ This whitelist is the thing most likely to go stale, so it's the main target of 
   ```bash
   set -a; . ./.env; set +a
   ```
-  Provider-specific env vars the prerelease set may touch: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `FIREWORKS_API_KEY`, `TOGETHERAI_API_KEY`, `SILICONFLOW_CN_API_KEY`, `COHERE_API_KEY`, `TYPESAFE_API_KEY`, `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`, plus `KILN_TEST_VERTEX_PROJECT_ID` (+ optional `KILN_TEST_VERTEX_LOCATION`) for the Vertex live check, which also requires `gcloud auth application-default login` against a project with `aiplatform.googleapis.com` enabled.
+  Provider-specific env vars the prerelease set may touch: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `FIREWORKS_API_KEY`, `TOGETHERAI_API_KEY`, `SILICONFLOW_CN_API_KEY`, `COHERE_API_KEY`, `TYPESAFE_API_KEY`, `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID` (used by `test_cloudflare` in `test_prompt_adaptors.py`, which runs GLM 4.7 Flash; a free-plan Cloudflare account is enough), `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`, plus `KILN_TEST_VERTEX_PROJECT_ID` (+ optional `KILN_TEST_VERTEX_LOCATION`) for the Vertex live check, which also requires `gcloud auth application-default login` against a project with `aiplatform.googleapis.com` enabled.
 - **A missing key is a coverage gap, not a failure.** Each missing key makes the relevant test `pytest.skip(...)`. That isn't a prerelease failure — surface it in the report so the user can decide whether to provide the key and re-run.
 - **`ml_model_list.py` never deletes entries — it only marks them `deprecated=True`.** So a slug missing from our list is not a signal you'll normally encounter. The signals that matter when diagnosing a break or staleness are:
   1. The provider entry has `deprecated=True` in our list.

@@ -12,6 +12,7 @@ from kiln_ai.adapters.ml_model_list import (
     default_thinking_level_for_model_provider,
     get_model_by_name,
 )
+from kiln_ai.adapters.pytest_prerelease_whitelist import PRERELEASE_CHAT_MODELS
 from kiln_ai.adapters.user_model_entry import UserModelEntry
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 
@@ -716,3 +717,27 @@ def test_judge_models_with_thinking_levels_default_to_reasoning():
                 f"{provider.default_thinking_level!r}. Judge models must default to a "
                 f'reasoning level ("medium" when offered, else "low").'
             )
+
+
+@pytest.mark.parametrize("model_name,provider_name", PRERELEASE_CHAT_MODELS)
+def test_prerelease_chat_models_exist(model_name, provider_name):
+    model = get_model_by_name(ModelName(model_name))
+    provider = next(
+        (p for p in model.providers if p.name == ModelProviderName(provider_name)),
+        None,
+    )
+    assert provider is not None, f"{model_name} has no {provider_name} provider"
+
+
+def test_cloudflare_model_ids_are_workers_ai_ids():
+    """Cloudflare ids go to the API verbatim, so they must be bare @cf/ ids."""
+    cloudflare_providers = [
+        provider
+        for model in built_in_models
+        for provider in model.providers
+        if provider.name == ModelProviderName.cloudflare
+    ]
+    assert cloudflare_providers
+    for provider in cloudflare_providers:
+        assert provider.model_id is not None
+        assert provider.model_id.startswith("@cf/"), provider.model_id
