@@ -186,8 +186,7 @@ describe("ConnectProviders API key dialog", () => {
   })
 })
 
-const cloudflare_description =
-  "Open models like GLM, Kimi and DeepSeek, on Cloudflare."
+const cloudflare_description = "Open models on the edge, plus an AI gateway."
 const cloudflare_token_field = "API Token"
 const cloudflare_account_field = "Account ID"
 const cloudflare_gateway_field = "AI Gateway ID - Optional"

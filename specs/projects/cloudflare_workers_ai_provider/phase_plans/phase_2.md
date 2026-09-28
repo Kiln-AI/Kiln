@@ -17,7 +17,7 @@ Phase 1 added the backend (`connect_cloudflare`, disconnect, config keys) and th
      {
        name: "Cloudflare",
        id: "cloudflare",
-       description: "Open models like GLM, Kimi and DeepSeek, on Cloudflare.",
+       description: "Open models on the edge, plus an AI gateway.",
        featured: false,
        api_key_steps: [
          "Go to https://dash.cloudflare.com/?to=/:account/ai/workers-ai and click 'Use REST API'",
