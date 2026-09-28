@@ -42,7 +42,7 @@ import ConnectProviders from "./connect_providers.svelte"
 
 const invalid_key_message = "Failed to connect to OpenAI. Invalid API key."
 
-const mock_fetch = vi.fn(async (url: string) => {
+const mock_fetch = vi.fn(async (url: string, _init?: RequestInit) => {
   if (url.includes("/api/settings")) {
     return { status: 200, json: async () => ({}) } as unknown as Response
   }
@@ -184,4 +184,177 @@ describe("ConnectProviders API key dialog", () => {
       .parentElement as HTMLElement
     expect(within(provider_row).getByAltText("Connected")).toBeTruthy()
   })
+})
+
+const cloudflare_description =
+  "Open models like GLM, Kimi and DeepSeek, on Cloudflare."
+const cloudflare_token_field = "API Token"
+const cloudflare_account_field = "Account ID"
+const cloudflare_gateway_field = "AI Gateway ID - Optional"
+
+function mock_saved_settings(settings: Record<string, string>) {
+  mock_fetch.mockImplementationOnce(
+    async () =>
+      ({
+        status: 200,
+        json: async () => settings,
+      }) as unknown as Response,
+  )
+}
+
+function cloudflare_row(): HTMLElement {
+  return screen.getByAltText("Cloudflare").parentElement as HTMLElement
+}
+
+async function fill_field(placeholder: string, value: string) {
+  await fireEvent.input(screen.getByPlaceholderText(placeholder), {
+    target: { value },
+  })
+}
+
+function connect_request_bodies(): unknown[] {
+  return mock_fetch.mock.calls
+    .filter(([url]) => url.includes("/api/provider/connect_api_key"))
+    .map(([, init]) => JSON.parse(init?.body as string))
+}
+
+describe("ConnectProviders Cloudflare", () => {
+  it("renders the Cloudflare card with its logo and description", async () => {
+    await render_connect_providers()
+
+    const image = screen.getByAltText("Cloudflare") as HTMLImageElement
+    expect(image.getAttribute("src")).toBe("/images/cloudflare.svg")
+    expect(
+      within(cloudflare_row()).getByText(cloudflare_description),
+    ).toBeTruthy()
+    expect(
+      within(cloudflare_row()).getByRole("button", { name: "Connect" }),
+    ).toBeTruthy()
+  })
+
+  it("shows the three fields, the steps and the Workers Paid warning", async () => {
+    await render_connect_providers()
+    await open_provider_dialog("Cloudflare")
+
+    expect(screen.getByText("Connect Cloudflare")).toBeTruthy()
+    expect(
+      screen.getByText("Some models require Cloudflare's Workers Paid plan."),
+    ).toBeTruthy()
+    const inputs = Array.from(
+      document.querySelectorAll("#api-key-fields input"),
+    ).map((input) => input.getAttribute("placeholder"))
+    expect(inputs).toEqual([
+      cloudflare_token_field,
+      cloudflare_account_field,
+      cloudflare_gateway_field,
+    ])
+    expect(screen.getAllByRole("listitem")).toHaveLength(5)
+    const dashboard_url =
+      "https://dash.cloudflare.com/?to=/:account/ai/workers-ai"
+    expect(
+      screen.getByRole("link", { name: dashboard_url }).getAttribute("href"),
+    ).toBe(dashboard_url)
+  })
+
+  it("submits the token and account ID without the empty gateway field", async () => {
+    await render_connect_providers()
+    await open_provider_dialog("Cloudflare")
+
+    await fill_field(cloudflare_token_field, "token")
+    await fill_field(cloudflare_account_field, "account")
+    mock_fetch.mockImplementationOnce(
+      async () =>
+        ({
+          status: 200,
+          json: async () => ({ message: "Connected to Cloudflare" }),
+        }) as unknown as Response,
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Connect" }))
+
+    await waitFor(() =>
+      expect(screen.queryByText("Connect Cloudflare")).toBeNull(),
+    )
+    expect(connect_request_bodies()).toEqual([
+      {
+        provider: "cloudflare",
+        key_data: {
+          [cloudflare_token_field]: "token",
+          [cloudflare_account_field]: "account",
+        },
+      },
+    ])
+    expect(within(cloudflare_row()).getByAltText("Connected")).toBeTruthy()
+  })
+
+  it("submits the gateway ID when one is entered", async () => {
+    await render_connect_providers()
+    await open_provider_dialog("Cloudflare")
+
+    await fill_field(cloudflare_token_field, "token")
+    await fill_field(cloudflare_account_field, "account")
+    await fill_field(cloudflare_gateway_field, "default")
+    mock_fetch.mockImplementationOnce(
+      async () =>
+        ({
+          status: 200,
+          json: async () => ({ message: "Connected to Cloudflare" }),
+        }) as unknown as Response,
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Connect" }))
+
+    await waitFor(() => expect(connect_request_bodies()).toHaveLength(1))
+    expect(connect_request_bodies()[0]).toEqual({
+      provider: "cloudflare",
+      key_data: {
+        [cloudflare_token_field]: "token",
+        [cloudflare_account_field]: "account",
+        [cloudflare_gateway_field]: "default",
+      },
+    })
+    expect(within(cloudflare_row()).getByAltText("Connected")).toBeTruthy()
+  })
+
+  it("does not submit when the account ID is missing", async () => {
+    await render_connect_providers()
+    await open_provider_dialog("Cloudflare")
+
+    await fill_field(cloudflare_token_field, "token")
+    await fireEvent.click(screen.getByRole("button", { name: "Connect" }))
+
+    expect(connect_request_bodies()).toEqual([])
+    expect(
+      screen
+        .getByPlaceholderText(cloudflare_account_field)
+        .classList.contains("input-error"),
+    ).toBe(true)
+  })
+
+  it("shows Cloudflare as connected when the token and account ID are saved", async () => {
+    mock_saved_settings({
+      cloudflare_api_key: "saved-token",
+      cloudflare_account_id: "saved-account",
+    })
+
+    await render_connect_providers()
+
+    expect(within(cloudflare_row()).getByAltText("Connected")).toBeTruthy()
+  })
+
+  it.each([
+    [{ cloudflare_api_key: "saved-token" }],
+    [{ cloudflare_account_id: "saved-account" }],
+    [{ cloudflare_ai_gateway_id: "default" }],
+  ])(
+    "does not show Cloudflare as connected with only %o saved",
+    async (settings) => {
+      mock_saved_settings(settings)
+
+      await render_connect_providers()
+
+      expect(within(cloudflare_row()).queryByAltText("Connected")).toBeNull()
+      expect(
+        within(cloudflare_row()).getByRole("button", { name: "Connect" }),
+      ).toBeTruthy()
+    },
+  )
 })
