@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Functional Spec: Cloudflare Provider (Workers AI + optional AI Gateway)
@@ -20,7 +20,7 @@ There's no new UX beyond the existing connect-provider screen and model picker.
 - A connect flow with three fields: API token (required), account ID (required) and AI Gateway ID (optional). Every field is validated on connect.
 - Running Workers AI text-generation models through Cloudflare's OpenAI-compatible endpoint, directly or through the user's AI Gateway.
 - A curated model list in `ml_model_list.py`, limited to Cloudflare's newer, OpenAI-style models (see [Model Selection](#model-selection)).
-- A rule that Kiln never silently runs a different model than the one requested (see [No Model Substitution](#no-model-substitution)).
+- A process safeguard against Cloudflare silently running a different model than the one requested (see [No Model Substitution](#no-model-substitution)).
 - Updates to the model-maintenance and deprecation-check skills so the Cloudflare list stays current.
 
 ### Out of scope
@@ -102,7 +102,7 @@ Qwen 3.8 27B's launch post names only the native endpoint. If it fails on the Op
 
 | Cloudflare model | Kiln model it would map to | Notes |
 |---|---|---|
-| `@cf/openai/gpt-oss-120b` | GPT-OSS 120B | **The notable loss.** It's popular, free-plan, and has tool calling and reasoning. |
+| `@cf/openai/gpt-oss-120b` | GPT-OSS 120B | The notable loss: popular, free-plan, tools and reasoning. Excluded by decision; available from other Kiln providers. |
 | `@cf/openai/gpt-oss-20b` | GPT-OSS 20B | Same as above. |
 | `@cf/meta/llama-4-scout-17b-16e-instruct` | Llama 4 Scout | Vision and tools. |
 | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | Llama 3.3 70B | Only 24K context, and reportedly doesn't emit tool calls on the OpenAI-compatible endpoint. |
@@ -117,26 +117,24 @@ Users can still add any `@cf/...` ID, including excluded ones, through Kiln's ex
 
 ## No Model Substitution
 
-Kiln must never silently run a different model than the one the user chose. Failing with an error is better than substitution.
+We don't want Kiln to run a different model than the one the user chose. An error is better than substitution. But this is Cloudflare's behavior, not Kiln's, so the safeguards are limited to what's low-risk.
 
 Why: when Cloudflare retired Kimi K2.5 in May 2026, it pointed the old ID at the more expensive Kimi K2.6 instead of returning an error. Cloudflare has no documented setting that turns this off.
 
 Requirements:
 
-1. **Runtime check (preferred).** If Cloudflare's response reports which model actually ran, Kiln compares it with the requested ID. On a mismatch, the run fails with a clear error that names both IDs. The architecture step must confirm with a live test that the response carries this information, and decide how IDs are compared (exact match or normalized).
-2. **Process (always).** The maintenance and deprecation skills remove or mark deprecated any Cloudflare model that gains a `planned_deprecation_date`, before that date. This way Kiln stops offering a model before it can be aliased.
-
-If the runtime check turns out to be impossible, only the process safeguard remains. Record that plainly in the architecture doc.
+1. **Process (required).** The maintenance and deprecation skills remove or mark deprecated any Cloudflare model that gains a `planned_deprecation_date`, before that date. This way Kiln stops offering a model before it can be aliased.
+2. **Runtime check (optional).** If Cloudflare's response reports which model actually ran, Kiln could compare it with the requested ID and fail on a mismatch. Only build this if a live test shows it can be done cleanly and locally, for example as a small check in the Cloudflare response path. If it needs a risky change to the shared adapter code, or the response doesn't carry the information, skip it and record that in the architecture doc.
 
 ## Errors
 
 - Cloudflare's error message is shown to the user as-is, the same way Kiln handles other providers' errors. There are no custom friendly messages in this project.
-- The no-substitution error above is the one Kiln-generated runtime error.
+- If the optional runtime no-substitution check is built, its mismatch error is the one Kiln-generated runtime error.
 
 ## Rate Limits and Concurrency
 
-- The models that need Workers Paid are capped at 20 requests per minute per account per model. Those entries set `max_parallel_requests` to a low value (2, matching other rate-limited entries in Kiln).
-- Other models use Kiln's default.
+- No Cloudflare-specific concurrency settings. All entries use Kiln's default parallelism. Cloudflare's 429 errors are shown as-is.
+- For reference, Cloudflare's documented limits (verified in the `cloudflare-docs` source, `workers-ai/platform/limits.mdx`, 2026-09-28) are 300 requests per minute for text generation. The exception is models that need Workers Paid: they're limited to 20 requests per minute per account per model, or 50 with prepaid AI Gateway credits. Users running large evals or synthetic data jobs on those models will hit 429s. That's Cloudflare's limit, not Kiln's.
 
 ## Model List Maintenance
 
@@ -155,12 +153,12 @@ Use the draft skill text in [recommended-maintenance-procedure.md](./research/cl
 
 Follow the model-maintenance skill's rule for new providers:
 
-- **PR 1, provider support:** the provider ID, config fields, LiteLLM wiring, connect and disconnect, the no-substitution check, and the web UI connect entry. It can merge whenever it's ready.
+- **PR 1, provider support:** the provider ID, config fields, LiteLLM wiring, connect and disconnect, the optional runtime no-substitution check if built, and the web UI connect entry. It can merge whenever it's ready.
 - **PR 2, models and skill docs:** the `ml_model_list.py` entries and the skill updates. It merges only after a client release that includes PR 1.
 
 ## Testing
 
-- Unit tests for the config fields, the connect validation for each field (including every failure case), the LiteLLM wiring with and without a gateway ID, and the no-substitution check.
+- Unit tests for the config fields, the connect validation for each field (including every failure case), the LiteLLM wiring with and without a gateway ID, and the runtime no-substitution check if built.
 - Per-model tests run automatically for each `ml_model_list.py` entry, as for other providers. These set the final structured-output mode, tool calling, vision and reasoning flags.
 - Live tests need a Cloudflare account on Workers Paid, with a token, an account ID and a gateway ID provided through this environment's secrets.
 
@@ -179,9 +177,9 @@ Hosts needed for development and live testing:
 
 ## Open Questions for Architecture
 
-These need a live account to answer. The architecture step must answer or design around each one.
+These need a live account to answer. The architecture step must answer or design around each one. Development continues in a new container with the dev network allowlist above in place, so these can be tested directly.
 
-- Does Cloudflare's response report which model actually ran? This decides whether the runtime no-substitution check is possible.
+- Does Cloudflare's response report which model actually ran? This decides whether the optional runtime no-substitution check is possible.
 - What's the cheapest reliable way to validate a gateway ID? What error comes back for a gateway ID that doesn't exist?
 - Which token permissions does a gateway need?
 - Is the gateway header truly optional for Workers AI calls? The docs contradict each other.
