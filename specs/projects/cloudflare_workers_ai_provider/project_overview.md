@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Cloudflare Workers AI Provider
