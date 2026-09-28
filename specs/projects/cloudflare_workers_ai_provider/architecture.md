@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Architecture: Cloudflare Provider
@@ -32,7 +32,7 @@ flowchart LR
 | Open question (functional spec) | Answer | Design consequence |
 |---|---|---|
 | Does the response report which model ran? | **No.** A successful call to the aliased `@cf/moonshotai/kimi-k2.5` returns `"model": "@cf/moonshotai/kimi-k2.5"`, even though K2.6 runs. No header carries it either. | **The optional runtime no-substitution check is not built.** The process safeguard in the maintenance skills is the only protection. |
-| Cheapest way to validate a gateway ID | A chat completion for a model ID that doesn't exist, with the gateway header. It returns 400 / 2001 if the gateway is missing, and 400 / 5007 ("No such model") if the gateway is fine. No model runs, so it's free. | Step 2 of the connect check. |
+| Cheapest way to validate a gateway ID | A chat completion for a model ID that doesn't exist, with the gateway header. It returns 400 / 2001 if the gateway is missing, and 400 / 5007 ("No such model") if the gateway is fine. No model runs, so it's free. | Step 3 of the connect check. |
 | Token permissions for a gateway | None beyond Workers AI. Confirmed by the account owner: the test token has no AI Gateway permission and works with the `default` gateway. | No permission text in the UI (already removed). |
 | Is the gateway header optional? | Yes. | The header is sent only when a gateway ID is set. |
 | Truncation with no `max_tokens` | None on all 10 included models: complete 700-number outputs of 1,500–5,800 tokens, `finish_reason: stop`. | **Kiln sends no `max_tokens` for this provider.** No provider-specific code. |
@@ -96,7 +96,7 @@ CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4"
 CLOUDFLARE_GATEWAY_HEADER = "cf-aig-gateway-id"
 
 def cloudflare_base_url(account_id: str) -> str:
-    return f"{CLOUDFLARE_API_BASE}/accounts/{account_id}/ai/v1"
+    return f"{CLOUDFLARE_API_BASE}/accounts/{quote(account_id, safe='')}/ai/v1"
 
 def cloudflare_headers(gateway_id: str | None) -> Dict[str, str] | None:
     return {CLOUDFLARE_GATEWAY_HEADER: gateway_id} if gateway_id else None
@@ -112,6 +112,7 @@ def _cloudflare_core_config() -> LiteLlmCoreConfig:
     )
 ```
 
+- `quote` (`urllib.parse`) URL-encodes the account ID in the path. It doesn't validate anything; a real ID passes through unchanged. It stops stray characters like `/` or `?` from changing which endpoint is called.
 - `connect_cloudflare` reuses `cloudflare_base_url` and `cloudflare_headers`, so the connect check and inference build URLs and headers the same way.
 - There's no `os.getenv(...BASE_URL)` override, unlike SiliconFlow and OpenRouter. The URL depends on the account, and nothing needs to override it.
 - No `HTTP-Referer` / `X-Title` headers. Cloudflare doesn't use them.
@@ -138,21 +139,21 @@ Algorithm:
 1. Read the fields. Strip whitespace from all three.
    - If the token or account ID is missing or empty, return 400 `Failed to connect to Cloudflare. API Token and Account ID are required.`.
    - If the gateway field is empty, treat it as `None`.
-2. **Local format check.** If the account ID doesn't match `^[0-9a-fA-F]{32}$`, return 400 with the approved "Invalid Account ID." message. No network call.
-3. **Token and account check.** `GET {CLOUDFLARE_API_BASE}/accounts/{account_id}/ai/models/search?search=kiln-connection-check` with a Bearer token and `timeout=30`.
+2. **Token and account check.** `GET {CLOUDFLARE_API_BASE}/accounts/{quote(account_id, safe='')}/ai/models/search?search=kiln-connection-check` with a Bearer token and `timeout=30`.
    - The `search` value matches no model, so the response is about 120 bytes instead of about 100 KB. It's free and checks the same token, account and Workers AI permission as inference. (`per_page` is ignored by Cloudflare.)
    - 200 → continue.
-   - 404 → the "Invalid Account ID." message.
+   - 404 → the "Invalid Account ID." message. Live, a malformed ID returns 404 / 7003.
+   - There's no local format check on the account ID or any other field. Cloudflare is the only judge of what's valid, so a format change on their side can't break Kiln's connect flow.
    - 400, 401 or 403 → the approved token message: `...Invalid API Token, or the token doesn't have Workers AI access for this Account ID.` Live, a junk token gives 400 / 9106, a bad token 401, and a well-formed account the token can't use 403.
    - Anything else → `Failed to connect to Cloudflare. Error: [<status>] <text>`.
-4. **Gateway check**, only if a gateway ID was given. `POST {cloudflare_base_url(account_id)}/chat/completions` with `headers=cloudflare_headers(gateway_id)` plus auth, body `{"model": CLOUDFLARE_CONNECTION_CHECK_MODEL, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1}`, and `timeout=30`.
+3. **Gateway check**, only if a gateway ID was given. `POST {cloudflare_base_url(account_id)}/chat/completions` with `headers=cloudflare_headers(gateway_id)` plus auth, body `{"model": CLOUDFLARE_CONNECTION_CHECK_MODEL, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1}`, and `timeout=30`.
    - Parse `errors[].code` from the JSON body, if any.
    - Code 5007 (No such model) → the gateway is fine; continue.
    - Code 2001 → return 400 with the approved message: `Failed to connect to Cloudflare. AI Gateway '<id>' not found. Check the gateway ID, or remove it.`
    - A 200 (someone deployed a model with that ID) → treat it as success.
    - Anything else → the generic `Error: [<status>] <text>` message.
-5. On success, set `cloudflare_api_key`, `cloudflare_account_id` and `cloudflare_ai_gateway_id` (`None` if not given). Return 200 `Connected to Cloudflare`. **Nothing is saved before every check passes.**
-6. Wrap the body in `try/except Exception` and return 400 `Failed to connect to Cloudflare. Error: {e!s}`, as `connect_fireworks` does.
+4. On success, set `cloudflare_api_key`, `cloudflare_account_id` and `cloudflare_ai_gateway_id` (`None` if not given). Return 200 `Connected to Cloudflare`. **Nothing is saved before every check passes.**
+5. Wrap the body in `try/except Exception` and return 400 `Failed to connect to Cloudflare. Error: {e!s}`, as `connect_fireworks` does.
 
 Error-status mapping for the returned `JSONResponse`: 401 for invalid-credential cases, 400 otherwise, matching Fireworks and SiliconFlow.
 
@@ -160,7 +161,7 @@ Parse the error code with a small helper, `_cloudflare_error_codes(response) -> 
 
 **Disconnect.** In `disconnect_api_key`, add a `cloudflare` case that sets all three config values to `None`.
 
-**Reconnecting.** Connecting again with an empty gateway field clears a previously saved gateway ID (step 5 writes `None`). That's the documented way to remove a gateway without disconnecting.
+**Reconnecting.** Connecting again with an empty gateway field clears a previously saved gateway ID (step 4 writes `None`). That's the documented way to remove a gateway without disconnecting.
 
 ### 4. Web UI
 
@@ -255,8 +256,7 @@ All tests use pytest, following the neighboring tests. No live calls in unit tes
 
 - Dispatch: `connect_api_key` routes `cloudflare` to `connect_cloudflare` with the full dict.
 - Missing token, and missing account ID → 400, nothing saved.
-- A malformed account ID → "Invalid Account ID.", with no HTTP call made.
-- Search returns 404 → Invalid Account ID; 400, 401 or 403 → the token message; 500 → the generic message. Nothing saved in any of these.
+- Search returns 404 → Invalid Account ID (the malformed-ID case; the ID is still sent, with no local validation); 400, 401 or 403 → the token message; 500 → the generic message. Nothing saved in any of these.
 - Search returns 200 with no gateway → saves the key and account, gateway `None`, and no chat call is made.
 - Gateway given, chat returns 400 / 5007 → saves all three. The request carries the gateway header, the fake model and `max_tokens: 1`.
 - Gateway given, chat returns 400 / 2001 → the gateway message, nothing saved.
