@@ -55,6 +55,10 @@
   export let empty_state_link: string | null = null
   export let inline_action: InlineAction | null = null
   export let aria_label: string | null = null
+  // The id of an element elsewhere on the page that describes this field — a
+  // live hint or an advisory the control itself does not own. Null for every
+  // caller that has nothing to point at, which leaves the attribute off.
+  export let aria_describedby: string | null = null
   export let hide_label: boolean = false
   export let min: number | null = null
   export let max: number | null = null
@@ -228,6 +232,7 @@
     {#if inputType === "textarea"}
       <textarea
         aria-label={aria_label || label}
+        aria-describedby={aria_describedby}
         placeholder={error_message || placeholder || label}
         {id}
         class="textarea text-base textarea-bordered w-full {height_class[
@@ -242,6 +247,7 @@
     {:else if inputType === "input"}
       <input
         aria-label={aria_label || label}
+        aria-describedby={aria_describedby}
         type="text"
         placeholder={error_message || placeholder || label}
         {id}
@@ -257,6 +263,7 @@
     {:else if inputType === "input_number"}
       <input
         aria-label={aria_label || label}
+        aria-describedby={aria_describedby}
         type="number"
         placeholder={error_message || placeholder || label}
         {id}
@@ -274,6 +281,7 @@
     {:else if inputType === "select"}
       <select
         aria-label={aria_label || label}
+        aria-describedby={aria_describedby}
         {id}
         class="select select-bordered w-full {error_message || inline_error
           ? 'select-error'

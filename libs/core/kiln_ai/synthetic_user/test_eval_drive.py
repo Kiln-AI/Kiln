@@ -19,6 +19,7 @@ from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunC
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.datamodel.usage import Usage
+from kiln_ai.run_context import get_episode_id
 from kiln_ai.synthetic_user import eval_drive as eval_drive_mod
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
 from kiln_ai.synthetic_user.eval_drive import drive_case_for_eval
@@ -68,6 +69,9 @@ class _FakeAdapter:
                 "input": input,
                 "input_source": input_source,
                 "prior_trace": prior_trace,
+                # What the adapter, and any tool it calls, reads from the
+                # run context during this turn.
+                "episode_id": get_episode_id(),
             }
         )
         new_trace = [
@@ -116,7 +120,7 @@ def fake_su_driver(monkeypatch: pytest.MonkeyPatch) -> Mock:
 
 
 @pytest.mark.asyncio
-async def test_drives_turns_and_returns_result(fake_adapter, fake_su_driver) -> None:
+async def test_drives_turns_and_returns_leaf(fake_adapter, fake_su_driver) -> None:
     adapter, _ = fake_adapter
     task = Mock(spec=Task)
 
@@ -200,3 +204,29 @@ async def test_input_source_attributes_su_driver(fake_adapter, fake_su_driver) -
     assert source.properties["model_name"] == "claude_4_5_haiku"
     assert source.properties["model_provider"] == "openrouter"
     assert source.properties["adapter_name"] == "kiln_synthetic_user_eval_driver"
+
+
+@pytest.mark.asyncio
+async def test_eval_drive_runs_under_one_episode_id(
+    fake_adapter, fake_su_driver
+) -> None:
+    """Every turn of an eval re-drive sees the same episode id, so a code
+    tool (via KILN_EPISODE_ID) keys its state to the conversation; the id is
+    cleared once the drive returns."""
+    adapter, _ = fake_adapter
+
+    await drive_case_for_eval(
+        seed_prompt="hi",
+        synthetic_user_info=_INFO,
+        target_task=Mock(spec=Task),
+        target_run_config=_target_run_config(),
+        su_driver_config=_SU_CONFIG,
+        turns=3,
+        skills={},
+    )
+
+    episode_ids = [call["episode_id"] for call in adapter.calls]
+    assert len(episode_ids) == 3
+    assert episode_ids[0] is not None
+    assert len(set(episode_ids)) == 1
+    assert get_episode_id() is None

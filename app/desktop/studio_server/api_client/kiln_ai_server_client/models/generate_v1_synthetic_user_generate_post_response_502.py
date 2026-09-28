@@ -6,9 +6,7 @@ from typing import Any, TypeVar
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-from ..models.generate_v1_synthetic_user_generate_post_response_502_code import (
-    GenerateV1SyntheticUserGeneratePostResponse502Code,
-)
+from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="GenerateV1SyntheticUserGeneratePostResponse502")
 
@@ -18,26 +16,27 @@ class GenerateV1SyntheticUserGeneratePostResponse502:
     """
     Attributes:
         message (str):
-        code (GenerateV1SyntheticUserGeneratePostResponse502Code):
+        code (str | Unset):
     """
 
     message: str
-    code: GenerateV1SyntheticUserGeneratePostResponse502Code
+    code: str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         message = self.message
 
-        code = self.code.value
+        code = self.code
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
                 "message": message,
-                "code": code,
             }
         )
+        if code is not UNSET:
+            field_dict["code"] = code
 
         return field_dict
 
@@ -46,7 +45,7 @@ class GenerateV1SyntheticUserGeneratePostResponse502:
         d = dict(src_dict)
         message = d.pop("message")
 
-        code = GenerateV1SyntheticUserGeneratePostResponse502Code(d.pop("code"))
+        code = d.pop("code", UNSET)
 
         generate_v1_synthetic_user_generate_post_response_502 = cls(
             message=message,

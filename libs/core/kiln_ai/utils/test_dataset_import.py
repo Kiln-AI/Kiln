@@ -1389,6 +1389,58 @@ def test_import_csv_multiturn_preflight_no_partial_save(multiturn_task: Task, tm
     assert multiturn_task.runs(include_intermediate_runs=True) == []
 
 
+def _failing_save(fail_on_call: int, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patch TaskRun.save_to_file to raise on the Nth call, saving normally before."""
+    original_save = TaskRun.save_to_file
+    calls = {"count": 0}
+
+    def save(self: TaskRun) -> None:
+        calls["count"] += 1
+        if calls["count"] == fail_on_call:
+            raise OSError("disk full")
+        original_save(self)
+
+    monkeypatch.setattr(TaskRun, "save_to_file", save)
+
+
+def test_import_csv_multiturn_save_failure_rolls_back(
+    multiturn_task: Task, tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    # A mid-chain save failure must not leave a truncated chain behind: its
+    # last-saved run would pose as a complete conversation's leaf.
+    trace = []
+    for i in range(5):
+        trace.append({"role": "user", "content": f"q{i}"})
+        trace.append({"role": "assistant", "content": f"a{i}"})
+
+    _failing_save(fail_on_call=3, monkeypatch=monkeypatch)
+    with pytest.raises(OSError, match="disk full"):
+        _import_multiturn_csv(multiturn_task, [{"trace": json.dumps(trace)}], tmp_path)
+
+    assert multiturn_task.runs(include_intermediate_runs=True) == []
+
+
+def test_import_csv_single_turn_save_failure_rolls_back(
+    base_task: Task, tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    rows = [{"input": f"in {i}", "output": f"out {i}"} for i in range(3)]
+    file_path = dicts_to_file_as_csv(rows, "test.csv", tmp_path)
+    importer = DatasetFileImporter(
+        base_task,
+        ImportConfig(
+            dataset_type=DatasetImportFormat.CSV,
+            dataset_path=file_path,
+            dataset_name="test.csv",
+        ),
+    )
+
+    _failing_save(fail_on_call=2, monkeypatch=monkeypatch)
+    with pytest.raises(OSError, match="disk full"):
+        importer.create_runs_from_file()
+
+    assert base_task.runs() == []
+
+
 def test_import_csv_single_turn_task_rejects_trace_csv(base_task: Task, tmp_path):
     rows = [{"trace": json.dumps(_single_pair_trace())}]
     file_path = dicts_to_file_as_csv(rows, "trace_only.csv", tmp_path)

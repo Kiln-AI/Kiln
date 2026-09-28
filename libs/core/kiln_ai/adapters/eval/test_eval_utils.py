@@ -143,6 +143,7 @@ class TestEvalTraceFormatter:
         result = EvalTraceFormatter.formatted_tool_calls_from_message(message)
         expected = """- Tool Name: tool1
 - Arguments: {"arg1": "value1"}
+
 - Tool Name: tool2
 - Arguments: {"arg2": "value2"}"""
         assert result == expected
@@ -247,8 +248,6 @@ Hi there
         assert result == expected
 
     def test_trace_to_formatted_conversation_history_with_reasoning(self):
-        """Reasoning is model-internal and never rendered, whether it stands
-        alone on a message or accompanies visible text."""
         trace: list[ChatCompletionMessageParam] = [
             {"role": "user", "content": "What is 2+2?"},  # type: ignore
             {
@@ -260,7 +259,12 @@ Hi there
         expected = """user:
 <user_message>
 What is 2+2?
-</user_message>"""
+</user_message>
+
+assistant reasoning:
+<assistant_reasoning_message>
+I need to add 2 and 2 together.
+</assistant_reasoning_message>"""
         assert result == expected
 
         trace_with_content: list[ChatCompletionMessageParam] = [
@@ -280,6 +284,11 @@ What is 2+2?
 <user_message>
 What is 2+2?
 </user_message>
+
+assistant reasoning:
+<assistant_reasoning_message>
+I need to add 2 and 2 together.
+</assistant_reasoning_message>
 
 assistant:
 <assistant_message>
@@ -345,7 +354,7 @@ assistant requested tool calls:
 - Arguments: {"arg": "value"}
 </assistant_requested_tool_calls>
 
-tool:
+tool result from test_tool:
 <tool_tool_message>
 tool result
 </tool_tool_message>"""
@@ -361,10 +370,17 @@ tool result
             },  # type: ignore
         ]
         result = EvalTraceFormatter.trace_to_formatted_conversation_history(trace)
+        # The originating call is absent, so the tool cannot be named — but the
+        # value it returned is still what a judge needs to see.
         expected = """user:
 <user_message>
 Test
-</user_message>"""
+</user_message>
+
+tool result:
+<tool_tool_message>
+result
+</tool_tool_message>"""
         assert result == expected
 
     def test_trace_to_formatted_conversation_history_empty(self):
@@ -380,12 +396,9 @@ Test
         result = EvalTraceFormatter.trace_to_formatted_conversation_history(trace)
         assert result == ""
 
-    def test_trace_to_formatted_conversation_history_text_and_tool_calls_together(
+    def test_trace_to_formatted_conversation_history_emits_every_block(
         self,
     ):
-        """An assistant that says something AND calls a tool in one message
-        must render both blocks, text first. Rendering only one of them hides
-        the call (or the preamble) from every reader of the transcript."""
         tool_calls: list[ChatCompletionMessageToolCallParam] = [
             {
                 "id": "call_123",
@@ -396,7 +409,7 @@ Test
         trace_all: list[ChatCompletionMessageParam] = [
             {
                 "role": "assistant",
-                "content": "Let me look that up.",
+                "content": "Final answer",
                 "reasoning_content": "Thinking step",
                 "tool_calls": tool_calls,
             },  # type: ignore
@@ -404,9 +417,17 @@ Test
         result_all = EvalTraceFormatter.trace_to_formatted_conversation_history(
             trace_all
         )
-        expected_all = """assistant:
+        # One message carrying reasoning, text and a tool call emits all three,
+        # in the order the model produced them: it thinks, says what it is about
+        # to do, then does it.
+        expected_all = """assistant reasoning:
+<assistant_reasoning_message>
+Thinking step
+</assistant_reasoning_message>
+
+assistant:
 <assistant_message>
-Let me look that up.
+Final answer
 </assistant_message>
 
 assistant requested tool calls:
@@ -422,12 +443,14 @@ assistant requested tool calls:
                 "reasoning_content": "Thinking step",
             },  # type: ignore
         ]
-        assert (
-            EvalTraceFormatter.trace_to_formatted_conversation_history(
-                trace_reasoning_only
-            )
-            == ""
+        result_reasoning = EvalTraceFormatter.trace_to_formatted_conversation_history(
+            trace_reasoning_only
         )
+        expected_reasoning = """assistant reasoning:
+<assistant_reasoning_message>
+Thinking step
+</assistant_reasoning_message>"""
+        assert result_reasoning == expected_reasoning
 
         trace_tool_only: list[ChatCompletionMessageParam] = [
             {
@@ -444,52 +467,6 @@ assistant requested tool calls:
 - Arguments: {"arg": "value"}
 </assistant_requested_tool_calls>"""
         assert result_tool == expected_tool
-
-    def test_trace_to_formatted_conversation_history_parallel_tool_calls(self):
-        """Parallel calls in one message stay separated, so the arguments of
-        one can't run into the name of the next."""
-        tool_calls: list[ChatCompletionMessageToolCallParam] = [
-            {
-                "id": "call_1",
-                "type": "function",
-                "function": {"name": "tool1", "arguments": '{"a": 1}'},
-            },
-            {
-                "id": "call_2",
-                "type": "function",
-                "function": {"name": "tool2", "arguments": '{"b": 2}'},
-            },
-        ]
-        trace: list[ChatCompletionMessageParam] = [
-            {"role": "assistant", "tool_calls": tool_calls},  # type: ignore
-        ]
-        result = EvalTraceFormatter.trace_to_formatted_conversation_history(trace)
-        expected = """assistant requested tool calls:
-<assistant_requested_tool_calls>
-- Tool Name: tool1
-- Arguments: {"a": 1}
-- Tool Name: tool2
-- Arguments: {"b": 2}
-</assistant_requested_tool_calls>"""
-        assert result == expected
-
-    def test_trace_to_formatted_conversation_history_skipped_first_message(self):
-        """A dropped leading message must not leave the transcript starting
-        with blank lines."""
-        trace: list[ChatCompletionMessageParam] = [
-            {
-                "role": "tool",
-                "content": "orphan result",
-                "tool_call_id": "call_missing",
-            },  # type: ignore
-            {"role": "user", "content": "Hello"},  # type: ignore
-        ]
-        result = EvalTraceFormatter.trace_to_formatted_conversation_history(trace)
-        expected = """user:
-<user_message>
-Hello
-</user_message>"""
-        assert result == expected
 
 
 class TestEvalUtils:
@@ -755,3 +732,96 @@ Add two numbers together and return the result</tool_description>
         assert "<tool>" in result
         assert "<tool_name>\nadd</tool_name>" in result
         assert "broken_tool" not in result
+
+
+class TestStructuredOutputRendering:
+    """A structured answer arrives as arguments to the internal task_response
+    tool. It is the model's answer, not a tool it chose to call."""
+
+    def _task_response_call(self, arguments: str):
+        return {
+            "id": "call_tr",
+            "type": "function",
+            "function": {"name": "task_response", "arguments": arguments},
+        }
+
+    def test_renders_as_the_answer_not_a_tool_call(self):
+        answer = '{"category": "refund_status"}'
+        trace: list[ChatCompletionMessageParam] = [
+            {"role": "user", "content": "Where is my refund?"},  # type: ignore
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [self._task_response_call(answer)],
+            },  # type: ignore
+        ]
+        result = EvalTraceFormatter.trace_to_formatted_conversation_history(trace)
+        expected = """user:
+<user_message>
+Where is my refund?
+</user_message>
+
+assistant:
+<assistant_message>
+{"category": "refund_status"}
+</assistant_message>"""
+        assert result == expected
+        assert "task_response" not in result
+
+    def test_real_calls_are_still_listed_beside_it(self):
+        """The wrapper is excluded from the tool-call listing; a genuine call in
+        the same message is not. Without this the judge would be shown a tool
+        the user never wrote, sitting alongside one they did."""
+        answer = '{"total": 114.75}'
+        trace: list[ChatCompletionMessageParam] = [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {
+                            "name": "multiply",
+                            "arguments": '{"a": 135, "b": 0.15}',
+                        },
+                    },
+                    self._task_response_call(answer),
+                ],
+            },  # type: ignore
+        ]
+        result = EvalTraceFormatter.trace_to_formatted_conversation_history(trace)
+        expected = """assistant:
+<assistant_message>
+{"total": 114.75}
+</assistant_message>
+
+assistant requested tool calls:
+<assistant_requested_tool_calls>
+- Tool Name: multiply
+- Arguments: {"a": 135, "b": 0.15}
+</assistant_requested_tool_calls>"""
+        assert result == expected
+        assert "task_response" not in result
+
+    def test_wrapper_alone_emits_no_tool_call_block(self):
+        message: ChatCompletionMessageParam = {
+            "role": "assistant",
+            "tool_calls": [self._task_response_call('{"a": 1}')],
+        }  # type: ignore
+        assert EvalTraceFormatter.formatted_tool_calls_from_message(message) is None
+
+    def test_last_wrapper_wins(self):
+        """Matches the adapter: the final task_response is the output the run
+        was saved with."""
+        message: ChatCompletionMessageParam = {
+            "role": "assistant",
+            "tool_calls": [
+                self._task_response_call('{"first": true}'),
+                self._task_response_call('{"second": true}'),
+            ],
+        }  # type: ignore
+        assert (
+            EvalTraceFormatter.structured_output_from_message(message)
+            == '{"second": true}'
+        )

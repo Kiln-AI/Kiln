@@ -6,7 +6,7 @@ Two stages, run per trace by the orchestrator in eval_builder_api:
     step happens before any Eval exists on disk, so nothing is persisted).
   - build_claims_for_trace — REMOTE. Thin call to kiln_server's claim builder.
 
-These are the only places that touch the (WIP) server/SDK shapes; they return
+These are the only places that touch the server/SDK shapes; they return
 the stable UI-facing models so the endpoints and UI never see SDK types.
 """
 
@@ -17,39 +17,52 @@ from fastapi import HTTPException
 from kiln_ai.adapters.eval.base_eval import conditionally_raw_wrap
 from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import EvalTraceFormatter
 from kiln_ai.adapters.eval.registry import v2_eval_adapter_from_config
+from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
     EvalConfigType,
     EvalDataType,
+    EvalOutputScore,
     EvalTaskInput,
     LlmJudgeProperties,
+    TaskRunSplit,
 )
 from kiln_ai.datamodel.task import Task
 from kiln_server.task_api import task_from_id
-from kiln_server.utils.spec_utils import spec_eval_output_score
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     build_claim_evidence_v1_copilot_build_claim_evidence_post,
+    generate_judge_prompt_v1_copilot_generate_judge_prompt_post,
     refine_judge_prompt_v1_copilot_refine_judge_prompt_post,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     BuildClaimEvidenceInput,
     BuildClaimEvidenceOutput,
+    GenerateJudgePromptApiInput,
+    GenerateJudgePromptOutput,
     RefineJudgePromptInput,
     RefineJudgePromptOutput,
 )
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
+from app.desktop.studio_server.api_models.copilot_models import (
+    TaskSkillInfoApi,
+    TaskToolInfoApi,
+)
 from app.desktop.studio_server.api_models.eval_builder_models import (
+    AuthorJudgeApiOutput,
     BuildClaimsApiOutput,
     GradedTraceApi,
     JudgeConfig,
     JudgeScoreLiteral,
     RefineJudgeApiOutput,
 )
-from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
+from app.desktop.studio_server.utils.copilot_utils import (
+    capability_payload_fields,
+    get_copilot_api_key,
+)
 from app.desktop.studio_server.utils.response_utils import unwrap_response
 
 
@@ -61,8 +74,8 @@ class JudgeVerdict:
     judge_reasoning: str
 
 
-def transcript_io_for_trace(trace: list[dict[str, Any]]) -> tuple[str, str]:
-    """Canonical (raw_input, raw_output) for a multi-turn trace.
+def transcript_io_for_trace(trace: list[Any]) -> tuple[str, str]:
+    """Canonical (raw_input, raw_output) for a trace, either arm.
 
     raw_output is the role-labelled transcript — the SAME rendering the judge
     template produces via the format_trace filter, so both LLMs and the UI's
@@ -79,11 +92,28 @@ def transcript_io_for_trace(trace: list[dict[str, Any]]) -> tuple[str, str]:
         ),
         "",
     )
-    # The trace is loose dicts by design; the formatter reads them like the
-    # typed message params it was written for.
-    return raw_input, EvalTraceFormatter.trace_to_formatted_conversation_history(
-        trace  # type: ignore[invalid-argument-type]
-    )
+    # The trace is loose dicts by design (list[Any] because typing.cast is
+    # banned repo-wide); the formatter reads them like the typed message
+    # params it was written for.
+    return raw_input, EvalTraceFormatter.trace_to_formatted_conversation_history(trace)
+
+
+def trace_or_echo(
+    trace: list[Any] | None, raw_input: str, raw_output: str
+) -> list[Any]:
+    """The trace to judge, or a two-message echo of the I/O pair.
+
+    Single-turn runs are not guaranteed to have recorded a trace, and both arms
+    now judge the transcript. An echo is lossless for a run with no trace: the
+    pair IS everything that happened, so rendering it as one user turn and one
+    assistant turn says exactly what a real trace would have.
+    """
+    if trace:
+        return trace
+    return [
+        {"role": "user", "content": raw_input},
+        {"role": "assistant", "content": raw_output},
+    ]
 
 
 def build_judge_prompt_template(judge_prompt: str, multi_turn: bool) -> str:
@@ -94,6 +124,12 @@ def build_judge_prompt_template(judge_prompt: str, multi_turn: bool) -> str:
     The prompt is raw-wrapped so spec text containing Jinja syntax can't break
     rendering or inject template code; the appended data blocks are filled from
     EvalTaskInput by the adapter (full trace for multi-turn, I/O pair otherwise).
+
+    `multi_turn` asks whether the judge reads a transcript, not what turn mode
+    the task has. The builder's own arms both pass True — the review judge
+    whenever a trace is present, and a wizard save because it requires
+    full-trace evaluation on either arm. The legacy v1 save path still passes
+    the caller's own flag, so the I/O-pair branch stays reachable from it.
     """
     parts = [conditionally_raw_wrap(judge_prompt)]
     parts.append(
@@ -117,21 +153,33 @@ def build_judge_prompt_template(judge_prompt: str, multi_turn: bool) -> str:
 
 
 def build_transient_judge_eval_config(
-    task: Task, judge: JudgeConfig, multi_turn: bool, spec_name: str
+    task: Task, judge: JudgeConfig, multi_turn: bool
 ) -> EvalConfig:
     """Throwaway in-memory Eval + V2 EvalConfig for one review-judge call.
 
     The alignment review runs before the user saves anything, so the parent
-    Eval is transient too — but its single pass/fail output score carries the
-    SAME name/instruction the saved eval will use (spec_eval_output_score), so
-    the adapter renders an identical judge prompt at review and at run time.
+    Eval is transient too, and its single pass/fail output score is the
+    CONSTANT draft score below — the eval's name is a save-time identity the
+    wizard deliberately keeps out of the pre-save flow (it stays freely
+    editable until save; nothing durable references it earlier). The saved
+    eval's score key will carry the real name; the delta the judge model
+    sees is the score's label and one boilerplate sentence — the rubric,
+    verdict vocabulary, and structure are identical.
     """
     eval_obj = Eval(
         name="Eval Builder Review Judge",
         parent=task,
-        # Eval requires exactly one filter id; this eval never runs via filters.
-        eval_set_filter_id="tag::transient_eval_builder_review",
-        output_scores=[spec_eval_output_score(spec_name)],
+        # Eval requires a test split; this eval never runs via filters.
+        splits={"test": TaskRunSplit(filter_id="tag::transient_eval_builder_review")},
+        output_scores=[
+            EvalOutputScore(
+                name="Meets Spec",
+                type=TaskOutputRatingType.pass_fail,
+                instruction=(
+                    "Evaluate if the model's behaviour meets the specification."
+                ),
+            )
+        ],
         evaluation_data_type=(
             EvalDataType.full_trace if multi_turn else EvalDataType.final_answer
         ),
@@ -181,19 +229,19 @@ async def run_judge_for_trace(
     raw_input: str,
     raw_output: str,
     judge: JudgeConfig,
-    spec_name: str,
     trace: list[dict[str, Any]] | None = None,
 ) -> JudgeVerdict:
     """Run the candidate judge over one trace, LOCALLY (the user's keys).
 
-    Multi-turn callers pass the structured `trace` so the judge scores the full
-    conversation rather than a flattened transcript. Raises when the adapter
-    skips or returns no score — the orchestrator surfaces that as a trace_error
-    SSE event, never a fabricated verdict.
+    Callers pass the structured `trace` so the judge scores the conversation
+    rather than a flattened transcript; both arms do, so the I/O-pair template
+    is not reachable from here. Raises when the adapter
+    skips or returns no score — the orchestrator surfaces that as an error
+    frame (trace_error / case_failed), never a fabricated verdict.
     """
     task = task_from_id(project_id, task_id)
     eval_config = build_transient_judge_eval_config(
-        task, judge, multi_turn=trace is not None, spec_name=spec_name
+        task, judge, multi_turn=trace is not None
     )
     adapter = v2_eval_adapter_from_config(eval_config)
 
@@ -227,7 +275,8 @@ async def run_judge_for_trace(
     # Read the key off the same output score the adapter scored against, so
     # the lookup can't drift from however the score name is derived.
     parent_eval = eval_config.parent_eval()
-    assert parent_eval is not None  # built with a parent three lines up
+    # build_transient_judge_eval_config always sets a parent Eval.
+    assert parent_eval is not None
     score = result.scores.get(parent_eval.output_scores[0].json_key())
     if score is None:
         raise ValueError("Judge returned no score for this trace.")
@@ -243,23 +292,45 @@ async def run_judge_for_trace(
     )
 
 
+# How the claim builder marks its verdict claim: the LAST claim opens with one
+# of these, and its instruction forbids the opener on any other claim. Text is
+# left-stripped first so a leading blank cannot hide the verdict.
+VERDICT_CLAIM_OPENERS = ("It passes", "It fails")
+
+
+def _is_verdict_claim(text: str) -> bool:
+    return text.lstrip().startswith(VERDICT_CLAIM_OPENERS)
+
+
 async def build_claims_for_trace(
+    task_instruction: str,
     raw_input: str,
     raw_output: str,
     eval_rubric: str,
     judge_score: JudgeScoreLiteral,
     judge_reasoning: str,
 ) -> BuildClaimsApiOutput:
-    """Distill one trace + verdict into claims + a final judgement via kiln_server.
+    """Distill one trace + verdict into an overview and claims via kiln_server.
 
     Thin remote passthrough: marshal → SDK call → map back. The claim generation
     (LLM) runs on kiln_server. Preserves the `from` citation alias for the UI.
+
+    `task_instruction` is context for the builder (what the task is), never a
+    rubric: it does not override the judge or the eval rubric.
+
+    The verdict flag is decided HERE, not in the UI: the builder's contract
+    says the verdict claim is the last claim and is the only one that may
+    open "It passes" / "It fails", so the flag is a property of the contract
+    and the studio is the layer that owns it. Only the last claim is ever
+    checked. A UI that regexed the prose itself would re-derive the contract
+    on every render and drift the moment the wording moved.
     """
     api_key = get_copilot_api_key()
     client = get_authenticated_client(api_key)
 
     body = BuildClaimEvidenceInput.from_dict(
         {
+            "task_instruction": task_instruction,
             "raw_input": raw_input,
             "raw_output": raw_output,
             "eval_rubric": eval_rubric,
@@ -280,9 +351,57 @@ async def build_claims_for_trace(
     # result.to_dict() emits citations with the `from` key; CitationApi's alias
     # preserves it on the studio response (the UI greps that literal key).
     if isinstance(result, BuildClaimEvidenceOutput):
-        return BuildClaimsApiOutput.model_validate(result.to_dict())
+        card = result.to_dict()
+        claims = card["claims"]
+        for index, claim in enumerate(claims):
+            claim["is_verdict"] = index == len(claims) - 1 and _is_verdict_claim(
+                claim["text"]
+            )
+        return BuildClaimsApiOutput.model_validate(card)
 
     raise HTTPException(status_code=500, detail="Unknown error building claims.")
+
+
+async def author_judge_prompt(
+    target_specification: str,
+    target_task_prompt: str,
+    task_tools: list[TaskToolInfoApi] | None = None,
+    task_skills: list[TaskSkillInfoApi] | None = None,
+) -> AuthorJudgeApiOutput:
+    """Author a spec-tailored judge prompt via kiln_server.
+
+    Returns the prompt only; the judge model is the caller's choice.
+    `task_tools` and `task_skills` let the rubric reason about tool and skill
+    use; None omits them. There is no fallback judge, so an error here stops
+    the drive.
+    """
+    api_key = get_copilot_api_key()
+    client = get_authenticated_client(api_key)
+
+    body = GenerateJudgePromptApiInput.from_dict(
+        {
+            "target_specification": target_specification,
+            "target_task_prompt": target_task_prompt,
+            # Flat rather than nested: this payload has no task info block.
+            **capability_payload_fields(task_tools, task_skills),
+        }
+    )
+
+    detailed_result = await generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed(
+        client=client,
+        body=body,
+    )
+    result = unwrap_response(
+        detailed_result,
+        none_detail="Failed to author the judge prompt. Please try again.",
+    )
+
+    if isinstance(result, GenerateJudgePromptOutput):
+        return AuthorJudgeApiOutput(judge_prompt=result.judge_evaluation_prompt)
+
+    raise HTTPException(
+        status_code=500, detail="Unknown error authoring the judge prompt."
+    )
 
 
 async def refine_judge_prompt_from_grades(

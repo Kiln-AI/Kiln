@@ -554,12 +554,10 @@ describe("eval detail page — add eval data", () => {
     return alerts
   }
 
-  it("offers no add-data button for an eval-input-backed test split", async () => {
-    // This flow adds TaskRuns, so an EvalInput-backed test split has no tag it can write
-    // under. The button is not offered at all rather than offered and then refused on
-    // click: there is nothing the user could do differently, so a dead-end button is
-    // worse than an explanation. The copy names the format rather than the internal
-    // types behind it — "eval inputs" and "task runs" appear nowhere else in the UI.
+  it("hides the add-data button for an eval-input-backed test split and says why", async () => {
+    // This flow adds TaskRuns, so an EvalInput-backed test split has nothing it can
+    // add to. Rather than a button that only ever alerts, the page offers no button
+    // and explains where the data comes from (the eval builder mints it at save).
     setEvalResponse({
       id: "eval1",
       name: "Test Eval",
@@ -575,7 +573,9 @@ describe("eval detail page — add eval data", () => {
       (b) => b.textContent?.trim() === "Add Eval Data",
     )
     expect(button).toBeUndefined()
-    expect(container.textContent).toContain("created by the eval builder")
+    expect(container.textContent?.replace(/\s+/g, " ")).toContain(
+      "created by the eval builder and can't be extended here",
+    )
     expect(mockGoto).not.toHaveBeenCalled()
   })
 

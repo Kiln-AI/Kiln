@@ -6,10 +6,8 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-from ..models.expected_result import ExpectedResult
-
 if TYPE_CHECKING:
-    from ..models.citation import Citation
+    from ..models.citation_1 import Citation1
 
 
 T = TypeVar("T", bound="Claim")
@@ -19,26 +17,16 @@ T = TypeVar("T", bound="Claim")
 class Claim:
     """
     Attributes:
-        claim (str): Atomic: a SINGLE inclusion, exclusion, or property. Inclusions affirmative; exclusions negative.
-        evidence (str): ONE sentence. States the decisive fact with [n] markers; fold any real counter-point into a
-            single 'though …' clause. Do NOT quote long spans.
-        expected_result (ExpectedResult):
-        citations (list[Citation]): Resolves the inline [n] markers. Each is a start+end anchor; the parser highlights
-            the span from `from` to `to`. Empty when the trace offers nothing to anchor.
+        text (str):
+        citations (list[Citation1]):
     """
 
-    claim: str
-    evidence: str
-    expected_result: ExpectedResult
-    citations: list[Citation]
+    text: str
+    citations: list[Citation1]
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        claim = self.claim
-
-        evidence = self.evidence
-
-        expected_result = self.expected_result.value
+        text = self.text
 
         citations = []
         for citations_item_data in self.citations:
@@ -49,9 +37,7 @@ class Claim:
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "claim": claim,
-                "evidence": evidence,
-                "expected_result": expected_result,
+                "text": text,
                 "citations": citations,
             }
         )
@@ -60,26 +46,20 @@ class Claim:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.citation import Citation
+        from ..models.citation_1 import Citation1
 
         d = dict(src_dict)
-        claim = d.pop("claim")
-
-        evidence = d.pop("evidence")
-
-        expected_result = ExpectedResult(d.pop("expected_result"))
+        text = d.pop("text")
 
         citations = []
         _citations = d.pop("citations")
         for citations_item_data in _citations:
-            citations_item = Citation.from_dict(citations_item_data)
+            citations_item = Citation1.from_dict(citations_item_data)
 
             citations.append(citations_item)
 
         claim = cls(
-            claim=claim,
-            evidence=evidence,
-            expected_result=expected_result,
+            text=text,
             citations=citations,
         )
 

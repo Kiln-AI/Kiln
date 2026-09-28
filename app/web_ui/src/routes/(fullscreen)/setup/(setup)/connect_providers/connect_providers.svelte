@@ -242,6 +242,19 @@
       api_key_fields: ["API Key"],
     },
     {
+      name: "TypeSafe AI",
+      id: "typesafe",
+      description:
+        "Classification models that return a probability for every answer.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://console.typesafe.ai/keys",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
       name: "Weights & Biases",
       id: "wandb",
       hide_in_onboarding: true,
@@ -384,6 +397,12 @@
       error: null,
       custom_description: null,
     },
+    typesafe: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
     kiln_copilot: {
       connected: false,
       connecting: false,
@@ -399,8 +418,25 @@
   export let intermediate_step = false
   export let centered = false
   let api_key_provider: Provider | null = null
+  let api_key_issue = false
+  let api_key_submitting = false
+  let api_key_message: string | null = null
   $: {
     intermediate_step = api_key_provider != null
+  }
+
+  const show_api_key_dialog = (provider: Provider) => {
+    api_key_provider = provider
+    api_key_issue = false
+    api_key_message = null
+    api_key_submitting = false
+  }
+
+  const dismiss_api_key_dialog = () => {
+    api_key_provider = null
+    api_key_issue = false
+    api_key_message = null
+    api_key_submitting = false
   }
 
   const disconnect_provider = async (provider: Provider) => {
@@ -476,7 +512,7 @@
     }
 
     if (provider.api_key_steps) {
-      api_key_provider = provider
+      show_api_key_dialog(provider)
     }
   }
 
@@ -647,9 +683,6 @@
       custom_url_str
   }
 
-  let api_key_issue = false
-  let api_key_submitting = false
-  let api_key_message: string | null = null
   const submit_api_key = async () => {
     const apiKeyFields = document.getElementById(
       "api-key-fields",
@@ -695,10 +728,8 @@
         provider_id: provider_id,
       })
 
-      api_key_issue = false
-      api_key_message = null
       status[provider_id].connected = true
-      api_key_provider = null
+      dismiss_api_key_dialog()
 
       // Clear the available models list
       available_tuning_models.set(null)
@@ -776,6 +807,9 @@
       }
       if (data["featherless_ai_api_key"]) {
         status.featherless_ai.connected = true
+      }
+      if (data["typesafe_api_key"]) {
+        status.typesafe.connected = true
       }
       if (data["kiln_copilot_api_key"]) {
         status.kiln_copilot.connected = true
@@ -926,7 +960,7 @@
       </h1>
 
       {#if api_key_provider.api_key_warning}
-        <div class="pt-2">
+        <div class="pt-4">
           <Warning
             warning_color="warning"
             warning_message={api_key_provider.api_key_warning}
@@ -976,7 +1010,7 @@
       </div>
       <button
         class="link text-center text-sm mt-8"
-        on:click={() => (api_key_provider = null)}
+        on:click={dismiss_api_key_dialog}
       >
         Cancel setting up {api_key_provider.name}
       </button>

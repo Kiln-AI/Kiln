@@ -44,6 +44,7 @@ from kiln_ai.datamodel.eval import (
     reference_data_keys,
     validate_scores_against_output_scores,
 )
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
 from kiln_ai.datamodel.task import Task
@@ -249,24 +250,6 @@ def test_no_train_split_minted_on_new_eval():
     assert "train" not in eval.splits
 
 
-def test_filter_id_for_split_test_none_for_v2_eval():
-    # V2 (EvalInput-backed) evals carry eval_input_filter_id instead of
-    # eval_set_filter_id, so even the test split can be unset.
-    eval = Eval(
-        name="Test Eval",
-        eval_input_filter_id="all",
-        eval_configs_filter_id="tag::eval_golden_test",
-        output_scores=[
-            EvalOutputScore(
-                name="accuracy",
-                type=TaskOutputRatingType.pass_fail,
-            )
-        ],
-    )
-
-    assert eval.filter_id_for_split("test") is None
-
-
 def test_eval_default_values():
     eval = Eval(
         name="Test Eval",
@@ -402,234 +385,6 @@ def test_eval_run_valid_creation():
     assert eval_run.input == '{"key": "value"}'
     assert eval_run.output == '{"result": "success"}'
     assert eval_run.scores == {"accuracy": 0.95}
-
-
-def test_eval_run_drive_fingerprint_defaults_none_and_round_trips(tmp_path):
-    """drive_fingerprint is additive: absent on existing records (None), and
-    a set value survives the disk round-trip."""
-    task = Task(
-        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
-    )
-    task.save_to_file()
-    eval = Eval(
-        name="FP Eval",
-        eval_set_filter_id="tag::tag1",
-        eval_configs_filter_id="tag::tag2",
-        output_scores=[
-            EvalOutputScore(name="quality", type=TaskOutputRatingType.pass_fail),
-        ],
-        parent=task,
-    )
-    eval.save_to_file()
-    config = EvalConfig(
-        name="cfg",
-        config_type=EvalConfigType.v2,
-        properties=ExactMatchProperties(expected_value="out"),
-        parent=eval,
-    )
-    config.save_to_file()
-
-    plain = EvalRun(
-        task_run_config_id="rc1",
-        scores={"quality": 1.0},
-        input="in",
-        output="out",
-        dataset_id="d1",
-        parent=config,
-    )
-    assert plain.drive_fingerprint is None
-    plain.save_to_file()
-    assert EvalRun.load_from_file(plain.path).drive_fingerprint is None
-
-    fingerprinted = EvalRun(
-        task_run_config_id="rc1",
-        scores={"quality": 1.0},
-        input="in",
-        output="out",
-        dataset_id="d2",
-        drive_fingerprint="v1:" + "a" * 64,
-        parent=config,
-    )
-    fingerprinted.save_to_file()
-    reloaded = EvalRun.load_from_file(fingerprinted.path)
-    assert reloaded.drive_fingerprint == "v1:" + "a" * 64
-
-
-def test_eval_run_eval_usage_defaults_none_and_round_trips(tmp_path):
-    """eval_usage is additive: absent on existing records (None), and a set
-    value survives the disk round-trip."""
-    task = Task(
-        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
-    )
-    task.save_to_file()
-    eval = Eval(
-        name="Usage Eval",
-        eval_set_filter_id="tag::tag1",
-        eval_configs_filter_id="tag::tag2",
-        output_scores=[
-            EvalOutputScore(name="quality", type=TaskOutputRatingType.pass_fail),
-        ],
-        parent=task,
-    )
-    eval.save_to_file()
-    config = EvalConfig(
-        name="cfg",
-        config_type=EvalConfigType.v2,
-        properties=ExactMatchProperties(expected_value="out"),
-        parent=eval,
-    )
-    config.save_to_file()
-
-    plain = EvalRun(
-        task_run_config_id="rc1",
-        scores={"quality": 1.0},
-        input="in",
-        output="out",
-        dataset_id="d1",
-        parent=config,
-    )
-    assert plain.eval_usage is None
-    plain.save_to_file()
-    assert EvalRun.load_from_file(plain.path).eval_usage is None
-
-    judged = EvalRun(
-        task_run_config_id="rc1",
-        scores={"quality": 1.0},
-        input="in",
-        output="out",
-        dataset_id="d2",
-        eval_usage=Usage(
-            input_tokens=1500, output_tokens=42, total_tokens=1542, cost=0.005
-        ),
-        parent=config,
-    )
-    judged.save_to_file()
-    reloaded = EvalRun.load_from_file(judged.path)
-    assert reloaded.eval_usage is not None
-    assert reloaded.eval_usage.input_tokens == 1500
-    assert reloaded.eval_usage.output_tokens == 42
-    assert reloaded.eval_usage.total_tokens == 1542
-    assert reloaded.eval_usage.cost == 0.005
-
-
-def test_eval_run_synthetic_user_usage_defaults_none_and_round_trips(tmp_path):
-    """synthetic_user_usage is additive: absent on existing records (None),
-    and a set value survives the disk round-trip. It is a third, independent
-    usage field — the driver model's spend never mixes with the agent's
-    (task_run_usage) or the judge's (eval_usage)."""
-    task = Task(
-        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
-    )
-    task.save_to_file()
-    eval = Eval(
-        name="SU Usage Eval",
-        eval_set_filter_id="tag::tag1",
-        eval_configs_filter_id="tag::tag2",
-        output_scores=[
-            EvalOutputScore(name="quality", type=TaskOutputRatingType.pass_fail),
-        ],
-        parent=task,
-    )
-    eval.save_to_file()
-    config = EvalConfig(
-        name="cfg",
-        config_type=EvalConfigType.v2,
-        properties=ExactMatchProperties(expected_value="out"),
-        parent=eval,
-    )
-    config.save_to_file()
-
-    plain = EvalRun(
-        task_run_config_id="rc1",
-        scores={"quality": 1.0},
-        input="in",
-        output="out",
-        dataset_id="d1",
-        parent=config,
-    )
-    assert plain.synthetic_user_usage is None
-    plain.save_to_file()
-    assert EvalRun.load_from_file(plain.path).synthetic_user_usage is None
-
-    driven = EvalRun(
-        task_run_config_id="rc1",
-        scores={"quality": 1.0},
-        input="in",
-        output="out",
-        dataset_id="d2",
-        task_run_usage=Usage(input_tokens=90000, output_tokens=4000, cost=0.31),
-        eval_usage=Usage(input_tokens=23000, output_tokens=12, cost=0.064),
-        synthetic_user_usage=Usage(
-            input_tokens=2600,
-            output_tokens=90,
-            total_tokens=2690,
-            cost=0.0021,
-            cached_tokens=1800,
-            total_llm_latency_ms=3300,
-        ),
-        parent=config,
-    )
-    driven.save_to_file()
-    reloaded = EvalRun.load_from_file(driven.path)
-    assert reloaded.synthetic_user_usage is not None
-    assert reloaded.synthetic_user_usage.input_tokens == 2600
-    assert reloaded.synthetic_user_usage.output_tokens == 90
-    assert reloaded.synthetic_user_usage.total_tokens == 2690
-    assert reloaded.synthetic_user_usage.cached_tokens == 1800
-    assert reloaded.synthetic_user_usage.total_llm_latency_ms == 3300
-    assert reloaded.synthetic_user_usage.cost == 0.0021
-    # The three model lanes stay independent on the same record.
-    assert reloaded.task_run_usage is not None
-    assert reloaded.task_run_usage.input_tokens == 90000
-    assert reloaded.eval_usage is not None
-    assert reloaded.eval_usage.input_tokens == 23000
-
-
-def test_eval_run_loads_record_written_before_synthetic_user_usage_existed(tmp_path):
-    """Back-compat: a record serialized without the field still validates,
-    with the field absent rather than defaulted to a measured zero."""
-    task = Task(
-        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
-    )
-    task.save_to_file()
-    eval = Eval(
-        name="Legacy Eval",
-        eval_set_filter_id="tag::tag1",
-        eval_configs_filter_id="tag::tag2",
-        output_scores=[
-            EvalOutputScore(name="quality", type=TaskOutputRatingType.pass_fail),
-        ],
-        parent=task,
-    )
-    eval.save_to_file()
-    config = EvalConfig(
-        name="cfg",
-        config_type=EvalConfigType.v2,
-        properties=ExactMatchProperties(expected_value="out"),
-        parent=eval,
-    )
-    config.save_to_file()
-
-    run = EvalRun(
-        task_run_config_id="rc1",
-        scores={"quality": 1.0},
-        input="in",
-        output="out",
-        eval_input_id="ei1",
-        synthetic_user_usage=Usage(input_tokens=10, cost=0.001),
-        parent=config,
-    )
-    run.save_to_file()
-    assert run.path is not None
-
-    # Strip the key the way a pre-field writer would have left the file.
-    on_disk = json.loads(run.path.read_text())
-    del on_disk["synthetic_user_usage"]
-    run.path.write_text(json.dumps(on_disk))
-
-    legacy = EvalRun.load_from_file(run.path)
-    assert legacy.synthetic_user_usage is None
-    assert legacy.scores == {"quality": 1.0}
 
 
 def test_eval_run_plaintext():
@@ -1294,6 +1049,271 @@ def test_check_type_config_rejected_on_custom_score_eval():
             properties=PatternMatchProperties(pattern="ok"),
             parent=eval,
         )
+
+
+def test_eval_run_drive_fingerprint_defaults_none_and_round_trips(tmp_path):
+    """drive_fingerprint is additive: absent on existing records (None), and
+    a set value survives the disk round-trip."""
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+    eval = Eval(
+        name="FP Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.pass_fail),
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+    config = EvalConfig(
+        name="cfg",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="out"),
+        parent=eval,
+    )
+    config.save_to_file()
+
+    plain = EvalRun(
+        task_run_config_id="rc1",
+        scores={"quality": 1.0},
+        input="in",
+        output="out",
+        dataset_id="d1",
+        parent=config,
+    )
+    assert plain.drive_fingerprint is None
+    plain.save_to_file()
+    assert EvalRun.load_from_file(plain.path).drive_fingerprint is None
+
+    fingerprinted = EvalRun(
+        task_run_config_id="rc1",
+        scores={"quality": 1.0},
+        input="in",
+        output="out",
+        dataset_id="d2",
+        drive_fingerprint="v1:" + "a" * 64,
+        parent=config,
+    )
+    fingerprinted.save_to_file()
+    reloaded = EvalRun.load_from_file(fingerprinted.path)
+    assert reloaded.drive_fingerprint == "v1:" + "a" * 64
+
+
+def test_eval_run_eval_usage_defaults_none_and_round_trips(tmp_path):
+    """eval_usage is additive: absent on existing records (None), and a set
+    value survives the disk round-trip."""
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+    eval = Eval(
+        name="Usage Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.pass_fail),
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+    config = EvalConfig(
+        name="cfg",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="out"),
+        parent=eval,
+    )
+    config.save_to_file()
+
+    plain = EvalRun(
+        task_run_config_id="rc1",
+        scores={"quality": 1.0},
+        input="in",
+        output="out",
+        dataset_id="d1",
+        parent=config,
+    )
+    assert plain.eval_usage is None
+    plain.save_to_file()
+    assert EvalRun.load_from_file(plain.path).eval_usage is None
+
+    judged = EvalRun(
+        task_run_config_id="rc1",
+        scores={"quality": 1.0},
+        input="in",
+        output="out",
+        dataset_id="d2",
+        eval_usage=Usage(
+            input_tokens=1500, output_tokens=42, total_tokens=1542, cost=0.005
+        ),
+        parent=config,
+    )
+    judged.save_to_file()
+    reloaded = EvalRun.load_from_file(judged.path)
+    assert reloaded.eval_usage is not None
+    assert reloaded.eval_usage.input_tokens == 1500
+    assert reloaded.eval_usage.output_tokens == 42
+    assert reloaded.eval_usage.total_tokens == 1542
+    assert reloaded.eval_usage.cost == 0.005
+
+
+def test_eval_run_synthetic_user_usage_defaults_none_and_round_trips(tmp_path):
+    """synthetic_user_usage is additive: absent on existing records (None),
+    and a set value survives the disk round-trip. It is a third, independent
+    usage field — the driver model's spend never mixes with the agent's
+    (task_run_usage) or the judge's (eval_usage)."""
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+    eval = Eval(
+        name="SU Usage Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.pass_fail),
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+    config = EvalConfig(
+        name="cfg",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="out"),
+        parent=eval,
+    )
+    config.save_to_file()
+
+    plain = EvalRun(
+        task_run_config_id="rc1",
+        scores={"quality": 1.0},
+        input="in",
+        output="out",
+        dataset_id="d1",
+        parent=config,
+    )
+    assert plain.synthetic_user_usage is None
+    plain.save_to_file()
+    assert EvalRun.load_from_file(plain.path).synthetic_user_usage is None
+
+    driven = EvalRun(
+        task_run_config_id="rc1",
+        scores={"quality": 1.0},
+        input="in",
+        output="out",
+        dataset_id="d2",
+        task_run_usage=Usage(input_tokens=90000, output_tokens=4000, cost=0.31),
+        eval_usage=Usage(input_tokens=23000, output_tokens=12, cost=0.064),
+        synthetic_user_usage=Usage(
+            input_tokens=2600,
+            output_tokens=90,
+            total_tokens=2690,
+            cost=0.0021,
+            cached_tokens=1800,
+            total_llm_latency_ms=3300,
+        ),
+        parent=config,
+    )
+    driven.save_to_file()
+    reloaded = EvalRun.load_from_file(driven.path)
+    assert reloaded.synthetic_user_usage is not None
+    assert reloaded.synthetic_user_usage.input_tokens == 2600
+    assert reloaded.synthetic_user_usage.output_tokens == 90
+    assert reloaded.synthetic_user_usage.total_tokens == 2690
+    assert reloaded.synthetic_user_usage.cached_tokens == 1800
+    assert reloaded.synthetic_user_usage.total_llm_latency_ms == 3300
+    assert reloaded.synthetic_user_usage.cost == 0.0021
+    # The three model lanes stay independent on the same record.
+    assert reloaded.task_run_usage is not None
+    assert reloaded.task_run_usage.input_tokens == 90000
+    assert reloaded.eval_usage is not None
+    assert reloaded.eval_usage.input_tokens == 23000
+
+
+def test_eval_run_loads_record_written_before_synthetic_user_usage_existed(tmp_path):
+    """Back-compat: a record serialized without the field still validates,
+    with the field absent rather than defaulted to a measured zero."""
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+    eval = Eval(
+        name="Legacy Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.pass_fail),
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+    config = EvalConfig(
+        name="cfg",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="out"),
+        parent=eval,
+    )
+    config.save_to_file()
+
+    run = EvalRun(
+        task_run_config_id="rc1",
+        scores={"quality": 1.0},
+        input="in",
+        output="out",
+        eval_input_id="ei1",
+        synthetic_user_usage=Usage(input_tokens=10, cost=0.001),
+        parent=config,
+    )
+    run.save_to_file()
+    assert run.path is not None
+
+    # Strip the key the way a pre-field writer would have left the file.
+    on_disk = json.loads(run.path.read_text())
+    del on_disk["synthetic_user_usage"]
+    run.path.write_text(json.dumps(on_disk))
+
+    legacy = EvalRun.load_from_file(run.path)
+    assert legacy.synthetic_user_usage is None
+    assert legacy.scores == {"quality": 1.0}
+
+
+def test_skipped_reason_includes_not_applicable():
+    """A code eval's skip sentinel records not_applicable; the value must be a
+    SkippedReason member so saved records keep their meaning."""
+    assert SkippedReason("not_applicable") == SkippedReason.not_applicable
+
+
+def test_eval_config_provenance_round_trips(tmp_path):
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+    eval = Eval(
+        name="Provenance Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.pass_fail),
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+    config = EvalConfig(
+        name="cfg",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="out"),
+        provenance=KilnArtifactProvenance(
+            notes="built from the failing traces", origin="agent"
+        ),
+        parent=eval,
+    )
+    config.save_to_file()
+    assert config.path is not None
+    reloaded = EvalConfig.load_from_file(config.path)
+    assert reloaded.provenance is not None
+    assert reloaded.provenance.notes == "built from the failing traces"
 
 
 def test_eval_run_eval_config_eval_validation():
@@ -2295,6 +2315,142 @@ def test_validate_output_fields_parametrized(
         assert run.task_run_trace == trace
 
 
+# ── V2 validate_output_fields: writer-shape matrix ─────────────────────────
+#
+# The V2 eval writers attach task_run_trace for exactly one shape: a scored
+# (non-skipped), non-eval-config task run of a full_trace eval. These pin the
+# datamodel gate to that shape so a writer dropping the trace is rejected, while
+# every shape the writer legitimately leaves trace-less continues to pass.
+
+V2_TRACE = '{"messages": [{"role": "user", "content": "test"}]}'
+
+
+def _v2_eval_and_config(mock_task, data_type=EvalDataType.full_trace):
+    """A V2 (typed-properties) config parented to an eval of the given type."""
+    eval = Eval(
+        name="V2 Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail)
+        ],
+        evaluation_data_type=data_type,
+    )
+    config = EvalConfig(
+        parent=eval,
+        name="V2 Config",
+        config_type=EvalConfigType.v2,
+        properties=LlmJudgeProperties(
+            model_name="gpt-4o",
+            model_provider="openai",
+            prompt_template="Evaluate: {{ final_message }}",
+        ),
+    )
+    return eval, config
+
+
+def test_v2_full_trace_task_run_eval_with_trace_passes(mock_task):
+    _, config = _v2_eval_and_config(mock_task)
+    run = EvalRun(
+        parent=config,
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="in",
+        output="out",
+        scores={"accuracy": 1.0},
+        task_run_trace=V2_TRACE,
+    )
+    assert run.task_run_trace == V2_TRACE
+
+
+def test_v2_full_trace_task_run_eval_without_trace_rejected(mock_task):
+    _, config = _v2_eval_and_config(mock_task)
+    with pytest.raises(
+        ValueError, match="full_trace task run eval runs should include trace"
+    ):
+        EvalRun(
+            parent=config,
+            eval_input_id="ei1",
+            task_run_config_id="rc1",
+            input="in",
+            output="out",
+            scores={"accuracy": 1.0},
+        )
+
+
+def test_v2_full_trace_skipped_record_without_trace_passes(mock_task):
+    _, config = _v2_eval_and_config(mock_task)
+    run = EvalRun(
+        parent=config,
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="in",
+        output=None,
+        scores={},
+        skipped_reason=SkippedReason.missing_trace.value,
+    )
+    assert run.task_run_trace is None
+
+
+def test_v2_full_trace_eval_config_eval_without_trace_passes(mock_task):
+    _, config = _v2_eval_and_config(mock_task)
+    run = EvalRun(
+        parent=config,
+        dataset_id="ds1",
+        eval_config_eval=True,
+        task_run_config_id=None,
+        input="in",
+        output="out",
+        scores={"accuracy": 1.0},
+    )
+    assert run.task_run_trace is None
+
+
+def test_v2_final_answer_record_without_trace_passes(mock_task):
+    _, config = _v2_eval_and_config(mock_task, data_type=EvalDataType.final_answer)
+    run = EvalRun(
+        parent=config,
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="in",
+        output="out",
+        scores={"accuracy": 1.0},
+    )
+    assert run.task_run_trace is None
+
+
+def test_v2_full_trace_trace_less_record_loads_from_file(mock_task, tmp_path):
+    """Historical trace-less full_trace records must still load; the gate holds
+    only new writes and rebuilds, not files already on disk."""
+    mock_task.path = tmp_path / "task.kiln"
+    mock_task.save_to_file()
+    eval, config = _v2_eval_and_config(mock_task)
+    eval.save_to_file()
+    config.save_to_file()
+
+    run = EvalRun(
+        parent=config,
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="in",
+        output="out",
+        scores={"accuracy": 1.0},
+        task_run_trace=V2_TRACE,
+    )
+    run.save_to_file()
+
+    # Rewrite the persisted record to the trace-less shape a pre-gate writer
+    # could have produced, then confirm it still loads rather than erroring.
+    assert run.path is not None
+    data = json.loads(run.path.read_text())
+    data["task_run_trace"] = None
+    run.path.write_text(json.dumps(data))
+
+    loaded = EvalRun.load_from_file(str(run.path))
+    assert loaded.task_run_trace is None
+
+
 @pytest.mark.parametrize(
     "evaluation_data_type,reference_answer,should_raise,expected_error",
     [
@@ -2566,13 +2722,23 @@ def test_v2_eval_config_rejects_root_model_fields():
         )
 
 
-def test_v2_eval_config_requires_typed_properties():
-    """V2 config rejects a raw dict for properties."""
-    with pytest.raises(ValueError, match="V2 config requires typed properties"):
+def test_v2_eval_config_rejects_undiscriminated_dict():
+    """A V2 properties dict without a valid "type" discriminator is rejected."""
+    with pytest.raises(ValidationError, match="type"):
         EvalConfig(
             name="Bad V2",
             config_type=EvalConfigType.v2,
             properties={"eval_steps": ["step"]},
+        )
+
+
+def test_v2_eval_config_requires_typed_properties():
+    """V2 config rejects missing properties."""
+    with pytest.raises(ValueError, match="V2 config requires typed properties"):
+        EvalConfig(
+            name="Bad V2",
+            config_type=EvalConfigType.v2,
+            properties=None,
         )
 
 
@@ -2706,6 +2872,20 @@ def test_eval_v2_with_eval_input_filter():
     assert eval.splits["test"] == EvalInputSplit(filter_id="all")
     assert eval.model_dump()["eval_set_filter_id"] is None
     assert not hasattr(eval, "eval_input_filter_id")
+
+
+def test_eval_v2_with_eval_input_split():
+    """An EvalInput-backed test split is authored directly in `splits`."""
+    eval = Eval(
+        name="V2 Eval",
+        splits={"test": EvalInputSplit(filter_id="all")},
+        eval_configs_filter_id="tag::cfg",
+        output_scores=[
+            EvalOutputScore(name="score", type=TaskOutputRatingType.pass_fail)
+        ],
+    )
+    assert eval.splits["test"] == EvalInputSplit(filter_id="all")
+    assert eval.model_dump()["eval_set_filter_id"] is None
 
 
 def test_eval_requires_a_test_split():
@@ -2896,6 +3076,36 @@ def test_eval_input_multi_turn():
     assert ei.data.synthetic_user_info.persona == "student"
     assert ei.data.synthetic_user_info.goal == "pass the exam"
     assert ei.data.synthetic_user_info.behavior_guidance is None
+
+
+def test_eval_input_rejects_empty_tag():
+    """An empty tag is rejected: tag filters can never select it."""
+    with pytest.raises(ValidationError, match="Tags cannot be empty strings"):
+        EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
+            tags=[""],
+        )
+
+
+def test_eval_input_rejects_tag_with_spaces():
+    """A tag containing spaces is rejected, matching TaskRun tag rules."""
+    with pytest.raises(ValidationError, match="Tags cannot contain spaces"):
+        EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
+            tags=["bad tag"],
+        )
+
+
+def test_eval_input_valid_tags_round_trip():
+    """Valid tags are accepted and survive a dump/validate cycle."""
+    tags = ["eval_slice", "scenario:1", "synthetic_user_batch:b1"]
+    ei = EvalInput(
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
+        tags=tags,
+    )
+    assert ei.tags == tags
+    rebuilt = EvalInput.model_validate(ei.model_dump())
+    assert rebuilt.tags == tags
 
 
 def test_multi_turn_synthetic_requires_synthetic_user_info():
@@ -3097,85 +3307,6 @@ class TestEvalTaskInputFromEvalInput:
         assert eti.task_input is None
 
 
-class TestEvalTaskInputFromEvalInputTrace:
-    """from_eval_input_trace: assembly from a stored conversation, used when
-    a reused trace stands in for a fresh drive (no TaskRun exists)."""
-
-    def _multi_turn_input(self, reference=None) -> EvalInput:
-        return EvalInput(
-            data=MultiTurnSyntheticEvalInputData(
-                first_message=UserMessage(text="opening message"),
-                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
-            ),
-            reference=reference,
-        )
-
-    def test_happy_path(self):
-        trace = [
-            {"role": "user", "content": "opening message"},
-            {"role": "assistant", "content": "hi"},
-            {"role": "user", "content": "turn 2"},
-            {"role": "assistant", "content": "final reply"},
-        ]
-        eti = EvalTaskInput.from_eval_input_trace(
-            self._multi_turn_input(reference={"expected": "A"}), trace
-        )
-        assert eti.final_message == "final reply"
-        assert eti.task_input == "opening message"
-        assert eti.reference_data == {"expected": "A"}
-        assert eti.trace == trace
-
-    def test_final_message_skips_toolcall_only_assistant_turns(self):
-        trace = [
-            {"role": "user", "content": "opening message"},
-            {"role": "assistant", "content": "real answer"},
-            {"role": "assistant", "content": None, "tool_calls": [{"id": "t1"}]},
-            {"role": "tool", "content": "tool result"},
-        ]
-        eti = EvalTaskInput.from_eval_input_trace(self._multi_turn_input(), trace)
-        assert eti.final_message == "real answer"
-
-    def test_trace_is_copied_not_aliased(self):
-        """The trace may be shared through a reuse index; mutating the
-        assembled input must not corrupt the shared copy."""
-        trace = [
-            {"role": "user", "content": "opening message"},
-            {"role": "assistant", "content": "final reply"},
-        ]
-        eti = EvalTaskInput.from_eval_input_trace(self._multi_turn_input(), trace)
-        assert eti.trace is not None
-        eti.trace[0]["content"] = "mutated"
-        assert trace[0]["content"] == "opening message"
-
-    def test_no_assistant_text_raises(self):
-        trace = [
-            {"role": "user", "content": "opening message"},
-            {"role": "assistant", "content": None, "tool_calls": [{"id": "t1"}]},
-        ]
-        with pytest.raises(ValueError, match="no assistant message"):
-            EvalTaskInput.from_eval_input_trace(self._multi_turn_input(), trace)
-
-    def test_single_turn_input_rejected(self):
-        ei = EvalInput(
-            data=SingleTurnEvalInputData(user_message=UserMessage(text="Q")),
-        )
-        with pytest.raises(ValueError, match="multi-turn synthetic"):
-            EvalTaskInput.from_eval_input_trace(
-                ei, [{"role": "assistant", "content": "a"}]
-            )
-
-    def test_missing_first_message_gives_none_task_input(self):
-        ei = EvalInput(
-            data=MultiTurnSyntheticEvalInputData(
-                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
-            ),
-        )
-        eti = EvalTaskInput.from_eval_input_trace(
-            ei, [{"role": "assistant", "content": "a"}]
-        )
-        assert eti.task_input is None
-
-
 # ── MultiTurnDriveConfig Tests ───────────────────────────────────────────
 
 
@@ -3194,12 +3325,47 @@ class TestMultiTurnDriveConfig:
             )
 
     def test_unknown_provider_string_accepted(self):
-        """model_provider is a plain string, not the enum — persisted evals
+        """model_provider is a plain string, not the enum — persisted items
         must load on builds that don't know the provider yet."""
         cfg = MultiTurnDriveConfig(
             model_name="m", model_provider="a_future_provider", turns=1
         )
         assert cfg.model_provider == "a_future_provider"
+
+    def test_defaults_to_none_on_item(self):
+        """Items minted before drive settings were stamped load with None."""
+        data = MultiTurnSyntheticEvalInputData(
+            synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+        )
+        assert data.drive_config is None
+
+    def test_persists_on_eval_input(self, mock_task, tmp_path):
+        """The stamped drive config round-trips through disk on the item."""
+        task_path = tmp_path / "task.kiln"
+        mock_task.path = task_path
+        mock_task.save_to_file()
+
+        ei = EvalInput(
+            parent=mock_task,
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="opening message"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+                drive_config=MultiTurnDriveConfig(
+                    model_name="claude_4_5_haiku",
+                    model_provider="openrouter",
+                    turns=5,
+                ),
+            ),
+        )
+        ei.save_to_file()
+
+        loaded_task = Task.load_from_file(str(task_path))
+        data = loaded_task.eval_inputs(readonly=True)[0].data
+        assert isinstance(data, MultiTurnSyntheticEvalInputData)
+        assert data.drive_config is not None
+        assert data.drive_config.model_name == "claude_4_5_haiku"
+        assert data.drive_config.model_provider == "openrouter"
+        assert data.drive_config.turns == 5
 
     def test_persists_on_eval(self, mock_task, tmp_path):
         task_path = tmp_path / "task.kiln"
@@ -3240,6 +3406,62 @@ class TestMultiTurnDriveConfig:
             parent=mock_task,
         )
         assert eval.multi_turn_drive_config is None
+
+    def test_unset_drive_config_is_omitted_from_saved_bytes(self, mock_task, tmp_path):
+        """Items that predate the field must not gain a null key on resave."""
+        task_path = tmp_path / "task.kiln"
+        mock_task.path = task_path
+        mock_task.save_to_file()
+
+        ei = EvalInput(
+            parent=mock_task,
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="hi"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+        )
+        ei.save_to_file()
+        assert ei.path is not None
+        on_disk = json.loads(ei.path.read_text())
+        assert "drive_config" not in on_disk["data"]
+
+    def test_stamped_drive_config_saved_bytes(self, mock_task, tmp_path):
+        """A stamped config is written as a nested object under data."""
+        task_path = tmp_path / "task.kiln"
+        mock_task.path = task_path
+        mock_task.save_to_file()
+
+        ei = EvalInput(
+            parent=mock_task,
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="hi"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+                drive_config=MultiTurnDriveConfig(
+                    model_name="m", model_provider="openrouter", turns=3
+                ),
+            ),
+        )
+        ei.save_to_file()
+        assert ei.path is not None
+        on_disk = json.loads(ei.path.read_text())
+        assert on_disk["data"]["drive_config"] == {
+            "model_name": "m",
+            "model_provider": "openrouter",
+            "turns": 3,
+        }
+
+    def test_explicit_null_drive_config_loads_as_absent(self):
+        """A hand-written null means the same as no key at all."""
+        data = MultiTurnSyntheticEvalInputData.model_validate(
+            {
+                "type": "multi_turn_synthetic",
+                "first_message": {"text": "hi"},
+                "synthetic_user_info": {"persona": "p", "goal": "g"},
+                "drive_config": None,
+            }
+        )
+        assert data.drive_config is None
+        assert "drive_config" not in data.model_dump()
 
 
 class TestEvalTaskInputFromTrace:
@@ -3316,6 +3538,41 @@ class TestEvalTaskInputFromTrace:
             trace, trace
         )
 
+    def test_from_a_multi_turn_eval_input_source(self, trace):
+        """The item's first message is the canonical input; the conversation
+        itself (and its final answer) comes from the trace TaskRun."""
+        eval_input = EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="opening message"),
+                synthetic_user_info=SyntheticUserInfo(
+                    persona="p", goal="g", behavior_guidance="b"
+                ),
+            ),
+            reference={"expected": "resolution"},
+        )
+
+        result = EvalTaskInput.from_trace(trace, eval_input)
+
+        assert result.final_message == "what the model said"
+        assert result.trace == trace.trace
+        assert result.reference_data == {"expected": "resolution"}
+        assert result.task_input == "opening message"
+
+    def test_from_a_multi_turn_eval_input_without_a_first_message(self, trace):
+        """Items minted without a seed have no canonical input text; the judge
+        still gets the trace and final answer."""
+        eval_input = EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+        )
+
+        result = EvalTaskInput.from_trace(trace, eval_input)
+
+        assert result.task_input is None
+        assert result.final_message == "what the model said"
+        assert result.trace == trace.trace
+
     @pytest.mark.parametrize(
         "trace_arg, source, error",
         [
@@ -3386,7 +3643,7 @@ class TestV2TemplateValidation:
             )
 
     def test_reference_data_only_prompt_template_rejected(self):
-        """A prompt_template referencing only reference_data is rejected (D30)."""
+        """A prompt_template referencing only reference_data is rejected: it never varies with the model output."""
         with pytest.raises(ValidationError, match="never references the model output"):
             _make_v2_eval_config(
                 properties=LlmJudgeProperties(
@@ -3408,7 +3665,7 @@ class TestV2TemplateValidation:
         assert cfg is not None
 
     def test_prompt_template_with_trace_passes(self):
-        """A prompt_template referencing trace passes (D30)."""
+        """A prompt_template referencing trace passes: trace counts as model output."""
         cfg = _make_v2_eval_config(
             properties=LlmJudgeProperties(
                 model_name="m",
@@ -3419,7 +3676,7 @@ class TestV2TemplateValidation:
         assert cfg is not None
 
     def test_prompt_template_with_task_input_passes(self):
-        """A prompt_template referencing task_input passes (D30)."""
+        """A prompt_template referencing task_input passes: it varies per run."""
         cfg = _make_v2_eval_config(
             properties=LlmJudgeProperties(
                 model_name="m",
@@ -3794,6 +4051,52 @@ class TestV1EvalConfigCoexistence:
         assert config.properties["type"] == "exact_match"
         assert config.properties["eval_steps"] == ["step1"]
 
+    def test_v1_properties_fully_colliding_with_v2_shape_stay_dict(self):
+        """A legacy properties dict that would parse cleanly as a typed V2 class must still load as a plain dict."""
+        props = {
+            "eval_steps": ["step1"],
+            "type": "llm_judge",
+            "model_name": "m",
+            "model_provider": "p",
+            "prompt_template": "{{ final_message }}",
+        }
+        # Premise: this dict is a valid LlmJudgeProperties payload, so only
+        # explicit dispatch (not union fallback) keeps it untyped below.
+        assert isinstance(LlmJudgeProperties.model_validate(props), LlmJudgeProperties)
+
+        config = EvalConfig.model_validate(
+            {
+                "name": "Full Collision",
+                "config_type": "g_eval",
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+                "properties": props,
+            }
+        )
+        assert config.config_type == EvalConfigType.g_eval
+        assert type(config.properties) is dict
+        assert config.properties["type"] == "llm_judge"
+        assert config.properties["eval_steps"] == ["step1"]
+
+    def test_v2_config_from_dict_round_trips_typed(self):
+        """V2 properties load from a raw dict into the typed class and survive dump/validate."""
+        raw = {
+            "name": "From Disk V2",
+            "config_type": "v2",
+            "properties": {
+                "type": "llm_judge",
+                "model_name": "m",
+                "model_provider": "p",
+                "prompt_template": "{{ final_message }}",
+            },
+        }
+        config = EvalConfig.model_validate(raw)
+        assert isinstance(config.properties, LlmJudgeProperties)
+
+        reloaded = EvalConfig.model_validate(config.model_dump())
+        assert isinstance(reloaded.properties, LlmJudgeProperties)
+        assert reloaded.properties == config.properties
+
     def test_v1_llm_as_judge_config_type_preserved(self):
         config = EvalConfig(
             name="LLM Judge V1",
@@ -3844,7 +4147,7 @@ class TestV1EvalConfigCoexistence:
 
 
 # ---------------------------------------------------------------------------
-# Phase 2: V1 EvalRun output=None guard (Item 1c)
+# Legacy EvalRun output: may be None only when skipped_reason is set
 # ---------------------------------------------------------------------------
 
 
@@ -3954,12 +4257,12 @@ class TestV1EvalRunOutputNoneGuard:
 
 
 # ---------------------------------------------------------------------------
-# Phase 2: CodeEvalProperties dead SyntaxError catch removed (Item 5.4)
+# CodeEvalProperties code validation: must parse and define a score function
 # ---------------------------------------------------------------------------
 
 
-class TestCodeEvalNoDeadSyntaxErrorCatch:
-    """After removing the dead except SyntaxError, ast.parse + score fn check still works."""
+class TestCodeEvalCodeValidation:
+    """CodeEvalProperties.code must be parseable Python defining a module-level score function."""
 
     def test_valid_code_with_score_fn(self):
         props = CodeEvalProperties(
@@ -4114,9 +4417,9 @@ class TestValidateScoresAgainstOutputScores:
         "value", [float("nan"), float("inf"), float("-inf")], ids=["nan", "inf", "-inf"]
     )
     def test_non_finite_flagged(self, score_type, value):
-        """NaN compares False against every range bound, so it passed all
-        range checks; pydantic then serialized it as null, making the saved
-        EvalRun file fail Dict[str, float] validation on next load."""
+        """NaN compares False against every range bound, so it passed all range
+        checks; pydantic then serialized it as null, making the saved EvalRun file
+        fail Dict[str, float] validation on the next load."""
         output_scores = [EvalOutputScore(name="metric", type=score_type)]
         problems = validate_scores_against_output_scores(
             {"metric": value}, output_scores
@@ -4134,13 +4437,13 @@ class TestValidateScoresAgainstOutputScores:
         )
 
     def test_overlarge_int_flagged_not_raised(self):
-        """math.isfinite raises OverflowError on ints too large for float
-        (10**400) — the validator must report a problem, not throw."""
+        """math.isfinite raises OverflowError on ints too large for float (10**400).
+        This validator is documented as never raising, so it must report a problem."""
         output_scores = [
-            EvalOutputScore(name="metric", type=TaskOutputRatingType.custom)
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.five_star)
         ]
         problems = validate_scores_against_output_scores(
-            {"metric": 10**400}, output_scores
+            {"quality": 10**400}, output_scores
         )
         assert len(problems) == 1
 
@@ -4239,7 +4542,7 @@ class TestV2EvalResult:
 
 
 # ---------------------------------------------------------------------------
-# D27: expected_tools non-empty (ToolCallCheckProperties)
+# ToolCallCheckProperties.expected_tools must contain at least one tool
 # ---------------------------------------------------------------------------
 class TestToolCallCheckExpectedToolsValidator:
     def test_empty_expected_tools_rejected(self):
@@ -4254,7 +4557,7 @@ class TestToolCallCheckExpectedToolsValidator:
 
 
 # ---------------------------------------------------------------------------
-# D28: ArgMatch regex validation
+# ArgMatch.value must compile as a regex when match_mode is "regex"
 # ---------------------------------------------------------------------------
 class TestArgMatchRegexValidator:
     def test_bad_regex_rejected(self):
@@ -4275,7 +4578,7 @@ class TestArgMatchRegexValidator:
 
 
 # ---------------------------------------------------------------------------
-# D29: reference_key min_length=1
+# reference_key must be a non-empty string when provided
 # ---------------------------------------------------------------------------
 class TestReferenceKeyMinLength:
     def test_exact_match_empty_reference_key_rejected(self):
@@ -4656,23 +4959,6 @@ class TestEvalSplits:
         reloaded = Eval.load_from_file(eval.path)
         assert getattr(reloaded.splits["test"], "weight") == 0.5
         assert getattr(reloaded.splits["train"], "weight") == 0.25
-
-    def test_both_legacy_test_filters_is_rejected(self, scores):
-        """The one conflict `splits` winning can't resolve: two legacy inputs, one split.
-
-        `splits` decides legacy-vs-`splits` disagreements, but both sides here are legacy
-        and name different backings, so nothing picks between them. Accepting one would
-        silently discard the other.
-        """
-        with pytest.raises(
-            ValidationError,
-            match="cannot set both eval_set_filter_id and eval_input_filter_id",
-        ):
-            self.build_eval(
-                scores,
-                eval_set_filter_id="tag::runs",
-                eval_input_filter_id="tag::inputs",
-            )
 
     def test_excluding_a_legacy_field_cannot_drop_a_split(self, scores):
         """With one home, no dump option can write a split nowhere at all.
@@ -5074,6 +5360,23 @@ class TestEvalSplits:
             "filter_id": "tag::train_x",
         }
 
+    def test_both_legacy_test_filters_is_rejected(self, scores):
+        """The one conflict `splits` winning can't resolve: two legacy inputs, one split.
+
+        `splits` decides legacy-vs-`splits` disagreements, but both sides here are legacy
+        and name different backings, so nothing picks between them. Accepting one would
+        silently discard the other.
+        """
+        with pytest.raises(
+            ValidationError,
+            match="cannot set both eval_set_filter_id and eval_input_filter_id",
+        ):
+            self.build_eval(
+                scores,
+                eval_set_filter_id="tag::runs",
+                eval_input_filter_id="tag::inputs",
+            )
+
     def test_eval_input_backed_test_split_from_the_shim(self, saved_task, scores):
         """The eval_input_filter_id shim: migrated into splits, and never written back."""
         eval = self.build_eval(
@@ -5100,6 +5403,46 @@ class TestEvalSplits:
             splits={"test": EvalInputSplit(filter_id="tag::from_splits")},
         )
         assert eval.splits["test"] == EvalInputSplit(filter_id="tag::from_splits")
+
+    def test_val_split_from_the_legacy_val_set_filter_id(self, saved_task, scores):
+        """`val_set_filter_id` (a pre-`splits` val set) migrates into splits['val'] once,
+        and is never written back."""
+        eval = self.build_eval(
+            scores,
+            parent=saved_task,
+            eval_set_filter_id="tag::test",
+            val_set_filter_id="tag::val",
+        )
+        assert eval.splits["val"] == TaskRunSplit(filter_id="tag::val")
+        assert eval.splits["test"] == TaskRunSplit(filter_id="tag::test")
+
+        data = self.saved_json(eval)
+        assert "val_set_filter_id" not in data
+        assert data["splits"]["val"] == {"source": "task_run", "filter_id": "tag::val"}
+
+    def test_splits_wins_over_the_legacy_val_set_filter_id(self, scores):
+        eval = self.build_eval(
+            scores,
+            eval_set_filter_id="tag::test",
+            val_set_filter_id="tag::from_legacy",
+            splits={"val": TaskRunSplit(filter_id="tag::from_splits")},
+        )
+        assert eval.splits["val"] == TaskRunSplit(filter_id="tag::from_splits")
+
+    def test_eval_input_backed_test_split_stays_in_splits(self, saved_task, scores):
+        """An EvalInput-backed test split serializes into `splits`, never a legacy field."""
+        eval = self.build_eval(
+            scores,
+            parent=saved_task,
+            splits={"test": EvalInputSplit(filter_id="tag::inputs")},
+        )
+        assert eval.splits["test"] == EvalInputSplit(filter_id="tag::inputs")
+
+        data = self.saved_json(eval)
+        assert data["eval_set_filter_id"] is None
+        assert data["splits"] == {
+            "test": {"source": "eval_input", "filter_id": "tag::inputs"}
+        }
 
     @pytest.mark.parametrize("source", ["task_run", "eval_input"])
     def test_unknown_field_inside_a_split_survives_a_round_trip(
@@ -5839,3 +6182,21 @@ def test_live_eval_run_fields_are_not_marked_deprecated():
     schema_properties = EvalRun.model_json_schema()["properties"]
     for field_name in ("scored_run_id", "eval_usage", "scores", "intermediate_outputs"):
         assert "deprecated" not in schema_properties[field_name], field_name
+
+
+def test_eval_config_eval_requires_a_dataset_item():
+    """Judge calibration compares against human ratings, which only dataset
+    items carry — a calibration record claiming an EvalInput is domain-invalid
+    and must be rejected, not silently persisted."""
+    with pytest.raises(
+        ValidationError, match="eval_config_eval records must score a dataset item"
+    ):
+        EvalRun(
+            eval_config_eval=True,
+            task_run_config_id=None,
+            dataset_id=None,
+            eval_input_id="ei_1",
+            input="in",
+            output="out",
+            scores={"accuracy": 1.0},
+        )

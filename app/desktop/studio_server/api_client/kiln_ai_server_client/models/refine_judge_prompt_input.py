@@ -19,8 +19,8 @@ class RefineJudgePromptInput:
     Attributes:
         judge_prompt (str): The current judge prompt / rubric being refined, verbatim. Your output is a revised version
             of this.
-        graded_traces (list[GradedTrace]): One entry per human-reviewed trace: the judge's verdict plus the reviewer's
-            grades on the claim/evidence pairs the claim builder produced for that trace.
+        graded_traces (list[GradedTrace]): One entry per human-reviewed trace: the judge's verdict, the claim builder's
+            review card, the reviewer's grade on every claim, and the reviewer's overall verdict.
     """
 
     judge_prompt: str

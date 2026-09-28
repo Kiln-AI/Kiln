@@ -1,7 +1,8 @@
 """The live lookup that decides whether an eval job generates a trace or reuses one.
 
-Reuse is keyed on `(source_type, source_id, run_config_id)` — the dataset item plus the
-run config, and deliberately not the eval config. That is what lets a second judge score
+Reuse is keyed on `(source_type, source_id, run_config_id, variant)` — the dataset item
+plus the run config (and, for a driven conversation, the drive fingerprint), and
+deliberately not the eval config. That is what lets a second judge score
 generations the first judge already paid for (functional spec §2.1).
 
 The lookup has to be live, not precomputed like the `already_run` set in
@@ -13,9 +14,12 @@ what makes a retry after a scoring failure re-score rather than regenerate
 (functional spec §4.2, §4.3).
 """
 
+import json
 import logging
 from pathlib import Path
 from typing import Awaitable, Callable, Dict, Tuple
+
+from pydantic import ValidationError
 
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.eval_splits import ItemKey, ItemSource
@@ -35,10 +39,12 @@ is a dict key: an id-less item and an id-less run config would produce one
 other's traces. `trace_key()` is where that impossibility is enforced.
 
 The variant separates conversations that the item and run config alone cannot: a
-multi-turn case re-driven under two different `multi_turn_drive_config`s is two different
-conversations, and sharing one between them would score a judge against a conversation
-its own eval never asked for. Empty for a single-turn generation, where the item and the
-run config are the whole identity."""
+multi-turn case re-driven under two different drive configs (the synthetic-user settings,
+or run config properties edited under the same id) is two different conversations, and
+sharing one between them would score a judge against a conversation its own eval never
+asked for. For a driven conversation it is the drive fingerprint
+(`drive_fingerprint.compute_drive_fingerprint`). Empty for a single-turn generation, where
+the item and the run config are the whole identity."""
 
 
 def trace_key(
@@ -104,12 +110,13 @@ class TraceIndex:
 
     def _seed(self) -> None:
         # include_intermediate_runs stays False, so a trace that is the *parent* of
-        # another run is invisible here. Multi-turn drives do generate traces, but each
-        # is persisted as a single childless run carrying the whole conversation on
-        # `.trace` (see EvalRunner._drive_and_persist), so none of them is a parent. A
-        # future lane that persisted a real chain would have to change this line with it
-        # — otherwise those traces are never found and the eval regenerates them on
-        # every run, silently.
+        # another run is invisible here. Safe because eval traces are always
+        # childless: single-turn generations are single runs, and a driven
+        # multi-turn conversation persists as one standalone run whose trace holds
+        # the whole exchange (chain-leaf scoring reads stored dataset runs without
+        # generating at all). Nothing may ever chain a child onto an eval trace
+        # without revisiting this seed — the parent would turn invisible here, and
+        # the eval would silently regenerate its trace on every run.
         for run in self._task.runs(readonly=True, include_eval_generated=True):
             if run.path is None:
                 continue
@@ -160,6 +167,18 @@ class TraceIndex:
             # rather than failing every job that wanted it.
             logger.warning(
                 "Indexed eval trace for %s is gone from %s; regenerating", key, path
+            )
+            del self._paths[key]
+            return None
+        except (json.JSONDecodeError, ValidationError, ValueError) as error:
+            # The file exists but no longer parses as a TaskRun — truncated by a crash
+            # mid-write, or rewritten by a newer schema. Same posture as a missing file:
+            # drop the entry and regenerate, rather than failing every job on this key.
+            logger.warning(
+                "Indexed eval trace for %s at %s failed to load (%s); regenerating",
+                key,
+                path,
+                error,
             )
             del self._paths[key]
             return None

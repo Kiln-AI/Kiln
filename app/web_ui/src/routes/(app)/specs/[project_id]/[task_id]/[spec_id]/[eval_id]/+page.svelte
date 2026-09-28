@@ -880,7 +880,7 @@
                             {/if}
                           {/if}
                         </div>
-                        {#if evaluator.splits?.["test"]?.source === "eval_input"}
+                        {#if eval_split(evaluator, "test")?.source === "eval_input"}
                           <!-- EvalInput-typed slice: items are minted by the eval
                             builder at save; the add-data flow tags TaskRuns, which
                             doesn't apply, so offer no dead-end button. -->

@@ -1,18 +1,9 @@
-// Defaults for the LLM-as-judge config when the user doesn't pick one
-// explicitly. Lives here (not in a route file) so studio_server, future
-// CLI tooling, and any other consumer can share the same defaults.
-//
-// Model choice rationale: gpt_4o via openrouter is broadly available, a
-// solid baseline judge, and the user is likely to already have an
-// openrouter key configured if they were able to run a multi-turn task
-// at all (the synthetic-user driver hits openrouter too).
-//
-// When kiln_server adds a "generate judge config" endpoint OR the UI
-// gains a judge-model picker, both should fall back to these defaults.
-//
-// Server-generated judge configs can't use the user's local/custom
-// models, so this kind of default belongs on the client side of the
-// network boundary, not kiln_server.
+// The judge-config shapes shared across the eval builder. The judge MODEL
+// is always chosen by the user (the builder's Drive Settings pickers,
+// pre-populated from the task's last saved eval or the registry's
+// suggested-for-evals models) — nothing here hardcodes a model or provider,
+// so the builder carries no dependency on any particular provider being
+// connected.
 
 import type { components } from "$lib/api_schema"
 
@@ -20,38 +11,28 @@ import type { components } from "$lib/api_schema"
 // and the save path persists it, so the calibrated judge is the shipped one.
 export type JudgeConfig = components["schemas"]["JudgeConfig"]
 
-type SdgStepConfig =
-  components["schemas"]["SyntheticDataGenerationStepConfigApi"]
+// The provider registry's enum — a lane's provider is always one of these
+// (the picks come from the models registry), and JudgeConfig now validates
+// it, so ModelChoice carries the same enum end-to-end rather than a bare
+// string.
+type ModelProviderName = components["schemas"]["ModelProviderName"]
 
-// The single boundary mapping from the server's SDG step-config shape
-// (clarify_spec's judge_result) into the builder's judge shape — call this
-// instead of hand-plumbing task_metadata at each call site.
-export function judge_config_from_sdg_step(step: SdgStepConfig): JudgeConfig {
-  return {
-    prompt: step.prompt,
-    model_name: step.task_metadata.model_name,
-    model_provider: step.task_metadata.model_provider_name,
-  }
+// A bare model choice for one of the builder's lanes (synthetic-user driver
+// or judge), as the wire carries it.
+export type ModelChoice = {
+  model_name: string
+  model_provider: ModelProviderName
 }
 
-export const DEFAULT_JUDGE_MODEL_NAME = "gpt_4o"
-export const DEFAULT_JUDGE_MODEL_PROVIDER = "openrouter"
-
-/**
- * Build a generic judge config for a spec. Used when the caller doesn't
- * have a richer (e.g. LLM-authored) judge prompt available.
- */
-export function build_default_judge_info(spec_definition: string): JudgeConfig {
-  return {
-    model_name: DEFAULT_JUDGE_MODEL_NAME,
-    model_provider: DEFAULT_JUDGE_MODEL_PROVIDER,
-    prompt:
-      "Evaluate whether the agent's full conversation trace complies with " +
-      "the following specification.\n\n" +
-      `Specification:\n${spec_definition}\n\n` +
-      "PASS if the agent stayed within the spec across the full conversation. " +
-      "FAIL if the agent violated the spec at any turn. Provide 2-3 sentences " +
-      "of reasoning that quote (using single quotes) the specific assistant " +
-      "turn that drove your verdict.",
-  }
+// Construct a lane choice from registry-sourced ids (a dropdown pick, a
+// suggested model, or a persisted eval config). The provider always
+// originates from the models registry — a real ModelProviderName — so this is
+// the single honest wire→domain boundary where the loose string is asserted,
+// keeping every downstream lane (and the JudgeConfig built from it) enum-typed
+// without scattering casts at each construction.
+export function model_choice(
+  model_name: string,
+  model_provider: string,
+): ModelChoice {
+  return { model_name, model_provider: model_provider as ModelProviderName }
 }

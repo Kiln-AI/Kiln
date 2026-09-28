@@ -24,9 +24,19 @@ PRERELEASE_CHAT_MODELS: list[tuple[str, str]] = [
     ("gemini_3_flash", ModelProviderName.gemini_api.value),
     ("claude_sonnet_4_6", ModelProviderName.openrouter.value),
     ("gpt_5_4_mini", ModelProviderName.openrouter.value),
-    ("llama_3_3_70b", ModelProviderName.groq.value),
-    ("qwen_3p6_plus", ModelProviderName.fireworks_ai.value),
-    ("minimax_m2_7", ModelProviderName.together_ai.value),
+    ("gpt_oss_20b", ModelProviderName.groq.value),
+    ("qwen_3p7_plus", ModelProviderName.fireworks_ai.value),
+    ("deepseek_4_flash", ModelProviderName.together_ai.value),
+]
+
+# (model_name, provider_name) — used by the Jev paid smoke tests in
+# kiln_ai/adapters/jev/test_jev_paid_smoke.py. Its own list rather than an entry in
+# PRERELEASE_CHAT_MODELS above, because that list pins the LiteLLM chat models and Jev does
+# not go through LiteLLM at all: lite_llm_core_config_for_provider and
+# get_litellm_provider_info both raise for typesafe on purpose, so an entry there would
+# fail by construction rather than tell us anything about Jev.
+PRERELEASE_JEV_MODELS: list[tuple[str, str]] = [
+    ("jev_1_13", ModelProviderName.typesafe.value),
 ]
 
 # (model_name, provider_name) — used by the embedding prerelease smoke tests
@@ -36,8 +46,14 @@ PRERELEASE_EMBEDDING_MODELS: list[tuple[str, str]] = [
     ("openai_text_embedding_3_small", ModelProviderName.openai.value),
     ("openai_text_embedding_3_large", ModelProviderName.openai.value),
     ("gemini_embedding_001", ModelProviderName.gemini_api.value),
+    # Default embedding for most RAG templates, and its model id tracks a
+    # Google alias (preview -> GA), so a rename must fail the release gate.
+    ("gemini_embedding_002", ModelProviderName.gemini_api.value),
     ("nomic_text_embedding_v1_5", ModelProviderName.fireworks_ai.value),
-    ("multilingual_e5_large_instruct", ModelProviderName.together_ai.value),
+    ("multilingual_e5_large", ModelProviderName.openrouter.value),
+    # Verifies the Voyage 4 family n_dimensions, which we set from docs
+    # rather than a live call. The whole family shares an embedding space.
+    ("voyage_4", ModelProviderName.openrouter.value),
     ("qwen_3_embedding_8b", ModelProviderName.siliconflow_cn.value),
 ]
 

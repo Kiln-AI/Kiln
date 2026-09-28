@@ -74,9 +74,7 @@ class RefineJudgePromptOutput:
                 return data
             return cast(None | str, data)
 
-        not_incorporated_feedback = _parse_not_incorporated_feedback(
-            d.pop("not_incorporated_feedback")
-        )
+        not_incorporated_feedback = _parse_not_incorporated_feedback(d.pop("not_incorporated_feedback"))
 
         refine_judge_prompt_output = cls(
             refined_judge_prompt=refined_judge_prompt,

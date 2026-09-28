@@ -2,13 +2,10 @@
 
 Two-field shape: `seed_prompt` (the opening user message) and
 `synthetic_user_info` (an opaque tagged blob; the runner parses it into a
-typed SyntheticUserInfo at the wire boundary before building the
-SyntheticUserDriver).
+typed SyntheticUserInfo before building the SyntheticUserDriver).
 
-Field-identical to the kiln_server SDK's `SyntheticUserCase`. Lives here
-in libs/core so the runner has no dependency on the vendored SDK in
-`app/desktop/`; studio_server's FastAPI route converts SDK case → this
-case at the wire boundary.
+Callers holding a serialized case convert it to this model before
+invoking the runner.
 """
 
 from pydantic import BaseModel, Field
@@ -19,8 +16,8 @@ class SyntheticUserCase(BaseModel):
 
     `seed_prompt` is the first user-side message sent into the target
     task. `synthetic_user_info` is the persona/goal/behavior_guidance
-    blob, parsed at the wire boundary into the typed SyntheticUserInfo
-    the driver builds the SU's system prompt from.
+    blob, parsed by the caller into the typed SyntheticUserInfo the
+    driver builds the SU's system prompt from.
     """
 
     seed_prompt: str = Field(..., min_length=1)

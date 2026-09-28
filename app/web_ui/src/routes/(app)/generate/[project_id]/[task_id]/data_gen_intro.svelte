@@ -23,9 +23,8 @@
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import FinetuneIcon from "$lib/ui/icons/finetune_icon.svelte"
   import { encode_splits_for_url } from "$lib/utils/splits_util"
-  import { eval_split } from "$lib/utils/eval_splits"
   import { build_eval_options } from "./eval_options"
-  import { build_eval_generation_splits_param } from "$lib/utils/eval_generation_splits"
+  import { build_synth_generation_splits } from "$lib/utils/eval_generation_splits"
 
   export let generate_subtopics: () => void
   export let generate_samples: () => void
@@ -116,24 +115,11 @@
       alert("This eval is not ready yet. Please configure its judge first.")
       return
     }
-    // Synthetic data generation writes TaskRuns into the dataset, so an
-    // EvalInput-backed test split has no tag for it to target. That is a different
-    // refusal from "the filter isn't tag-shaped", and gets its own message: telling
-    // someone to switch to tag filters would be useless advice here, since the store
-    // is the problem, not the filter's form. The message diagnoses and stops there —
-    // nothing in this app creates eval inputs, so there is no action to point at.
-    const test_split = eval_split(evaluator, "test")
-    if (test_split?.source === "eval_input") {
-      alert(
-        "This eval uses our new eval dataset format, which can't be generated from this UI.",
-      )
-      return
-    }
-    // Generated data is spread over whichever of the eval's splits can receive it. The test
-    // split is the one we can't do without: no tag to write the runs into means there is
-    // nothing to generate for.
-    const splits_param = build_eval_generation_splits_param(evaluator)
-    if (!splits_param) {
+    // Generated cases are spread over the eval's splits, written as runs or as eval inputs
+    // depending on which store each split holds. The test split is the one we can't do
+    // without: no tag to write the cases into means there is nothing to generate for.
+    const generation_splits = build_synth_generation_splits(evaluator)
+    if (!generation_splits) {
       alert(
         "We can't generate synthetic data for this eval because its test set isn't defined by a tag filter. Select an eval which uses tags to define its datasets.",
       )
@@ -155,7 +141,14 @@
     }
 
     // .set will automatically URL encode
-    params.set("splits", splits_param)
+    params.set("splits", encode_splits_for_url(generation_splits.splits))
+    // Which of those tags the synth page has to write as eval inputs instead of runs.
+    if (generation_splits.eval_input_tags.length > 0) {
+      params.set(
+        "eval_input_splits",
+        generation_splits.eval_input_tags.join(","),
+      )
+    }
 
     // For reference answer evals, redirect to QnA page instead of synth page
     if (template_id === "rag") {

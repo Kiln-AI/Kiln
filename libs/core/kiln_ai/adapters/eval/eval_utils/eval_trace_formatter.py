@@ -2,7 +2,10 @@ import json
 import logging
 from dataclasses import dataclass
 
-from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+from kiln_ai.utils.open_ai_types import (
+    TASK_RESPONSE_TOOL_NAME,
+    ChatCompletionMessageParam,
+)
 from openai.types.chat import ChatCompletionMessageToolCallParam
 
 logger = logging.getLogger(__name__)
@@ -15,6 +18,10 @@ class EvalTraceFormatter:
         reasoning_content: str | None
         tool_calls: str | None
         content: str | None
+        # The structured answer the model returned through the internal
+        # task_response tool. Kept apart from tool_calls so it reads as the
+        # answer rather than as a tool the model chose to call.
+        structured_output: str | None
 
     @staticmethod
     def trace_to_formatted_conversation_history(
@@ -22,15 +29,12 @@ class EvalTraceFormatter:
     ) -> str:
         """Convert a trace of chat completion messages to a formatted conversation history string.
 
-        One message can carry several things at once — an assistant commonly
-        replies with visible text AND requests tool calls in the same message.
-        Each is rendered as its own block, in the order the model produced them
-        (the text, then the calls it announced). Rendering only one of them
-        hides real behavior from everything that reads this transcript.
-
-        Reasoning content is deliberately not rendered: it is model-internal,
-        not part of the observable behavior a transcript is read to judge.
-        MessageDetails still parses it for callers that want it.
+        One message can carry several things at once — a model commonly narrates
+        while it calls a tool — so each is emitted as its own block. Collecting
+        blocks rather than assigning to shared variables is what keeps them: an
+        earlier design assigned and emitted once per message, so the last branch
+        taken silently replaced the others and a tool call accompanied by a
+        sentence never reached the judge.
         """
         blocks: list[str] = []
         for message in trace:
@@ -43,37 +47,67 @@ class EvalTraceFormatter:
                         message, trace
                     )
                 )
-
-                # A tool result we can't trace back to its call is scaffolding
-                # without an author, so it is left out entirely.
-                if origin_tool_call_name:
-                    blocks.append(
-                        EvalTraceFormatter.format_message(
-                            role,
-                            f"{role}_tool_message",
-                            message_details.content,
-                        )
+                # Named where the name is known, and still emitted where it is
+                # not: an unresolvable origin means we cannot say which tool
+                # answered, not that nothing did. Dropping the result would hide
+                # the value itself, which is the part a judge needs.
+                role_label = (
+                    f"tool result from {origin_tool_call_name}"
+                    if origin_tool_call_name
+                    else "tool result"
+                )
+                blocks.append(
+                    EvalTraceFormatter.format_message(
+                        role_label,
+                        f"{role}_tool_message",
+                        message_details.content,
                     )
+                )
+                continue
 
-            else:
-                if message_details.content:
-                    blocks.append(
-                        EvalTraceFormatter.format_message(
-                            role,
-                            f"{role}_message",
-                            message_details.content,
-                        )
+            if message_details.reasoning_content:
+                blocks.append(
+                    EvalTraceFormatter.format_message(
+                        f"{role} reasoning",
+                        f"{role}_reasoning_message",
+                        message_details.reasoning_content,
                     )
+                )
 
-                if message_details.tool_calls:
-                    blocks.append(
-                        EvalTraceFormatter.format_message(
-                            f"{role} requested tool calls",
-                            f"{role}_requested_tool_calls",
-                            message_details.tool_calls,
-                        )
+            # Content before tool calls: the text in such a message is the
+            # narration introducing the call ("Now I'll subtract that fee"), so
+            # emitting the call first would read backwards.
+            if message_details.content:
+                blocks.append(
+                    EvalTraceFormatter.format_message(
+                        role, f"{role}_message", message_details.content
                     )
+                )
 
+            # Emitted under the same tag a plain message uses, because that is
+            # what it is. A new tag would re-expose the plumbing under a
+            # different name, and every judge prompt already knows what an
+            # <assistant_message> is.
+            if message_details.structured_output:
+                blocks.append(
+                    EvalTraceFormatter.format_message(
+                        role,
+                        f"{role}_message",
+                        message_details.structured_output,
+                    )
+                )
+
+            if message_details.tool_calls:
+                blocks.append(
+                    EvalTraceFormatter.format_message(
+                        f"{role} requested tool calls",
+                        f"{role}_requested_tool_calls",
+                        message_details.tool_calls,
+                    )
+                )
+
+        # Joined on what was emitted, not on position in the trace: a message
+        # that renders to nothing must not leave a gap behind it.
         return "\n\n".join(blocks)
 
     @staticmethod
@@ -91,6 +125,9 @@ class EvalTraceFormatter:
             ),
             tool_calls=EvalTraceFormatter.formatted_tool_calls_from_message(message),
             content=EvalTraceFormatter.content_from_message(message),
+            structured_output=EvalTraceFormatter.structured_output_from_message(
+                message
+            ),
         )
 
     @staticmethod
@@ -147,18 +184,45 @@ class EvalTraceFormatter:
         if tool_calls is None:
             return None
 
-        # Parallel tool calls each get their own line pair. Without the
-        # separator the last argument of one call runs straight into the name
-        # of the next, which reads as a single mangled call.
-        tool_call_descriptions: list[str] = []
+        # The task_response wrapper is not a tool the model chose to call, so it
+        # is reported as the model's answer instead. See
+        # structured_output_from_message.
+        #
+        # Blank line between calls: concatenating them ran the next call's name
+        # onto the end of the previous call's arguments, so a message issuing
+        # several calls read as one run-on block.
+        described = "\n\n".join(
+            f"- Tool Name: {tool_call['function']['name']}\n"
+            f"- Arguments: {tool_call['function']['arguments']}"
+            for tool_call in tool_calls
+            if tool_call["function"]["name"] != TASK_RESPONSE_TOOL_NAME
+        )
+        # None rather than "" so a message whose only call was the wrapper
+        # emits no tool-call block at all.
+        return described or None
+
+    @staticmethod
+    def structured_output_from_message(
+        message: ChatCompletionMessageParam,
+    ) -> str | None:
+        """The structured answer a model returned via the internal task_response tool.
+
+        Function-calling structured output modes carry the answer as the
+        arguments of a synthetic task_response call. Returns those arguments so
+        the trace can show them as the answer rather than as tool use.
+        """
+        tool_calls = EvalTraceFormatter.tool_calls_from_message(message)
+        if tool_calls is None:
+            return None
+
+        arguments = None
         for tool_call in tool_calls:
-            tool_call_function = tool_call["function"]
-            tool_name = tool_call_function["name"]
-            tool_call_arguments = tool_call_function["arguments"]
-            tool_call_descriptions.append(
-                f"- Tool Name: {tool_name}\n- Arguments: {tool_call_arguments}"
-            )
-        return "\n".join(tool_call_descriptions)
+            if tool_call["function"]["name"] == TASK_RESPONSE_TOOL_NAME:
+                # Last one wins, matching the adapter: when a model emits more
+                # than one task_response, the final call is the output the run
+                # was saved with.
+                arguments = tool_call["function"]["arguments"]
+        return arguments
 
     @staticmethod
     def origin_tool_call_name_from_message(

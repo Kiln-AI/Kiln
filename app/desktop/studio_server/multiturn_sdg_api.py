@@ -21,9 +21,10 @@ upstream work — the runner depends on multi-turn TaskRun chaining
 The kiln_server API key is read server-side (`get_copilot_api_key`) and
 never crosses to the browser, matching the copilot pattern. The SU
 driver model is exposed to the caller because the choice of model
-affects probe quality and cost — deliberate, not internal.
+affects probe quality and cost.
 """
 
+import asyncio
 import dataclasses
 import json
 import logging
@@ -61,7 +62,11 @@ from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
 from pydantic import BaseModel, Field, model_validator
+from typing_extensions import Self
 
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    SyntheticUserCase as SdkCase,
+)
 from app.desktop.studio_server.eval_api import task_run_config_from_id
 from app.desktop.studio_server.synthetic_user.client import (
     SyntheticUserClient,
@@ -71,6 +76,20 @@ from app.desktop.studio_server.synthetic_user.client import (
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 
 logger = logging.getLogger(__name__)
+
+
+# Persona cases asked for per kiln_server call. kiln_server accepts at most
+# 50 cases per request and writes a request's whole batch in a single model
+# call, so the generated output grows with the count: 20 keeps each call
+# short (faster, and less of it lost to truncation and salvage) and well
+# under the server's bound. If that bound ever changes this must stay at or
+# below it.
+SU_CASES_PER_CALL = 20
+
+# How many chunk calls run at once. The chunks are independent, so they
+# overlap rather than running end to end; four is deliberately conservative
+# against provider rate limits.
+SU_CALLS_IN_FLIGHT = 4
 
 
 # ───────────────────────── Pydantic API models ─────────────────────────
@@ -87,39 +106,29 @@ _CASE_DICT_DESCRIPTION = (
     "scenario_index?: int | null}. The synthetic_user_info value is an "
     "XML-tagged blob: "
     "<persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. "
-    "Parsed client-side by kiln_ai.synthetic_user.parser. scenario_index is "
-    "set only on scenario batches (generate_cases with case_prompts) and maps "
+    "Parsed client-side by kiln_ai.synthetic_user.parser. scenario_index maps "
     "the case back to its plan prompt."
 )
 
 
 class GenerateCasesApiInput(BaseModel):
     target_specification: str = Field(..., min_length=1)
-    num_cases: int = Field(..., ge=1, le=NUM_CASES_MAX)
-    case_prompts: list[str] | None = Field(
-        default=None,
+    case_prompts: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=NUM_CASES_MAX,
         description=(
-            "Optional per-case scenario prompts (e.g. from an approved batch "
-            "plan). When provided, the batch is generated in ONE upstream "
-            "call with case i designed around prompt i; each returned case "
-            "carries scenario_index. Under the upstream salvage contract a "
-            "flaky case is dropped rather than failing the batch, so the "
-            "response may hold fewer cases than prompts — scenario_index, "
-            "not position, maps a case to its prompt. Length must equal "
-            "num_cases."
+            "One scenario prompt per case (e.g. from an approved batch plan). "
+            "A case that fails to generate is dropped, so the response can "
+            "hold fewer cases than prompts; scenario_index maps each case to "
+            "its prompt."
         ),
     )
 
     @model_validator(mode="after")
-    def _case_prompts_match_num_cases(self) -> "GenerateCasesApiInput":
-        if self.case_prompts is not None:
-            if len(self.case_prompts) != self.num_cases:
-                raise ValueError(
-                    "case_prompts length must equal num_cases "
-                    f"({len(self.case_prompts)} != {self.num_cases})."
-                )
-            if any(not p.strip() for p in self.case_prompts):
-                raise ValueError("case_prompts entries must be non-empty.")
+    def _case_prompts_non_empty(self) -> "GenerateCasesApiInput":
+        if any(not p.strip() for p in self.case_prompts):
+            raise ValueError("case_prompts entries must be non-empty.")
         return self
 
 
@@ -136,25 +145,11 @@ class SyntheticUserDriverSpec(BaseModel):
     model_provider: ModelProviderName
 
 
-class RunCasesBatchApiInput(BaseModel):
-    cases: list[SyntheticUserCaseDict] = Field(
-        ...,
-        min_length=1,
-        max_length=NUM_CASES_MAX,
-        description=(
-            f"Cases as returned by /generate_cases, optionally edited. "
-            f"{_CASE_DICT_DESCRIPTION}"
-        ),
-    )
-    turns: int = Field(
-        default=MAX_TURNS_DEFAULT,
-        ge=1,
-        le=20,
-        description=(
-            "Exact number of assistant turns to produce per case. The drive "
-            "loop has no early termination."
-        ),
-    )
+class TargetRunConfigFields(BaseModel):
+    """The target-config half of every drive request — inherited by both the
+    multi-turn batch/pipeline requests and the single-turn pipeline request,
+    so the two drive contracts can't drift."""
+
     target_run_config: RunConfigProperties | None = Field(
         default=None,
         description=(
@@ -176,6 +171,32 @@ class RunCasesBatchApiInput(BaseModel):
             "of target_run_config / target_run_config_id is required."
         ),
     )
+
+    @model_validator(mode="after")
+    def _exactly_one_target_config(self) -> Self:
+        if (self.target_run_config is None) == (self.target_run_config_id is None):
+            raise ValueError(
+                "Provide exactly one of target_run_config or target_run_config_id."
+            )
+        return self
+
+
+class RunCasesBatchApiInput(TargetRunConfigFields):
+    cases: list[SyntheticUserCaseDict] = Field(
+        ...,
+        min_length=1,
+        max_length=NUM_CASES_MAX,
+        description=(
+            f"Cases as returned by /generate_cases, optionally edited. "
+            f"{_CASE_DICT_DESCRIPTION}"
+        ),
+    )
+    turns: int = Field(
+        default=MAX_TURNS_DEFAULT,
+        ge=1,
+        le=20,
+        description="Ceiling on the assistant turns produced per case.",
+    )
     su_driver: SyntheticUserDriverSpec
     batch_tag: str | None = Field(
         default=None,
@@ -188,14 +209,6 @@ class RunCasesBatchApiInput(BaseModel):
             "TaskRuns. Auto-generated if not provided."
         ),
     )
-
-    @model_validator(mode="after")
-    def _exactly_one_target_config(self) -> "RunCasesBatchApiInput":
-        if (self.target_run_config is None) == (self.target_run_config_id is None):
-            raise ValueError(
-                "Provide exactly one of target_run_config or target_run_config_id."
-            )
-        return self
 
 
 # ───────────────────────── helpers ─────────────────────────
@@ -221,9 +234,9 @@ def guard_multiturn(task: Task) -> None:
 
 
 def resolve_target_run_config(
-    input: RunCasesBatchApiInput, project_id: str, task_id: str
+    input: TargetRunConfigFields, project_id: str, task_id: str
 ) -> tuple[KilnAgentRunConfigProperties, str | None]:
-    """The runner's target config, from whichever source the request used,
+    """The drive's target config, from whichever source the request used,
     plus the saved config's id for run attribution (None on the inline
     path — those runs are ad-hoc by definition).
 
@@ -260,7 +273,7 @@ def resolve_target_run_config(
                 detail={
                     "code": "run_config_not_agent",
                     "message": (
-                        "Multi-turn driving requires a Kiln agent run config; "
+                        "Driving the task requires a Kiln agent run config; "
                         "the selected run config is a different type."
                     ),
                 },
@@ -278,7 +291,7 @@ def resolve_target_run_config(
             detail={
                 "code": "run_config_not_agent",
                 "message": (
-                    "Multi-turn driving requires a Kiln agent run config; "
+                    "Driving the task requires a Kiln agent run config; "
                     "the inline run config is a different type."
                 ),
             },
@@ -336,8 +349,9 @@ def _to_http_exception(
     at the call site — gives the type checker NoReturn semantics for free
     and avoids any chance of unbound-variable bugs after the try block.
 
-    Status preservation: upstream's HTTP status is passed through faithfully
-    when it's one of the 4xx/5xx codes the SDK models (401, 422, 500, 502).
+    Status preservation: upstream's status is passed through faithfully for
+    401/422 client errors and for any upstream 5xx; everything else collapses
+    to a clean 400/500.
     Collapsing a 401 to 400 hides whether the operator's stored API key is
     bad vs the caller's body being malformed — both knowable distinctions
     that the consumer needs to act on.
@@ -359,6 +373,24 @@ def _to_http_exception(
         status_code=status,
         detail={"code": exc.code, "message": exc.message},
     )
+
+
+def _case_chunks(case_prompts: list[str]) -> list[tuple[int, list[str]]]:
+    """Split the plan into `(plan offset, scenarios)` chunks of at most
+    SU_CASES_PER_CALL, in plan order. The offset turns the chunk-relative
+    indexes upstream returns back into plan-relative ones."""
+    return [
+        (start, case_prompts[start : start + SU_CASES_PER_CALL])
+        for start in range(0, len(case_prompts), SU_CASES_PER_CALL)
+    ]
+
+
+def _case_dict_at_plan_offset(case: SdkCase, start: int) -> SyntheticUserCaseDict:
+    """The case as a wire dict, with scenario_index shifted by the chunk's plan
+    offset: upstream numbers each chunk's cases from 0."""
+    case_dict = case.to_dict()
+    case_dict["scenario_index"] = case.scenario_index + start
+    return case_dict
 
 
 # ───────────────────────── route registration ─────────────────────────
@@ -391,23 +423,49 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
         api_key = get_copilot_api_key()
         client = SyntheticUserClient(api_key=api_key)
 
+        # The batch goes upstream in chunks, not in one request. kiln_server
+        # accepts at most 50 cases per call and writes a call's whole batch in
+        # a single model call, so one big ask both breaks that bound and runs
+        # long. The chunks are independent, so they run concurrently, and each
+        # chunk's cases come back numbered against the slice that chunk was
+        # given — the chunk's plan offset is added back so every index on the
+        # wire is plan-relative. Plan prompts ride as case_scenarios (case i ←
+        # prompt i, salvage drops a flaky case instead of failing the chunk).
+        in_flight = asyncio.Semaphore(SU_CALLS_IN_FLIGHT)
+
+        async def generate_chunk(
+            start: int, scenarios: list[str]
+        ) -> list[SyntheticUserCaseDict]:
+            async with in_flight:
+                chunk_cases = await client.generate(
+                    target_task_prompt=task.instruction,
+                    target_specification=input.target_specification,
+                    case_scenarios=scenarios,
+                )
+            return [_case_dict_at_plan_offset(c, start) for c in chunk_cases]
+
         try:
-            # One upstream call either way. Plan prompts ride as
-            # case_scenarios (one batch pass, case i ← prompt i, salvage
-            # drops a flaky case instead of failing the batch).
-            sdk_cases = await client.generate(
-                target_task_prompt=task.instruction,
-                target_specification=input.target_specification,
-                num_cases=input.num_cases,
-                case_scenarios=input.case_prompts,
+            # gather keeps results in argument order, so the chunks stitch back
+            # in plan order. A chunk's typed failure IS the request's failure:
+            # it propagates out of gather and maps exactly as a single call's
+            # did, rather than shipping a partial batch.
+            by_chunk = await asyncio.gather(
+                *(
+                    generate_chunk(start, scenarios)
+                    for start, scenarios in _case_chunks(input.case_prompts)
+                )
             )
         except (SyntheticUserRequestError, SyntheticUserServerError) as exc:
             raise _to_http_exception(exc) from exc
 
-        if not sdk_cases:
+        cases = [case for chunk_cases in by_chunk for case in chunk_cases]
+
+        if not cases:
             # Upstream promises >= 1 case or a 502; an empty 200 is a broken
-            # contract. Surface it typed rather than handing the UI an empty
-            # batch it would fail on later with no visible cause.
+            # contract. A short chunk is ordinary salvage, so the guard is on
+            # the stitched batch: nothing at all came back. Surface it typed
+            # rather than handing the UI an empty batch it would fail on later
+            # with no visible cause.
             raise HTTPException(
                 status_code=502,
                 detail={
@@ -415,7 +473,7 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
                     "message": "Synthetic-user generator returned no cases.",
                 },
             )
-        return GenerateCasesApiOutput(cases=[c.to_dict() for c in sdk_cases])
+        return GenerateCasesApiOutput(cases=cases)
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/run_cases_batch",

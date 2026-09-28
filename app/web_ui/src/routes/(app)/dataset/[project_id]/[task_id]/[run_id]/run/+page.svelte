@@ -562,8 +562,11 @@
     scrolled_for_run_id = run.id ?? null
     // The freshly-loaded run's trace already contains the just-sent turn, so
     // drop the optimistic placeholder + loader to avoid showing them twice.
+    // For a fork, this is also where the held truncation is released — the new
+    // branch is now rendered, so we show it in full.
     optimistic_sent_message = null
     awaiting_response = false
+    fork_send_trace_index = null
     apply_transcript_scroll()
   }
 
@@ -599,6 +602,9 @@
     if (!ok) {
       optimistic_sent_message = null
       awaiting_response = false
+      // Fork failed: release the held truncation. fork_target is still set (no
+      // navigation happened), so the fork composer stays open at the same point.
+      fork_send_trace_index = null
     }
   }
 
@@ -607,6 +613,7 @@
   $: if (load_error) {
     awaiting_response = false
     optimistic_sent_message = null
+    fork_send_trace_index = null
   }
 
   async function apply_transcript_scroll() {
@@ -702,6 +709,12 @@
   let run_has_children = false
   let chain_loaded_for_run_id: string | null = null
   let fork_target: ForkTarget | null = null
+  // Holds the fork point's truncation across the navigation to the forked run.
+  // fork_target is reset the instant run_id changes (below), so on its own the
+  // transcript would snap back to the full untruncated conversation mid-send;
+  // this survives the navigation and is cleared only once the forked run
+  // renders, mirroring how awaiting_response gates the append flow.
+  let fork_send_trace_index: number | null = null
 
   // Reset fork + chain state whenever the run id changes so we don't surface
   // stale data (banners, suffix-aligned mappings) from the previous run
@@ -803,8 +816,20 @@
     fork_target = null
   }
 
+  // Fork send begins: hold the fork point's truncation and raise the loader
+  // before navigation, so the transcript stays truncated (with a pending-
+  // response indicator) instead of flashing the full original conversation
+  // while the forked run is created and loaded.
+  function handle_fork_send_start() {
+    fork_send_trace_index = fork_target?.trace_index ?? null
+    awaiting_response = true
+    apply_transcript_scroll()
+  }
+
   async function handle_fork_success(new_run_id: string) {
-    fork_target = null
+    // Don't clear fork_target here: navigation resets it (see the run_id
+    // reactive), and fork_send_trace_index / awaiting_response keep the view
+    // truncated + loading until the forked run renders.
     await handle_send(new_run_id)
   }
 
@@ -950,7 +975,8 @@
                     trace={display_trace}
                     {project_id}
                     {forkable_run_ids}
-                    truncate_at_trace_index={fork_target?.trace_index ?? null}
+                    truncate_at_trace_index={fork_target?.trace_index ??
+                      fork_send_trace_index}
                     {on_fork}
                     show_per_message_usage={task?.turn_mode === "multiturn"}
                   />
@@ -973,8 +999,11 @@
                       run_config_component={multiturn_run_config_component}
                       prefill_text={fork_target.prefill}
                       forked_turn_index={fork_target.turn_index}
+                      {chain_broken}
                       on_success={handle_fork_success}
                       on_cancel={cancel_fork}
+                      on_send_start={handle_fork_send_start}
+                      on_send_settled={handle_send_settled}
                     />
                   {:else}
                     <MultiturnComposer

@@ -848,7 +848,7 @@
         <div class="rounded-lg border border-error/40 bg-error/5 px-3 py-2">
           <Warning
             warning_color="error"
-            tight
+            inline={true}
             markdown
             trusted
             warning_message={"A newer version of Kiln is required to continue using chat. [Check for updates](/settings/check_for_update)"}
@@ -863,7 +863,7 @@
           <div class="flex-1 min-w-0">
             <Warning
               warning_color="warning"
-              tight
+              inline={true}
               markdown
               trusted
               warning_message={`A newer version of Kiln (${upgradeNudgeVersion}) is available. [Check for updates](/settings/check_for_update)`}

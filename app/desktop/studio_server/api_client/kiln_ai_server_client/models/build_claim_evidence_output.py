@@ -8,7 +8,7 @@ from attrs import field as _attrs_field
 
 if TYPE_CHECKING:
     from ..models.claim import Claim
-    from ..models.final_judgement import FinalJudgement
+    from ..models.overview import Overview
 
 
 T = TypeVar("T", bound="BuildClaimEvidenceOutput")
@@ -18,29 +18,30 @@ T = TypeVar("T", bound="BuildClaimEvidenceOutput")
 class BuildClaimEvidenceOutput:
     """
     Attributes:
-        claims (list[Claim]): ALL claims the data supports, ordered most-to-least important. Do NOT target a count or
-            cap the list. May be empty for a trivial single-property eval where the final judgement carries it.
-        final_judgement (FinalJudgement):
+        overview (Overview):
+        claims (list[Claim]): Ordered. Each text opens with the decision the reviewer votes on. The last item is the
+            verdict claim when one is present. A trailing 'Note:' paragraph or a final 'We suggest …' sentence are
+            conventions inside text.
     """
 
+    overview: Overview
     claims: list[Claim]
-    final_judgement: FinalJudgement
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        overview = self.overview.to_dict()
+
         claims = []
         for claims_item_data in self.claims:
             claims_item = claims_item_data.to_dict()
             claims.append(claims_item)
 
-        final_judgement = self.final_judgement.to_dict()
-
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
+                "overview": overview,
                 "claims": claims,
-                "final_judgement": final_judgement,
             }
         )
 
@@ -49,9 +50,11 @@ class BuildClaimEvidenceOutput:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.claim import Claim
-        from ..models.final_judgement import FinalJudgement
+        from ..models.overview import Overview
 
         d = dict(src_dict)
+        overview = Overview.from_dict(d.pop("overview"))
+
         claims = []
         _claims = d.pop("claims")
         for claims_item_data in _claims:
@@ -59,11 +62,9 @@ class BuildClaimEvidenceOutput:
 
             claims.append(claims_item)
 
-        final_judgement = FinalJudgement.from_dict(d.pop("final_judgement"))
-
         build_claim_evidence_output = cls(
+            overview=overview,
             claims=claims,
-            final_judgement=final_judgement,
         )
 
         build_claim_evidence_output.additional_properties = d

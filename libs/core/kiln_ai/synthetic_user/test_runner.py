@@ -8,12 +8,15 @@ ordering / per-case bookkeeping.
 """
 
 import asyncio
+import logging
 import re
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
+import litellm
 import pytest
 
+from kiln_ai.adapters.errors import KilnRunError, format_error_message
 from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
@@ -25,8 +28,13 @@ from kiln_ai.datamodel.usage import Usage
 from kiln_ai.synthetic_user import runner as runner_mod
 from kiln_ai.synthetic_user.case import SyntheticUserCase
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
-from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
+from kiln_ai.synthetic_user.models import (
+    EARLY_STOP_SENTINEL,
+    TAG_SU_ENDED_CONVERSATION,
+    SyntheticUserDriverConfig,
+)
 from kiln_ai.synthetic_user.runner import (
+    NUM_CASES_MAX,
     BatchCompletedEvent,
     BatchEvent,
     BatchStartedEvent,
@@ -35,6 +43,7 @@ from kiln_ai.synthetic_user.runner import (
     TurnCompletedEvent,
     run_cases_batch,
 )
+from kiln_ai.utils.git_sync_protocols import default_save_context
 
 # ───────────────────────── helpers / fixtures ─────────────────────────
 
@@ -120,8 +129,9 @@ def _patch_su_driver(
             else list(replies_per_case)
         )
         instance = Mock(spec=SyntheticUserDriver)
-        # respond() returns (message, usage). Tests that don't care about
-        # spend get None — the provider reported nothing.
+        # respond() returns (message, Usage | None). Tests that don't care about
+        # the driver's spend hand back None — the shape a provider that reported
+        # nothing produces, which the runner totals as zero.
         instance.respond = AsyncMock(side_effect=[(r, None) for r in replies])
         return instance
 
@@ -146,6 +156,12 @@ async def _collect(gen) -> list[BatchEvent]:
 
 
 # ───────────────────────── input validation ─────────────────────────
+
+
+def test_num_cases_max_is_pinned() -> None:
+    """Callers mirror this cap in their own bounds, so a change here is a
+    contract change for all of them — not a local tweak."""
+    assert NUM_CASES_MAX == 200
 
 
 @pytest.mark.asyncio
@@ -247,23 +263,14 @@ async def test_total_cost_sums_target_and_su_driver_spend(
     leaf_b = _fake_run("b-leaf", cost=0.05)
     _patch_adapter_for_task(
         monkeypatch,
-        [
-            _fake_run("a-1"),
-            _fake_run("a-2"),
-            leaf_a,
-            _fake_run("b-1"),
-            _fake_run("b-2"),
-            leaf_b,
-        ],
+        [_fake_run("a-1"), leaf_a, _fake_run("b-1"), leaf_b],
     )
 
-    # Three turns → two SU replies (the last turn gets none) at $0.01
-    # each → $0.02 SU per case.
+    # At turns=2 each case makes ONE SU call (none after the final turn),
+    # at $0.01 → $0.01 SU per case.
     def _ctor(info, config):
         instance = Mock(spec=SyntheticUserDriver)
-        instance.respond = AsyncMock(
-            side_effect=[("u2", Usage(cost=0.01)), ("u3", Usage(cost=0.01))]
-        )
+        instance.respond = AsyncMock(side_effect=[("u2", Usage(cost=0.01))])
         return instance
 
     monkeypatch.setattr(runner_mod, "SyntheticUserDriver", _ctor)
@@ -274,17 +281,17 @@ async def test_total_cost_sums_target_and_su_driver_spend(
             target_task=fake_task,
             target_run_config=_target_run_config(),
             su_driver_config=_su_driver_config(),
-            turns=3,
+            turns=2,
             concurrency=1,
         )
     )
 
     case_a, case_b = (e for e in events if isinstance(e, CaseCompletedEvent))
-    assert case_a.total_cost == pytest.approx(0.10 + 0.02)
-    assert case_b.total_cost == pytest.approx(0.05 + 0.02)
+    assert case_a.total_cost == pytest.approx(0.10 + 0.01)
+    assert case_b.total_cost == pytest.approx(0.05 + 0.01)
 
     batch = next(e for e in events if isinstance(e, BatchCompletedEvent))
-    assert batch.total_cost == pytest.approx(0.12 + 0.07)
+    assert batch.total_cost == pytest.approx(0.15 + 0.02)
 
 
 @pytest.mark.asyncio
@@ -306,40 +313,13 @@ async def test_turn_completed_event_carries_su_message_and_trace(
         )
     )
 
-    turn = next(e for e in events if isinstance(e, TurnCompletedEvent))
-    assert turn.su_next_message == "the SU's reply"
-    assert turn.cumulative_cost == pytest.approx(0.01)
+    turns = [e for e in events if isinstance(e, TurnCompletedEvent)]
+    assert turns[0].su_next_message == "the SU's reply"
+    assert turns[0].cumulative_cost == pytest.approx(0.01)
     # Trace is whatever the fake run carried.
-    assert any(m.get("role") == "assistant" for m in turn.trace)
-
-
-@pytest.mark.asyncio
-async def test_final_turn_event_carries_empty_su_message(
-    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The last turn still emits a TurnCompletedEvent — the runner tracks
-    persisted runs and per-turn progress through it — but with an empty
-    su_next_message: the drive loop skips the SU call there, so no next
-    user message exists.
-    """
-    _patch_adapter_for_task(
-        monkeypatch, [_fake_run("r0", cost=0.01), _fake_run("r1", cost=0.02)]
-    )
-    _patch_su_driver(monkeypatch, replies_per_case=["the SU's reply"])
-
-    events = await _collect(
-        run_cases_batch(
-            cases=[_case()],
-            target_task=fake_task,
-            target_run_config=_target_run_config(),
-            su_driver_config=_su_driver_config(),
-            turns=2,
-        )
-    )
-
-    turn_events = [e for e in events if isinstance(e, TurnCompletedEvent)]
-    assert len(turn_events) == 2
-    assert [e.su_next_message for e in turn_events] == ["the SU's reply", ""]
+    assert any(m.get("role") == "assistant" for m in turns[0].trace)
+    # The final turn has no SU reply — nothing would consume it.
+    assert turns[1].su_next_message is None
 
 
 @pytest.mark.asyncio
@@ -364,6 +344,65 @@ async def test_leaf_is_tagged_with_synthetic_user_case_and_batch_tag(
     assert "synthetic_user_case" in leaf.tags
     assert "synthetic_user_batch:abc123" in leaf.tags
     leaf.save_to_file.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_leaf_is_tagged_when_the_su_ends_the_conversation_early(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch, caplog
+) -> None:
+    """The tag is the only durable record that this conversation is short because
+    the synthetic user finished, not because the drive broke.
+    """
+    leaf = _fake_run("leaf")
+    _patch_adapter_for_task(monkeypatch, [leaf])
+    _patch_su_driver(monkeypatch, replies_per_case=[EARLY_STOP_SENTINEL])
+
+    with caplog.at_level(logging.WARNING, logger="kiln_ai.synthetic_user.runner"):
+        events = await _collect(
+            run_cases_batch(
+                cases=[_case()],
+                target_task=fake_task,
+                target_run_config=_target_run_config(),
+                su_driver_config=_su_driver_config(),
+                turns=3,
+                batch_tag="abc123",
+            )
+        )
+
+    completed = next(e for e in events if isinstance(e, CaseCompletedEvent))
+    assert completed.total_turns == 1
+    assert TAG_SU_ENDED_CONVERSATION in leaf.tags
+    # Ending on the very first turn leaves a single-turn conversation under a
+    # multi-turn batch. It is kept, but it is worth a line in the log.
+    assert any(
+        "ended on its first turn" in record.getMessage() for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_full_length_drive_is_not_tagged_as_ended_by_the_su(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch, caplog
+) -> None:
+    """A conversation that used its whole turn ceiling must not carry the tag, or
+    the tag would say nothing about any conversation."""
+    runs = [_fake_run("r1"), _fake_run("leaf")]
+    _patch_adapter_for_task(monkeypatch, runs)
+    _patch_su_driver(monkeypatch, replies_per_case=["keep going"])
+
+    with caplog.at_level(logging.WARNING, logger="kiln_ai.synthetic_user.runner"):
+        await _collect(
+            run_cases_batch(
+                cases=[_case()],
+                target_task=fake_task,
+                target_run_config=_target_run_config(),
+                su_driver_config=_su_driver_config(),
+                turns=2,
+                batch_tag="abc123",
+            )
+        )
+
+    assert TAG_SU_ENDED_CONVERSATION not in runs[-1].tags
+    assert caplog.records == []
 
 
 @pytest.mark.asyncio
@@ -540,6 +579,38 @@ async def test_target_invoke_failure_surfaces_as_case_failed(
 
 
 @pytest.mark.asyncio
+async def test_terminal_provider_error_names_its_class_on_the_event(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A provider error the shared classifier calls permanent carries its
+    exception class on the event, so failures can be counted by kind without
+    parsing the message."""
+    _patch_adapter_for_task(
+        monkeypatch,
+        litellm.BadRequestError(
+            message="max_tokens too large for this model",
+            model="gpt_5_5",
+            llm_provider="openrouter",
+        ),
+    )
+    _patch_su_driver(monkeypatch, replies_per_case=["x"])
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=1,
+        )
+    )
+
+    failed = next(e for e in events if isinstance(e, CaseFailedEvent))
+    assert failed.error_code == "unexpected_error"
+    assert failed.error_type == "BadRequestError"
+
+
+@pytest.mark.asyncio
 async def test_tag_leaf_failure_surfaces_as_case_failed(
     fake_task: Mock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -593,6 +664,267 @@ async def test_failed_case_deletes_partial_chain(
     failed = next(e for e in events if isinstance(e, CaseFailedEvent))
     assert failed.error_code == "unexpected_error"
     turn_one.delete.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_su_failure_deletes_chain_including_just_persisted_run(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failure in the SU half of turn N strikes AFTER run N persisted but
+    BEFORE the turn hook fired — cleanup must delete runs 1..N, not just
+    the turns that fully completed."""
+    run_one = _fake_run("turn-1")
+    run_two = _fake_run("turn-2")
+    _patch_adapter_for_task(monkeypatch, [run_one, run_two])
+
+    def _ctor(info, config):
+        instance = Mock(spec=SyntheticUserDriver)
+        # Turn 1's SU reply succeeds; turn 2's SU call dies mid-case.
+        instance.respond = AsyncMock(
+            side_effect=[("u2", None), ValueError("su blew up")]
+        )
+        return instance
+
+    monkeypatch.setattr(runner_mod, "SyntheticUserDriver", _ctor)
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=3,
+        )
+    )
+
+    failed = next(e for e in events if isinstance(e, CaseFailedEvent))
+    assert failed.error_code == "unexpected_error"
+    run_one.delete.assert_called_once()
+    run_two.delete.assert_called_once()
+
+
+# ───────────────────────── retry behavior ─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_transient_error_retries_and_succeeds(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A drive failing with a transient (classifier-approved) error is
+    re-attempted by the job runner and can still complete — no case_failed."""
+    monkeypatch.setattr(runner_mod, "DRIVE_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(
+        runner_mod, "is_retryable_error", lambda e: isinstance(e, RuntimeError)
+    )
+    run = _fake_run("r-retry")
+    invoke = _patch_adapter_for_task(monkeypatch, [RuntimeError("flaky 502"), run])
+    _patch_su_driver(monkeypatch, replies_per_case=["x"])
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=1,
+        )
+    )
+
+    assert not [e for e in events if isinstance(e, CaseFailedEvent)]
+    completed = next(e for e in events if isinstance(e, CaseCompletedEvent))
+    assert completed.case_index == 0
+    assert invoke.call_count == 2
+    batch = next(e for e in events if isinstance(e, BatchCompletedEvent))
+    assert batch.successful == 1
+    assert batch.failed == 0
+
+
+@pytest.mark.asyncio
+async def test_transient_error_exhausts_retries_then_fails_once(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Retries exhausted → exactly ONE case_failed (never one per attempt),
+    with the underlying error in the message and named on the event.
+
+    Runs a real transient provider error through the shared classifier, wrapped
+    the way the model adapter delivers it: both the KilnRunError wrapper and
+    the retryable wrapper hide the original, so message and error_type must
+    name the innermost provider error."""
+    monkeypatch.setattr(runner_mod, "DRIVE_RETRY_DELAY_SECONDS", 0)
+
+    def _raise_as_the_adapter_does(*args: Any, **kwargs: Any) -> None:
+        original = litellm.RateLimitError(
+            message="upstream rate limit",
+            model="gpt_5_5",
+            llm_provider="openrouter",
+        )
+        raise KilnRunError(
+            message=format_error_message(original),
+            partial_trace=None,
+            original=original,
+        ) from original
+
+    invoke = _patch_adapter_for_task(monkeypatch, _raise_as_the_adapter_does)
+    _patch_su_driver(monkeypatch, replies_per_case=["x"])
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=1,
+        )
+    )
+
+    failed = [e for e in events if isinstance(e, CaseFailedEvent)]
+    assert len(failed) == 1
+    assert failed[0].error_code == "unexpected_error"
+    assert "upstream rate limit" in failed[0].message
+    assert failed[0].error_type == "RateLimitError"
+    # One invoke per attempt at turns=1: the first try plus the retries.
+    assert invoke.call_count == 1 + runner_mod.DRIVE_MAX_RETRIES
+
+
+@pytest.mark.asyncio
+async def test_each_failed_attempt_cleans_its_partial_chain(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """turns=2: every attempt persists turn 1 then dies on turn 2 — each
+    attempt's orphan chain must be deleted, and turn events restart at 1
+    per attempt (turn_index is per-attempt, not cumulative)."""
+    monkeypatch.setattr(runner_mod, "DRIVE_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(
+        runner_mod, "is_retryable_error", lambda e: isinstance(e, RuntimeError)
+    )
+    runs = [_fake_run(f"turn1-attempt{i}") for i in range(3)]
+    _patch_adapter_for_task(
+        monkeypatch,
+        [
+            runs[0],
+            RuntimeError("flaky"),
+            runs[1],
+            RuntimeError("flaky"),
+            runs[2],
+            RuntimeError("flaky"),
+        ],
+    )
+    _patch_su_driver(monkeypatch, replies_per_case=["x", "y"])
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=2,
+        )
+    )
+
+    assert len([e for e in events if isinstance(e, CaseFailedEvent)]) == 1
+    for run in runs:
+        run.delete.assert_called_once()
+    turn_indexes = [e.turn_index for e in events if isinstance(e, TurnCompletedEvent)]
+    assert turn_indexes == [1, 1, 1]
+
+
+@pytest.mark.asyncio
+async def test_retried_case_batch_total_includes_both_attempts_costs(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A retried case's discarded first attempt still billed the provider.
+    total_cost stays per-conversation; discarded_attempts_cost carries the
+    deleted attempt's spend; the batch total covers both."""
+    monkeypatch.setattr(runner_mod, "DRIVE_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(
+        runner_mod, "is_retryable_error", lambda e: isinstance(e, RuntimeError)
+    )
+    # Attempt 1: turn 1 persists ($0.03 target), turn 2 dies transiently.
+    # Attempt 2: full chain; leaf's cumulative target cost $0.08.
+    _patch_adapter_for_task(
+        monkeypatch,
+        [
+            _fake_run("a1-t1", cost=0.03),
+            RuntimeError("flaky 502"),
+            _fake_run("a2-t1", cost=0.03),
+            _fake_run("a2-leaf", cost=0.08),
+        ],
+    )
+
+    # One SU call per attempt (turns=2), at $0.01.
+    def _ctor(info, config):
+        instance = Mock(spec=SyntheticUserDriver)
+        instance.respond = AsyncMock(side_effect=[("u2", Usage(cost=0.01))])
+        return instance
+
+    monkeypatch.setattr(runner_mod, "SyntheticUserDriver", _ctor)
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=2,
+        )
+    )
+
+    completed = next(e for e in events if isinstance(e, CaseCompletedEvent))
+    # Surviving conversation: leaf target $0.08 + SU $0.01.
+    assert completed.total_cost == pytest.approx(0.09)
+    # Attempt 1's real spend: persisted turn $0.03 + SU $0.01.
+    assert completed.discarded_attempts_cost == pytest.approx(0.04)
+    batch = next(e for e in events if isinstance(e, BatchCompletedEvent))
+    assert batch.total_cost == pytest.approx(0.13)
+
+
+@pytest.mark.asyncio
+async def test_dead_case_failed_event_reports_all_attempts_spend(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A case that exhausts retries billed on every attempt — case_failed
+    carries the summed spend and the batch total includes it, even though
+    nothing survives on disk."""
+    monkeypatch.setattr(runner_mod, "DRIVE_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(
+        runner_mod, "is_retryable_error", lambda e: isinstance(e, RuntimeError)
+    )
+    runs = [_fake_run(f"t1-a{i}", cost=0.02) for i in range(3)]
+    _patch_adapter_for_task(
+        monkeypatch,
+        [
+            runs[0],
+            RuntimeError("flaky"),
+            runs[1],
+            RuntimeError("flaky"),
+            runs[2],
+            RuntimeError("flaky"),
+        ],
+    )
+
+    def _ctor(info, config):
+        instance = Mock(spec=SyntheticUserDriver)
+        instance.respond = AsyncMock(side_effect=[("u2", Usage(cost=0.01))])
+        return instance
+
+    monkeypatch.setattr(runner_mod, "SyntheticUserDriver", _ctor)
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=2,
+        )
+    )
+
+    failed = next(e for e in events if isinstance(e, CaseFailedEvent))
+    # Three attempts, each $0.02 target + $0.01 SU before dying.
+    assert failed.total_cost == pytest.approx(3 * 0.03)
+    batch = next(e for e in events if isinstance(e, BatchCompletedEvent))
+    assert batch.successful == 0
+    assert batch.total_cost == pytest.approx(3 * 0.03)
 
 
 # ───────────────────────── concurrency ─────────────────────────
@@ -815,3 +1147,89 @@ async def test_consumer_cancellation_cancels_in_flight_case_tasks(
     await asyncio.sleep(0)
 
     assert saw_cancel["cancelled"] is True
+
+
+@pytest.mark.asyncio
+async def test_cancelled_case_deletes_partial_chain_and_reraises(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stopping a batch cancels in-flight cases mid-drive; a cancelled case
+    must remove its already-persisted turns AND re-raise the CancelledError —
+    swallowing it would break cooperative teardown."""
+    run_one = _fake_run("turn-1")
+    reached_turn_two = asyncio.Event()
+    calls = {"n": 0}
+
+    async def invoke(**_kwargs: Any) -> Mock:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return run_one
+        reached_turn_two.set()
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    _patch_adapter_for_task(monkeypatch, invoke)
+    _patch_su_driver(monkeypatch, replies_per_case=["x"])
+
+    queue: asyncio.Queue = asyncio.Queue()
+    task = asyncio.create_task(
+        runner_mod._drive_one_case_and_emit(
+            case_index=0,
+            case=_case(),
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=2,
+            batch_tag="tb",
+            queue=queue,
+            save_ctx=default_save_context,
+            skills={},
+            task_run_config_id=None,
+            failed_attempt_spend={},
+        )
+    )
+    await asyncio.wait_for(reached_turn_two.wait(), timeout=1.0)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    run_one.delete.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_consumer_disconnect_cleans_cancelled_cases_partial_chains(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end teardown: closing the batch generator mid-case must leave
+    no persisted turns behind — the cancelled case's cleanup runs (shielded)
+    before the generator's teardown completes."""
+    run_one = _fake_run("turn-1")
+    reached_turn_two = asyncio.Event()
+    calls = {"n": 0}
+
+    async def invoke(**_kwargs: Any) -> Mock:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return run_one
+        reached_turn_two.set()
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    _patch_adapter_for_task(monkeypatch, invoke)
+    _patch_su_driver(monkeypatch, replies_per_case=["x"])
+
+    gen = run_cases_batch(
+        cases=[_case()],
+        target_task=fake_task,
+        target_run_config=_target_run_config(),
+        su_driver_config=_su_driver_config(),
+        turns=2,
+    )
+    started = await gen.__anext__()
+    assert isinstance(started, BatchStartedEvent)
+    await asyncio.wait_for(reached_turn_two.wait(), timeout=1.0)
+
+    # Simulates the consumer disconnect / stop button.
+    await gen.aclose()
+
+    run_one.delete.assert_called_once()

@@ -1,16 +1,24 @@
 import logging
 from dataclasses import dataclass
-from typing import AsyncGenerator, Dict, List, Literal, Set, Tuple
-
-import litellm
+from typing import Any, AsyncGenerator, Dict, List, Literal, Set
 
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
-from kiln_ai.adapters.errors import KilnRunError
+from kiln_ai.adapters.chat.chat_formatter import (
+    chat_strategy_for_run,
+    is_two_message_cot_strategy,
+)
 from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 from kiln_ai.adapters.eval.drive_fingerprint import compute_drive_fingerprint
 from kiln_ai.adapters.eval.registry import legacy_eval_adapter_from_type
 from kiln_ai.adapters.eval.trace_index import TraceIndex, TraceKey, trace_key
+from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
+from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
+from kiln_ai.adapters.provider_tools import kiln_model_provider_from
+from kiln_ai.adapters.retry_classification import (
+    is_retryable_error,
+    unwrap_kiln_run_error,
+)
 from kiln_ai.datamodel.basemodel import ID_TYPE, generate_model_id
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.dataset_filters import (
@@ -26,6 +34,7 @@ from kiln_ai.datamodel.eval import (
     EvalRun,
     EvalScores,
     EvalTaskInput,
+    MultiTurnDriveConfig,
     MultiTurnSyntheticEvalInputData,
     SkippedReason,
     V2EvalResult,
@@ -40,12 +49,16 @@ from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     as_kiln_agent_run_config,
 )
-from kiln_ai.datamodel.task import TaskRunConfig
+from kiln_ai.datamodel.task import Task, TaskRunConfig
 from kiln_ai.datamodel.task_run import EvalItemSource, TaskRun, Usage
 from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.run_context import clear_eval_input_id, set_eval_input_id
 from kiln_ai.synthetic_user import drive_case_for_eval
-from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
+from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
+from kiln_ai.synthetic_user.models import (
+    TAG_SU_ENDED_CONVERSATION,
+    SyntheticUserDriverConfig,
+)
 from kiln_ai.utils.async_job_runner import (
     AsyncJobRunner,
     AsyncJobRunnerObserver,
@@ -54,6 +67,7 @@ from kiln_ai.utils.async_job_runner import (
 )
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam, serialize_trace
+from kiln_ai.utils.slow_operation import log_if_slow
 
 logger = logging.getLogger(__name__)
 
@@ -84,33 +98,110 @@ def _calibration_item(job: EvalJob) -> TaskRun | None:
     return job.item
 
 
-def _multi_turn_synthetic_case(
-    job: EvalJob,
-) -> Tuple[EvalInput, MultiTurnSyntheticEvalInputData] | None:
-    """The synthetic multi-turn case this job re-drives, if it is one.
+def _has_text_content(content: Any) -> bool:
+    """Whether a message's content carries any text.
 
-    task_run_eval only: calibration scores golden TaskRuns, and an EvalInput carries no
-    stored output to judge, so a hand-built job of that shape falls through to the skip
-    rather than paying for a drive.
+    Content is either a plain string or a list of content parts, and both shapes reach
+    here — traces are written by adapters and read back through pydantic.
     """
-    if job.type != "task_run_eval":
-        return None
-    if not isinstance(job.item, EvalInput):
-        return None
-    if not isinstance(job.item.data, MultiTurnSyntheticEvalInputData):
-        return None
-    return job.item, job.item.data
+    if isinstance(content, str):
+        return bool(content.strip())
+    if isinstance(content, list):
+        return any(
+            isinstance(part, dict) and bool(str(part.get("text") or "").strip())
+            for part in content
+        )
+    return False
 
 
-def _is_multi_turn(item: TaskRun | EvalInput) -> bool:
-    """Whether this item is a conversation rather than a single exchange.
+def conversation_health_problem(
+    trace: list[ChatCompletionMessageParam] | None,
+    required_turns: int,
+) -> str | None:
+    """Why `trace` is not a complete conversation of `required_turns` turns, or None when
+    it is complete.
 
-    Multi-turn items are skipped by V2 evals, which also keeps eval traces childless —
-    a property `TraceIndex._seed` relies on to find them.
+    Structural completeness only, never error-freeness: a conversation whose tool calls
+    failed is a legitimate thing to evaluate (judging how an agent handles errors is a
+    first-class eval), so error-bearing tool messages say nothing about health here. What
+    it does catch is a conversation that stopped short, which would otherwise be judged
+    as if the agent had simply finished.
     """
-    if isinstance(item, TaskRun):
-        return item.parent_task_run_id is not None
-    return isinstance(item.data, MultiTurnSyntheticEvalInputData)
+    messages = trace or []
+    user_turns = sum(1 for message in messages if message.get("role") == "user")
+    if user_turns != required_turns:
+        return f"expected {required_turns} user turns, found {user_turns}"
+    if not messages:
+        return "the conversation is empty"
+    last_role = messages[-1].get("role")
+    if last_role != "assistant":
+        return f"the conversation ends with a '{last_role}' message, not an assistant reply"
+    if not _has_text_content(messages[-1].get("content")):
+        return "the final assistant message has no text content"
+    return None
+
+
+def effective_drive_config(
+    eval: Eval, data: MultiTurnSyntheticEvalInputData
+) -> MultiTurnDriveConfig | None:
+    """The synthetic-user drive settings a multi-turn item is re-driven with.
+
+    The item's own `drive_config` is the home for these settings. Items minted before
+    items carried one fall back to the eval's legacy `multi_turn_drive_config`, where
+    earlier builds stored it, so evals written by those builds stay drivable. None when
+    neither is set.
+    """
+    return data.drive_config or eval.multi_turn_drive_config
+
+
+def _splits_a_turn_into_two_messages(
+    properties: KilnAgentRunConfigProperties, task: Task
+) -> bool:
+    """Whether this run config answers one turn with two user-role messages.
+
+    A chain of thought prompt on a model with no reasoning step of its own is served by
+    asking the model to think, then sending a second user message asking for the final
+    answer. That extra message is indistinguishable from a real user turn, so a driven
+    conversation both miscounts its turns and feeds the injected message back to the
+    synthetic user as if the user had written it.
+
+    The strategy is resolved from the same prompt builder and model provider the adapter
+    reads, so the answer here is the one the drive would get. Built-in models are read
+    straight from the model table rather than through the credentialed provider lookup:
+    this preflight runs before any paid call and must give the same answer on a machine
+    with no provider keys, and the two fields it needs are static entries in that table.
+    Custom, fine-tuned and litellm models are not in the table, so they keep the
+    credentialed lookup. A config that cannot be resolved answers False: the drive
+    fails on the identical lookup before it spends anything, and one unresolvable
+    config must not block the run configs beside it.
+    """
+    try:
+        cot_prompt = prompt_builder_from_id(
+            properties.prompt_id, task
+        ).chain_of_thought_prompt()
+        provider = None
+        if cot_prompt:
+            provider = built_in_models_from_provider(
+                properties.model_provider_name, properties.model_name
+            ) or kiln_model_provider_from(
+                properties.model_name, properties.model_provider_name
+            )
+    except Exception as error:
+        logger.warning(
+            "Could not resolve the chat strategy for model '%s' with prompt '%s' (%s); "
+            "leaving its multi-turn compatibility to the per-job checks",
+            properties.model_name,
+            properties.prompt_id,
+            error,
+        )
+        return False
+    return is_two_message_cot_strategy(
+        chat_strategy_for_run(
+            cot_prompt=cot_prompt,
+            tuned_chat_strategy=provider.tuned_chat_strategy if provider else None,
+            reasoning_capable=provider.reasoning_capable if provider else False,
+        )
+    )
 
 
 def no_golden_set_message(eval: Eval) -> str:
@@ -131,11 +222,14 @@ class EvalRunner:
     Runs an eval. Async execution is supported to make it faster when using remote/fast model providers.
 
     Can run an eval in 2 modes:
-    1) eval_config_eval: evaluate an eval config using existing dataset items. Scoped by the
-       eval's golden filter, so its items are always TaskRuns.
-    2) task_run_eval: evaluate a range of task run configs, generating new run output using
-       existing dataset item input. Scoped by the `split` it is given, whose items may come
-       from either store.
+    1) eval_config_eval: evaluate an eval config (judge quality) using existing dataset
+       items. Scoped by the eval's golden filter, so its items are always TaskRuns.
+    2) task_run_eval: evaluate a range of task run configs, generating new run output.
+       Scoped by the `split` it is given, whose items may come from either store.
+       Multi-turn synthetic EvalInputs are re-driven as a full conversation per run
+       config using the drive config stamped on each item (or the eval's legacy
+       multi_turn_drive_config for items minted without one); stored multi-turn TaskRun
+       chains are skipped.
     """
 
     def __init__(
@@ -145,7 +239,6 @@ class EvalRunner:
         eval_run_type: Literal["eval_config_eval", "task_run_eval"],
         split: ResolvedSplit | None = None,
         save_context: SaveContext | None = None,
-        eval_set_filter_id_override: DatasetFilterId | None = None,
     ):
         if len(eval_configs) == 0:
             raise ValueError("Eval runner requires at least one eval config")
@@ -201,7 +294,6 @@ class EvalRunner:
             self.golden_filter_id = target_eval.eval_configs_filter_id
 
         self.eval_run_type = eval_run_type
-        self.eval_set_filter_id_override = eval_set_filter_id_override
         self.eval_configs = eval_configs
         self.run_configs = run_configs
         self.split = split
@@ -240,6 +332,11 @@ class EvalRunner:
         for eval_config in self.eval_configs:
             already_run[eval_config.id] = set()
             for run in eval_config.runs(readonly=True):
+                # Only calibration records mark a golden item done: the same eval
+                # config also accumulates task_run_eval records, and a golden
+                # TaskRun that was scored as a test item must still be calibrated.
+                if not run.eval_config_eval:
+                    continue
                 already_run[eval_config.id].add(run.dataset_id)
 
         return [
@@ -301,6 +398,89 @@ class EvalRunner:
             not in already_run[eval_config.id][run_config.id]
         ]
 
+    def validate_multi_turn_drive_readiness(
+        self, check_run_configs: bool = True
+    ) -> None:
+        """Fail fast on config problems every multi-turn re-drive job would
+        hit: no item carrying a synthetic-user drive config, a stamped
+        config with an unknown model provider, run configs that aren't
+        Kiln agent configs, or run configs that answer in two messages per
+        turn. Callers can invoke this before starting a batch
+        so the user gets one clear error up front instead of one opaque
+        error per job. The per-job checks stay as the backstop for
+        standalone runner use.
+
+        A partially stamped split is NOT an error here: the stamped items
+        can still run, and each unstamped item records a per-item skip
+        naming the fix. Only an entirely unstamped split fails up front,
+        because nothing could run and one clear error beats a page of
+        identical skips.
+
+        `check_run_configs=False` limits validation to the drive configs —
+        for callers running a fleet the user didn't hand-pick, where one
+        incompatible run config shouldn't block every other config's jobs.
+
+        Raises ValueError listing every problem; no-op unless re-drive jobs
+        can actually occur (task_run_eval over a split containing multi-turn
+        synthetic items — stored-TaskRun sources never re-drive, and a
+        single-turn split has nothing to drive).
+        """
+        if self.eval_run_type != "task_run_eval" or self.split is None:
+            return
+        multi_turn_items = [
+            item.data
+            for item in self.split.items
+            if isinstance(item, EvalInput)
+            and isinstance(item.data, MultiTurnSyntheticEvalInputData)
+        ]
+        if not multi_turn_items:
+            return
+        problems: list[str] = []
+        stamped_configs = [
+            config
+            for data in multi_turn_items
+            if (config := effective_drive_config(self.eval, data)) is not None
+        ]
+        if not stamped_configs:
+            problems.append(
+                "none of this eval's multi-turn items has a synthetic user "
+                "configuration (create a new batch to mint items that carry one)"
+            )
+        for provider in sorted({cfg.model_provider for cfg in stamped_configs}):
+            try:
+                ModelProviderName(provider)
+            except ValueError:
+                problems.append(
+                    "a multi-turn item's synthetic-user drive config has "
+                    f"unknown model provider '{provider}'"
+                )
+        if check_run_configs:
+            for run_config in self.run_configs or []:
+                try:
+                    agent_properties = as_kiln_agent_run_config(
+                        run_config.run_config_properties
+                    )
+                except ValueError:
+                    problems.append(
+                        f"run config '{run_config.name}' is not a Kiln agent "
+                        "config, so it can't hold a multi-turn conversation"
+                    )
+                    continue
+                if _splits_a_turn_into_two_messages(agent_properties, self.task):
+                    problems.append(
+                        f"run config '{run_config.name}' uses a chain of thought "
+                        "prompt with a model that has no reasoning step of its own, "
+                        "so it answers in two messages per turn and can't hold a "
+                        "multi-turn conversation (pick a reasoning-capable model, or "
+                        "a prompt without thinking instructions)"
+                    )
+        if problems:
+            raise ValueError(
+                "Cannot re-drive this eval's multi-turn conversations: "
+                + "; ".join(problems)
+                + "."
+            )
+
     def _preload_skills(self) -> SkillsDict:
         """Collect all skill IDs from run configs and bulk-load them once."""
         if self.run_configs is None:
@@ -328,9 +508,9 @@ class EvalRunner:
         `concurrency` bounds how many items run in parallel; None uses the default.
 
         `max_retries` re-attempts items that fail with a transient error (rate limit,
-        connection blip) with exponential backoff starting at `retry_delay` seconds,
-        only surfacing the error if every attempt fails. Background jobs override the
-        defaults with a more patient schedule.
+        connection blip), backing off from `retry_delay` seconds, and only surfaces the
+        error if every attempt fails. Background jobs override the defaults with a more
+        patient schedule.
         """
         if concurrency is None:
             concurrency = DEFAULT_EVAL_CONCURRENCY
@@ -353,17 +533,22 @@ class EvalRunner:
                 return await self._run_v2_job(job)
             else:
                 return await self._run_legacy_job(job)
+        except RetryableError as e:
+            # Already classified by whoever raised it: this is a deliberate, expected
+            # ask for another attempt (an unusable generation the retry replaces), not a
+            # failure. Re-raised untouched, and logged without a stacktrace so a
+            # self-healing event doesn't read as a crash in the logs.
+            logger.warning(f"Retrying eval job for dataset item {job.item.id}: {e}")
+            raise
         except Exception as e:
-            if _is_retryable_error(e):
-                # Warning, not error: this fires per attempt, and the runner may
-                # still retry. A final failure is reported via the runner's observers.
-                logger.warning(
+            if is_retryable_error(e):
+                logger.error(
                     f"Transient error running eval job for dataset item {job.item.id}: {e}",
                     exc_info=True,
                 )
                 # KilnRunError's own message is genericized user-facing text; keep
                 # the underlying provider detail for the developer-facing error log.
-                raise RetryableError(str(_unwrap_kiln_run_error(e))) from e
+                raise RetryableError(str(unwrap_kiln_run_error(e))) from e
             logger.error(
                 f"Error running eval job for dataset item {job.item.id}: {e}",
                 exc_info=True,
@@ -459,42 +644,35 @@ class EvalRunner:
                 "V2 eval type not yet implemented",
             )
 
-        # The two multi-turn lanes come before `_resolve_trace`: neither is a single
-        # generation, so neither can go through it.
-        multi_turn_case = _multi_turn_synthetic_case(job)
-        if multi_turn_case is not None:
-            eval_input, data = multi_turn_case
+        if (
+            isinstance(job.item, EvalInput)
+            and isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
+            and job.type == "task_run_eval"
+        ):
+            # Multi-turn synthetic input: re-drive the conversation fresh
+            # for this run config, then judge the new trace. The job.type
+            # guard is defensive — collect_tasks never pairs eval_config_eval
+            # with EvalInput items, because judge calibration is scoped by the
+            # golden filter and golden filters only address TaskRuns. There is
+            # no runtime handler for a hand-built job of that shape.
+            seed = (
+                job.item.data.first_message.text if job.item.data.first_message else ""
+            )
             return await self._run_v2_multi_turn_synthetic_job(
-                job,
-                evaluator,
-                eval_input,
-                data,
-                data.first_message.text if data.first_message else "",
+                job, evaluator, job.item, job.item.data, seed
             )
 
-        if isinstance(job.item, TaskRun) and job.item.parent_task_run_id is not None:
-            # A stored conversation, not a case to re-drive: a chain leaf carries no
-            # synthetic-user persona, so there is nothing to drive it with and both run
-            # modes judge the trace it already has. Its scores are therefore a property
-            # of the stored conversation and identical across run configs.
-            leaf = job.item
-            if not leaf.trace:
-                return await self._persist_skip(
-                    job,
-                    SkippedReason.missing_trace,
-                    "Multi-turn task run has no stored trace to evaluate",
-                )
-            eval_task_input = EvalTaskInput.from_task_run(leaf)
-            result = await evaluator.evaluate(eval_task_input)
-            return await self._persist_judgment(job, leaf, result)
-
-        # Any other multi-turn shape can never be scored, and the skip comes before
-        # `_resolve_trace` so it never pays for a generation.
-        if _is_multi_turn(job.item):
+        # Both skips come before `_resolve_trace`, so a job that can never be scored
+        # never pays for a generation.
+        if (
+            isinstance(job.item, TaskRun)
+            and job.item.parent_task_run_id is not None
+            and job.type == "task_run_eval"
+        ):
             return await self._persist_skip(
                 job,
                 SkippedReason.incompatible_input_shape,
-                "V2 evals do not yet support multi-turn inputs",
+                "Stored multi-turn conversations can't be re-run for a run config",
             )
 
         trace = await self._resolve_trace(job, evaluator)
@@ -560,7 +738,6 @@ class EvalRunner:
         skipped_detail: str | None = None,
         intermediate_outputs: Dict[str, str] | None = None,
         eval_usage: Usage | None = None,
-        synthetic_user_usage: Usage | None = None,
         drive_fingerprint: str | None = None,
     ) -> bool:
         """Write one V2 score record.
@@ -585,11 +762,8 @@ class EvalRunner:
                 skipped_detail=skipped_detail,
                 intermediate_outputs=intermediate_outputs,
                 eval_usage=eval_usage,
-                # Both are multi-turn only, and both describe the drive rather than the
-                # judgment: the synthetic user's spend (which surfaces nowhere else —
-                # its turns are not persisted as runs) and the inputs the conversation
-                # was driven from.
-                synthetic_user_usage=synthetic_user_usage,
+                # Multi-turn only: the identity of the drive the scored conversation
+                # came from, which is also the variant half of its trace key.
                 drive_fingerprint=drive_fingerprint,
             ).save_to_file()
         return True
@@ -621,6 +795,7 @@ class EvalRunner:
         job: EvalJob,
         trace: TaskRun,
         result: V2EvalResult,
+        drive_fingerprint: str | None = None,
     ) -> bool:
         """The score for one item, pointing at the trace it was computed over.
 
@@ -638,6 +813,7 @@ class EvalRunner:
             skipped_detail=result.skipped_detail,
             intermediate_outputs=result.intermediate_outputs,
             eval_usage=result.usage,
+            drive_fingerprint=drive_fingerprint,
         )
 
     async def _run_v2_multi_turn_synthetic_job(
@@ -650,32 +826,33 @@ class EvalRunner:
     ) -> bool:
         """task_run_eval over a multi-turn synthetic input.
 
-        The run config under evaluation drives the agent while the eval's
-        multi_turn_drive_config plays the synthetic user, so each run config gets its own
-        conversation — the property that makes run-config comparison meaningful for
-        multi-turn. The conversation is persisted as a TaskRun and reached through
-        `TraceIndex` like any other eval trace, so a second judge scores what the first
-        one paid for, across evals as well as within one.
+        The run config under evaluation drives the agent while the drive
+        config stamped on the item plays the synthetic user, so each run
+        config gets its own fresh conversation — the property that makes
+        run-config comparison meaningful for multi-turn. The conversation
+        persists as one standalone TaskRun through the trace index, exactly
+        like single-turn generations: durable before scoring, and reusable
+        by every other judge over the same item and run config.
 
-        Reuse is keyed on the drive fingerprint as well as the item and run config: two
-        evals driving the same case with different drive settings produce genuinely
-        different conversations, and the fingerprint is what keeps them apart.
+        Reuse is keyed on the drive fingerprint as well as the item and run
+        config: a drive under different synthetic-user settings, or against run
+        config properties edited under the same id, is a different
+        conversation, and the fingerprint is what keeps them apart.
         """
-        drive_config = self.eval.multi_turn_drive_config
+        drive_config = effective_drive_config(self.eval, data)
         if drive_config is None:
             return await self._persist_skip(
                 job,
                 SkippedReason.missing_drive_config,
-                "Eval has no multi_turn_drive_config; re-driving a multi-turn "
-                "synthetic input requires one",
+                "This item has no synthetic user configuration. "
+                "Create a new batch to replace it.",
             )
 
         if not seed:
             return await self._persist_skip(
                 job,
                 SkippedReason.incompatible_input_shape,
-                "Multi-turn synthetic input has no first_message to open the "
-                "conversation",
+                "Multi-turn synthetic input has no first_message to open the conversation",
             )
 
         if job.task_run_config is None:
@@ -693,231 +870,176 @@ class EvalRunner:
             su_provider = ModelProviderName(drive_config.model_provider)
         except ValueError as e:
             raise ValueError(
-                "Invalid synthetic-user model provider on the eval's "
-                f"multi_turn_drive_config: {drive_config.model_provider}"
+                "Invalid synthetic-user model provider on this item's "
+                f"drive config: {drive_config.model_provider}"
             ) from e
 
         fingerprint = compute_drive_fingerprint(
             drive_config, job.task_run_config.run_config_properties, data
         )
-        # Synthetic-user spend for THIS record. Stays None when the conversation was
-        # reused: no driver call was made, and the spend is already booked on the record
-        # that drove it. Unlike the agent's usage it cannot be recovered from the trace,
-        # because the synthetic user's calls leave nothing in it.
-        driven_su_usage: List[Usage | None] = []
+        key = trace_key(item_key(eval_input), job.task_run_config.id, fingerprint)
 
-        key = trace_key(item_key(job.item), job.task_run_config.id, fingerprint)
-        trace, was_generated = await self._trace_index.get_or_create(
-            key,
-            lambda: self._drive_and_persist(
-                job,
-                eval_input,
-                data,
-                seed,
-                agent_run_config,
-                su_provider,
-                key,
-                driven_su_usage,
-            ),
-        )
+        async def drive_and_persist() -> TaskRun:
+            # No app-level timeout on the re-drive: it terminates
+            # structurally (the turn ceiling, the adapter's tool-call cap,
+            # the model client's per-request timeout). This path runs as a
+            # background job, so the watchdog log is how a pathologically
+            # slow drive gets noticed.
+            #
+            # The eval-input id is scoped to the drive, so every turn's tool calls
+            # see which EvalInput produced them (run_context contextvar, exported
+            # to code tools as KILN_EVAL_INPUT_ID).
+            if eval_input.id:
+                set_eval_input_id(eval_input.id)
+            try:
+                async with log_if_slow(f"eval re-drive for eval item {eval_input.id}"):
+                    drive_result = await drive_case_for_eval(
+                        seed_prompt=seed,
+                        synthetic_user_info=data.synthetic_user_info,
+                        target_task=self.task,
+                        target_run_config=agent_run_config,
+                        su_driver_config=SyntheticUserDriverConfig(
+                            model_name=drive_config.model_name,
+                            model_provider_name=su_provider,
+                        ),
+                        turns=drive_config.turns,
+                        skills=self._skills,
+                    )
+            finally:
+                clear_eval_input_id()
+            turns_run = len(drive_result.chain)
+            ended_by_su = drive_result.ended_early(drive_config.turns)
+            if turns_run == 1 and drive_config.turns > 1:
+                # Not enforced: discarding a paid drive over a rule the synthetic
+                # user's prompt states but cannot guarantee would cost more than it
+                # saves. Logged because a one-turn conversation is a single-turn
+                # trace wearing a multi-turn label.
+                logger.warning(
+                    "The driven conversation for eval item %s ended on its first "
+                    "turn — the synthetic user ended it before the agent had "
+                    "answered a second message",
+                    eval_input.id,
+                )
+            leaf_trace = drive_result.chain[-1].trace if drive_result.chain else None
+            # Gated on the turns that actually ran, not the item's ceiling: the drive
+            # is still in hand, so its own chain is the exact count the leaf's trace
+            # has to match. A conversation the synthetic user ended is shorter than
+            # the ceiling and still complete, while one whose trace lost turns the
+            # chain says it ran is a broken record either way.
+            problem = conversation_health_problem(leaf_trace, turns_run)
+            if problem is not None:
+                # Persisting it would index an incomplete conversation that every judge
+                # of this item reuses from then on, so it is a failed generation rather
+                # than a cheap result. Retryable, so the job re-drives.
+                raise RetryableError(
+                    f"The driven conversation for eval item {eval_input.id} is "
+                    f"incomplete ({problem}), so it was not saved."
+                )
+            return await self._persist_driven_conversation(
+                key, drive_result, seed=seed, ended_by_su=ended_by_su
+            )
 
-        if not was_generated and not _trace_is_complete_drive(
-            trace.trace, drive_config.turns
-        ):
-            # A partial conversation is a degraded sample, not a cheaper one: re-judging
-            # it would quietly score every later judge against a drive that fell over.
-            # Driving again under a variant nothing else can name keeps the fresh
-            # conversation out of the way of the indexed (broken) one, which stays where
-            # it is as the record of what the first judge actually scored.
-            logger.info(
-                "Indexed multi-turn trace %s for %s is incomplete; re-driving",
-                trace.id,
-                key,
-            )
-            retry_key = trace_key(
-                item_key(job.item),
-                job.task_run_config.id,
-                f"{fingerprint}:redrive:{job.eval_config.id}",
-            )
-            trace, _ = await self._trace_index.get_or_create(
-                retry_key,
-                lambda: self._drive_and_persist(
-                    job,
-                    eval_input,
-                    data,
-                    seed,
-                    agent_run_config,
-                    su_provider,
-                    retry_key,
-                    driven_su_usage,
-                ),
-            )
+        # A raising drive persists nothing, so the job's retry re-drives; a
+        # successful one is on disk before the judge sees it, so a scoring
+        # failure re-scores without paying for the conversation again.
+        trace, _ = await self._trace_index.get_or_create(key, drive_and_persist)
 
         eval_task_input = EvalTaskInput.from_trace(trace, eval_input)
         result = await evaluator.evaluate(eval_task_input)
-        return await self._persist_score(
-            job,
-            scored_run_id=trace.id,
-            scores=result.scores,
-            skipped_reason=result.skipped_reason.value
-            if result.skipped_reason
-            else None,
-            skipped_detail=result.skipped_detail,
-            intermediate_outputs=result.intermediate_outputs,
-            eval_usage=result.usage,
-            synthetic_user_usage=driven_su_usage[0] if driven_su_usage else None,
-            drive_fingerprint=fingerprint,
+        return await self._persist_judgment(
+            job, trace, result, drive_fingerprint=fingerprint
         )
 
-    async def _drive_and_persist(
+    async def _persist_driven_conversation(
         self,
-        job: EvalJob,
-        eval_input: EvalInput,
-        data: MultiTurnSyntheticEvalInputData,
-        seed: str,
-        agent_run_config: KilnAgentRunConfigProperties,
-        su_provider: ModelProviderName,
         key: TraceKey,
-        su_usage_out: List[Usage | None] | None = None,
+        drive_result: DriveCaseResult,
+        *,
+        seed: str,
+        ended_by_su: bool,
     ) -> TaskRun:
-        """Drive one conversation and make it durable before it is scored.
+        """One standalone TaskRun holding a freshly driven multi-turn conversation.
 
-        The `TraceIndex` counterpart to `_generate_and_persist`, for the lane where a
-        generation is a whole conversation rather than a single call. Stamped from `key`
-        for the same reason: a run that files itself under a different key than the one
-        it was generated for is never found again.
+        The drive itself touches no disk, and its leaf's trace already holds the
+        whole conversation — so a single childless run is the entire durable
+        record. Persisting the chain's ancestors would store partial copies of
+        the same conversation, and a child run would be invisible to the trace
+        index's childless-only seed.
+
+        Stamped from `key` rather than re-derived, for the same reason as
+        `_generate_and_persist`: the run must file itself under exactly the key
+        the index filed it under, or it is never found again.
         """
-        drive_config = self.eval.multi_turn_drive_config
-        assert drive_config is not None, "the caller checks this before driving"
         source_type, source_id, run_config_id, variant = key
-
-        # Scope the eval-input id to the drive: every turn's tool calls see which
-        # EvalInput produced them (run_context contextvar).
-        if eval_input.id:
-            set_eval_input_id(eval_input.id)
-        try:
-            drive_result = await drive_case_for_eval(
-                seed_prompt=seed,
-                synthetic_user_info=data.synthetic_user_info,
-                target_task=self.task,
-                target_run_config=agent_run_config,
-                su_driver_config=SyntheticUserDriverConfig(
-                    model_name=drive_config.model_name,
-                    model_provider_name=su_provider,
-                ),
-                turns=drive_config.turns,
-                skills=self._skills,
-            )
-        finally:
-            clear_eval_input_id()
-
-        if su_usage_out is not None:
-            su_usage_out.append(drive_result.su_usage)
-
         leaf = drive_result.chain[-1]
-        # The leaf carries the whole conversation on `.trace`, and its ancestors are
-        # never saved. Keeping a pointer to them would read as a broken chain in the
-        # dataset UI, and would hide this trace from the index, which does not look at
-        # runs that are somebody's parent.
-        leaf.parent_task_run_id = None
-        if leaf.usage is None:
-            leaf.usage = _usage_from_trace(leaf.trace)
-        if leaf.id is None:
-            # Driven with allow_saving=False, so nothing has minted an id; the runner is
-            # the one persisting, exactly as in `_generate_and_persist`.
-            leaf.id = generate_model_id()
-        if leaf.output.source is not None:
-            # Half the key a later index rebuilds from is read off here.
-            leaf.output.source.run_config_id = run_config_id
-        leaf.eval_source = EvalItemSource(
-            source_type=source_type, source_id=source_id, variant=variant or None
+        if leaf.output.source is None:
+            # Fail before anything is saved: a run without an output source can't
+            # carry the run_config_id half of its reuse key, so persisting it would
+            # strand a paid conversation on disk that the index can never serve.
+            raise ValueError(
+                "Driven conversation has no output source; cannot stamp its reuse key"
+            )
+        # The drive's adapter runs detached from any TaskRunConfig, so the leaf's
+        # output source has no run_config_id; the index requires it as half the key.
+        output_source = leaf.output.source.model_copy(
+            update={"run_config_id": run_config_id}
         )
+        run = TaskRun(
+            parent=self.task,
+            # The seed, not the leaf's own input (the synthetic user's LAST message):
+            # this run stands alone, so its input is what opened the conversation.
+            input=seed,
+            input_source=leaf.input_source,
+            output=leaf.output.model_copy(update={"source": output_source}),
+            trace=leaf.trace,
+            usage=_conversation_usage(drive_result.chain),
+            # The synthetic-user driver's spend rides its own field so `usage`
+            # stays honestly assistant-only. The whole Usage, not a cost-only
+            # stub: the SU is usually a different model on a different provider
+            # from the agent, so its tokens are the half that makes the figure
+            # reconcilable. `drive_case` already returns None for a drive whose
+            # provider reported nothing.
+            synthetic_user_usage=drive_result.su_usage,
+            cumulative_usage=leaf.cumulative_usage
+            or MessageUsage.from_trace(leaf.trace),
+            eval_source=EvalItemSource(
+                source_type=source_type,
+                source_id=source_id,
+                variant=variant or None,
+            ),
+            tags=[TAG_SU_ENDED_CONVERSATION] if ended_by_su else [],
+        )
+        # The drive runs with allow_saving=False, so nothing touched disk before
+        # this fully-stamped run — no crash window in which a driven conversation
+        # could persist without eval_source and pass for a curated dataset row.
         async with self._save_context():
-            leaf.save_to_file()
-        return leaf
+            run.save_to_file()
+        return run
 
 
-def _usage_from_trace(trace: list[ChatCompletionMessageParam] | None) -> Usage | None:
-    """Aggregate per-message usage and latency into run-level Usage.
+def _conversation_usage(chain: list[TaskRun]) -> Usage | None:
+    """Conversation-total assistant spend for one driven multi-turn conversation.
 
-    A driven conversation's leaf reaches the runner unsaved and without run-level
-    usage of its own, so it is derived from the trace before the leaf is persisted.
-    Latency is the sum of per-call latency_ms:
-    calls within one conversation run sequentially, so the sum is the real
-    time spent waiting on the model."""
-    if not trace:
-        return None
-    message_usage = MessageUsage()
-    latency = 0
-    for message in trace:
-        if not isinstance(message, dict) or message.get("role") != "assistant":
-            continue
-        raw_usage = message.get("usage")
-        if isinstance(raw_usage, MessageUsage):
-            message_usage = message_usage + raw_usage
-        elif isinstance(raw_usage, dict):
-            message_usage = message_usage + MessageUsage.model_validate(raw_usage)
-        latency += message.get("latency_ms") or 0
-    if message_usage == MessageUsage() and not latency:
-        return None
-    return Usage(**message_usage.model_dump(), total_llm_latency_ms=latency or None)
-
-
-def _trace_is_complete_drive(
-    trace: list[ChatCompletionMessageParam] | None, expected_turns: int
-) -> bool:
-    """A complete drive has exactly one user message per turn (assistant
-    messages can be several per turn when tools fire, so they can't be
-    counted) and ends with assistant text — the judges' final_message.
-    Requiring the LAST message to be assistant text keeps a degraded record
-    from promoting a mid-conversation reply to the final answer."""
-    if not trace:
-        return False
-    user_turns = sum(1 for msg in trace if msg.get("role") == "user")
-    if user_turns != expected_turns:
-        return False
-    last = trace[-1] if trace else None
-    if last is None:
-        return False
-    content = last.get("content")
-    return (
-        last.get("role") == "assistant" and isinstance(content, str) and bool(content)
+    The leaf's own `usage` covers only its final turn, so tokens and cost come
+    from the cumulative recompute over the full trace, and latency sums each
+    turn's in-flight accumulator. None when no turn reported anything — an
+    all-None Usage would read as a report where there was none.
+    """
+    leaf = chain[-1]
+    totals = leaf.cumulative_usage or MessageUsage.from_trace(leaf.trace)
+    latencies = [
+        run.usage.total_llm_latency_ms
+        for run in chain
+        if run.usage is not None and run.usage.total_llm_latency_ms is not None
+    ]
+    usage = Usage(
+        input_tokens=totals.input_tokens,
+        output_tokens=totals.output_tokens,
+        total_tokens=totals.total_tokens,
+        cost=totals.cost,
+        cached_tokens=totals.cached_tokens,
+        total_llm_latency_ms=sum(latencies) if latencies else None,
     )
-
-
-def _unwrap_kiln_run_error(e: BaseException) -> BaseException:
-    """The innermost non-wrapper error.
-
-    The model adapter wraps provider exceptions in KilnRunError (to carry the
-    partial trace), whose own message is genericized user-facing text — so both
-    retry classification and error detail must use the underlying error. The
-    isinstance guard on `original` keeps a (contract-violating) None from
-    escaping as the result."""
-    while isinstance(e, KilnRunError) and isinstance(e.original, BaseException):
-        e = e.original
-    return e
-
-
-def _is_retryable_error(e: BaseException) -> bool:
-    e = _unwrap_kiln_run_error(e)
-
-    if isinstance(
-        e,
-        (
-            litellm.RateLimitError,
-            litellm.APIConnectionError,
-            litellm.InternalServerError,
-            litellm.ServiceUnavailableError,
-            litellm.BadGatewayError,
-            litellm.JSONSchemaValidationError,
-        ),
-    ):
-        return True
-
-    # ValueError thrown by Kiln's adapter when structured output doesn't match schema
-    if isinstance(
-        e, ValueError
-    ) and "This task requires a specific output schema" in str(e):
-        return True
-
-    return False
+    if all(v is None for v in usage.model_dump().values()):
+        return None
+    return usage

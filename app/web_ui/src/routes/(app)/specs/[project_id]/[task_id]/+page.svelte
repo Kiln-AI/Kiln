@@ -3,6 +3,15 @@
   import { page } from "$app/stores"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { client } from "$lib/api_client"
+  import { get } from "svelte/store"
+  import { indexedDBStore } from "$lib/stores/index_db_store"
+  import {
+    builder_draft_key,
+    create_eval_button_label,
+    create_eval_destination,
+    draft_is_resumable,
+    EMPTY_BUILDER_DRAFT,
+  } from "./builder/builder_draft"
   import Intro from "$lib/ui/intro.svelte"
   import type { Spec, SpecStatus, Eval, Priority } from "$lib/types"
   import { goto, replaceState } from "$app/navigation"
@@ -26,12 +35,12 @@
     type SortableColumn,
     type TableRow,
   } from "./spec_table"
+  import { kilnCopilotConnected } from "$lib/stores/copilot_connection_store"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Banner from "$lib/ui/banner.svelte"
   import posthog from "posthog-js"
   import { agentInfo } from "$lib/agent"
-  import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
 
   // ### Spec Table ###
 
@@ -49,12 +58,15 @@
   let evals_error: KilnError | null = null
   let evals_loading = true
   let eval_load_error_count = 0
-  // Whether this user has Kiln Copilot, which decides where the Create Eval CTA goes.
-  // Its own loading flag stays out of `loading`: the table does not wait on it, and the
-  // CTA is only reachable once the page has rendered.
-  let has_kiln_copilot = false
 
-  $: loading = specs_loading || evals_loading
+  // The draft peek is in the page's loading gate, not outside it: its answer
+  // is what the create button is LABELLED, so a button rendered before it
+  // lands says "Create Eval" and then rewrites itself a few ms later. Held
+  // with the rest, the button and the body arrive together and the label is
+  // right the first time it is painted.
+  let draft_loading = true
+
+  $: loading = specs_loading || evals_loading || draft_loading
   $: error = specs_error || evals_error
 
   // Eval lookup for spec rows; priority/status resolution lives in spec_table.ts.
@@ -176,23 +188,68 @@
     show_archived = true
   }
 
-  async function load_has_kiln_copilot() {
-    try {
-      has_kiln_copilot = await checkKilnCopilotAvailable()
-    } catch {
-      // Not knowing means not Pro: the CTA falls back to the manual flow, which is
-      // where a non-Pro user goes anyway. A failed capability check is not worth an
-      // error banner over the whole evals table.
-      has_kiln_copilot = false
-    }
-  }
-
   $: if (project_id && task_id) {
-    load_has_kiln_copilot()
     load_specs(project_id, task_id)
     load_evals(project_id, task_id)
     load_judge_types(project_id, task_id)
+    // Per-task, so it belongs with the loads keyed on the task rather than in
+    // onMount: navigating between two tasks keeps this component mounted, and
+    // a once-only check would advertise the previous task's draft.
+    check_eval_draft(project_id, task_id)
   }
+
+  // Bounded, for the same reason checkKilnCopilotAvailable is: the page's
+  // spinner waits on this peek, so one that never settles must give up rather
+  // than hold the whole page forever. IndexedDB really can hang — index_db_store
+  // resolves its open() on success and error but not on `blocked`, which fires
+  // instead of either while another tab holds the database at a different
+  // version. The draft is a label on one button, so timing out and reading
+  // "Create Eval" is a far better answer than a spinner that never stops.
+  const DRAFT_CHECK_TIMEOUT_MS = 2000
+
+  // Rejects once the deadline passes. The timer is cleared whichever side
+  // wins, so a peek that lands first leaves nothing pending behind it.
+  function within_draft_deadline(peek: Promise<unknown>): Promise<unknown> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error("draft check timed out")),
+        DRAFT_CHECK_TIMEOUT_MS,
+      )
+    })
+    return Promise.race([peek, deadline]).finally(() => clearTimeout(timer))
+  }
+
+  // Whether the v2 builder has a resumable draft for this task — the
+  // create button advertises it ("Continue Eval Draft"). Read-only peek at
+  // the draft store; the builder owns all writes. IndexedDB has no
+  // synchronous read, so this is held behind the page's spinner rather than
+  // allowed to land late and relabel a button already on screen.
+  let has_eval_draft = false
+  async function check_eval_draft(req_project_id: string, req_task_id: string) {
+    try {
+      draft_loading = true
+      const { store, initialized } = indexedDBStore(
+        builder_draft_key(req_project_id, req_task_id),
+        EMPTY_BUILDER_DRAFT,
+      )
+      await within_draft_deadline(initialized)
+      // A slower earlier task must not overwrite the task now on screen.
+      if (req_project_id !== project_id || req_task_id !== task_id) return
+      has_eval_draft = draft_is_resumable(get(store))
+    } catch {
+      // No draft signal is ever worth an error surface here — a failed or
+      // timed-out peek means "no draft to continue", which is what the button
+      // already says by default.
+      if (req_project_id !== project_id || req_task_id !== task_id) return
+      has_eval_draft = false
+    } finally {
+      if (req_project_id === project_id && req_task_id === task_id) {
+        draft_loading = false
+      }
+    }
+  }
+  $: create_eval_label = create_eval_button_label(has_eval_draft)
 
   async function load_specs(req_project_id: string, req_task_id: string) {
     try {
@@ -665,21 +722,14 @@
     updateEvalStatus(evaluator, value)
   }
 
-  async function check_kiln_copilot_and_proceed() {
+  function create_eval() {
+    const has_kiln_copilot = get(kilnCopilotConnected) === true
     posthog.capture("eval_v2_cta_clicked", {
       branch: has_kiln_copilot ? "v2" : "v1_manual",
       has_pro: has_kiln_copilot,
     })
-    if (!has_kiln_copilot) {
-      // Non-Pro users start at the template picker; the Pro-vs-Manual workflow
-      // screen now comes later in that flow, only for templates Kiln Pro can assist with.
-      goto(`/specs/${project_id}/${task_id}/select_template`)
-    } else {
-      // Pro users land on the v2 builder. The legacy template carousel
-      // remains reachable via the "Evals Legacy" sidebar entry during
-      // the bug bash; remove the fallback once v2 ships GA.
-      goto(`/specs/${project_id}/${task_id}/builder`)
-    }
+    const destination = create_eval_destination(has_eval_draft)
+    goto(`/specs/${project_id}/${task_id}/${destination}`)
   }
 </script>
 
@@ -689,13 +739,13 @@
   subtitle="Define the behaviours to enforce or avoid for your task, and automatically measure quality."
   sub_subtitle={"Read the Docs"}
   sub_subtitle_link="https://docs.kiln.tech/docs/evals-and-specs"
-  action_buttons={is_empty
+  action_buttons={loading || is_empty
     ? []
     : [
         {
-          label: "Create Eval",
+          label: create_eval_label,
           handler: async () => {
-            await check_kiln_copilot_and_proceed()
+            create_eval()
           },
           primary: true,
         },
@@ -731,9 +781,9 @@
           ]}
           action_buttons={[
             {
-              label: "Create Eval",
+              label: create_eval_label,
               onClick: async () => {
-                await check_kiln_copilot_and_proceed()
+                create_eval()
               },
               is_primary: true,
             },

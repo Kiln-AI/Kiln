@@ -15,18 +15,19 @@ T = TypeVar("T", bound="BuildClaimEvidenceInput")
 class BuildClaimEvidenceInput:
     """
     Attributes:
-        raw_input (str): The task's raw input, verbatim. Part of the trace and GROUND TRUTH. For conversational tasks,
-            the conversation's opening user message. Anchor citations into this with source 'input'.
-        raw_output (str): The task's raw output, verbatim. Part of the trace and GROUND TRUTH. For conversational tasks,
-            the full multi-speaker transcript (role-labelled turns in <role_message> tags). Anchor citations into this with
-            source 'output'.
-        eval_rubric (str): The prompt the judge ran with — the rubric judge_score was produced under. Take hints from it
-            but QUESTION it; may be under-specified or wrong.
-        judge_reasoning (str): The judge's explanation. May be thin or a mechanical placeholder; validate against the
-            trace, never treat as truth or required evidence.
+        task_instruction (str): The client task's prompt or description. Says what the task is (a joke generator, a
+            support assistant, an extractor). Context only: it never overrides the judge or the rubric.
+        raw_input (str): The task's raw input, verbatim. Ground truth. For conversational tasks, the opening user
+            message. Cite with source 'input'.
+        raw_output (str): The task's raw output, verbatim. Ground truth. For conversational tasks, the full transcript
+            as labelled turns. Cite with source 'output'.
+        eval_rubric (str): The prompt the judge ran with. A hint about what matters; may be under-specified or wrong.
+        judge_reasoning (str): The judge's explanation. May be rich, thin or a placeholder. Never shown to the reviewer;
+            never describe it in the output.
         judge_score (JudgeScore):
     """
 
+    task_instruction: str
     raw_input: str
     raw_output: str
     eval_rubric: str
@@ -35,6 +36,8 @@ class BuildClaimEvidenceInput:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        task_instruction = self.task_instruction
+
         raw_input = self.raw_input
 
         raw_output = self.raw_output
@@ -49,6 +52,7 @@ class BuildClaimEvidenceInput:
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
+                "task_instruction": task_instruction,
                 "raw_input": raw_input,
                 "raw_output": raw_output,
                 "eval_rubric": eval_rubric,
@@ -62,6 +66,8 @@ class BuildClaimEvidenceInput:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
+        task_instruction = d.pop("task_instruction")
+
         raw_input = d.pop("raw_input")
 
         raw_output = d.pop("raw_output")
@@ -73,6 +79,7 @@ class BuildClaimEvidenceInput:
         judge_score = JudgeScore(d.pop("judge_score"))
 
         build_claim_evidence_input = cls(
+            task_instruction=task_instruction,
             raw_input=raw_input,
             raw_output=raw_output,
             eval_rubric=eval_rubric,

@@ -38,6 +38,7 @@ GEMINI_ADAPTIVE_THINKING_MODELS = {
     ModelName.gemini_3_flash.value,
     ModelName.gemini_3_5_flash.value,
     ModelName.gemini_3_6_flash.value,
+    ModelName.gemini_3_8_flash.value,
     ModelName.gemini_3_5_flash_lite.value,
 }
 
@@ -116,8 +117,9 @@ async def test_thinking_level_reasoning_content(
     tmp_path, provider_name: str, model_name: str, thinking_level: str
 ):
     skip_if_missing_provider_keys(provider_name)
-    # For anthropic, we need to set the temperature to 1 to use thinking level.
-    temperature = 1 if provider_name == ModelProviderName.anthropic else 0
+    # Anthropic requires temperature 1 with thinking on, and GPT-6 rejects any other
+    # value. 1 is Kiln's default, so every model in the catalog accepts it.
+    temperature = 1
 
     task = build_thinking_level_test_task(tmp_path)
     adapter = adapter_for_task(
@@ -181,7 +183,9 @@ async def test_thinking_level_reasoning_content_prerelease_smoke(
     tmp_path, provider_name: str, model_name: str, thinking_level: str
 ):
     skip_if_missing_provider_keys(provider_name)
-    temperature = 1 if provider_name == ModelProviderName.anthropic else 0
+    # Anthropic requires temperature 1 with thinking on, and GPT-6 rejects any other
+    # value. 1 is Kiln's default, so every model in the catalog accepts it.
+    temperature = 1
 
     task = build_thinking_level_test_task(tmp_path)
     adapter = adapter_for_task(

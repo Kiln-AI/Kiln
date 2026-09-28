@@ -454,6 +454,21 @@ def test_litellm_model_id_caching(config, mock_task):
     mock_model_provider.assert_not_called()
 
 
+def test_litellm_model_id_typesafe_not_supported(config, mock_task):
+    """TypeSafe AI is served by its own adapter, so LiteLLM must refuse to map it."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.typesafe
+    mock_provider.model_id = "jev-1.13.0"
+
+    with patch.object(adapter, "model_provider", return_value=mock_provider):
+        with pytest.raises(
+            ValueError, match="TypeSafe AI models do not run through LiteLLM"
+        ):
+            adapter.litellm_model_id()
+
+
 def test_litellm_model_id_unknown_provider(config, mock_task):
     """Test litellm_model_id raises error for unknown provider"""
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)

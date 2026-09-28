@@ -1,11 +1,10 @@
-"""Unit tests for the tagged blob parser/builder."""
+"""Unit tests for the tagged blob parser."""
 
 import pytest
 
 from kiln_ai.synthetic_user.models import SyntheticUserInfo
 from kiln_ai.synthetic_user.parser import (
     SyntheticUserInfoParseError,
-    build_synthetic_user_info,
     parse_synthetic_user_info,
 )
 
@@ -98,40 +97,21 @@ def test_parse_completely_unstructured_blob_raises() -> None:
         parse_synthetic_user_info("just plain text with no tags at all")
 
 
-# ───────────────────────── build ─────────────────────────
-
-
-def test_build_all_three_tags() -> None:
-    info = SyntheticUserInfo(persona="P", goal="G", behavior_guidance="B")
-    assert (
-        build_synthetic_user_info(info)
-        == "<persona>P</persona><goal>G</goal><behavior_guidance>B</behavior_guidance>"
-    )
-
-
-def test_build_omits_behavior_guidance_when_none() -> None:
-    info = SyntheticUserInfo(persona="P", goal="G")
-    assert build_synthetic_user_info(info) == "<persona>P</persona><goal>G</goal>"
-
-
-def test_build_omits_empty_behavior_guidance() -> None:
-    # The model permits None for behavior_guidance; build's truthiness check
-    # also skips empty strings, which matches the parser's "missing → None".
-    info = SyntheticUserInfo(persona="P", goal="G", behavior_guidance="")
-    assert build_synthetic_user_info(info) == "<persona>P</persona><goal>G</goal>"
-
-
 # ───────────────────────── roundtrip ─────────────────────────
 
 
 def test_roundtrip_all_three() -> None:
     info = SyntheticUserInfo(persona="P\nmultiline", goal="G", behavior_guidance="B")
-    assert parse_synthetic_user_info(build_synthetic_user_info(info)) == info
+    blob = (
+        "<persona>P\nmultiline</persona><goal>G</goal>"
+        "<behavior_guidance>B</behavior_guidance>"
+    )
+    assert parse_synthetic_user_info(blob) == info
 
 
 def test_roundtrip_required_only() -> None:
     info = SyntheticUserInfo(persona="P", goal="G")
-    assert parse_synthetic_user_info(build_synthetic_user_info(info)) == info
+    assert parse_synthetic_user_info("<persona>P</persona><goal>G</goal>") == info
 
 
 def test_roundtrip_preserves_internal_whitespace() -> None:
@@ -139,7 +119,5 @@ def test_roundtrip_preserves_internal_whitespace() -> None:
     info = SyntheticUserInfo(
         persona="word1  word2   word3", goal="G", behavior_guidance=None
     )
-    assert (
-        parse_synthetic_user_info(build_synthetic_user_info(info)).persona
-        == info.persona
-    )
+    blob = "<persona>word1  word2   word3</persona><goal>G</goal>"
+    assert parse_synthetic_user_info(blob).persona == info.persona

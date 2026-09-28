@@ -97,6 +97,8 @@ class TestTraceNavigation:
         ]
         calls = helpers.get_tool_calls(trace)
         assert [c["name"] for c in calls] == ["", ""]
+        assert [c["arguments"] for c in calls] == [{}, {}]
+        assert [c["id"] for c in calls] == ["c1", "c2"]
 
     @pytest.mark.parametrize(
         "trace",
@@ -387,6 +389,10 @@ class TestScoring:
     def test_five_star_bool_rejected(self, helpers: KilnEvalHelpers):
         with pytest.raises(ValueError, match="must be a number"):
             helpers.five_star(True)  # type: ignore[arg-type]
+
+    def test_five_star_nan_rejected(self, helpers: KilnEvalHelpers):
+        with pytest.raises(ValueError, match="between 1 and 5"):
+            helpers.five_star(float("nan"))
 
 
 # ---------------------------------------------------------------------------

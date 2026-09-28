@@ -15,11 +15,11 @@ T = TypeVar("T", bound="Citation")
 class Citation:
     """
     Attributes:
-        marker (int): The [n] used in evidence.
+        marker (int): The [n] used in the text.
         source (Source):
-        from_ (str): Short verbatim snippet marking the START of the span to highlight. Located by FIRST occurrence —
-            must be unique within its source; extend the snippet if the phrase repeats.
-        to (str): Short verbatim snippet marking the END of the span. For a short span, may equal `from`.
+        from_ (str): Short verbatim snippet marking the start of the span. Located by first occurrence; must be unique
+            in its source.
+        to (str): Short verbatim snippet marking the end of the span. May equal from.
     """
 
     marker: int

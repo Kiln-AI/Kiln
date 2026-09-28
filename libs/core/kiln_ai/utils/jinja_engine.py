@@ -66,10 +66,18 @@ def _format_trace(value: Any) -> str:
         EvalTraceFormatter,
     )
 
-    if not isinstance(value, list) or not all(isinstance(m, dict) for m in value):
+    if not isinstance(value, list):
         raise JinjaExtractionError(
             f"format_trace filter expected a list of messages, got {type(value).__name__}"
         )
+    for index, message in enumerate(value):
+        if not isinstance(message, dict):
+            # Name the offending member, not the container — "got list" would
+            # hide which message is malformed.
+            raise JinjaExtractionError(
+                f"format_trace filter expected a list of messages, but message "
+                f"{index} is {type(message).__name__}, not a dict"
+            )
     try:
         # Loose dicts are the runtime reality for traces; the formatter reads
         # them like its typed message params.

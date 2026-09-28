@@ -2,13 +2,14 @@
 
 The eval runner calls this to regenerate a conversation per run config: the
 agent under test comes from the run config being evaluated; the synthetic
-user (customer) comes from the eval's drive config, held constant so a
+user (customer) comes from the item's drive config, held constant so a
 comparison varies only the agent.
 
-Nothing is persisted — the drive is transient and the EvalRun record carries
-the scored trace, mirroring how single-turn fresh generation runs with
-allow_saving=False. Conversation continuity rides `prior_trace`, so no
-parent_task_run chaining (which requires persisted parents) is involved.
+Nothing here touches disk — the drive runs with allow_saving=False, and the
+eval runner persists the finished conversation itself as one standalone
+TaskRun, after stamping it as an eval trace. Conversation continuity rides
+`prior_trace`, so no parent_task_run chaining (which requires persisted
+parents) is involved.
 """
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
@@ -43,12 +44,11 @@ async def drive_case_for_eval(
 ) -> DriveCaseResult:
     """Drive one case in memory and return the full DriveCaseResult (never saved).
 
-    The leaf (`chain[-1]`) carries the full cumulative conversation on `.trace`
-    and its id is None (nothing touches disk). The result also carries
-    `su_usage` — the synthetic user's spend, which surfaces nowhere else since
-    SU turns aren't persisted as TaskRuns; returning only the leaf would make
-    the driver model's tokens unrecoverable. `skills` must be preloaded by the
-    caller — the adapter raises on skill tools with no injected dict.
+    The result's leaf (`chain[-1]`) has `.trace` holding the full cumulative
+    conversation and its id is None (nothing touches disk). The result also
+    carries `su_usage` — the synthetic user model's spend, which surfaces
+    nowhere else since SU turns aren't persisted. `skills` must be preloaded
+    by the caller — the adapter raises on skill tools with no injected dict.
     """
     su_driver = SyntheticUserDriver(synthetic_user_info, su_driver_config)
     adapter = adapter_for_task(

@@ -8,6 +8,7 @@ from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
 from ...models.refine_judge_prompt_input import RefineJudgePromptInput
 from ...models.refine_judge_prompt_output import RefineJudgePromptOutput
+from ...models.unauthorized_response import UnauthorizedResponse
 from ...types import Response
 
 
@@ -32,11 +33,16 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | RefineJudgePromptOutput | None:
+) -> HTTPValidationError | RefineJudgePromptOutput | UnauthorizedResponse | None:
     if response.status_code == 200:
         response_200 = RefineJudgePromptOutput.from_dict(response.json())
 
         return response_200
+
+    if response.status_code == 401:
+        response_401 = UnauthorizedResponse.from_dict(response.json())
+
+        return response_401
 
     if response.status_code == 422:
         response_422 = HTTPValidationError.from_dict(response.json())
@@ -51,7 +57,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | RefineJudgePromptOutput]:
+) -> Response[HTTPValidationError | RefineJudgePromptOutput | UnauthorizedResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -64,7 +70,7 @@ def sync_detailed(
     *,
     client: AuthenticatedClient,
     body: RefineJudgePromptInput,
-) -> Response[HTTPValidationError | RefineJudgePromptOutput]:
+) -> Response[HTTPValidationError | RefineJudgePromptOutput | UnauthorizedResponse]:
     """Refine Judge Prompt
 
      Refine a judge prompt from human grades on reviewed traces.
@@ -80,7 +86,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | RefineJudgePromptOutput]
+        Response[HTTPValidationError | RefineJudgePromptOutput | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -98,7 +104,7 @@ def sync(
     *,
     client: AuthenticatedClient,
     body: RefineJudgePromptInput,
-) -> HTTPValidationError | RefineJudgePromptOutput | None:
+) -> HTTPValidationError | RefineJudgePromptOutput | UnauthorizedResponse | None:
     """Refine Judge Prompt
 
      Refine a judge prompt from human grades on reviewed traces.
@@ -114,7 +120,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | RefineJudgePromptOutput
+        HTTPValidationError | RefineJudgePromptOutput | UnauthorizedResponse
     """
 
     return sync_detailed(
@@ -127,7 +133,7 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
     body: RefineJudgePromptInput,
-) -> Response[HTTPValidationError | RefineJudgePromptOutput]:
+) -> Response[HTTPValidationError | RefineJudgePromptOutput | UnauthorizedResponse]:
     """Refine Judge Prompt
 
      Refine a judge prompt from human grades on reviewed traces.
@@ -143,7 +149,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | RefineJudgePromptOutput]
+        Response[HTTPValidationError | RefineJudgePromptOutput | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -159,7 +165,7 @@ async def asyncio(
     *,
     client: AuthenticatedClient,
     body: RefineJudgePromptInput,
-) -> HTTPValidationError | RefineJudgePromptOutput | None:
+) -> HTTPValidationError | RefineJudgePromptOutput | UnauthorizedResponse | None:
     """Refine Judge Prompt
 
      Refine a judge prompt from human grades on reviewed traces.
@@ -175,7 +181,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | RefineJudgePromptOutput
+        HTTPValidationError | RefineJudgePromptOutput | UnauthorizedResponse
     """
 
     return (

@@ -41,17 +41,26 @@ def _fake_run_output(text: str | dict = "hi from the SU") -> RunOutput:
 def _patch_adapter(
     monkeypatch: pytest.MonkeyPatch,
     return_value: RunOutput,
+    cost: float | None = None,
     usage: Usage | None = None,
 ) -> Mock:
     """Replace adapter_for_task with a stub returning a mock adapter whose
     invoke_returning_run_output yields (Mock(spec=TaskRun), return_value).
     Returns the mock adapter so tests can assert call args.
 
-    Pass `usage` to populate the in-memory TaskRun's `.usage`; when omitted,
-    `.usage` is None and `respond()` should report None.
+    Pass `usage` to set the in-memory TaskRun's `.usage` outright, or `cost`
+    for the cost-only shorthand. With neither, `.usage` is None and
+    `respond()` reports None.
     """
     task_run = Mock(spec=TaskRun)
-    task_run.usage = usage
+    if usage is not None:
+        task_run.usage = usage
+    elif cost is not None:
+        task_run.usage = Usage(
+            input_tokens=0, output_tokens=0, total_tokens=0, cost=cost
+        )
+    else:
+        task_run.usage = None
     adapter = Mock()
     adapter.invoke_returning_run_output = AsyncMock(
         return_value=(task_run, return_value)
@@ -90,11 +99,14 @@ def test_construction_renders_system_prompt_once(
 
 
 @pytest.mark.asyncio
-async def test_respond_returns_adapter_output_and_none_usage_when_unset(
+async def test_respond_returns_adapter_output_and_zero_cost_when_unset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """When the provider reports no usage, respond() returns None rather
-    than a zeroed Usage — an unmeasured call must not read as a free one.
+    """A provider that reports nothing yields None, not a zeroed Usage.
+
+    The distinction is the point of returning Usage at all: a zeroed record
+    would read downstream as a genuinely free call rather than an unmeasured
+    one, and the drive's total would claim a precision it doesn't have.
     """
     adapter = _patch_adapter(monkeypatch, _fake_run_output("the SU's reply"))
     drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
@@ -111,21 +123,19 @@ async def test_respond_returns_adapter_output_and_none_usage_when_unset(
 
 
 @pytest.mark.asyncio
-async def test_respond_returns_full_usage_from_task_run(
+async def test_respond_returns_usage_from_task_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The whole Usage is returned, not just its cost: the SU's TaskRun is
-    never persisted, so tokens dropped here are unrecoverable."""
+    """The whole Usage comes back, tokens included — not just the cost.
+
+    The SU's TaskRun is never persisted, so anything dropped here is gone for
+    good: these token counts exist nowhere else on disk.
+    """
     _patch_adapter(
         monkeypatch,
         _fake_run_output("hi"),
         usage=Usage(
-            input_tokens=910,
-            output_tokens=24,
-            total_tokens=934,
-            cost=0.0123,
-            cached_tokens=768,
-            total_llm_latency_ms=1400,
+            input_tokens=3548, output_tokens=61, total_tokens=3609, cost=0.0123
         ),
     )
     drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
@@ -137,11 +147,9 @@ async def test_respond_returns_full_usage_from_task_run(
     _, usage = await drv.respond(conversation)
 
     assert usage is not None
-    assert usage.input_tokens == 910
-    assert usage.output_tokens == 24
-    assert usage.total_tokens == 934
-    assert usage.cached_tokens == 768
-    assert usage.total_llm_latency_ms == 1400
+    assert usage.input_tokens == 3548
+    assert usage.output_tokens == 61
+    assert usage.total_tokens == 3609
     assert usage.cost == pytest.approx(0.0123)
 
 
@@ -183,7 +191,7 @@ async def test_respond_role_swaps_and_prepends_system_prompt(
 
 
 @pytest.mark.asyncio
-async def test_respond_filters_visible_message_roles(
+async def test_respond_keeps_only_user_and_assistant_turns(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A system turn in the conversation must be dropped before role-swap."""
@@ -250,13 +258,49 @@ async def test_respond_drops_tool_dispatch_only_assistant_turns(
 
 
 @pytest.mark.asyncio
+async def test_respond_drops_empty_string_tool_dispatch_assistant_turns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The adapter allows dispatch turns with content `''` alongside
+    tool_calls, not just None — those must be filtered too, or the SU
+    sees a blank user message after role-swap.
+    """
+    adapter = _patch_adapter(monkeypatch, _fake_run_output("ok"))
+    drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
+    conversation: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": "what's the weather?"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": "{}"},
+                }
+            ],
+        },  # type: ignore[typeddict-item]
+        {"role": "assistant", "content": "It's 72F."},
+    ]
+
+    await drv.respond(conversation)
+
+    call = adapter.invoke_returning_run_output.await_args
+    # Same outcome as the content=None dispatch: the empty turn is dropped.
+    assert call.args[0] == "It's 72F."
+    prior_trace = call.kwargs["prior_trace"]
+    assert len(prior_trace) == 2
+    assert prior_trace[1] == {"role": "assistant", "content": "what's the weather?"}
+
+
+@pytest.mark.asyncio
 async def test_respond_keeps_assistant_turns_with_text_and_tool_calls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Some providers emit assistant turns with BOTH text content AND
     tool_calls in the same message ("Let me look that up." + dispatch).
-    The text is user-facing — the SU should see it. Only None-content
-    turns get dropped.
+    The text is user-facing — the SU should see it. Only turns with no
+    text (None or empty content) get dropped.
     """
     adapter = _patch_adapter(monkeypatch, _fake_run_output("ok"))
     drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
@@ -283,36 +327,6 @@ async def test_respond_keeps_assistant_turns_with_text_and_tool_calls(
     assert call.args[0] == "Let me look that up."
 
 
-@pytest.mark.asyncio
-async def test_respond_with_custom_visible_roles(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Custom visibility set is honored — the driver doesn't hardcode the default."""
-    adapter = _patch_adapter(monkeypatch, _fake_run_output("ok"))
-    drv = SyntheticUserDriver(
-        _INFO,
-        SyntheticUserDriverConfig(
-            model_name="x",
-            model_provider_name=ModelProviderName.openrouter,
-            visible_message_roles=["assistant"],
-        ),
-    )
-    # Only assistant turns visible — the user turn gets filtered out, leaving
-    # only the assistant for /respond. After filter, the conversation is a
-    # single "assistant" message, which IS the required ends-on-assistant
-    # shape: visible=[asst]; swap→[user]; last is input; prior_trace=[sys].
-    conversation: list[ChatCompletionMessageParam] = [
-        {"role": "user", "content": "u1"},
-        {"role": "assistant", "content": "a1"},
-    ]
-
-    await drv.respond(conversation)
-
-    call = adapter.invoke_returning_run_output.await_args
-    assert call.args[0] == "a1"
-    assert len(call.kwargs["prior_trace"]) == 1  # just the system prompt
-
-
 # ───────────────────────── respond — invariants ─────────────────────────
 
 
@@ -322,7 +336,7 @@ async def test_respond_raises_when_no_visible_messages(
 ) -> None:
     _patch_adapter(monkeypatch, _fake_run_output())
     drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
-    # All messages filtered out by visible_message_roles.
+    # All messages filtered out: the driver keeps only user and assistant turns.
     conversation: list[ChatCompletionMessageParam] = [
         {"role": "system", "content": "sys"},
     ]

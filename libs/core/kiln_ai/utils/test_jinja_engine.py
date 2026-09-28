@@ -371,21 +371,34 @@ class TestFormatTraceFilter:
         )
 
     def test_non_list_raises_extraction_error(self):
-        with pytest.raises(JinjaExtractionError, match="expected a list"):
+        with pytest.raises(JinjaExtractionError, match="got str"):
             render_input_transform(
                 JinjaInputTransform(template="{{ input.trace | format_trace }}"),
                 {"trace": "not a list"},
             )
 
+    def test_non_dict_member_raises_error_naming_the_member(self):
+        # The error must name the malformed member, not the (valid) container.
+        with pytest.raises(JinjaExtractionError, match="message 1 is str, not a dict"):
+            render_input_transform(
+                JinjaInputTransform(template="{{ input.trace | format_trace }}"),
+                {"trace": [{"role": "user", "content": "hi"}, "not a dict"]},
+            )
+
     def test_canonical_rendering_is_frozen(self):
-        # CROSS-REPO DRIFT ALARM. This exact rendering — the role labels and
-        # the full tag vocabulary (system/user/assistant messages, assistant
-        # reasoning, requested tool calls, tool results) — is what the
-        # kiln_server claim-builder task's instruction documents to its LLM
-        # (buildClaimEvidence "Multi-turn transcripts" section; its tests pin
-        # the same tag list). Changing the format here without updating that
-        # instruction (and vice versa) silently degrades citations, so this
-        # test must only be updated TOGETHER with the kiln_server side.
+        # CROSS-REPO DRIFT ALARM. The TAG VOCABULARY below (system/user/
+        # assistant messages, assistant reasoning, requested tool calls, tool
+        # results) is what the kiln_server claim-builder task's instruction
+        # documents to its LLM (buildClaimEvidence "Multi-turn transcripts"
+        # section; its tests pin the same tag list). Changing a tag here
+        # without updating that instruction silently degrades citations, so a
+        # tag change must land in BOTH repos together.
+        #
+        # Role labels are not part of that contract: the instruction describes
+        # them generically ("the role: labels and <…> tags are added by the
+        # rendering software — never cite them") and enumerates no specific
+        # one. The labels below therefore changed on their own when tool
+        # results gained their tool's name, and the tags did not.
         trace = [
             {"role": "system", "content": "You are a support agent."},
             {"role": "user", "content": "Is the X200 in stock?"},
@@ -420,6 +433,9 @@ class TestFormatTraceFilter:
             "assistant requested tool calls:\n<assistant_requested_tool_calls>\n"
             '- Tool Name: check_stock\n- Arguments: {"sku": "X200"}\n'
             "</assistant_requested_tool_calls>\n\n"
-            "tool:\n<tool_tool_message>\nIn stock: 4\n</tool_tool_message>\n\n"
+            "tool result from check_stock:\n<tool_tool_message>\n"
+            "In stock: 4\n</tool_tool_message>\n\n"
+            "assistant reasoning:\n<assistant_reasoning_message>\n"
+            "Inventory says 4.\n</assistant_reasoning_message>\n\n"
             "assistant:\n<assistant_message>\nYes — 4 units in stock.\n</assistant_message>"
         )

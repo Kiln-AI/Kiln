@@ -7,9 +7,6 @@ from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.generate_synthetic_users_request import GenerateSyntheticUsersRequest
 from ...models.generate_synthetic_users_response import GenerateSyntheticUsersResponse
-from ...models.generate_v1_synthetic_user_generate_post_response_401 import (
-    GenerateV1SyntheticUserGeneratePostResponse401,
-)
 from ...models.generate_v1_synthetic_user_generate_post_response_500 import (
     GenerateV1SyntheticUserGeneratePostResponse500,
 )
@@ -17,6 +14,7 @@ from ...models.generate_v1_synthetic_user_generate_post_response_502 import (
     GenerateV1SyntheticUserGeneratePostResponse502,
 )
 from ...models.http_validation_error import HTTPValidationError
+from ...models.unauthorized_response import UnauthorizedResponse
 from ...types import Response
 
 
@@ -43,10 +41,10 @@ def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
 ) -> (
     GenerateSyntheticUsersResponse
-    | GenerateV1SyntheticUserGeneratePostResponse401
     | GenerateV1SyntheticUserGeneratePostResponse500
     | GenerateV1SyntheticUserGeneratePostResponse502
     | HTTPValidationError
+    | UnauthorizedResponse
     | None
 ):
     if response.status_code == 200:
@@ -55,7 +53,7 @@ def _parse_response(
         return response_200
 
     if response.status_code == 401:
-        response_401 = GenerateV1SyntheticUserGeneratePostResponse401.from_dict(response.json())
+        response_401 = UnauthorizedResponse.from_dict(response.json())
 
         return response_401
 
@@ -84,10 +82,10 @@ def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
 ) -> Response[
     GenerateSyntheticUsersResponse
-    | GenerateV1SyntheticUserGeneratePostResponse401
     | GenerateV1SyntheticUserGeneratePostResponse500
     | GenerateV1SyntheticUserGeneratePostResponse502
     | HTTPValidationError
+    | UnauthorizedResponse
 ]:
     return Response(
         status_code=HTTPStatus(response.status_code),
@@ -103,32 +101,27 @@ def sync_detailed(
     body: GenerateSyntheticUsersRequest,
 ) -> Response[
     GenerateSyntheticUsersResponse
-    | GenerateV1SyntheticUserGeneratePostResponse401
     | GenerateV1SyntheticUserGeneratePostResponse500
     | GenerateV1SyntheticUserGeneratePostResponse502
     | HTTPValidationError
+    | UnauthorizedResponse
 ]:
     """Generate
 
-     Return up to `num_cases` synthetic-user cases for the authoring UX.
-
-    See `GenerateSyntheticUsersResponse` for the salvage contract: response
-    may contain 1 ≤ len(cases) ≤ num_cases; 0 usable cases or a batch parse
-    failure surfaces as 502 `upstream_invalid_output`.
+     Generate one synthetic-user case per scenario.
 
     Args:
         body (GenerateSyntheticUsersRequest): Request body for POST /v1/synthetic_user/generate.
 
-            Generates `num_cases` synthetic-user cases designed to probe
-            `target_specification` against the agent described by `target_task_prompt`,
-            across multi-turn conversations.
+            One case per entry in `case_scenarios`, each probing `target_specification`
+            against the agent described by `target_task_prompt`.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[GenerateSyntheticUsersResponse | GenerateV1SyntheticUserGeneratePostResponse401 | GenerateV1SyntheticUserGeneratePostResponse500 | GenerateV1SyntheticUserGeneratePostResponse502 | HTTPValidationError]
+        Response[GenerateSyntheticUsersResponse | GenerateV1SyntheticUserGeneratePostResponse500 | GenerateV1SyntheticUserGeneratePostResponse502 | HTTPValidationError | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -148,33 +141,28 @@ def sync(
     body: GenerateSyntheticUsersRequest,
 ) -> (
     GenerateSyntheticUsersResponse
-    | GenerateV1SyntheticUserGeneratePostResponse401
     | GenerateV1SyntheticUserGeneratePostResponse500
     | GenerateV1SyntheticUserGeneratePostResponse502
     | HTTPValidationError
+    | UnauthorizedResponse
     | None
 ):
     """Generate
 
-     Return up to `num_cases` synthetic-user cases for the authoring UX.
-
-    See `GenerateSyntheticUsersResponse` for the salvage contract: response
-    may contain 1 ≤ len(cases) ≤ num_cases; 0 usable cases or a batch parse
-    failure surfaces as 502 `upstream_invalid_output`.
+     Generate one synthetic-user case per scenario.
 
     Args:
         body (GenerateSyntheticUsersRequest): Request body for POST /v1/synthetic_user/generate.
 
-            Generates `num_cases` synthetic-user cases designed to probe
-            `target_specification` against the agent described by `target_task_prompt`,
-            across multi-turn conversations.
+            One case per entry in `case_scenarios`, each probing `target_specification`
+            against the agent described by `target_task_prompt`.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        GenerateSyntheticUsersResponse | GenerateV1SyntheticUserGeneratePostResponse401 | GenerateV1SyntheticUserGeneratePostResponse500 | GenerateV1SyntheticUserGeneratePostResponse502 | HTTPValidationError
+        GenerateSyntheticUsersResponse | GenerateV1SyntheticUserGeneratePostResponse500 | GenerateV1SyntheticUserGeneratePostResponse502 | HTTPValidationError | UnauthorizedResponse
     """
 
     return sync_detailed(
@@ -189,32 +177,27 @@ async def asyncio_detailed(
     body: GenerateSyntheticUsersRequest,
 ) -> Response[
     GenerateSyntheticUsersResponse
-    | GenerateV1SyntheticUserGeneratePostResponse401
     | GenerateV1SyntheticUserGeneratePostResponse500
     | GenerateV1SyntheticUserGeneratePostResponse502
     | HTTPValidationError
+    | UnauthorizedResponse
 ]:
     """Generate
 
-     Return up to `num_cases` synthetic-user cases for the authoring UX.
-
-    See `GenerateSyntheticUsersResponse` for the salvage contract: response
-    may contain 1 ≤ len(cases) ≤ num_cases; 0 usable cases or a batch parse
-    failure surfaces as 502 `upstream_invalid_output`.
+     Generate one synthetic-user case per scenario.
 
     Args:
         body (GenerateSyntheticUsersRequest): Request body for POST /v1/synthetic_user/generate.
 
-            Generates `num_cases` synthetic-user cases designed to probe
-            `target_specification` against the agent described by `target_task_prompt`,
-            across multi-turn conversations.
+            One case per entry in `case_scenarios`, each probing `target_specification`
+            against the agent described by `target_task_prompt`.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[GenerateSyntheticUsersResponse | GenerateV1SyntheticUserGeneratePostResponse401 | GenerateV1SyntheticUserGeneratePostResponse500 | GenerateV1SyntheticUserGeneratePostResponse502 | HTTPValidationError]
+        Response[GenerateSyntheticUsersResponse | GenerateV1SyntheticUserGeneratePostResponse500 | GenerateV1SyntheticUserGeneratePostResponse502 | HTTPValidationError | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -232,33 +215,28 @@ async def asyncio(
     body: GenerateSyntheticUsersRequest,
 ) -> (
     GenerateSyntheticUsersResponse
-    | GenerateV1SyntheticUserGeneratePostResponse401
     | GenerateV1SyntheticUserGeneratePostResponse500
     | GenerateV1SyntheticUserGeneratePostResponse502
     | HTTPValidationError
+    | UnauthorizedResponse
     | None
 ):
     """Generate
 
-     Return up to `num_cases` synthetic-user cases for the authoring UX.
-
-    See `GenerateSyntheticUsersResponse` for the salvage contract: response
-    may contain 1 ≤ len(cases) ≤ num_cases; 0 usable cases or a batch parse
-    failure surfaces as 502 `upstream_invalid_output`.
+     Generate one synthetic-user case per scenario.
 
     Args:
         body (GenerateSyntheticUsersRequest): Request body for POST /v1/synthetic_user/generate.
 
-            Generates `num_cases` synthetic-user cases designed to probe
-            `target_specification` against the agent described by `target_task_prompt`,
-            across multi-turn conversations.
+            One case per entry in `case_scenarios`, each probing `target_specification`
+            against the agent described by `target_task_prompt`.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        GenerateSyntheticUsersResponse | GenerateV1SyntheticUserGeneratePostResponse401 | GenerateV1SyntheticUserGeneratePostResponse500 | GenerateV1SyntheticUserGeneratePostResponse502 | HTTPValidationError
+        GenerateSyntheticUsersResponse | GenerateV1SyntheticUserGeneratePostResponse500 | GenerateV1SyntheticUserGeneratePostResponse502 | HTTPValidationError | UnauthorizedResponse
     """
 
     return (

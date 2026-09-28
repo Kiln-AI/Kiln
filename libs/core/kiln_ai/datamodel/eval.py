@@ -13,6 +13,7 @@ from pydantic import (
     JsonValue,
     SerializationInfo,
     SerializerFunctionWrapHandler,
+    TypeAdapter,
     ValidationInfo,
     model_serializer,
     model_validator,
@@ -50,11 +51,6 @@ if TYPE_CHECKING:
     from kiln_ai.datamodel.task_run import TaskRun
 
 EvalScores = Dict[str, float]
-
-# The named dataset splits an eval carries. "test" is stored in eval_set_filter_id
-# (the "eval set" — the name is legacy), "train" in train_set_filter_id and "val"
-# in val_set_filter_id.
-EvalSplitName = Literal["train", "val", "test"]
 
 # Module-level set to track evals currently being migrated (to prevent recursion)
 # Protected by _migration_lock to ensure thread-safe access
@@ -396,6 +392,9 @@ V2EvalConfigProperties = Annotated[
     Discriminator("type"),
 ]
 
+# Parses a raw properties dict into its typed V2 class via the "type" discriminator.
+_V2_PROPERTIES_ADAPTER: TypeAdapter[Any] = TypeAdapter(V2EvalConfigProperties)
+
 # Explicit tuple of V2 property types for isinstance() checks.
 # Must list exactly the same types as the V2EvalConfigProperties union above.
 V2_PROPERTY_TYPES: tuple[type[BaseModel], ...] = (
@@ -477,15 +476,14 @@ def validate_scores_against_output_scores(
     """
 
     def _is_numeric(v: object) -> bool:
-        # Finiteness must be explicit: NaN compares False against every range
-        # bound, so without it NaN passes all checks (and pydantic serializes
-        # NaN as null, making the saved file fail validation on next load).
+        # NaN compares False against every range bound, so it passes every check
+        # below, then serializes to null and makes the saved file fail on reload.
         if not isinstance(v, (int, float)) or isinstance(v, bool):
             return False
         try:
             return math.isfinite(v)
         except OverflowError:
-            # isfinite converts int args to float; an int like 10**400 can't be
+            # isfinite coerces int args to float, which an int like 10**400 can't be.
             return False
 
     problems: list[str] = []
@@ -532,6 +530,8 @@ class SkippedReason(str, Enum):
     incompatible_input_shape = "incompatible_input_shape"
     code_eval_not_trusted = "code_eval_not_trusted"
     type_not_available = "type_not_available"
+    # A code eval's scorer returned the skip sentinel: the item gave the criterion
+    # nothing to judge, so it counts as done but stays out of score aggregates.
     not_applicable = "not_applicable"
 
 
@@ -576,9 +576,40 @@ class SingleTurnEvalInputData(BaseModel):
     user_message: UserMessage
 
 
+class MultiTurnDriveConfig(BaseModel):
+    """Settings for re-driving a multi-turn synthetic input at eval time.
+
+    A multi-turn eval run regenerates each conversation: the agent under test
+    comes from the run config being evaluated, while the synthetic user
+    (customer) configured here is held constant across run configs — so a
+    comparison varies only the agent. Stored per item, on
+    MultiTurnSyntheticEvalInputData.drive_config. Evals written by earlier builds
+    may also carry one as Eval.multi_turn_drive_config, which the runner uses only
+    for items that have none.
+    """
+
+    model_name: str = Field(
+        description="The model that plays the synthetic user during re-drives."
+    )
+    # A plain string rather than the provider enum so persisted items load on
+    # builds that don't know the provider yet (same choice as LlmJudgeProperties).
+    model_provider: str = Field(description="The provider of the synthetic-user model.")
+    turns: int = Field(
+        ge=1,
+        le=20,
+        description="Ceiling on the assistant turns per re-driven conversation.",
+    )
+
+
 class MultiTurnSyntheticEvalInputData(BaseModel):
-    """A re-drivable multi-turn case: the opening user message plus the
-    synthetic user who continues the conversation at eval time.
+    """A re-drivable multi-turn case: the opening user message, the synthetic
+    user who continues the conversation at eval time, and the drive settings
+    that synthetic user runs with.
+
+    Together these make the item a self-contained replication recipe: with the
+    persona, first_message, and drive_config it re-drives identically under any
+    eval that references it, which is what makes conversation traces keyed to
+    the item reusable across evals.
 
     first_message may be None; such items carry no seed to open a
     conversation with, so the eval runner skips them instead of re-driving.
@@ -587,6 +618,30 @@ class MultiTurnSyntheticEvalInputData(BaseModel):
     type: Literal["multi_turn_synthetic"] = "multi_turn_synthetic"
     first_message: UserMessage | None = None
     synthetic_user_info: SyntheticUserInfo
+    drive_config: MultiTurnDriveConfig | None = Field(
+        default=None,
+        description="How this item's conversation is re-driven: the "
+        "synthetic-user model and turn count, stamped when the item is minted. "
+        "Items are the home for drive settings; displays and prefills derive "
+        "from items. Held constant across run configs so a comparison varies "
+        "only the agent under test. Immutable once minted: changing the "
+        "synthetic-user setup means minting new items. None only on items "
+        "minted before drive settings were stamped; the eval runner then uses "
+        "the eval's legacy multi_turn_drive_config if it has one, and otherwise "
+        "skips the item with a clear reason rather than guessing a config.",
+    )
+
+    @model_serializer(mode="wrap")
+    def _omit_unset_drive_config(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> Dict[str, Any]:
+        # Items that predate drive_config carry no key on disk, and absent and
+        # null load identically — omit an unset config instead of churning
+        # every legacy file with a null on resave.
+        data: Dict[str, Any] = handler(self)
+        if data.get("drive_config") is None:
+            data.pop("drive_config", None)
+        return data
 
 
 EvalInputData = Annotated[
@@ -616,6 +671,17 @@ class EvalInput(KilnParentedModel):
         default_factory=list,
         description="Tags for filtering eval inputs.",
     )
+
+    @model_validator(mode="after")
+    def validate_tags(self) -> Self:
+        # Empty or space-containing tags can't be selected by tag filters, so
+        # reject them at creation instead of silently dropping the item later.
+        for tag in self.tags:
+            if not tag:
+                raise ValueError("Tags cannot be empty strings")
+            if " " in tag:
+                raise ValueError("Tags cannot contain spaces. Try underscores.")
+        return self
 
 
 class EvalTaskInput(BaseModel):
@@ -671,13 +737,14 @@ class EvalTaskInput(BaseModel):
 
         if isinstance(source, EvalInput):
             reference_data = source.reference
+            # The item's own text, not the trace's: an EvalInput is the canonical
+            # statement of the input, and the adapter may have reserialized it.
             if isinstance(source.data, SingleTurnEvalInputData):
-                # The item's own text, not the trace's: an EvalInput is the canonical
-                # statement of the input, and the adapter may have reserialized it.
                 task_input = source.data.user_message.text
             elif isinstance(source.data, MultiTurnSyntheticEvalInputData):
-                # Multi-turn: the seed message opened the conversation and the rest of
-                # the exchange is in the trace, so the seed is the canonical input.
+                # Multi-turn: the first message opened the conversation, and the
+                # rest of the exchange lives in the trace. Items minted without a
+                # first message have no canonical input text to offer.
                 task_input = (
                     source.data.first_message.text
                     if source.data.first_message
@@ -716,45 +783,15 @@ class EvalTaskInput(BaseModel):
     def from_eval_input(
         cls, eval_input: "EvalInput", run_output: "TaskRun"
     ) -> "EvalTaskInput":
-        """A generated run scored against the EvalInput it was generated from."""
+        """A generated run scored against the EvalInput it was generated from.
+
+        The argument-order counterpart of `from_trace` for callers holding the item
+        first. The explicit type check stays: passed a TaskRun by mistake,
+        `from_trace` would silently take its TaskRun branch instead of failing.
+        """
         if not isinstance(eval_input, EvalInput):
             raise TypeError("Expected an EvalInput instance")
         return cls.from_trace(run_output, eval_input)
-
-    @classmethod
-    def from_eval_input_trace(
-        cls, eval_input: "EvalInput", trace: list[dict[str, Any]]
-    ) -> "EvalTaskInput":
-        """Assemble evaluator input from an EvalInput plus an already-driven
-        conversation: used when a stored trace stands in for a fresh drive,
-        so there is no TaskRun to compose from. Mirrors from_eval_input."""
-        if not isinstance(eval_input, EvalInput):
-            raise TypeError("Expected an EvalInput instance")
-        if not isinstance(eval_input.data, MultiTurnSyntheticEvalInputData):
-            raise ValueError(
-                "Trace-based assembly requires a multi-turn synthetic input; "
-                f"got: {type(eval_input.data).__name__}"
-            )
-
-        # The final model output is the last assistant text in the trace
-        # (assistant tool-call messages can carry no text content).
-        final_message: str | None = None
-        for msg in reversed(trace):
-            content = msg.get("content")
-            if msg.get("role") == "assistant" and isinstance(content, str) and content:
-                final_message = content
-                break
-        if final_message is None:
-            raise ValueError("Trace has no assistant message with text content")
-
-        return cls(
-            final_message=final_message,
-            trace=[dict(msg) for msg in trace],
-            reference_data=eval_input.reference,
-            task_input=eval_input.data.first_message.text
-            if eval_input.data.first_message
-            else None,
-        )
 
 
 class ScoreDirection(str, Enum):
@@ -850,11 +887,14 @@ class EvalRun(KilnParentedModel):
     """
     The scores an eval produced for a single dataset item.
 
-    This is a child of an EvalConfig, which specifies how the scores were generated.
-
-    Eval runs can be one of 2 types:
-    1) eval_config_eval=False (scoring): we were evaluating a task run config (a method of running the task). We take the item's input, run the task with the task_run_config, then run the evaluator on that output. task_run_config_id must be set.
-    2) eval_config_eval=True (calibration): we were evaluating an eval config (a method of evaluating the task). We used an existing human-rated dataset item's input/output, and ran the evaluator on it. task_run_config_id must be None.
+    A run serves one of two purposes:
+    - eval_config_eval=False (scoring): evaluating a task run config — the item's
+      input was run through the task with task_run_config_id (which must be set)
+      and the evaluator scored that output.
+    - eval_config_eval=True (calibration): evaluating the eval config itself — an
+      existing human-rated dataset item's input and output were scored so the
+      evaluator can be compared against those human ratings. task_run_config_id
+      must be None.
 
     A record is described by two independent facts — whether it points at a TaskRun, and
     whether it was skipped — which `validate_record_mode` constrains to three legal
@@ -923,13 +963,9 @@ class EvalRun(KilnParentedModel):
         default=None,
         description="The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field.",
     )
-    eval_usage: Usage | None = Field(
-        default=None,
-        description="The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field.",
-    )
     synthetic_user_usage: Usage | None = Field(
         default=None,
-        description="The usage of the synthetic-user (driver) model that played the customer side of a multi-turn drive, summed across the drive's turns. The third and last model in an eval run: task_run_usage is the agent under test, eval_usage is the judge, this is the driver. SU turns are never persisted as TaskRuns and never appear in task_run_trace, so this field is the only record of that spend. None when no drive happened on this record — a reused trace (the spend belongs to the record that drove it), a non-multi-turn lane, a provider that reported no usage, or a record predating this field.",
+        description="The usage of the synthetic-user (driver) model that played the customer side of a multi-turn drive, summed across the drive's turns, as recorded by earlier builds on the record that drove the conversation. The eval runner now records it on the driven TaskRun (TaskRun.synthetic_user_usage), next to the conversation every judge reuses, and leaves this None. Kept so records that carry it still load and keep it on resave.",
     )
 
     eval_input_id: ID_TYPE | None = Field(
@@ -946,11 +982,10 @@ class EvalRun(KilnParentedModel):
     )
     drive_fingerprint: str | None = Field(
         default=None,
-        description="Identity of the drive that produced task_run_trace for "
+        description="Identity of the drive that produced the scored conversation for "
         "multi-turn synthetic (EvalInput) runs: a versioned hash of drive "
-        "config + run config properties + scenario content. Enables reuse of "
-        "the stored conversation by other eval configs; None for non-driven "
-        "records.",
+        "config + run config properties + scenario content, and the variant half of "
+        "the conversation's reuse key. None for non-driven records.",
     )
 
     def parent_eval_config(self) -> Union["EvalConfig", None]:
@@ -999,35 +1034,49 @@ class EvalRun(KilnParentedModel):
         return self
 
     @model_validator(mode="after")
-    def validate_output_fields(self) -> Self:
-        # Resolved before the pointer bypass below, so the pointer path can't skip the
-        # parent-type check.
+    def validate_output_fields(self, info: ValidationInfo) -> Self:
         parent_eval_config = self.parent_eval_config()
         if self.scored_run_id is not None:
-            # Pointer mode: the output lives on the referenced TaskRun, and
-            # validate_record_mode has already required it to be absent here.
-            return self
-        if parent_eval_config and parent_eval_config.config_type == EvalConfigType.v2:
+            # Pointer mode: the trace lives on the referenced TaskRun, and
+            # validate_record_mode already forbids inline copies here. The checks
+            # below are about data carried on this record, so none of them apply.
             return self
         parent_eval = parent_eval_config.parent_eval() if parent_eval_config else None
         if not parent_eval:
             return self
 
+        evaluation_data_type = parent_eval.evaluation_data_type
+
+        # A full_trace eval scores the conversation trace, so a successful task
+        # run must carry it. Both V1 and V2 writers attach the trace for exactly
+        # this shape (a scored, non-skipped task-run eval of a full_trace eval),
+        # so demanding it back makes a writer that drops the trace fail loudly
+        # instead of persisting a record that can't be re-scored. Historical
+        # files predating this gate are exempt so they still load; new writes
+        # and rebuilds are held to it.
+        if (
+            not self.eval_config_eval
+            and self.skipped_reason is None
+            and evaluation_data_type == EvalDataType.full_trace
+            and self.task_run_trace is None
+            and not self.loaded_from_file(info)
+        ):
+            raise ValueError("full_trace task run eval runs should include trace")
+
+        # Remaining checks are V1-only. V2 deliberately relaxes them: skipped
+        # runs carry no output, and V2 writers never attach a trace to a
+        # final_answer run in the first place.
+        if parent_eval_config.config_type == EvalConfigType.v2:
+            return self
+
         if self.output is None and self.skipped_reason is None:
             raise ValueError("V1 EvalRun requires output to be set")
 
-        evaluation_data_type = parent_eval.evaluation_data_type
         if (
             evaluation_data_type == EvalDataType.final_answer
             and self.task_run_trace is not None
         ):
             raise ValueError("final_answer runs should not set trace")
-        elif (
-            not self.eval_config_eval
-            and evaluation_data_type == EvalDataType.full_trace
-            and self.task_run_trace is None
-        ):
-            raise ValueError("full_trace task run eval runs should include trace")
 
         return self
 
@@ -1040,6 +1089,12 @@ class EvalRun(KilnParentedModel):
         if not self.eval_config_eval and self.task_run_config_id is None:
             raise ValueError(
                 "task_run_config_id must be set if eval_config_eval is false"
+            )
+        if self.eval_config_eval and self.dataset_id is None:
+            raise ValueError(
+                "eval_config_eval records must score a dataset item: judge "
+                "calibration compares against human ratings, which only "
+                "dataset items (TaskRuns) carry"
             )
         return self
 
@@ -1110,7 +1165,7 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
         default=EvalConfigType.g_eval,
         description="This is used to determine the type of eval to run.",
     )
-    properties: V2EvalConfigProperties | dict[str, Any] | None = Field(
+    properties: dict[str, Any] | V2EvalConfigProperties | None = Field(
         default=None,
         description="Properties to be used to execute the eval config. Legacy configs use a dict; V2 configs use typed properties.",
     )
@@ -1122,25 +1177,24 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
     @model_validator(mode="before")
     @classmethod
     def dispatch_properties_parsing(cls, data: Any, info: ValidationInfo) -> Any:
-        # Pydantic's discriminated-union parsing would reject a plain dict for
-        # `properties` because dicts don't carry a discriminator field. V1 (legacy)
-        # configs store properties as an untyped dict, so we shallow-copy and
-        # re-assign it here to force Pydantic to accept the dict branch of the union.
+        # The union lists dict first, so a raw dict always stays a plain dict —
+        # even one whose keys happen to match a typed V2 shape (legacy configs
+        # store arbitrary dicts). V2 configs persist properties as a dict too,
+        # so parse those into the typed union here, before field validation.
         if not isinstance(data, dict):
             return data
-        config_type = data.get("config_type", "g_eval")
-        if config_type != "v2":
+        if data.get("config_type", EvalConfigType.g_eval) == EvalConfigType.v2:
+            # code_eval stores its score() source in a sibling scorer.py: on file
+            # load, the type-gated helper parses those props through
+            # CodeEvalProperties (reading the sibling via the load context) so a
+            # bad or missing scorer.py surfaces directly instead of being masked
+            # by a union fallback. Other property types pass through unchanged.
+            data = _eager_parse_code_eval_on_load(data, info.context or {})
             props = data.get("properties")
-            if props is not None and isinstance(props, dict):
+            if isinstance(props, dict):
                 data = dict(data)
-                data["properties"] = props
-            return data
-
-        # V2: the only load-time special-case is code_eval, whose score() source
-        # lives in a sibling scorer.py. Delegate to the code-eval-local helper,
-        # which is explicitly type-gated (`type == code_eval`); all other V2
-        # properties pass through unchanged.
-        return _eager_parse_code_eval_on_load(data, info.context or {})
+                data["properties"] = _V2_PROPERTIES_ADAPTER.validate_python(props)
+        return data
 
     def parent_eval(self) -> Union["Eval", None]:
         if self.parent is not None and self.parent.__class__.__name__ != "Eval":
@@ -1280,32 +1334,6 @@ class EvalDataType(str, Enum):
     reference_answer = "reference_answer"
 
 
-class MultiTurnDriveConfig(BaseModel):
-    """Per-eval settings for re-driving multi-turn synthetic inputs at eval time.
-
-    A multi-turn eval run regenerates each conversation: the agent under test
-    comes from the run config being evaluated, while the synthetic user
-    (customer) defined here is held constant across run configs — so a
-    comparison varies only the agent. Stored per-eval so re-drives use the
-    same synthetic-user model and turn count the builder used when driving
-    the conversations the judge was calibrated on, keeping the judge scoring
-    the same conversation distribution.
-    """
-
-    model_name: str = Field(
-        description="The model that plays the synthetic user during re-drives."
-    )
-    # A plain string rather than the provider enum so persisted evals load on
-    # builds that don't know the provider yet (same choice as LlmJudgeProperties).
-    model_provider: str = Field(description="The provider of the synthetic-user model.")
-    turns: int = Field(
-        ge=1,
-        le=20,
-        description="Exact number of assistant turns per re-driven conversation "
-        "(the drive loop has no early termination).",
-    )
-
-
 class TaskRunSplit(BaseModel):
     """A split whose items are TaskRuns, selected by a dataset filter."""
 
@@ -1366,8 +1394,6 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         default=None,
         description="The id of the current config to use for this eval. This can be changed over time to run the same eval with different configs.",
     )
-    # Despite its name, eval_set_filter_id defines the eval's TEST set. The "eval set"
-    # name is legacy, kept for file-format compatibility.
     eval_set_filter_id: DatasetFilterId | None = Field(
         default=None,
         deprecated=True,
@@ -1411,31 +1437,39 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     )
     multi_turn_drive_config: MultiTurnDriveConfig | None = Field(
         default=None,
-        description="How to re-drive multi-turn synthetic eval inputs at eval "
-        "time (synthetic-user model + turn count). Required to execute "
-        "multi-turn EvalInput items; None for single-turn and stored-trace evals.",
+        # Kept off disk when unset, so evals saved by this build match the
+        # item-only format; legacy evals that carry a value keep it on re-save.
+        exclude_if=lambda value: value is None,
+        description="Legacy home of the synthetic-user drive settings (model + turn "
+        "count), from builds that stored them on the eval rather than on each item. "
+        "Each item's own data.drive_config takes precedence; the eval runner falls "
+        "back to this only for multi-turn items minted without one. None on evals "
+        "whose items carry their own drive settings.",
     )
 
     @model_validator(mode="before")
     @classmethod
-    def migrate_eval_input_filter_id(cls, data: Any) -> Any:
-        """Migrate the pre-`splits` `eval_input_filter_id` key into an EvalInput-backed test split.
+    def migrate_legacy_split_keys(cls, data: Any) -> Any:
+        """Migrate two undeclared pre-`splits` keys into `splits`.
 
-        A third legacy input for the test split, so it follows the same rule as the two
-        declared legacy fields: it fills the test split only when `splits` does not
-        already describe one, and is dropped either way (it is not a declared field, so
-        it is never written back).
+        - `eval_input_filter_id` backed an EvalInput test split. Like the two declared
+          legacy fields, it fills the test split only when `splits` does not already
+          describe one.
+        - `val_set_filter_id` backed a TaskRun val split, from builds that added a val
+          set before `splits` existed. It fills the val split the same way.
 
-        FUTURE: Safe to delete whenever someone wants to. Only internal projects contained
-        this key and none of them still exist; no public project file has ever had it, so
-        this never becomes a compatibility commitment.
+        Both are dropped either way: they are not declared fields, so they are never
+        written back. Evals written by those builds exist in real projects, and without
+        this an eval whose only test split was an `eval_input_filter_id` fails to load
+        (validate_splits requires a test split).
         """
         if not isinstance(data, dict):
             return data
         filter_id = data.get("eval_input_filter_id")
-        if filter_id is None:
+        val_filter_id = data.get("val_set_filter_id")
+        if filter_id is None and val_filter_id is None:
             return data
-        if data.get("eval_set_filter_id") is not None:
+        if filter_id is not None and data.get("eval_set_filter_id") is not None:
             # Two legacy inputs naming one split with two different backings. `splits`
             # winning resolves legacy-vs-`splits` disagreements, but not this one: both
             # sides here are legacy, so there is no rule that picks between them, and
@@ -1444,10 +1478,13 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
                 "An eval cannot set both eval_set_filter_id and eval_input_filter_id: they are two backings for the same test split."
             )
         data = dict(data)
-        data.pop("eval_input_filter_id")
+        data.pop("eval_input_filter_id", None)
+        data.pop("val_set_filter_id", None)
         splits = dict(data.get("splits") or {})
-        if "test" not in splits:
+        if filter_id is not None and "test" not in splits:
             splits["test"] = {"source": "eval_input", "filter_id": filter_id}
+        if val_filter_id is not None and "val" not in splits:
+            splits["val"] = {"source": "task_run", "filter_id": val_filter_id}
         data["splits"] = splits
         return data
 
@@ -1520,24 +1557,6 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
 
     def configs(self, readonly: bool = False) -> list[EvalConfig]:
         return super().configs(readonly=readonly)  # type: ignore
-
-    def filter_id_for_split(self, split: EvalSplitName) -> DatasetFilterId | None:
-        """The dataset filter id backing one of this eval's named splits.
-
-        "test" maps to eval_set_filter_id (the eval set — the name is legacy),
-        which is unset on V2 (EvalInput-backed) evals. "train" and "val" may be
-        None on evals constructed without them; evals loaded from file get both
-        via lazy migration.
-        """
-        match split:
-            case "train":
-                return self.train_set_filter_id
-            case "val":
-                return self.val_set_filter_id
-            case "test":
-                return self.eval_set_filter_id
-            case _:
-                raise_exhaustive_enum_error(split)
 
     # Workaround to return typed parent without importing Spec
     def associated_spec(self, readonly: bool = False) -> Union["Spec", None]:
@@ -1642,10 +1661,6 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
                 _currently_migrating_eval_ids.discard(self.id)
 
         return self
-
-    def _split_tag_suffix(self) -> str:
-        """The eval-name slug used to build split tag filter IDs (e.g., "My Eval" -> "my_eval")."""
-        return self.name.lower().replace(" ", "_")
 
     @model_validator(mode="after")
     def validate_scores(self) -> Self:

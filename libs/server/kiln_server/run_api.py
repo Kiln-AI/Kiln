@@ -38,6 +38,8 @@ logger = logging.getLogger(__name__)
 # Lock to prevent overwriting via concurrent updates. We use a load/update/write pattern that is not atomic.
 update_run_lock = Lock()
 
+EVAL_TRACE_DELETE_MESSAGE = "This run can't be deleted because it's needed for an eval."
+
 # Defensive cap on parent-chain depth. Real multiturn conversations are tiny
 # compared to this; the guard exists to terminate on disk corruption or cycles.
 _MAX_ANCESTOR_DEPTH = 1000
@@ -109,8 +111,12 @@ def _collect_cascade_delete_runs(
         return to_delete
 
     # Pull every run on disk once so we can do child counts without re-hitting
-    # the loader for each ancestor. We need the full chain view here.
-    all_runs = task.runs(include_intermediate_runs=True, readonly=True)
+    # the loader for each ancestor. We need the full chain view here, including
+    # eval-generated runs: an eval trace hanging off an ancestor must count as a
+    # live child, or the cascade deletes the ancestor out from under the eval.
+    all_runs = task.runs(
+        include_intermediate_runs=True, include_eval_generated=True, readonly=True
+    )
     children_by_parent: Dict[str, list[str]] = {}
     runs_by_id: Dict[str, TaskRun] = {}
     for r in all_runs:
@@ -138,6 +144,9 @@ def _collect_cascade_delete_runs(
         if live_children:
             # A sibling branch survives — keep this parent.
             break
+        if parent.eval_source is not None:
+            # An eval still needs this ancestor: keep it, like a live sibling.
+            break
         if parent.id is not None and str(parent.id) not in queued:
             to_delete.append(parent)
             queued.add(str(parent.id))
@@ -152,7 +161,35 @@ def _count_user_messages(trace: list[Any] | None) -> int:
     return sum(1 for m in trace if isinstance(m, dict) and m.get("role") == "user")
 
 
-EVAL_TRACE_DELETE_MESSAGE = "This run can't be deleted because it's needed for an eval."
+def _position_chain_turns(
+    chain_runs: list[TaskRun], chain_broken: bool
+) -> tuple[list[TaskRun], list[int | None], bool]:
+    """
+    Map each run in a root-to-leaf chain to the index in the leaf's trace where
+    its turn begins. A run's trace is its parent's trace plus its own turn's
+    messages, so trace lengths strictly increase along the chain and each turn
+    starts at its parent's trace length (0 for the true root). Message-role
+    counting can't do this: chat strategies differ in how many user messages a
+    turn emits (e.g. chain-of-thought adds a second one).
+
+    A run whose trace fails to extend its predecessor's invalidates everything
+    before it: keep the suffix from that run onward and flag the chain broken.
+    Pass chain_broken=True when ancestors are already missing; the first kept
+    run's boundary is then unknowable and reported as None.
+    """
+    kept: list[TaskRun] = []
+    starts: list[int | None] = []
+    prev_len = 0
+    for run in chain_runs:
+        trace_len = len(run.trace or [])
+        if trace_len <= prev_len:
+            kept, starts = [run], [None]
+            chain_broken = True
+        else:
+            starts.append(None if not kept and chain_broken else prev_len)
+            kept.append(run)
+        prev_len = trace_len
+    return kept, starts, chain_broken
 
 
 def deep_update(
@@ -213,8 +250,19 @@ class RunChainEntry(BaseModel):
     )
     turn_index: int = Field(
         description=(
-            "1-based turn index in the leaf's conversation (turn 1 = root, "
-            "turn N = leaf). Derived from the leaf trace's user-message count."
+            "1-based turn index within the returned chain (turn 1 = first "
+            "entry, turn N = leaf). For an unbroken chain this is the absolute "
+            "turn number in the conversation; for a broken chain it is relative "
+            "to the returned suffix, since absolute positions are unknowable "
+            "when ancestors are missing."
+        )
+    )
+    trace_start_index: int | None = Field(
+        description=(
+            "Index into the leaf run's trace where this turn's messages begin. "
+            "A run's trace is its parent's trace plus its own turn, so this is "
+            "the parent run's trace length (0 for the conversation root). None "
+            "when the boundary is unknowable (first entry of a broken chain)."
         )
     )
 
@@ -238,8 +286,9 @@ class RunChainResponse(BaseModel):
     chain_broken: bool = Field(
         description=(
             "True if while walking parents we encountered a parent_task_run_id "
-            "that could not be loaded, a cycle, the depth guard, or the chain "
-            "length exceeded the leaf trace's user-message count."
+            "that could not be loaded, a cycle, the depth guard, or a run whose "
+            "trace does not extend its parent's (so it can't be positioned in "
+            "the leaf's trace)."
         )
     )
     has_children: bool = Field(
@@ -446,25 +495,31 @@ def connect_run_api(app: FastAPI):
             )
         has_children = any(
             r.parent_task_run_id == run_id
-            for r in task.runs(include_intermediate_runs=True, readonly=True)
+            for r in task.runs(
+                include_intermediate_runs=True,
+                include_eval_generated=True,
+                readonly=True,
+            )
         )
         chain_runs, chain_broken = _walk_run_chain(leaf, task.path)
-        turn_count = _count_user_messages(leaf.trace)
-        # Degenerate leaf trace (no user messages at all): we can't position any
-        # run on a turn, so surface as broken-chain with an empty list.
-        if turn_count == 0:
+        # Degenerate leaf trace (no user messages at all): not a conversation,
+        # so we can't position any run on a turn. Surface as broken-chain with
+        # an empty list.
+        if _count_user_messages(leaf.trace) == 0:
             return RunChainResponse(
                 chain=[], chain_broken=True, has_children=has_children
             )
-        # Pathological: more resolved ancestors than the leaf trace can support.
-        # Treat as broken and keep only the suffix that fits.
-        if len(chain_runs) > turn_count:
-            chain_runs = chain_runs[-turn_count:]
-            chain_broken = True
+        # Each run in the chain is one turn; anchor each turn to where it
+        # begins in the leaf's trace, dropping any prefix that can't be
+        # positioned (see _position_chain_turns).
+        chain_runs, turn_starts, chain_broken = _position_chain_turns(
+            chain_runs, chain_broken
+        )
         chain = [
             RunChainEntry(
                 run_id=r.id,
-                turn_index=turn_count - (len(chain_runs) - 1 - i),
+                turn_index=i + 1,
+                trace_start_index=turn_starts[i],
             )
             for i, r in enumerate(chain_runs)
         ]
@@ -498,13 +553,9 @@ def connect_run_api(app: FastAPI):
             raise HTTPException(status_code=409, detail=EVAL_TRACE_DELETE_MESSAGE)
         # For multiturn chains, also delete ancestors whose only remaining child
         # is in our delete-set. Stop at the first ancestor that still has another
-        # live child (a sibling branch). An ancestor that is itself an eval trace
-        # is left in place rather than cascaded over: the same state that makes a
-        # run undeletable directly makes it undeletable as a side effect.
+        # live child (a sibling branch) — or one an eval still needs.
         runs_to_delete = _collect_cascade_delete_runs(task, run)
         for r in runs_to_delete:
-            if r.eval_source is not None:
-                continue
             r.delete()
 
     @app.get(
@@ -652,31 +703,27 @@ def connect_run_api(app: FastAPI):
                 run = TaskRun.from_id_and_parent_path(run_id, task.path)
                 if run is None:
                     record_failure(run_id, "Run not found")
-                elif run.eval_source is not None:
+                    continue
+                if run.eval_source is not None:
                     # Reported rather than silently skipped, so a partially deleted
                     # selection says why. Collected like any other per-run failure
                     # instead of raising: the rest of the batch is still deletable.
                     record_failure(run_id, EVAL_TRACE_DELETE_MESSAGE)
-                else:
-                    cascade = _collect_cascade_delete_runs(task, run, queued_ids)
-                    for r in cascade:
-                        if r.id is not None:
-                            queued_ids.add(str(r.id))
-                        runs_to_delete.append(r)
+                    continue
+                cascade = _collect_cascade_delete_runs(task, run, queued_ids)
+                for r in cascade:
+                    if r.id is not None:
+                        queued_ids.add(str(r.id))
+                    runs_to_delete.append(r)
             except Exception as e:
                 record_failure(run_id, str(e))
 
         for r in runs_to_delete:
-            run_id = str(r.id) if r.id is not None else "unknown"
-            if r.eval_source is not None:
-                # A swept ancestor is protected for the same reason a directly
-                # selected run is; it is reported rather than deleted.
-                record_failure(run_id, EVAL_TRACE_DELETE_MESSAGE)
-                continue
             try:
                 r.delete()
             except Exception as e:
-                record_failure(run_id, str(e))
+                if r.id is not None:
+                    record_failure(str(r.id), str(e))
 
         if failed_runs:
             raise HTTPException(
@@ -714,6 +761,16 @@ def connect_run_api(app: FastAPI):
         """Invoke an AI model on a task and return the result. Unlike 'Create Run', this actually executes the model."""
         task = task_from_id(project_id, task_id)
 
+        input = request.plaintext_input
+        if task.input_schema() is not None:
+            input = request.structured_input
+
+        if input is None:
+            raise HTTPException(
+                status_code=400,
+                detail="No input provided. Ensure you provided the proper format (plaintext or structured).",
+            )
+
         run_config_properties = request.run_config_properties
         skills = load_skills_for_task(task, run_config_properties)
 
@@ -726,16 +783,6 @@ def connect_run_api(app: FastAPI):
                 task_run_config_id=request.task_run_config_id,
             ),
         )
-
-        input = request.plaintext_input
-        if task.input_schema() is not None:
-            input = request.structured_input
-
-        if input is None:
-            raise HTTPException(
-                status_code=400,
-                detail="No input provided. Ensure your provided the proper format (plaintext or structured).",
-            )
 
         prior_trace = None
         parent_task_run = None
@@ -760,11 +807,30 @@ def connect_run_api(app: FastAPI):
                 )
             prior_trace = parent_task_run.trace
 
-        return await adapter.invoke(
+        run = await adapter.invoke(
             input,
             prior_trace=prior_trace,
             parent_task_run=parent_task_run,
         )
+
+        # The conversation may have been cascade-deleted while the model was
+        # generating (invoke autosaves the new run before returning). Don't
+        # resurrect a deleted conversation as an orphaned leaf: remove the
+        # just-saved run and tell the caller what happened.
+        if request.parent_task_run_id is not None:
+            parent_still_exists = (
+                TaskRun.from_id_and_parent_path(request.parent_task_run_id, task.path)
+                is not None
+            )
+            if not parent_still_exists:
+                if run.path is not None:
+                    run.delete()
+                raise HTTPException(
+                    status_code=409,
+                    detail="The conversation was deleted while the response was being generated, so the new message was discarded.",
+                )
+
+        return run
 
     @app.patch(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
@@ -962,10 +1028,10 @@ async def update_run_util(
     #
     # Testing for the key rather than a set value also refuses `{"eval_source": null}`,
     # which deep_update treats as a clear. That is deliberate: an escape hatch out of the
-    # delete guard would be the guard's own bypass. The accepted cost (D16) is that a
-    # trace orphaned by deleting its eval - `delete_eval` removes the EvalRuns but not
-    # the TaskRuns they scored - stays on disk, invisible to the dataset and removable
-    # only from the filesystem.
+    # delete guard would be the guard's own bypass. The accepted cost is that a trace
+    # orphaned by deleting its eval - deleting an Eval removes its EvalRuns but not the
+    # TaskRuns they scored - stays on disk, invisible to the dataset and removable only
+    # from the filesystem.
     if "eval_source" in run_data:
         raise HTTPException(
             status_code=400,

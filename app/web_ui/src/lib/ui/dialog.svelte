@@ -11,7 +11,14 @@
   export let sub_subtitle: string | null = null
   export let sub_subtitle_link: string | null = null
   export let blur_background: boolean = false
-  export let width: "normal" | "wide" | "full" = "normal"
+  // Dialog width. "extra_wide" is for content that reads as a full page in
+  // miniature (a whole conversation), where 3xl forces constant wrapping.
+  // "full" is for inspector-style dialogs (Compare V2 / Evolution) that sit
+  // between the two. Dialogs rendered INSIDE another dialog's content are
+  // display:none while closed (app.css .modal-box rule) — closed nested
+  // overlays otherwise inflate the outer box's scroll area via its permanent
+  // transform.
+  export let width: "normal" | "wide" | "full" | "extra_wide" = "normal"
   // When true the box takes a fixed tall height and its body becomes a flex
   // column, so slot content can own the scrolling (rather than the box growing
   // with its content). For inspector-style dialogs with their own tabs/scrollers.
@@ -94,14 +101,18 @@
   on:cancel={(e) => dispatch("cancel", e)}
 >
   <div
-    class="modal-box text-base-content {width === 'wide'
-      ? 'w-11/12 max-w-3xl'
+    class="modal-box text-base-content {width === 'extra_wide'
+      ? 'w-11/12 max-w-7xl'
       : width === 'full'
         ? 'w-11/12 max-w-6xl'
-        : ''} {fill_height ? 'h-[85vh] max-h-[85vh] flex flex-col' : ''}"
+        : width === 'wide'
+          ? 'w-11/12 max-w-3xl'
+          : ''} {fill_height ? 'h-[85vh] max-h-[85vh] flex flex-col' : ''}"
   >
     <!-- Hidden div to force the compiler to find these classes -->
-    <div class="hidden w-11/12 max-w-3xl max-w-6xl h-[85vh] max-h-[85vh]"></div>
+    <div
+      class="hidden w-11/12 max-w-3xl max-w-6xl max-w-7xl h-[85vh] max-h-[85vh]"
+    ></div>
     <div class="flex flex-row gap-2 items-start">
       <div
         class="grow flex flex-col {center_content

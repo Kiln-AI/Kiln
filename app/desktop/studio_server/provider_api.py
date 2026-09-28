@@ -161,6 +161,7 @@ class ModelDetails(BaseModel):
     suggested_for_data_gen: bool
     supports_logprobs: bool
     suggested_for_evals: bool
+    suggested_for_synthetic_user: bool
     supports_function_calling: bool
     uncensored: bool
     suggested_for_uncensored_data_gen: bool
@@ -324,6 +325,7 @@ def connect_provider_api(app: FastAPI):
                                 supports_logprobs=provider.supports_logprobs,
                                 supports_function_calling=provider.supports_function_calling,
                                 suggested_for_evals=provider.suggested_for_evals,
+                                suggested_for_synthetic_user=provider.suggested_for_synthetic_user,
                                 uncensored=provider.uncensored,
                                 suggested_for_uncensored_data_gen=provider.suggested_for_uncensored_data_gen,
                                 structured_output_mode=provider.structured_output_mode,
@@ -910,6 +912,8 @@ def connect_provider_api(app: FastAPI):
                 return await connect_cerebras(parse_api_key(key_data))
             case ModelProviderName.featherless_ai:
                 return await connect_featherless(parse_api_key(key_data))
+            case ModelProviderName.typesafe:
+                return await connect_typesafe(parse_api_key(key_data))
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
@@ -985,6 +989,8 @@ def connect_provider_api(app: FastAPI):
                     Config.shared().cerebras_api_key = None
                 case ModelProviderName.featherless_ai:
                     Config.shared().featherless_ai_api_key = None
+                case ModelProviderName.typesafe:
+                    Config.shared().typesafe_api_key = None
                 case (
                     ModelProviderName.kiln_custom_registry
                     | ModelProviderName.kiln_fine_tune
@@ -1608,6 +1614,49 @@ async def connect_featherless(key: str):
         )
 
 
+async def connect_typesafe(key: str):
+    try:
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        # /v1/models is account-scoped and rejects a bad key, and listing models spends
+        # no tokens, so it validates the key without a POST.
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.typesafe.ai/v1/models",
+                headers=headers,
+                timeout=10,
+                follow_redirects=True,
+            )
+
+        if response.status_code in (401, 403):
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "message": "Failed to connect to TypeSafe AI. Invalid API key."
+                },
+            )
+        elif response.status_code != 200:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to connect to TypeSafe AI. Error: [{response.status_code}]"
+                },
+            )
+        else:
+            Config.shared().typesafe_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to TypeSafe AI"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to TypeSafe AI. Error: {e!s}"},
+        )
+
+
 async def connect_bedrock(key_data: dict):
     access_key = key_data.get("Access Key")
     secret_key = key_data.get("Secret Key")
@@ -1716,6 +1765,7 @@ async def available_ollama_models() -> AvailableModels | None:
                             supports_logprobs=False,  # Ollama doesn't support logprobs https://github.com/ollama/ollama/issues/2415
                             suggested_for_data_gen=ollama_provider.suggested_for_data_gen,
                             suggested_for_evals=ollama_provider.suggested_for_evals,
+                            suggested_for_synthetic_user=ollama_provider.suggested_for_synthetic_user,
                             supports_function_calling=ollama_provider.supports_function_calling,
                             uncensored=False,
                             suggested_for_uncensored_data_gen=False,
@@ -1746,6 +1796,7 @@ async def available_ollama_models() -> AvailableModels | None:
                     untested_model=True,
                     suggested_for_data_gen=False,
                     suggested_for_evals=False,
+                    suggested_for_synthetic_user=False,
                     uncensored=False,
                     suggested_for_uncensored_data_gen=False,
                     # Ollama has constrained decode and all models support json_schema. Use it!
@@ -1830,6 +1881,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                             supports_logprobs=docker_provider.supports_logprobs,
                             suggested_for_data_gen=docker_provider.suggested_for_data_gen,
                             suggested_for_evals=docker_provider.suggested_for_evals,
+                            suggested_for_synthetic_user=docker_provider.suggested_for_synthetic_user,
                             uncensored=docker_provider.uncensored,
                             suggested_for_uncensored_data_gen=docker_provider.suggested_for_uncensored_data_gen,
                             supports_vision=docker_provider.supports_vision,
@@ -1852,6 +1904,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                     untested_model=True,
                     suggested_for_data_gen=False,
                     suggested_for_evals=False,
+                    suggested_for_synthetic_user=False,
                     uncensored=False,
                     suggested_for_uncensored_data_gen=False,
                     supports_vision=False,
@@ -1972,6 +2025,7 @@ def legacy_custom_models_as_available() -> Dict[str, List[ModelDetails]]:
                 untested_model=True,
                 suggested_for_data_gen=False,
                 suggested_for_evals=False,
+                suggested_for_synthetic_user=False,
                 uncensored=False,
                 suggested_for_uncensored_data_gen=False,
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -2051,6 +2105,7 @@ def user_models_as_available() -> Dict[str, List[ModelDetails]]:
                 untested_model=True,
                 suggested_for_data_gen=False,
                 suggested_for_evals=False,
+                suggested_for_synthetic_user=False,
                 uncensored=overrides.get("uncensored", False),
                 suggested_for_uncensored_data_gen=False,
                 structured_output_mode=structured_output_mode_value,
@@ -2109,6 +2164,7 @@ def all_fine_tuned_models() -> AvailableModels | None:
                             task_filter=[str(task.id)],
                             suggested_for_data_gen=False,
                             suggested_for_evals=False,
+                            suggested_for_synthetic_user=False,
                             uncensored=False,
                             suggested_for_uncensored_data_gen=False,
                             structured_output_mode=fine_tune_model_structured_output_mode(
@@ -2226,6 +2282,7 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
                         untested_model=True,
                         suggested_for_data_gen=False,
                         suggested_for_evals=False,
+                        suggested_for_synthetic_user=False,
                         uncensored=False,
                         suggested_for_uncensored_data_gen=False,
                         # OpenAI compatible models could be anything. JSON instructions is the only safe bet that works everywhere.

@@ -162,7 +162,7 @@ class CodeEvalAdapter(BaseV2EvalBridge):
                 try:
                     value = float(value)
                 except OverflowError:
-                    # int too large for a float, e.g. 10**400
+                    # An int too large for a float, e.g. 10**400.
                     raise RuntimeError(
                         f"Score '{key}' must be a finite number, got {value}"
                     ) from None
@@ -170,8 +170,8 @@ class CodeEvalAdapter(BaseV2EvalBridge):
                 raise RuntimeError(
                     f"Score '{key}' must be a float, got {type(value).__name__}"
                 )
-            # Fail here, in the scorer's own error surface, rather than at
-            # EvalRun save time where the message loses the code-eval context.
+            # Fail here, in the scorer's own error surface, rather than at EvalRun
+            # save time where the message loses the code eval context.
             if not math.isfinite(value):
                 raise RuntimeError(
                     f"Score '{key}' must be a finite number, got {value}"

@@ -106,13 +106,12 @@ function tool_option(
     value: value_field === "function_name" ? function_name : tool.id,
     label: tool_display_name(tool, duplicate_names),
     description: description ? description : undefined,
-    // Only when the selected value isn't already the label: repeating the name as a
-    // badge is noise, but a function name that differs from the display name is the
-    // value being picked, and has to be visible.
-    badge:
-      value_field === "function_name" && function_name !== tool.name
-        ? function_name
-        : undefined,
+    // Only when it differs from the label: repeating the name as a badge is noise,
+    // but a function name that differs from the display name is what the model
+    // actually calls, and has to be visible. Function names are long, so the
+    // badge goes under the label rather than cramping it.
+    badge: function_name !== tool.name ? function_name : undefined,
+    badge_placement: "below",
     disabled: option_disabled ? option_disabled(tool, tool_set) : false,
   }
 }

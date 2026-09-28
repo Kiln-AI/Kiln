@@ -1,11 +1,10 @@
-"""Parse / build the tagged synthetic_user_info blob.
+"""Parse the tagged synthetic_user_info blob.
 
-Both server and OSS sides treat this as a wire format only — persisted
-eval inputs store the parsed SyntheticUserInfo, never the blob. Both ends
-call these helpers — single source of truth for the tag schema.
+The blob is a serialization format only — persisted eval inputs store
+the parsed SyntheticUserInfo, never the blob.
 
 Tag rules:
-- Greedy first match per known tag; nested tags not supported.
+- First match per known tag, non-greedy content; nested tags not supported.
 - Whitespace trimmed from each tag's content.
 - Unknown tags are ignored (forward-compat for future generator output).
 - `<persona>` and `<goal>` are required; parse raises if missing or empty.
@@ -48,14 +47,3 @@ def parse_synthetic_user_info(blob: str) -> SyntheticUserInfo:
         goal=goal,
         behavior_guidance=behavior_guidance,
     )
-
-
-def build_synthetic_user_info(info: SyntheticUserInfo) -> str:
-    """Inverse of parse — for tests and any callers that need to construct a blob."""
-    parts = [
-        f"<persona>{info.persona}</persona>",
-        f"<goal>{info.goal}</goal>",
-    ]
-    if info.behavior_guidance:
-        parts.append(f"<behavior_guidance>{info.behavior_guidance}</behavior_guidance>")
-    return "".join(parts)
