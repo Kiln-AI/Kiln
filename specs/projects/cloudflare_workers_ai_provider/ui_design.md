@@ -20,7 +20,7 @@ The UI is the standard provider entry on the connect-provider screen (`connect_p
 1. `Go to https://dash.cloudflare.com/?to=/:account/ai/workers-ai and click 'Use REST API'`
 2. `Click 'Create a Workers AI API Token', create the token, then copy it and paste it below`
 3. `On the same page, copy your Account ID and paste it below`
-4. `Optional: to send requests through Cloudflare AI Gateway (a router to other AI hosts), enter a gateway ID. Enter 'default' to have Cloudflare create one. Your token needs AI Gateway permissions.`
+4. `Optional: to send requests through Cloudflare AI Gateway (a router to other AI hosts), enter a gateway ID. Enter 'default' to have Cloudflare create one.`
 5. `Click 'Connect'`
 
 ## Field Labels
