@@ -2,6 +2,7 @@ import logging
 import os
 from dataclasses import dataclass
 from typing import Any, Dict, List
+from urllib.parse import quote
 
 from pydantic import BaseModel
 
@@ -560,6 +561,8 @@ def provider_name_from_id(id: str) -> str:
                 return "Cerebras"
             case ModelProviderName.featherless_ai:
                 return "Featherless AI"
+            case ModelProviderName.cloudflare:
+                return "Cloudflare"
             case ModelProviderName.docker_model_runner:
                 return "Docker Model Runner"
             case ModelProviderName.typesafe:
@@ -634,6 +637,10 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
         required_config_keys=["featherless_ai_api_key"],
         message="Attempted to use Featherless AI without an API key set. \nGet your API key from https://featherless.ai/account/api-keys",
     ),
+    ModelProviderName.cloudflare: ModelProviderWarning(
+        required_config_keys=["cloudflare_api_key", "cloudflare_account_id"],
+        message="Attempted to use Cloudflare without an API token and account ID set. \nCreate a token and find your account ID at https://dash.cloudflare.com/?to=/:account/ai/workers-ai",
+    ),
     ModelProviderName.typesafe: ModelProviderWarning(
         required_config_keys=["typesafe_api_key"],
         message="Attempted to use TypeSafe AI without an API key set. \nGet your API key from https://console.typesafe.ai/keys",
@@ -645,6 +652,29 @@ class LiteLlmCoreConfig(BaseModel):
     base_url: str | None = None
     default_headers: Dict[str, str] | None = None
     additional_body_options: Dict[str, Any] | None = None
+
+
+CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4"
+CLOUDFLARE_GATEWAY_HEADER = "cf-aig-gateway-id"
+
+
+def cloudflare_base_url(account_id: str) -> str:
+    return f"{CLOUDFLARE_API_BASE}/accounts/{quote(account_id, safe='')}/ai/v1"
+
+
+def cloudflare_headers(gateway_id: str | None) -> Dict[str, str] | None:
+    return {CLOUDFLARE_GATEWAY_HEADER: gateway_id} if gateway_id else None
+
+
+def _cloudflare_core_config() -> LiteLlmCoreConfig:
+    account_id = Config.shared().cloudflare_account_id
+    if not account_id:
+        raise ValueError(provider_warnings[ModelProviderName.cloudflare].message)
+    return LiteLlmCoreConfig(
+        base_url=cloudflare_base_url(account_id),
+        default_headers=cloudflare_headers(Config.shared().cloudflare_ai_gateway_id),
+        additional_body_options={"api_key": Config.shared().cloudflare_api_key},
+    )
 
 
 def lite_llm_core_config_for_provider(
@@ -795,6 +825,8 @@ def lite_llm_core_config_for_provider(
                     "api_key": Config.shared().featherless_ai_api_key,
                 },
             )
+        case ModelProviderName.cloudflare:
+            return _cloudflare_core_config()
         case ModelProviderName.openai_compatible:
             # openai compatible requires a model name in the format "provider::model_name"
             if openai_compatible_provider_name is None:

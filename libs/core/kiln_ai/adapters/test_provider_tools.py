@@ -17,6 +17,8 @@ from kiln_ai.adapters.provider_tools import (
     built_in_provider_from_model_id,
     builtin_model_from,
     check_provider_warnings,
+    cloudflare_base_url,
+    cloudflare_headers,
     core_provider,
     default_adapter_for_provider,
     find_user_model,
@@ -163,6 +165,54 @@ def test_check_provider_warnings_typesafe_missing_key(mock_config):
     assert "Attempted to use TypeSafe AI without an API key set." in str(exc_info.value)
 
 
+def test_cloudflare_provider_warning_requires_key_and_account_not_gateway():
+    assert provider_warnings[ModelProviderName.cloudflare].required_config_keys == [
+        "cloudflare_api_key",
+        "cloudflare_account_id",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "config_values,expected",
+    [
+        ({"cloudflare_api_key": "key", "cloudflare_account_id": "acct"}, True),
+        ({"cloudflare_api_key": "key", "cloudflare_account_id": None}, False),
+        ({"cloudflare_api_key": None, "cloudflare_account_id": "acct"}, False),
+    ],
+)
+async def test_provider_enabled_cloudflare(mock_config, config_values, expected):
+    mock_config.side_effect = lambda key: config_values.get(key)
+
+    assert await provider_enabled(ModelProviderName.cloudflare) is expected
+
+
+def test_cloudflare_base_url():
+    assert (
+        cloudflare_base_url("abc123")
+        == "https://api.cloudflare.com/client/v4/accounts/abc123/ai/v1"
+    )
+
+
+def test_cloudflare_base_url_encodes_path_characters():
+    assert (
+        cloudflare_base_url("a/b?c")
+        == "https://api.cloudflare.com/client/v4/accounts/a%2Fb%3Fc/ai/v1"
+    )
+
+
+@pytest.mark.parametrize(
+    "gateway_id,expected",
+    [
+        (None, None),
+        ("", None),
+        ("gw", {"cf-aig-gateway-id": "gw"}),
+    ],
+)
+def test_cloudflare_headers(gateway_id, expected):
+    assert cloudflare_headers(gateway_id) == expected
+
+
 def test_check_provider_warnings_typesafe_with_key(mock_config):
     mock_config.return_value = "test-typesafe-key"
 
@@ -227,6 +277,7 @@ def test_provider_name_from_id_case_sensitivity():
         (ModelProviderName.fireworks_ai, "Fireworks AI"),
         (ModelProviderName.siliconflow_cn, "SiliconFlow"),
         (ModelProviderName.featherless_ai, "Featherless AI"),
+        (ModelProviderName.cloudflare, "Cloudflare"),
         (ModelProviderName.typesafe, "TypeSafe AI"),
         (ModelProviderName.kiln_fine_tune, "Fine Tuned Models"),
         (ModelProviderName.kiln_custom_registry, "Custom Models"),
@@ -1157,6 +1208,44 @@ def test_lite_llm_core_config_incorrect_openai_compatible_provider_name(
             ModelProviderName.openai_compatible,
             "provider_that_does_not_exist_in_compatible_openai_providers",
         )
+
+
+@pytest.mark.parametrize(
+    "gateway_id,expected_headers",
+    [
+        (None, None),
+        ("my-gateway", {"cf-aig-gateway-id": "my-gateway"}),
+    ],
+)
+def test_lite_llm_core_config_for_provider_cloudflare(
+    mock_config_for_lite_llm_core_config, gateway_id, expected_headers
+):
+    config_instance = mock_config_for_lite_llm_core_config.shared.return_value
+    config_instance.cloudflare_api_key = "test-cloudflare-key"
+    config_instance.cloudflare_account_id = "test-account"
+    config_instance.cloudflare_ai_gateway_id = gateway_id
+
+    config = lite_llm_core_config_for_provider(ModelProviderName.cloudflare)
+
+    assert config == LiteLlmCoreConfig(
+        base_url="https://api.cloudflare.com/client/v4/accounts/test-account/ai/v1",
+        default_headers=expected_headers,
+        additional_body_options={"api_key": "test-cloudflare-key"},
+    )
+
+
+@pytest.mark.parametrize("account_id", [None, ""])
+def test_lite_llm_core_config_for_provider_cloudflare_missing_account(
+    mock_config_for_lite_llm_core_config, account_id
+):
+    config_instance = mock_config_for_lite_llm_core_config.shared.return_value
+    config_instance.cloudflare_api_key = "test-cloudflare-key"
+    config_instance.cloudflare_account_id = account_id
+
+    with pytest.raises(
+        ValueError, match="Attempted to use Cloudflare without an API token"
+    ):
+        lite_llm_core_config_for_provider(ModelProviderName.cloudflare)
 
 
 def test_lite_llm_core_config_for_provider_typesafe_raises(

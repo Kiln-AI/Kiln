@@ -557,6 +557,7 @@ const provider_name_map: Record<ModelProviderName, string> = {
   cerebras: "Cerebras",
   docker_model_runner: "Docker Model Runner",
   featherless_ai: "Featherless AI",
+  cloudflare: "Cloudflare",
   typesafe: "TypeSafe AI",
 }
 

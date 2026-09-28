@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Annotated, Any, Dict, List, Literal
+from urllib.parse import quote
 
 import httpx
 import litellm
@@ -34,7 +35,10 @@ from kiln_ai.adapters.ollama_tools import (
     parse_ollama_tags,
 )
 from kiln_ai.adapters.provider_tools import (
+    CLOUDFLARE_API_BASE,
     PLACEHOLDER_API_KEY,
+    cloudflare_base_url,
+    cloudflare_headers,
     get_all_user_models,
     get_legacy_custom_models,
     provider_name_from_id,
@@ -912,6 +916,8 @@ def connect_provider_api(app: FastAPI):
                 return await connect_cerebras(parse_api_key(key_data))
             case ModelProviderName.featherless_ai:
                 return await connect_featherless(parse_api_key(key_data))
+            case ModelProviderName.cloudflare:
+                return await connect_cloudflare(key_data)
             case ModelProviderName.typesafe:
                 return await connect_typesafe(parse_api_key(key_data))
             case (
@@ -989,6 +995,10 @@ def connect_provider_api(app: FastAPI):
                     Config.shared().cerebras_api_key = None
                 case ModelProviderName.featherless_ai:
                     Config.shared().featherless_ai_api_key = None
+                case ModelProviderName.cloudflare:
+                    Config.shared().cloudflare_api_key = None
+                    Config.shared().cloudflare_account_id = None
+                    Config.shared().cloudflare_ai_gateway_id = None
                 case ModelProviderName.typesafe:
                     Config.shared().typesafe_api_key = None
                 case (
@@ -1612,6 +1622,111 @@ async def connect_featherless(key: str):
             status_code=400,
             content={"message": f"Failed to connect to Featherless AI. Error: {e!s}"},
         )
+
+
+CLOUDFLARE_TOKEN_FIELD = "API Token"
+CLOUDFLARE_ACCOUNT_FIELD = "Account ID"
+CLOUDFLARE_GATEWAY_FIELD = "AI Gateway ID - Optional"
+CLOUDFLARE_CONNECTION_CHECK_MODEL = "@cf/kiln/connection-check"
+CLOUDFLARE_NO_SUCH_MODEL_CODE = 5007
+CLOUDFLARE_GATEWAY_NOT_FOUND_CODE = 2001
+CLOUDFLARE_CONNECT_TIMEOUT_SECONDS = 30
+
+
+def _cloudflare_field(key_data: dict, field: str) -> str | None:
+    value = key_data.get(field)
+    if not isinstance(value, str):
+        return None
+    return value.strip() or None
+
+
+def _cloudflare_error_codes(response: requests.Response) -> set[int]:
+    try:
+        errors = response.json().get("errors") or []
+        return {error["code"] for error in errors if isinstance(error.get("code"), int)}
+    except Exception:
+        return set()
+
+
+def _cloudflare_connect_error(status_code: int, detail: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={"message": f"Failed to connect to Cloudflare. {detail}"},
+    )
+
+
+def _cloudflare_unexpected_response(response: requests.Response) -> JSONResponse:
+    return _cloudflare_connect_error(
+        400, f"Error: [{response.status_code}] {response.text}"
+    )
+
+
+async def connect_cloudflare(key_data: dict):
+    try:
+        token = _cloudflare_field(key_data, CLOUDFLARE_TOKEN_FIELD)
+        account_id = _cloudflare_field(key_data, CLOUDFLARE_ACCOUNT_FIELD)
+        gateway_id = _cloudflare_field(key_data, CLOUDFLARE_GATEWAY_FIELD)
+        if not token or not account_id:
+            return _cloudflare_connect_error(
+                400, "API Token and Account ID are required."
+            )
+
+        auth_headers = {"Authorization": f"Bearer {token}"}
+
+        # The search term matches no model, which keeps the response tiny. The call
+        # still checks the token, the account and the Workers AI permission.
+        search_response = requests.get(
+            f"{CLOUDFLARE_API_BASE}/accounts/{quote(account_id, safe='')}/ai/models/search",
+            headers=auth_headers,
+            params={"search": "kiln-connection-check"},
+            timeout=CLOUDFLARE_CONNECT_TIMEOUT_SECONDS,
+        )
+        if search_response.status_code == 404:
+            return _cloudflare_connect_error(401, "Invalid Account ID.")
+        if search_response.status_code in (400, 401, 403):
+            return _cloudflare_connect_error(
+                401,
+                "Invalid API Token, or the token doesn't have Workers AI access for this Account ID.",
+            )
+        if search_response.status_code != 200:
+            return _cloudflare_unexpected_response(search_response)
+
+        if gateway_id:
+            # The models search API ignores the gateway header, so check the gateway
+            # with a chat call for a model that doesn't exist. Cloudflare rejects a
+            # missing gateway before resolving the model, and no model runs either way.
+            chat_response = requests.post(
+                f"{cloudflare_base_url(account_id)}/chat/completions",
+                headers={**auth_headers, **(cloudflare_headers(gateway_id) or {})},
+                json={
+                    "model": CLOUDFLARE_CONNECTION_CHECK_MODEL,
+                    "messages": [{"role": "user", "content": "ping"}],
+                    "max_tokens": 1,
+                },
+                timeout=CLOUDFLARE_CONNECT_TIMEOUT_SECONDS,
+            )
+            error_codes = _cloudflare_error_codes(chat_response)
+            if CLOUDFLARE_GATEWAY_NOT_FOUND_CODE in error_codes:
+                return _cloudflare_connect_error(
+                    400,
+                    f"AI Gateway '{gateway_id}' not found. Check the gateway ID, or remove it.",
+                )
+            gateway_accepted = (
+                chat_response.status_code == 200
+                or CLOUDFLARE_NO_SUCH_MODEL_CODE in error_codes
+            )
+            if not gateway_accepted:
+                return _cloudflare_unexpected_response(chat_response)
+
+        Config.shared().cloudflare_api_key = token
+        Config.shared().cloudflare_account_id = account_id
+        Config.shared().cloudflare_ai_gateway_id = gateway_id
+        return JSONResponse(
+            status_code=200,
+            content={"message": "Connected to Cloudflare"},
+        )
+    except Exception as e:
+        return _cloudflare_connect_error(400, f"Error: {e!s}")
 
 
 async def connect_typesafe(key: str):

@@ -9738,7 +9738,7 @@ export interface components {
          * @description Enumeration of supported AI model providers.
          * @enum {string}
          */
-        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner" | "featherless_ai" | "typesafe";
+        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner" | "featherless_ai" | "cloudflare" | "typesafe";
         /**
          * MultiTurnDriveConfig
          * @description Settings for re-driving a multi-turn synthetic input at eval time.

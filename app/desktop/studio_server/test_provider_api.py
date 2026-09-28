@@ -49,6 +49,7 @@ from app.desktop.studio_server.provider_api import (
     connect_anthropic,
     connect_azure_openai,
     connect_bedrock,
+    connect_cloudflare,
     connect_docker_model_runner,
     connect_featherless,
     connect_gemini,
@@ -131,6 +132,7 @@ def patched_non_builtin_available_model_sources(patch_openai_compatible: bool = 
         "together_ai",
         "siliconflow_cn",
         "featherless_ai",
+        "cloudflare",
         "typesafe",
     ],
 )
@@ -2256,6 +2258,9 @@ def mock_config_all_providers():
     mock_config.bedrock_secret_key = "test_key"
     mock_config.siliconflow_cn_api_key = "test_key"
     mock_config.featherless_ai_api_key = "test_key"
+    mock_config.cloudflare_api_key = "test_key"
+    mock_config.cloudflare_account_id = "test_key"
+    mock_config.cloudflare_ai_gateway_id = "test_key"
     mock_config.typesafe_api_key = "test_key"
     return mock_config
 
@@ -4423,6 +4428,257 @@ def test_connect_api_key_featherless_success(mock_connect_featherless, client):
 
     assert response.status_code == 200
     mock_connect_featherless.assert_called_once_with("test_key")
+
+
+# Cloudflare connection tests.
+
+CF_SEARCH_URL = (
+    "https://api.cloudflare.com/client/v4/accounts/test-account/ai/models/search"
+)
+CF_CHAT_URL = (
+    "https://api.cloudflare.com/client/v4/accounts/test-account/ai/v1/chat/completions"
+)
+CF_TOKEN_MESSAGE = "Failed to connect to Cloudflare. Invalid API Token, or the token doesn't have Workers AI access for this Account ID."
+
+
+def _cf_key_data(gateway_id: str | None = None) -> dict:
+    key_data = {"API Token": " test-token ", "Account ID": " test-account "}
+    if gateway_id is not None:
+        key_data["AI Gateway ID - Optional"] = gateway_id
+    return key_data
+
+
+def _cf_response(status_code: int, error_code: int | None = None, text: str = ""):
+    response = MagicMock()
+    response.status_code = status_code
+    response.text = text
+    if error_code is None:
+        response.json.side_effect = ValueError("not json")
+    else:
+        response.json.return_value = {
+            "success": False,
+            "errors": [{"code": error_code, "message": "error"}],
+        }
+    return response
+
+
+def _json_body(result: JSONResponse) -> dict:
+    return json.loads(bytes(result.body))
+
+
+@pytest.fixture
+def cf_mocks():
+    with (
+        patch("app.desktop.studio_server.provider_api.requests.get") as mock_get,
+        patch("app.desktop.studio_server.provider_api.requests.post") as mock_post,
+        patch("app.desktop.studio_server.provider_api.Config.shared") as mock_shared,
+    ):
+        mock_get.return_value = _cf_response(200)
+        mock_post.return_value = _cf_response(400, error_code=5007)
+        mock_shared.return_value.cloudflare_ai_gateway_id = "previous-gateway"
+        yield mock_get, mock_post, mock_shared
+
+
+@patch("app.desktop.studio_server.provider_api.connect_cloudflare")
+def test_connect_api_key_cloudflare_dispatch(mock_connect_cloudflare, client):
+    mock_connect_cloudflare.return_value = {"message": "Connected to Cloudflare"}
+    key_data = _cf_key_data("gw")
+
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "cloudflare", "key_data": key_data},
+    )
+
+    assert response.status_code == 200
+    mock_connect_cloudflare.assert_called_once_with(key_data)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "key_data",
+    [
+        {"Account ID": "test-account"},
+        {"API Token": "test-token"},
+        {"API Token": "   ", "Account ID": "test-account"},
+        {"API Token": "test-token", "Account ID": 123},
+    ],
+)
+async def test_connect_cloudflare_missing_required_fields(cf_mocks, key_data):
+    mock_get, mock_post, mock_shared = cf_mocks
+
+    result = await connect_cloudflare(key_data)
+
+    assert result.status_code == 400
+    assert _json_body(result) == {
+        "message": "Failed to connect to Cloudflare. API Token and Account ID are required."
+    }
+    mock_get.assert_not_called()
+    mock_post.assert_not_called()
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "search_status,expected_status,expected_message",
+    [
+        (404, 401, "Failed to connect to Cloudflare. Invalid Account ID."),
+        (400, 401, CF_TOKEN_MESSAGE),
+        (401, 401, CF_TOKEN_MESSAGE),
+        (403, 401, CF_TOKEN_MESSAGE),
+        (500, 400, "Failed to connect to Cloudflare. Error: [500] boom"),
+    ],
+)
+async def test_connect_cloudflare_search_failures(
+    cf_mocks, search_status, expected_status, expected_message
+):
+    mock_get, mock_post, mock_shared = cf_mocks
+    mock_get.return_value = _cf_response(search_status, text="boom")
+
+    result = await connect_cloudflare(_cf_key_data("gw"))
+
+    assert result.status_code == expected_status
+    assert _json_body(result) == {"message": expected_message}
+    mock_post.assert_not_called()
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("gateway_id", [None, "", "   "])
+async def test_connect_cloudflare_without_gateway(cf_mocks, gateway_id):
+    mock_get, mock_post, mock_shared = cf_mocks
+
+    result = await connect_cloudflare(_cf_key_data(gateway_id))
+
+    assert result.status_code == 200
+    assert _json_body(result) == {"message": "Connected to Cloudflare"}
+    mock_get.assert_called_once_with(
+        CF_SEARCH_URL,
+        headers={"Authorization": "Bearer test-token"},
+        params={"search": "kiln-connection-check"},
+        timeout=30,
+    )
+    mock_post.assert_not_called()
+    config = mock_shared.return_value
+    assert config.cloudflare_api_key == "test-token"
+    assert config.cloudflare_account_id == "test-account"
+    assert config.cloudflare_ai_gateway_id is None
+
+
+@pytest.mark.asyncio
+async def test_connect_cloudflare_account_id_is_url_encoded(cf_mocks):
+    mock_get, _, _ = cf_mocks
+
+    await connect_cloudflare({"API Token": "t", "Account ID": "a/b?c"})
+
+    assert (
+        mock_get.call_args.args[0]
+        == "https://api.cloudflare.com/client/v4/accounts/a%2Fb%3Fc/ai/models/search"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "chat_response",
+    [_cf_response(400, error_code=5007), _cf_response(200)],
+    ids=["no_such_model", "model_exists"],
+)
+async def test_connect_cloudflare_with_valid_gateway(cf_mocks, chat_response):
+    _, mock_post, mock_shared = cf_mocks
+    mock_post.return_value = chat_response
+
+    result = await connect_cloudflare(_cf_key_data(" my-gateway "))
+
+    assert result.status_code == 200
+    mock_post.assert_called_once_with(
+        CF_CHAT_URL,
+        headers={
+            "Authorization": "Bearer test-token",
+            "cf-aig-gateway-id": "my-gateway",
+        },
+        json={
+            "model": "@cf/kiln/connection-check",
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 1,
+        },
+        timeout=30,
+    )
+    config = mock_shared.return_value
+    assert config.cloudflare_api_key == "test-token"
+    assert config.cloudflare_account_id == "test-account"
+    assert config.cloudflare_ai_gateway_id == "my-gateway"
+
+
+@pytest.mark.asyncio
+async def test_connect_cloudflare_gateway_not_found(cf_mocks):
+    _, mock_post, mock_shared = cf_mocks
+    mock_post.return_value = _cf_response(400, error_code=2001)
+
+    result = await connect_cloudflare(_cf_key_data("missing-gw"))
+
+    assert result.status_code == 400
+    assert _json_body(result) == {
+        "message": "Failed to connect to Cloudflare. AI Gateway 'missing-gw' not found. Check the gateway ID, or remove it."
+    }
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "chat_response,expected_message",
+    [
+        (
+            _cf_response(502, text="Bad Gateway"),
+            "Failed to connect to Cloudflare. Error: [502] Bad Gateway",
+        ),
+        (
+            _cf_response(401, error_code=10000, text="auth"),
+            "Failed to connect to Cloudflare. Error: [401] auth",
+        ),
+    ],
+    ids=["non_json_502", "unexpected_error_code"],
+)
+async def test_connect_cloudflare_gateway_unexpected_response(
+    cf_mocks, chat_response, expected_message
+):
+    _, mock_post, mock_shared = cf_mocks
+    mock_post.return_value = chat_response
+
+    result = await connect_cloudflare(_cf_key_data("gw"))
+
+    assert result.status_code == 400
+    assert _json_body(result) == {"message": expected_message}
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_connect_cloudflare_request_exception(cf_mocks):
+    mock_get, _, mock_shared = cf_mocks
+    mock_get.side_effect = Exception("Connection error")
+
+    result = await connect_cloudflare(_cf_key_data())
+
+    assert result.status_code == 400
+    assert _json_body(result) == {
+        "message": "Failed to connect to Cloudflare. Error: Connection error"
+    }
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_disconnect_api_key_cloudflare(client, mock_config_all_providers):
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config.return_value = mock_config_all_providers
+
+        response = client.post(
+            "/api/provider/disconnect_api_key",
+            params={"provider_id": "cloudflare"},
+        )
+
+        assert response.status_code == 200
+        assert mock_config_all_providers.cloudflare_api_key is None
+        assert mock_config_all_providers.cloudflare_account_id is None
+        assert mock_config_all_providers.cloudflare_ai_gateway_id is None
+        assert mock_config_all_providers.open_ai_api_key is not None
 
 
 # TypeSafe AI connection tests.
