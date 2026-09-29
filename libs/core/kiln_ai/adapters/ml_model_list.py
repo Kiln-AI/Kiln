@@ -526,11 +526,21 @@ GPT_5_4_PRO_OPENAI_THINKING_LEVELS = {
     "Extra High": "xhigh",
 }
 
-# GPT-6 Astra supports reasoning effort levels low/medium/high/xhigh/max with a
-# default of medium. Unlike the GPT-5.x models it does NOT support `none` or
-# `minimal`, and it adds a new `max` level, so it needs its own constant.
-# GPT-6.1 Sol on OpenRouter uses the same levels.
+# GPT-6 Astra and GPT-6.1 Sol support reasoning effort levels
+# low/medium/high/xhigh/max with a default of medium. Unlike the GPT-5.x models
+# they do NOT support `none` or `minimal`. OpenAI's /v1/chat/completions (which
+# Kiln uses for the openai provider) rejects `max` with a 400; only
+# /v1/responses accepts it. OpenRouter accepts `max`, so the two providers get
+# separate constants.
+# https://developers.openai.com/api/docs/models/gpt-6.1-sol
 GPT_6_ASTRA_OPENAI_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+}
+
+GPT_6_ASTRA_OPENROUTER_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
     "High": "high",
@@ -538,20 +548,18 @@ GPT_6_ASTRA_OPENAI_THINKING_LEVELS = {
     "Max": "max",
 }
 
-# GPT-6.1 Sol on OpenAI direct. The model page lists `max` as well, but
-# /v1/chat/completions (which Kiln uses) rejects it with a 400; only
-# /v1/responses accepts it. `none` and `minimal` are rejected on both.
-# https://developers.openai.com/api/docs/models/gpt-6.1-sol
-GPT_6_1_SOL_OPENAI_THINKING_LEVELS = {
+# GPT-6 Sol and Luna support the same levels as Astra plus `none`, and default
+# to medium. As with Astra, `max` is rejected on /v1/chat/completions, so it is
+# only offered on OpenRouter. https://developers.openai.com/api/docs/models/gpt-6-sol
+GPT_6_OPENAI_THINKING_LEVELS = {
+    "Off/None": "none",
     "Low": "low",
     "Medium": "medium",
     "High": "high",
     "Extra High": "xhigh",
 }
 
-# GPT-6 Sol and Luna support the same levels as Astra plus `none`, and default
-# to medium. https://developers.openai.com/api/docs/models/gpt-6-sol
-GPT_6_OPENAI_THINKING_LEVELS = {
+GPT_6_OPENROUTER_THINKING_LEVELS = {
     "Off/None": "none",
     "Low": "low",
     "Medium": "medium",
@@ -758,7 +766,7 @@ built_in_models: List[KilnModel] = [
                 suggested_for_data_gen=True,
                 model_id="gpt-6.1-sol",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=GPT_6_1_SOL_OPENAI_THINKING_LEVELS,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
@@ -783,7 +791,7 @@ built_in_models: List[KilnModel] = [
                 suggested_for_data_gen=True,
                 model_id="openai/gpt-6.1-sol",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                available_thinking_levels=GPT_6_ASTRA_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="medium",
                 # Use OpenRouter's reasoning object so reasoning is preserved
                 # when tools are sent (the bare reasoning_effort param is
@@ -843,7 +851,7 @@ built_in_models: List[KilnModel] = [
                 suggested_for_data_gen=True,
                 model_id="openai/gpt-6-astra",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                available_thinking_levels=GPT_6_ASTRA_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="medium",
                 # Use OpenRouter's reasoning object so reasoning is preserved
                 # when tools are sent (the bare reasoning_effort param is
@@ -898,7 +906,7 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-6-sol",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
+                available_thinking_levels=GPT_6_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="medium",
                 # Use OpenRouter's reasoning object so reasoning is preserved
                 # when tools are sent (the bare reasoning_effort param is
@@ -958,7 +966,7 @@ built_in_models: List[KilnModel] = [
                 suggested_for_data_gen=True,
                 model_id="openai/gpt-6-luna",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
+                available_thinking_levels=GPT_6_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="medium",
                 # Use OpenRouter's reasoning object so reasoning is preserved
                 # when tools are sent (the bare reasoning_effort param is
