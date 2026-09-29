@@ -127,7 +127,7 @@
     {
       name: "Cerebras",
       id: "cerebras",
-      description: "Exceptionally fast inference on custom hardware.",
+      description: "Remarkably fast inference on custom hardware.",
       featured: false,
       api_key_steps: [
         "Go to https://cloud.cerebras.ai/platform",
