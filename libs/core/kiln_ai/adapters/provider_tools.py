@@ -551,7 +551,7 @@ def provider_name_from_id(id: str) -> str:
             case ModelProviderName.huggingface:
                 return "Hugging Face"
             case ModelProviderName.vertex:
-                return "Gemini Enterprise Agent Platform (formerly Vertex AI)"
+                return "Gemini Enterprise Agent Platform"
             case ModelProviderName.together_ai:
                 return "Together AI"
             case ModelProviderName.siliconflow_cn:

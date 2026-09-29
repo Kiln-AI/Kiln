@@ -56,7 +56,7 @@
     {
       name: "OpenAI",
       id: "openai",
-      description: "The OG home to GPT-4o and more. Supports fine-tuning.",
+      description: "The OG home to GPT.",
       featured: false,
       pill_text: highlight_finetune ? "Tuneable" : undefined,
       api_key_steps: [
@@ -67,43 +67,6 @@
       ],
       api_key_warning:
         "Note: the OpenAI API requires a separate account from ChatGPT.",
-    },
-    {
-      name: "Ollama",
-      id: "ollama",
-      description: "Run models locally. No API key required.",
-      featured: false,
-    },
-    {
-      name: "Docker Model Runner",
-      id: "docker_model_runner",
-      description: "Run models locally with Docker. No API key required.",
-      featured: false,
-    },
-    {
-      name: "Groq",
-      id: "groq",
-      description: "Exceptionally fast inference on custom hardware.",
-      featured: false,
-      api_key_steps: [
-        "Go to https://console.groq.com/keys",
-        "Create an API Key",
-        "Copy the new key, paste it below and click 'Connect'",
-      ],
-    },
-    {
-      name: "Fireworks AI",
-      id: "fireworks_ai",
-      description: "Open models (Llama, Phi), plus the ability to fine-tune.",
-      pill_text: highlight_finetune ? "Tuneable" : undefined,
-      api_key_steps: [
-        "Go to https://app.fireworks.ai/settings/users/api-keys",
-        "Create a new API Key and paste it below",
-        "Go to https://app.fireworks.ai/settings/account",
-        "Copy the Account ID, paste it below, and click 'Connect'",
-      ],
-      featured: false,
-      api_key_fields: ["API Key", "Account ID"],
     },
     {
       name: "Anthropic",
@@ -118,10 +81,65 @@
       api_key_fields: ["API Key"],
     },
     {
+      name: "Ollama",
+      id: "ollama",
+      description: "Run models locally. No API key required.",
+      featured: false,
+    },
+    {
+      name: "Fireworks AI",
+      id: "fireworks_ai",
+      description: "Open models, plus the ability to fine-tune.",
+      pill_text: highlight_finetune ? "Tuneable" : undefined,
+      api_key_steps: [
+        "Go to https://app.fireworks.ai/settings/users/api-keys",
+        "Create a new API Key and paste it below",
+        "Go to https://app.fireworks.ai/settings/account",
+        "Copy the Account ID, paste it below, and click 'Connect'",
+      ],
+      featured: false,
+      api_key_fields: ["API Key", "Account ID"],
+    },
+    {
+      name: "Together.ai",
+      id: "together_ai",
+      description: "Inference service from Together.ai",
+      featured: false,
+      pill_text: highlight_finetune ? "Tuneable" : undefined,
+      api_key_steps: [
+        "Create a Together account.",
+        "Create an API Key (or user key) here: https://api.together.ai/settings/api-keys",
+        "Copy the API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
+      name: "Groq",
+      id: "groq",
+      description: "Exceptionally fast inference on custom hardware.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://console.groq.com/keys",
+        "Create an API Key",
+        "Copy the new key, paste it below and click 'Connect'",
+      ],
+    },
+    {
+      name: "Cerebras",
+      id: "cerebras",
+      description: "Exceptionally fast inference on custom hardware.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://cloud.cerebras.ai/platform",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
       name: "Google Gemini API",
       id: "gemini_api",
-      description:
-        "Google's Gemini API (aka AI Studio). Not to be confused with Gemini Enterprise Agent Platform (formerly Vertex AI).",
+      description: "Google's Gemini API (aka AI Studio).",
       featured: false,
       api_key_steps: [
         "Go to https://aistudio.google.com/app/apikey",
@@ -133,8 +151,7 @@
     {
       name: "Gemini Enterprise Agent Platform",
       id: "vertex",
-      description:
-        "Google's Gemini Enterprise Agent Platform (formerly Vertex AI). Not to be confused with Gemini API.",
+      description: "Google's enterprise platform. Formerly Vertex AI.",
       featured: false,
       pill_text: highlight_finetune ? "Tuneable" : undefined,
       api_key_steps: [
@@ -176,19 +193,6 @@
       api_key_fields: ["API Key"],
     },
     {
-      name: "Together.ai",
-      id: "together_ai",
-      description: "Inference service from Together.ai",
-      featured: false,
-      pill_text: highlight_finetune ? "Tuneable" : undefined,
-      api_key_steps: [
-        "Create a Together account.",
-        "Create an API Key (or user key) here: https://api.together.ai/settings/api-keys",
-        "Copy the API Key, paste it below and click 'Connect'",
-      ],
-      api_key_fields: ["API Key"],
-    },
-    {
       name: "Amazon Bedrock",
       id: "amazon_bedrock",
       description: "So your company has an AWS contract?",
@@ -204,6 +208,12 @@
       api_key_fields: ["Access Key", "Secret Key"],
     },
     {
+      name: "Docker Model Runner",
+      id: "docker_model_runner",
+      description: "Run models locally with Docker. No API key required.",
+      featured: false,
+    },
+    {
       name: "SiliconFlow (硅基流动)",
       id: "siliconflow_cn",
       description: "AI provider for users in China.",
@@ -212,18 +222,6 @@
       featured: false,
       api_key_steps: [
         "Go to https://cloud.siliconflow.cn/account/ak",
-        "Create a new API Key",
-        "Copy the new API Key, paste it below and click 'Connect'",
-      ],
-      api_key_fields: ["API Key"],
-    },
-    {
-      name: "Cerebras",
-      id: "cerebras",
-      description: "Exceptionally fast inference on custom hardware.",
-      featured: false,
-      api_key_steps: [
-        "Go to https://cloud.cerebras.ai/platform",
         "Create a new API Key",
         "Copy the new API Key, paste it below and click 'Connect'",
       ],
