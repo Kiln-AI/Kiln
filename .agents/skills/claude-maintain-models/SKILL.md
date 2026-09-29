@@ -592,6 +592,7 @@ plumbing PR must not skip them.
 ### OpenAI
 - Most GPT models use `json_schema` for structured output
 - GPT-5.x models support `available_thinking_levels` — see [Thinking Levels Reference](#thinking-levels-reference)
+- GPT-6.x models list a `max` effort level on their model pages, but `/v1/chat/completions` (which Kiln uses for the `openai` provider) rejects it with a 400 — only `/v1/responses` accepts it. Offer `max` on OpenRouter only, and give the `openai` provider a constant without it (see `GPT_6_ASTRA_OPENAI_THINKING_LEVELS` vs `GPT_6_ASTRA_OPENROUTER_THINKING_LEVELS`). Probe with a real request before adding a level the docs list
 - Chat/instant variants (e.g. GPT-5.3 Instant) may not support reasoning effort
 - o-series models have fixed thinking tiers (separate model entries per tier, not configurable levels)
 
