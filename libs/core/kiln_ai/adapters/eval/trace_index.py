@@ -13,9 +13,12 @@ what makes a retry after a scoring failure re-score rather than regenerate
 (functional spec §4.2, §4.3).
 """
 
+import json
 import logging
 from pathlib import Path
 from typing import Awaitable, Callable, Dict, Tuple
+
+from pydantic import ValidationError
 
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.eval_splits import ItemKey, ItemSource
@@ -89,10 +92,13 @@ class TraceIndex:
 
     def _seed(self) -> None:
         # include_intermediate_runs stays False, so a trace that is the *parent* of
-        # another run is invisible here. Safe only because architecture §3.2 skips
-        # multi-turn items outright, so no eval trace has children today. If multi-turn
-        # evals ever generate traces, this line has to change with them — otherwise those
-        # traces are never found and the eval regenerates them on every run, silently.
+        # another run is invisible here. Safe because eval traces are always
+        # childless: single-turn generations are single runs, and a driven
+        # multi-turn conversation persists as one standalone run whose trace holds
+        # the whole exchange (chain-leaf scoring reads stored dataset runs without
+        # generating at all). Nothing may ever chain a child onto an eval trace
+        # without revisiting this seed — the parent would turn invisible here, and
+        # the eval would silently regenerate its trace on every run.
         for run in self._task.runs(readonly=True, include_eval_generated=True):
             if run.path is None:
                 continue
@@ -143,6 +149,18 @@ class TraceIndex:
             # rather than failing every job that wanted it.
             logger.warning(
                 "Indexed eval trace for %s is gone from %s; regenerating", key, path
+            )
+            del self._paths[key]
+            return None
+        except (json.JSONDecodeError, ValidationError, ValueError) as error:
+            # The file exists but no longer parses as a TaskRun — truncated by a crash
+            # mid-write, or rewritten by a newer schema. Same posture as a missing file:
+            # drop the entry and regenerate, rather than failing every job on this key.
+            logger.warning(
+                "Indexed eval trace for %s at %s failed to load (%s); regenerating",
+                key,
+                path,
+                error,
             )
             del self._paths[key]
             return None

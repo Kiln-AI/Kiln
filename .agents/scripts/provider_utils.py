@@ -96,6 +96,8 @@ SKIP_PROVIDERS = {
     "openai_compatible",
     "azure_openai",
     "huggingface",
+    # TypeSafe AI's System One API has no OpenAI-compatible model listing to enumerate.
+    "typesafe",
 }
 
 CASE_INSENSITIVE_PROVIDERS = {"siliconflow_cn"}

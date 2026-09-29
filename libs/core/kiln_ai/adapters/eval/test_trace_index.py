@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import os
 from typing import Awaitable, Callable
 
 import pytest
@@ -440,3 +442,43 @@ async def test_vanished_trace_file_regenerates(task):
     assert was_generated is True
     assert trace.id != existing.id
     assert generate.calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "corrupt_content",
+    [
+        # Truncated JSON, as an in-place write interrupted mid-file leaves behind.
+        '{"v": 1, "id": ',
+        # Valid JSON that no longer validates as a TaskRun.
+        '{"v": 1, "model_type": "task_run"}',
+        # A schema version from a newer build, refused with a plain ValueError.
+        '{"v": 999999, "model_type": "task_run", "input": "i"}',
+    ],
+)
+async def test_corrupt_trace_file_regenerates(task, caplog, corrupt_content):
+    """A trace file that no longer parses degrades like a deleted one: drop the entry,
+    warn, and regenerate — rather than failing every job on this key forever."""
+    existing = save_trace(task)
+    index = TraceIndex(task)
+    assert existing.path is not None
+    existing.path.write_text(corrupt_content, encoding="utf-8")
+    # Bump mtime so the model cache cannot serve the previously loaded instance.
+    stat = existing.path.stat()
+    os.utime(existing.path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000))
+
+    generate = Generator(task)
+    with caplog.at_level(logging.WARNING, logger="kiln_ai.adapters.eval.trace_index"):
+        trace, was_generated = await index.get_or_create(KEY, generate.for_key(KEY))
+
+    assert was_generated is True
+    assert trace.id != existing.id
+    assert generate.calls == 1
+    warning = next(r for r in caplog.records if "failed to load" in r.getMessage())
+    assert warning.levelno == logging.WARNING
+    assert str(existing.path) in warning.getMessage()
+
+    # The regenerated trace is indexed: the next lookup serves it without generating.
+    again, was_generated_again = await index.get_or_create(KEY, generate.for_key(KEY))
+    assert was_generated_again is False
+    assert again.id == trace.id

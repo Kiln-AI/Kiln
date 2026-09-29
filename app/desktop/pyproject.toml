@@ -4,14 +4,16 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kiln-studio-desktop"
-version = "1.1.2"
+version = "1.2.0"
 description = "The Kiln Desktop App. Download from https://kiln.tech"
 requires-python = ">=3.10"
 dependencies = [
     "kiln-server",
     "pillow>=11.0.0",
     "pystray>=0.19.5",
-    "pyinstaller==6.15.0",
+    # Linux tray: StatusNotifierItem over D-Bus, without bundling GTK
+    "jeepney>=0.9.0; sys_platform == 'linux'",
+    "pyinstaller==6.22.3",
     # scipy 1.15.x ships a _propack extension whose Mach-O has a zero-fill
     # __DATA/__thread_bss section with a non-zero offset, which macOS 27's dyld
     # refuses to load. 1.16.0 is the first release that loads there. scipy 1.16

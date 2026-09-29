@@ -6,6 +6,7 @@ from kiln_ai.adapters.adapter_registry import litellm_core_provider_config
 from kiln_ai.adapters.docker_model_runner_tools import DockerModelRunnerConnection
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
+    ModelAdapterId,
     ModelName,
     ModelParserID,
     ModelProviderName,
@@ -17,6 +18,7 @@ from kiln_ai.adapters.provider_tools import (
     builtin_model_from,
     check_provider_warnings,
     core_provider,
+    default_adapter_for_provider,
     find_user_model,
     finetune_cache,
     finetune_from_id,
@@ -34,6 +36,7 @@ from kiln_ai.adapters.provider_tools import (
     provider_warnings,
     user_model_to_provider,
 )
+from kiln_ai.adapters.user_model_entry import UserModelEntry
 from kiln_ai.datamodel import Finetune, StructuredOutputMode, Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
@@ -151,6 +154,21 @@ def test_check_provider_warnings_unknown_provider():
     check_provider_warnings("unknown_provider")
 
 
+def test_check_provider_warnings_typesafe_missing_key(mock_config):
+    mock_config.return_value = None
+
+    with pytest.raises(ValueError) as exc_info:
+        check_provider_warnings(ModelProviderName.typesafe)
+
+    assert "Attempted to use TypeSafe AI without an API key set." in str(exc_info.value)
+
+
+def test_check_provider_warnings_typesafe_with_key(mock_config):
+    mock_config.return_value = "test-typesafe-key"
+
+    check_provider_warnings(ModelProviderName.typesafe)
+
+
 @pytest.mark.parametrize(
     "provider_name",
     [
@@ -209,6 +227,7 @@ def test_provider_name_from_id_case_sensitivity():
         (ModelProviderName.fireworks_ai, "Fireworks AI"),
         (ModelProviderName.siliconflow_cn, "SiliconFlow"),
         (ModelProviderName.featherless_ai, "Featherless AI"),
+        (ModelProviderName.typesafe, "TypeSafe AI"),
         (ModelProviderName.kiln_fine_tune, "Fine Tuned Models"),
         (ModelProviderName.kiln_custom_registry, "Custom Models"),
     ],
@@ -1140,6 +1159,16 @@ def test_lite_llm_core_config_incorrect_openai_compatible_provider_name(
         )
 
 
+def test_lite_llm_core_config_for_provider_typesafe_raises(
+    mock_config_for_lite_llm_core_config,
+):
+    # TypeSafe's System One API is served by its own adapter, never LiteLLM.
+    with pytest.raises(
+        ValueError, match="TypeSafe AI models do not run through LiteLLM"
+    ):
+        lite_llm_core_config_for_provider(ModelProviderName.typesafe)
+
+
 def test_lite_llm_core_config_for_provider_with_string(
     mock_config_for_lite_llm_core_config,
 ):
@@ -1614,3 +1643,62 @@ def test_kiln_model_provider_from_legacy_under_custom_registry(mock_config):
     assert provider.model_id == "custom-model"
     assert provider.untested_model is True
     assert provider.supports_structured_output is False
+
+
+@pytest.mark.parametrize(
+    "provider_name,expected",
+    [
+        (ModelProviderName.typesafe, ModelAdapterId.jev),
+        (ModelProviderName.openai, ModelAdapterId.litellm),
+        (ModelProviderName.openai_compatible, ModelAdapterId.litellm),
+        (ModelProviderName.ollama, ModelAdapterId.litellm),
+    ],
+)
+def test_default_adapter_for_provider(provider_name, expected):
+    assert default_adapter_for_provider(provider_name) == expected
+
+
+@pytest.mark.parametrize(
+    "provider_name,expected",
+    [
+        (ModelProviderName.typesafe, ModelAdapterId.jev),
+        (ModelProviderName.openai, ModelAdapterId.litellm),
+    ],
+)
+def test_custom_model_gets_provider_default_adapter(
+    mock_config, provider_name, expected
+):
+    mock_config.return_value = "fake-api-key"
+
+    provider = kiln_model_provider_from("custom_model", provider_name)
+
+    assert provider.adapter == expected
+
+
+@pytest.mark.parametrize(
+    "provider_id,expected",
+    [
+        (ModelProviderName.typesafe, ModelAdapterId.jev),
+        (ModelProviderName.openai, ModelAdapterId.litellm),
+    ],
+)
+def test_user_model_gets_provider_default_adapter(provider_id, expected):
+    entry = UserModelEntry(
+        provider_type="builtin",
+        provider_id=provider_id,
+        model_id="some-model",
+    )
+
+    assert user_model_to_provider(entry).adapter == expected
+
+
+def test_user_model_to_provider_cannot_override_adapter():
+    """The adapter follows the provider: a user override would break routing."""
+    entry = UserModelEntry(
+        provider_type="builtin",
+        provider_id=ModelProviderName.typesafe,
+        model_id="jev-preview",
+        overrides={"adapter": ModelAdapterId.litellm},
+    )
+
+    assert user_model_to_provider(entry).adapter == ModelAdapterId.jev

@@ -45,6 +45,7 @@ Whitelisted lists:
 - `PRERELEASE_EXTRACTION_MODELS` — one multimodal model per major vendor (OpenAI, Anthropic, Gemini).
 - `PRERELEASE_EXTRACTION_MIME_PROBES` — three mime probes (PDF, PNG, MP3) for the extraction smoke; the full paid test sweeps all 13 mime types per model.
 - `PRERELEASE_THINKING_MODELS` — five (provider, model, thinking_level) triples covering reasoning content + a "none" negation case.
+- `PRERELEASE_JEV_MODELS` — TypeSafe AI's Jev models, used by the Jev paid smoke tests. Separate from `PRERELEASE_CHAT_MODELS` because Jev does not go through LiteLLM.
 
 This whitelist is the thing most likely to go stale, so it's the main target of the pin sweep in Phase 4. The fan-out tests (e.g. `test_extract_document_success` over every model × mime type, `test_paid_generate_embeddings_basic` over every embedding) are **only `@pytest.mark.paid`** — not `@pytest.mark.prerelease` — and are out of scope for this skill.
 
@@ -58,7 +59,7 @@ This whitelist is the thing most likely to go stale, so it's the main target of 
   ```bash
   set -a; . ./.env; set +a
   ```
-  Provider-specific env vars the prerelease set may touch: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `FIREWORKS_API_KEY`, `TOGETHERAI_API_KEY`, `SILICONFLOW_CN_API_KEY`, `COHERE_API_KEY`, `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`, plus `KILN_TEST_VERTEX_PROJECT_ID` (+ optional `KILN_TEST_VERTEX_LOCATION`) for the Vertex live check, which also requires `gcloud auth application-default login` against a project with `aiplatform.googleapis.com` enabled.
+  Provider-specific env vars the prerelease set may touch: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `FIREWORKS_API_KEY`, `TOGETHERAI_API_KEY`, `SILICONFLOW_CN_API_KEY`, `COHERE_API_KEY`, `TYPESAFE_API_KEY`, `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`, plus `KILN_TEST_VERTEX_PROJECT_ID` (+ optional `KILN_TEST_VERTEX_LOCATION`) for the Vertex live check, which also requires `gcloud auth application-default login` against a project with `aiplatform.googleapis.com` enabled.
 - **A missing key is a coverage gap, not a failure.** Each missing key makes the relevant test `pytest.skip(...)`. That isn't a prerelease failure — surface it in the report so the user can decide whether to provide the key and re-run.
 - **`ml_model_list.py` never deletes entries — it only marks them `deprecated=True`.** So a slug missing from our list is not a signal you'll normally encounter. The signals that matter when diagnosing a break or staleness are:
   1. The provider entry has `deprecated=True` in our list.
@@ -180,6 +181,7 @@ from kiln_ai.adapters.ml_embedding_model_list import built_in_embedding_models
 from kiln_ai.adapters.pytest_prerelease_whitelist import (
     PRERELEASE_CHAT_MODELS, PRERELEASE_EMBEDDING_MODELS,
     PRERELEASE_EXTRACTION_MODELS, PRERELEASE_THINKING_MODELS,
+    PRERELEASE_JEV_MODELS,
 )
 
 def chat_status(name, provider):
@@ -197,7 +199,7 @@ def emb_status(name, provider):
     return 'MODEL_REMOVED_OR_RENAMED'
 
 print('== chat / extraction ==')
-for n,p in PRERELEASE_CHAT_MODELS + PRERELEASE_EXTRACTION_MODELS:
+for n,p in PRERELEASE_CHAT_MODELS + PRERELEASE_EXTRACTION_MODELS + PRERELEASE_JEV_MODELS:
     print(f'{chat_status(n,p):>22}  {n}  ({p})')
 print('== embedding ==')
 for n,p in PRERELEASE_EMBEDDING_MODELS:

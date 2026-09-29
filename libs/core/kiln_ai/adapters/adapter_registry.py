@@ -1,11 +1,12 @@
 from kiln_ai import datamodel
-from kiln_ai.adapters.ml_model_list import ModelProviderName
+from kiln_ai.adapters.ml_model_list import ModelAdapterId, ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterConfig,
     BaseAdapter,
     SkillsDict,
     assemble_unique_agent_tools,
 )
+from kiln_ai.adapters.model_adapters.jev_adapter import JevAdapter
 from kiln_ai.adapters.model_adapters.litellm_adapter import (
     LiteLlmAdapter,
     LiteLlmConfig,
@@ -14,6 +15,7 @@ from kiln_ai.adapters.model_adapters.mcp_adapter import MCPAdapter
 from kiln_ai.adapters.provider_tools import (
     core_provider,
     find_user_model,
+    kiln_model_provider_from,
     lite_llm_core_config_for_provider,
 )
 from kiln_ai.datamodel.run_config import (
@@ -168,12 +170,26 @@ def adapter_for_task(
         case "kiln_agent":
             if not isinstance(run_config_properties, KilnAgentRunConfigProperties):
                 raise ValueError(
-                    "KilnAgentRunConfigProperties is required for LiteLlmAdapter"
+                    "KilnAgentRunConfigProperties is required for kiln_agent adapters"
                 )
-            return LiteLlmAdapter(
-                kiln_task=kiln_task,
-                config=litellm_core_provider_config(run_config_properties),
-                base_adapter_config=base_adapter_config,
+            model_provider = kiln_model_provider_from(
+                run_config_properties.model_name,
+                run_config_properties.model_provider_name,
             )
+            match model_provider.adapter:
+                case ModelAdapterId.jev:
+                    return JevAdapter(
+                        kiln_task=kiln_task,
+                        run_config=run_config_properties,
+                        base_adapter_config=base_adapter_config,
+                    )
+                case ModelAdapterId.litellm:
+                    return LiteLlmAdapter(
+                        kiln_task=kiln_task,
+                        config=litellm_core_provider_config(run_config_properties),
+                        base_adapter_config=base_adapter_config,
+                    )
+                case _:
+                    raise_exhaustive_enum_error(model_provider.adapter)
         case _:
             raise_exhaustive_enum_error(run_config_properties.type)

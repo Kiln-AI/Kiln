@@ -9,8 +9,13 @@ from kiln_ai.adapters.adapter_registry import (
     load_skills_for_task,
     validate_run_config_tool_names,
 )
-from kiln_ai.adapters.ml_model_list import ModelProviderName
+from kiln_ai.adapters.ml_model_list import (
+    KilnModelProvider,
+    ModelAdapterId,
+    ModelProviderName,
+)
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
+from kiln_ai.adapters.model_adapters.jev_adapter import JevAdapter
 from kiln_ai.adapters.model_adapters.litellm_adapter import (
     LiteLlmAdapter,
     LiteLlmConfig,
@@ -21,6 +26,7 @@ from kiln_ai.adapters.provider_tools import (
     LiteLlmCoreConfig,
     lite_llm_core_config_for_provider,
 )
+from kiln_ai.adapters.user_model_entry import UserModelEntry
 from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
 from kiln_ai.datamodel.run_config import (
@@ -54,6 +60,7 @@ def mock_config():
         )
         mock.shared.return_value.siliconflow_cn_api_key = "test-siliconflow-key"
         mock.shared.return_value.featherless_ai_api_key = "test-featherless-key"
+        mock.shared.return_value.typesafe_api_key = "test-typesafe-key"
         mock.shared.return_value.docker_model_runner_base_url = (
             "http://localhost:12434/engines/llama.cpp"
         )
@@ -417,8 +424,16 @@ def mock_lite_llm_core_config_for_provider():
         yield mock
 
 
+@pytest.fixture
+def mock_litellm_model_entry():
+    """Resolve the routing lookup to a model entry that uses the LiteLLM adapter."""
+    with patch("kiln_ai.adapters.adapter_registry.kiln_model_provider_from") as mock:
+        mock.return_value = KilnModelProvider(name=ModelProviderName.openai)
+        yield mock
+
+
 def test_adapter_for_task_core_provider_mapping(
-    mock_lite_llm_core_config_for_provider, basic_task
+    mock_lite_llm_core_config_for_provider, mock_litellm_model_entry, basic_task
 ):
     """Test adapter_for_task correctly maps virtual providers to core providers."""
     # Mock auth details for the underlying provider
@@ -464,7 +479,7 @@ def test_adapter_for_task_core_provider_mapping(
 
 
 def test_adapter_for_task_preserves_run_config_properties(
-    mock_lite_llm_core_config_for_provider, basic_task
+    mock_lite_llm_core_config_for_provider, mock_litellm_model_entry, basic_task
 ):
     """Test adapter_for_task preserves all run config properties correctly."""
     mock_lite_llm_core_config = LiteLlmCoreConfig(
@@ -502,7 +517,7 @@ def test_adapter_for_task_preserves_run_config_properties(
 
 
 def test_adapter_for_task_with_base_adapter_config(
-    mock_lite_llm_core_config_for_provider, basic_task
+    mock_lite_llm_core_config_for_provider, mock_litellm_model_entry, basic_task
 ):
     """Test adapter_for_task correctly passes through base_adapter_config."""
     mock_lite_llm_core_config = LiteLlmCoreConfig(
@@ -835,7 +850,7 @@ def test_lite_llm_config_no_api_key(mock_shared_config):
     ],
 )
 def test_lite_llm_core_config_for_provider_virtual_providers(
-    mock_config, basic_task, provider_name
+    mock_config, mock_litellm_model_entry, basic_task, provider_name
 ):
     # patch core_provider to return None
     with patch("kiln_ai.adapters.adapter_registry.core_provider") as mock_core_provider:
@@ -1038,7 +1053,7 @@ def test_adapter_for_task_rejects_kiln_agent_non_instance(basic_task):
 
     with pytest.raises(
         ValueError,
-        match="KilnAgentRunConfigProperties is required for LiteLlmAdapter",
+        match="KilnAgentRunConfigProperties is required for kiln_agent adapters",
     ):
         adapter_for_task(
             kiln_task=basic_task,
@@ -1229,3 +1244,94 @@ class TestValidateRunConfigToolNames:
         )
         with pytest.raises(ValueError, match="not found in the project: missing_id"):
             await validate_run_config_tool_names(task, rc)
+
+
+class TestAdapterRouting:
+    """adapter_for_task dispatches on the model entry's `adapter` field."""
+
+    def test_jev_entry_routes_to_jev_adapter(self, mock_config, basic_task):
+        with patch(
+            "kiln_ai.adapters.adapter_registry.kiln_model_provider_from"
+        ) as mock_lookup:
+            mock_lookup.return_value = KilnModelProvider(
+                name=ModelProviderName.typesafe,
+                model_id="jev-test",
+                adapter=ModelAdapterId.jev,
+            )
+            adapter = adapter_for_task(
+                kiln_task=basic_task,
+                run_config_properties=KilnAgentRunConfigProperties(
+                    model_name="jev_1_13",
+                    model_provider_name=ModelProviderName.typesafe,
+                    prompt_id="simple_prompt_builder",
+                    structured_output_mode="json_schema",
+                ),
+            )
+
+        assert isinstance(adapter, JevAdapter)
+        assert adapter.adapter_name() == "kiln_jev_adapter"
+
+    def test_default_entry_routes_to_litellm_adapter(
+        self, mock_config, mock_lite_llm_core_config_for_provider, basic_task
+    ):
+        mock_lite_llm_core_config_for_provider.return_value = LiteLlmCoreConfig(
+            additional_body_options={"api_key": "test-openai-key"},
+        )
+        with patch(
+            "kiln_ai.adapters.adapter_registry.kiln_model_provider_from"
+        ) as mock_lookup:
+            mock_lookup.return_value = KilnModelProvider(
+                name=ModelProviderName.openai, model_id="gpt-4o"
+            )
+            adapter = adapter_for_task(
+                kiln_task=basic_task,
+                run_config_properties=KilnAgentRunConfigProperties(
+                    model_name="gpt_4o",
+                    model_provider_name=ModelProviderName.openai,
+                    prompt_id="simple_prompt_builder",
+                    structured_output_mode="json_schema",
+                ),
+            )
+
+        assert isinstance(adapter, LiteLlmAdapter)
+
+    def test_custom_registry_model_routes_through_the_real_resolver(
+        self, mock_config, basic_task
+    ):
+        """No lookups mocked: the legacy `provider::model_id` slug resolves to a real
+        model entry, which routes to LiteLLM under the underlying provider."""
+        adapter = adapter_for_task(
+            kiln_task=basic_task,
+            run_config_properties=KilnAgentRunConfigProperties(
+                model_name="openai::gpt-4-turbo",
+                model_provider_name=ModelProviderName.kiln_custom_registry,
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="json_schema",
+            ),
+        )
+
+        assert isinstance(adapter, LiteLlmAdapter)
+        assert adapter.config.additional_body_options["api_key"] == "test-openai-key"
+
+    def test_user_registry_model_under_typesafe_routes_to_jev_adapter(
+        self, mock_config, basic_task
+    ):
+        entry = UserModelEntry(
+            provider_type="builtin",
+            provider_id=ModelProviderName.typesafe,
+            model_id="jev-preview",
+        )
+        with patch(
+            "kiln_ai.adapters.provider_tools.get_all_user_models", return_value=[entry]
+        ):
+            adapter = adapter_for_task(
+                kiln_task=basic_task,
+                run_config_properties=KilnAgentRunConfigProperties(
+                    model_name=f"user_model::{entry.id}",
+                    model_provider_name=ModelProviderName.typesafe,
+                    prompt_id="simple_prompt_builder",
+                    structured_output_mode="json_schema",
+                ),
+            )
+
+        assert isinstance(adapter, JevAdapter)
