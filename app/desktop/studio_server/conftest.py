@@ -1,8 +1,9 @@
 """Shared fixtures for studio server tests."""
 
 import pytest
+from kiln_ai.adapters.fine_tune.finetune_run_config_id import finetune_run_config_id
 from kiln_ai.adapters.ml_model_list import ModelProviderName
-from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel import Finetune, Project, Task
 from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import (
@@ -63,6 +64,32 @@ def set_default_run_config():
         return run_config
 
     return _set
+
+
+@pytest.fixture
+def save_finetune_run_config(agent_run_config_properties):
+    """Save a fine-tune under a task and return its run config id, which only
+    resolves by lookup: task.run_configs() never holds it."""
+
+    def _save(
+        project: Project,
+        task: Task,
+        tools_config: ToolsRunConfig | None = None,
+    ) -> str:
+        finetune = Finetune(
+            name="support-ft",
+            provider="openai",
+            base_model_id="gpt-4o-mini",
+            fine_tune_model_id="ft:gpt-4o-mini:support",
+            dataset_split_id="split1",
+            system_message="You are a support agent.",
+            run_config=agent_run_config_properties(tools_config=tools_config),
+            parent=task,
+        )
+        finetune.save_to_file()
+        return finetune_run_config_id(str(project.id), str(task.id), str(finetune.id))
+
+    return _save
 
 
 @pytest.fixture

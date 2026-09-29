@@ -2,18 +2,24 @@ import asyncio
 import json
 import logging
 import re
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import litellm
+import pygit2
+import pygit2.enums
 import pytest
 from fastapi import FastAPI, HTTPException
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from kiln_ai.adapters.errors import KilnRunError
+from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
     TaskOutputRatingType,
+    TurnMode,
 )
 from kiln_ai.datamodel.eval import (
     EvalConfigType,
@@ -26,11 +32,16 @@ from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     ToolsRunConfig,
 )
+from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
+from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.synthetic_user.runner import NUM_CASES_MAX
 from kiln_ai.utils.async_job_runner import RETRY_BACKOFF_FACTOR
 from kiln_server.custom_errors import connect_custom_errors
 from pydantic import ValidationError
 
+from app.desktop.git_sync.config import GitSyncProjectConfig
+from app.desktop.git_sync.middleware import GitSyncMiddleware
+from app.desktop.git_sync.registry import GitSyncRegistry
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.build_claim_evidence_output import (
     BuildClaimEvidenceOutput,
 )
@@ -51,12 +62,19 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
     JudgeConfig,
     OverviewApi,
 )
+from app.desktop.studio_server.batch_plan_api import connect_batch_plan_api
 from app.desktop.studio_server.eval_builder_api import (
     JUDGE_MAX_RETRIES,
     JUDGE_RETRY_DELAY_SECONDS,
     SingleTurnPipelineRequest,
+    SingleTurnPipelineRun,
     connect_eval_builder_api,
     run_judge_with_retry,
+)
+from app.desktop.studio_server.multiturn_sdg_api import connect_multiturn_sdg_api
+from app.desktop.studio_server.utils.copilot_utils import (
+    find_multi_turn_chain_leaves,
+    find_single_turn_batch_runs,
 )
 from app.desktop.studio_server.utils.eval_builder_utils import (
     JudgeVerdict,
@@ -572,6 +590,36 @@ def author_judge_task():
         yield mock_task
 
 
+@pytest.fixture
+def saved_task(tmp_path, give_task_one_tool_and_skill):
+    """A task on disk whose default run config gives it `add` and a skill, for
+    tests that resolve a named run config by lookup rather than on a mock."""
+    project = Project(name="Support", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(
+        name="Support Agent",
+        instruction="You are a customer support agent.",
+        parent=project,
+    )
+    task.save_to_file()
+    give_task_one_tool_and_skill(project, task)
+    return project, task
+
+
+@pytest.fixture
+def multiply_finetune_run_config_id(saved_task, save_finetune_run_config):
+    """A fine-tune on the saved task whose config gives it `multiply` and no
+    skills."""
+    project, task = saved_task
+    return save_finetune_run_config(
+        project, task, ToolsRunConfig(tools=["kiln_tool::multiply_numbers"])
+    )
+
+
+def _author_judge_url(project: Project, task: Task) -> str:
+    return f"/api/projects/{project.id}/tasks/{task.id}/eval_builder/author_judge"
+
+
 class TestAuthorJudge:
     def test_author_judge_no_api_key(self, client, author_judge_input):
         """Fail-fast: a keyless caller gets a clean 401 before the remote call."""
@@ -711,21 +759,69 @@ class TestAuthorJudge:
         assert response.status_code == 200
         assert mock_capabilities.await_args.args[1] == expected_run_config_id
 
+    def test_author_judge_reads_a_finetune_run_config(
+        self,
+        client,
+        author_judge_input,
+        saved_task,
+        multiply_finetune_run_config_id,
+        mock_api_key,
+    ):
+        """The builder offers completed fine-tunes as the eval's target, so the
+        rubric grades the fine-tune's tools, not the task default's."""
+        project, task = saved_task
+        # Named ids resolve by project lookup, which reads the mocked config.
+        mock_api_key.projects = [str(project.path)]
+        mock_output = MagicMock(spec=GenerateJudgePromptOutput)
+        mock_output.judge_evaluation_prompt = "1. Check the transcript."
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = mock_output
+
+        with patch(
+            "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ) as mock_post:
+            response = client.post(
+                _author_judge_url(project, task),
+                json={
+                    **author_judge_input,
+                    "run_config_id": multiply_finetune_run_config_id,
+                },
+            )
+
+        assert response.status_code == 200
+        body_dict = mock_post.call_args.kwargs["body"].to_dict()
+        assert body_dict["task_tools"] == [
+            {
+                "name": "multiply",
+                "description": "Multiply two numbers together and return the result",
+            }
+        ]
+        assert body_dict["task_skills"] == []
+
     def test_author_judge_unresolvable_run_config_404s(
-        self, client, author_judge_input, mock_api_key, author_judge_task
+        self, client, author_judge_input, saved_task, mock_api_key
     ):
         """An id that names no config on the task stops the request rather
         than authoring a rubric against the default config's surface."""
+        project, task = saved_task
+        mock_api_key.projects = [str(project.path)]
         with patch(
             "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
             new_callable=AsyncMock,
         ) as mock_post:
             response = client.post(
-                AUTHOR_JUDGE_URL,
+                _author_judge_url(project, task),
                 json={**author_judge_input, "run_config_id": "no-such-config"},
             )
 
         assert response.status_code == 404
+        assert (
+            response.json()["message"]
+            == "Task run config not found. ID: no-such-config"
+        )
         mock_post.assert_not_awaited()
 
     def test_author_judge_reports_a_task_with_no_capabilities(
@@ -2262,11 +2358,11 @@ SINGLE_TURN_URL = "/api/projects/p1/tasks/t1/eval_builder/single_turn_pipeline"
 
 
 def _fake_single_turn_run(i: int, cost: float = 0.05, with_trace: bool = True):
-    """A TaskRun stand-in with the real attributes the pipeline touches:
-    tags mutate through the real tagging helper, save/delete are observable,
-    and the trace is the structured shape the frames echo."""
+    """A TaskRun stand-in, unsaved as the adapter returns it (no path until
+    save_to_file)."""
     run = Mock()
     run.id = f"run-{i}"
+    run.path = None
     run.tags = []
     run.output = Mock()
     run.output.output = f"answer {i}"
@@ -2275,7 +2371,12 @@ def _fake_single_turn_run(i: int, cost: float = 0.05, with_trace: bool = True):
     usage = Mock()
     usage.cost = cost
     run.cumulative_usage = usage
-    run.save_to_file = Mock()
+
+    def save():
+        run.path = Mock(spec=Path)
+        run.path.exists.return_value = True
+
+    run.save_to_file = Mock(side_effect=save)
     run.delete = Mock()
     return run
 
@@ -2306,8 +2407,7 @@ def single_turn_seams(single_turn_request):
     """Patch the pipeline's seams: the copilot key, task resolution, skills,
     the adapter, the judge, and the batch deleter. `runs_by_input` maps each
     request input to what its invoke produces — a run, an exception, or a
-    list popped per attempt (for retry tests). The real tagging helper runs
-    against the fake runs, so tag assertions exercise the shipped code."""
+    list popped per attempt (for retry tests)."""
     from kiln_ai.datamodel.datamodel_enums import TurnMode
 
     runs_by_input: dict = {
@@ -2430,18 +2530,17 @@ class TestSingleTurnPipeline:
             # back from its own item.
             assert call.kwargs["trace"] is not None
 
-    def test_runs_are_batch_tagged_and_saved(
+    def test_runs_are_saved_once_by_the_pipeline_not_the_adapter(
         self, client, single_turn_request, single_turn_seams
     ):
-        client.post(
-            SINGLE_TURN_URL, json={**single_turn_request, "batch_tag": "batch42"}
-        )
+        """The adapter never saves; the pipeline saves each run once."""
+        client.post(SINGLE_TURN_URL, json=single_turn_request)
+        assert [
+            inv["adapter_config"].allow_saving
+            for inv in single_turn_seams["invocations"]
+        ] == [False, False]
         for text in single_turn_request["inputs"]:
-            run = single_turn_seams["runs_by_input"][text]
-            assert run.tags == sorted(
-                ["single_turn_drive", "single_turn_drive_batch:batch42"]
-            )
-            run.save_to_file.assert_called_once()
+            single_turn_seams["runs_by_input"][text].save_to_file.assert_called_once()
 
     def test_run_config_id_stamps_adapter_config(
         self, client, single_turn_request, single_turn_seams
@@ -2453,8 +2552,6 @@ class TestSingleTurnPipeline:
         )
         invocation = single_turn_seams["invocations"][0]
         assert invocation["adapter_config"].task_run_config_id is None
-        # default_tags rides the run's own save, so even a run orphaned by a
-        # cancel mid-invoke stays discoverable by the batch sweeper.
         assert invocation["adapter_config"].default_tags == sorted(
             ["single_turn_drive", "single_turn_drive_batch:batch42"]
         )
@@ -2637,12 +2734,10 @@ class TestSingleTurnPipeline:
         # The parse failure precedes any model call — nothing was invoked.
         assert single_turn_seams["invocations"] == []
 
-    def test_missing_output_fails_case_and_deletes_run(
+    def test_missing_output_fails_case_and_writes_nothing(
         self, client, single_turn_request, single_turn_seams
     ):
-        """A run with no output can't be judged: the case fails and the
-        unusable persisted run is removed (it would otherwise sit on disk
-        untagged and undiscoverable)."""
+        """No output: the case fails before the save, so nothing is written."""
         target_input = single_turn_request["inputs"][0]
         bad_run = _fake_single_turn_run(0)
         bad_run.output = None
@@ -2654,10 +2749,53 @@ class TestSingleTurnPipeline:
         assert failed[0]["code"] == "missing_output"
         # No exception underlies an empty output — nothing to name.
         assert failed[0]["error_type"] is None
-        bad_run.delete.assert_called_once()
+        bad_run.save_to_file.assert_not_called()
+        bad_run.delete.assert_not_called()
         # Cost honesty: the discarded run's spend was real — banked into the
         # batch total alongside the surviving case's 0.05.
         assert _events_of(events, "batch_completed")[0]["total_cost"] == 0.1
+
+    def test_save_failure_fails_the_case_and_deletes_nothing(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        run = single_turn_seams["runs_by_input"][single_turn_request["inputs"][0]]
+        run.save_to_file = Mock(side_effect=OSError("disk full"))
+        events = _parse_sse(client.post(SINGLE_TURN_URL, json=single_turn_request).text)
+        failed = _events_of(events, "case_failed")
+        assert [(f["case_index"], f["stage"]) for f in failed] == [(0, "run")]
+        assert "disk full" in failed[0]["message"]
+        run.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "state, expected_cost, deleted",
+        [
+            ("no_run", 0.0, False),
+            ("never_saved", 0.05, False),
+            ("rolled_back", 0.05, False),
+            ("on_disk", 0.05, True),
+        ],
+    )
+    async def test_delete_partial_run_banks_spend_and_deletes_only_saved_runs(
+        self, single_turn_request, state, expected_cost, deleted
+    ):
+        """A save context that rolled back its own write already removed the
+        run, so only a run still on disk is deleted."""
+        stream = SingleTurnPipelineRun(
+            project_id="p1",
+            task_id="t1",
+            task=_task_mock(TurnMode.single_turn),
+            input=SingleTurnPipelineRequest(**single_turn_request),
+            save_context=None,
+        )
+        run = None if state == "no_run" else _fake_single_turn_run(0)
+        if state in ("rolled_back", "on_disk"):
+            run.path = Mock(spec=Path)
+            run.path.exists.return_value = state == "on_disk"
+        await stream._delete_partial_run(run)
+        assert stream._total_cost == expected_cost
+        if run is not None:
+            assert run.delete.called == deleted
 
     def test_slow_run_completes_and_logs(
         self, client, single_turn_request, single_turn_seams, monkeypatch, caplog
@@ -2844,3 +2982,226 @@ class TestPreflightModel:
         resp = client.post(PREFLIGHT_URL, json=preflight_request)
         assert resp.status_code == 422
         mock_adapter_for_task.assert_not_called()
+
+
+# ─────────────── both pipelines in a git auto-synced project ───────────────
+
+
+def _commit_all_and_push(repo_path: Path, message: str) -> None:
+    repo = pygit2.Repository(str(repo_path))
+    repo.index.add_all()
+    repo.index.write()
+    tree = repo.index.write_tree()
+    sig = pygit2.Signature("test", "test@example.com")
+    parents = [repo.head.target] if not repo.head_is_unborn else []
+    repo.create_commit("refs/heads/main", sig, sig, message, tree, parents)
+    repo.remotes["origin"].push(["refs/heads/main"])
+
+
+@pytest.fixture
+def synced_project(tmp_path):
+    """A clean clone of a bare remote holding a multi-turn and a
+    single-turn task, synced in auto mode."""
+    remote = tmp_path / "remote.git"
+    pygit2.init_repository(str(remote), bare=True, initial_head="main")
+    clone = tmp_path / "clone"
+    pygit2.clone_repository(str(remote), str(clone))
+    pygit2.Repository(str(clone)).set_head("refs/heads/main")
+    project = Project(name="Synced", path=clone / "project.kiln")
+    project.save_to_file()
+    tasks = {
+        "multi_turn": Task(
+            name="MT", instruction="Help.", parent=project, turn_mode=TurnMode.multiturn
+        ),
+        "single_turn": Task(name="ST", instruction="Help.", parent=project),
+    }
+    for task in tasks.values():
+        task.save_to_file()
+    _commit_all_and_push(clone, "seed")
+    config = GitSyncProjectConfig(
+        sync_mode="auto",
+        auth_mode="system_keys",
+        remote_name="origin",
+        branch="main",
+        clone_path=str(clone),
+        git_url=None,
+        pat_token=None,
+        oauth_token=None,
+    )
+    with (
+        patch(
+            "app.desktop.git_sync.middleware.project_path_from_id",
+            return_value=str(project.path),
+        ),
+        patch(
+            "app.desktop.git_sync.middleware.get_git_sync_config",
+            return_value=config,
+        ),
+    ):
+        yield clone, remote, tasks
+    GitSyncRegistry.reset()
+
+
+def _adapter_that_saves_like_the_real_one(task, run_config, base_adapter_config=None):
+    """Returns real TaskRuns, saved only when allow_saving (else the id is
+    cleared), like the real adapter."""
+    config = base_adapter_config or AdapterConfig()
+    adapter = Mock()
+
+    async def invoke(
+        *, input, input_source=None, prior_trace=None, parent_task_run=None
+    ):
+        if parent_task_run is not None and parent_task_run.id is None:
+            raise ValueError("parent_task_run must be persisted before using as parent")
+        run = TaskRun(
+            parent=task,
+            parent_task_run_id=parent_task_run.id if parent_task_run else None,
+            input=input if isinstance(input, str) else json.dumps(input),
+            input_source=input_source,
+            output=TaskOutput(
+                output="answer",
+                source=DataSource(
+                    type=DataSourceType.synthetic,
+                    properties={
+                        "model_name": "fake",
+                        "model_provider": "openrouter",
+                        "adapter_name": "fake",
+                    },
+                ),
+            ),
+            trace=[
+                {"role": "user", "content": str(input)},
+                {"role": "assistant", "content": "answer"},
+            ],
+            tags=config.default_tags or [],
+        )
+        if config.allow_saving:
+            run.save_to_file()
+        else:
+            run.id = None
+        return run
+
+    adapter.invoke = invoke
+    return adapter
+
+
+@pytest.fixture
+def synced_client(synced_project):
+    _clone, _remote, tasks = synced_project
+    su_driver = Mock()
+    su_driver.respond = AsyncMock(return_value=("tell me more", None))
+    app = FastAPI()
+    app.add_middleware(GitSyncMiddleware)
+    connect_custom_errors(app)
+    connect_eval_builder_api(app)
+    with (
+        patch(
+            "app.desktop.studio_server.eval_builder_api.get_copilot_api_key",
+            return_value="test_api_key",
+        ),
+        patch(
+            "app.desktop.studio_server.eval_builder_api.task_from_id",
+            side_effect=lambda project_id, task_id: next(
+                t for t in tasks.values() if t.id == task_id
+            ),
+        ),
+        patch(
+            "app.desktop.studio_server.eval_builder_api.load_skills_for_task",
+            return_value={},
+        ),
+        patch("kiln_ai.synthetic_user.runner.load_skills_for_task", return_value={}),
+        patch(
+            "app.desktop.studio_server.eval_builder_api.adapter_for_task",
+            side_effect=_adapter_that_saves_like_the_real_one,
+        ),
+        patch(
+            "kiln_ai.synthetic_user.runner.adapter_for_task",
+            side_effect=_adapter_that_saves_like_the_real_one,
+        ),
+        patch(
+            "kiln_ai.synthetic_user.runner.SyntheticUserDriver",
+            return_value=su_driver,
+        ),
+        patch(
+            "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+            new=AsyncMock(return_value=JudgeVerdict("pass", "ok")),
+        ),
+    ):
+        yield TestClient(app)
+
+
+class TestPipelinesInGitSyncedProject:
+    """Every run a drive writes is committed, never stashed."""
+
+    @pytest.mark.parametrize(
+        "arm, request_fixture, expected_runs, expected_parent_links",
+        [
+            ("multi_turn", "pipeline_request", 4, 2),
+            ("single_turn", "single_turn_request", 2, 0),
+        ],
+    )
+    def test_drive_commits_every_run_and_stashes_nothing(
+        self,
+        synced_client,
+        synced_project,
+        request,
+        arm,
+        request_fixture,
+        expected_runs,
+        expected_parent_links,
+    ):
+        clone, remote, tasks = synced_project
+        task = tasks[arm]
+        route = "multi_turn_pipeline" if arm == "multi_turn" else "single_turn_pipeline"
+        resp = synced_client.post(
+            f"/api/projects/p1/tasks/{task.id}/eval_builder/{route}",
+            json=request.getfixturevalue(request_fixture),
+        )
+
+        assert resp.status_code == 200
+        events = _parse_sse(resp.text)
+        completed = _events_of(events, "batch_completed")
+        assert completed[0]["judged"] == 2
+        assert completed[0]["failed"] == 0
+        repo = pygit2.Repository(str(clone))
+        assert repo.references.get("refs/stash") is None
+        assert all(
+            flags == pygit2.enums.FileStatus.IGNORED for flags in repo.status().values()
+        )
+        assert repo.head.target == pygit2.Repository(str(remote)).head.target
+        runs = task.runs(include_intermediate_runs=True)
+        assert len(runs) == expected_runs
+        run_ids = {run.id for run in runs}
+        linked = [run for run in runs if run.parent_task_run_id is not None]
+        assert len(linked) == expected_parent_links
+        assert all(run.parent_task_run_id in run_ids for run in linked)
+        # Save finds the batch by its tag, so the saved runs must carry it.
+        batch_tag = _events_of(events, "batch_started")[0]["batch_tag"]
+        find = (
+            find_multi_turn_chain_leaves
+            if arm == "multi_turn"
+            else find_single_turn_batch_runs
+        )
+        driven = {e["leaf_run_id"] for e in _events_of(events, "case_driven")}
+        assert {run.id for run in find(task, batch_tag)} == driven
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/build_claims",
+        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/preflight_model",
+        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/author_judge",
+        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/refine_judge",
+        "/api/projects/{project_id}/tasks/{task_id}/copilot/batch_plan",
+        "/api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/generate_cases",
+    ],
+)
+def test_remote_call_routes_skip_the_git_sync_lock(path):
+    """These routes write nothing, so they never hold the git-sync lock."""
+    app = FastAPI()
+    connect_eval_builder_api(app)
+    connect_batch_plan_api(app)
+    connect_multiturn_sdg_api(app)
+    route = next(r for r in app.routes if isinstance(r, APIRoute) and r.path == path)
+    assert getattr(route.endpoint, "_git_sync_no_write_lock", False)
