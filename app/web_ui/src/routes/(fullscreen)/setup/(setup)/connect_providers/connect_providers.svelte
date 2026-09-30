@@ -71,7 +71,7 @@
     {
       name: "Anthropic",
       id: "anthropic",
-      description: "The home of Sonnet, Haiku, and Opus.",
+      description: "The home of Opus, Sonnet, and Fable.",
       featured: false,
       api_key_steps: [
         "Go to https://console.anthropic.com/settings/keys",
