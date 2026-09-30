@@ -4,6 +4,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Prompt, PromptGenerators, Task
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.prompt_api import connect_prompt_api, prompt_generators
@@ -177,32 +178,40 @@ def test_update_prompt_model_has_no_provenance_field():
     assert "provenance" not in PromptUpdateRequest.model_fields
 
 
-def test_list_prompts_forward_compat_provenance_does_not_500(client, project_and_task):
+STORED_PROVENANCES = [
+    {"origin": "tool", "notes": "x" * 2500},
+    {"notes": "written before origin existed"},
+    {"origin": "agent", "derived_from_ids": ["dup", "dup", ""]},
+]
+
+
+@pytest.mark.parametrize("stored", STORED_PROVENANCES)
+def test_list_prompts_forward_compat_provenance_does_not_500(
+    client, project_and_task, stored
+):
     project, task = project_and_task
-    # A prompt written by a newer client with a lenient (unknown-origin,
-    # over-length) provenance must list via the API, returned as-is, never 500.
-    fc_prompt = Prompt.model_validate(
-        {
-            "name": "future-prompt",
-            "prompt": "text",
-            "provenance": {
-                "origin": "future_origin",
-                "derived_from_ids": ["dup", "dup"],
-                "notes": "y" * 3000,
-            },
-        },
-        context={"loading_from_file": True},
+    # A prompt whose stored provenance is valid only on load (unknown or missing
+    # origin, over-length notes, dirty ids) must list via the API, returned
+    # as-is, never 500.
+    fc_prompt = Prompt(
+        name="future-prompt",
+        prompt="text",
+        provenance=KilnArtifactProvenance.model_validate(
+            stored, context={"loading_from_file": True}
+        ),
+        parent=task,
     )
-    fc_prompt.parent = task
     fc_prompt.save_to_file()
 
     with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/prompts")
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     saved = next(p for p in response.json()["prompts"] if p["name"] == "future-prompt")
-    assert saved["provenance"]["origin"] == "future_origin"
+    assert saved["provenance"]["origin"] == stored.get("origin")
+    assert saved["provenance"]["notes"] == stored.get("notes")
+    assert saved["provenance"]["derived_from_ids"] == stored.get("derived_from_ids", [])
 
 
 def test_get_prompts_task_not_found(client):

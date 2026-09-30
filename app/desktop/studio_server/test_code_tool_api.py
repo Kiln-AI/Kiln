@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.tools.code_tool import ChildOutcome, PythonCodeTool
 from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
 from kiln_server.custom_errors import connect_custom_errors
@@ -339,6 +340,35 @@ class TestCreateCodeToolProvenance:
         )
         assert reloaded is not None
         assert reloaded.provenance is None
+
+
+STORED_PROVENANCES = [
+    {"origin": "tool", "notes": "x" * 2500},
+    {"notes": "written before origin existed"},
+    {"origin": "agent", "derived_from_ids": ["dup", "dup", ""]},
+]
+
+
+@pytest.mark.parametrize("stored", STORED_PROVENANCES)
+def test_read_endpoints_return_stored_provenance_valid_only_on_load(
+    client, test_project, mock_project_from_id, saved_code_tool, stored
+):
+    saved_code_tool.provenance = KilnArtifactProvenance.model_validate(
+        stored, context={"loading_from_file": True}
+    )
+    saved_code_tool.save_to_file()
+
+    listed = client.get(f"/api/projects/{test_project.id}/code_tools")
+    fetched = client.get(
+        f"/api/projects/{test_project.id}/code_tools/{saved_code_tool.id}"
+    )
+
+    assert listed.status_code == 200, listed.text
+    assert fetched.status_code == 200, fetched.text
+    for returned in (listed.json()[0]["provenance"], fetched.json()["provenance"]):
+        assert returned["origin"] == stored.get("origin")
+        assert returned["notes"] == stored.get("notes")
+        assert returned["derived_from_ids"] == stored.get("derived_from_ids", [])
 
 
 class TestListCodeTools:

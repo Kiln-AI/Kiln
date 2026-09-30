@@ -35,6 +35,7 @@ from kiln_ai.datamodel.dataset_split import (
     Train80Test20SplitDefinition,
     Train80Val20SplitDefinition,
 )
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     ToolsRunConfig,
@@ -1349,6 +1350,38 @@ def test_get_finetune_not_found(client, mock_task_from_id_disk_backed):
     assert response.json()["message"] == "Finetune with ID 'nonexistent' not found"
 
     mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
+
+
+STORED_PROVENANCES = [
+    {"origin": "tool", "notes": "x" * 2500},
+    {"notes": "written before origin existed"},
+    {"origin": "agent", "derived_from_ids": ["dup", "dup", ""]},
+]
+
+
+@pytest.mark.parametrize("stored", STORED_PROVENANCES)
+def test_read_endpoints_return_stored_provenance_valid_only_on_load(
+    client, test_task, mock_task_from_id_disk_backed, stored
+):
+    finetune = next(ft for ft in test_task.finetunes() if ft.id == "ft1")
+    finetune.provenance = KilnArtifactProvenance.model_validate(
+        stored, context={"loading_from_file": True}
+    )
+    finetune.save_to_file()
+
+    listed = client.get("/api/projects/project1/tasks/task1/finetunes")
+    fetched = client.get("/api/projects/project1/tasks/task1/finetunes/ft1")
+
+    assert listed.status_code == 200, listed.text
+    assert fetched.status_code == 200, fetched.text
+    listed_ft1 = next(ft for ft in listed.json() if ft["id"] == "ft1")
+    for returned in (
+        listed_ft1["provenance"],
+        fetched.json()["finetune"]["provenance"],
+    ):
+        assert returned["origin"] == stored.get("origin")
+        assert returned["notes"] == stored.get("notes")
+        assert returned["derived_from_ids"] == stored.get("derived_from_ids", [])
 
 
 async def test_get_finetunes_with_status_update(
