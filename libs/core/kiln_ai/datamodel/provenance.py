@@ -90,6 +90,7 @@ class KilnArtifactProvenance(BaseModel):
         if _is_loading(info):
             return v  # accept any historical/future list as-is
         seen: set[str] = set()
+        stripped: list[ID_TYPE] = []
         for entry in v:
             entry_id = entry.strip() if entry is not None else ""
             if not entry_id:
@@ -97,7 +98,8 @@ class KilnArtifactProvenance(BaseModel):
             if entry_id in seen:
                 raise ValueError(f"duplicate id in derived_from_ids: {entry_id}")
             seen.add(entry_id)
-        return v
+            stripped.append(entry_id)
+        return stripped
 
     @field_validator("origin", mode="after")
     @classmethod

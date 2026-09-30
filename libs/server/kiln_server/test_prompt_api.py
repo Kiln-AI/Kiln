@@ -108,7 +108,8 @@ def test_get_prompts_success(client, project_and_task):
     assert res["prompts"][0]["name"] == "Test Prompt"
 
 
-def test_create_prompt_with_valid_provenance(client, project_and_task):
+@pytest.mark.parametrize("padding", ["", "  "])
+def test_create_prompt_with_valid_provenance(client, project_and_task, padding):
     project, task = project_and_task
 
     parent_prompt = Prompt(name="Parent Prompt", prompt="Parent text", parent=task)
@@ -119,7 +120,7 @@ def test_create_prompt_with_valid_provenance(client, project_and_task):
         "prompt": "Derived text",
         "provenance": {
             "origin": "human",
-            "derived_from_ids": [parent_prompt.id],
+            "derived_from_ids": [f"{padding}{parent_prompt.id}{padding}"],
             "notes": "Cloned from the parent prompt.",
         },
     }
