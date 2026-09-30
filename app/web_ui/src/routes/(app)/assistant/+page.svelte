@@ -1,7 +1,6 @@
 <script lang="ts">
   import { getContext, onDestroy, onMount } from "svelte"
   import type { Writable } from "svelte/store"
-  import { env } from "$env/dynamic/public"
   import AppPage from "../app_page.svelte"
   import Chat from "./chat.svelte"
   import { agentInfo } from "$lib/agent"
@@ -12,10 +11,7 @@
     initCopilotConnectionStore,
   } from "$lib/stores/copilot_connection_store"
 
-  const chatPageTitle =
-    env.PUBLIC_SHOW_TOOL_CALL_DETAILS === "true"
-      ? "Assistant (debug mode)"
-      : "Assistant"
+  const chatPageTitle = "Assistant"
 
   agentInfo.set({
     name: "Assistant",

@@ -5,12 +5,12 @@
   import { hydrateSessionFromSnapshot } from "$lib/chat/session_messages"
   import type { LoadedChatSessionDetail } from "$lib/chat/chat_history_apply"
   import type { components } from "$lib/api_schema"
+  import { main_conversation_store } from "$lib/chat/conversation_store"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
-  import { formatDate } from "$lib/utils/formatters"
   import Dialog from "$lib/ui/dialog.svelte"
   import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
-  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
+  import ChatHistoryRow from "./chat_history_row.svelte"
 
   const dispatch = createEventDispatcher<{
     apply: LoadedChatSessionDetail
@@ -25,10 +25,10 @@
   let sessionDetailLoading: string | null = null
   let deletingSessionId: string | null = null
 
-  function displayTitle(item: SessionListItem): string {
-    if (item.title) return item.title
-    return item.id.length > 12 ? `${item.id.slice(0, 10)}…` : item.id
-  }
+  // Auto-active conversations render in a "Working now" group above the
+  // rest, keeping the server's ordering within each group.
+  $: activeRows = sessionRows.filter((row) => row.auto_active)
+  $: recentRows = sessionRows.filter((row) => !row.auto_active)
 
   async function loadSessionList() {
     sessionsLoading = true
@@ -63,7 +63,11 @@
     historyDialog?.close()
   }
 
-  async function selectSession(sessionId: string) {
+  async function selectSession(row: SessionListItem) {
+    // row.id is an opaque conversation KEY (live session id or upstream
+    // root id); the desktop resolves it to the current leaf for the
+    // hydration GET and again on the ensure/adopt in the apply handler.
+    const sessionId = row.id
     sessionDetailLoading = sessionId
     sessionsError = null
     try {
@@ -77,12 +81,32 @@
         sessionsError = createKilnError(error)
         return
       }
-      const { messages, continuationTraceId } =
+      const { messages, rootId, contextUsage } =
         hydrateSessionFromSnapshot(snapshot)
-      dispatch("apply", { messages, continuationTraceId })
+      dispatch("apply", {
+        messages,
+        sessionId,
+        // The durable recovery key: the row's root_id (present for every
+        // non-legacy session) with the snapshot's copy as fallback.
+        rootId: row.root_id ?? rootId,
+        contextUsage,
+        autoActive: !!row.auto_active,
+      })
       posthog.capture("chat_history_session_loaded", {
         message_count: messages.length,
+        auto_active: !!row.auto_active,
       })
+      // The apply handler (chat.svelte → chatSessionStore.loadSession)
+      // re-attaches the conversation's observer for EVERY kind
+      // (create-or-adopt + attach: the replayed in-flight turn and any
+      // parked approval converge on their own). For a live AUTO
+      // conversation, additionally show the transient "reconnecting…"
+      // affordance during the hydrate→attach window (attach clears it once
+      // the stream is established, and the on-subscribe conversation-state
+      // marker restores the working/on indicators).
+      if (row.auto_active) {
+        main_conversation_store.beginReconnect()
+      }
       close()
     } catch (e) {
       sessionsError = createKilnError(e)
@@ -159,57 +183,45 @@
         </p>
       </div>
     {:else}
-      <div class="flex flex-col gap-0.5">
-        {#each sessionRows as row (row.id)}
+      {@const busy =
+        sessionDetailLoading !== null || deletingSessionId !== null}
+      {#if activeRows.length > 0}
+        <div
+          class="px-3 pt-1 pb-1 text-xs font-semibold uppercase tracking-wide text-primary/90"
+        >
+          Working now
+        </div>
+        <div class="flex flex-col gap-0.5">
+          {#each activeRows as row (row.id)}
+            <ChatHistoryRow
+              {row}
+              loading={sessionDetailLoading === row.id}
+              deleting={deletingSessionId === row.id}
+              {busy}
+              onSelect={selectSession}
+              onDelete={deleteSession}
+            />
+          {/each}
+        </div>
+        {#if recentRows.length > 0}
+          <div class="divider my-1.5"></div>
           <div
-            class="group relative flex items-center w-full rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-base-200/80 cursor-pointer"
-            class:opacity-50={deletingSessionId === row.id}
-            role="button"
-            tabindex="0"
-            on:click={() =>
-              sessionDetailLoading === null &&
-              deletingSessionId === null &&
-              selectSession(row.id)}
-            on:keydown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault()
-                if (!sessionDetailLoading && !deletingSessionId)
-                  selectSession(row.id)
-              }
-            }}
+            class="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-base-content/40"
           >
-            <div class="flex-1 min-w-0">
-              <span class="block text-sm font-medium truncate"
-                >{displayTitle(row)}</span
-              >
-            </div>
-            {#if sessionDetailLoading === row.id || deletingSessionId === row.id}
-              <span class="loading loading-spinner loading-xs shrink-0 ml-2"
-              ></span>
-            {:else}
-              {#if row.updated_at}
-                <span
-                  class="text-xs text-gray-500 shrink-0 ml-3 whitespace-nowrap"
-                  >{formatDate(row.updated_at)}</span
-                >
-              {/if}
-              <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-              <div
-                class="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                on:click|stopPropagation
-              >
-                <TableActionMenu
-                  width="w-40"
-                  items={[
-                    {
-                      label: "Delete",
-                      onclick: () => deleteSession(row.id),
-                    },
-                  ]}
-                />
-              </div>
-            {/if}
+            Recent
           </div>
+        {/if}
+      {/if}
+      <div class="flex flex-col gap-0.5">
+        {#each recentRows as row (row.id)}
+          <ChatHistoryRow
+            {row}
+            loading={sessionDetailLoading === row.id}
+            deleting={deletingSessionId === row.id}
+            {busy}
+            onSelect={selectSession}
+            onDelete={deleteSession}
+          />
         {/each}
       </div>
     {/if}
