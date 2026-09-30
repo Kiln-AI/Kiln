@@ -7,22 +7,30 @@ from typing import Annotated, Any, AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Path, Query, Response
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
+from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     agent_policy_require_approval,
 )
 from pydantic import BaseModel, Field, ValidationError
 
+from app.desktop.studio_server.eval_api import eval_from_id, resolved_split_or_422
+
 from . import error_log
 from .events import JobEvent
-from .models import BackgroundJobStatus, JobRecord
+from .models import BackgroundJobStatus, JobRecord, WaitTimeoutBounds
 from .registry import JobNotFoundError, JobOperationError, job_registry
+from .workers.eval import EvalJobParams, EvalJobWorker
 from .workers.noop import NoopJobWorker
 
 KEEPALIVE_SECONDS = 15.0
 
 _JOB_MUTATION_APPROVAL = agent_policy_require_approval(
     "Allow agent to control background jobs (pause, resume, cancel, delete)?"
+)
+
+_EVAL_JOB_APPROVAL = agent_policy_require_approval(
+    "Run an eval in the background? This runs LLM calls across the eval's dataset split and uses AI credits."
 )
 
 
@@ -55,6 +63,48 @@ class CreateJobResponse(BaseModel):
 
 def _project_id_from_params(validated_params: BaseModel) -> str | None:
     return getattr(validated_params, "project_id", None)
+
+
+class WaitForJobsRequest(BaseModel):
+    """Request body for waiting on a set of jobs."""
+
+    ids: list[str] = Field(
+        default_factory=list,
+        description="Job ids to wait for. All must reach a terminal state.",
+    )
+    timeout: float = Field(
+        default=WaitTimeoutBounds.DEFAULT,
+        ge=0,
+        le=WaitTimeoutBounds.MAX,
+        description="Seconds to wait before giving up (504 on timeout; jobs keep "
+        f"running — re-issue the wait to keep waiting). Defaults to "
+        f"{WaitTimeoutBounds.DEFAULT:.0f}s, capped at {WaitTimeoutBounds.MAX:.0f}s: "
+        "the wait is always bounded, since a job that never terminates (e.g. "
+        "paused by the user) would otherwise hang the caller indefinitely.",
+    )
+
+
+def _check_eval_job_request(params: EvalJobParams) -> None:
+    """Raise unless the job can run: 404 if the eval is missing, 422 if it has no such
+    split or if `item_ids` names an item that is not in the split.
+
+    Deliberately discards what it resolved. The worker resolves the split again when the
+    job actually runs, because a job runs the items as they are then, not as they were
+    when it was requested.
+    """
+    eval = eval_from_id(params.project_id, params.task_id, params.eval_id)
+    task = task_from_id(params.project_id, params.task_id)
+    split = resolved_split_or_422(task, eval, params.split)
+    if params.item_ids is None:
+        return
+    split_ids = {item.id for item in split.items}
+    outside = [item_id for item_id in params.item_ids if item_id not in split_ids]
+    if outside:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Items not in the '{params.split}' split of eval '{eval.id}': "
+            + ", ".join(outside),
+        )
 
 
 def _format_sse(event: JobEvent) -> str:
@@ -97,6 +147,7 @@ def connect_jobs_api(app: FastAPI) -> None:
     # Register the workers this server exposes. register_type overwrites by
     # type_name, so repeated calls (e.g. multiple make_app() in tests) are safe.
     job_registry.register_type(NoopJobWorker)
+    job_registry.register_type(EvalJobWorker)
 
     @app.get(
         "/api/jobs/events",
@@ -152,6 +203,55 @@ def connect_jobs_api(app: FastAPI) -> None:
             limit=limit,
         )
 
+    # Registered before POST /api/jobs/{type}: routes match in registration order,
+    # and "wait" is a single segment that the generic route would otherwise take.
+    # The registry also reserves "wait" and "evals" as job type names.
+    @app.post(
+        "/api/jobs/wait",
+        summary="Wait For Jobs",
+        tags=["Jobs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def wait_for_jobs(request: WaitForJobsRequest) -> list[JobRecord]:
+        """Block until ALL the given jobs reach a terminal state, then return
+        their records in the order given. A pure observer: disconnecting never
+        stops a job. The timeout covers the whole set. Empty `ids` returns an
+        empty list. A paused job is not terminal, so a wait on one runs out
+        the timeout (504)."""
+        if not request.ids:
+            return []
+        try:
+            return await job_registry.wait_many(request.ids, timeout=request.timeout)
+        except JobNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=f"Job not found: {exc}")
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=504,
+                detail="Not all jobs completed within the timeout.",
+            )
+
+    @app.post(
+        "/api/jobs/evals/run",
+        summary="Run Eval Job",
+        tags=["Jobs"],
+        status_code=201,
+        response_model=CreateJobResponse,
+        openapi_extra=_EVAL_JOB_APPROVAL,
+    )
+    async def run_eval_job(params: EvalJobParams) -> CreateJobResponse:
+        """Start a background job that runs one split of an eval against one run
+        config, and return at once. Items that already have a score for this eval
+        config and run config are skipped. Poll `GET /api/jobs/{id}` or
+        `POST /api/jobs/wait` for progress and the result."""
+        # Entity loads are blocking IO, so run them off the event loop.
+        await asyncio.to_thread(_check_eval_job_request, params)
+        job = await job_registry.create(
+            type_name=EvalJobWorker.type_name,
+            params=params,
+            project_id=params.project_id,
+        )
+        return CreateJobResponse(job_id=job.id, status=job.status)
+
     @app.post(
         "/api/jobs/{type}",
         summary="Create Job",
@@ -183,6 +283,11 @@ def connect_jobs_api(app: FastAPI) -> None:
             worker = job_registry.worker_for(type)
         except JobOperationError:
             raise HTTPException(status_code=404, detail=f"Unknown job type: {type}")
+        if worker.create_path is not None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Create '{type}' jobs with POST {worker.create_path}.",
+            )
 
         try:
             validated = worker.params_model.model_validate(request.params)

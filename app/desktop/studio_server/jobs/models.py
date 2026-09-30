@@ -18,6 +18,20 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class WaitTimeoutBounds:
+    """Bounds for the multi-job wait endpoint's timeout (seconds).
+
+    The wait is always bounded: it is a plain (non-streaming) handler, so a client
+    that disconnects does not cancel it. An unbounded wait on a job that never
+    terminates (for example, one the user paused) would hold the coroutine for the
+    life of the process. A caller that wants to wait longer issues the wait again;
+    504 means "still running", not failure.
+    """
+
+    DEFAULT = 600.0
+    MAX = 3600.0
+
+
 class BackgroundJobStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
@@ -38,6 +52,14 @@ TERMINAL_STATUSES = frozenset(
         BackgroundJobStatus.CANCELLED,
     }
 )
+
+# Background jobs retry an item that fails with a transient provider error (rate
+# limit, connection blip) more patiently than the interactive runners do. With
+# AsyncJobRunner's backoff (each window 4x the last, full jitter) the three waits are
+# drawn from 0-5s, 0-20s and 0-80s, so a throttled provider gets up to ~105s to
+# recover before the item's error is reported.
+JOB_TRANSIENT_ERROR_MAX_RETRIES = 3
+JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS = 5.0
 
 
 class JobProgress(BaseModel):
@@ -138,6 +160,12 @@ class JobRecord(BaseModel):
         default=None,
         description="Optional typed, worker-specific progress detail (validated against "
         "the worker's progress_model). Null for workers whose generic count progress is enough.",
+    )
+    properties: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional static, worker-published descriptive properties for this job "
+        "(validated against the worker's properties_model). Derived once from params at "
+        "create time and unchanged over the run.",
     )
     params: dict[str, Any] = Field(
         default_factory=dict,
@@ -276,7 +304,27 @@ class JobWorker(Generic[TParams, TResult]):
     # JobContext.report_progress_detail(); stamped on JobRecord.progress_detail.
     # Leave None for workers whose generic count progress is enough.
     progress_model: ClassVar[type[BaseModel] | None] = None
+    # Optional typed model for static descriptive properties returned by
+    # describe() and stamped on JobRecord.properties. Leave None for workers
+    # that have nothing descriptive to publish.
+    properties_model: ClassVar[type[BaseModel] | None] = None
     supports_pause: ClassVar[bool] = False
+    # The dedicated endpoint that creates jobs of this type. When set, the generic
+    # POST /api/jobs/{type} refuses the type, so the dedicated endpoint's request
+    # checks and agent policy cannot be bypassed. None for workers that the
+    # generic endpoint creates.
+    create_path: ClassVar[str | None] = None
+
+    async def describe(self, params: TParams) -> BaseModel | None:
+        """Return static, worker-specific descriptive properties for the UI.
+
+        MUST be a pure read — no side effects, idempotent, safe to call any time.
+        Derived from params only (the result does not change over the run). The
+        registry calls this once at create time and stamps the serialized result
+        on JobRecord.properties. Returns an instance of the worker's
+        `properties_model`, or None when there is nothing to publish (default).
+        """
+        return None
 
     async def compute_state(self, params: TParams) -> JobDerivedState | None:
         """Read source-of-truth Kiln entities and return the operation's true state.

@@ -3,11 +3,25 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from unittest.mock import patch
 
 import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
+from kiln_ai.adapters.ml_model_list import ModelProviderName
+from kiln_ai.datamodel import (
+    DataSource,
+    DataSourceType,
+    Project,
+    Task,
+    TaskOutput,
+    TaskOutputRatingType,
+    TaskRun,
+)
+from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalOutputScore, EvalRun
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
 from pydantic import BaseModel
 
 from app.desktop.studio_server.jobs import api as jobs_api
@@ -19,6 +33,7 @@ from app.desktop.studio_server.jobs.models import (
     JobWorker,
 )
 from app.desktop.studio_server.jobs.registry import JobOperationError, JobRegistry
+from app.desktop.studio_server.jobs.workers.eval import EvalJobResult, EvalJobWorker
 from app.desktop.studio_server.jobs.workers.noop import NoopJobWorker
 
 
@@ -607,6 +622,30 @@ def test_connect_jobs_api_registers_noop_idempotently(monkeypatch):
     connect_jobs_api(app)
     connect_jobs_api(app)  # second call must not raise
     assert "noop" in reg._workers
+    assert "eval" in reg._workers
+
+
+@pytest.mark.parametrize("name", ["wait", "evals"])
+def test_route_segment_names_are_reserved_job_types(name):
+    class ReservedWorker(NoopJobWorker):
+        type_name = name
+
+    with pytest.raises(ValueError, match="reserved"):
+        JobRegistry(max_concurrent=2).register_type(ReservedWorker)
+
+
+def test_static_job_routes_register_before_the_generic_create(app):
+    # Routes match in registration order, so the static POST routes must come
+    # before POST /api/jobs/{type}, or "wait" would be read as a job type.
+    post_paths = [
+        route.path
+        for route in app.routes
+        if "POST" in getattr(route, "methods", set())
+        and getattr(route, "path", "").startswith("/api/jobs/")
+    ]
+    generic = post_paths.index("/api/jobs/{type}")
+    assert post_paths.index("/api/jobs/wait") < generic
+    assert post_paths.index("/api/jobs/evals/run") < generic
 
 
 # -- SSE ---------------------------------------------------------------------
@@ -772,3 +811,414 @@ async def test_event_stream_disconnect_leaves_job_running(registry):
     )
     await _wait_for_status(registry, job.id, BackgroundJobStatus.SUCCEEDED)
     assert registry._jobs[job.id].result == {"completed_steps": 6}
+
+
+# -- eval jobs (typed endpoint) ------------------------------------------------
+
+
+_EVAL_RUN_PATH = "/api/jobs/evals/run"
+
+_EVAL_PARAMS = {
+    "project_id": "p_split",
+    "task_id": "t_split",
+    "eval_id": "e_split",
+    "eval_config_id": "ec_split",
+    "run_config_id": "rc_split",
+    "concurrency": None,
+    "split": "test",
+    "item_ids": None,
+}
+
+
+def _eval_params(**overrides) -> dict:
+    return {**_EVAL_PARAMS, **overrides}
+
+
+@pytest.fixture
+def stub_eval_worker(monkeypatch):
+    """Keep the EvalJobWorker's run off disk: compute_state is a no-op and run
+    returns a fixed result. Request checks and describe() still read disk."""
+
+    async def fake_compute_state(self, params):
+        return None
+
+    async def fake_run(self, params, ctx):
+        return EvalJobResult(total=0, success=0, error=0)
+
+    monkeypatch.setattr(EvalJobWorker, "compute_state", fake_compute_state)
+    monkeypatch.setattr(EvalJobWorker, "run", fake_run)
+
+
+@pytest.fixture
+def split_eval(tmp_path):
+    """A real on-disk eval with a test and a train split but no val split, plus
+    the eval config and run config that _EVAL_PARAMS names.
+
+    task_from_id binds project_from_id into kiln_server.task_api, so it is
+    patched there (the name as looked up), not at its definition site.
+    """
+    project = Project(
+        id="p_split", name="Split Project", path=tmp_path / "project.kiln"
+    )
+    project.save_to_file()
+    task = Task(
+        id="t_split",
+        name="Split Task",
+        description="test",
+        instruction="do the thing",
+        parent=project,
+    )
+    task.save_to_file()
+    eval = Eval(
+        id="e_split",
+        name="Split Eval",
+        description="test",
+        eval_set_filter_id="tag::eval_set",
+        train_set_filter_id="tag::train_set",
+        output_scores=[
+            EvalOutputScore(
+                name="Accuracy",
+                instruction="Check accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+    EvalConfig(
+        id="ec_split",
+        name="Split Eval Config",
+        model_name="gpt-4",
+        model_provider="openai",
+        properties={"eval_steps": ["step1"]},
+        parent=eval,
+    ).save_to_file()
+    TaskRunConfig(
+        id="rc_split",
+        name="Split Run Config",
+        description="test",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=task,
+    ).save_to_file()
+    with patch("kiln_server.task_api.project_from_id", return_value=project):
+        yield eval
+
+
+def _make_split_item(eval: Eval, tag: str) -> TaskRun:
+    task = eval.parent_task()
+    assert task is not None
+    task_run = TaskRun(
+        parent=task,
+        input="test",
+        input_source=DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+                "adapter_name": "test_adapter",
+            },
+        ),
+        tags=[tag],
+        output=TaskOutput(output="test"),
+    )
+    task_run.save_to_file()
+    return task_run
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_creates_typed_eval_job(
+    client, registry, stub_eval_worker, split_eval
+):
+    resp = await client.post(_EVAL_RUN_PATH, json=_EVAL_PARAMS)
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["status"] in {
+        BackgroundJobStatus.PENDING.value,
+        BackgroundJobStatus.RUNNING.value,
+    }
+
+    job = registry._jobs[body["job_id"]]
+    assert job.type == "eval"
+    assert job.project_id == "p_split"
+    assert job.params == _EVAL_PARAMS
+    # describe() runs unstubbed against the fixture's entities, and registry.create
+    # swallows its exceptions. A populated block proves it succeeded.
+    assert job.properties is not None
+    assert job.properties["eval_name"] == "Split Eval"
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_without_a_split_422(client, registry, stub_eval_worker):
+    params = {k: v for k, v in _EVAL_PARAMS.items() if k != "split"}
+    resp = await client.post(_EVAL_RUN_PATH, json=params)
+
+    assert resp.status_code == 422, resp.text
+    assert registry._jobs == {}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_with_a_split_the_eval_lacks_422(
+    client, registry, stub_eval_worker, split_eval
+):
+    resp = await client.post(_EVAL_RUN_PATH, json=_eval_params(split="val"))
+
+    assert resp.status_code == 422, resp.text
+    # This test app is a bare FastAPI without the studio's error-shape handlers, so
+    # assert on the raw body rather than a field name the real app would rewrite.
+    assert "'val' split" in resp.text
+    assert "e_split" in resp.text
+    assert registry._jobs == {}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_with_an_unknown_eval_404(
+    client, registry, stub_eval_worker, split_eval
+):
+    resp = await client.post(_EVAL_RUN_PATH, json=_eval_params(eval_id="e_missing"))
+
+    assert resp.status_code == 404, resp.text
+    assert registry._jobs == {}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_with_an_invalid_split_value_422(
+    client, registry, stub_eval_worker, split_eval
+):
+    resp = await client.post(_EVAL_RUN_PATH, json=_eval_params(split="holdout"))
+
+    assert resp.status_code == 422, resp.text
+    assert registry._jobs == {}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_with_items_outside_the_split_422(
+    client, registry, stub_eval_worker, split_eval
+):
+    inside = _make_split_item(split_eval, "train_set")
+    other_split = _make_split_item(split_eval, "eval_set")
+
+    resp = await client.post(
+        _EVAL_RUN_PATH,
+        json=_eval_params(split="train", item_ids=[inside.id, other_split.id, "nope"]),
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert str(other_split.id) in resp.text
+    assert "nope" in resp.text
+    assert str(inside.id) not in resp.text
+    assert registry._jobs == {}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_with_empty_item_ids_422(
+    client, registry, stub_eval_worker, split_eval
+):
+    resp = await client.post(_EVAL_RUN_PATH, json=_eval_params(item_ids=[]))
+
+    assert resp.status_code == 422, resp.text
+    assert registry._jobs == {}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_invalid_params_422(client, registry):
+    resp = await client.post(_EVAL_RUN_PATH, json={"project_id": "p_split"})
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_generic_create_refuses_a_type_with_a_typed_endpoint(
+    client, registry, split_eval
+):
+    # The generic route is agent-allowed; the typed route asks for approval and
+    # checks the split. The generic route must not be a way around either.
+    resp = await client.post("/api/jobs/eval", json={"params": _EVAL_PARAMS})
+
+    assert resp.status_code == 400, resp.text
+    assert _EVAL_RUN_PATH in resp.json()["detail"]
+    assert registry._jobs == {}
+
+
+def test_eval_endpoints_agent_policy(app):
+    schema = app.openapi()
+    run = schema["paths"][_EVAL_RUN_PATH]["post"]["x-agent-policy"]
+    assert run["permission"] == "allow"
+    assert run["requires_approval"] is True
+    wait = schema["paths"]["/api/jobs/wait"]["post"]["x-agent-policy"]
+    assert wait["permission"] == "allow"
+    assert wait["requires_approval"] is False
+
+
+# -- eval jobs: the contract an external client relies on ---------------------
+
+
+class _ScriptedRunJob:
+    """Stands in for EvalRunner.run_job: stores an EvalRun for each item, except
+    items in `failing`, which raise the way a failed judge call does."""
+
+    def __init__(self) -> None:
+        self.failing: set[str] = set()
+        self.seen: list[str] = []
+
+    async def run_job(self, runner, job) -> bool:
+        item_id = str(job.item.id)
+        self.seen.append(item_id)
+        if item_id in self.failing:
+            raise ValueError(f"judge failed on {item_id}")
+        EvalRun(
+            parent=job.eval_config,
+            dataset_id=job.item.id,
+            task_run_config_id=job.task_run_config.id,
+            input="test",
+            output="test",
+            scores={"accuracy": 1.0},
+        ).save_to_file()
+        return True
+
+
+@pytest.fixture
+def scripted_run_job():
+    script = _ScriptedRunJob()
+
+    async def run_job(runner, job) -> bool:
+        return await script.run_job(runner, job)
+
+    with patch("kiln_ai.adapters.eval.eval_runner.EvalRunner.run_job", new=run_job):
+        yield script
+
+
+async def _run_eval_job(client, **overrides) -> tuple[dict, list[dict]]:
+    created = await client.post(_EVAL_RUN_PATH, json=_eval_params(**overrides))
+    assert created.status_code == 201, created.text
+    job_id = created.json()["job_id"]
+    waited = await client.post(
+        "/api/jobs/wait", json={"ids": [job_id], "timeout": 10.0}, timeout=10.0
+    )
+    assert waited.status_code == 200, waited.text
+    assert waited.json()[0]["id"] == job_id
+    # GET reconciles against disk, which is where a lost error count would show.
+    record = (await client.get(f"/api/jobs/{job_id}")).json()
+    errors = (await client.get(f"/api/jobs/{job_id}/errors")).json()
+    return record, errors
+
+
+@pytest.mark.asyncio
+async def test_eval_job_contract_failures_retries_and_skips(
+    client, registry, split_eval, scripted_run_job
+):
+    items = [_make_split_item(split_eval, "train_set") for _ in range(3)]
+    _make_split_item(split_eval, "eval_set")
+    failing_id = str(items[1].id)
+    scripted_run_job.failing = {failing_id}
+
+    # A failed item does not fail the job. It stays counted in progress.error, and
+    # its row in the error log names the item, the run config and the store.
+    record, errors = await _run_eval_job(client, split="train")
+    assert record["status"] == "succeeded"
+    assert record["progress"]["total"] == 3
+    assert record["progress"]["success"] == 2
+    assert record["progress"]["error"] == 1
+    assert record["result"] == {"total": 3, "success": 2, "error": 1}
+    assert len(errors) == 1
+    assert "judge failed" in errors[0]["error_message"]
+    assert errors[0]["dataset_id"] == failing_id
+    assert errors[0]["run_config_id"] == "rc_split"
+    assert errors[0]["item_source"] == "task_run"
+
+    # The failed item stored no EvalRun, so the next job runs it and only it.
+    # The total still covers the split, and the scored items count as success.
+    scripted_run_job.failing = set()
+    scripted_run_job.seen.clear()
+    record, errors = await _run_eval_job(client, split="train")
+    assert scripted_run_job.seen == [failing_id]
+    assert record["status"] == "succeeded"
+    assert record["progress"]["total"] == 3
+    assert record["progress"]["success"] == 3
+    assert record["progress"]["error"] == 0
+    assert errors == []
+
+    # A combination that is fully measured runs no item at all. The registry sees
+    # it complete on disk before run() starts, so the job has progress but no result.
+    scripted_run_job.seen.clear()
+    record, _ = await _run_eval_job(client, split="train")
+    assert scripted_run_job.seen == []
+    assert record["status"] == "succeeded"
+    assert record["progress"]["total"] == 3
+    assert record["progress"]["success"] == 3
+    assert record["progress"]["error"] == 0
+    assert record["result"] is None
+
+
+@pytest.mark.asyncio
+async def test_eval_job_item_ids_narrow_the_job(
+    client, registry, split_eval, scripted_run_job
+):
+    items = [_make_split_item(split_eval, "train_set") for _ in range(4)]
+    named = [str(items[0].id), str(items[2].id)]
+
+    record, _ = await _run_eval_job(client, split="train", item_ids=named)
+    assert sorted(scripted_run_job.seen) == sorted(named)
+    assert record["status"] == "succeeded"
+    assert record["progress"]["total"] == 2
+    assert record["progress"]["success"] == 2
+
+    # The rows the subset stored are reused: the full split runs only the rest,
+    # and its total covers the whole split.
+    scripted_run_job.seen.clear()
+    record, _ = await _run_eval_job(client, split="train")
+    assert sorted(scripted_run_job.seen) == sorted([str(items[1].id), str(items[3].id)])
+    assert record["progress"]["total"] == 4
+    assert record["progress"]["success"] == 4
+
+
+# -- multi-job wait -------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_wait_many_endpoint_returns_records_in_id_order(client, registry):
+    a = await _create_noop(client, steps=3, sleep_per_step_seconds=0.02)
+    b = await _create_noop(client, steps=1, sleep_per_step_seconds=0.01)
+    got = await client.post(
+        "/api/jobs/wait", json={"ids": [a, b, a], "timeout": 10.0}, timeout=10.0
+    )
+    assert got.status_code == 200, got.text
+    body = got.json()
+    assert [r["id"] for r in body] == [a, b, a]
+    assert all(r["status"] == "succeeded" for r in body)
+
+
+@pytest.mark.asyncio
+async def test_wait_many_endpoint_empty_ids_returns_empty(client):
+    got = await client.post("/api/jobs/wait", json={})
+    assert got.status_code == 200
+    assert got.json() == []
+
+
+@pytest.mark.asyncio
+async def test_wait_many_endpoint_404_unknown(client, registry):
+    job_id = await _create_noop(client, steps=2, sleep_per_step_seconds=0.02)
+    resp = await client.post("/api/jobs/wait", json={"ids": [job_id, "j_missing"]})
+    assert resp.status_code == 404
+    await _safe_cancel(registry, job_id)
+
+
+@pytest.mark.asyncio
+async def test_wait_many_endpoint_504_on_timeout(client, registry):
+    fast = await _create_noop(client, steps=1, sleep_per_step_seconds=0.01)
+    slow = await _create_noop(client, steps=50, sleep_per_step_seconds=0.05)
+    await _wait_for_status(registry, slow, BackgroundJobStatus.RUNNING)
+    resp = await client.post(
+        "/api/jobs/wait", json={"ids": [fast, slow], "timeout": 0.05}
+    )
+    assert resp.status_code == 504
+    await registry.cancel(slow)
+
+
+@pytest.mark.asyncio
+async def test_wait_many_endpoint_rejects_an_unbounded_timeout(client):
+    resp = await client.post("/api/jobs/wait", json={"ids": [], "timeout": 3601})
+    assert resp.status_code == 422
