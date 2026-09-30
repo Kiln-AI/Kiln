@@ -1,21 +1,20 @@
 /**
  * The main conversation store.
  *
- * The assistant's conversation is a desktop-owned run keyed by session id,
- * reached over the `/api/conversations` surface. ONE pure-observer attachment
- * to the conversation's events stream feeds the `StreamEventProcessor`, for
- * both kinds: an interactive conversation and an auto conversation are the
- * same record, whose policy flips on enable/disable. This store owns:
+ * Desktop-owned conversations, keyed by session id, reached over the
+ * `/api/conversations` surface and the `conversation-state` event
+ * vocabulary. The module holds two stores: the sub-agent (children) store
+ * first, then the main conversation store (see its section header below).
  *
- * - create-or-adopt (`ensure`) and attach/detach of the observer,
- * - the auto-mode lifecycle (enable / decline / stop / arm) and its UX states
- *   (indicator, "waiting for you", consent and stop dialogs),
- * - sends (`POST /{sid}/messages`, returning the echo-dedupe message id),
- * - approvals (`fetchApprovals` + `decide` against the parked batch).
- *
- * Opening or closing the stream never mutates the run. The authoritative
- * lifecycle state comes from `conversation-state` events, so it is correct on
- * first paint after a re-attach, not only after a local action.
+ * The desktop server runs conversations in the background and exposes them as
+ * pure-observer streams: observing, stopping observation, or reconnecting
+ * never mutates a run. The children store tracks the current conversation's
+ * children (`syncForConversation` + a registry-level `conversation-state`
+ * firehose, connection handling modeled on `jobs_store.ts`), and — per
+ * observed child — maintains a read-only transcript by hydrating the child's
+ * persisted session then feeding its live events SSE into the same
+ * `StreamEventProcessor`, so a child transcript renders exactly like a main
+ * transcript.
  */
 
 import { get, writable, type Readable } from "svelte/store"
@@ -24,17 +23,991 @@ import type { components } from "$lib/api_schema"
 import {
   StreamEventProcessor,
   autoModeConsentPayloadFromEvent,
+  chatGenerateId,
+  consumeSseStream,
   type AutoModeConsentRequiredPayload,
   type ChatMessage,
   type ContextUsage,
   type StreamEvent,
   type ToolCallsPendingItem,
 } from "./streaming_chat"
+import {
+  hydrateSessionFromSnapshot,
+  stripInternalFraming,
+  type ChatSessionSnapshot,
+} from "./session_messages"
 
+export type ConversationItem = components["schemas"]["ConversationItem"]
+export type RunState = components["schemas"]["RunState"]
 export type CreateAutoConversationRequest =
   components["schemas"]["CreateConversationRequest"]
 
+/**
+ * Per-conversation runtime affordances mirrored from the live stream so its
+ * transcript renders with the SAME fidelity as the main one (thinking dots via
+ * the activity indicator, "retrying N/M…" via the retry state). Runtime-only —
+ * cleared when the observation ends.
+ */
+export interface ConversationRuntimeState {
+  showActivityIndicator: boolean
+  retry: { attempt: number; max: number } | null
+  /**
+   * The child's own context/compaction gauge data: seeded from its persisted
+   * snapshot on hydration, then updated live from its `kiln_chat_trace`
+   * events. Survives the observation ending (unlike the live-only fields) so
+   * a settled child still shows its final usage.
+   */
+  contextUsage: ContextUsage | null
+}
+
 const CONVERSATIONS_BASE_URL = `${base_url}/api/conversations`
+const RECONNECT_DELAY_MS = 2000
+// Hard bound on a children-list fetch. WHY: the reconcile loop deliberately
+// skips ticks while a fetch is pending (no request stacking), so a fetch that
+// never settles — e.g. a server event-loop stall holding the response open —
+// would otherwise blind the tab strip PERMANENTLY: the in-flight flag never
+// resets and every future tick is skipped. Aborting turns "hung forever"
+// into "one skipped interval"; the next tick then re-fetches.
+const CHILDREN_FETCH_TIMEOUT_MS = 10_000
+// Watchdog for a firehose connect that wedges before headers arrive (same
+// stall failure mode): an EventSource stuck CONNECTING fires neither onopen
+// nor onerror, so without a bound it never reconnects.
+const FIREHOSE_CONNECT_TIMEOUT_MS = 15_000
+// Low-frequency safety-net re-fetch of the children list while the firehose is
+// connected and a parent is set (see `updateReconcileTimer`). Since
+// `conversation-state` events carry `parent_session_id`, an unknown child is
+// attributed to the current parent DIRECTLY from the event (no fetch), so this
+// reconcile is not load-bearing for tab appearance. It is only a cheap
+// safety net for two residual cases: an older desktop whose events
+// lack the lineage field (there the fetch fallback can lose a race), and a
+// freak loss where both the live event and the reconnect snapshot were
+// missed. Hence the long interval — frequent ticks would just compete for the
+// connection-pool slots the page's SSE streams already strain.
+const RECONCILE_INTERVAL_MS = 20_000
+
+// Lifecycle of the state-firehose EventSource, surfaced for tests / debugging.
+// A pure observer: this only reports the connection, it never mutates a run.
+export type ConversationConnection = "idle" | "connecting" | "open" | "errored"
+
+/**
+ * `conversation-state` payload as it arrives on the firehose and on the
+ * per-conversation observer stream (as the on-subscribe liveness marker).
+ * `session_id` is the handle, `state` uses the RunState strings, and trace
+ * ids are deliberately absent: the browser never sees trace ids — hydration
+ * is keyed by session id and the desktop resolves the current leaf.
+ */
+interface ConversationStateEvent {
+  type?: string
+  session_id?: string
+  kind?: string
+  state?: string
+  auto_flag?: boolean
+  idle_reason?: string
+  name?: string
+  /**
+   * Sub-agent lineage: the parent conversation's session id. Rides every
+   * sub-agent state event (live publish and snapshot replay) so an unknown
+   * child can be attributed to the current parent straight from the event.
+   * Absent on events from desktops predating the field — those fall back to
+   * the list fetch.
+   */
+  parent_session_id?: string
+  report_available?: boolean
+  /**
+   * Sub-agent identity (rides subagent state events), so a directly-attributed
+   * child renders its type badge/tooltip without waiting for a list fetch.
+   */
+  agent_type?: string
+}
+
+// Terminal = the run can never advance again (one-shot kinds only).
+// idle/awaiting_approval are live states, never terminal: the RunState type
+// covers every kind, not only sub-agents.
+const TERMINAL_STATES: ReadonlySet<string> = new Set([
+  "completed",
+  "failed",
+  "stopped",
+  "timeout",
+])
+
+export function isTerminalState(state: string): boolean {
+  return TERMINAL_STATES.has(state)
+}
+
+/** Max individual child tabs before the strip collapses into a count chip. */
+export const CHILD_TAB_OVERFLOW_LIMIT = 3
+
+/**
+ * Children whose tab is visible in the strip: live (non-terminal) ones, plus
+ * the currently selected child even when terminal (so the view isn't yanked
+ * while the user is reading it — selecting away drops the terminal tab).
+ * Purely derived from state + selection (no tombstoning), so a child whose
+ * state ever returns to live reappears automatically.
+ */
+export function visibleChildTabs(
+  children: ConversationItem[],
+  selectedId: string | null,
+): ConversationItem[] {
+  return children.filter(
+    (c) => !isTerminalState(c.state) || c.session_id === selectedId,
+  )
+}
+
+/**
+ * Whether the strip should collapse individual child tabs into a single
+ * "N agents running" chip (the selected child keeps its own tab beside it).
+ */
+export function shouldCollapseChildTabs(
+  visibleChildren: ConversationItem[],
+): boolean {
+  return visibleChildren.length > CHILD_TAB_OVERFLOW_LIMIT
+}
+
+export interface ConversationStore {
+  /** Children of the current conversation (server order). */
+  children: Readable<ConversationItem[]>
+  /** Selected tab: a child's session_id, or null for the main agent. */
+  selectedId: Readable<string | null>
+  /** Per-child read-only transcripts, keyed by session_id. */
+  transcripts: Readable<Map<string, ChatMessage[]>>
+  /** Per-child live rendering affordances (activity indicator, retry). */
+  runtime: Readable<Map<string, ConversationRuntimeState>>
+  connection: Readable<ConversationConnection>
+  /** Open the registry-level state firehose (assistant page active). */
+  connect(): void
+  /** Close the firehose (navigation away). Observers are left alone. */
+  disconnect(): void
+  /**
+   * Replace `children` with the sub-agents of the given parent conversation,
+   * keyed by its SESSION id (the browser's only parent handle —
+   * chat.svelte binds this to `main_conversation_store.sessionId`).
+   * `null` (no conversation attached) clears the list. Deduped by value, so
+   * it is safe to call reactively.
+   */
+  syncForConversation(parentId: string | null): Promise<void>
+  /**
+   * Select a tab; selecting a child starts observing it, and the previously
+   * selected child's observer stream is torn down (only the selected child
+   * holds a live per-child SSE connection).
+   */
+  select(sessionId: string | null): void
+  /**
+   * Observe one child: hydrate its persisted history, then attach the live
+   * events tail (buffer replay + state marker + live). Idempotent while an
+   * observation is active; a re-observe after the stream ended re-hydrates.
+   */
+  observe(sessionId: string): Promise<void>
+  stop(sessionId: string): Promise<void>
+  sendMessage(
+    sessionId: string,
+    content: string,
+  ): Promise<{ ok: boolean; error?: string }>
+  /** Clear everything for a new chat (the firehose connection is kept). */
+  reset(): void
+  /** Exposed for tests / explicit teardown; not part of normal usage. */
+  _close(): void
+}
+
+interface ChildObservation {
+  abort: AbortController
+  // Render the replayed in-flight turn into a FRESH assistant message instead
+  // of overwriting the last hydrated one (same rule as auto re-attach).
+  pendingFreshTurn: boolean
+}
+
+export function createConversationStore(): ConversationStore {
+  const children = writable<ConversationItem[]>([])
+  const selectedId = writable<string | null>(null)
+  const transcripts = writable<Map<string, ChatMessage[]>>(new Map())
+  const runtime = writable<Map<string, ConversationRuntimeState>>(new Map())
+  const connection = writable<ConversationConnection>("idle")
+
+  // The parent handle the current children list was fetched for (undefined =
+  // never synced). Dedupes reactive syncForConversation calls and keys the
+  // firehose "unknown child → re-fetch" rule.
+  let syncedParentId: string | null | undefined = undefined
+  let syncGeneration = 0
+  // The parent whose children the `children` store CURRENTLY holds — distinct
+  // from syncedParentId (the fetch target): a failed cross-parent fetch must
+  // clear the strip, while a failed same-parent re-fetch must not.
+  let renderedParentId: string | null = null
+
+  let eventSource: EventSource | null = null
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  // Firehose connect watchdog (see FIREHOSE_CONNECT_TIMEOUT_MS): an
+  // EventSource wedged in CONNECTING fires neither onopen nor onerror.
+  let firehoseConnectTimer: ReturnType<typeof setTimeout> | null = null
+  // Periodic children reconcile (see RECONCILE_INTERVAL_MS): runs only while
+  // the firehose is active AND a parent is set; null when stopped.
+  let reconcileTimer: ReturnType<typeof setInterval> | null = null
+  // True while a reconcile-tick fetch is pending; ticks are skipped rather
+  // than stacked when the server is slow to answer.
+  let reconcileFetchInFlight = false
+  // True between connect() and disconnect(): gates the reconnect loop.
+  let firehoseActive = false
+
+  const observations = new Map<string, ChildObservation>()
+
+  // When each event-attributed child was appended (Date.now()), keyed by
+  // session id. Lets a landing list fetch decide whether a child it lacks is
+  // one it could not have known about (added after the fetch STARTED → shield
+  // it) or one the server authoritatively no longer knows (added before →
+  // drop it). Entries are pruned alongside the child (see pruneToChildren).
+  const eventAddedAt = new Map<string, number>()
+
+  // --- Transcript bookkeeping ------------------------------------------------
+
+  function setTranscript(id: string, messages: ChatMessage[]): void {
+    transcripts.update((map) => {
+      const next = new Map(map)
+      next.set(id, messages)
+      return next
+    })
+  }
+
+  function transcriptFor(id: string): ChatMessage[] {
+    return get(transcripts).get(id) ?? []
+  }
+
+  function appendMessage(id: string, message: ChatMessage): void {
+    setTranscript(id, [...transcriptFor(id), message])
+  }
+
+  function updateLastAssistant(
+    id: string,
+    update: (draft: ChatMessage) => void,
+  ): void {
+    const msgs = transcriptFor(id)
+    const last = msgs[msgs.length - 1]
+    if (last?.role !== "assistant") return
+    const draft = { ...last, parts: last.parts ? [...last.parts] : [] }
+    update(draft)
+    setTranscript(id, [...msgs.slice(0, -1), draft])
+  }
+
+  function appendErrorMessage(id: string, message: string): void {
+    appendMessage(id, { id: chatGenerateId(), role: "error", content: message })
+  }
+
+  function updateRuntime(
+    id: string,
+    patch: Partial<ConversationRuntimeState>,
+  ): void {
+    runtime.update((map) => {
+      const next = new Map(map)
+      const prev = next.get(id) ?? {
+        showActivityIndicator: false,
+        retry: null,
+        contextUsage: null,
+      }
+      next.set(id, { ...prev, ...patch })
+      return next
+    })
+  }
+
+  function clearRuntime(id: string): void {
+    runtime.update((map) => {
+      const prev = map.get(id)
+      if (!prev) return map
+      const next = new Map(map)
+      // The live-only affordances die with the stream; the context gauge is a
+      // property of the conversation, not the observation, so it stays.
+      next.set(id, {
+        showActivityIndicator: false,
+        retry: null,
+        contextUsage: prev.contextUsage,
+      })
+      return next
+    })
+  }
+
+  // --- Children list ----------------------------------------------------------
+
+  function updateChildFromStateEvent(event: ConversationStateEvent): void {
+    // conversation-state events carry no trace id, and hydration needs none:
+    // it fetches by session id and the desktop resolves the fresh leaf per
+    // request.
+    children.update((list) =>
+      list.map((child) =>
+        child.session_id === event.session_id
+          ? {
+              ...child,
+              name: event.name ?? child.name,
+              state: (event.state ?? child.state) as RunState,
+              // Identity backfill for an event-attributed child added before
+              // its agent_type was known; an established value is never
+              // overwritten (identity is immutable).
+              agent_type: child.agent_type ?? event.agent_type ?? null,
+              report_available:
+                event.report_available ?? child.report_available,
+            }
+          : child,
+      ),
+    )
+  }
+
+  // An unknown sub-agent attributed to the current parent straight from a
+  // lineage-carrying state event: append it from the fields the event carries
+  // (everything the tab strip renders). The remaining ConversationItem fields
+  // take their schema defaults; the initial-hydration fetch or later state
+  // events fill them in.
+  function addChildFromStateEvent(event: ConversationStateEvent): void {
+    if (!event.session_id) return
+    if (get(children).some((c) => c.session_id === event.session_id)) return
+    eventAddedAt.set(event.session_id, Date.now())
+    const item: ConversationItem = {
+      session_id: event.session_id,
+      kind: "subagent",
+      state: (event.state ?? "running") as RunState,
+      name: event.name ?? null,
+      agent_type: event.agent_type ?? null,
+      parent_session_id: event.parent_session_id ?? null,
+      auto_flag: event.auto_flag ?? false,
+      rounds_used: 0,
+      report_available: event.report_available ?? false,
+      report_delivered: false,
+    }
+    children.update((list) => [...list, item])
+  }
+
+  // The event-added children a list fetch that started at `startedAt` must not
+  // drop: same parent and appended AFTER the fetch started — so the server's
+  // answer (or failure) predates their existence and says nothing about them.
+  // Deliberately NOT filtered by terminal state: a child that spawns AND
+  // settles inside the fetch window stays shielded, so the transcript and
+  // selection aren't yanked while the user reads its failure output. The
+  // startedAt check alone removes ghosts — a fetch started after the add is
+  // authoritative about the child's absence. `>=` on the timestamp: a
+  // same-millisecond tie is unresolvable, and shielding errs toward keeping a
+  // live tab (a real ghost still dies on the next fetch, whose start strictly
+  // postdates the add).
+  function shieldedEventChildren(
+    parentId: string,
+    startedAt: number,
+  ): ConversationItem[] {
+    return get(children).filter(
+      (c) =>
+        c.parent_session_id === parentId &&
+        (eventAddedAt.get(c.session_id) ?? -Infinity) >= startedAt,
+    )
+  }
+
+  // Drop observations/transcripts for children no longer in the list, and clear
+  // the selection if the selected child disappeared (conversation switch).
+  function pruneToChildren(list: ConversationItem[]): void {
+    const ids = new Set(list.map((c) => c.session_id))
+    for (const id of eventAddedAt.keys()) {
+      if (!ids.has(id)) eventAddedAt.delete(id)
+    }
+    for (const [id, obs] of observations) {
+      if (!ids.has(id)) {
+        obs.abort.abort()
+        observations.delete(id)
+      }
+    }
+    transcripts.update((map) => {
+      let changed = false
+      const next = new Map(map)
+      for (const id of next.keys()) {
+        if (!ids.has(id)) {
+          next.delete(id)
+          changed = true
+        }
+      }
+      return changed ? next : map
+    })
+    runtime.update((map) => {
+      let changed = false
+      const next = new Map(map)
+      for (const id of next.keys()) {
+        if (!ids.has(id)) {
+          next.delete(id)
+          changed = true
+        }
+      }
+      return changed ? next : map
+    })
+    const selected = get(selectedId)
+    if (selected && !ids.has(selected)) {
+      selectedId.set(null)
+    }
+  }
+
+  async function fetchChildren(parentId: string): Promise<void> {
+    const thisGeneration = ++syncGeneration
+    // Anchors the shield decision on landing (see shieldedEventChildren): the
+    // server computed its answer no earlier than this instant.
+    const startedAt = Date.now()
+    let list: ConversationItem[] = []
+    let failed = false
+    try {
+      const response = await fetch(
+        `${CONVERSATIONS_BASE_URL}?parent=${encodeURIComponent(parentId)}`,
+        // Bounded: a hung response must not pin the reconcile loop's
+        // in-flight flag forever (see CHILDREN_FETCH_TIMEOUT_MS).
+        { signal: AbortSignal.timeout(CHILDREN_FETCH_TIMEOUT_MS) },
+      )
+      if (response.ok) {
+        const data = (await response.json()) as ConversationItem[]
+        if (Array.isArray(data)) list = data
+      } else {
+        failed = true
+        console.warn(
+          `Sub-agent list fetch failed (${response.status}) for parent ${parentId}`,
+        )
+      }
+    } catch (err) {
+      failed = true
+      // A silent timeout here would leave the tab strip empty with no trace —
+      // keep a breadcrumb for forensics.
+      console.warn(`Sub-agent list fetch failed for parent ${parentId}:`, err)
+    }
+    // A newer sync (conversation switch) superseded this fetch; drop the result.
+    if (thisGeneration !== syncGeneration) return
+    if (failed) {
+      // Failure handling depends on WHOSE children are currently shown:
+      // - same parent → keep them. Clearing on a blip/timeout would flicker
+      //   running tabs away; the reconcile loop retries in a few seconds.
+      // - different parent (a switch whose first fetch failed) → clear the old
+      //   parent's children, so another conversation's tabs never linger under
+      //   this one — but keep any child of THIS parent attributed from a state
+      //   event while the fetch was in flight (a failure is not authoritative,
+      //   and dropping it would blank a live tab the events already proved).
+      if (renderedParentId !== parentId) {
+        renderedParentId = parentId
+        const kept = shieldedEventChildren(parentId, startedAt)
+        children.set(kept)
+        pruneToChildren(kept)
+      }
+      return
+    }
+    renderedParentId = parentId
+    // Merge, don't clobber: a fetch computed BEFORE a spawn can land AFTER the
+    // spawn's state event already added the child directly (the fetch isn't
+    // generation-bumped by direct attribution). Shield ONLY children added
+    // after this fetch started — the server's answer predates them, so their
+    // absence proves nothing. A child the fetch SHOULD have known (added
+    // before it started) yet lacks is authoritatively gone and gets dropped:
+    // this is what removes a ghost whose terminal event will never arrive
+    // (e.g. a desktop restart emptied the in-memory registry), instead of
+    // every fetch re-shielding it forever.
+    const fetchedIds = new Set(list.map((c) => c.session_id))
+    const eventAdded = shieldedEventChildren(parentId, startedAt).filter(
+      (c) => !fetchedIds.has(c.session_id),
+    )
+    // For ids the fetch DOES know, the fetched fields normally win (the
+    // reconcile heals events the firehose missed) — with one exception:
+    // terminal is monotone, so if the store already saw a child settle (via a
+    // state event) and the fetched row still says non-terminal, the row is
+    // provably stale (computed before the settle) and must not revert the tab
+    // to running for up to a reconcile interval. In that one case the
+    // event-carried fields (state / name / agent_type / report_available)
+    // keep the in-store values; everything else still comes from the fetch.
+    // Chosen over "in-store always wins on state" because that would stop the
+    // reconcile from healing a missed transition; terminal-wins is the only
+    // ordering that is always provable.
+    const storedById = new Map(get(children).map((c) => [c.session_id, c]))
+    const reconciled = list.map((fetched) => {
+      const stored = storedById.get(fetched.session_id)
+      if (
+        !stored ||
+        !isTerminalState(stored.state) ||
+        isTerminalState(fetched.state)
+      ) {
+        return fetched
+      }
+      return {
+        ...fetched,
+        state: stored.state,
+        name: stored.name ?? fetched.name,
+        agent_type: stored.agent_type ?? fetched.agent_type,
+        report_available: stored.report_available || fetched.report_available,
+      }
+    })
+    const merged =
+      eventAdded.length > 0 ? [...reconciled, ...eventAdded] : reconciled
+    children.set(merged)
+    pruneToChildren(merged)
+  }
+
+  async function syncForConversation(parentId: string | null): Promise<void> {
+    if (parentId === syncedParentId) return
+    syncedParentId = parentId
+    // The parent changed: (re)evaluate whether the reconcile timer should run
+    // (it only runs with a non-null parent). Do this before the fetch so a
+    // switch to null stops reconciling immediately.
+    updateReconcileTimer()
+    if (!parentId) {
+      syncGeneration++
+      renderedParentId = null
+      children.set([])
+      pruneToChildren([])
+      return
+    }
+    await fetchChildren(parentId)
+  }
+
+  // --- State firehose ---------------------------------------------------------
+
+  function handleFirehoseEvent(event: ConversationStateEvent): void {
+    if (event.type !== "conversation-state" || !event.session_id) return
+    // Guard by kind so a parent (auto / interactive) record on the shared
+    // firehose never leaks into the children strip.
+    if (event.kind && event.kind !== "subagent") return
+    const known = get(children).some((c) => c.session_id === event.session_id)
+    if (known) {
+      updateChildFromStateEvent(event)
+      return
+    }
+    // Unknown child carrying lineage: attribute it directly from the event —
+    // no list fetch. A fetch competes with the page's long-lived SSE streams
+    // for the browser's small per-origin connection budget and can starve
+    // indefinitely, leaving the tab strip blind.
+    if (event.parent_session_id !== undefined) {
+      if (event.parent_session_id === syncedParentId) {
+        addChildFromStateEvent(event)
+      }
+      // Another conversation's child: not ours, nothing to fetch.
+      return
+    }
+    // No lineage on the event (older desktop): we can't tell whether the child
+    // belongs to this conversation, so re-fetch the list for the current
+    // parent.
+    if (syncedParentId) {
+      void fetchChildren(syncedParentId)
+    }
+  }
+
+  function clearReconnect(): void {
+    if (reconnectTimer !== null) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+  }
+
+  // Start/stop the periodic children reconcile to match the current lifecycle:
+  // it runs iff the firehose is active AND a parent is set (a missed running
+  // child can only exist under those two conditions). Idempotent, so it is
+  // safe to call from every place those inputs change (connect / disconnect /
+  // syncForConversation / reset). Each tick re-fetches the authoritative list;
+  // fetchChildren's generation guard drops a tick that races a real
+  // conversation switch, and same-parent ticks all hit the identical
+  // children_of endpoint so the last one applied is always correct.
+  function updateReconcileTimer(): void {
+    const shouldRun = firehoseActive && !!syncedParentId
+    if (shouldRun && reconcileTimer === null) {
+      reconcileTimer = setInterval(() => {
+        // Re-check inside the tick: firehoseActive/syncedParentId may have
+        // flipped between scheduling and firing. Skip the tick while the
+        // previous reconcile fetch is still pending — a slow server would
+        // otherwise accumulate one pending request per tick.
+        if (firehoseActive && syncedParentId && !reconcileFetchInFlight) {
+          reconcileFetchInFlight = true
+          void fetchChildren(syncedParentId).finally(() => {
+            reconcileFetchInFlight = false
+          })
+        }
+      }, RECONCILE_INTERVAL_MS)
+    } else if (!shouldRun && reconcileTimer !== null) {
+      clearInterval(reconcileTimer)
+      reconcileTimer = null
+    }
+  }
+
+  function scheduleReconnect(): void {
+    if (reconnectTimer !== null || !firehoseActive) return
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null
+      if (firehoseActive) connectFirehose()
+    }, RECONNECT_DELAY_MS)
+  }
+
+  function closeSource(): void {
+    if (eventSource) {
+      eventSource.close()
+      eventSource = null
+    }
+  }
+
+  function clearFirehoseConnectWatchdog(): void {
+    if (firehoseConnectTimer !== null) {
+      clearTimeout(firehoseConnectTimer)
+      firehoseConnectTimer = null
+    }
+  }
+
+  function connectFirehose(): void {
+    // Pure observer: opening or closing this stream never affects a run. A
+    // dropped connection is recovered by reconnecting; the fresh snapshot
+    // (one state event per known conversation) re-syncs the children.
+    const EventSourceCtor = globalThis.EventSource
+    if (!EventSourceCtor) return
+    closeSource()
+    clearReconnect()
+    connection.set("connecting")
+
+    const source = new EventSourceCtor(`${CONVERSATIONS_BASE_URL}/events`)
+    eventSource = source
+
+    // Watchdog: a connect wedged before response headers (server event-loop
+    // stall) fires neither onopen nor onerror — bound it and retry.
+    clearFirehoseConnectWatchdog()
+    firehoseConnectTimer = setTimeout(() => {
+      firehoseConnectTimer = null
+      if (eventSource !== source) return
+      closeSource()
+      connection.set("errored")
+      scheduleReconnect()
+    }, FIREHOSE_CONNECT_TIMEOUT_MS)
+
+    source.onopen = () => {
+      if (eventSource !== source) return
+      clearFirehoseConnectWatchdog()
+      connection.set("open")
+    }
+    source.onmessage = (e: MessageEvent) => {
+      if (eventSource !== source) return
+      const data = typeof e.data === "string" ? e.data.trim() : ""
+      if (!data) return
+      let event: ConversationStateEvent
+      try {
+        event = JSON.parse(data) as ConversationStateEvent
+      } catch {
+        return
+      }
+      handleFirehoseEvent(event)
+    }
+    source.onerror = () => {
+      // Only act on the active source (avoid racing a teardown / reconnect).
+      if (eventSource !== source) return
+      clearFirehoseConnectWatchdog()
+      closeSource()
+      connection.set("errored")
+      scheduleReconnect()
+    }
+  }
+
+  function connect(): void {
+    if (firehoseActive) return
+    firehoseActive = true
+    connectFirehose()
+    // A parent may already be set (syncForConversation runs before connect on
+    // the assistant page); start reconciling if so.
+    updateReconcileTimer()
+  }
+
+  function disconnect(): void {
+    firehoseActive = false
+    closeSource()
+    clearReconnect()
+    clearFirehoseConnectWatchdog()
+    updateReconcileTimer()
+    connection.set("idle")
+  }
+
+  // --- Per-child observation -----------------------------------------------
+
+  function buildProcessor(
+    id: string,
+    obs: ChildObservation,
+  ): StreamEventProcessor {
+    return new StreamEventProcessor({
+      onAssistantMessage: (update) => {
+        // First assistant content of the replayed in-flight turn (or of a turn
+        // following a user-message echo): render into a fresh assistant message
+        // rather than overwriting the last hydrated one.
+        const msgs = transcriptFor(id)
+        if (
+          obs.pendingFreshTurn ||
+          msgs[msgs.length - 1]?.role !== "assistant"
+        ) {
+          obs.pendingFreshTurn = false
+          appendMessage(id, {
+            id: chatGenerateId(),
+            role: "assistant",
+            parts: [],
+          })
+        }
+        updateLastAssistant(id, update)
+      },
+      onInlineError: (message) => appendErrorMessage(id, message),
+      // Mirror the live rendering affordances the main transcript gets from the
+      // session store, so the child transcript shows the same thinking-dots and
+      // "retrying N/M…" states.
+      onShowActivityIndicator: (show) =>
+        updateRuntime(id, { showActivityIndicator: show }),
+      onRetry: (attempt, max) => updateRuntime(id, { retry: { attempt, max } }),
+      onRetryClear: () => updateRuntime(id, { retry: null }),
+      // The child's own context gauge (chat.svelte shows it while this
+      // child's tab is selected, in place of the main conversation's).
+      onContextUsage: (usage) => updateRuntime(id, { contextUsage: usage }),
+    })
+  }
+
+  // Control events on the per-conversation stream: state markers keep the
+  // children list fresh even without the firehose; user-message echoes open a
+  // new turn.
+  function handleObserverControlEvent(
+    id: string,
+    obs: ChildObservation,
+    processor: StreamEventProcessor,
+    event: StreamEvent,
+  ): boolean {
+    if (event.type === "conversation-state") {
+      const stateEvent = event as ConversationStateEvent
+      if (stateEvent.session_id) updateChildFromStateEvent(stateEvent)
+      return true
+    }
+    if (event.type === "user-message") {
+      // The run echoed an injected user message (the kickoff briefing at run
+      // start, or a steer from the overseeing user). Dedupe by echo id — a
+      // buffer replay on re-attach re-emits the echo for a message the
+      // transcript already shows.
+      const echoId = event.id
+      if (echoId && transcriptFor(id).some((m) => m.echoId === echoId)) {
+        return true
+      }
+      // Kickoff echo ("kickoff-<session_id>") replayed after hydration already
+      // seeded the briefing: the hydrated message carries no echoId, so dedupe
+      // structurally — a kickoff can only ever be the first message, so skip it
+      // whenever a user message already opens the transcript.
+      if (echoId === `kickoff-${id}` && transcriptFor(id)[0]?.role === "user") {
+        return true
+      }
+      // A buffer-replayed echo may carry the steer framing (<system-reminder>)
+      // the engine adds before sending upstream; strip it for display the same
+      // way hydration does, so the bubble shows what the user actually typed.
+      appendMessage(id, {
+        id: chatGenerateId(),
+        role: "user",
+        content: stripInternalFraming(event.content ?? ""),
+        echoId,
+      })
+      // The next assistant content belongs to a fresh turn; reset the processor
+      // so the prior turn's accumulated parts aren't re-flushed into it.
+      obs.pendingFreshTurn = true
+      processor.reset()
+      return true
+    }
+    return false
+  }
+
+  async function observe(sessionId: string): Promise<void> {
+    if (observations.has(sessionId)) return
+    const child = get(children).find((c) => c.session_id === sessionId)
+    if (!child) return
+    const abort = new AbortController()
+    const obs: ChildObservation = { abort, pendingFreshTurn: true }
+    observations.set(sessionId, obs)
+
+    // 1. Hydrate the child's persisted history by SESSION id: the desktop
+    // resolves the record's CURRENT leaf per request, so hydration is always
+    // fresh with no separate item fetch. Best effort: a failure still
+    // attaches the live tail below.
+    let messages: ChatMessage[] = []
+    // Only an authoritative answer may overwrite a kept transcript: 2xx (the
+    // persisted history) or 404 (nothing persisted — empty IS the truth). A
+    // network throw or other error status on a RE-select must not blank the
+    // transcript select() deliberately kept for instant repaint.
+    let authoritative = false
+    try {
+      const response = await fetch(
+        `${base_url}/api/chat/sessions/${encodeURIComponent(sessionId)}`,
+        { signal: abort.signal },
+      )
+      if (response.ok) {
+        const snapshot = (await response.json()) as ChatSessionSnapshot
+        const hydrated = hydrateSessionFromSnapshot(snapshot)
+        messages = hydrated.messages
+        authoritative = true
+        if (hydrated.contextUsage) {
+          updateRuntime(sessionId, { contextUsage: hydrated.contextUsage })
+        }
+      } else if (response.status === 404) {
+        authoritative = true
+      }
+    } catch {
+      /* aborted or unreachable — live tail below still attaches */
+    }
+    if (abort.signal.aborted) return
+    if (authoritative || transcriptFor(sessionId).length === 0) {
+      setTranscript(sessionId, messages)
+    }
+
+    // 2. Attach the live tail: buffer replay (current turn) + state marker +
+    // live events. For terminal runs the stream ends after the marker.
+    void observeEvents(sessionId, obs)
+  }
+
+  async function observeEvents(
+    sessionId: string,
+    obs: ChildObservation,
+  ): Promise<void> {
+    try {
+      const response = await fetch(
+        `${CONVERSATIONS_BASE_URL}/${encodeURIComponent(sessionId)}/events`,
+        { signal: obs.abort.signal },
+      )
+      if (!response.ok) return
+      const reader = response.body?.getReader()
+      if (!reader) return
+      const processor = buildProcessor(sessionId, obs)
+      await consumeSseStream(reader, processor, (event) =>
+        handleObserverControlEvent(sessionId, obs, processor, event),
+      )
+    } catch {
+      /* aborted or dropped — the transcript keeps what it has */
+    } finally {
+      // Allow a later select to re-observe (re-hydrate + re-attach) after the
+      // stream ended — terminal run, network drop, or abort. The live-only
+      // affordances (activity indicator, retry) die with the stream.
+      if (observations.get(sessionId) === obs) {
+        observations.delete(sessionId)
+        clearRuntime(sessionId)
+      }
+    }
+  }
+
+  // --- Actions ----------------------------------------------------------------
+
+  function stopObservation(id: string): void {
+    const obs = observations.get(id)
+    if (!obs) return
+    obs.abort.abort()
+    observations.delete(id)
+    clearRuntime(id)
+  }
+
+  function select(sessionId: string | null): void {
+    const previous = get(selectedId)
+    selectedId.set(sessionId)
+    // Only the SELECTED child keeps a live observer stream: each stream holds
+    // one of the browser's few per-origin connections, and the firehose
+    // already carries status for unselected tabs. The transcript is kept for
+    // an instant repaint on re-select; re-selecting re-hydrates and
+    // re-attaches the live tail.
+    if (previous && previous !== sessionId) stopObservation(previous)
+    if (sessionId) void observe(sessionId)
+  }
+
+  async function stop(sessionId: string): Promise<void> {
+    // Idempotent server-side; the authoritative state change arrives as a
+    // conversation-state event (firehose and observer stream).
+    try {
+      await fetch(
+        `${CONVERSATIONS_BASE_URL}/${encodeURIComponent(sessionId)}/stop`,
+        { method: "POST" },
+      )
+    } catch {
+      /* the run keeps going and the user can retry */
+    }
+  }
+
+  async function sendMessage(
+    sessionId: string,
+    content: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    let response: Response
+    try {
+      response = await fetch(
+        `${CONVERSATIONS_BASE_URL}/${encodeURIComponent(sessionId)}/messages`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        },
+      )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      appendErrorMessage(sessionId, `Couldn't send the message: ${message}`)
+      return { ok: false, error: message }
+    }
+    if (response.status === 409) {
+      // The run reached a terminal state since the UI last heard; refresh the
+      // list so the tab reflects it, and surface a friendly inline error.
+      const message =
+        "This sub-agent has already finished, so it can't receive messages."
+      appendErrorMessage(sessionId, message)
+      if (syncedParentId) void fetchChildren(syncedParentId)
+      return { ok: false, error: message }
+    }
+    if (!response.ok) {
+      let message = `Couldn't send the message (${response.status}).`
+      try {
+        const parsed = (await response.json()) as { detail?: string }
+        if (parsed?.detail) message = parsed.detail
+      } catch {
+        /* keep default */
+      }
+      appendErrorMessage(sessionId, message)
+      return { ok: false, error: message }
+    }
+    // No optimistic append: the run echoes the message on the observer stream
+    // (user-message), which is what the transcript renders.
+    return { ok: true }
+  }
+
+  function reset(): void {
+    for (const obs of observations.values()) {
+      obs.abort.abort()
+    }
+    observations.clear()
+    // Invariant: eventAddedAt only holds entries for current children —
+    // children.set([]) below bypasses pruneToChildren, so clear it here.
+    eventAddedAt.clear()
+    syncGeneration++
+    syncedParentId = undefined
+    renderedParentId = null
+    // No parent anymore: stop the reconcile timer (the firehose connection
+    // itself is intentionally kept — reset() is a new-chat clear, not a
+    // navigation-away).
+    updateReconcileTimer()
+    children.set([])
+    selectedId.set(null)
+    transcripts.set(new Map())
+    runtime.set(new Map())
+  }
+
+  return {
+    children: { subscribe: children.subscribe },
+    selectedId: { subscribe: selectedId.subscribe },
+    transcripts: { subscribe: transcripts.subscribe },
+    runtime: { subscribe: runtime.subscribe },
+    connection: { subscribe: connection.subscribe },
+    connect,
+    disconnect,
+    syncForConversation,
+    select,
+    observe,
+    stop,
+    sendMessage,
+    reset,
+    _close: closeSource,
+  }
+}
+
+export const conversation_store: ConversationStore = createConversationStore()
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main conversation store.
+//
+// The assistant's conversation is a desktop-owned run keyed by session id,
+// observed like any other conversation (architecture §7). ONE pure-observer
+// attachment to the conversation's events stream feeds the
+// `StreamEventProcessor`, for both kinds: an interactive conversation and an
+// auto conversation are the same record, whose policy flips on
+// enable/disable. This store owns:
+//
+// - create-or-adopt (`ensure`) and attach/detach of the observer,
+// - the auto-mode lifecycle (enable / decline / stop / arm) and its UX states
+//   (indicator, "waiting for you", consent and stop dialogs),
+// - sends (`POST /{sid}/messages`, returning the echo-dedupe message id),
+// - approvals (`fetchApprovals` + `decide` against the parked batch).
+//
+// Opening or closing the stream never mutates the run. The authoritative
+// lifecycle state comes from `conversation-state` events, so it is correct on
+// first paint after a re-attach, not only after a local action.
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Lifecycle of the per-conversation events EventSource, surfaced for tests /
 // debugging. A pure observer: this only reports the connection, it never
@@ -48,7 +1021,12 @@ export interface PendingApprovalsView {
 }
 
 export interface DeclineAutoModeContext {
-  /** The ``enable_auto_mode`` call to resolve as ``{"status": "declined"}``. */
+  /**
+   * The consent-gating call to resolve as ``{"status": "declined"}`` — the
+   * ``enable_auto_mode`` call, or the gating ``spawn_subagent`` call of a
+   * spawn-triggered consent (FR2). The desktop route also accepts an
+   * ``enable_tool_call_id`` alias; this store always sends this field.
+   */
   gating_tool_call_id: string
   siblings: ToolCallsPendingItem[]
 }
@@ -84,9 +1062,9 @@ export interface MainConversationSink {
    */
   onWorkingChange: (working: boolean) => void
   /**
-   * The run echoed a user message (an own send or a second tab's send);
-   * ``echoId`` lets the sink dedupe its own just-sent message and buffer
-   * replays.
+   * The run echoed a user message (an own send, a second tab's send, or an
+   * injected sub-agent report); ``echoId`` lets the sink dedupe its own
+   * just-sent message and buffer replays.
    */
   onUserMessage: (content: string, echoId?: string) => void
   /**
@@ -192,10 +1170,11 @@ export interface MainConversationStore {
     text: string,
   ): Promise<{ ok: boolean; error?: string; messageId?: string }>
   /**
-   * Stop the run (POST /{sid}/stop): cancels the in-flight turn, and turns
-   * auto mode off when it is on.
+   * Stop the run (POST /{sid}/stop). ``cascade`` also stops every running
+   * sub-agent child (the kill-the-tree affordance); without it an
+   * interactive stop only cancels the in-flight turn.
    */
-  stop(): Promise<void>
+  stop(opts?: { cascade?: boolean }): Promise<void>
   /** Fetch the parked approval batch (404 → null). */
   fetchApprovals(): Promise<PendingApprovalsView | null>
   /**
@@ -451,6 +1430,11 @@ export function createMainConversationStore(): MainConversationStore {
   //   auto-mode-consent-required        → consent dialog
   function handleControlEvent(event: StreamEvent): boolean {
     if (event.type === "conversation-state") {
+      // Ignore other kinds defensively (the per-conversation stream carries
+      // only this conversation's events; sub-agent records are never the
+      // main conversation).
+      if (event.kind && event.kind !== "auto" && event.kind !== "interactive")
+        return true
       const isAttachMarker = attachMarkerPending
       attachMarkerPending = false
       // Any state event means the attach is established.
@@ -955,15 +1939,16 @@ export function createMainConversationStore(): MainConversationStore {
     return { ok: true }
   }
 
-  async function stop(): Promise<void> {
+  async function stop(opts?: { cascade?: boolean }): Promise<void> {
     const id = get(sessionId)
     if (!id) return
     // Optimistic only: the authoritative state change arrives as a
     // conversation-state event (idle for interactive, flag-off for auto).
+    const suffix = opts?.cascade ? "?cascade=true" : ""
     let response: Response
     try {
       response = await fetch(
-        `${CONVERSATIONS_BASE_URL}/${encodeURIComponent(id)}/stop`,
+        `${CONVERSATIONS_BASE_URL}/${encodeURIComponent(id)}/stop${suffix}`,
         {
           method: "POST",
         },

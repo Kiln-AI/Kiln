@@ -20,8 +20,8 @@ vi.mock("$lib/api_client", () => ({
 
 const mockHydrate = vi.fn()
 vi.mock("./session_messages", async (importOriginal) => ({
-  // Keep the real userChatMessageFromContent / stripInternalFraming (echo
-  // framing strip); only hydration is stubbed.
+  // Keep the real userChatMessageFromContent / stripInternalFraming (echo →
+  // report chip detection, framing strip); only hydration is stubbed.
   ...(await importOriginal<typeof import("./session_messages")>()),
   hydrateSessionFromSnapshot: (...args: unknown[]) => mockHydrate(...args),
 }))
@@ -374,6 +374,26 @@ describe("createChatSessionStore", () => {
       expect(users).toHaveLength(1)
       expect(users[0].content).toBe("hello")
     })
+
+    it("renders another observer's echo (e.g. an injected report) as a chip", async () => {
+      const { store, sink } = await makeStore()
+      await store.sendMessage("hello")
+      const report =
+        '<subagent_report id="cv_1" agent_type="general" status="completed" title="Helper">\nAll done.\n</subagent_report>'
+      sink().onUserMessage(report, "cm_report")
+      const users = get(store).messages.filter((m) => m.role === "user")
+      expect(users).toHaveLength(2)
+      expect(users[1].subagentReport?.title).toBe("Helper")
+      expect(users[1].content).toBe("All done.")
+      // A fresh assistant turn follows the echo.
+      const last = get(store).messages[get(store).messages.length - 1]
+      expect(last.role).toBe("assistant")
+      // Dedupe by echo id on replay.
+      sink().onUserMessage(report, "cm_report")
+      expect(get(store).messages.filter((m) => m.role === "user")).toHaveLength(
+        2,
+      )
+    })
   })
 
   describe("cost disclaimer consent", () => {
@@ -535,6 +555,7 @@ describe("createChatSessionStore", () => {
       trigger: "enable_auto_mode" as const,
       gatingToolCallId: "tc_enable",
       reason: "run it",
+      spawn: null,
       siblingToolCalls: [],
     }
 
@@ -615,6 +636,108 @@ describe("createChatSessionStore", () => {
       await vi.waitFor(() => {
         expect(fake.decline).toHaveBeenCalled()
       })
+    })
+  })
+
+  describe("spawn-triggered auto-mode consent (FR2)", () => {
+    const sibling = {
+      toolCallId: "tc_sib",
+      toolName: "add",
+      input: { a: 1 },
+      requiresApproval: false,
+    }
+    // The wire spawn object carries a field the typed SpawnConsentInfo does
+    // not model — accept must echo it verbatim, not the lossy rebuild.
+    const rawSpawnInput = {
+      agent_type: "general",
+      name: "Helper",
+      prompt: "do things",
+      future_field: "kept",
+    }
+    const spawnPayload = {
+      trigger: "spawn_subagent" as const,
+      gatingToolCallId: "tc_spawn",
+      reason: null,
+      spawn: {
+        agentType: "general",
+        name: "Helper",
+        prompt: "do things",
+        rawInput: rawSpawnInput,
+      },
+      siblingToolCalls: [sibling],
+    }
+
+    it("accept enables with the gating spawn FIRST in pending_tool_calls and no enable id", async () => {
+      const { store, sink, fake, sessionId } = await makeStore()
+      sessionId.set("cv_live")
+      store.onAutoModeConsentNeeded = vi.fn().mockResolvedValue(true)
+      sink().onConsentRequired(spawnPayload)
+      await vi.waitFor(() => {
+        expect(fake.requestEnable).toHaveBeenCalledTimes(1)
+      })
+      const seed = vi.mocked(fake.requestEnable).mock.calls[0][0]
+      expect(seed).toEqual({
+        kind: "auto",
+        session_id: "cv_live",
+        pending_tool_calls: [
+          {
+            toolCallId: "tc_spawn",
+            toolName: "spawn_subagent",
+            input: rawSpawnInput,
+            requiresApproval: false,
+          },
+          {
+            toolCallId: "tc_sib",
+            toolName: "add",
+            input: { a: 1 },
+            requiresApproval: false,
+          },
+        ],
+      })
+      // There is no enable call in the spawn-consent flow — the desktop's
+      // enable_auto tolerates a None id and seeds off the pending calls.
+      expect("enable_tool_call_id" in seed).toBe(false)
+      expect("reason" in seed).toBe(false)
+    })
+
+    it("accept falls back to the typed rebuild when the payload has no raw spawn input", async () => {
+      const { store, sink, fake, sessionId } = await makeStore()
+      sessionId.set("cv_live")
+      store.onAutoModeConsentNeeded = vi.fn().mockResolvedValue(true)
+      sink().onConsentRequired({
+        ...spawnPayload,
+        spawn: { agentType: "general", name: "Helper", prompt: "do things" },
+      })
+      await vi.waitFor(() => {
+        expect(fake.requestEnable).toHaveBeenCalledTimes(1)
+      })
+      const seed = vi.mocked(fake.requestEnable).mock.calls[0][0]
+      expect(seed.pending_tool_calls?.[0]).toEqual({
+        toolCallId: "tc_spawn",
+        toolName: "spawn_subagent",
+        input: { agent_type: "general", name: "Helper", prompt: "do things" },
+        requiresApproval: false,
+      })
+    })
+
+    it("decline resolves the gating SPAWN id with its siblings", async () => {
+      const { store, sink, fake } = await makeStore()
+      store.onAutoModeConsentNeeded = vi.fn().mockResolvedValue(false)
+      sink().onConsentRequired(spawnPayload)
+      await vi.waitFor(() => {
+        expect(fake.decline).toHaveBeenCalledWith({
+          gating_tool_call_id: "tc_spawn",
+          siblings: [
+            {
+              toolCallId: "tc_sib",
+              toolName: "add",
+              input: { a: 1 },
+              requiresApproval: false,
+            },
+          ],
+        })
+      })
+      expect(fake.requestEnable).not.toHaveBeenCalled()
     })
   })
 

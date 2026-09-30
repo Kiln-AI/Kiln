@@ -15,12 +15,17 @@
     chatSessionStore,
     type ChatSessionStore,
   } from "$lib/chat/chat_session_store"
-  import { main_conversation_store } from "$lib/chat/conversation_store"
+  import {
+    main_conversation_store,
+    conversation_store,
+  } from "$lib/chat/conversation_store"
   import ChatWelcome from "./chat_welcome.svelte"
   import ChatHistory from "./chat_history.svelte"
   import AutoModeConsentDialog from "./auto_mode_consent_dialog.svelte"
   import AutoModeStopDialog from "./auto_mode_stop_dialog.svelte"
   import ChatTranscript from "./chat_transcript.svelte"
+  import SubagentTabs from "./subagent_tabs.svelte"
+  import SubagentTranscript from "./subagent_transcript.svelte"
   import BrailleSpinner from "./braille_spinner.svelte"
   import ContextUsageGauge from "$lib/ui/context_usage_gauge.svelte"
 
@@ -56,6 +61,28 @@
   // the auto indicator off — the desktop-owned run is unaffected by observer
   // connection loss.
   const mainConnection = main_conversation_store.connection
+
+  // Sub-agents (background child runs) of the current conversation, served by
+  // the unified conversation store (children are keyed by session id and speak
+  // the conversation-state vocabulary). The tab strip selects between the main
+  // transcript and a child's read-only one; the composer routes to a running
+  // child when its tab is selected.
+  const subagentChildren = conversation_store.children
+  const subagentSelectedId = conversation_store.selectedId
+  const subagentTranscripts = conversation_store.transcripts
+  const subagentRuntime = conversation_store.runtime
+
+  $: selectedChild = $subagentSelectedId
+    ? $subagentChildren.find((c) => c.session_id === $subagentSelectedId) ??
+      null
+    : null
+  $: selectedChildRunning = selectedChild?.state === "running"
+  $: selectedChildMessages = selectedChild
+    ? $subagentTranscripts.get(selectedChild.session_id) ?? []
+    : []
+  $: selectedChildRuntime = selectedChild
+    ? $subagentRuntime.get(selectedChild.session_id) ?? null
+    : null
 
   // The footer "Auto mode" toggle is shown whenever auto mode is off (the {:else}
   // branch), and is ALWAYS clickable, including on a brand-new
@@ -147,7 +174,12 @@
   $: autoWorking = $store.autoWorking
   // Retry affordance from either source (auto burst or interactive stream).
   $: activeRetry = $autoRetry ?? $store.retry
-  $: contextUsage = $store.contextUsage
+  // The gauge follows the selected tab: a sub-agent tab shows THAT agent's
+  // context usage (hydrated from its snapshot + live trace events), not the
+  // main conversation's.
+  $: contextUsage = selectedChild
+    ? selectedChildRuntime?.contextUsage ?? null
+    : $store.contextUsage
   $: upgradeNudgeVersion = $store.upgradeNudgeVersion
   $: versionRequired = $store.versionRequired
   // A message typed while a turn was in flight, held client-side and surfaced
@@ -158,6 +190,13 @@
   $: messages = $store.messages
   $: hasMessages = messages.length > 0
   $: status = $store.status
+
+  // Keep the sub-agent list in sync with the conversation the transcript
+  // shows, keyed by the main conversation's SESSION id. Stable for the
+  // conversation's whole life, so the dedupe inside syncForConversation
+  // makes the reactive call cheap; null (New Chat / detached) clears the tab
+  // strip.
+  $: void conversation_store.syncForConversation($mainSessionId)
 
   // Pause autoscroll around a step-group expand/collapse in the transcript
   // (the toggle mutates layout without new content arriving).
@@ -174,10 +213,24 @@
   // burst, AND during a re-attach's brief "reconnecting…" window so a
   // reattaching conversation doesn't look done/idle before liveness is known.
   $: transcriptLoading = isLoading || autoWorking || $autoReconnecting
+  // A child steer POST in flight: the composer is disabled until it settles so
+  // a second Enter can't duplicate the send, and text typed during the await
+  // can't be wiped by the first request's success clearing the input.
+  let childSendPending = false
   // The composer stays usable while a turn is in flight so a message typed mid-
   // turn reaches the run (or is queued above the input) rather than blocked.
-  // Disabled only for a too-old client (sending would just 426 again).
-  $: inputDisabled = versionRequired
+  // Disabled only for a too-old client (sending would just 426 again), while a
+  // child steer send is pending, or when a finished sub-agent's tab is
+  // selected (it can't receive messages; return to Main to continue).
+  $: inputDisabled =
+    versionRequired ||
+    childSendPending ||
+    (selectedChild !== null && !selectedChildRunning)
+  $: composerPlaceholder = selectedChild
+    ? selectedChildRunning
+      ? "Message this sub-agent…"
+      : "This sub-agent has finished — select Main to continue the conversation."
+    : "Type a message…"
 
   let prevIsLoading = false
   $: {
@@ -194,6 +247,10 @@
   let isAutoScrolling = false
   const SCROLL_THRESHOLD = 0.5
 
+  // Scroll the shared container to its end. Container-based (not the main
+  // transcript's end anchor) so it works for whichever transcript is visible —
+  // scrollIntoView on the hidden main anchor is a no-op while a sub-agent tab
+  // is selected.
   function scrollToBottom(): void {
     const container = messagesContainer
     if (!container) return
@@ -202,6 +259,20 @@
     requestAnimationFrame(() => {
       isAutoScrolling = false
     })
+  }
+
+  // Switching tabs (main ↔ sub-agent) keeps the shared container's previous
+  // scroll offset, which lands the newly shown transcript at the top — jump to
+  // the bottom instead. Content that hydrates after the switch is carried the
+  // rest of the way by the MutationObserver (userNearBottom is reset here).
+  let prevSelectedTabId: string | null | undefined = undefined
+  $: {
+    const tabId = $subagentSelectedId
+    if (prevSelectedTabId !== undefined && tabId !== prevSelectedTabId) {
+      userNearBottom = true
+      void tick().then(() => scrollToBottom())
+    }
+    prevSelectedTabId = tabId
   }
 
   function handleScroll() {
@@ -235,6 +306,10 @@
   onMount(() => {
     // Surface the upgrade banners up front, before any message is sent.
     void store.checkVersionPolicy()
+
+    // Watch the conversation-state firehose while the assistant page is active
+    // so tabs reflect spawns/finishes even with no chat stream in flight.
+    conversation_store.connect()
 
     const container = messagesContainer
     if (container) {
@@ -276,6 +351,7 @@
   })
 
   onDestroy(() => {
+    conversation_store.disconnect()
     messagesContainer?.removeEventListener("scroll", handleScroll)
     messagesContainer?.removeEventListener("wheel", handleWheel)
     messagesContainer?.removeEventListener("touchstart", handleTouchStart)
@@ -316,7 +392,16 @@
   }
 
   function stop() {
-    store.stop()
+    // The user-facing Stop kills the whole tree: cancelling the main run also
+    // stops every running sub-agent (their loops have nothing left to report
+    // to).
+    store.stop({ cascade: true })
+  }
+
+  function stopSelectedChild() {
+    const selected = selectedChild
+    if (!selected) return
+    void conversation_store.stop(selected.session_id)
   }
 
   function sendQueuedNow() {
@@ -348,6 +433,9 @@
       e.detail.contextUsage,
       { autoActive: e.detail.autoActive, rootId: e.detail.rootId },
     )
+    // Back to the main transcript; the loaded conversation's children sync
+    // reactively from its session id once ensure() attaches.
+    conversation_store.select(null)
     userNearBottom = true
     tick().then(() => {
       scrollToBottom()
@@ -360,6 +448,8 @@
       had_messages: get(store).messages.length > 0,
     })
     store.reset()
+    // A new conversation has no children yet; drop tabs/observers/selection.
+    conversation_store.reset()
   }
 
   export function openHistory() {
@@ -372,6 +462,25 @@
     // No isLoading guard: the store injects or queues when a turn is in
     // flight.
     if (!text) return
+    // A sub-agent tab is selected: route the message to that child instead of
+    // the main conversation. Terminal children can't receive messages (the
+    // composer is disabled with a hint to return to Main).
+    if (selectedChild) {
+      if (!selectedChildRunning || childSendPending) return
+      childSendPending = true
+      try {
+        const result = await conversation_store.sendMessage(
+          selectedChild.session_id,
+          text,
+        )
+        if (!result.ok) return
+        input = ""
+        setTimeout(() => adjustTextareaHeight(), 0)
+      } finally {
+        childSendPending = false
+      }
+      return
+    }
     const sent = await store.sendMessage(text)
     if (!sent) return
     input = ""
@@ -392,8 +501,19 @@
       role="log"
       aria-live="polite"
     >
+      {#if selectedChild}
+        <!-- A sub-agent tab is selected: show its read-only transcript instead
+           of the main one (which stays mounted, just hidden, so streaming
+           state / observers are untouched while peeking at a child). -->
+        <SubagentTranscript
+          child={selectedChild}
+          messages={selectedChildMessages}
+          runtime={selectedChildRuntime}
+        />
+      {/if}
       <div
         class="flex flex-col gap-4 w-full min-h-full md:max-w-3xl mx-auto px-1"
+        class:hidden={selectedChild !== null}
       >
         {#if messages.length === 0 && !isLoading}
           <div class="flex-1 shrink-0"></div>
@@ -474,7 +594,10 @@
       </div>
     {/if}
 
-    {#if queuedMessage}
+    <!-- The queued bubble belongs to the MAIN agent (the client queue only
+       exists for the main conversation — sub-agent sends go straight to the
+       child's server-side inbox), so it only renders on the Main tab. -->
+    {#if queuedMessage && !selectedChild}
       <div class="flex-none w-full md:max-w-3xl md:mx-auto px-1 pt-2">
         <div
           class="rounded-xl border border-base-content/10 bg-base-200 py-2.5"
@@ -523,6 +646,9 @@
       </div>
     {/if}
 
+    <!-- Sub-agent tab strip (renders nothing when there are no children). -->
+    <SubagentTabs />
+
     <form
       class="flex-none relative w-full md:max-w-3xl md:mx-auto px-1 pt-2"
       on:submit|preventDefault={handleSubmit}
@@ -531,14 +657,27 @@
         bind:this={textareaRef}
         class="input input-bordered w-full min-h-[80px] max-h-[40vh] resize-none overflow-y-auto py-3 pr-12 text-sm"
         aria-label="Chat message"
-        placeholder="Type a message…"
+        placeholder={composerPlaceholder}
         bind:value={input}
         disabled={inputDisabled}
         rows={3}
         on:input={() => adjustTextareaHeight()}
         on:keydown={handleTextareaKeydown}
       />
-      {#if isLoading && !input.trim()}
+      {#if selectedChild && selectedChildRunning && !input.trim()}
+        <!-- Kill this sub-agent (same stop the tab's × does, reachable from
+           inside its transcript view). -->
+        <button
+          type="button"
+          class="absolute right-3 bottom-6 btn btn-sm btn-circle btn-neutral"
+          on:click={stopSelectedChild}
+          aria-label="Stop this sub-agent"
+        >
+          <span class="size-4 block"><StopIcon /></span>
+        </button>
+      {:else if isLoading && !input.trim() && !selectedChild}
+        <!-- Main-agent stop; hidden while a sub-agent tab is selected (the
+           composer then addresses the child, not the main stream). -->
         <button
           type="button"
           class="absolute right-3 bottom-6 btn btn-sm btn-circle btn-neutral"

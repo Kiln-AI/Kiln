@@ -1,8 +1,10 @@
 <script lang="ts">
   // Transcript renderer: the message loop (user bubbles, markdown text, step
-  // groups, tool status lines, status steps). Page concerns (welcome screen,
-  // queued-message UI, banners, composer) stay in chat.svelte; approval boxes
-  // render only when a waiter is passed.
+  // groups, tool status lines, status steps, report chips). The main view and
+  // the sub-agent observer view both render through it. Page concerns (welcome
+  // screen, queued-message UI, banners, composer) stay in chat.svelte; approval
+  // boxes render only when a waiter is passed (never in the read-only child
+  // view).
   import { fly } from "svelte/transition"
   import type { ChatMessage, ChatMessagePart } from "$lib/chat/streaming_chat"
   import type { ToolApprovalWaiter } from "$lib/chat/chat_session_store"
@@ -10,15 +12,21 @@
   import ChatStatusSteps from "./chat_status_steps.svelte"
   import ToolStatusLine from "./tool_status_line.svelte"
   import ToolApprovalBox from "./tool_approval_box.svelte"
+  import SubagentReportChip from "./subagent_report_chip.svelte"
 
   export let messages: ChatMessage[] = []
-  /** A turn is live (interactive turn / auto burst): drives the thinking
-   * dots, animated icon and active tool spinners. */
+  /** A turn is live (interactive turn / auto burst / running sub-agent):
+   * drives the thinking dots, animated icon and active tool spinners. */
   export let loading = false
   export let showActivityIndicator = false
   export let compacting = false
   /** "retrying N/M…" affordance ({ attempt, max }) or null. */
   export let retrying: { attempt: number; max: number } | null = null
+  /**
+   * Read-only observer view (sub-agent transcript): hides the error Retry
+   * button. Approval boxes are off simply because no waiter is passed.
+   */
+  export let readOnly = false
   export let toolApprovalWaiter: ToolApprovalWaiter | null = null
   export let toolApprovalPicks: Record<string, boolean | undefined> = {}
   export let onToolApprovalRun: (toolCallId: string) => void = () => {}
@@ -165,7 +173,9 @@
       in:fly={{ y: 8, duration: 200 }}
       out:fly={{ y: -4, duration: 150 }}
       class={message.role === "user"
-        ? "leading-tight rounded-xl bg-base-content/[0.06] px-3 py-2.5 max-w-2xl ml-auto text-sm break-words"
+        ? message.subagentReport
+          ? ""
+          : "leading-tight rounded-xl bg-base-content/[0.06] px-3 py-2.5 max-w-2xl ml-auto text-sm break-words"
         : message.role === "error"
           ? "rounded-lg bg-error/10 border border-error/30 px-3 py-2.5 text-error text-sm break-words"
           : "flex flex-col gap-3"}
@@ -173,14 +183,16 @@
       {#if message.role === "error"}
         <div class="flex items-center justify-between gap-3">
           <span>{message.content}</span>
-          <button
-            type="button"
-            class="shrink-0 rounded-md bg-error/20 px-2 py-1 text-xs font-medium hover:bg-error/30 transition-colors"
-            on:click={onRetryLastRequest}
-            disabled={retryDisabled}
-          >
-            Retry
-          </button>
+          {#if !readOnly}
+            <button
+              type="button"
+              class="shrink-0 rounded-md bg-error/20 px-2 py-1 text-xs font-medium hover:bg-error/30 transition-colors"
+              on:click={onRetryLastRequest}
+              disabled={retryDisabled}
+            >
+              Retry
+            </button>
+          {/if}
         </div>
       {:else}
         <div class="flex flex-col leading-tight">
@@ -284,6 +296,10 @@
                         {@const effectivelyComplete =
                           hasOutput || !isActiveMessage}
                         {#if pendingInlineApproval && toolApprovalPicks[tcId] === undefined}
+                          <!-- FR3: spawn_subagent never appears here — in auto
+                             mode it auto-runs; interactively it rides the
+                             auto-mode consent dialog (the FR2 spawn gate),
+                             not the approval box. -->
                           <div class="mt-2 text-sm">
                             <ToolApprovalBox
                               description={approvalItem?.approvalDescription ??
@@ -408,6 +424,13 @@
                 />
               </div>
             </div>
+          {:else if message.subagentReport}
+            <!-- Sub-agent completion report injected as a user-role
+               message: render a collapsed chip instead of a bubble. -->
+            <SubagentReportChip
+              report={message.subagentReport}
+              body={message.content ?? ""}
+            />
           {:else if message.content}
             <div class="whitespace-pre-wrap break-words">{message.content}</div>
           {/if}

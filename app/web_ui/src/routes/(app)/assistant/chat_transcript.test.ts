@@ -60,17 +60,44 @@ describe("chat_transcript", () => {
     expect(container.textContent).toContain("(GET /api/thing/tc0)")
   })
 
-  it("renders an error message with a Retry button", async () => {
+  it("renders a sub-agent report chip instead of a user bubble", () => {
+    const messages: ChatMessage[] = [
+      {
+        id: "u1",
+        role: "user",
+        content: "report body",
+        subagentReport: {
+          id: "sa_1",
+          agentType: "general",
+          status: "completed",
+          title: "Eval sweep",
+        },
+      },
+    ]
+    const { container } = render(ChatTranscript, { props: { messages } })
+    expect(container.textContent).toContain("Sub-agent report")
+    expect(container.textContent).toContain("Eval sweep")
+    // Collapsed by default: the body only shows after expanding.
+    expect(container.textContent).not.toContain("report body")
+  })
+
+  it("shows the error Retry button interactively but not in readOnly", async () => {
     const messages: ChatMessage[] = [
       { id: "e1", role: "error", content: "boom" },
     ]
     const onRetryLastRequest = vi.fn()
-    const { container, getByRole } = render(ChatTranscript, {
+    const interactive = render(ChatTranscript, {
       props: { messages, onRetryLastRequest },
     })
-    expect(container.textContent).toContain("boom")
-    await fireEvent.click(getByRole("button", { name: "Retry" }))
+    await fireEvent.click(interactive.getByRole("button", { name: "Retry" }))
     expect(onRetryLastRequest).toHaveBeenCalledTimes(1)
+    cleanup()
+
+    const readOnly = render(ChatTranscript, {
+      props: { messages, readOnly: true },
+    })
+    expect(readOnly.container.textContent).toContain("boom")
+    expect(readOnly.queryByRole("button", { name: "Retry" })).toBeNull()
   })
 
   it("hides empty assistant messages unless they are the live last turn", () => {

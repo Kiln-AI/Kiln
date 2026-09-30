@@ -124,8 +124,8 @@ export interface ChatSessionState extends PersistedChatSession {
    * queued appends to it. Runtime-only, not persisted.
    *
    * Mid-turn sends on a LIVE interactive run do not queue here: they POST
-   * straight to the server inbox (the same transport cross-tab sends use)
-   * and the engine folds them into the run's next upstream round.
+   * straight to the server inbox (the same transport sub-agent and cross-tab
+   * sends use) and the engine folds them into the run's next upstream round.
    * This queue holds only the messages that can't ride a live run right now:
    * an approval box open (the POST's optimistic working flip would close the
    * box), a consent dialog resolving (the turn is already over server-side —
@@ -157,8 +157,12 @@ export interface ChatSessionStore extends Readable<ChatSessionState> {
   sendQueuedNow(): void
   /** Discard the queued message without sending it. */
   clearQueued(): void
-  /** Stop the in-flight turn (and auto mode, when it is on). */
-  stop(): void
+  /**
+   * Stop the main run. ``cascade`` also kills every running sub-agent child
+   * (the user-facing Stop button); the interrupt-to-send-queued path omits it
+   * so injecting a message never tears down running sub-agents.
+   */
+  stop(opts?: { cascade?: boolean }): void
   retryLastRequest(): void
   reset(): void
   loadSession(
@@ -386,9 +390,8 @@ export function createChatSessionStore(
       return
     }
     removeErrors()
-    // Other tabs' sends carry the app-context header and auto-mode injects
-    // carry a side-note framing; strip internal framing for display, exactly
-    // like hydration does.
+    // Reports arrive framed; other tabs' sends carry the app-context header —
+    // strip internal framing for display, exactly like hydration does.
     updateMessages((msgs) => [
       ...msgs,
       userChatMessageFromContent(stripInternalFraming(content), echoId),
@@ -400,7 +403,7 @@ export function createChatSessionStore(
   // - our own just-sent message (rendered locally already): attach the echo
   //   id to the local bubble and skip the append;
   // - an echo id the transcript already shows (replay): skip;
-  // - anything else (e.g. another tab's send): render it.
+  // - anything else (another tab's send, an injected report): render it.
   function handleUserMessageEcho(content: string, echoId?: string) {
     const stripped = stripInternalFraming(content)
     const ownIdx = pendingOwnEchoes.findIndex(
@@ -637,10 +640,13 @@ export function createChatSessionStore(
   let onConsentNeeded: (() => Promise<boolean>) | null = null
   let onAutoModeConsentNeeded: AutoModeConsentDecision | null = null
 
-  // The model called enable_auto_mode and the consent control event arrived
-  // on the observer; the turn is over server-side. Ask the UI: accept flips
-  // the SAME conversation to auto mode, decline resumes interactively with
-  // the enable call resolved as declined.
+  // The model called enable_auto_mode — or spawn_subagent while auto mode
+  // was off (FR2: spawning requires auto mode, so the spawn call takes the
+  // gating role) — and the consent control event arrived on the observer;
+  // the turn is over server-side. Ask the UI: accept flips the SAME
+  // conversation to auto mode (a gating spawn then executes as the first
+  // pending call), decline resumes interactively with the gating call
+  // resolved as declined.
   async function handleAutoModeConsent(
     payload: AutoModeConsentRequiredPayload,
   ): Promise<void> {
@@ -669,13 +675,47 @@ export function createChatSessionStore(
         requiresApproval: Boolean(s.requiresApproval),
       }))
       if (accepted) {
-        const seed: CreateAutoConversationRequest = {
-          kind: "auto",
-          session_id: sid ?? undefined,
-          enable_tool_call_id: payload.gatingToolCallId,
-          pending_tool_calls: siblings,
-          reason: payload.reason,
-        }
+        // Spawn trigger (FR2): there is no enable call to resolve — the
+        // gating SPAWN rides pending_tool_calls (first, ahead of its
+        // siblings) so the enable executes it and the burst continues under
+        // the auto policy. Enable trigger: enable_tool_call_id names the
+        // call to resolve and the siblings ride pending_tool_calls.
+        const seed: CreateAutoConversationRequest =
+          payload.trigger === "spawn_subagent"
+            ? {
+                kind: "auto",
+                session_id: sid ?? undefined,
+                pending_tool_calls: [
+                  {
+                    toolCallId: payload.gatingToolCallId,
+                    toolName: "spawn_subagent",
+                    // Echo the wire spawn input VERBATIM when it's in hand —
+                    // the typed SpawnConsentInfo rebuild is lossy (missing
+                    // fields coerce to "", unknown keys drop), which would
+                    // quietly corrupt accept if the spawn schema grows
+                    // fields. The rebuild is the fallback for payloads
+                    // without the raw object; {} for absent/malformed spawn.
+                    input:
+                      payload.spawn?.rawInput ??
+                      (payload.spawn
+                        ? {
+                            agent_type: payload.spawn.agentType,
+                            name: payload.spawn.name,
+                            prompt: payload.spawn.prompt,
+                          }
+                        : {}),
+                    requiresApproval: false,
+                  },
+                  ...siblings,
+                ],
+              }
+            : {
+                kind: "auto",
+                session_id: sid ?? undefined,
+                enable_tool_call_id: payload.gatingToolCallId,
+                pending_tool_calls: siblings,
+                reason: payload.reason,
+              }
         // Surface enable failures (e.g. 429 "Too many auto runs") — the
         // dialog has already closed, so the inline error is the only signal.
         const result = await conversationStore.requestEnable(seed)
@@ -685,8 +725,9 @@ export function createChatSessionStore(
           )
         }
       } else {
-        // Decline resolves the enable call as {"status": "declined"} and
-        // denies the siblings.
+        // Decline resolves the gating call — enable or spawn — as
+        // {"status": "declined"} and denies the siblings (FR2: the desktop
+        // resolves the gating spawn id server-side).
         const ctx: DeclineAutoModeContext = {
           gating_tool_call_id: payload.gatingToolCallId,
           siblings,
@@ -1037,11 +1078,11 @@ export function createChatSessionStore(
     return true
   }
 
-  function stop(): void {
+  function stop(opts?: { cascade?: boolean }): void {
     // POST /{sid}/stop cancels the in-flight turn server-side; the idle state
     // event settles the UI (status ready + queued flush).
     posthog.capture("chat_stopped")
-    void conversationStore.stop()
+    void conversationStore.stop(opts)
   }
 
   function retryLastRequest(): void {
