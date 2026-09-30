@@ -153,6 +153,24 @@ async def test_update_clears_content_with_empty_string(project):
     assert updated["memory"]["content"] is None
 
 
+@pytest.mark.parametrize("field", ["overview", "content", "tags", "scope"])
+async def test_update_null_field_is_not_provided(project, field):
+    # A model can send an explicit null. That must leave the field as it is,
+    # not clear it (and not fail on a required field).
+    saved = out(
+        await tool(project, "save").run(
+            overview="orig", scope="project", content="body", tags=["t"]
+        )
+    )
+    result = await tool(project, "update").run(id=saved["id"], **{field: None})
+    assert not result.is_error
+    memory = out(result)["memory"]
+    assert memory["overview"] == "orig"
+    assert memory["content"] == "body"
+    assert memory["tags"] == ["t"]
+    assert memory["scope"] == "project"
+
+
 # --- the store runs off the event loop ---
 
 

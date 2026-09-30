@@ -257,8 +257,8 @@ class GetMemoriesTool(_MemoryTool):
 class UpdateMemoryTool(_MemoryTool):
     _name: ClassVar[str] = "update_memory"
     _description: ClassVar[str] = (
-        "Replace provided fields on an existing memory (omitted fields are "
-        "untouched). Use this to correct or refresh a memory whose overview or "
+        "Replace provided fields on an existing memory (omitted or null fields "
+        "are untouched). Use this to correct or refresh a memory whose overview or "
         "content is wrong or outdated; delete instead if the memory should be "
         "removed entirely. Passing an empty content clears it. Conflicts resolve "
         "last-writer-wins."
@@ -276,7 +276,8 @@ class UpdateMemoryTool(_MemoryTool):
             "content": {
                 "type": "string",
                 "description": (
-                    f"New body (<={MAX_CONTENT_LENGTH} chars). Empty string clears it."
+                    f"New body (<={MAX_CONTENT_LENGTH} chars). Empty string clears it; "
+                    "null or omitted leaves it as is."
                 ),
             },
             "tags": _TAGS_SCHEMA,
@@ -291,10 +292,13 @@ class UpdateMemoryTool(_MemoryTool):
         memory_id = kwargs.get("id")
         if not memory_id:
             return self._error(ValueError("id is required"))
+        # A null value means "not provided", not "clear": a model that sends
+        # "tags": null must not wipe the tags. Only an empty content string clears
+        # content.
         updates = {
             key: kwargs[key]
             for key in ("overview", "content", "tags", "scope")
-            if key in kwargs
+            if kwargs.get(key) is not None
         }
         try:
             memory = await asyncio.to_thread(
