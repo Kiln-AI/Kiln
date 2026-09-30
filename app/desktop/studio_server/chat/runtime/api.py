@@ -5,6 +5,10 @@ Replaces the request-scoped interactive chat surface (``POST /api/chat`` +
 ``tool-calls-pending`` event and the browser POSTed the decisions to
 continue) with supervised conversations the browser observes:
 
+- ``GET /api/conversations?parent=`` — the live conversations, or the
+  sub-agent children of one parent (by the parent's session id);
+- ``GET /api/conversations/events`` — the registry-level
+  ``conversation-state`` firehose (snapshot + live);
 - ``POST /api/conversations`` — create/adopt an interactive conversation
   (``kind="interactive"``), or enable auto mode (``kind="auto"``: flip the
   named conversation, or create one for the armed-first-send seed);
@@ -20,9 +24,16 @@ continue) with supervised conversations the browser observes:
   EXISTING conversation, or decline a pending consent request;
 - ``POST /api/conversations/{sid}/stop`` — stop the in-flight turn/burst.
 
+``GET /api/conversations/{sid}`` takes ``include_report`` to add a finished
+child's final report. The consent decline on ``/{sid}/auto`` covers both
+gating calls: ``enable_auto_mode`` and the FR2 spawn-consent
+``spawn_subagent``. ``/{sid}/stop`` takes ``cascade=true`` to stop every
+running sub-agent child first.
+
 Lifecycle is reported by the unified ``conversation-state`` event
-(runtime/sse.py) on the observer stream. The AI-SDK content vocabulary on the
-observer stream is the upstream's.
+(runtime/sse.py) on both the observer stream (as the on-subscribe marker and
+live lifecycle updates) and the registry-level firehose. The AI-SDK content
+vocabulary on the observer stream is the upstream's.
 """
 
 from __future__ import annotations
@@ -30,11 +41,11 @@ from __future__ import annotations
 import logging
 from typing import Annotated, Any, AsyncGenerator, Literal
 
-from fastapi import FastAPI, HTTPException, Path, Response
+from fastapi import FastAPI, HTTPException, Path, Query, Response
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import no_write_lock
 from kiln_server.utils.agent_checks.policy import DENY_AGENT
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from app.desktop.studio_server.chat.stream_session import ToolCallInfo
 
@@ -44,6 +55,7 @@ from app.desktop.studio_server.jobs.events import KeepalivePing, iter_with_keepa
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 
 from .models import ConversationKind, ConversationRecord, RunState
+from .sse import format_conversation_state
 from .supervisor import ConversationCapError, conversation_supervisor
 
 
@@ -81,24 +93,42 @@ class ConversationItem(BaseModel):
       persist a restart-proof recovery key (the in-memory ``session_id`` dies
       with the desktop process; the recovery key resumes via the backend's
       own session-id resolution).
+    - ``final_report`` is included only when requested with
+      ``include_report``.
     """
 
     session_id: str
     kind: ConversationKind
     state: RunState
+    name: str | None = None
+    agent_type: str | None = None
+    parent_session_id: str | None = None
     root_id: str | None = None
     auto_flag: bool = False
     idle_reason: str | None = None
+    rounds_used: int = 0
+    report_available: bool = False
+    report_delivered: bool = False
+    final_report: str | None = None
 
     @classmethod
-    def from_record(cls, record: ConversationRecord) -> "ConversationItem":
+    def from_record(
+        cls, record: ConversationRecord, include_report: bool = False
+    ) -> "ConversationItem":
         return cls(
             session_id=record.session_id,
             kind=record.kind,
             state=record.state,
+            name=record.name,
+            agent_type=record.agent_type,
+            parent_session_id=record.parent_session_id,
             root_id=record.root_id,
             auto_flag=record.auto_flag,
             idle_reason=record.idle_reason,
+            rounds_used=record.rounds_used,
+            report_available=record.final_report is not None,
+            report_delivered=record.report_delivered,
+            final_report=record.final_report if include_report else None,
         )
 
 
@@ -141,11 +171,15 @@ class CreateConversationRequest(BaseModel):
     # conversation).
     session_id: str | None = None
     # Resolve this enable_auto_mode call as "enabled" before the first round
-    # (the consent accept). Auto kind only.
+    # (the enable-triggered consent accept). None for the FR2 spawn-consent
+    # accept, where the gating spawn rides pending_tool_calls instead. Auto
+    # kind only.
     enable_tool_call_id: str | None = None
     # Client tool calls to auto-execute first, their results seeding the
-    # burst. Usually empty (the model is instructed to call enable_auto_mode
-    # alone). Auto kind only.
+    # burst. Usually empty for the enable trigger (the model is instructed to
+    # call enable_auto_mode alone); the spawn-consent accept sends the gating
+    # spawn_subagent call FIRST here (+ any siblings), so accepting actually
+    # spawns the child. Auto kind only.
     pending_tool_calls: list[ToolCallInfo] = Field(default_factory=list)
     # Extra messages to prepend (e.g. the first user message on the
     # armed-first-send path). Auto kind only.
@@ -164,9 +198,15 @@ class DeclineAutoModeContext(BaseModel):
     ``enabled=false``. The conversation record's own leaf is authoritative,
     so no trace id rides here."""
 
-    # The enable_auto_mode call that surfaced the consent flow. Resolved as
-    # {"status": "declined"}.
-    gating_tool_call_id: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    # The call that surfaced the consent flow: the enable_auto_mode call, or
+    # (FR2) the spawn_subagent call that required auto mode. Resolved as
+    # {"status": "declined"}. The ``enable_tool_call_id`` spelling is also
+    # accepted, for an open browser tab whose bundle still sends that name.
+    gating_tool_call_id: str = Field(
+        validation_alias=AliasChoices("gating_tool_call_id", "enable_tool_call_id")
+    )
     # Other client tool calls from the same turn the backend is awaiting
     # results for. Normally empty (the model is instructed to call
     # enable_auto_mode alone); each is resolved as denied so the
@@ -182,8 +222,9 @@ class SetAutoModeRequest(BaseModel):
     an interactive continuation turn streaming on the observer channel."""
 
     enabled: bool
-    # Present = the consent-DECLINE flow: the gating call resolves as
-    # declined + denied siblings instead of a plain flag flip.
+    # Present = the consent-DECLINE flow (enable- or spawn-triggered): the
+    # gating call resolves as declined + denied siblings instead of a plain
+    # flag flip.
     decline: DeclineAutoModeContext | None = None
 
 
@@ -222,7 +263,67 @@ async def _observer_stream(session_id: str) -> AsyncGenerator[bytes, None]:
             yield item
 
 
+async def _state_firehose_stream() -> AsyncGenerator[bytes, None]:
+    """Registry-level conversation-state firehose: an initial snapshot (one
+    state event per known conversation) followed by live state events for
+    every conversation. The UI store filters by parent client-side, so an
+    interactive, idle parent still learns a child finished with no per-run
+    stream open."""
+
+    def _snapshot() -> list[bytes]:
+        # Built INSIDE subscribe(), AFTER the firehose subscriber is already
+        # registered on the status bus (see BroadcastBus.subscribe): a
+        # conversation spawned while we read/format list_records() has its
+        # live conversation-state event QUEUED for this subscriber rather than
+        # lost in a read-snapshot-then-subscribe gap (a running child missing
+        # from the store). Materialize eagerly so the whole read is one
+        # synchronous step with no await for an event to slip through.
+        return [
+            format_conversation_state(record)
+            for record in conversation_supervisor.list_records()
+        ]
+
+    async def _with_snapshot() -> AsyncGenerator[bytes, None]:
+        async for payload in conversation_supervisor.status_bus.subscribe(
+            snapshot=_snapshot
+        ):
+            yield payload
+
+    async for item in iter_with_keepalive(_with_snapshot(), KEEPALIVE_SECONDS):
+        if isinstance(item, KeepalivePing):
+            yield b": ping\n\n"
+        else:
+            yield item
+
+
 def connect_conversations_api(app: FastAPI) -> None:
+    @app.get(
+        "/api/conversations",
+        summary="List conversations",
+        tags=["Copilot"],
+        openapi_extra=DENY_AGENT,
+        response_model_exclude_none=True,
+    )
+    async def list_conversations(
+        parent: Annotated[
+            str | None,
+            Query(
+                description=(
+                    "Filter to children of this conversation, by the "
+                    "parent's session id. Omit for all live conversations."
+                )
+            ),
+        ] = None,
+    ) -> list[ConversationItem]:
+        # ``parent`` is a session id — children carry their parent's
+        # ``parent_session_id`` verbatim, so no resolution is needed (an
+        # unknown value yields the correct empty list).
+        if parent is not None:
+            records = conversation_supervisor.children_of(parent)
+        else:
+            records = conversation_supervisor.list_records()
+        return [ConversationItem.from_record(record) for record in records]
+
     @app.post(
         "/api/conversations",
         summary="Create (or adopt/flip) a conversation",
@@ -238,12 +339,14 @@ def connect_conversations_api(app: FastAPI) -> None:
 
         - ``kind="interactive"``: create-or-adopt the conversation for the
           given key. Idempotent: a key resolving to a live record (any kind)
-          returns that record's session id; a cold key (upstream root id /
-          legacy leaf) is adopted VERBATIM — the backend resolves it on the
-          first turn — and rehydrates pending approvals from the persisted
-          trace tail (functional spec §5 restart recovery); a dead ``cv_``
-          key — the record died with a desktop restart — creates a fresh
-          empty record.
+          returns that record's session id; a TERMINAL record's key (a
+          finished sub-agent reopened from history) continues its trace on a
+          fresh interactive record; a cold key (upstream root id / legacy
+          leaf) is adopted VERBATIM — the backend resolves it on the first
+          turn — and rehydrates pending approvals from the persisted trace
+          tail (functional spec §5 restart recovery); a dead ``cv_`` key —
+          the record died with a desktop restart — creates a fresh empty
+          record.
         - ``kind="auto"`` (default): enable auto mode — flip the named
           conversation, or create one for the armed-first-send seed (see
           ``supervisor.enable_auto`` for the entry shapes, including the
@@ -265,13 +368,18 @@ def connect_conversations_api(app: FastAPI) -> None:
             session_key: str | None = None
             if body.session_id is not None:
                 resolved = resolve_conversation_key(body.session_id)
-                if resolved.record is not None:
+                if (
+                    resolved.record is not None
+                    and not resolved.record.state.is_terminal
+                ):
                     # Idempotent adopt: the key names a live conversation.
                     return ConversationCreatedResponse(
                         session_id=resolved.record.session_id
                     )
-                # A cold key rides verbatim; a dead cv_ key yields None (fresh
-                # empty record).
+                # A terminal record's key (a finished sub-agent reopened from
+                # history) resolves to its current leaf so the fresh
+                # interactive record continues that trace; a cold key rides
+                # verbatim; a dead cv_ key yields None (fresh empty record).
                 session_key = resolved.upstream_key
             record = await conversation_supervisor.adopt_interactive(
                 session_key,
@@ -295,6 +403,10 @@ def connect_conversations_api(app: FastAPI) -> None:
                 status_code=404,
                 detail=f"Conversation not found: {body.session_id}",
             )
+        except ValueError as exc:
+            # Sub-agent/terminal records can't enable auto mode (mirrors
+            # set_auto_flag's "invalid" outcome).
+            raise HTTPException(status_code=409, detail=str(exc))
         except ConversationCapError as exc:
             raise HTTPException(status_code=429, detail=str(exc))
         except RuntimeError as exc:
@@ -310,6 +422,20 @@ def connect_conversations_api(app: FastAPI) -> None:
         return ConversationCreatedResponse(session_id=record.session_id)
 
     @app.get(
+        "/api/conversations/events",
+        summary="Stream conversation state events",
+        tags=["Copilot"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def stream_conversation_state_events() -> CancellableStreamingResponse:
+        """Registry-level firehose of ``conversation-state`` events (snapshot
+        then live)."""
+        return CancellableStreamingResponse(
+            content=_state_firehose_stream(),
+            media_type="text/event-stream",
+        )
+
+    @app.get(
         "/api/conversations/{session_id}",
         summary="Get a conversation",
         tags=["Copilot"],
@@ -318,13 +444,17 @@ def connect_conversations_api(app: FastAPI) -> None:
     )
     async def get_conversation(
         session_id: Annotated[str, Path(description="The conversation session id.")],
+        include_report: Annotated[
+            bool,
+            Query(description="Include the final report for terminal runs."),
+        ] = False,
     ) -> ConversationItem:
         record = conversation_supervisor.get(session_id)
         if record is None:
             raise HTTPException(
                 status_code=404, detail=f"Conversation not found: {session_id}"
             )
-        return ConversationItem.from_record(record)
+        return ConversationItem.from_record(record, include_report=include_report)
 
     @app.get(
         "/api/conversations/{session_id}/events",
@@ -361,9 +491,22 @@ def connect_conversations_api(app: FastAPI) -> None:
         session_id: Annotated[
             str, Path(description="The conversation session id to stop.")
         ],
+        cascade: Annotated[
+            bool,
+            Query(
+                description="Also stop every running sub-agent child (kill the"
+                " whole tree). Without it an interactive stop only cancels the"
+                " in-flight turn; auto/sub-agent stops cascade regardless."
+            ),
+        ] = False,
     ) -> Response:
-        """Stop the in-flight turn/burst (auto mode turns off). Idempotent —
-        stopping an unknown or idle conversation is a no-op; always 202."""
+        """Stop the run. Idempotent — stopping an unknown or terminal
+        conversation is a no-op (a child's report, if any, is still delivered
+        to the parent); always 202. ``cascade=true`` stops the children
+        FIRST (their reports are suppressed — the parent is being torn down,
+        same order as session deletion) and then the conversation itself."""
+        if cascade:
+            await conversation_supervisor.stop_children(session_id)
         await conversation_supervisor.stop(session_id)
         return Response(status_code=202)
 
@@ -380,16 +523,17 @@ def connect_conversations_api(app: FastAPI) -> None:
         body: SetAutoModeRequest,
     ) -> Response:
         """Flip the auto-mode flag on an EXISTING conversation (functional
-        spec §2). ``enabled=false`` → disable: cancel a live burst and publish
-        the off state with reason ``user_disabled``; the record then swaps
-        back to its interactive life. ``enabled=false`` + ``decline`` → the
-        consent-decline flow: resolve the pending ``enable_auto_mode`` call as
-        declined + denied siblings via an interactive continuation turn that
-        streams on the observer channel. ``enabled=true`` → enable/re-arm: the
-        record flips to the auto policy (ARMED-only: flag on, no upstream POST
-        — the next message starts the burst). 404 unknown, 409 for a decline
-        racing an in-flight run, 429 when enabling would exceed the
-        concurrency cap."""
+        spec §2). ``enabled=false`` → disable: cancel a live burst, publish
+        the off state with reason ``user_disabled`` and cascade-stop sub-agent
+        children; the record then swaps back to its interactive life.
+        ``enabled=false`` + ``decline`` → the consent-decline flow: resolve
+        the pending gating call — ``enable_auto_mode``, or the FR2
+        spawn-consent ``spawn_subagent`` — as declined + denied siblings via
+        an interactive continuation turn that streams on the observer channel.
+        ``enabled=true`` → enable/re-arm: the record flips to the auto policy
+        (ARMED-only: flag on, no upstream POST — the next message starts the
+        burst). 404 unknown, 409 for sub-agent records / a decline racing an
+        in-flight run, 429 when enabling would exceed the concurrency cap."""
         if not body.enabled and body.decline is not None:
             outcome = conversation_supervisor.decline_auto(
                 session_id,
@@ -399,6 +543,11 @@ def connect_conversations_api(app: FastAPI) -> None:
             if outcome == "not_found":
                 raise HTTPException(
                     status_code=404, detail=f"Conversation not found: {session_id}"
+                )
+            if outcome == "invalid":
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Conversation cannot decline auto mode: {session_id}",
                 )
             if outcome == "busy":
                 raise HTTPException(
@@ -415,6 +564,11 @@ def connect_conversations_api(app: FastAPI) -> None:
         if outcome == "not_found":
             raise HTTPException(
                 status_code=404, detail=f"Conversation not found: {session_id}"
+            )
+        if outcome == "invalid":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Conversation cannot flip auto mode: {session_id}",
             )
         return Response(status_code=202)
 
@@ -515,8 +669,10 @@ def connect_conversations_api(app: FastAPI) -> None:
             )
         message_id = conversation_supervisor.send_message(session_id, body.content)
         if message_id is None:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Auto mode is no longer active: {session_id}",
+            detail = (
+                f"Auto mode is no longer active: {session_id}"
+                if record.kind == "auto" and not record.auto_flag
+                else f"Conversation already finished: {session_id}"
             )
+            raise HTTPException(status_code=409, detail=detail)
         return ConversationMessageAccepted(message_id=message_id)

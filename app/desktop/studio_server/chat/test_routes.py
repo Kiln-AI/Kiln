@@ -59,7 +59,12 @@ def test_list_chat_sessions_forwards_to_kiln(
             "updated_at": "2025-06-15T12:30:00Z",
             "auto_active": False,
             "auto_run_id": None,
+            "agent_type": None,
             "root_id": None,
+            "parent_root_id": None,
+            "is_subagent": False,
+            "subagent_id": None,
+            "subagent_status": None,
         }
     ]
     mock_asyncio_detailed.assert_called_once()
@@ -388,8 +393,8 @@ def _seed_live_record(sup, leaf: str, kind: str = "interactive"):
 def test_list_chat_sessions_rows_key_on_session_ids(
     mock_asyncio_detailed, client, mock_api_key, monkeypatch
 ):
-    # Row id precedence: live record's session id (runtime-known, any kind)
-    # → upstream root_id (cold rows) → the leaf itself
+    # Row id precedence: live record's session id (runtime-known, ANY kind —
+    # parents and children) → upstream root_id (cold rows) → the leaf itself
     # (legacy sessions without session_meta). The browser treats all three as
     # one opaque conversation key.
     sup = _fresh_supervisor(monkeypatch)
@@ -628,12 +633,14 @@ def test_get_chat_session_passes_through_upstream_503(
     "app.desktop.studio_server.chat.routes.delete_session_v1_chat_sessions_session_id_delete.asyncio_detailed",
     new_callable=AsyncMock,
 )
-def test_delete_chat_session_resolves_key_and_stops_live_run(
+def test_delete_chat_session_resolves_key_and_cascades(
     mock_asyncio_detailed, client, mock_api_key, monkeypatch
 ):
     # DELETE accepts the same conversation keys; the upstream DELETE runs on
-    # the record's freshest upstream identity (its current leaf), and a live
-    # conversation's in-flight run is stopped.
+    # the record's freshest upstream identity (its current leaf) while the
+    # orchestration cascade receives the browser's ORIGINAL key
+    # (handle_session_deleted resolves live sids directly and anything else
+    # through the whole-chain index).
     sup = _fresh_supervisor(monkeypatch)
     record = _seed_live_record(sup, "1111111111_leaf")
     mock_asyncio_detailed.return_value = KilnResponse(
@@ -642,11 +649,14 @@ def test_delete_chat_session_resolves_key_and_stops_live_run(
         headers={},
         parsed=None,
     )
-    with patch.object(sup, "stop", new_callable=AsyncMock) as stop:
+    with patch(
+        "app.desktop.studio_server.chat.routes.orchestration.handle_session_deleted",
+        new_callable=AsyncMock,
+    ) as cascade:
         r = client.delete(f"/api/chat/sessions/{record.session_id}")
     assert r.status_code == 204
     assert mock_asyncio_detailed.call_args[1]["session_id"] == "1111111111_leaf"
-    stop.assert_awaited_once_with(record.session_id)
+    cascade.assert_awaited_once_with(record.session_id)
 
 
 @patch(
@@ -657,20 +667,23 @@ def test_delete_chat_session_forwards_cold_keys_verbatim(
     mock_asyncio_detailed, client, mock_api_key, monkeypatch
 ):
     # A cold key deletes by-key upstream (the backend resolves a root to its
-    # current leaf and cleans its pointer server-side); there is no live run
-    # to stop.
-    sup = _fresh_supervisor(monkeypatch)
+    # current leaf and cleans its pointer server-side); the cascade still
+    # gets the original key — a no-op for a truly cold session.
+    _fresh_supervisor(monkeypatch)
     mock_asyncio_detailed.return_value = KilnResponse(
         status_code=HTTPStatus.NO_CONTENT,
         content=b"",
         headers={},
         parsed=None,
     )
-    with patch.object(sup, "stop", new_callable=AsyncMock) as stop:
+    with patch(
+        "app.desktop.studio_server.chat.routes.orchestration.handle_session_deleted",
+        new_callable=AsyncMock,
+    ) as cascade:
         r = client.delete("/api/chat/sessions/1111111119_root")
     assert r.status_code == 204
     assert mock_asyncio_detailed.call_args[1]["session_id"] == "1111111119_root"
-    stop.assert_not_awaited()
+    cascade.assert_awaited_once_with("1111111119_root")
 
 
 @patch(

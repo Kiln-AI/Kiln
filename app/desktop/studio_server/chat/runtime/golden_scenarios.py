@@ -45,14 +45,24 @@ from .models import (
     ConversationRecord,
     InboundMessage,
     PendingApprovalBatch,
+    SubAgentSeed,
     auto_policy,
     build_auto_seed_body,
     interactive_policy,
+    subagent_policy,
 )
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
 
 UPSTREAM_URL = "https://example.test/v1/chat"
+
+# A fixed, fully deterministic report frame (real frames carry a random child
+# id, which would make fixtures unstable). The frame SHAPE is covered by unit
+# tests; these scenarios pin how a drained report rides the continuation.
+REPORT_FRAME = (
+    '<subagent_report id="sa_fixed" agent_type="general" status="completed" '
+    'title="Helper">\nAll done.\n</subagent_report>'
+)
 
 
 # ── Capture helpers ───────────────────────────────────────────────────────────
@@ -74,18 +84,25 @@ async def _run_engine(
     client: FakeUpstreamClient,
     initial_body: dict[str, Any] | None,
     inbox: list[InboundMessage] | None = None,
+    reports: list[str] | None = None,
     decisions: dict[str, bool] | None = None,
 ) -> list[dict[str, Any]]:
     """Drive the engine over the scripted upstream with a minimal io wiring
     (lists instead of the supervisor), mirroring what the supervisor
-    provides: a drain-once inbox and an immediately-deciding approval
-    callback."""
+    provides: drain-once inbox/report queues and an immediately-deciding
+    approval callback."""
     emitted: list[bytes] = []
     inbox_queue = list(inbox or [])
+    report_queue = list(reports or [])
 
     def drain_inbox() -> list[InboundMessage]:
         taken = list(inbox_queue)
         inbox_queue.clear()
+        return taken
+
+    def drain_reports() -> list[str]:
+        taken = list(report_queue)
+        report_queue.clear()
         return taken
 
     async def await_decisions(batch: PendingApprovalBatch) -> dict[str, bool]:
@@ -101,6 +118,7 @@ async def _run_engine(
         emit=emitted.append,
         on_trace=on_trace,
         drain_inbox=drain_inbox,
+        drain_reports=drain_reports,
         await_decisions=await_decisions,
     )
     engine = ConversationEngine(UPSTREAM_URL, {})
@@ -198,7 +216,37 @@ async def _engine_interactive_approval_flow() -> list[dict[str, Any]]:
     )
 
 
-# ── Scenario 3: auto seed + tool round + mid-burst side-note injection ────────
+# ── Scenario 3: interactive mid-stream sub-agent report injection ─────────────
+
+_REPORT_INITIAL_BODY = {"messages": [{"role": "user", "content": "check status"}]}
+
+
+def _report_injection_responses() -> list[FakeUpstreamResponse]:
+    return [
+        FakeUpstreamResponse(
+            chunks=[
+                tool_input_available("tc1", "add", {"a": 2, "b": 2}),
+                trace("tr-1"),
+                finish_tool_calls(),
+            ]
+        ),
+        FakeUpstreamResponse(
+            chunks=[text_delta("noted the report"), trace("tr-2"), finish("stop")]
+        ),
+    ]
+
+
+async def _engine_interactive_report_injection() -> list[dict[str, Any]]:
+    return await _run_engine(
+        policy=interactive_policy(),
+        record=ConversationRecord(kind="interactive"),
+        client=FakeUpstreamClient(_report_injection_responses()),
+        initial_body=dict(_REPORT_INITIAL_BODY),
+        reports=[REPORT_FRAME],
+    )
+
+
+# ── Scenario 4: auto seed + tool round + mid-burst side-note injection ────────
 #
 # The auto seed body (enable_auto_mode resolution + the auto_mode flag) is
 # built by the builder the enable flow uses in production
@@ -237,7 +285,7 @@ async def _engine_auto_seed_and_tool_round() -> list[dict[str, Any]]:
     )
 
 
-# ── Scenario 4: stale disable_auto_mode refusal mid-burst (FR1) ──────────────
+# ── Scenario 5: stale disable_auto_mode refusal mid-burst (FR1) ──────────────
 #
 # Auto mode turns off only by user action: a disable_auto_mode call is
 # refused without side effects — the refusal rides the continuation next to
@@ -270,6 +318,121 @@ async def _engine_auto_disable_stale_refusal() -> list[dict[str, Any]]:
     )
 
 
+# ── Scenario 6: FR2 spawn-consent accept seed ────────────────────────────────
+#
+# Accepting a spawn-triggered consent (interactive spawn_subagent with auto
+# mode off) rides enable_auto with NO enable tool call id: the gating spawn
+# executes first and its {"status": "spawned", ...} result seeds the burst as
+# a plain sibling result (models.build_auto_seed_body — the same builder the
+# route uses). The fixture pins that seed shape — no enable row, the spawn's
+# role:tool result leading the messages, auto_mode riding every continuation —
+# plus one normal tool round showing the burst continuing under the auto
+# policy. Captured from the engine (the reference implementation).
+
+_SPAWN_ACCEPT_RESULT = json.dumps(
+    {"status": "spawned", "subagent_id": "cv_fixed", "name": "helper"},
+    ensure_ascii=False,
+)
+_SPAWN_ACCEPT_SEED_BODY = build_auto_seed_body(
+    trace_id="tr-0",
+    enable_tool_call_id=None,
+    extra_messages=[],
+    sibling_results={"tc_spawn": _SPAWN_ACCEPT_RESULT},
+)
+
+
+def _spawn_consent_accept_responses() -> list[FakeUpstreamResponse]:
+    return [
+        FakeUpstreamResponse(
+            chunks=[
+                tool_input_available("tc1", "add", {"a": 1, "b": 1}),
+                trace("tr-1"),
+                finish_tool_calls(),
+            ]
+        ),
+        FakeUpstreamResponse(
+            chunks=[text_delta("child is working"), trace("tr-2"), finish("stop")]
+        ),
+    ]
+
+
+async def _engine_auto_spawn_consent_accept_seed() -> list[dict[str, Any]]:
+    return await _run_engine(
+        policy=auto_policy(),
+        record=ConversationRecord(kind="auto", auto_flag=True),
+        client=FakeUpstreamClient(_spawn_consent_accept_responses()),
+        initial_body=dict(_SPAWN_ACCEPT_SEED_BODY),
+    )
+
+
+# ── Scenario 7: sub-agent seed body + steer message ──────────────────────────
+
+_SUBAGENT_SEED = SubAgentSeed(
+    agent_type="general",
+    name="eval-helper",
+    prompt="Briefing: do the thing.",
+    parent_trace_id="parent-leaf-1",
+)
+_STEER_TEXT = "also check model B"
+
+
+def _subagent_steer_responses() -> list[FakeUpstreamResponse]:
+    return [
+        FakeUpstreamResponse(
+            chunks=[text_delta("thought I was done"), trace("tr-1"), finish()]
+        ),
+        FakeUpstreamResponse(
+            chunks=[text_delta("real report"), trace("tr-2"), finish()]
+        ),
+    ]
+
+
+async def _engine_subagent_seed_and_steer() -> list[dict[str, Any]]:
+    return await _run_engine(
+        policy=subagent_policy(_SUBAGENT_SEED),
+        record=ConversationRecord(
+            kind="subagent",
+            parent_session_id="cv_parent",
+            name=_SUBAGENT_SEED.name,
+            agent_type=_SUBAGENT_SEED.agent_type,
+        ),
+        client=FakeUpstreamClient(_subagent_steer_responses()),
+        # None: the engine builds the seed body (agent block + kickoff) from
+        # policy.seed — that construction is exactly what this fixture pins.
+        initial_body=None,
+        inbox=[InboundMessage(content=_STEER_TEXT)],
+    )
+
+
+# ── Scenario 8: a <subagent_report> frame on the auto inbox rides UNWRAPPED ──
+#
+# Reports reach auto-flag parents through the same inbound channel as user
+# asides, but must NOT get the side-note frame: it would misdescribe them to
+# the model and break the client's report-panel detection, which keys on the
+# persisted message STARTING with the frame.
+
+
+def _auto_report_inbox_responses() -> list[FakeUpstreamResponse]:
+    return [
+        FakeUpstreamResponse(
+            chunks=[text_delta("waiting for helpers"), trace("tr-1"), finish("stop")]
+        ),
+        FakeUpstreamResponse(
+            chunks=[text_delta("thanks, wrapping up"), trace("tr-2"), finish("stop")]
+        ),
+    ]
+
+
+async def _engine_auto_report_inbox_unwrapped() -> list[dict[str, Any]]:
+    return await _run_engine(
+        policy=auto_policy(),
+        record=ConversationRecord(kind="auto", auto_flag=True),
+        client=FakeUpstreamClient(_auto_report_inbox_responses()),
+        initial_body=dict(_AUTO_SEED_BODY),
+        inbox=[InboundMessage(content=REPORT_FRAME)],
+    )
+
+
 # ── Scenario table ────────────────────────────────────────────────────────────
 
 
@@ -283,8 +446,16 @@ class GoldenScenario:
 SCENARIOS: tuple[GoldenScenario, ...] = (
     GoldenScenario("interactive_tool_round", _engine_interactive_tool_round),
     GoldenScenario("interactive_approval_flow", _engine_interactive_approval_flow),
+    GoldenScenario(
+        "interactive_report_injection", _engine_interactive_report_injection
+    ),
     GoldenScenario("auto_seed_and_tool_round", _engine_auto_seed_and_tool_round),
     GoldenScenario("auto_disable_stale_refusal", _engine_auto_disable_stale_refusal),
+    GoldenScenario(
+        "auto_spawn_consent_accept_seed", _engine_auto_spawn_consent_accept_seed
+    ),
+    GoldenScenario("subagent_seed_and_steer", _engine_subagent_seed_and_steer),
+    GoldenScenario("auto_report_inbox_unwrapped", _engine_auto_report_inbox_unwrapped),
 )
 
 

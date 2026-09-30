@@ -15,8 +15,11 @@ Contract:
   state — the on-subscribe marker callback provides the fresh truth instead.
 - ``subscribe()`` yields the buffer replay, then a fresh on-subscribe marker
   from the supervisor-supplied callback (so an attaching observer immediately
-  reflects running-vs-idle instead of looking done until the next event
-  lands), then goes live.
+  reflects running-vs-idle-vs-terminal instead of looking done until the next
+  event lands), then goes live. If the terminal callback reports the
+  conversation can never produce another event, the stream ends after the
+  marker (a late subscriber to a finished sub-agent gets exactly the terminal
+  status and EOF).
 - Disconnecting a subscriber only unsubscribes; it never touches the
   conversation's supervising task (observer teardown is always side-effect
   free — the core "disconnect never affects the run" invariant).
@@ -30,7 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import AsyncGenerator, Callable
+from typing import AsyncGenerator, Callable, Iterable
 
 from app.desktop.studio_server.chat.constants import KILN_SSE_CHAT_TRACE
 
@@ -87,6 +90,94 @@ class _ByteSubscriber:
 # callback — not a stored value — because the marker must reflect the state
 # at SUBSCRIBE time, not at bus construction time.
 MarkerProvider = Callable[[], bytes | None]
+# Callback reporting whether the conversation can ever produce another event.
+# True ⇒ the stream ends right after the on-subscribe marker.
+TerminalCheck = Callable[[], bool]
+
+
+class BroadcastBus:
+    """Registry-level fan-out of raw SSE bytes — no buffering, no replay, no
+    marker.
+
+    One subscription per UI client (the conversation store's firehose),
+    filtered client-side. It exists so an interactive, idle parent still
+    learns that a child finished — there is no parent stream to ride in that
+    case. Deliberately NOT a ``ByteEventBus``: lifecycle events
+    describe the moment they fire, so replaying stale ones would lie about
+    current state — the firehose route prepends a fresh snapshot instead.
+    """
+
+    def __init__(self) -> None:
+        self._subscribers: set[_ByteSubscriber] = set()
+
+    def publish(self, payload: bytes) -> None:
+        for subscriber in self._subscribers:
+            subscriber.queue.put_nowait(payload)
+
+    async def subscribe(
+        self,
+        *,
+        snapshot: Callable[[], Iterable[bytes]] | None = None,
+    ) -> AsyncGenerator[bytes, None]:
+        """Fan-out subscription, optionally opened with a caller-built snapshot.
+
+        WHY the ``snapshot`` hook exists: the registry firehose must emit an
+        INITIAL per-conversation snapshot and then go live with NO gap. The
+        obvious spelling — build the snapshot, THEN ``async for`` over a bare
+        ``subscribe()`` — registers the subscriber only AFTER the snapshot is
+        done, so a ``conversation-state`` published in that window (a sub-agent
+        spawned the instant the firehose (re)connects) reaches no subscriber
+        and is silently dropped. A RUNNING child whose single spawn-time
+        "running" event lands in that gap is then absent from the UI until it
+        settles or the user refreshes.
+
+        Passing the snapshot builder HERE closes the gap: we register the
+        subscriber FIRST (synchronously, below — no ``await`` separates it from
+        the snapshot call), then run the snapshot. Any publish racing snapshot
+        construction is queued on our subscriber, not lost, and drained right
+        after the snapshot. The bus still owns no buffer — the snapshot is
+        caller-provided state, so this stays a pure fan-out.
+        """
+        subscriber = _ByteSubscriber()
+        # Register BEFORE building the snapshot so a concurrent publish() queues
+        # instead of falling in a subscribe-after-snapshot gap.
+        # Registration is synchronous; nothing awaits between here and the
+        # snapshot call below, so no event can slip in unobserved.
+        self._subscribers.add(subscriber)
+        try:
+            if snapshot is not None:
+                # Emit the snapshot, remembering the exact bytes so we can drop
+                # a redundant re-publish that queued DURING snapshot
+                # construction (byte-identical payload ⇒ same conversation, same
+                # state ⇒ nothing new for the idempotent client). A payload
+                # embeds its session id, so identical bytes can only be the same
+                # conversation.
+                emitted: set[bytes] = set()
+                for payload in snapshot():
+                    emitted.add(payload)
+                    yield payload
+                # Drain the construction-window backlog, deduping byte-identical
+                # states UNTIL the first genuinely-new event. After that first
+                # real event we pass everything through, so a legitimate
+                # transition — even one that flaps back to a snapshot state —
+                # is never suppressed; dedup only ever hides an exact,
+                # redundant duplicate published while we built the snapshot.
+                deduping = True
+                while not subscriber.queue.empty():
+                    item = subscriber.queue.get_nowait()
+                    if isinstance(item, _CloseSentinel):
+                        return
+                    if deduping and item in emitted:
+                        continue
+                    deduping = False
+                    yield item
+            while True:
+                item = await subscriber.queue.get()
+                if isinstance(item, _CloseSentinel):
+                    return
+                yield item
+        finally:
+            self._subscribers.discard(subscriber)
 
 
 class ByteEventBus:
@@ -102,8 +193,10 @@ class ByteEventBus:
         self,
         *,
         marker_provider: MarkerProvider | None = None,
+        terminal_check: TerminalCheck | None = None,
     ) -> None:
         self._marker_provider = marker_provider
+        self._terminal_check = terminal_check
         # Everything emitted since the last persisted kiln_chat_trace
         # snapshot — the gapless re-attach replay window.
         self.buffer: list[bytes] = []
@@ -168,6 +261,11 @@ class ByteEventBus:
                 marker = self._marker_provider()
                 if marker is not None:
                     yield marker
+            # A terminal conversation (one-shot run finished) can never emit
+            # again: end the stream so a late subscriber gets marker + EOF
+            # instead of hanging forever.
+            if self._terminal_check is not None and self._terminal_check():
+                return
             while True:
                 item = await subscriber.queue.get()
                 if isinstance(item, _CloseSentinel):

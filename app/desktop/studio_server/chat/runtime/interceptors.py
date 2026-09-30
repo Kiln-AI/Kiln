@@ -2,9 +2,12 @@
 
 Some "tool calls" are signals to the desktop, never tools to execute:
 ``enable_auto_mode`` asks for consent in an interactive conversation and is a
-no-op while auto mode is already on. The logic lives in ONE ordered chain of
-small functions carried on the policy, so a signal tool registers once for
-every kind.
+no-op while auto mode is already on, an interactive ``spawn_subagent``
+without auto mode asks for the SAME consent with the spawn in the gating role
+(FR2: spawning requires auto mode), and the sub-agent orchestration tools
+must be rejected at depth ≥ 1. The logic lives in ONE ordered chain of small
+functions carried on the policy, so a signal tool registers once for every
+kind.
 
 Every intercepted call still gets ANSWERED (a result JSON fed back on the
 continuation, or a control event that ends the turn) — the provider requires
@@ -14,8 +17,8 @@ dangling corrupts the persisted trace.
 ``disable_auto_mode`` is deliberately NOT a real signal anymore (assistant
 autonomy lifecycle FR1): auto mode turns off only by user action, and the
 upstream toolset does not offer the tool. A call can still arrive (a
-hallucinated call, or an older server), so both chains end in a stale-call
-backstop that refuses it without side effects.
+hallucinated call, or an older server), so both parent chains end in a
+stale-call backstop that refuses it without side effects.
 
 Chain order is PRIORITY: the engine applies the first non-pass result whose
 kind takes over the round (``control``); plain ``resolve`` results just
@@ -59,16 +62,54 @@ ENABLE_AUTO_MODE_RESULT = json.dumps(
 # The refusal result for a STALE disable_auto_mode call (FR1). The tool is not
 # offered upstream — auto mode turns off only by user action — but a call can
 # still arrive (a hallucinated call, or an older server). Refused without side
-# effects: no flag clear, the burst/turn continues. The message doubles
-# as the model's instruction when a user asks it to stop auto mode: direct
-# them to the Stop button. Byte-pinned in test_interceptors.py because it is
-# persisted in traces.
+# effects: no flag clear, no child stops, the burst/turn continues. The
+# message doubles as the model's instruction when a user asks it to stop auto
+# mode: direct them to the Stop button. Byte-pinned in test_interceptors.py
+# because it is persisted in traces.
 DISABLE_AUTO_MODE_STALE_RESULT = json.dumps(
     {
         "status": "not_available",
         "message": "Auto mode can only be turned off by the user (Stop button).",
     },
     ensure_ascii=False,
+)
+
+# Tool results for calls a child must never act on. Orchestration calls are
+# rejected (depth 1: sub-agents cannot manage sub-agents) and the auto-mode
+# signals are no-ops (the child loop is already unattended). The backend
+# doesn't wire these tools into child agent types, so these are defense in
+# depth against a model hallucinating the calls. Byte-pinned in
+# test_interceptors.py because they are persisted in traces.
+DEPTH_LIMIT_RESULT = json.dumps(
+    {"error": "Sub-agents cannot spawn or manage sub-agents."}, ensure_ascii=False
+)
+AUTO_MODE_NOOP_RESULT = json.dumps(
+    {
+        "status": "noop",
+        "detail": "This session already runs autonomously; auto mode does not apply.",
+    },
+    ensure_ascii=False,
+)
+
+# Orchestration tool names — the CANONICAL home (the executor in
+# chat/orchestration.py imports them from here). They live in this module
+# rather than next to the executor because the import chain runs
+# orchestration → supervisor → engine → interceptors: defining them at the
+# leaf keeps the chain acyclic. Names must match the backend's
+# client-visible tool schemas (kiln_server tools/subagent_tools.py) — they
+# are how execute_tool_batch recognizes a call that needs conversation
+# identity instead of the kiln_ai tool registry.
+SPAWN_SUBAGENT_TOOL_NAME = "spawn_subagent"
+GET_SUBAGENT_STATUS_TOOL_NAME = "get_subagent_status"
+WAIT_FOR_SUBAGENTS_TOOL_NAME = "wait_for_subagents"
+STOP_SUBAGENT_TOOL_NAME = "stop_subagent"
+ORCHESTRATION_TOOL_NAMES: frozenset[str] = frozenset(
+    [
+        SPAWN_SUBAGENT_TOOL_NAME,
+        GET_SUBAGENT_STATUS_TOOL_NAME,
+        WAIT_FOR_SUBAGENTS_TOOL_NAME,
+        STOP_SUBAGENT_TOOL_NAME,
+    ]
 )
 
 
@@ -91,10 +132,12 @@ class InterceptContext:
 # How the engine must apply an interception:
 # - "resolve": answer this one call with result_json; the round otherwise
 #   proceeds normally (approval gate, execution of the rest). Examples:
-#   auto's enable no-op, the stale disable backstop.
+#   auto's enable no-op, the stale disable backstop, the child depth guard /
+#   auto-signal noops.
 # - "control": emit control_bytes and end the turn WITHOUT answering the call
 #   here — resolution happens out-of-band (the consent accept/decline
-#   endpoints answer the gating call). Interactive enable_auto_mode consent.
+#   endpoints answer the gating call). Interactive enable_auto_mode consent
+#   and the FR2 spawn-requires-auto gate.
 InterceptKind = Literal["resolve", "control"]
 
 
@@ -142,12 +185,47 @@ def intercept_enable_auto_mode_consent(
     )
 
 
+def intercept_spawn_requires_auto(
+    event: ToolInputAvailableEvent, ctx: InterceptContext
+) -> InterceptResult | None:
+    """Interactive ``spawn_subagent``: spawning requires auto mode (FR2).
+    With ``auto_flag`` off, surface the auto-mode consent flow with the SPAWN
+    call in the gating role and end the turn; accept/decline resolves
+    out-of-band (accept flips the policy via ``enable_auto`` with the spawn
+    riding ``pending_tool_calls``; decline resolves it ``{"status":
+    "declined"}``). Sits AFTER the enable-consent interception: if the model
+    calls enable+spawn together, the enable consent wins and the spawn rides
+    as a sibling.
+
+    A flag that is already on (armed, or a racing user enable) means the
+    spawn may proceed — the interactive chain only runs under the gated
+    policy, so this is the mid-flip window, and the flag IS the consent.
+
+    Multiple spawns in one batch: the engine's priority scan makes the first
+    the gating call; the rest ride as siblings (accept executes them all,
+    decline denies them with the standard denied shape)."""
+    if event.toolName != SPAWN_SUBAGENT_TOOL_NAME:
+        return None
+    if ctx.record.auto_flag:
+        return None
+    siblings = [e for e in ctx.client_events if e is not event]
+    return InterceptResult(
+        kind="control",
+        control_bytes=_format_consent_required_sse(
+            trigger="spawn_subagent",
+            gating_tool_call_id=event.toolCallId,
+            spawn=event.input,
+            siblings=siblings,
+        ),
+    )
+
+
 def intercept_disable_auto_mode_stale(
     event: ToolInputAvailableEvent, ctx: InterceptContext
 ) -> InterceptResult | None:
     """``disable_auto_mode`` is not offered upstream (FR1); a call can still
-    arrive. Refuse without side effects: no flag clear, the burst/turn
-    continues."""
+    arrive. Refuse without side effects: no flag clear, no child stops, the
+    burst/turn continues."""
     if event.toolName != DISABLE_AUTO_MODE_TOOL_NAME:
         return None
     return InterceptResult(kind="resolve", result_json=DISABLE_AUTO_MODE_STALE_RESULT)
@@ -163,14 +241,43 @@ def intercept_enable_auto_mode_noop(
     return InterceptResult(kind="resolve", result_json=ENABLE_AUTO_MODE_RESULT)
 
 
+def intercept_orchestration_depth_guard(
+    event: ToolInputAvailableEvent, ctx: InterceptContext
+) -> InterceptResult | None:
+    """Depth ≥ 1: orchestration calls are rejected before dispatch — sub-agents
+    cannot spawn or manage sub-agents."""
+    if ctx.policy.orchestration_depth < 1:
+        return None
+    if event.toolName not in ORCHESTRATION_TOOL_NAMES:
+        return None
+    return InterceptResult(kind="resolve", result_json=DEPTH_LIMIT_RESULT)
+
+
+def intercept_auto_mode_signals_noop(
+    event: ToolInputAvailableEvent, ctx: InterceptContext
+) -> InterceptResult | None:
+    """Child loop: BOTH auto-mode signals are no-ops — the session already
+    runs autonomously."""
+    if event.toolName not in (ENABLE_AUTO_MODE_TOOL_NAME, DISABLE_AUTO_MODE_TOOL_NAME):
+        return None
+    return InterceptResult(kind="resolve", result_json=AUTO_MODE_NOOP_RESULT)
+
+
 # Per-kind chains, in priority order (see module docstring). The consent
 # interception leads the interactive chain so the consent UI outranks the
-# approval gate; both chains end in the stale-disable backstop.
+# approval gate — and outranks the spawn gate, so an enable+spawn batch
+# surfaces the ENABLE consent with the spawn as a sibling; both parent chains
+# end in the stale-disable backstop.
 INTERACTIVE_INTERCEPTORS: tuple[Interceptor, ...] = (
     intercept_enable_auto_mode_consent,
+    intercept_spawn_requires_auto,
     intercept_disable_auto_mode_stale,
 )
 AUTO_INTERCEPTORS: tuple[Interceptor, ...] = (
     intercept_enable_auto_mode_noop,
     intercept_disable_auto_mode_stale,
+)
+SUBAGENT_INTERCEPTORS: tuple[Interceptor, ...] = (
+    intercept_orchestration_depth_guard,
+    intercept_auto_mode_signals_noop,
 )

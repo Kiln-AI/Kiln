@@ -25,6 +25,7 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
     _get_common_headers,
     get_authenticated_client,
 )
+from app.desktop.studio_server.chat import orchestration
 from app.desktop.studio_server.chat.runtime.models import ConversationRecord
 from app.desktop.studio_server.chat.runtime.supervisor import conversation_supervisor
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
@@ -163,9 +164,18 @@ class ChatSessionListItem(BaseModel):
     # bursts).
     auto_active: bool = False
     auto_run_id: str | None = None
-    # The session's durable id from the upstream session meta (survives app
-    # restarts). None for legacy sessions.
+    # Sub-agent lineage. agent_type/root_id/parent_root_id come from the
+    # upstream session meta (durable, survives app restarts); subagent_id/
+    # subagent_status are joined from the in-memory conversation supervisor
+    # (live runs only): subagent_id carries the child's conversation session
+    # id (cv_…, addressable via /api/conversations) and subagent_status
+    # carries a RunState value.
+    agent_type: str | None = None
     root_id: str | None = None
+    parent_root_id: str | None = None
+    is_subagent: bool = False
+    subagent_id: str | None = None
+    subagent_status: str | None = None
 
 
 class ClientVersionPolicy(BaseModel):
@@ -314,33 +324,43 @@ def connect_chat_api(app: FastAPI) -> None:
                 auto_record = conversation_supervisor.auto_record_for_trace(item.id)
                 auto_active = auto_record is not None
                 auto_run_id = auto_record.session_id if auto_record else None
-                # The durable root id from the upstream session meta rides in
-                # the generated SDK's additional_properties (the SDK model
-                # predates the field; regeneration isn't needed to read it).
-                extra_root = item.additional_properties.get("root_id")
-                root_id = extra_root if isinstance(extra_root, str) else None
-                # Live-record join: resolve the row's leaf trace id (any leaf
-                # the session ever had is indexed) to its live record —
-                # falling back to the row's ROOT id, which is how a record
-                # adopted by root key (no leaf known until its first persist)
-                # still joins its row.
+                # Durable lineage from the upstream session meta rides in the
+                # generated SDK's additional_properties (the SDK model predates
+                # these fields; regeneration isn't needed to read them).
+                extra = item.additional_properties
+                # Live-run join against the in-memory conversation supervisor:
+                # resolve the row's leaf trace id (any leaf the session ever
+                # had is indexed) to its live record — falling back to the
+                # row's ROOT id, which is how a record adopted by root key
+                # (no leaf known until its first persist) still joins its
+                # row. The subagent kind guard matters because parents live
+                # on the same supervisor — a parent's leaf must never stamp
+                # its own row as a sub-agent.
+                extra_root = extra.get("root_id")
                 live_sid = conversation_supervisor.session_for_trace(item.id) or (
-                    conversation_supervisor.session_for_trace(root_id)
-                    if root_id is not None
+                    conversation_supervisor.session_for_trace(extra_root)
+                    if isinstance(extra_root, str)
                     else None
                 )
                 live_record = (
                     conversation_supervisor.get(live_sid) if live_sid else None
                 )
+                child_record = (
+                    live_record
+                    if live_record is not None and live_record.kind == "subagent"
+                    else None
+                )
                 # Row key (see ChatSessionListItem.id): the live record's
-                # session id when the row resolves through the supervisor,
-                # else the durable root_id, else the legacy leaf.
-                # resolve_conversation_key is the exact inverse on
-                # GET/DELETE/adopt.
+                # session id when the row's leaf resolves through the
+                # supervisor (ANY kind — parents and children, terminal
+                # children included, so a finished child's row stays
+                # addressable while its record lives), else the durable
+                # root_id, else the legacy leaf. resolve_conversation_key is
+                # the exact inverse on GET/DELETE/adopt.
                 row_id = (
                     live_record.session_id
                     if live_record is not None
-                    else (root_id or item.id)
+                    else (extra.get("root_id") or item.id)
                 )
                 items.append(
                     ChatSessionListItem.model_validate(
@@ -350,7 +370,16 @@ def connect_chat_api(app: FastAPI) -> None:
                             "updated_at": item.updated_at,
                             "auto_active": auto_active,
                             "auto_run_id": auto_run_id,
-                            "root_id": root_id,
+                            "agent_type": extra.get("agent_type"),
+                            "root_id": extra.get("root_id"),
+                            "parent_root_id": extra.get("parent_root_id"),
+                            "is_subagent": bool(extra.get("is_subagent")),
+                            "subagent_id": (
+                                child_record.session_id if child_record else None
+                            ),
+                            "subagent_status": (
+                                child_record.state.value if child_record else None
+                            ),
                         }
                     )
                 )
@@ -434,5 +463,13 @@ def connect_chat_api(app: FastAPI) -> None:
         )
         if detailed.status_code != HTTPStatus.NO_CONTENT:
             _raise_upstream_error(detailed)
-        if resolved.record is not None:
-            await conversation_supervisor.stop(resolved.record.session_id)
+        # Cascade: stop children spawned by this session (and drop their pending
+        # reports), or stop the sub-agent itself if a child session was deleted.
+        # Keyed by the browser's ORIGINAL key: handle_session_deleted resolves
+        # a live session id directly and anything else through the whole-chain
+        # trace index (which also holds adopted resume keys). (Known corner:
+        # the engine's pre-emit leaf stamp can briefly precede indexing if a
+        # round then fails terminally before its boundary advance — a delete
+        # in that instant misses the cascade for that one unindexed leaf;
+        # accepted, self-heals next turn.)
+        await orchestration.handle_session_deleted(session_id)
