@@ -1,3 +1,4 @@
+import asyncio
 from typing import Annotated, Any
 
 from fastapi import FastAPI, HTTPException, Path, Query
@@ -77,6 +78,8 @@ class UpdateMemoryRequest(BaseModel):
 
 
 def connect_memory_api(app: FastAPI):
+    # The store does blocking disk scans and regex work, so every handler runs
+    # it through asyncio.to_thread: a slow call never blocks the event loop.
     @app.post(
         "/api/projects/{project_id}/memories",
         summary="Save Memory",
@@ -88,11 +91,13 @@ def connect_memory_api(app: FastAPI):
         body: SaveMemoryRequest,
     ) -> Memory:
         try:
-            return _store(project_id).save_memory(
-                overview=body.overview,
-                scope=body.scope,
-                content=body.content,
-                tags=body.tags,
+            return await asyncio.to_thread(
+                lambda: _store(project_id).save_memory(
+                    overview=body.overview,
+                    scope=body.scope,
+                    content=body.content,
+                    tags=body.tags,
+                )
             )
         except ValidationError as e:
             raise _validation_error(e)
@@ -126,12 +131,14 @@ def connect_memory_api(app: FastAPI):
         """List memory summaries newest-first. content_length 0 means the overview
         is the whole memory. Truncation fields nudge how to narrow the results."""
         try:
-            return _store(project_id).list_memories(
-                scope=scope,
-                tags=tags,
-                content_match=content_match,
-                limit=limit,
-                offset=offset,
+            return await asyncio.to_thread(
+                lambda: _store(project_id).list_memories(
+                    scope=scope,
+                    tags=tags,
+                    content_match=content_match,
+                    limit=limit,
+                    offset=offset,
+                )
             )
         except InvalidContentMatchError as e:
             raise HTTPException(status_code=422, detail=str(e))
@@ -152,7 +159,9 @@ def connect_memory_api(app: FastAPI):
     ) -> MemorySummary:
         """Cheap per-scope orientation (counts, newest timestamp, tag cardinalities)
         with no record content. Call before targeted list queries."""
-        return _store(project_id).memory_summary(scope=scope)
+        return await asyncio.to_thread(
+            lambda: _store(project_id).memory_summary(scope=scope)
+        )
 
     @app.get(
         "/api/projects/{project_id}/memories/by_ids",
@@ -165,7 +174,7 @@ def connect_memory_api(app: FastAPI):
         ids: Annotated[list[str], Query(description="The memory ids to fetch.")],
     ) -> list[Memory]:
         """Fetch full memory records by id. Unknown ids are omitted from the result."""
-        return _store(project_id).get_memories(ids)
+        return await asyncio.to_thread(lambda: _store(project_id).get_memories(ids))
 
     @app.patch(
         "/api/projects/{project_id}/memories/{memory_id}",
@@ -186,7 +195,9 @@ def connect_memory_api(app: FastAPI):
             if field in body.model_fields_set
         }
         try:
-            return _store(project_id).update_memory(memory_id, **updates)
+            return await asyncio.to_thread(
+                lambda: _store(project_id).update_memory(memory_id, **updates)
+            )
         except MemoryNotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e))
         except ValidationError as e:
@@ -205,6 +216,6 @@ def connect_memory_api(app: FastAPI):
         """Hard-delete a memory. For junk, wrong, or obsolete memories; use update
         instead if the memory should be corrected rather than removed."""
         try:
-            _store(project_id).delete_memory(memory_id)
+            await asyncio.to_thread(lambda: _store(project_id).delete_memory(memory_id))
         except MemoryNotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e))

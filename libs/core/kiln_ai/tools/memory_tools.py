@@ -13,6 +13,7 @@ discipline and retrieval semantics from the functional spec.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, ClassVar
 
@@ -50,7 +51,11 @@ _TAGS_SCHEMA = {
 
 
 class _MemoryTool(KilnToolInterface):
-    """Base for the six memory tools. Subclasses set name/description/schema and run()."""
+    """Base for the six memory tools. Subclasses set name/description/schema and run().
+
+    The store is synchronous (disk scans, regex). run() is async, so each store
+    call goes through asyncio.to_thread to keep the event loop free.
+    """
 
     _name: ClassVar[str] = ""
     _description: ClassVar[str] = ""
@@ -152,7 +157,8 @@ class SaveMemoryTool(_MemoryTool):
         if not scope:
             return self._error(ValueError("scope is required"))
         try:
-            memory = self._store.save_memory(
+            memory = await asyncio.to_thread(
+                self._store.save_memory,
                 overview=overview,
                 scope=scope,
                 content=kwargs.get("content"),
@@ -200,7 +206,8 @@ class ListMemoriesTool(_MemoryTool):
         self, context: ToolCallContext | None = None, **kwargs
     ) -> ToolCallResult:
         try:
-            result = self._store.list_memories(
+            result = await asyncio.to_thread(
+                self._store.list_memories,
                 scope=kwargs.get("scope"),
                 tags=kwargs.get("tags"),
                 content_match=kwargs.get("content_match"),
@@ -243,7 +250,7 @@ class GetMemoriesTool(_MemoryTool):
         self, context: ToolCallContext | None = None, **kwargs
     ) -> ToolCallResult:
         ids = kwargs.get("ids") or []
-        records = self._store.get_memories(list(ids))
+        records = await asyncio.to_thread(self._store.get_memories, list(ids))
         return self._ok({"memories": [self._record(m) for m in records]})
 
 
@@ -290,7 +297,9 @@ class UpdateMemoryTool(_MemoryTool):
             if key in kwargs
         }
         try:
-            memory = self._store.update_memory(memory_id, **updates)
+            memory = await asyncio.to_thread(
+                self._store.update_memory, memory_id, **updates
+            )
         except (ValidationError, ValueError) as e:
             return self._error(e)
         return self._ok({"memory": self._record(memory)})
@@ -317,7 +326,7 @@ class DeleteMemoryTool(_MemoryTool):
         if not memory_id:
             return self._error(ValueError("id is required"))
         try:
-            self._store.delete_memory(memory_id)
+            await asyncio.to_thread(self._store.delete_memory, memory_id)
         except ValueError as e:
             return self._error(e)
         return self._ok({"deleted": memory_id})
@@ -344,7 +353,9 @@ class MemorySummaryTool(_MemoryTool):
     async def run(
         self, context: ToolCallContext | None = None, **kwargs
     ) -> ToolCallResult:
-        summary = self._store.memory_summary(scope=kwargs.get("scope"))
+        summary = await asyncio.to_thread(
+            self._store.memory_summary, scope=kwargs.get("scope")
+        )
         return self._ok(summary.model_dump(mode="json", exclude_none=True))
 
 

@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -385,3 +386,43 @@ def test_all_endpoints_allow_agent(app):
             method,
             path,
         )
+
+
+# --- threading ---
+
+
+@pytest.mark.parametrize(
+    "method, suffix, body",
+    [
+        ("POST", "", {"overview": "new", "scope": "project"}),
+        ("GET", "", None),
+        ("GET", "/summary", None),
+        ("GET", "/by_ids?ids={id}", None),
+        ("PATCH", "/{id}", {"overview": "edited"}),
+        ("DELETE", "/{id}", None),
+    ],
+)
+def test_handlers_run_the_store_off_the_event_loop(
+    client, project, method, suffix, body
+):
+    """Every handler loads the project and calls the store in a worker thread,
+    where no event loop is running, so disk scans never block the loop."""
+    memory = add(project, "existing", "project", 0)
+    on_loop: list[bool] = []
+
+    def fake_project_from_id(_project_id):
+        try:
+            asyncio.get_running_loop()
+            on_loop.append(True)
+        except RuntimeError:
+            on_loop.append(False)
+        return project
+
+    url = f"/api/projects/{project.id}/memories" + suffix.format(id=memory.id)
+    with patch(
+        "kiln_server.memory_api.project_from_id", side_effect=fake_project_from_id
+    ):
+        resp = client.request(method, url, json=body)
+
+    assert resp.status_code == 200, resp.text
+    assert on_loop == [False]
