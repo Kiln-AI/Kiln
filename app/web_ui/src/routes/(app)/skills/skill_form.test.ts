@@ -62,6 +62,7 @@ describe("SkillForm provenance stamping", () => {
     await submit(getByText, "Add")
 
     await waitFor(() => expect(mockPost).toHaveBeenCalled())
+    expect(mockPost.mock.calls[0][0]).toBe("/api/projects/{project_id}/skills")
     const body = mockPost.mock.calls[0][1].body
     expect(body.provenance).toEqual({ origin: "human" })
   })
@@ -85,6 +86,13 @@ describe("SkillForm provenance stamping", () => {
     await submit(getByText, "Clone")
 
     await waitFor(() => expect(mockPost).toHaveBeenCalled())
+    // A clone goes to the clone endpoint, which copies the resource files.
+    expect(mockPost.mock.calls[0][0]).toBe(
+      "/api/projects/{project_id}/skills/{skill_id}/clone",
+    )
+    expect(mockPost.mock.calls[0][1].params).toEqual({
+      path: { project_id: "proj1", skill_id: "src-skill-id" },
+    })
     const body = mockPost.mock.calls[0][1].body
     expect(body.provenance).toEqual({
       origin: "human",
