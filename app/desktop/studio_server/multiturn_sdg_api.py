@@ -405,6 +405,7 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
             "Generate synthetic-user cases? Uses an LLM call (cost)."
         ),
     )
+    @no_write_lock  # writes nothing; the lock would be held through the remote call
     async def generate_cases(
         project_id: Annotated[
             str, Path(description="ID of the project containing the target task.")

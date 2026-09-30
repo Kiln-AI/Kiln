@@ -279,6 +279,7 @@ def test_provider_name_from_id_case_sensitivity():
         (ModelProviderName.featherless_ai, "Featherless AI"),
         (ModelProviderName.cloudflare, "Cloudflare"),
         (ModelProviderName.typesafe, "TypeSafe AI"),
+        (ModelProviderName.vertex, "Gemini Enterprise Agent Platform"),
         (ModelProviderName.kiln_fine_tune, "Fine Tuned Models"),
         (ModelProviderName.kiln_custom_registry, "Custom Models"),
     ],

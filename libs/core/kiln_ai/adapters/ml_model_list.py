@@ -154,6 +154,7 @@ class ModelName(str, Enum):
     claude_3_7_sonnet = "claude_3_7_sonnet"
     claude_3_7_sonnet_thinking = "claude_3_7_sonnet_thinking"
     claude_sonnet_4 = "claude_sonnet_4"
+    claude_sonnet_5_5 = "claude_sonnet_5_5"
     claude_sonnet_5 = "claude_sonnet_5"
     claude_sonnet_4_6 = "claude_sonnet_4_6"
     claude_sonnet_4_5 = "claude_sonnet_4_5"
@@ -665,12 +666,13 @@ CLAUDE_OPUS_5_ANTHROPIC_THINKING_LEVELS = {
     "Max": "max",
 }
 
-# Claude Opus 5.5 supports the same five effort levels as Opus 5, but adaptive
-# thinking is always on and cannot be disabled (a request with
-# thinking={"type": "disabled"} is a 400 at every effort level), so "none" is
-# omitted. It is also the one Claude model that defaults to medium, not high.
+# Claude Opus 5.5 and Sonnet 5.5 support the same five effort levels as Opus 5
+# and Sonnet 5, but thinking={"type": "disabled"} is a 400 on both at every
+# effort level (Opus 5.5 always thinks; Sonnet 5.5 only offers "between_tools"
+# as its lowest setting), so "none" is omitted. The API default is medium on
+# Opus 5.5 and high on Sonnet 5.5.
 # https://platform.claude.com/docs/en/build-with-claude/effort
-CLAUDE_OPUS_5_5_THINKING_LEVELS = {
+CLAUDE_5_5_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
     "High": "high",
@@ -2427,7 +2429,7 @@ built_in_models: List[KilnModel] = [
                 model_id="anthropic/claude-opus-5.5",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 openrouter_reasoning_object=True,
-                available_thinking_levels=CLAUDE_OPUS_5_5_THINKING_LEVELS,
+                available_thinking_levels=CLAUDE_5_5_THINKING_LEVELS,
                 default_thinking_level="medium",
                 supports_doc_extraction=True,
                 supports_vision=True,
@@ -2448,7 +2450,7 @@ built_in_models: List[KilnModel] = [
                 model_id="claude-opus-5-5",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
-                available_thinking_levels=CLAUDE_OPUS_5_5_THINKING_LEVELS,
+                available_thinking_levels=CLAUDE_5_5_THINKING_LEVELS,
                 default_thinking_level="medium",
                 anthropic_summarized_thinking=True,
                 supports_doc_extraction=True,
@@ -2728,18 +2730,69 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Claude Sonnet 5
+    # Claude Sonnet 5.5
     KilnModel(
         family=ModelFamily.claude,
-        name=ModelName.claude_sonnet_5,
-        friendly_name="Claude 5 Sonnet",
+        name=ModelName.claude_sonnet_5_5,
+        friendly_name="Claude 5.5 Sonnet",
         featured_rank=10,
+        editorial_notes="Anthropic's fast Claude model for everyday coding, agents, and knowledge work. Strong quality at a mid-tier price.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 suggested_for_synthetic_user=True,
+                model_id="anthropic/claude-sonnet-5.5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                openrouter_reasoning_object=True,
+                available_thinking_levels=CLAUDE_5_5_THINKING_LEVELS,
+                default_thinking_level="medium",
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                suggested_for_synthetic_user=True,
+                model_id="claude-sonnet-5-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                available_thinking_levels=CLAUDE_5_5_THINKING_LEVELS,
+                default_thinking_level="medium",
+                anthropic_summarized_thinking=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # Claude Sonnet 5
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_sonnet_5,
+        friendly_name="Claude 5 Sonnet",
+        editorial_notes="Anthropic's previous-generation Sonnet model. Fast and capable.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-sonnet-5",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 openrouter_reasoning_object=True,
@@ -2759,9 +2812,6 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
-                suggested_for_synthetic_user=True,
                 model_id="claude-sonnet-5",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
@@ -5891,8 +5941,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
-                suggested_for_synthetic_user=True,
                 model_id="accounts/fireworks/models/deepseek-v4-flash-0731",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
@@ -9019,6 +9069,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/routers/glm-5p2-fast",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
@@ -9545,6 +9596,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/kimi-k2p6",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 multimodal_capable=True,

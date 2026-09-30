@@ -4,6 +4,7 @@ from typing import Annotated
 import httpx
 from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.synthetic_user.runner import NUM_CASES_MAX
+from kiln_server.git_sync_decorators import no_write_lock
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
 from pydantic import BaseModel, Field
@@ -108,6 +109,7 @@ def connect_batch_plan_api(app: FastAPI):
             "Plan a synthetic batch with Copilot?"
         ),
     )
+    @no_write_lock  # writes nothing; the lock would be held through the remote call
     async def batch_plan(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
