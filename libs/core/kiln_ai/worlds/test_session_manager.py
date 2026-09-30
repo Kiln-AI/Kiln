@@ -56,9 +56,7 @@ class TestRemoteSessions:
         assert tools[0].toolcall_definition()["function"]["name"] == "append_note"
         # Cached per server: a second call does not open a session.
         assert await session_manager.list_tools(remote_world) is tools
-        version = await session_manager.world_version(remote_world, {})
-        assert version == f"{ENV_NAME}@1.0.0"
-        assert await session_manager.world_version(remote_world, {"x": 1}) == version
+        assert await session_manager.world_version(remote_world) == f"{ENV_NAME}@1.0.0"
 
     async def test_start_episode_records_the_reset(self, session_manager, remote_world):
         episode = await session_manager.start_episode(
@@ -91,9 +89,6 @@ class TestRemoteSessions:
         missing = await session_manager.call_tool(episode, "nope", {})
         assert missing.error == "no tool 'nope'"
         assert missing.error_code == "tool_not_found"
-        # Rewards and done are tracked on the live session only.
-        session = session_manager._sessions[episode.episode_id]
-        assert session.rewards == [1.0, 0.0, -1.0] and session.done is True
 
         final = await session_manager.end_episode(episode)
         assert final.final_state is not None
@@ -160,27 +155,46 @@ class TestWorldsWithoutUrl:
         world.save_to_file()
         with pytest.raises(OpenEnvError, match="has no env_url"):
             await session_manager.list_tools(world)
-        assert session_manager.server_for_world_id(world.id) is None
+        assert world.id not in session_manager._servers
 
 
 class TestEnvironmentIdentity:
     async def test_version_keys_content(self, session_manager, remote_world):
-        before = await session_manager.world_version(remote_world, {})
+        before = await session_manager.world_version(remote_world)
         with serve_in_thread(version="2.0.0") as upgraded:
             remote_world.env_url = upgraded
-            after = await session_manager.world_version(remote_world, {})
-            assert after != before
-            server = session_manager.server_for_world_id(remote_world.id)
-            assert server is not None and server.env_version == "2.0.0"
+            after = await session_manager.world_version(remote_world)
+            assert after == f"{ENV_NAME}@2.0.0" != before
 
     async def test_url_change_reconnects(self, session_manager, remote_world):
-        await session_manager.world_version(remote_world, {})
-        first = session_manager.server_for_world_id(remote_world.id)
+        await session_manager.world_version(remote_world)
+        first = session_manager._servers[remote_world.id]
         remote_world.env_url = remote_world.env_url + "/"
         assert (await session_manager._server_for(remote_world)) is first
         remote_world.env_url = f"http://127.0.0.1:{free_port()}"
         with pytest.raises(OpenEnvError, match="did not answer /metadata"):
-            await session_manager.world_version(remote_world, {})
+            await session_manager.world_version(remote_world)
+
+    async def test_refresh_sees_a_new_version_on_the_same_url(
+        self, session_manager, project
+    ):
+        """An environment restarted at a new version on the same URL is seen only
+        after a refresh; a refresh that finds the same version keeps the tools, and one
+        that finds a new version re-lists them."""
+        port = free_port()
+        world = World(
+            name="same url", parent=project, env_url=f"http://127.0.0.1:{port}"
+        )
+        world.save_to_file()
+        with serve_in_thread(port=port):
+            tools = await session_manager.list_tools(world)
+            await session_manager.refresh(world)
+            assert await session_manager.list_tools(world) is tools
+        with serve_in_thread(port=port, version="2.0.0"):
+            assert await session_manager.world_version(world) == f"{ENV_NAME}@1.0.0"
+            await session_manager.refresh(world)
+            assert await session_manager.world_version(world) == f"{ENV_NAME}@2.0.0"
+            assert await session_manager.list_tools(world) is not tools
 
 
 class TestErrorShapeTolerance:

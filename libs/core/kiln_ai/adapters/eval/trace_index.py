@@ -66,8 +66,13 @@ def _stored_trace_key(run: TaskRun) -> TraceKey | None:
 
     Read from the run rather than from whatever the caller believes, because this is what
     the *next* process sees: a fresh index has only the record on disk to go on.
+
+    A world trace whose episode never recorded a final state files nowhere: graders
+    read that state, so a trace without it is never reused, and its job regenerates.
     """
     if run.eval_source is None:
+        return None
+    if run.world_episode is not None and run.world_episode.final_state is None:
         return None
     run_config_id = run.output.source.run_config_id if run.output.source else None
     if not run_config_id:

@@ -166,7 +166,5 @@ class TestTools:
             assert tools[0]["description"] == "Append a note to the episode's notebook."
             assert tools[0]["input_schema"]["required"] == ["note"]
             assert tools[1]["input_schema"] == {"type": "object", "properties": {}}
-            server = session_manager.server_for_world_id(world_id)
-            assert server is not None
-            assert server.env_name == ENV_NAME
-            assert server.env_version == ENV_VERSION
+            server = session_manager._servers[world_id]
+            assert server.world_version == f"{ENV_NAME}@{ENV_VERSION}"

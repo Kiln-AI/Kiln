@@ -7,7 +7,8 @@ Speaks the subset of OpenEnv's HTTP and WebSocket protocol that Kiln's session m
 note and pays a reward, `read_notes` lists them, `explode` fails, and `state` reports
 the notes.
 
-`serve_in_thread` runs it in-process on a free localhost port.
+`serve_in_thread` runs it in-process on a free localhost port. Built on `websockets`,
+a dependency of `kiln_ai` itself, so importing this module needs nothing extra.
 """
 
 from __future__ import annotations
@@ -15,11 +16,13 @@ from __future__ import annotations
 import json
 import socket
 import threading
-import time
 from contextlib import contextmanager
-from typing import Any, Iterator
+from http import HTTPStatus
+from typing import Any, Callable, Iterator
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from websockets.exceptions import ConnectionClosed
+from websockets.http11 import Request, Response
+from websockets.sync.server import ServerConnection, serve
 
 ENV_NAME = "kiln_counter_env"
 ENV_VERSION = "1.0.0"
@@ -143,67 +146,69 @@ class CounterEnv:
         return result
 
 
-def create_app(version: str = ENV_VERSION) -> FastAPI:
-    app = FastAPI()
-
-    @app.get("/health")
-    async def health() -> dict[str, Any]:
-        return {"status": "healthy"}
-
-    @app.get("/metadata")
-    async def metadata() -> dict[str, Any]:
-        return {"name": ENV_NAME, "version": version, "description": "test env"}
-
-    @app.websocket("/ws")
-    async def ws(websocket: WebSocket) -> None:
-        await websocket.accept()
-        env = CounterEnv()
-        try:
-            while True:
-                raw = await websocket.receive_text()
-                message = json.loads(raw)
-                kind = message.get("type")
-                try:
-                    if kind == "reset":
-                        response = {
-                            "type": "observation",
-                            "data": env.reset(**(message.get("data") or {})),
-                        }
-                    elif kind == "step":
-                        response = {
-                            "type": "observation",
-                            "data": env.step(message.get("data") or {}),
-                        }
-                    elif kind == "state":
-                        response = {"type": "state", "data": env.state}
-                    elif kind == "close":
-                        break
-                    else:
-                        response = {
-                            "type": "error",
-                            "data": {
-                                "message": f"Unknown message type: {kind}",
-                                "code": "unknown_type",
-                            },
-                        }
-                except Exception as e:
+def _handle_session(websocket: ServerConnection) -> None:
+    env = CounterEnv()
+    try:
+        for raw in websocket:
+            message = json.loads(raw)
+            kind = message.get("type")
+            try:
+                if kind == "reset":
+                    response = {
+                        "type": "observation",
+                        "data": env.reset(**(message.get("data") or {})),
+                    }
+                elif kind == "step":
+                    response = {
+                        "type": "observation",
+                        "data": env.step(message.get("data") or {}),
+                    }
+                elif kind == "state":
+                    response = {"type": "state", "data": env.state}
+                elif kind == "close":
+                    break
+                else:
                     response = {
                         "type": "error",
-                        "data": {"message": str(e), "code": "error"},
+                        "data": {
+                            "message": f"Unknown message type: {kind}",
+                            "code": "unknown_type",
+                        },
                     }
-                await websocket.send_text(json.dumps(response))
-        except WebSocketDisconnect:
-            pass
-        finally:
-            try:
-                await websocket.close()
-            except Exception:
-                pass
+            except Exception as e:
+                response = {
+                    "type": "error",
+                    "data": {"message": str(e), "code": "error"},
+                }
+            websocket.send(json.dumps(response))
+    except ConnectionClosed:
+        pass
+    finally:
+        websocket.close()
 
-    return app
 
+def _http_routes(
+    version: str,
+) -> Callable[[ServerConnection, Request], Response | None]:
+    """Answer the plain HTTP endpoints; `/ws` falls through to the WebSocket handshake."""
+    bodies = {
+        "/health": {"status": "healthy"},
+        "/metadata": {"name": ENV_NAME, "version": version, "description": "test env"},
+    }
 
-app = create_app()
+    def process_request(
+        connection: ServerConnection, request: Request
+    ) -> Response | None:
+        if request.path == "/ws":
+            return None
+        body = bodies.get(request.path)
+        if body is None:
+            return connection.respond(HTTPStatus.NOT_FOUND, "not found\n")
+        response = connection.respond(HTTPStatus.OK, json.dumps(body))
+        response.headers["Content-Type"] = "application/json"
+        return response
+
+    return process_request
 
 
 def free_port() -> int:
@@ -217,23 +222,18 @@ def serve_in_thread(
     port: int | None = None, version: str = ENV_VERSION
 ) -> Iterator[str]:
     """Run the test environment on localhost in a background thread; yields its base URL."""
-    import uvicorn
-
     port = port or free_port()
-    config = uvicorn.Config(
-        create_app(version), host="127.0.0.1", port=port, log_level="warning"
+    server = serve(
+        _handle_session,
+        "127.0.0.1",
+        port,
+        process_request=_http_routes(version),
+        max_size=None,
     )
-    server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    deadline = time.monotonic() + 15
-    while not server.started:
-        if time.monotonic() > deadline:
-            server.should_exit = True
-            raise RuntimeError("test OpenEnv server did not start")
-        time.sleep(0.02)
     try:
         yield f"http://127.0.0.1:{port}"
     finally:
-        server.should_exit = True
+        server.shutdown()
         thread.join(timeout=10)

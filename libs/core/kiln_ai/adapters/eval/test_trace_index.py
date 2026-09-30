@@ -82,13 +82,15 @@ def save_trace(
 
 
 def episode_for(source_id: str, world_version: str | None) -> WorldEpisode | None:
-    """A world run's episode record, carrying the version the trace key is read from."""
+    """A world run's settled episode record, carrying the version the trace key is read
+    from."""
     if not world_version:
         return None
     return WorldEpisode(
         reset=WorldReset(world_id="w1"),
         episode_id=f"ep_{source_id}",
         world_version=world_version,
+        final_state={"notes": []},
     )
 
 
@@ -549,3 +551,17 @@ def test_stored_world_version_separates_traces(task):
     assert index._paths[("eval_input", "item1", "rc1", "")] == plain.path
     assert index._paths[("eval_input", "item1", "rc1", "syn1:a")] == fixture_a.path
     assert ("eval_input", "item1", "rc1", "syn1:b") not in index._paths
+
+
+def test_unsettled_world_trace_is_never_indexed(task):
+    """A world trace saved before its episode ended records no final state, which is
+    what graders read: it files under no key, so its job regenerates rather than
+    reusing it."""
+    unsettled = episode_for("item1", "syn1:a")
+    assert unsettled is not None
+    save_run(
+        task,
+        eval_source=EvalItemSource(source_type="eval_input", source_id="item1"),
+        world_episode=unsettled.model_copy(update={"final_state": None}),
+    )
+    assert TraceIndex(task)._paths == {}

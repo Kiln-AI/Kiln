@@ -62,18 +62,22 @@ _episode: ContextVar["EpisodeContext | None"] = ContextVar("episode", default=No
 
 
 def get_episode() -> "EpisodeContext | None":
+    """The episode the current task is running against, or None outside a world."""
     return _episode.get()
 
 
 def set_episode(
     ctx: "EpisodeContext | None",
 ) -> Token["EpisodeContext | None"]:
+    """Make `ctx` the current episode; pass the returned token to `reset_episode`."""
     return _episode.set(ctx)
 
 
 def reset_episode(token: Token["EpisodeContext | None"]) -> None:
+    """Restore the episode that was current before the matching `set_episode`."""
     _episode.reset(token)
 
 
 def generate_episode_id() -> str:
+    """A fresh, unique id for a new episode."""
     return f"ep_{uuid.uuid4().hex[:16]}"

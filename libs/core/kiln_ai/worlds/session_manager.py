@@ -15,10 +15,11 @@ An env author writes OpenEnv code and no Kiln code. Every Kiln-side value derive
 what OpenEnv already exposes:
 
     world_version   the environment's reported name and version
-    start_episode     open a `/ws` session and `reset(**reset_kwargs)`
-    call_tool         `step(CallToolAction)`; each observation's reward is kept in memory
-    end_episode       `state`, then close the session
-    release           close the session
+    refresh         re-read `/metadata`, so a new version on the same URL is seen
+    start_episode   open a `/ws` session and `reset(**reset_kwargs)`
+    call_tool       `step(CallToolAction)`
+    end_episode     `state`, then close the session
+    release         close the session
 
 One session per episode; sessions are closed by `end_episode`, so the record on the
 trace is the durable state.
@@ -117,36 +118,54 @@ class WorldSessionManager(Protocol):
     """The seam the eval runner and the tool proxies call. `OpenEnvSessionManager` is the
     implementation; tests substitute a fake."""
 
-    async def world_version(
-        self, world: World, reset_kwargs: dict[str, JsonValue]
-    ) -> str:
+    async def world_version(self, world: World) -> str:
         """Identity of the environment code an episode would run, without starting one.
-        Folded into the trace fingerprint: change it and traces regenerate."""
+        One per environment, whatever an episode is reset with. Folded into the trace
+        fingerprint: change it and traces regenerate."""
         ...
 
-    async def list_tools(self, world: World) -> list[OpenEnvTool]: ...
+    async def refresh(self, world: World) -> None:
+        """Re-read the environment's identity, so an environment restarted at a new
+        version on the same URL is seen as new. Its tools are re-listed when the
+        version changed."""
+        ...
+
+    async def list_tools(self, world: World) -> list[OpenEnvTool]:
+        """The tools the world's environment serves."""
+        ...
 
     async def start_episode(
         self, world: World, reset_kwargs: dict[str, JsonValue]
-    ) -> WorldEpisode: ...
+    ) -> WorldEpisode:
+        """Open a session on the world's environment and reset it with `reset_kwargs`.
+        The session stays live until `end_episode` or `release`."""
+        ...
 
     async def call_tool(
         self, episode: WorldEpisode, tool_name: str, arguments: dict[str, Any]
-    ) -> ToolCallOutcome: ...
+    ) -> ToolCallOutcome:
+        """Call one of the environment's tools inside a live episode."""
+        ...
 
-    async def end_episode(self, episode: WorldEpisode) -> WorldEpisode: ...
+    async def end_episode(self, episode: WorldEpisode) -> WorldEpisode:
+        """Read the environment's final state and close the session. Returns the
+        episode with `final_state` set: the durable record graders read."""
+        ...
 
-    async def release(self, episode: WorldEpisode) -> None: ...
+    async def release(self, episode: WorldEpisode) -> None:
+        """Close an episode's session without reading its state, e.g. after a
+        failed generation."""
+        ...
 
-    async def shutdown(self) -> None: ...
+    async def shutdown(self) -> None:
+        """Close every live session and forget every environment."""
+        ...
 
 
 @dataclass
 class _EnvServer:
     world_id: str
     base_url: str
-    env_name: str
-    env_version: str | None
     world_version: str
     tools: list[OpenEnvTool] | None = None
 
@@ -161,12 +180,13 @@ class _Session:
     episode_id: str
     ws: ClientConnection
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    rewards: list[float] = field(default_factory=list)
-    done: bool = False
 
 
 class OpenEnvSessionManager:
-    """Drives sessions on running OpenEnv environments."""
+    """Drives sessions on running OpenEnv environments.
+
+    What Kiln knows about each environment (its version and tools) is cached per world
+    and re-read when the world's URL changes or `refresh` is called."""
 
     def __init__(self, step_timeout_s: float = STEP_TIMEOUT_S) -> None:
         self._step_timeout_s = step_timeout_s
@@ -176,11 +196,12 @@ class OpenEnvSessionManager:
 
     # ---- protocol ----
 
-    async def world_version(
-        self, world: World, reset_kwargs: dict[str, JsonValue]
-    ) -> str:
+    async def world_version(self, world: World) -> str:
         server = await self._server_for(world)
         return server.world_version
+
+    async def refresh(self, world: World) -> None:
+        await self._server_for(world, refresh=True)
 
     async def list_tools(self, world: World) -> list[OpenEnvTool]:
         server = await self._server_for(world)
@@ -257,11 +278,7 @@ class OpenEnvSessionManager:
                     },
                 },
             )
-            reward = data.get("reward")
-            if isinstance(reward, (int, float)) and not isinstance(reward, bool):
-                session.rewards.append(float(reward))
-            done = bool(data.get("done", False))
-            session.done = session.done or done
+        reward = data.get("reward")
         observation = data.get("observation") or {}
         error, error_code, error_details = read_observation_error(
             observation.get("error")
@@ -269,8 +286,10 @@ class OpenEnvSessionManager:
         return ToolCallOutcome(
             result=observation.get("result"),
             error=error,
-            reward=float(reward) if isinstance(reward, (int, float)) else None,
-            done=done,
+            reward=float(reward)
+            if isinstance(reward, (int, float)) and not isinstance(reward, bool)
+            else None,
+            done=bool(data.get("done", False)),
             error_code=error_code,
             error_details=error_details,
         )
@@ -302,13 +321,11 @@ class OpenEnvSessionManager:
 
     # ---- servers ----
 
-    def server_for_world_id(self, world_id: str) -> _EnvServer | None:
-        return self._servers.get(world_id)
-
-    async def _server_for(self, world: World) -> _EnvServer:
+    async def _server_for(self, world: World, refresh: bool = False) -> _EnvServer:
         """What Kiln knows about the world's environment: its address, reported
         identity and content version. Cached per world; re-read when the world's URL
-        changes."""
+        changes or on `refresh`. A refresh that finds the same version keeps the
+        cached tools; a new version re-lists them."""
         if world.id is None:
             raise ValueError("World must be saved before its environment can be used")
         if not world.env_url:
@@ -321,9 +338,13 @@ class OpenEnvSessionManager:
         lock = self._server_locks.setdefault(world.id, asyncio.Lock())
         async with lock:
             current = self._servers.get(world.id)
-            if current is not None and current.base_url == base_url:
+            if current is not None and current.base_url != base_url:
+                current = None
+            if current is not None and not refresh:
                 return current
             server = await self._connect_remote(world, base_url)
+            if current is not None and current.world_version == server.world_version:
+                server.tools = current.tools
             self._servers[world.id] = server
             return server
 
@@ -341,13 +362,12 @@ class OpenEnvSessionManager:
                 ) from e
         name = str(meta.get("name") or world.name)
         version = meta.get("version")
-        version = str(version) if version is not None else None
         return _EnvServer(
             world_id=world.id,
             base_url=base_url,
-            env_name=name,
-            env_version=version,
-            world_version=_compose_world_version(name, version),
+            world_version=_compose_world_version(
+                name, str(version) if version is not None else None
+            ),
         )
 
     # ---- sessions ----
@@ -457,6 +477,8 @@ def shared_session_manager() -> OpenEnvSessionManager:
 
 
 async def shutdown_shared_session_manager() -> None:
+    """Close the process-wide session manager's sessions; the next call to
+    `shared_session_manager` starts a fresh one."""
     global _shared
     if _shared is not None:
         await _shared.shutdown()

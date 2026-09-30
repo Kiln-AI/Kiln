@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import (
     Any,
     AsyncGenerator,
+    Awaitable,
     Callable,
     Dict,
     Iterable,
@@ -71,7 +72,6 @@ from kiln_ai.datamodel.world import (
 )
 from kiln_ai.run_context import (
     EpisodeContext,
-    get_episode,
     reset_episode,
     set_episode,
 )
@@ -84,9 +84,11 @@ from kiln_ai.synthetic_user.models import (
 from kiln_ai.tools.tool_registry import project_tool_function_name
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
+from kiln_ai.utils.lock import AsyncLockManager
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam, serialize_trace
 from kiln_ai.utils.slow_operation import log_if_slow
 from kiln_ai.worlds.session_manager import (
+    OpenEnvError,
     WorldSessionManager,
     shared_session_manager,
 )
@@ -212,12 +214,12 @@ def _splits_a_turn_into_two_messages(
 
 @dataclass(frozen=True)
 class _WorldTarget:
-    """A resolved world: what a job needs to launch episodes and to
-    key its traces."""
+    """A resolved world: what a job needs to launch episodes and to key its traces.
+    Resolved once per world per eval run, so every job in the run keys its traces by
+    the same environment version."""
 
     world: World
     session_manager: WorldSessionManager
-    reset_kwargs: dict[str, Any]
     tools: dict[str, OpenEnvTool]
     world_version: str
 
@@ -225,10 +227,12 @@ class _WorldTarget:
 @dataclass(frozen=True)
 class _Generation:
     """How a job produces its trace: the key it files under, and the call that makes
-    and persists it. Built per lane, run through the trace index by the caller."""
+    it. `generate` returns the run stamped but unsaved, so the caller saves it exactly
+    once, after anything else the trace must record (a world's ended episode). Built
+    per lane, run through the trace index by the caller."""
 
     key: TraceKey
-    generate: Callable[[], Any]
+    generate: Callable[[], Awaitable[TaskRun]]
 
 
 @dataclass(frozen=True)
@@ -286,10 +290,27 @@ def _uses_world(
     return True
 
 
+def _multi_turn_skip(data: MultiTurnSyntheticEvalInputData) -> _Skip | None:
+    """Why a multi-turn synthetic input can't be driven, or None when it can. Checked
+    before anything is resolved or launched: a skipped item never needs its world's
+    environment, and never pays for a drive."""
+    if data.drive_config is None:
+        return _Skip(
+            SkippedReason.missing_drive_config,
+            "This item has no synthetic user configuration. "
+            "Create a new batch to replace it.",
+        )
+    if not data.first_message or not data.first_message.text:
+        return _Skip(
+            SkippedReason.incompatible_input_shape,
+            "Multi-turn synthetic input has no first_message to open the conversation",
+        )
+    return None
+
+
 def _check_project_versions_of_served_tools(
     run_config: TaskRunConfig,
     item: EvalInput | TaskRun,
-    world_reset: WorldReset,
     world: World,
     served: Iterable[str],
     project: Project | None,
@@ -419,6 +440,10 @@ class EvalRunner:
         # A session manager passed in replaces the process-wide OpenEnv session manager (tests use a
         # fake, or point the real one at a temporary cache).
         self._world_session_manager_override = world_session_manager
+        # One resolution per world per run: the first job re-reads the environment's
+        # metadata, and every later job keys its traces by that same version.
+        self._world_targets: dict[str, _WorldTarget] = {}
+        self._world_target_locks = AsyncLockManager()
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":
@@ -738,10 +763,17 @@ class EvalRunner:
             and job.type == "task_run_eval"
         )
 
-        # World lane. After the type skip (a skipped item must never create
-        # an episode) and before either generation lane, so single-turn and multi-turn
-        # inputs share one lifecycle: the multi-turn drive runs with the episode in
-        # context for every turn, and the leaf trace records it.
+        if is_multi_turn_input:
+            assert isinstance(job.item, EvalInput)
+            assert isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
+            skip = _multi_turn_skip(job.item.data)
+            if skip is not None:
+                return await self._persist_skip(job, skip.reason, skip.detail)
+
+        # World lane. After every skip (a skipped item must never need the environment
+        # or create an episode) and before either generation lane, so single-turn and
+        # multi-turn inputs share one lifecycle: the multi-turn drive runs with the
+        # episode in context for every turn, and the leaf trace records it.
         world_reset = _world_reset_of(job)
         uses_world = job.task_run_config is not None and _uses_world(
             job.task_run_config, job.item, world_reset
@@ -753,29 +785,27 @@ class EvalRunner:
             _check_project_versions_of_served_tools(
                 job.task_run_config,
                 job.item,
-                world_reset,
                 target.world,
                 target.tools,
                 self.task.parent_project(),
             )
-        if uses_world:
-            assert world_reset is not None and job.task_run_config is not None
-            target = await self._resolve_world_target(world_reset)
-            if is_multi_turn_input:
-                assert isinstance(job.item, EvalInput)
-                assert isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
-                generation = self._multi_turn_generation(
-                    job, job.item, job.item.data, world_version=target.world_version
+            if uses_world:
+                if is_multi_turn_input:
+                    assert isinstance(job.item, EvalInput)
+                    assert isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
+                    generation = self._multi_turn_generation(
+                        job,
+                        job.item,
+                        job.item.data,
+                        world_version=target.world_version,
+                    )
+                else:
+                    generation = self._single_turn_generation(
+                        job, evaluator, world_version=target.world_version
+                    )
+                return await self._run_v2_job_in_world(
+                    job, evaluator, target, world_reset, generation
                 )
-            else:
-                generation = self._single_turn_generation(
-                    job, evaluator, world_version=target.world_version
-                )
-            if isinstance(generation, _Skip):
-                return await self._persist_skip(
-                    job, generation.reason, generation.detail
-                )
-            return await self._run_v2_job_in_world(job, evaluator, target, generation)
 
         if is_multi_turn_input:
             # Multi-turn synthetic input: re-drive the conversation fresh
@@ -787,15 +817,11 @@ class EvalRunner:
             assert isinstance(job.item, EvalInput)
             assert isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
             generation = self._multi_turn_generation(job, job.item, job.item.data)
-            if isinstance(generation, _Skip):
-                return await self._persist_skip(
-                    job, generation.reason, generation.detail
-                )
             # A raising drive persists nothing, so the job's retry re-drives; a
             # successful one is on disk before the judge sees it, so a scoring
             # failure re-scores without paying for the conversation again.
             trace, _ = await self._trace_index.get_or_create(
-                generation.key, generation.generate
+                generation.key, lambda: self._generate_and_save(generation)
             )
             eval_task_input = EvalTaskInput.from_trace(trace, job.item)
             result = await evaluator.evaluate(eval_task_input)
@@ -823,25 +849,27 @@ class EvalRunner:
         self,
         job: EvalJob,
         evaluator: BaseV2EvalBridge,
-        target: "_WorldTarget",
-        generation: "_Generation",
+        target: _WorldTarget,
+        world_reset: WorldReset,
+        generation: _Generation,
     ) -> bool:
-        """One job against a episode, for either generation lane.
+        """One job against an episode, for either generation lane.
 
         Generation runs under the trace index's per-key lock with a freshly launched
         episode in context, so racing judges of one item share a single generation and
         a single episode, and every turn of a multi-turn drive sees the same episode.
         The session manager ends the episode (reads the environment's state and closes
-        the session) before the lock is released, and the trace persists the settled
-        record. Grading then runs with the context rebuilt from whatever the trace
-        recorded — the same record for a reused trace — so scorers read the state the
-        generation actually left. The context is reset in `finally` both times: worker
+        the session) before the lock is released, and the trace is saved once, with the
+        settled record: a trace on disk always carries its episode's final state, so an
+        episode that fails to end leaves nothing for a later run to reuse. Grading then
+        runs with the context rebuilt from whatever the trace recorded — the same record
+        for a reused trace — so scorers read the state the generation actually left. The context is reset in `finally` both times: worker
         tasks are reused across jobs.
         """
 
         async def generate() -> TaskRun:
             episode = await target.session_manager.start_episode(
-                target.world, target.reset_kwargs
+                target.world, world_reset.reset_kwargs
             )
             token = set_episode(
                 EpisodeContext(
@@ -863,10 +891,13 @@ class EvalRunner:
             # need (the final state) and the trace persists it, so a
             # concurrent judge reusing this generation sees the settled record.
             ended = await target.session_manager.end_episode(episode)
+            if ended.final_state is None:
+                raise OpenEnvError(
+                    f"Episode {episode.episode_id} in world '{target.world.name}' "
+                    "ended without a final state, so its trace was not saved"
+                )
             run.world_episode = ended
-            async with self._save_context():
-                run.save_to_file()
-            return run
+            return await self._save_trace(run)
 
         trace, _ = await self._trace_index.get_or_create(generation.key, generate)
         episode = trace.world_episode
@@ -890,34 +921,44 @@ class EvalRunner:
         finally:
             reset_episode(token)
 
-    async def _resolve_world_target(self, world_reset: WorldReset) -> "_WorldTarget":
+    async def _resolve_world_target(self, world_reset: WorldReset) -> _WorldTarget:
         """The world an input names, the tools its environment serves, and the trace
-        world_version — or an error: never a silent fallback. The launch config is the
-        environment's to validate, which it does at reset."""
+        world_version — or an error: never a silent fallback. The reset kwargs are the
+        environment's to validate, which it does at reset.
+
+        Resolved once per world per run, re-reading the environment's metadata the
+        first time: an environment restarted at a new version on the same URL keys
+        this run's traces by its new version, never reusing the old version's."""
+        world_id = world_reset.world_id
+        async with self._world_target_locks.acquire(world_id):
+            cached = self._world_targets.get(world_id)
+            if cached is not None:
+                return cached
+            target = await self._load_world_target(world_id)
+            self._world_targets[world_id] = target
+            return target
+
+    async def _load_world_target(self, world_id: str) -> _WorldTarget:
         project = self.task.parent_project()
         if project is None:
             raise ValueError("World resets require the task to belong to a project")
-        world = World.from_id_and_parent_path(world_reset.world_id, project.path)
+        world = World.from_id_and_parent_path(world_id, project.path)
         if world is None:
-            raise ValueError(
-                f"World {world_reset.world_id} not found in project {project.id}"
-            )
+            raise ValueError(f"World {world_id} not found in project {project.id}")
         session_manager = (
             self._world_session_manager_override or shared_session_manager()
         )
+        await session_manager.refresh(world)
         tools = {tool.name: tool for tool in await session_manager.list_tools(world)}
         return _WorldTarget(
             world=world,
             session_manager=session_manager,
-            reset_kwargs=world_reset.reset_kwargs,
             tools=tools,
             # The input's id stands for its contents (including world_reset), and the
             # run config's id for the tools, so the only thing the trace key still
             # needs is the environment's version: it lives on a server, not in the
             # project, and a bump must not reuse traces made against the old code.
-            world_version=await session_manager.world_version(
-                world, world_reset.reset_kwargs
-            ),
+            world_version=await session_manager.world_version(world),
         )
 
     def _single_turn_generation(
@@ -925,14 +966,23 @@ class EvalRunner:
         job: EvalJob,
         evaluator: BaseV2EvalBridge,
         world_version: str | None = None,
-    ) -> "_Generation":
+    ) -> _Generation:
         if job.task_run_config is None:
             raise ValueError("A task_run_eval job requires a run config")
         key = trace_key(item_key(job.item), job.task_run_config.id, world_version)
         return _Generation(
             key=key,
-            generate=lambda: self._generate_and_persist(job, evaluator, key),
+            generate=lambda: self._generate_trace(job, evaluator, key),
         )
+
+    async def _generate_and_save(self, generation: _Generation) -> TaskRun:
+        """Generate outside any world, and make the result durable before scoring."""
+        return await self._save_trace(await generation.generate())
+
+    async def _save_trace(self, run: TaskRun) -> TaskRun:
+        async with self._save_context():
+            run.save_to_file()
+        return run
 
     async def _resolve_trace(
         self, job: EvalJob, evaluator: BaseV2EvalBridge
@@ -942,21 +992,18 @@ class EvalRunner:
         if golden is not None:
             return golden
 
-        if job.task_run_config is None:
-            raise ValueError("A task_run_eval job requires a run config")
-
-        key = trace_key(item_key(job.item), job.task_run_config.id)
+        generation = self._single_turn_generation(job, evaluator)
         # `TraceIndex` logs both outcomes itself — debug on reuse, info on generation
         # (architecture 8) — so the was_generated bool has no reader here.
         trace, _ = await self._trace_index.get_or_create(
-            key, lambda: self._generate_and_persist(job, evaluator, key)
+            generation.key, lambda: self._generate_and_save(generation)
         )
         return trace
 
-    async def _generate_and_persist(
+    async def _generate_trace(
         self, job: EvalJob, evaluator: BaseV2EvalBridge, key: TraceKey
     ) -> TaskRun:
-        """Run the task for this job's item, and make the result durable before scoring.
+        """Run the task for this job's item, stamped for the key but not yet saved.
 
         Stamped from `key` rather than re-derived from the job, so the run files itself
         under exactly the key the index filed it under. A run that disagrees is never
@@ -966,8 +1013,8 @@ class EvalRunner:
         trace = await evaluator.run_task(job.item, run_config_id=run_config_id)
         if trace.id is None:
             # `run_task` builds its adapter with allow_saving=False, and every adapter
-            # clears the id of a run it did not persist (base_adapter.py:346). The runner
-            # is the one persisting here, so it mints the id — the same thing
+            # clears the id of a run it did not persist (base_adapter.py:346). The caller
+            # saves this run, so the runner mints the id — the same thing
             # data_gen_api.py:474 does with an unsaved adapter run.
             #
             # Deliberately not allow_saving=True instead: the adapter would persist the
@@ -979,11 +1026,6 @@ class EvalRunner:
             source_type=source_type,
             source_id=source_id,
         )
-        episode_ctx = get_episode()
-        if episode_ctx is not None:
-            trace.world_episode = episode_ctx.episode
-        async with self._save_context():
-            trace.save_to_file()
         return trace
 
     async def _persist_score(
@@ -1074,9 +1116,9 @@ class EvalRunner:
         eval_input: EvalInput,
         data: MultiTurnSyntheticEvalInputData,
         world_version: str | None = None,
-    ) -> "_Generation | _Skip":
-        """The generation for a task_run_eval over a multi-turn synthetic input, or the
-        skip that stands in for it.
+    ) -> _Generation:
+        """The generation for a task_run_eval over a multi-turn synthetic input that
+        `_multi_turn_skip` has already cleared.
 
         The run config under evaluation drives the agent while the drive
         config stamped on the item plays the synthetic user, so each run
@@ -1088,17 +1130,9 @@ class EvalRunner:
         """
         seed = data.first_message.text if data.first_message else ""
         drive_config = data.drive_config
-        if drive_config is None:
-            return _Skip(
-                SkippedReason.missing_drive_config,
-                "This item has no synthetic user configuration. "
-                "Create a new batch to replace it.",
-            )
-
-        if not seed:
-            return _Skip(
-                SkippedReason.incompatible_input_shape,
-                "Multi-turn synthetic input has no first_message to open the conversation",
+        if drive_config is None or not seed:
+            raise ValueError(
+                f"Eval item {eval_input.id} can't be driven; it should have been skipped"
             )
 
         if job.task_run_config is None:
@@ -1122,7 +1156,7 @@ class EvalRunner:
 
         key = trace_key(item_key(eval_input), job.task_run_config.id, world_version)
 
-        async def drive_and_persist() -> TaskRun:
+        async def drive() -> TaskRun:
             # No app-level timeout on the re-drive: it terminates
             # structurally (the turn ceiling, the adapter's tool-call cap,
             # the model client's per-request timeout). This path runs as a
@@ -1169,13 +1203,13 @@ class EvalRunner:
                     f"The driven conversation for eval item {eval_input.id} is "
                     f"incomplete ({problem}), so it was not saved."
                 )
-            return await self._persist_driven_conversation(
+            return self._driven_conversation_run(
                 key, drive_result, seed=seed, ended_by_su=ended_by_su
             )
 
-        return _Generation(key=key, generate=drive_and_persist)
+        return _Generation(key=key, generate=drive)
 
-    async def _persist_driven_conversation(
+    def _driven_conversation_run(
         self,
         key: TraceKey,
         drive_result: DriveCaseResult,
@@ -1192,13 +1226,14 @@ class EvalRunner:
         index's childless-only seed.
 
         Stamped from `key` rather than re-derived, for the same reason as
-        `_generate_and_persist`: the run must file itself under exactly the key
-        the index filed it under, or it is never found again.
+        `_generate_trace`: the run must file itself under exactly the key
+        the index filed it under, or it is never found again. Returned unsaved;
+        the caller saves it.
         """
         source_type, source_id, run_config_id, _ = key
         leaf = drive_result.chain[-1]
         if leaf.output.source is None:
-            # Fail before anything is saved: a run without an output source can't
+            # Fail before the run is built: a run without an output source can't
             # carry the run_config_id half of its reuse key, so persisting it would
             # strand a paid conversation on disk that the index can never serve.
             raise ValueError(
@@ -1233,14 +1268,10 @@ class EvalRunner:
             ),
             tags=[TAG_SU_ENDED_CONVERSATION] if ended_by_su else [],
         )
-        episode_ctx = get_episode()
-        if episode_ctx is not None:
-            run.world_episode = episode_ctx.episode
-        # The drive runs with allow_saving=False, so nothing touched disk before
-        # this fully-stamped run — no crash window in which a driven conversation
-        # could persist without eval_source and pass for a curated dataset row.
-        async with self._save_context():
-            run.save_to_file()
+        # The drive runs with allow_saving=False, so nothing touches disk before
+        # this fully-stamped run is saved — no crash window in which a driven
+        # conversation could persist without eval_source and pass for a curated
+        # dataset row.
         return run
 
 

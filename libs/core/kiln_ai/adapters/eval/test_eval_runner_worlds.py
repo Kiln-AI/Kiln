@@ -54,7 +54,7 @@ from kiln_ai.run_context import get_episode
 from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
 from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.tool_registry import tool_from_id
-from kiln_ai.worlds.session_manager import OpenEnvSessionManager
+from kiln_ai.worlds.session_manager import OpenEnvError, OpenEnvSessionManager
 from kiln_ai.worlds.testing import ENV_NAME, free_port, serve_in_thread
 
 SCHEMA = {"type": "object", "properties": {"note": {"type": "string"}}}
@@ -330,7 +330,7 @@ STATE_SCORER = (
 )
 
 
-async def test_full_run_isolates_and_records_instances(
+async def test_full_run_isolates_and_records_episodes(
     project, task, world, syn_tool_id, run_config, eval_, session_manager
 ):
     a = _input(task, "note for a", _reset(world, "a", CLOCK_A), id="ei_a")
@@ -395,7 +395,7 @@ async def test_project_run_config_runs_project_tools_without_an_environment(
     project, task, world, project_tool, project_run_config, eval_, session_manager
 ):
     """An input with no environment runs the project tool under a real run config; no
-    session, no instance, no world_version."""
+    session, no episode, no world_version."""
     none = _input(task, "note for none", None, id="ei_none")
     cfg = _config(eval_, ExactMatchProperties(expected_value="real"))
     generator = ToolCallingGenerator(task, build_code_tool_id(project_tool.id))
@@ -451,7 +451,7 @@ async def test_unserved_project_tools_ignore_the_environment(
 ):
     """An input with a world, run under a run config whose only tools
     are real ones the world does not serve, is a plain real-tools job: nothing is
-    launched and no instance or world_version is recorded. The environment only matters to
+    launched and no episode or world_version is recorded. The environment only matters to
     tools that use it."""
     run_config = _run_config(task, [build_code_tool_id(other_tool.id)], name="other rc")
     _input(task, "note", _reset(world, "a"), id="ei_a")
@@ -496,10 +496,10 @@ async def test_world_tool_id_outside_a_world_job_raises(task, syn_tool_id):
         tool_from_id(syn_tool_id, task)
 
 
-async def test_later_judge_reuses_trace_and_instance(
+async def test_later_judge_reuses_trace_and_episode(
     project, task, world, syn_tool_id, run_config, eval_, session_manager
 ):
-    """A judge added later scores the same trace and sees the same instance record,
+    """A judge added later scores the same trace and sees the same episode record,
     without opening a new session."""
     _input(task, "look", _reset(world, "a"), id="ei_a")
     first = _config(eval_, ExactMatchProperties(expected_value="x"), name="first")
@@ -511,9 +511,9 @@ async def test_later_judge_reuses_trace_and_instance(
     original_start = session_manager.start_episode
 
     async def counting_start(world_, config):
-        instance = await original_start(world_, config)
-        launched.add(instance.episode_id)
-        return instance
+        episode = await original_start(world_, config)
+        launched.add(episode.episode_id)
+        return episode
 
     second = _config(eval_, ExactMatchProperties(expected_value="x"), name="second")
     with (
@@ -561,6 +561,63 @@ async def test_changed_environment_version_regenerates_the_trace(
     assert len(traces) == 2
     assert len({t.world_episode.world_version for t in traces}) == 2
     assert len({t.world_episode.episode_id for t in traces}) == 2
+
+
+async def test_new_version_on_the_same_url_regenerates_the_trace(
+    project, task, eval_, session_manager
+):
+    """An environment restarted at a new version on the same URL: each run re-reads
+    the environment's metadata, so the long-lived session manager sees the new version
+    and the item is generated again rather than reused."""
+    port = free_port()
+    world = World(name="Restarted", parent=project, env_url=f"http://127.0.0.1:{port}")
+    world.save_to_file()
+    syn_tool_id = build_world_tool_id(world.id, "append_note")
+    run_config = _run_config(task, [syn_tool_id])
+    _input(task, "note", _reset(world, "a"), id="ei_a")
+    generator = ToolCallingGenerator(task, syn_tool_id)
+
+    for name, version in (("first", "1.0.0"), ("second", "2.0.0")):
+        cfg = _config(eval_, ExactMatchProperties(expected_value="x"), name=name)
+        with (
+            serve_in_thread(port=port, version=version),
+            patch.object(BaseV2EvalBridge, "run_task", new=generator),
+        ):
+            await _drain(_runner([cfg], run_config, session_manager))
+    assert sorted(t.world_episode.world_version for t in _traces(task)) == [
+        f"{ENV_NAME}@1.0.0",
+        f"{ENV_NAME}@2.0.0",
+    ]
+
+
+async def test_failed_episode_end_saves_no_trace(
+    project, task, world, syn_tool_id, run_config, eval_, session_manager
+):
+    """An episode that fails to end leaves nothing on disk: a trace is saved only with
+    its episode's final state, so the retry generates again instead of a later run
+    reusing a trace graders would read no state from."""
+    _input(task, "note", _reset(world, "a"), id="ei_a")
+    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
+    generator = ToolCallingGenerator(task, syn_tool_id)
+
+    async def failing_end(episode):
+        await session_manager.release(episode)
+        raise OpenEnvError("state failed")
+
+    with (
+        patch.object(BaseV2EvalBridge, "run_task", new=generator),
+        patch.object(session_manager, "end_episode", new=failing_end),
+    ):
+        runner = _runner([cfg], run_config, session_manager)
+        with pytest.raises(OpenEnvError, match="state failed"):
+            await runner.run_job(runner.collect_tasks()[0])
+    assert _traces(task) == []
+    assert session_manager._sessions == {}
+
+    with patch.object(BaseV2EvalBridge, "run_task", new=generator), _judge_patch():
+        await _drain(_runner([cfg], run_config, session_manager))
+    (trace,) = _traces(task)
+    assert trace.world_episode.final_state["notes"] == ["note"]
 
 
 async def test_missing_world_is_an_error_not_a_skip(
@@ -635,10 +692,10 @@ async def test_skipped_job_creates_no_session(
     assert _traces(task) == []
 
 
-async def test_concurrent_judges_share_one_generation_and_instance(
+async def test_concurrent_judges_share_one_generation_and_episode(
     project, task, world, syn_tool_id, run_config, eval_, session_manager
 ):
-    """Two scorers on one item, in one run: one generation, one instance, and both
+    """Two scorers on one item, in one run: one generation, one episode, and both
     read the settled state."""
     _input(task, "look", _reset(world, "a"), id="ei_a")
     first = _config(
@@ -662,11 +719,11 @@ async def test_concurrent_judges_share_one_generation_and_instance(
 
 
 # ---------------------------------------------------------------------------
-# Multi-turn: one instance shared by every turn of a drive
+# Multi-turn: one episode shared by every turn of a drive
 # ---------------------------------------------------------------------------
 
 
-async def test_multi_turn_drive_shares_one_instance_across_turns(
+async def test_multi_turn_drive_shares_one_episode_across_turns(
     project, task, world, syn_tool_id, run_config, eval_, session_manager
 ):
     """The drive runs with the episode in context for its whole conversation: every
@@ -699,15 +756,15 @@ async def test_multi_turn_drive_shares_one_instance_across_turns(
         ),
     )
     tool_id = syn_tool_id
-    seen_instances: list[str] = []
+    seen_episodes: list[str] = []
 
     async def fake_drive(*, seed_prompt, target_task, turns, **_):
         chain = []
         for note in ("first note", "second note")[:turns]:
             tool = tool_from_id(tool_id, target_task)
             ctx = get_episode()
-            assert ctx is not None, "the drive must run with the instance in context"
-            seen_instances.append(ctx.episode.episode_id)
+            assert ctx is not None, "the drive must run with the episode in context"
+            seen_episodes.append(ctx.episode.episode_id)
             result = await tool.run(ToolCallContext(episode=ctx.episode), note=note)
             assert not result.is_error, result.output
             chain.append(
@@ -740,12 +797,12 @@ async def test_multi_turn_drive_shares_one_instance_across_turns(
     with patch("kiln_ai.adapters.eval.eval_runner.drive_case_for_eval", new=fake_drive):
         await _drain(_runner([cfg], run_config, session_manager))
 
-    assert len(seen_instances) == 2 and len(set(seen_instances)) == 1
+    assert len(seen_episodes) == 2 and len(set(seen_episodes)) == 1
     traces = _traces(task)
     assert len(traces) == 1
     trace = traces[0]
     assert trace.world_episode is not None
-    assert trace.world_episode.episode_id == seen_instances[0]
+    assert trace.world_episode.episode_id == seen_episodes[0]
     assert trace.world_episode.final_state["notes"] == ["first note", "second note"]
     assert trace.world_episode.final_state["step_count"] == 2
     assert trace.world_episode.world_version == f"{ENV_NAME}@1.0.0"
@@ -754,15 +811,15 @@ async def test_multi_turn_drive_shares_one_instance_across_turns(
     assert run.scores == {"accuracy": 1.0}
     assert session_manager._sessions == {}
 
-    # A second judge reuses the drive and its instance rather than re-driving.
+    # A second judge reuses the drive and its episode rather than re-driving.
     second = _config(eval_, ExactMatchProperties(expected_value="x"), name="second")
     with patch("kiln_ai.adapters.eval.eval_runner.drive_case_for_eval", new=fake_drive):
         await _drain(_runner([second], run_config, session_manager))
-    assert len(seen_instances) == 2
+    assert len(seen_episodes) == 2
     assert len(_traces(task)) == 1
 
 
-async def test_multi_turn_skip_creates_no_instance(
+async def test_multi_turn_skip_creates_no_episode(
     project, task, world, run_config, eval_, session_manager
 ):
     EvalInput(
@@ -784,6 +841,32 @@ async def test_multi_turn_skip_creates_no_instance(
     start_episode.assert_not_called()
     assert session_manager._sessions == {}
     assert _traces(task) == []
+
+
+async def test_multi_turn_skip_needs_no_environment(
+    project, task, eval_, session_manager
+):
+    """A multi-turn item that will be skipped is skipped before its world is resolved,
+    so an environment that is down does not turn the skip into a job error."""
+    world = World(
+        name="Dead", parent=project, env_url=f"http://127.0.0.1:{free_port()}"
+    )
+    world.save_to_file()
+    run_config = _run_config(task, [build_world_tool_id(world.id, "append_note")])
+    EvalInput(
+        id="ei_nodrive",
+        parent=task,
+        data=MultiTurnSyntheticEvalInputData(
+            first_message=UserMessage(text="hi"),
+            synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            drive_config=None,
+        ),
+        world_reset=_reset(world, "a"),
+    ).save_to_file()
+    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
+    await _drain(_runner([cfg], run_config, session_manager))
+    assert cfg.runs(readonly=True)[0].skipped_reason == "missing_drive_config"
+    assert session_manager._servers == {}
 
 
 # ---------------------------------------------------------------------------
@@ -860,7 +943,7 @@ async def test_project_tools_the_world_does_not_serve_are_allowed(
 ):
     """A project tool outside the world's coverage (a web search, a docs lookup) may sit
     beside the world's tools; it runs for real while the world's tools run in the
-    instance."""
+    episode."""
     run_config = _run_config(
         task, [syn_tool_id, build_code_tool_id(other_tool.id)], name="mixed rc"
     )

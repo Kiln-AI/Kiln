@@ -1,4 +1,4 @@
-"""Tools served by a episode.
+"""Tools served by an episode.
 
 A run config lists an environment's tools by id, ``kiln_tool::world::<world_id>::
 <tool_name>``. While an episode of that world is active the registry resolves such an
@@ -25,6 +25,9 @@ from kiln_ai.tools.base_tool import (
 
 
 class OpenEnvToolProxy(KilnToolInterface):
+    """One of a world's tools, called on the live session of the episode in `context`.
+    Its name, description and schema are whatever the environment reported."""
+
     def __init__(
         self,
         tool_id: ToolId,
