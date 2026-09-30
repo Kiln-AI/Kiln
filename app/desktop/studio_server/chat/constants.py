@@ -11,15 +11,12 @@ MAX_TOOL_ROUNDS = 1000
 SSE_TYPE_TOOL_CALLS_PENDING = "tool-calls-pending"
 SSE_TYPE_TOOL_EXEC_START = "kiln-tool-execution-start"
 SSE_TYPE_TOOL_EXEC_END = "kiln-tool-execution-end"
-# Emitted by the OLD interactive loop when the model calls enable_auto_mode
-# (survives until phase 4 ports the interactive path; the runtime interceptor
-# emits the same event via stream_session's formatter). The rest of the old
-# auto lifecycle vocabulary (auto-mode-on/off/idle/state) died in phase 3,
-# replaced by the unified conversation-state event (runtime/sse.py).
+# Emitted when the model calls enable_auto_mode in an interactive
+# conversation: the user must consent before the conversation flips to auto
+# mode (runtime/interceptors.py).
 SSE_TYPE_AUTO_MODE_CONSENT_REQUIRED = "auto-mode-consent-required"
-# Emitted between retry attempts after a transient upstream failure (by BOTH the
-# interactive chat stream and the runtime engine — they share the retry helper),
-# so the UI can show "retrying N/M…" instead of a hard error. Carries
+# Emitted between retry attempts after a transient upstream failure, so the UI
+# can show "retrying N/M…" instead of a hard error. Carries
 # {attempt, max_attempts, status_code?, run_id?}.
 SSE_TYPE_CHAT_RETRY = "kiln-chat-retry"
 

@@ -1,5 +1,5 @@
 """ByteEventBus unit tests: replay buffer semantics, trace-boundary reset,
-on-subscribe marker, terminal end, and observer isolation."""
+on-subscribe marker, close, and observer isolation."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 
 from app.desktop.studio_server.chat.test_fakes import text_delta, trace
 
-from .bus import BroadcastBus, ByteEventBus, extract_trace_id
+from .bus import ByteEventBus, extract_trace_id
 
 MARKER = b'data: {"type": "conversation-state"}\n\n'
 
@@ -112,14 +112,6 @@ class TestSubscribe:
         bus.emit(text_delta("only"))
         assert await _collect_replay(bus) == [text_delta("only")]
 
-    async def test_terminal_stream_ends_after_marker(self):
-        # A late subscriber to a finished one-shot run gets replay + terminal
-        # marker + EOF (never hangs) — old SubAgentEventBus contract.
-        bus = ByteEventBus(marker_provider=lambda: MARKER, terminal_check=lambda: True)
-        bus.emit(text_delta("tail"))
-        received = [payload async for payload in bus.subscribe()]
-        assert received == [text_delta("tail"), MARKER]
-
     async def test_disconnect_only_unsubscribes(self):
         # Observer teardown is side-effect free: other subscribers keep
         # receiving, and emit never fails after a disconnect.
@@ -161,7 +153,7 @@ class TestSubscribe:
         assert second == text_delta("during")
 
     async def test_close_ends_live_subscriber_stream(self):
-        # CR n3: an evicted conversation's bus is closed; a live subscriber
+        # An evicted conversation's bus is closed; a live subscriber
         # must get EOF instead of parking forever on a dead queue.
         bus = ByteEventBus()
         sub = bus.subscribe()
@@ -185,85 +177,6 @@ class TestSubscribe:
         bus.close()
         # No stale replay, no marker — just EOF (the conversation is gone).
         assert [payload async for payload in bus.subscribe()] == []
-
-
-class TestBroadcastBusSnapshot:
-    """The registry firehose's subscribe(snapshot=...) must register the
-    subscriber BEFORE building the snapshot, so a conversation-state published
-    while the snapshot is being built (a sub-agent spawned at that instant) is
-    delivered rather than dropped — the missed-running-child bug."""
-
-    async def test_event_published_during_snapshot_is_delivered(self):
-        # THE gap test: the snapshot builder publishes an event as a side
-        # effect (modelling a spawn that races snapshot construction — i.e. a
-        # conversation created after list_records() would have been read but
-        # before the live drain). Because the subscriber is already registered
-        # when the builder runs, that event must reach us.
-        bus = BroadcastBus()
-        live = b"data: live-during-snapshot\n\n"
-        snap = b"data: snap-a\n\n"
-
-        def _snapshot():
-            bus.publish(live)  # racing publish; subscriber already registered
-            return [snap]
-
-        gen = bus.subscribe(snapshot=_snapshot)
-        got = [await asyncio.wait_for(gen.__anext__(), timeout=1.0)]
-        # The event published DURING snapshot construction is drained right
-        # after the snapshot rather than lost.
-        got.append(await asyncio.wait_for(gen.__anext__(), timeout=1.0))
-        await gen.aclose()
-        assert got == [snap, live]
-
-    async def test_redundant_backlog_duplicate_is_deduped(self):
-        # A byte-identical re-publish of a state already in the snapshot (same
-        # session + state) is dropped: nothing new for the idempotent client.
-        bus = BroadcastBus()
-        snap = b"data: snap-a\n\n"
-        follow = b"data: live-b\n\n"
-
-        def _snapshot():
-            bus.publish(snap)  # redundant duplicate of the snapshot payload
-            return [snap]
-
-        gen = bus.subscribe(snapshot=_snapshot)
-        got = [await asyncio.wait_for(gen.__anext__(), timeout=1.0)]
-        # The duplicate was dropped; a later genuinely-new event still flows.
-        bus.publish(follow)
-        got.append(await asyncio.wait_for(gen.__anext__(), timeout=1.0))
-        await gen.aclose()
-        assert got == [snap, follow]
-
-    async def test_transition_after_snapshot_is_never_suppressed(self):
-        # Dedup must NOT hide a real transition — even one that flaps back to a
-        # snapshot state. Backlog: a differing event (turns dedup off), then a
-        # payload equal to the snapshot; both must be delivered.
-        bus = BroadcastBus()
-        running = b"data: X-running\n\n"
-        idle = b"data: X-idle\n\n"
-
-        def _snapshot():
-            bus.publish(idle)  # a real change (X went idle) — must pass
-            bus.publish(running)  # flap back to the snapshot state — must pass
-            return [running]
-
-        gen = bus.subscribe(snapshot=_snapshot)
-        got = [await asyncio.wait_for(gen.__anext__(), timeout=1.0)]  # snapshot
-        got.append(await asyncio.wait_for(gen.__anext__(), timeout=1.0))
-        got.append(await asyncio.wait_for(gen.__anext__(), timeout=1.0))
-        await gen.aclose()
-        assert got == [running, idle, running]
-
-    async def test_bare_subscribe_still_works(self):
-        # Backward compatibility: subscribe() with no snapshot is the plain
-        # fan-out other callers (the test drain in test_supervisor) still use.
-        bus = BroadcastBus()
-        gen = bus.subscribe()
-        first = asyncio.ensure_future(gen.__anext__())
-        await asyncio.sleep(0.01)
-        bus.publish(b"data: only\n\n")
-        assert await asyncio.wait_for(first, timeout=1.0) == b"data: only\n\n"
-        await gen.aclose()
 
 
 @pytest.mark.asyncio

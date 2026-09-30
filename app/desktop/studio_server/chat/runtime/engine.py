@@ -1,13 +1,10 @@
 """ConversationEngine — THE chat round loop (architecture §3).
 
-One loop replaces three: ``ChatStreamSession.stream()`` (interactive),
-``AutoChatRunner.run()`` (auto mode), and ``SubAgentRunner.run()``
-(sub-agents). All per-round logic already existed, scattered across those
-loops; here each pipeline step carries a comment naming the old code path it
-preserves. The differences between kinds are exclusively:
+One loop drives every conversation kind (interactive turns and auto
+bursts). The differences between kinds are exclusively:
 
-- frozen ``ConversationPolicy`` data (approval gating, framing, one-shot,
-  budgets, backstop message), and
+- frozen ``ConversationPolicy`` data (approval gating, message framing,
+  round budget, graceful-stop behavior), and
 - the policy's ``interceptors`` chain (signal-tool handling).
 
 Design invariants:
@@ -16,27 +13,23 @@ Design invariants:
   Everything flows through the ``EngineIO`` callback bundle; the only network
   the engine drives is the upstream chat POST via the SHARED round primitives
   in ``stream_session.py`` (``iter_round_with_retries`` /
-  ``iter_upstream_round``) — reused, never duplicated, so retry
-  classification and error shapes cannot drift from the old paths while they
-  coexist.
-- **Byte-identical upstream protocol.** Continuation bodies, the ``agent``
-  block lifecycle, ``auto_mode`` propagation, message framings, and tool
-  results must produce persisted traces indistinguishable from today's
-  (functional spec §3) — pinned by test_golden_protocol.py.
-- **Outcome via the record.** The engine records its terminal outcome on the
-  ``ConversationRecord`` (state / idle_reason / auto_flag / final_report),
-  exactly like the old runners recorded ``self.status`` for their
-  supervising registries. The supervisor's single settle path normalizes
-  cancellation/timeout/exception on top and does all publishing.
-- **Stop semantics preserved.** ``io.stop_requested`` is polled at the same
-  boundaries as today (round retries, post-round, post-execution). Hard
-  cancellation (task.cancel) is the supervisor's job.
+  ``iter_upstream_round``), so retry classification and error shapes are
+  defined once.
+- **Stable upstream protocol.** Continuation bodies, ``auto_mode``
+  propagation, message framings, and tool results are pinned by
+  test_golden_protocol.py (functional spec §3).
+- **Outcome via the record.** The engine records its outcome on the
+  ``ConversationRecord`` (state / idle_reason / auto_flag). The supervisor's
+  single settle path normalizes cancellation/exception on top and does all
+  publishing.
+- **Stop semantics.** ``io.stop_requested`` is polled at round retries,
+  post-round, and post-execution. Hard cancellation (task.cancel) is the
+  supervisor's job.
 """
 
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
@@ -44,7 +37,6 @@ import httpx
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
 
 from app.desktop.studio_server.chat.constants import CHAT_TIMEOUT
-from app.desktop.studio_server.chat.debug_log import chat_debug_log
 from app.desktop.studio_server.chat.stream_session import (
     RetryRoundResult,
     ToolCallInfo,
@@ -63,13 +55,12 @@ from .interceptors import (
     InterceptResult,
 )
 from .models import (
+    MAX_ROUNDS_MESSAGE,
     ConversationPolicy,
     ConversationRecord,
     InboundMessage,
     PendingApprovalBatch,
     RunState,
-    build_subagent_seed_body,
-    kickoff_message,
 )
 from .sse import (
     format_error,
@@ -77,7 +68,6 @@ from .sse import (
     format_tool_exec_end,
     format_tool_exec_start,
     format_tool_output,
-    format_user_message,
 )
 
 logger = logging.getLogger(__name__)
@@ -91,9 +81,7 @@ logger = logging.getLogger(__name__)
 # turn that still carries tool calls, so it answers AND keeps working. It does
 # NOT apply to seed messages (the task itself) or to a message that wakes an
 # idle run (those ride unframed — see the supervisor's idle re-arm).
-# Canonical (and only) home since phase 3 deleted chat/auto/runner.py's
-# _SIDE_NOTE_REMINDER; byte-pinned in test_interceptors.py because it is
-# persisted in traces.
+# Byte-pinned in test_interceptors.py because it is persisted in traces.
 SIDE_NOTE_REMINDER = (
     "<system-reminder>"
     "This message arrived from the user while you are working autonomously in auto "
@@ -104,45 +92,17 @@ SIDE_NOTE_REMINDER = (
     "</system-reminder>"
 )
 
-# Framing for a user message injected into a RUNNING sub-agent from the UI.
-# Without it the model reads the message as a fresh conversational turn,
-# replies in plain text, and that text turn would end the run as COMPLETED
-# with the reply as its "report".
-# Canonical copy of chat/subagents/runner.py's _STEER_REMINDER (deleted in
-# phase 2); byte-identical because it is persisted in traces.
-STEER_REMINDER = (
-    "<system-reminder>"
-    "This message was sent by the user overseeing your background run. "
-    "Incorporate the guidance and continue working in the same turn — do not "
-    "end your turn just to reply. End only when your job (as adjusted) is done, "
-    "with your final report."
-    "</system-reminder>"
-)
-
 
 def _frame_inbox_message(
     msg: InboundMessage, policy: ConversationPolicy
 ) -> dict[str, Any]:
-    """Frame a drained inbox message per the policy (old _side_note_message /
-    _steer_message / raw interactive)."""
+    """Frame a drained inbox message per the policy (side note for auto,
+    raw for interactive)."""
     base = msg.as_chat_message()
-    # `or ""` so an explicit None content can't become the string "None"
-    # (defensive parity with the old auto helper).
+    # `or ""` so an explicit None content can't become the string "None".
     content = str(base.get("content") or "")
     if policy.message_framing == "side_note":
-        # Sub-agent completion reports ride the same inbound channel (an
-        # auto-flag parent receives them as inbox messages) but are NOT user
-        # asides: the side-note frame would misdescribe them to the model AND
-        # break the client's report-panel detection (which keys on the
-        # persisted message starting with the report frame). Deliver them
-        # unwrapped. (Old auto _side_note_message behavior.)
-        if content.startswith("<subagent_report"):
-            return {**base, "content": content}
         return {**base, "content": f"{SIDE_NOTE_REMINDER}\n\n{content}"}
-    if policy.message_framing == "steer":
-        # Old sub-agent _steer_message applied the frame unconditionally
-        # (children never receive report frames), preserved as-is.
-        return {**base, "content": f"{STEER_REMINDER}\n\n{content}"}
     return base
 
 
@@ -150,8 +110,7 @@ def _append_messages(
     body: dict[str, Any], messages: list[dict[str, Any]]
 ) -> dict[str, Any]:
     """Append messages after whatever the continuation already carries (they
-    come last so the backend reads them as the latest input — old
-    _append_user_messages contract)."""
+    come last so the backend reads them as the latest input)."""
     existing = list(body.get("messages", []))
     existing.extend(messages)
     return {**body, "messages": existing}
@@ -167,7 +126,6 @@ class EngineIO:
     """
 
     # Push one SSE byte payload to the conversation's bus + replay buffer.
-    # (Old runners' emit callback; the interactive loop's `yield`.)
     emit: Callable[[bytes], None]
     # Called with each newly persisted leaf trace id, AFTER the engine updated
     # record.current_leaf_trace_id / seen_trace_ids (the record is the run
@@ -176,34 +134,22 @@ class EngineIO:
     on_trace: Callable[[str], Awaitable[None]] | None = None
     # Atomically take (and clear) user messages queued since the last drain.
     # The supervisor echoes messages at ENQUEUE time; the engine never
-    # re-echoes drained messages (echo-once — old CR Moderate 1).
+    # re-echoes drained messages (echo-once).
     drain_inbox: Callable[[], list[InboundMessage]] = field(default=lambda: [])
-    # Take (and mark delivered) framed sub-agent reports queued for THIS
-    # conversation. Interactive-parent channel only: the supervisor routes an
-    # auto-flag parent's reports through the inbox instead (waking an idle
-    # burst), so the two channels can never double-deliver.
-    drain_reports: Callable[[], list[str]] = field(default=lambda: [])
     # Park on a pending approval batch until the user decides; returns the
     # decision map. Only gated policies call this. No upstream connection is
     # held while parked — the run task simply awaits the batch event.
     await_decisions: (
         Callable[[PendingApprovalBatch], Awaitable[dict[str, bool]]] | None
     ) = None
-    # Graceful-stop intent, polled at the same boundaries the old runners
-    # polled self.stop_requested. (The old interactive loop had no stop
-    # polling; its io returns False forever, so behavior is unchanged there.)
+    # Graceful-stop intent, polled at round retries, post-round, and
+    # post-execution.
     stop_requested: Callable[[], bool] = field(default=lambda: False)
-    # Opaque conversation identity for sub-agent orchestration tool calls,
-    # passed straight through to execute_tool_batch (which dispatches
-    # spawn/status/wait/stop). None resolves those calls to an "unavailable"
-    # error — correct for phase 1 where orchestration still targets the old
-    # registries; phase 2 retargets it onto the supervisor.
-    orchestration_ctx: Any | None = None
 
 
 class ConversationEngine:
-    """Drives the chat round loop for ONE run (an interactive turn, an auto
-    burst, or a whole sub-agent run) against the upstream chat endpoint.
+    """Drives the chat round loop for ONE run (an interactive turn or an
+    auto burst) against the upstream chat endpoint.
 
     A plain class: construct with the upstream target, call ``run`` once per
     run. The engine is stateless across runs — all conversation state lives on
@@ -226,74 +172,31 @@ class ConversationEngine:
         """Run one turn/burst/run to its natural end, recording the outcome on
         ``record``. Raises only on unexpected internal errors (the supervisor
         classifies those per architecture §9); upstream errors are handled
-        in-band exactly like the old loops.
+        in-band (error SSE + idle settle).
 
-        ``resume_batch`` (phase 4) resumes a conversation whose pending
-        approval batch had NO parked run task — the restart/refresh recovery
-        contract (architecture §2: the batch is reconstructible from the
-        persisted trace tail) and the graceful-stop leftover-calls shape.
-        Instead of opening with an upstream round, the run starts by
-        executing the already-decided batch and continuing from its stored
-        round context — the exact flow the OLD ``POST /api/chat/execute-tools``
-        endpoint drove (execute with decisions → continuation body of
-        role:tool results → fresh ChatStreamSession), now in-process.
+        ``resume_batch`` resumes a conversation whose pending approval batch
+        had NO parked run task — the restart/refresh recovery contract
+        (architecture §2: the batch is reconstructible from the persisted
+        trace tail) and the graceful-stop leftover-calls shape. Instead of
+        opening with an upstream round, the run starts by executing the
+        already-decided batch and continuing from its stored round context.
         """
         if resume_batch is not None:
             body = await self._execute_resumed_batch(io, resume_batch)
         elif initial_body is not None:
             body = dict(initial_body)
         else:
-            # Child creation (policy.seed): the engine owns the first POST —
-            # agent block + kickoff message (old SubAgentRunner.run preamble).
-            if policy.seed is None:
-                raise ValueError(
-                    "ConversationEngine.run needs an initial_body or a policy seed"
-                )
-            body = build_subagent_seed_body(policy.seed)
-            # Echo the kickoff message onto the run's stream: the observer SSE
-            # only carries response events (the kickoff rides the request
-            # body), so without this an observer attaching before the first
-            # snapshot persists would never see the sub-agent's instructions.
-            # The stable id lets a client dedupe the echo against a transcript
-            # it already shows (old id was kickoff-<subagent_id>; the handle
-            # is the session id now).
-            io.emit(
-                format_user_message(
-                    kickoff_message(policy.seed.name, policy.seed.prompt),
-                    f"kickoff-{record.session_id}",
-                )
-            )
+            raise ValueError("ConversationEngine.run needs an initial_body")
 
         record.state = RunState.RUNNING
         # Seed the error-correlation trace id from the body (the conversation
-        # continuation leaf) or the record — same seeding the old loops used.
+        # continuation leaf) or the record.
         trace_id_for_error: str | None = (
             body.get("trace_id") or record.current_leaf_trace_id
-        )
-        chat_debug_log(
-            "engine_run_started",
-            conversation_id=record.session_id,
-            kind=record.kind,
-            body_keys=sorted(body.keys()),
-            message_count=len(body.get("messages", [])),
-            resume_batch=resume_batch is not None,
         )
 
         async with httpx.AsyncClient(timeout=CHAT_TIMEOUT) as client:
             for _ in range(policy.max_rounds):
-                # rounds_used is one-shot reporting (old SubAgentRunner
-                # counted every attempted round, including the failing one);
-                # harmless bookkeeping for the other kinds.
-                record.rounds_used += 1
-                chat_debug_log(
-                    "upstream_round_started",
-                    conversation_id=record.session_id,
-                    round=record.rounds_used,
-                    trace_id=body.get("trace_id"),
-                    session_key=body.get("session_id"),
-                    message_count=len(body.get("messages", [])),
-                )
-
                 # ── 1. Round (shared retry helper — identical transient-error
                 # classification/backoff for every kind). ────────────────────
                 result = RetryRoundResult()
@@ -304,15 +207,14 @@ class ConversationEngine:
                     body,
                     trace_id_for_error,
                     result,
-                    # Old protocol detail: retry events carried a run id on the
-                    # auto/sub-agent streams but not the interactive one. The
-                    # id is the session id in the unified vocabulary.
+                    # Retry events carry the session id as run_id on auto
+                    # streams only.
                     run_id=(
                         record.session_id if policy.retry_events_carry_run_id else None
                     ),
                     stop_requested=io.stop_requested,
                 ):
-                    # Early ROOT/leaf stamp (phase-5 CR LOW 3): the parser sets
+                    # Early ROOT/leaf stamp: the parser sets
                     # round_state.trace_id BEFORE the kiln_chat_trace payload
                     # is yielded (iter_upstream_round parses each chunk, then
                     # forwards its lines), so stamping here — before the emit —
@@ -336,32 +238,28 @@ class ConversationEngine:
                     trace_id_for_error = round_state.trace_id_for_error
                 if result.status == "stopped":
                     # Stop pressed mid-retry: the helper surfaced no error;
-                    # settle stopped (old auto USER_STOPPED / sub-agent STOPPED).
-                    self._finish_stopped(record, policy)
+                    # settle stopped.
+                    self._finish_stopped(record)
                     return
                 if result.status != "ok" or round_state is None:
                     # Non-retryable or retry-exhausted upstream error; the
-                    # error SSE was already emitted. One-shot runs FAIL (old
-                    # sub-agent), others idle with reason "error" — the flag
-                    # stays on so the user can retry or stop (old auto).
-                    self._finish_error(record, policy)
+                    # error SSE was already emitted. The run idles with reason
+                    # "error" — the flag stays on so the user can retry or
+                    # stop.
+                    self._finish_idle(record, "error")
                     return
 
                 # ── 2. Trace advance. ────────────────────────────────────────
-                if policy.one_shot and round_state.assistant_text.strip():
-                    # Last assistant text seen becomes the report (or its
-                    # partial-output base) on any end — old SubAgentRunner.
-                    record.final_report = round_state.assistant_text
                 if round_state.trace_id:
                     # Single-writer rule: the run loop owns the leaf pointer.
                     # A FRESH conversation's first persisted snapshot is its
                     # durable root (backend stamps session_meta.root_id =
                     # snapshot_id on the first persist — see
                     # stream_orchestration.save_chat_snapshot), so stamp
-                    # record.root_id (phase 5: the browser's restart-recovery
-                    # key). Normally already done by the early pre-emit stamp
-                    # in the round loop above (CR LOW 3) — this is the
-                    # boundary backstop, idempotent via the None check.
+                    # record.root_id (the browser's restart-recovery key).
+                    # Normally already done by the early pre-emit stamp in the
+                    # round loop above — this is the boundary backstop,
+                    # idempotent via the None check.
                     # Adopted records (seen_trace_ids seeded at adopt) joined
                     # mid-chain and never stamp from a trace.
                     if record.root_id is None and not record.seen_trace_ids:
@@ -372,21 +270,13 @@ class ConversationEngine:
                     if io.on_trace is not None:
                         await io.on_trace(round_state.trace_id)
                     # Rebuild the continuation base: continue from the new
-                    # leaf with empty messages. The `agent` block is dropped —
-                    # it is first-POST-only (the backend 400s agent + trace_id
-                    # together; old SubAgentRunner rebuilt minimally for the
-                    # same reason). `session_id` (a resume-by-key first POST,
-                    # phase 6) is dropped for the same lifecycle reason: once
-                    # a real leaf exists the turn continues by trace_id, and
-                    # the backend 400s the two keys together. Everything else
-                    # ({**body}) is preserved so auto_mode and any extra
-                    # interactive body fields keep riding every continuation
-                    # (old interactive/auto rebuild).
-                    body = {
-                        k: v
-                        for k, v in body.items()
-                        if k not in ("agent", "session_id")
-                    }
+                    # leaf with empty messages. `session_id` (a resume-by-key
+                    # first POST) is dropped: once a real leaf exists the turn
+                    # continues by trace_id, and the backend 400s the two keys
+                    # together. Everything else ({**body}) is preserved so
+                    # auto_mode and any extra body fields keep riding every
+                    # continuation.
+                    body = {k: v for k, v in body.items() if k != "session_id"}
                     body = {**body, "trace_id": round_state.trace_id, "messages": []}
 
                 # ── 3/4. Natural end (no tool-call finish boundary). ─────────
@@ -395,25 +285,16 @@ class ConversationEngine:
                         # Graceful stop on a plain-text final round: finish
                         # what streamed, then settle stopped — nothing to
                         # approve, and queued inbox is dropped (a stop never
-                        # starts a new round; old auto behavior).
-                        self._finish_stopped(record, policy)
+                        # starts a new round).
+                        self._finish_stopped(record)
                         return
                     # Drain-before-idle: a message sent the instant the run
                     # would settle must not be dropped — continue with it as a
-                    # fresh (framed) user turn instead of settling. (Old auto
-                    # drain-before-idle + sub-agent drain-before-finish; the
+                    # fresh (framed) user turn instead of settling. The
                     # interactive inbox is fed by the primary tab's mid-turn
-                    # sends and by other tabs.)
+                    # sends and by other tabs.
                     injected = io.drain_inbox()
                     if injected:
-                        chat_debug_log(
-                            "inbox_injected",
-                            conversation_id=record.session_id,
-                            round=record.rounds_used,
-                            site="drain_before_idle",
-                            count=len(injected),
-                            message_ids=[m.id for m in injected],
-                        )
                         body = {
                             **body,
                             "messages": [
@@ -421,15 +302,8 @@ class ConversationEngine:
                             ],
                         }
                         continue
-                    if policy.one_shot:
-                        # Plain-text terminal turn = the report (final_report
-                        # already captured above); natural completion.
-                        record.state = RunState.COMPLETED
-                        return
                     # Assistant emitted only text (a question or a wrap-up):
-                    # the run settles idle awaiting the user (old auto
-                    # "asked_user"; the old interactive stream simply ended
-                    # its turn here, which is the same IDLE in the new model).
+                    # the run settles idle awaiting the user.
                     self._finish_idle(record, "asked_user")
                     return
 
@@ -446,11 +320,10 @@ class ConversationEngine:
                 )
 
                 # Priority scan: the first interceptor (in chain order) whose
-                # result takes over the round wins — this reproduces the old
-                # `next(...)` scans (the interactive consent interception
-                # always outranked the rest of the batch). Plain resolves are
-                # collected afterwards; interceptors are pure so re-invoking
-                # them below is safe.
+                # result takes over the round wins (the interactive consent
+                # interception outranks the rest of the batch). Plain resolves
+                # are collected afterwards; interceptors are pure so
+                # re-invoking them below is safe.
                 takeover: tuple[ToolInputAvailableEvent, InterceptResult] | None = None
                 for interceptor in policy.interceptors:
                     for e in client_events:
@@ -464,17 +337,15 @@ class ConversationEngine:
                 if takeover is not None:
                     _, res = takeover
                     # "control" is the only takeover kind: the interactive
-                    # consent interceptions (enable_auto_mode consent, or the
-                    # FR2 spawn-requires-auto gate) — emit the
+                    # enable_auto_mode consent interception — emit the
                     # consent-required control event and END the turn without
                     # executing anything. The gating call is resolved
                     # out-of-band by the accept/decline flow, which flips the
-                    # policy on accept — old ChatStreamSession enable branch.
+                    # policy on accept.
                     assert res.kind == "control" and res.control_bytes is not None
                     io.emit(res.control_bytes)
-                    # The old stream just ended here; in the unified model
-                    # that is an idle turn boundary (the consent-pending
-                    # bookkeeping is the enable endpoint's job, phase 3).
+                    # An idle turn boundary: the consent-pending bookkeeping
+                    # is the enable endpoint's job.
                     record.state = RunState.IDLE
                     return
 
@@ -483,22 +354,20 @@ class ConversationEngine:
                 # execute this round's client tool calls and do NOT start a
                 # new round — surface them for normal approval via
                 # tool-calls-pending (everything after the stop is subject to
-                # approval), then settle stopped. Old AutoChatRunner behavior;
-                # its position (after the takeover scan, before execution) is
-                # preserved. ─────────────────────────────────────────────────
+                # approval), then settle stopped. Positioned after the
+                # takeover scan, before execution. ───────────────────────────
                 if (
                     policy.graceful_stop_surfaces_pending
                     and io.stop_requested()
                     and client_events
                 ):
                     io.emit(format_tool_calls_pending(client_events))
-                    self._finish_stopped(record, policy)
+                    self._finish_stopped(record)
                     return
 
                 # Plain per-event resolves (auto enable no-op, the stale
-                # disable_auto_mode refusal, child depth guard / auto-signal
-                # noops): the call is answered locally, never executed, and
-                # the batch otherwise proceeds.
+                # disable_auto_mode refusal): the call is answered locally,
+                # never executed, and the batch otherwise proceeds.
                 intercepted: dict[str, str] = {}
                 executable: list[ToolInputAvailableEvent] = []
                 for e in client_events:
@@ -516,8 +385,7 @@ class ConversationEngine:
                     ]
                     if needs_approval:
                         # The pending event lists the WHOLE client batch (the
-                        # user sees non-approval siblings for context), same
-                        # bytes as the old interactive stream.
+                        # user sees non-approval siblings for context).
                         io.emit(format_tool_calls_pending(client_events))
                         batch = PendingApprovalBatch(
                             items=[_pending_item_from_event(e) for e in client_events],
@@ -530,23 +398,17 @@ class ConversationEngine:
                                 "gated policy requires io.await_decisions"
                             )
                         # Park. No upstream connection is held; the task
-                        # simply awaits the decision event. This replaces the
-                        # old two-request flow (stream ends at pending; the
-                        # browser POSTs /execute-tools to continue) with a
-                        # parked run — the wire bodies are identical.
+                        # simply awaits the decision event.
                         record.state = RunState.AWAITING_APPROVAL
                         decisions = await io.await_decisions(batch)
                         record.state = RunState.RUNNING
 
                 # ── 6. Execute the batch. ────────────────────────────────────
                 # requiresApproval per call:
-                # - auto policy: False for everything (AUTO-APPROVE — the old
-                #   runners' unattended contract).
+                # - auto policy: False for everything (AUTO-APPROVE).
                 # - gated: the metadata verdict — exactly the flags the
-                #   pending event surfaced, which is what the old browser
-                #   echoed back to /execute-tools (all False when the round
-                #   never parked, by construction — otherwise we'd have
-                #   parked).
+                #   pending event surfaced (all False when the round never
+                #   parked, by construction — otherwise we'd have parked).
                 def _requires_approval(e: ToolInputAvailableEvent) -> bool:
                     if policy.approvals != "gated":
                         return False
@@ -562,22 +424,9 @@ class ConversationEngine:
                     for e in executable
                 ]
                 # exec framing counts: start = the round's client batch size,
-                # end = number of results — both preserved from the old loops
-                # (they differ only when intercepted calls resolve without
-                # executing, which the old loops counted the same way).
+                # end = number of results.
                 io.emit(format_tool_exec_start(len(client_events)))
-                tools_started = time.monotonic()
-                results = await execute_tool_batch(
-                    tool_calls, decisions, orchestration_ctx=io.orchestration_ctx
-                )
-                chat_debug_log(
-                    "tool_batch_executed",
-                    conversation_id=record.session_id,
-                    round=record.rounds_used,
-                    tool_names=[tc.tool_name for tc in tool_calls],
-                    intercepted=len(intercepted),
-                    duration_ms=round((time.monotonic() - tools_started) * 1000, 1),
-                )
+                results = await execute_tool_batch(tool_calls, decisions)
                 results.update(intercepted)
                 for tc_id, output in results.items():
                     io.emit(format_tool_output(tc_id, output))
@@ -588,19 +437,11 @@ class ConversationEngine:
                 if not results:
                     if io.stop_requested():
                         # On graceful stop just settle — nothing to surface
-                        # for approval (old auto empty-results stop branch).
-                        self._finish_stopped(record, policy)
+                        # for approval.
+                        self._finish_stopped(record)
                         return
                     injected = io.drain_inbox()
                     if injected:
-                        chat_debug_log(
-                            "inbox_injected",
-                            conversation_id=record.session_id,
-                            round=record.rounds_used,
-                            site="server_only_batch",
-                            count=len(injected),
-                            message_ids=[m.id for m in injected],
-                        )
                         body = {
                             **body,
                             "messages": [
@@ -608,12 +449,7 @@ class ConversationEngine:
                             ],
                         }
                         continue
-                    if policy.one_shot:
-                        record.state = RunState.COMPLETED
-                        return
-                    # Old auto reason vocabulary: a tool batch that produced
-                    # no results settles "done". (The old interactive stream
-                    # simply ended its turn here.)
+                    # A tool batch that produced no results settles "done".
                     self._finish_idle(record, "done")
                     return
 
@@ -626,51 +462,23 @@ class ConversationEngine:
                 )
                 # Graceful stop after a fully executed round: the tool results
                 # were fed into the continuation body conceptually, but no new
-                # round starts (old auto post-execution stop; the persisted
-                # trace already holds the calls — acceptable for a stop).
+                # round starts (the persisted trace already holds the calls —
+                # acceptable for a stop).
                 if io.stop_requested():
-                    self._finish_stopped(record, policy)
+                    self._finish_stopped(record)
                     return
-                # Sub-agent reports that landed while this run was in flight
-                # ride the continuation as user messages (completion
-                # injection, mid-stream path) and are echoed to the live
-                # transcript — old ChatStreamSession._append_pending_
-                # subagent_reports. Never framed: the report frame IS the
-                # message. Auto-flag parents receive reports via the inbox
-                # instead (supervisor routing), so drain_reports is empty for
-                # them — no double delivery is possible.
-                reports = io.drain_reports()
-                if reports:
-                    body = _append_messages(
-                        body, [{"role": "user", "content": r} for r in reports]
-                    )
-                    for r in reports:
-                        io.emit(format_user_message(r))
                 # Messages queued during this round ride the continuation
                 # after the tool results (framed per policy) so the backend
-                # sees both on the next turn — old auto _append_user_messages.
+                # sees both on the next turn.
                 injected = io.drain_inbox()
                 if injected:
-                    chat_debug_log(
-                        "inbox_injected",
-                        conversation_id=record.session_id,
-                        round=record.rounds_used,
-                        site="continuation",
-                        count=len(injected),
-                        message_ids=[m.id for m in injected],
-                    )
                     body = _append_messages(
                         body, [_frame_inbox_message(m, policy) for m in injected]
                     )
 
-        # Loop exhausted max_rounds without a natural exit. One-shot runs go
-        # TIMEOUT (old sub-agent round cap); others settle idle with reason
-        # "max_rounds" — the flag stays on so the user can re-arm (old auto
-        # backstop; the old interactive stream ended after the same error).
-        io.emit(format_error(policy.max_rounds_message, trace_id_for_error))
-        if policy.one_shot:
-            record.state = RunState.TIMEOUT
-            return
+        # Loop exhausted max_rounds without a natural exit: settle idle with
+        # reason "max_rounds" — the flag stays on so the user can re-arm.
+        io.emit(format_error(MAX_ROUNDS_MESSAGE, trace_id_for_error))
         self._finish_idle(record, "max_rounds")
 
     async def _execute_resumed_batch(
@@ -679,19 +487,18 @@ class ConversationEngine:
         batch: PendingApprovalBatch,
     ) -> dict[str, Any]:
         """Execute an already-decided RUNLESS batch and return the
-        continuation body for the round loop (phase 4 recovery entry).
+        continuation body for the round loop (the recovery entry).
 
         Mirrors the engine's normal parked execution (steps 6-7) driven from
         the batch's stored round context instead of live round state, and —
         through ``_build_openai_tool_continuation`` over the batch's
-        ``{trace_id, messages: []}`` base — produces exactly the continuation
-        body the OLD ``routes.post_execute_tools`` built (`role:tool` results
-        only), so the persisted trace is indistinguishable.
+        ``{trace_id, messages: []}`` base — produces a continuation body of
+        ``role:tool`` results only, so the persisted trace matches the live
+        path.
 
         ``requiresApproval`` per call comes from the batch ITEMS (for a live
-        batch these are the metadata verdicts the pending event surfaced —
-        the same flags the old browser echoed back to /execute-tools; for a
-        trace-tail-rehydrated batch every item is conservatively True, see
+        batch these are the metadata verdicts the pending event surfaced; for
+        a trace-tail-rehydrated batch every item is conservatively True, see
         the supervisor's rehydration). A denied call resolves to
         DENIED_TOOL_OUTPUT exactly like the parked path.
         """
@@ -719,9 +526,7 @@ class ConversationEngine:
         # Same exec framing the normal parked path emits (start = batch size,
         # end = result count) so observers render one tool round.
         io.emit(format_tool_exec_start(len(client_events)))
-        results = await execute_tool_batch(
-            tool_calls, decisions, orchestration_ctx=io.orchestration_ctx
-        )
+        results = await execute_tool_batch(tool_calls, decisions)
         # Pre-answered calls (rehydrated signal siblings resolved as declined
         # — see PendingApprovalBatch.preresolved_results) merge in exactly
         # like the main loop's `intercepted` resolves: never executed, but
@@ -739,45 +544,24 @@ class ConversationEngine:
             results,
         )
 
-    # ── Outcome helpers (the engine-side halves of the old runner statuses;
-    # the supervisor's settle path publishes them). ──────────────────────────
+    # ── Outcome helpers (the supervisor's settle path publishes them). ─────
 
     def _finish_idle(self, record: ConversationRecord, reason: str | None) -> None:
-        # NOTE (CR m2): the auto idle vocabulary (asked_user/done/error/
-        # max_rounds/user_stopped) is recorded uniformly — INCLUDING on
-        # interactive-kind records, where the old world had no such concept
-        # (the interactive stream just ended its turn). The uniform write
-        # keeps the engine kind-agnostic and gives the supervisor one settle
-        # shape; conversation-state events therefore carry idle_reason for
-        # interactive conversations too. Phase 4's frontend must key any
-        # idle_reason rendering on kind == "auto" (or auto_flag) and ignore
-        # it for interactive conversations — see the phase-4 note in the
-        # phase-1 plan.
+        # The idle vocabulary (asked_user/done/error/max_rounds/user_stopped)
+        # is recorded uniformly, including on interactive records, which keeps
+        # the engine kind-agnostic. Conversation-state events therefore carry
+        # idle_reason for interactive conversations too; the frontend keys any
+        # idle_reason rendering on auto mode.
         record.state = RunState.IDLE
         if reason is not None:
             record.idle_reason = reason
 
-    def _finish_stopped(
-        self, record: ConversationRecord, policy: ConversationPolicy
-    ) -> None:
-        if policy.one_shot:
-            record.state = RunState.STOPPED
-            return
-        # Auto graceful stop clears the conversation flag (old USER_STOPPED →
-        # auto-mode-off(user_stopped)); for interactive records the flag is
-        # already off, so this is a no-op there.
+    def _finish_stopped(self, record: ConversationRecord) -> None:
+        # Auto graceful stop clears the conversation flag (auto mode off with
+        # reason user_stopped); for interactive records the flag is already
+        # off, so this is a no-op there.
         record.auto_flag = False
         self._finish_idle(record, "user_stopped")
-
-    def _finish_error(
-        self, record: ConversationRecord, policy: ConversationPolicy
-    ) -> None:
-        if policy.one_shot:
-            record.state = RunState.FAILED
-            return
-        # A burst-level upstream failure leaves the flag ON so the user can
-        # retry or stop (old auto IDLE("error") semantics).
-        self._finish_idle(record, "error")
 
     # ── Interception application. ────────────────────────────────────────────
 
@@ -791,8 +575,7 @@ class ConversationEngine:
 
         Round-takeover kinds were already handled by the priority scan; if one
         matches here it belongs to a DIFFERENT event than the takeover winner
-        and the old loops would not have specially handled it either (their
-        `next(...)` scans picked one winner) — treat it as executable.
+        (only one winner takes over a round) — treat it as executable.
         """
         for interceptor in policy.interceptors:
             res = interceptor(event, ictx)

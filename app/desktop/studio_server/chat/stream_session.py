@@ -1,12 +1,8 @@
-"""Shared chat ROUND PRIMITIVES (architecture §1: this module survives every
-phase of the unified-runtime migration).
+"""Shared chat ROUND PRIMITIVES (architecture §1).
 
-Historically this file also owned ``ChatStreamSession`` — the interactive
-loop class that drove the multi-round stream inside the HTTP response
-generator of ``POST /api/chat``. Phase 4 deleted it: interactive
-conversations now run on ``chat/runtime/``'s ``ConversationEngine`` as
-supervised turn tasks, and the browser observes them via
-``/api/conversations``. What remains here is the ONE copy of the per-round
+Interactive conversations run on ``chat/runtime/``'s ``ConversationEngine``
+as supervised turn tasks, and the browser observes them via
+``/api/conversations``. This module is the ONE copy of the per-round
 upstream mechanics every conversation kind uses:
 
 - ``RoundState`` / ``iter_upstream_round`` — POST one round, forward SSE
@@ -16,7 +12,7 @@ upstream mechanics every conversation kind uses:
   transient-failure retry wrapper (identical classification/backoff for
   every kind);
 - ``execute_tool`` / ``execute_tool_batch`` — client tool execution with
-  approval decisions + orchestration dispatch;
+  approval decisions;
 - ``_build_openai_tool_continuation`` — the continuation body builder (the
   persisted-trace shape contract, pinned by the golden fixtures);
 - the pending/consent/retry SSE formatters (re-exported by
@@ -29,12 +25,7 @@ import logging
 import random
 import uuid
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Literal
-
-if TYPE_CHECKING:
-    from app.desktop.studio_server.chat.orchestration import (
-        OrchestrationContext,
-    )
+from typing import Any, AsyncIterator, Callable, Literal
 
 import httpx
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
@@ -63,7 +54,7 @@ class RoundState:
     The first four fields are the public per-round outputs the caller reads.
     The trailing two carry the small amount of cross-round/error context that
     ``iter_upstream_round`` needs so it can own the non-200 / RemoteProtocolError
-    handling that used to be inline in ``ChatStreamSession.stream()``:
+    handling:
 
     - ``trace_id_for_error``: the last trace id seen so far (seeded from the
       caller's known trace id), stamped onto error payloads so the UI can
@@ -86,9 +77,9 @@ class RoundState:
     # yielded inline; in ``defer_terminal_error`` mode it is held on
     # ``deferred_error_payload`` instead so the caller can decide whether to retry.
     emitted_terminal_error: bool = False
-    # Populated only in ``defer_terminal_error`` mode (the auto runner): the error
-    # SSE bytes that would have been yielded, plus the classification the runner
-    # needs to decide on a retry. ``error_status_code`` is the upstream HTTP status
+    # Populated only in ``defer_terminal_error`` mode (the retry wrapper): the
+    # error SSE bytes that would have been yielded, plus the classification the
+    # wrapper needs to decide on a retry. ``error_status_code`` is the upstream HTTP status
     # (None for a connection-level failure); ``error_retryable`` is True for a
     # transient non-200 (429/5xx) that streamed no content and is safe to re-POST.
     deferred_error_payload: bytes | None = None
@@ -108,8 +99,7 @@ class RoundState:
           finish_tool_calls``): the duplicate generic error was suppressed and
           there is nothing more to continue from.
 
-        Both the interactive ``ChatStreamSession.stream()`` and the auto-run
-        ``AutoChatRunner`` consult this so the two paths can't drift.
+        The retry wrapper consults this for every conversation kind.
         """
         return self.emitted_terminal_error or (
             self.seen_upstream_error and not self.finish_tool_calls
@@ -148,32 +138,26 @@ def _format_tool_calls_pending_sse(events: list[ToolInputAvailableEvent]) -> byt
 
 def _format_consent_required_sse(
     *,
-    trigger: Literal["enable_auto_mode", "spawn_subagent"],
+    trigger: Literal["enable_auto_mode"],
     gating_tool_call_id: str,
     siblings: list[ToolInputAvailableEvent],
     reason: str | None = None,
-    spawn: dict[str, Any] | None = None,
 ) -> bytes:
     """Format the ``auto-mode-consent-required`` SSE the engine emits when an
-    interactive conversation needs the user's auto-mode consent — either the
-    model called ``enable_auto_mode`` (``trigger="enable_auto_mode"``) or it
-    called ``spawn_subagent`` with auto mode off (``trigger="spawn_subagent"``,
-    FR2: spawning requires auto mode, so the spawn call takes the gating role).
+    interactive conversation needs the user's auto-mode consent (the model
+    called ``enable_auto_mode``).
 
     ``gating_tool_call_id`` is the call whose accept/decline resolution the
-    consent flow owes an answer to; ``enable_tool_call_id`` is kept as a
-    duplicate of it for the enable trigger only (wire compat — legacy browser
-    bundles key on that name), and ``reason`` (the model's stated reason)
-    rides only with the enable trigger too. The spawn trigger instead carries
-    ``spawn`` — the gating call's input (``agent_type``/``name``/``prompt``)
-    so the dialog can name what is about to be spawned.
+    consent flow owes an answer to; ``enable_tool_call_id`` carries the same
+    id, and ``reason`` is the model's stated reason. ``trigger`` names the
+    tool that surfaced the consent flow.
 
     ``sibling_tool_calls`` carries any other (non-server) client tool calls from
     the same round so the accept/decline paths can resolve every ``tool_call_id``
     the backend is waiting on. The model is instructed to call ``enable_auto_mode``
-    alone, so this is normally empty for the enable trigger.
+    alone, so this is normally empty.
 
-    Phase 5: the payload no longer carries ``trace_id`` — consent accept
+    The payload carries no ``trace_id``: consent accept
     (``POST /api/conversations`` kind=auto) and decline (``POST /{sid}/auto``)
     are keyed by the conversation's session id and the record's own leaf is
     authoritative (functional spec §4: browsers never see trace ids).
@@ -182,24 +166,21 @@ def _format_consent_required_sse(
         "type": SSE_TYPE_AUTO_MODE_CONSENT_REQUIRED,
         "trigger": trigger,
         "gating_tool_call_id": gating_tool_call_id,
+        "enable_tool_call_id": gating_tool_call_id,
+        "reason": reason,
+        "sibling_tool_calls": [_pending_item_from_event(e) for e in siblings],
     }
-    if trigger == "enable_auto_mode":
-        payload["enable_tool_call_id"] = gating_tool_call_id
-        payload["reason"] = reason
-    else:
-        payload["spawn"] = spawn
-    payload["sibling_tool_calls"] = [_pending_item_from_event(e) for e in siblings]
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
 
 
-# Transient upstream HTTP statuses worth retrying in auto mode (the request never
+# Transient upstream HTTP statuses worth retrying (the request never
 # produced a streamed response, so re-POSTing is safe). 4xx client errors (400,
 # 401, 403, 404, 422) are deliberately excluded — they won't self-heal.
 RETRYABLE_UPSTREAM_STATUS: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 
 # A transient upstream failure is retried with backoff rather than surfaced
-# immediately, on BOTH the interactive chat stream and the unattended auto runner
-# (they share ``iter_round_with_retries``). The schedule ramps up and caps at 60s
+# immediately, for every conversation kind (they share
+# ``iter_round_with_retries``). The schedule ramps up and caps at 60s
 # so the run rides out a real remote/network blip (~5 min total) instead of
 # burning all attempts in seconds, but still settles instead of hanging forever.
 # Per-attempt seconds, 1-based: attempt N uses index N-1, clamped to the last.
@@ -261,9 +242,8 @@ async def iter_upstream_round(
     """POST one upstream round; yield forward-bytes as they stream; mutate
     ``round_state`` in place.
 
-    Shared by the interactive ``ChatStreamSession.stream()`` and the auto-run
-    ``AutoChatRunner``. It owns exactly the per-round upstream mechanics that
-    used to be inline in ``stream()``: open the upstream POST, parse the SSE,
+    It owns exactly the per-round upstream mechanics: open the upstream POST,
+    parse the SSE,
     forward the bytes, accumulate ``finish_tool_calls`` / ``tool_input_events`` /
     ``assistant_text`` / ``trace_id`` onto ``round_state``, and handle non-200
     responses and ``RemoteProtocolError`` by yielding the standard ``error`` SSE
@@ -375,8 +355,8 @@ class RetryRoundResult:
 
     - ``status == "ok"``: ``round_state`` is the successful attempt's state —
       the caller continues its round loop.
-    - ``status == "stopped"``: a Stop was requested mid-retry (auto runner only)
-      — the caller settles ``USER_STOPPED``.
+    - ``status == "stopped"``: a Stop was requested mid-retry — the caller
+      settles stopped.
     - ``status == "error"``: a non-retryable or retry-exhausted failure; the
       error was already yielded — the caller ends the stream.
     """
@@ -398,8 +378,8 @@ async def iter_round_with_retries(
 ) -> AsyncIterator[bytes]:
     """Stream one upstream round, retrying transient failures with backoff.
 
-    Shared by the interactive ``ChatStreamSession.stream()`` and the unattended
-    ``AutoChatRunner`` so both get identical retry behavior. Yields forward bytes
+    Every conversation kind gets identical retry behavior from here. Yields
+    forward bytes
     as they stream, plus a ``kiln-chat-retry`` event between attempts and, on
     give-up, the held-back error. The terminal outcome is reported via ``result``.
 
@@ -408,8 +388,8 @@ async def iter_round_with_retries(
     never duplicate already-emitted output. ``defer_terminal_error`` holds the
     error back until we either retry past it or give up.
 
-    ``stop_requested`` (auto runner only) is polled each round so a Stop pressed
-    mid-retry abandons the loop with ``status == "stopped"``.
+    ``stop_requested`` is polled each round so a Stop pressed mid-retry
+    abandons the loop with ``status == "stopped"``.
     """
     attempt = 0
     while True:
@@ -464,7 +444,7 @@ async def iter_round_with_retries(
             await asyncio.sleep(_retry_backoff_seconds(attempt))
             continue
 
-        # Stop takes precedence over surfacing the error (auto runner only).
+        # Stop takes precedence over surfacing the error.
         if stop:
             result.status = "stopped"
             return
@@ -486,25 +466,8 @@ async def iter_round_with_retries(
 async def execute_tool_batch(
     tool_calls: list[ToolCallInfo],
     decisions: dict[str, bool],
-    orchestration_ctx: "OrchestrationContext | None" = None,
 ) -> dict[str, str]:
-    """Execute a batch of client tool calls, honoring approval decisions.
-
-    Sub-agent orchestration tools (spawn/status/wait/stop) are not kiln_ai
-    registry tools — they need the parent conversation's identity and the local
-    sub-agent registry, carried by ``orchestration_ctx``. Callers that own a
-    conversation (interactive stream, auto runner, execute-tools continuation)
-    thread their ctx through; a ``None`` ctx resolves those calls to an error
-    result instead of executing.
-    """
-    # Lazy import: the orchestration module targets the runtime supervisor,
-    # whose engine imports this module's round mechanics (same pattern as
-    # _clear_auto_mode_flag).
-    from app.desktop.studio_server.chat.orchestration import (
-        ORCHESTRATION_TOOL_NAMES,
-        execute_orchestration_tool,
-    )
-
+    """Execute a batch of client tool calls, honoring approval decisions."""
     results: dict[str, str] = {}
     for tc in tool_calls:
         if tc.requires_approval:
@@ -512,20 +475,6 @@ async def execute_tool_batch(
             if approved is not True:
                 results[tc.tool_call_id] = DENIED_TOOL_OUTPUT
                 continue
-        if tc.tool_name in ORCHESTRATION_TOOL_NAMES:
-            if orchestration_ctx is None:
-                results[tc.tool_call_id] = json.dumps(
-                    {
-                        "status": "error",
-                        "message": "Sub-agent orchestration is unavailable in this context.",
-                    },
-                    ensure_ascii=False,
-                )
-            else:
-                results[tc.tool_call_id] = await execute_orchestration_tool(
-                    tc.tool_name, tc.input, orchestration_ctx
-                )
-            continue
         tool_result = await execute_tool(tc.tool_name, tc.input)
         results[tc.tool_call_id] = tool_result
     return results
@@ -587,10 +536,10 @@ def _build_openai_tool_continuation(
     # messages ("trace-only"): the persisted trace already holds the
     # assistant message with its tool calls, so the continuation must carry
     # ONLY the role:tool results — re-sending the assistant message would
-    # duplicate it in the persisted trace. A `session_id` base (phase-6
-    # resume-by-key, e.g. a rehydrated approval batch on a record with no
-    # known leaf) is the same shape keyed differently: the backend resolves
-    # it to the current leaf whose tail already holds that assistant message.
+    # duplicate it in the persisted trace. A `session_id` base (resume-by-key,
+    # e.g. a rehydrated approval batch on a record with no known leaf) is the
+    # same shape keyed differently: the backend resolves it to the current
+    # leaf whose tail already holds that assistant message.
     trace_only_continuation = (
         bool(original_body.get("trace_id") or original_body.get("session_id"))
         and not prior_messages

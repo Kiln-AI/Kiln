@@ -1,11 +1,4 @@
-"""Tiny shared test fixtures for the chat package.
-
-Phase 4 note: this module used to also carry the httpx mock builders
-(``make_httpx_mock`` / ``make_n_round_mock_client`` and the PATCH_* targets)
-that drove the deleted ``POST /api/chat`` route tests; the surviving suites
-script upstream rounds through ``chat/test_fakes.py`` instead, so only the
-SSE payload builder remains.
-"""
+"""Tiny shared test fixtures for the chat package."""
 
 import json
 
