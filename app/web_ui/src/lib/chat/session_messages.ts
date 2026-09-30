@@ -1,8 +1,10 @@
 import type { components } from "$lib/api_schema"
 import {
   chatGenerateId,
+  normalizeContextUsage,
   type ChatMessage,
   type ChatMessagePart,
+  type ContextUsage,
 } from "./streaming_chat"
 
 type TraceMessage = components["schemas"]["TraceMessage"]
@@ -23,8 +25,32 @@ function extractTextContent(content: TraceMessage["content"]): string {
 const APP_UI_CONTEXT_RE =
   /<new_app_ui_context>[\s\S]*?<\/new_app_ui_context>\s*/g
 
+// Auto mode wraps a message injected mid-burst in a <system-reminder> "side
+// note" before sending it upstream, so the framing is persisted in the trace.
+// Strip it on hydration so a reloaded transcript shows the user's actual
+// message, matching the live echo.
+const SYSTEM_REMINDER_RE = /<system-reminder>[\s\S]*?<\/system-reminder>\s*/g
+
 export function stripAppUiContext(text: string): string {
   return text.replace(APP_UI_CONTEXT_RE, "")
+}
+
+// Strip the internal framing the client/runner prepend to a user message before
+// sending it to the model (app-UI context header + auto-mode side-note), so the
+// hydrated transcript shows what the user actually typed.
+export function stripInternalFraming(text: string): string {
+  return text.replace(APP_UI_CONTEXT_RE, "").replace(SYSTEM_REMINDER_RE, "")
+}
+
+/**
+ * Build the UI message for a user-role trace entry. Shared by hydration
+ * (below) and the live ``user-message`` echo path.
+ */
+export function userChatMessageFromContent(
+  content: string,
+  echoId?: string,
+): ChatMessage {
+  return { id: chatGenerateId(), role: "user", content, echoId }
 }
 
 function traceToolCallToPart(tc: TraceToolCall): ChatMessagePart {
@@ -44,9 +70,6 @@ function traceToolCallToPart(tc: TraceToolCall): ChatMessagePart {
 
 function buildAssistantParts(msg: TraceMessage): ChatMessagePart[] {
   const parts: ChatMessagePart[] = []
-  if (msg.reasoning_content) {
-    parts.push({ type: "reasoning", reasoning: msg.reasoning_content })
-  }
   const text = extractTextContent(msg.content)
   if (text) {
     parts.push({ type: "text", text })
@@ -61,12 +84,18 @@ function buildAssistantParts(msg: TraceMessage): ChatMessagePart[] {
 
 /**
  * Converts a typed ChatSessionSnapshot into UI messages.
- * Sets ``traceId`` on the last assistant message so
- * ``traceIdForNextChatRequest`` can continue the thread.
+ *
+ * The snapshot's leaf-shaped ``id`` is not surfaced: the browser keys
+ * conversations on SESSION ids and the desktop resolves the current leaf on
+ * every hydration fetch. ``rootId`` is the session's durable id
+ * (``session_meta.root_id``, passed through by the desktop proxy), which the
+ * session store persists as its restart-recovery key; null for sessions
+ * without meta.
  */
 export function hydrateSessionFromSnapshot(snapshot: ChatSessionSnapshot): {
   messages: ChatMessage[]
-  continuationTraceId: string
+  rootId: string | null
+  contextUsage: ContextUsage | null
 } {
   const trace = snapshot.task_run.trace ?? []
   const messages: ChatMessage[] = []
@@ -74,11 +103,11 @@ export function hydrateSessionFromSnapshot(snapshot: ChatSessionSnapshot): {
   for (const msg of trace) {
     switch (msg.role) {
       case "user": {
-        messages.push({
-          id: chatGenerateId(),
-          role: "user",
-          content: stripAppUiContext(extractTextContent(msg.content)),
-        })
+        messages.push(
+          userChatMessageFromContent(
+            stripInternalFraming(extractTextContent(msg.content)),
+          ),
+        )
         break
       }
       case "assistant": {
@@ -115,12 +144,9 @@ export function hydrateSessionFromSnapshot(snapshot: ChatSessionSnapshot): {
     }
   }
 
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === "assistant") {
-      messages[i] = { ...messages[i], traceId: snapshot.id }
-      break
-    }
+  return {
+    messages,
+    rootId: snapshot.root_id ?? null,
+    contextUsage: normalizeContextUsage(snapshot.context_usage),
   }
-
-  return { messages, continuationTraceId: snapshot.id }
 }
