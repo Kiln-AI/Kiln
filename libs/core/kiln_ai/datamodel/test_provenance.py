@@ -1,3 +1,4 @@
+import json
 from unittest.mock import Mock
 
 import pytest
@@ -418,3 +419,113 @@ def test_host_tier2_create_rejects_provenance_without_origin():
                 "provenance": {"notes": "no origin here"},
             }
         )
+
+
+# ---- on-disk format: no key unless provided, legacy files load ----
+
+
+def _all_host_classes():
+    from kiln_ai.datamodel.code_tool import CodeTool
+    from kiln_ai.datamodel.task import TaskRunConfig
+
+    return [Skill, Prompt, TaskRunConfig, CodeTool, *_tier2_host_classes()]
+
+
+def test_all_host_classes_count():
+    # Four Tier-1 hosts and eight Tier-2 hosts carry the field.
+    assert len(_all_host_classes()) == 12
+
+
+@pytest.mark.parametrize("host_cls", _all_host_classes(), ids=lambda c: c.__name__)
+def test_every_host_leaves_out_none_provenance_when_serialized(host_cls):
+    # Every host declares the field the same way: default None, and a None value
+    # is left out of the dump. Saving an artifact without provenance then writes
+    # the same file format as before this field existed.
+    field = host_cls.model_fields["provenance"]
+    assert field.default is None
+    assert field.exclude_if is not None
+    assert field.exclude_if(None) is True
+    assert field.exclude_if(KilnArtifactProvenance(origin="human")) is False
+
+
+def _read_json(path) -> dict:
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _write_json(path, data: dict) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
+def test_skill_saved_without_provenance_writes_no_key(project):
+    skill = Skill(name="plain-skill", description="No provenance.", parent=project)
+    skill.save_to_file()
+
+    assert skill.path is not None
+    assert "provenance" not in _read_json(skill.path)
+    assert "provenance" not in skill.model_dump()
+
+
+def test_skill_saved_with_provenance_writes_key(project):
+    skill = Skill(
+        name="derived-skill",
+        description="With provenance.",
+        provenance=KilnArtifactProvenance(origin="agent", derived_from_ids=["p1"]),
+        parent=project,
+    )
+    skill.save_to_file()
+
+    assert skill.path is not None
+    assert _read_json(skill.path)["provenance"] == {
+        "notes": None,
+        "derived_from_ids": ["p1"],
+        "origin": "agent",
+    }
+
+
+def test_embedding_config_saved_without_provenance_writes_no_key(project):
+    config = _make_embedding_config(project)
+    config.save_to_file()
+
+    assert config.path is not None
+    assert "provenance" not in _read_json(config.path)
+
+
+@pytest.mark.parametrize(
+    "legacy_value",
+    ["absent", None],
+    ids=["file-without-key", "file-with-null"],
+)
+def test_legacy_skill_file_loads_from_disk(project, legacy_value):
+    # A skill file written before this field existed has no `provenance` key. A
+    # file written by an earlier build can carry `"provenance": null`. Both load
+    # from disk with provenance=None, and a re-save writes no key.
+    skill = Skill(name="legacy-skill", description="Old file.", parent=project)
+    skill.save_to_file()
+    assert skill.path is not None
+    data = _read_json(skill.path)
+    data.pop("provenance", None)
+    if legacy_value is None:
+        data["provenance"] = None
+    _write_json(skill.path, data)
+
+    loaded = Skill.load_from_file(skill.path)
+    assert loaded.provenance is None
+
+    loaded.save_to_file()
+    assert "provenance" not in _read_json(skill.path)
+
+
+def test_legacy_embedding_config_file_loads_from_disk(project):
+    from kiln_ai.datamodel.embedding import EmbeddingConfig
+
+    config = _make_embedding_config(project)
+    config.save_to_file()
+    assert config.path is not None
+    data = _read_json(config.path)
+    data.pop("provenance", None)
+    _write_json(config.path, data)
+
+    loaded = EmbeddingConfig.load_from_file(config.path)
+    assert loaded.provenance is None

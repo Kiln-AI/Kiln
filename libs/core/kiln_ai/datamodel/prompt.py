@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
-from kiln_ai.datamodel.provenance import KilnArtifactProvenance
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance, provenance_field
 
 
 class BasePrompt(BaseModel):
@@ -37,7 +37,4 @@ class Prompt(KilnParentedModel, BasePrompt):
 
     # Provenance lives on the stored Prompt, not BasePrompt: BasePrompt is embedded
     # inside TaskRunConfig/Finetune and must not carry artifact provenance.
-    provenance: KilnArtifactProvenance | None = Field(
-        default=None,
-        description="Why this artifact exists and what it was derived from.",
-    )
+    provenance: KilnArtifactProvenance | None = provenance_field()

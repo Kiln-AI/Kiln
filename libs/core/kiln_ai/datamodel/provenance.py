@@ -8,6 +8,7 @@ submodel never breaks loading an imperfect or future-written file.
 """
 
 from collections.abc import Callable
+from typing import Any
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
@@ -106,6 +107,26 @@ class KilnArtifactProvenance(BaseModel):
         if v not in VALID_ORIGINS:
             raise ValueError(f"origin is required and must be one of {VALID_ORIGINS}")
         return v
+
+
+def _is_none(value: object) -> bool:
+    return value is None
+
+
+def provenance_field() -> Any:
+    """The `provenance` field declaration shared by every host model.
+
+    The field is optional and defaults to None, so a file written before this field
+    existed loads with provenance=None. A None value is left out when the host is
+    serialized, so saving an artifact that has no provenance writes no `provenance`
+    key. Files stay identical to the format before this field existed, and git sync
+    shows no new key on a re-save of an existing artifact.
+    """
+    return Field(
+        default=None,
+        exclude_if=_is_none,
+        description="Why this artifact exists and what it was derived from.",
+    )
 
 
 def validate_derived_from_ids(
