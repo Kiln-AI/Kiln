@@ -51,6 +51,7 @@ from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import (
 )
 
 from app.desktop.studio_server.chat.constants import DENIED_TOOL_OUTPUT
+from app.desktop.studio_server.chat.debug_log import chat_debug_log
 from app.desktop.studio_server.chat.stream_session import (
     ToolCallInfo,
     _pending_item_from_event,
@@ -223,7 +224,11 @@ class _Conversation:
         self.record = record
         self.policy = policy
         self.upstream_url = upstream_url
-        self.headers = headers
+        # Correlation id for upstream requests: the hosted chat server's debug
+        # log keys its events by this conversation, so the desktop and server
+        # timelines can be joined. Always sent; the server ignores it unless
+        # its debug log is on.
+        self.headers = {**headers, "X-Kiln-Conversation-Id": record.session_id}
         # The bus's on-subscribe marker must reflect the record AT SUBSCRIBE
         # TIME, hence a lambda over the live record rather than a stored value.
         self.bus = ByteEventBus(
@@ -948,6 +953,14 @@ class ConversationSupervisor:
         conv.run_finished = False
         conv.stop_requested = False
         conv.record.state = RunState.RUNNING
+        chat_debug_log(
+            "run_started",
+            conversation_id=session_id,
+            kind=conv.record.kind,
+            auto_flag=conv.record.auto_flag,
+            resume_batch=resume_batch is not None,
+            inbox_len=len(conv.inbox),
+        )
         self._touch(conv)
         conv.task = asyncio.create_task(
             self._supervise(conv, initial_body, resume_batch)
@@ -1081,6 +1094,16 @@ class ConversationSupervisor:
             record.auto_flag,
             record.idle_reason,
         )
+        chat_debug_log(
+            "run_settled",
+            conversation_id=record.session_id,
+            state=record.state.value,
+            auto_flag=record.auto_flag,
+            idle_reason=record.idle_reason,
+            inbox_len=len(conv.inbox),
+            restart_stranded_inbox=restart_stranded_inbox,
+            current_leaf_trace_id=record.current_leaf_trace_id,
+        )
         # Inbox-drain-on-settle. Logged the settle FIRST (above) so the "run
         # ended" line reflects the settled IDLE, then the restart (which logs
         # + publishes RUNNING for its own new turn) follows. The off-auto
@@ -1210,7 +1233,21 @@ class ConversationSupervisor:
 
         if conv.record.state in (RunState.RUNNING, RunState.AWAITING_APPROVAL):
             conv.inbox.append(message)
+            chat_debug_log(
+                "message_enqueued",
+                conversation_id=session_id,
+                message_id=message.id,
+                state=conv.record.state.value,
+                inbox_len=len(conv.inbox),
+            )
             return message.id
+        chat_debug_log(
+            "message_starts_idle_turn",
+            conversation_id=session_id,
+            message_id=message.id,
+            stranded_inbox_len=len(conv.inbox),
+            auto_flag=conv.record.auto_flag,
+        )
 
         # IDLE → start a fresh turn/burst seeded with the message: continue
         # from the current leaf, message unframed (framing is for MID-run

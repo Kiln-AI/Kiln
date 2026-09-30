@@ -116,14 +116,16 @@ class FakeUpstreamResponse:
 
 class FakeUpstreamClient:
     """Stand-in for ``httpx.AsyncClient`` that returns queued responses in order
-    and records the request bodies it was POSTed."""
+    and records the request bodies and headers it was POSTed."""
 
     def __init__(self, responses: list[FakeUpstreamResponse]) -> None:
         self._responses = list(responses)
         self.bodies: list[dict[str, Any]] = []
+        self.headers: list[dict[str, str]] = []
 
     def stream(self, method: str, url: str, *, content: bytes, headers: dict):
         self.bodies.append(json.loads(content.decode()))
+        self.headers.append(dict(headers))
         if not self._responses:
             raise AssertionError("FakeUpstreamClient ran out of queued responses")
         return self._responses.pop(0)

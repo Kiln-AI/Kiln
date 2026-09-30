@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
 from app.desktop.studio_server.chat.constants import DENIED_TOOL_OUTPUT
+from app.desktop.studio_server.chat.debug_log import ENV_VAR as DEBUG_LOG_ENV_VAR
 from app.desktop.studio_server.chat.stream_session import MAX_CHAT_RETRIES
 from app.desktop.studio_server.chat.test_fakes import (
     FakeUpstreamClient,
@@ -608,6 +610,55 @@ async def test_interactive_drain_rides_unframed():
     await _run(h, client, interactive_policy(), dict(_USER_TURN))
     (msg,) = client.bodies[1]["messages"]
     assert msg == {"role": "user", "content": "one more thing"}
+
+
+async def test_debug_log_records_rounds_injections_and_tool_batches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    log_file = tmp_path / "chat_debug.jsonl"
+    monkeypatch.setenv(DEBUG_LOG_ENV_VAR, str(log_file))
+    round1 = [
+        tool_input_available("tc1", "multiply", {"a": 6, "b": 7}),
+        trace("tr-1"),
+        finish_tool_calls(),
+    ]
+    round2 = [text_delta("42"), trace("tr-2"), finish("stop")]
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse(round1), FakeUpstreamResponse(round2)]
+    )
+    h = _harness(kind="auto", inbox=["and then?"])
+    await _run(h, client, auto_policy(), dict(_AUTO_SEED))
+
+    events = [json.loads(line) for line in log_file.read_text().splitlines()]
+    assert [e["event"] for e in events] == [
+        "engine_run_started",
+        "upstream_round_started",
+        "tool_batch_executed",
+        "inbox_injected",
+        "upstream_round_started",
+    ]
+    assert all(e["conversation_id"] == h.record.session_id for e in events)
+    assert [e["round"] for e in events[1:]] == [1, 1, 1, 2]
+    assert events[0]["resume_batch"] is False
+    assert events[2]["tool_names"] == ["multiply"]
+    assert events[3]["site"] == "continuation"
+    assert events[3]["count"] == 1
+    assert events[4]["trace_id"] == "tr-1"
+    assert "and then?" not in log_file.read_text()
+
+
+async def test_debug_log_is_silent_when_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delenv(DEBUG_LOG_ENV_VAR, raising=False)
+    monkeypatch.chdir(tmp_path)
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse([text_delta("hi"), trace("tr-1"), finish("stop")])]
+    )
+    h = _harness()
+    await _run(h, client, interactive_policy(), dict(_USER_TURN))
+    assert h.record.state == RunState.IDLE
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_frame_inbox_message_matrix():
