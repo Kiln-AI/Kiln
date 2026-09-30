@@ -19,6 +19,18 @@ export type ChatMessagePart =
       output?: unknown
     }
 
+/**
+ * Parsed attributes of a ``<subagent_report …>`` frame — the user-role message
+ * the server injects into a parent conversation when a sub-agent finishes. The
+ * transcript renders these as a collapsed report chip instead of a user bubble.
+ */
+export interface SubagentReportInfo {
+  id: string
+  agentType: string
+  status: string
+  title: string
+}
+
 export interface ChatMessage {
   id: string
   role: "user" | "assistant" | "system" | "error"
@@ -30,6 +42,13 @@ export interface ChatMessage {
    * record owns continuation state.
    */
   traceId?: string
+  /**
+   * Set when this user-role message is a sub-agent completion report frame
+   * (``<subagent_report …>``). ``content`` then holds the report BODY (the
+   * frame is stripped on hydration / echo detection, like other internal
+   * framings) and the transcript renders a report chip instead of a bubble.
+   */
+  subagentReport?: SubagentReportInfo
   /**
    * Stable id from the ``user-message`` echo for an injected user message.
    * Lets the client render the echo idempotently — a buffer replay on re-attach
@@ -105,9 +124,13 @@ export interface StreamEvent {
   messageMetadata?: { finishReason?: string; usage?: unknown }
   items?: ToolCallsPendingItem[]
   tool_count?: number
-  /** ``auto-mode-consent-required`` carries the gating call + siblings. */
+  /** ``auto-mode-consent-required`` carries the gating call + siblings.
+   * ``trigger``/``gating_tool_call_id``/``spawn`` are the generalized shape
+   * (FR2: an interactive ``spawn_subagent`` also rides the consent flow);
+   * all optional — absent means the enable trigger. */
   trigger?: string
   gating_tool_call_id?: string
+  spawn?: { agent_type?: string; name?: string; prompt?: string } | null
   enable_tool_call_id?: string
   reason?: string | null
   sibling_tool_calls?: ToolCallsPendingItem[]
@@ -121,7 +144,7 @@ export interface StreamEvent {
    * declares below; auto_flag/idle_reason carry the auto-mode axis (reasons:
    * armed/asked_user/done/error/max_rounds while on, user_stopped/
    * user_disabled when the flag just cleared); ``kind`` is
-   * interactive|auto. */
+   * interactive|auto|subagent. */
   session_id?: string
   kind?: string
   auto_flag?: boolean
@@ -151,20 +174,36 @@ export interface ToolCallsPendingPayload {
   items: ToolCallsPendingItem[]
 }
 
-/** What gated the turn behind auto-mode consent. */
-export type AutoModeConsentTrigger = "enable_auto_mode"
+/** What gated the turn behind auto-mode consent (FR2). */
+export type AutoModeConsentTrigger = "enable_auto_mode" | "spawn_subagent"
+
+/** The sub-agent a spawn-triggered consent request is about to spawn. */
+export interface SpawnConsentInfo {
+  agentType: string
+  name: string
+  prompt: string
+  /** The wire ``spawn`` object exactly as the engine sent it. Accept echoes
+   * this verbatim as the rebuilt gating call's input (the typed fields above
+   * are display-only and lossy: missing fields coerce to "" and unknown keys
+   * drop), so accept stays faithful if the spawn schema grows fields. */
+  rawInput?: Record<string, unknown>
+}
 
 /**
  * Payload of the ``auto-mode-consent-required`` event. The engine emits this
- * (then idles the turn) when the model calls ``enable_auto_mode``. The UI
- * must gate auto mode behind explicit consent. ``gatingToolCallId`` is the
- * call accept/decline owes an answer to. The payload carries no trace id:
- * accept/decline is keyed by the observed conversation's session id.
+ * (then idles the turn) when the model calls ``enable_auto_mode`` — or
+ * ``spawn_subagent`` while auto mode is off (FR2: spawning requires auto
+ * mode, so the spawn call takes the gating role). The UI must gate auto mode
+ * behind explicit consent. ``gatingToolCallId`` is the call accept/decline
+ * owes an answer to; ``reason`` rides only the enable trigger and ``spawn``
+ * only the spawn trigger. The payload carries no trace id: accept/decline is
+ * keyed by the observed conversation's session id (functional spec §4).
  */
 export interface AutoModeConsentRequiredPayload {
   trigger: AutoModeConsentTrigger
   gatingToolCallId: string
   reason: string | null
+  spawn: SpawnConsentInfo | null
   siblingToolCalls: ToolCallsPendingItem[]
 }
 
@@ -500,6 +539,19 @@ export class StreamEventProcessor {
   }
 }
 
+/** Parse the ``spawn`` field of a spawn-triggered consent event; null on a
+ * malformed value so a bad payload never crashes the consent flow. */
+function spawnConsentInfoFromEvent(raw: unknown): SpawnConsentInfo | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null
+  const record = raw as Record<string, unknown>
+  return {
+    agentType: typeof record.agent_type === "string" ? record.agent_type : "",
+    name: typeof record.name === "string" ? record.name : "",
+    prompt: typeof record.prompt === "string" ? record.prompt : "",
+    rawInput: record,
+  }
+}
+
 /**
  * Map a raw ``auto-mode-consent-required`` event to its typed payload. The
  * gating id falls back to ``enable_tool_call_id`` when
@@ -508,14 +560,56 @@ export class StreamEventProcessor {
 export function autoModeConsentPayloadFromEvent(
   event: StreamEvent,
 ): AutoModeConsentRequiredPayload {
+  const trigger: AutoModeConsentTrigger =
+    event.trigger === "spawn_subagent" ? "spawn_subagent" : "enable_auto_mode"
   return {
-    trigger: "enable_auto_mode",
+    trigger,
     gatingToolCallId:
       event.gating_tool_call_id ?? event.enable_tool_call_id ?? "",
-    reason: event.reason ?? null,
+    reason: trigger === "enable_auto_mode" ? event.reason ?? null : null,
+    spawn:
+      trigger === "spawn_subagent"
+        ? spawnConsentInfoFromEvent(event.spawn)
+        : null,
     siblingToolCalls: Array.isArray(event.sibling_tool_calls)
       ? event.sibling_tool_calls
       : [],
+  }
+}
+
+/**
+ * Read an SSE byte stream, JSON-parse ``data:`` lines, and dispatch each event.
+ * ``onControlEvent`` is consulted first; if it returns ``true`` the event is
+ * considered handled and not forwarded to the processor. Used by the
+ * sub-agent child observers and shareable by any reader-based SSE consumer.
+ * Resolves when the stream ends (``done``).
+ */
+export async function consumeSseStream(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  processor: StreamEventProcessor,
+  onControlEvent?: (event: StreamEvent) => boolean,
+): Promise<void> {
+  const decoder = new TextDecoder()
+  let buffer = ""
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split("\n")
+    buffer = lines.pop() ?? ""
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue
+      const payload = line.slice(6).trim()
+      if (payload === "[DONE]" || payload === "") continue
+      let event: StreamEvent
+      try {
+        event = JSON.parse(payload) as StreamEvent
+      } catch {
+        continue
+      }
+      if (onControlEvent?.(event)) continue
+      processor.handleEvent(event)
+    }
   }
 }
 
