@@ -36,6 +36,7 @@ from kiln_server.git_sync_decorators import no_write_lock
 from kiln_server.utils.agent_checks.policy import DENY_AGENT
 from pydantic import BaseModel, Field
 
+from app.desktop.studio_server.chat.debug_log import chat_debug_enabled
 from app.desktop.studio_server.chat.stream_session import ToolCallInfo
 
 # The shared keepalive helper: its feeder-task design is what makes a
@@ -67,6 +68,12 @@ logger = logging.getLogger(__name__)
 
 # Quiet-window keepalive for the SSE streams.
 KEEPALIVE_SECONDS = 15.0
+
+
+class ChatDebugStatus(BaseModel):
+    """Whether assistant forensic debug logging (``KILN_CHAT_DEBUG_LOG``) is on."""
+
+    debug_log_enabled: bool
 
 
 class ConversationItem(BaseModel):
@@ -223,6 +230,18 @@ async def _observer_stream(session_id: str) -> AsyncGenerator[bytes, None]:
 
 
 def connect_conversations_api(app: FastAPI) -> None:
+    @app.get(
+        "/api/chat/debug_status",
+        summary="Assistant debug-logging status",
+        tags=["Copilot"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def chat_debug_status() -> ChatDebugStatus:
+        """Whether ``KILN_CHAT_DEBUG_LOG`` forensic logging is on — the UI
+        surfaces the conversation id (the join key for the desktop and hosted
+        server debug logs) when it is."""
+        return ChatDebugStatus(debug_log_enabled=chat_debug_enabled())
+
     @app.post(
         "/api/conversations",
         summary="Create (or adopt/flip) a conversation",

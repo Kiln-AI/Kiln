@@ -6,12 +6,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Callable
 from unittest.mock import patch
 
 import httpx
 import pytest
 
+from app.desktop.studio_server.chat.debug_log import ENV_VAR as DEBUG_LOG_ENV_VAR
 from app.desktop.studio_server.chat.test_fakes import (
     FakeUpstreamClient,
     FakeUpstreamResponse,
@@ -278,6 +280,67 @@ async def test_send_message_while_idle_starts_turn_with_preserved_body_shape():
             "auto_mode": True,
         }
     ]
+
+
+async def test_upstream_requests_carry_conversation_id_header():
+    sup = _sup()
+    client = FakeUpstreamClient(_text_run_responses())
+    record = sup.create_conversation(
+        "interactive", upstream_url=URL, headers={"Authorization": "Bearer k"}
+    )
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        assert sup.send_message(record.session_id, "hello") is not None
+        await _wait_for(lambda: record.state == RunState.IDLE)
+
+    assert client.headers == [
+        {"Authorization": "Bearer k", "X-Kiln-Conversation-Id": record.session_id}
+    ]
+
+
+async def test_debug_log_records_run_lifecycle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    log_file = tmp_path / "chat_debug.jsonl"
+    monkeypatch.setenv(DEBUG_LOG_ENV_VAR, str(log_file))
+    sup = _sup()
+    client = FakeUpstreamClient(_text_run_responses())
+    record = sup.create_conversation("interactive", upstream_url=URL, headers={})
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        message_id = sup.send_message(record.session_id, "hello")
+        await _wait_for(lambda: record.state == RunState.IDLE)
+
+    events = [json.loads(line) for line in log_file.read_text().splitlines()]
+    assert [e["event"] for e in events] == [
+        "message_starts_idle_turn",
+        "run_started",
+        "engine_run_started",
+        "upstream_round_started",
+        "run_settled",
+    ]
+    assert all(e["conversation_id"] == record.session_id for e in events)
+    assert events[0]["message_id"] == message_id
+    assert events[-1]["state"] == "idle"
+    assert events[-1]["idle_reason"] == "asked_user"
+    assert "hello" not in log_file.read_text()
+
+
+async def test_send_message_while_running_logs_enqueue(
+    hang_engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    log_file = tmp_path / "chat_debug.jsonl"
+    monkeypatch.setenv(DEBUG_LOG_ENV_VAR, str(log_file))
+    sup = _sup()
+    record = sup.create_conversation("interactive", upstream_url=URL, headers={})
+    sup.start_run(record.session_id, {"messages": [{"role": "user", "content": "go"}]})
+    message_id = sup.send_message(record.session_id, "queued")
+
+    events = [json.loads(line) for line in log_file.read_text().splitlines()]
+    (enqueued,) = [e for e in events if e["event"] == "message_enqueued"]
+    assert enqueued["conversation_id"] == record.session_id
+    assert enqueued["message_id"] == message_id
+    assert enqueued["state"] == "running"
+    assert enqueued["inbox_len"] == 1
+    await sup.stop(record.session_id)
 
 
 async def test_send_message_while_idle_delivers_stranded_inbox_first():

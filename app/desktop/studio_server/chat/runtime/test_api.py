@@ -18,6 +18,7 @@ from kiln_server.custom_errors import connect_custom_errors
 # Absolute imports so the patched module attributes are the same instances the
 # app wiring resolves.
 from app.desktop.studio_server.chat import routes as routes_module
+from app.desktop.studio_server.chat.debug_log import ENV_VAR as DEBUG_LOG_ENV_VAR
 from app.desktop.studio_server.chat.runtime import api as conversations_api_module
 from app.desktop.studio_server.chat.runtime.api import connect_conversations_api
 from app.desktop.studio_server.chat.runtime.engine import ConversationEngine
@@ -127,6 +128,19 @@ def _running_interactive(supervisor: ConversationSupervisor):
         record.session_id, {"messages": [{"role": "user", "content": "go"}]}
     )
     return record
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"), [(None, False), ("0", False), ("1", True)]
+)
+async def test_chat_debug_status(client, monkeypatch, value, expected):
+    if value is None:
+        monkeypatch.delenv(DEBUG_LOG_ENV_VAR, raising=False)
+    else:
+        monkeypatch.setenv(DEBUG_LOG_ENV_VAR, value)
+    r = await client.get("/api/chat/debug_status")
+    assert r.status_code == 200
+    assert r.json() == {"debug_log_enabled": expected}
 
 
 async def test_get_conversation(supervisor, hang_engine, client):
