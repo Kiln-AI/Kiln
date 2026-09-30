@@ -3988,6 +3988,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/wait": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wait For Jobs
+         * @description Block until ALL the given jobs reach a terminal state, then return
+         *     their records in the order given. A pure observer: disconnecting never
+         *     stops a job. The timeout covers the whole set. Empty `ids` returns an
+         *     empty list. A paused job is not terminal, so a wait on one runs out
+         *     the timeout (504).
+         */
+        post: operations["wait_for_jobs_api_jobs_wait_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/evals/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Eval Job
+         * @description Start a background job that runs one split of an eval against one run
+         *     config, and return at once. Items that already have a score for this eval
+         *     config and run config are skipped. Poll `GET /api/jobs/{id}` or
+         *     `POST /api/jobs/wait` for progress and the result.
+         */
+        post: operations["run_eval_job_api_jobs_evals_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{type}": {
         parameters: {
             query?: never;
@@ -7219,6 +7266,53 @@ export interface components {
             source_id: string;
         };
         /**
+         * EvalJobParams
+         * @description Which split of an eval to run, against which run config, with which judge.
+         */
+        EvalJobParams: {
+            /**
+             * Project Id
+             * @description Id of the project the eval belongs to.
+             */
+            project_id: string;
+            /**
+             * Task Id
+             * @description Id of the task the eval belongs to.
+             */
+            task_id: string;
+            /**
+             * Eval Id
+             * @description Id of the eval to run.
+             */
+            eval_id: string;
+            /**
+             * Eval Config Id
+             * @description Id of the eval config (judge) to evaluate the run's output with.
+             */
+            eval_config_id: string;
+            /**
+             * Run Config Id
+             * @description Id of the task run config whose outputs are being evaluated.
+             */
+            run_config_id: string;
+            /**
+             * Concurrency
+             * @description Max dataset items evaluated in parallel by the runner. Leave null to use the runner's default (25).
+             */
+            concurrency?: number | null;
+            /**
+             * Split
+             * @description Which of the eval's dataset splits to run: train, val, or test. Required, so a caller never runs the test split by omission. Fails with 422 if the eval has no such split.
+             * @enum {string}
+             */
+            split: "train" | "val" | "test";
+            /**
+             * Item Ids
+             * @description Restrict the job to these items of the split (EvalInput ids for an EvalInput-backed split, TaskRun ids for a TaskRun-backed one). Fails with 422 if an id is not in the split when the job is created. Progress and completion are measured over the subset. Leave null to run the whole split. Lets a caller trial a run config on a few named items before paying for the full split: the rows it stores are reused by a later full run, which skips scored items.
+             */
+            item_ids?: string[] | null;
+        };
+        /**
          * EvalOutputScore
          * @description A definition of a score that an evaluator will produce.
          *
@@ -8964,6 +9058,13 @@ export interface components {
              * @description Optional typed, worker-specific progress detail (validated against the worker's progress_model). Null for workers whose generic count progress is enough.
              */
             progress_detail?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Properties
+             * @description Optional static, worker-published descriptive properties for this job (validated against the worker's properties_model). Derived once from params at create time and unchanged over the run.
+             */
+            properties?: {
                 [key: string]: unknown;
             } | null;
             /**
@@ -13855,6 +13956,23 @@ export interface components {
          * @enum {string}
          */
         VectorStoreType: "lancedb_fts" | "lancedb_hybrid" | "lancedb_vector";
+        /**
+         * WaitForJobsRequest
+         * @description Request body for waiting on a set of jobs.
+         */
+        WaitForJobsRequest: {
+            /**
+             * Ids
+             * @description Job ids to wait for. All must reach a terminal state.
+             */
+            ids?: string[];
+            /**
+             * Timeout
+             * @description Seconds to wait before giving up (504 on timeout; jobs keep running — re-issue the wait to keep waiting). Defaults to 600s, capped at 3600s: the wait is always bounded, since a job that never terminates (e.g. paused by the user) would otherwise hang the caller indefinitely.
+             * @default 600
+             */
+            timeout: number;
+        };
     };
     responses: never;
     parameters: never;
@@ -22585,6 +22703,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    wait_for_jobs_api_jobs_wait_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WaitForJobsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_eval_job_api_jobs_evals_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvalJobParams"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateJobResponse"];
                 };
             };
             /** @description Validation Error */
