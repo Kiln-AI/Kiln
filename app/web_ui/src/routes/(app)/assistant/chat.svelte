@@ -645,7 +645,7 @@
             {debugIdCopied ? "copied" : debugConversationId}
           </button>
         {/if}
-        {#if contextUsage}
+        {#if dev_tools_enabled && contextUsage}
           <ContextUsageGauge usage={contextUsage} />
         {/if}
       </div>

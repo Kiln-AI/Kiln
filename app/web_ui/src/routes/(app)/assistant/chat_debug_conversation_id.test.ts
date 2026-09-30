@@ -64,7 +64,9 @@ async function loadChat(devTools: boolean) {
   return { Chat, chat_debug_log_enabled }
 }
 
-function makeFakeStore(): ChatSessionStore {
+function makeFakeStore(
+  overrides: Partial<ChatSessionState> = {},
+): ChatSessionStore {
   const state = writable<ChatSessionState>({
     messages: [],
     collapsedPartKeys: {},
@@ -83,6 +85,7 @@ function makeFakeStore(): ChatSessionStore {
     upgradeNudgeVersion: null,
     versionRequired: false,
     queuedMessage: null,
+    ...overrides,
   })
   const noop = () => {}
   return {
@@ -155,5 +158,30 @@ describe("chat.svelte copy-conversation-id widget", () => {
       props: { store: makeFakeStore() },
     })
     expect(queryByLabelText(COPY_LABEL)).toBeNull()
+  })
+})
+
+describe("chat.svelte context usage gauge", () => {
+  const contextUsage = {
+    context_tokens: 50_000,
+    context_limit: 200_000,
+    context_percent: 25,
+    compacted: false,
+  }
+
+  it("shows the gauge with dev tools", async () => {
+    const { Chat } = await loadChat(true)
+    const { queryByTestId } = render(Chat, {
+      props: { store: makeFakeStore({ contextUsage }) },
+    })
+    expect(queryByTestId("context-usage-gauge")).not.toBeNull()
+  })
+
+  it("hides the gauge without dev tools", async () => {
+    const { Chat } = await loadChat(false)
+    const { queryByTestId } = render(Chat, {
+      props: { store: makeFakeStore({ contextUsage }) },
+    })
+    expect(queryByTestId("context-usage-gauge")).toBeNull()
   })
 })
