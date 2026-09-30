@@ -25,17 +25,18 @@ def validate_provenance_or_400(
     """Run the create-time `derived_from_ids` check, mapping `ValueError` → HTTP 400.
 
     Each candidate parent id must resolve to an existing same-type sibling of the new
-    artifact — a `sibling_cls` instance in the same parent scope (archived included) via
-    `from_id_and_parent_path` (a `KilnParentedModel` classmethod). Callers pass the
-    sibling class and its parent path instead of repeating the lookup lambda.
+    artifact — a `sibling_cls` instance in the same parent scope (archived included).
+    All candidate ids resolve in one `from_ids_and_parent_path` scan of the parent
+    directory. Callers pass the sibling class and its parent path instead of
+    repeating the lookup.
     """
+    if provenance is None or not provenance.derived_from_ids:
+        return
+    candidate_ids = {cid for cid in provenance.derived_from_ids if cid is not None}
+    known_ids = sibling_cls.from_ids_and_parent_path(
+        candidate_ids, parent_path, readonly=True
+    ).keys()
     try:
-        validate_derived_from_ids(
-            provenance,
-            self_id,
-            lambda cid: (
-                sibling_cls.from_id_and_parent_path(cid, parent_path) is not None
-            ),
-        )
+        validate_derived_from_ids(provenance, self_id, lambda cid: cid in known_ids)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
