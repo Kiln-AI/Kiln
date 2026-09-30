@@ -28,6 +28,7 @@ from app.desktop.studio_server.jobs import api as jobs_api
 from app.desktop.studio_server.jobs import error_log
 from app.desktop.studio_server.jobs.api import connect_jobs_api
 from app.desktop.studio_server.jobs.models import (
+    JOB_MAX_CONCURRENCY,
     BackgroundJobStatus,
     JobDerivedState,
     JobWorker,
@@ -1022,6 +1023,30 @@ async def test_run_eval_job_with_empty_item_ids_422(
 
     assert resp.status_code == 422, resp.text
     assert registry._jobs == {}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_with_concurrency_above_the_max_422(
+    client, registry, stub_eval_worker, split_eval
+):
+    resp = await client.post(
+        _EVAL_RUN_PATH, json=_eval_params(concurrency=JOB_MAX_CONCURRENCY + 1)
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert "concurrency" in resp.text
+    assert registry._jobs == {}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_with_concurrency_at_the_max_201(
+    client, registry, stub_eval_worker, split_eval
+):
+    resp = await client.post(
+        _EVAL_RUN_PATH, json=_eval_params(concurrency=JOB_MAX_CONCURRENCY)
+    )
+
+    assert resp.status_code == 201, resp.text
 
 
 @pytest.mark.asyncio

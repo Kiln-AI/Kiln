@@ -32,6 +32,7 @@ from app.desktop.studio_server.eval_api import (
     task_run_config_from_id,
 )
 from app.desktop.studio_server.jobs.models import (
+    JOB_MAX_CONCURRENCY,
     JOB_TRANSIENT_ERROR_MAX_RETRIES,
     JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS,
     JobContext,
@@ -121,8 +122,10 @@ class EvalJobParams(BaseModel):
     concurrency: int | None = Field(
         default=None,
         ge=1,
-        description="Max dataset items evaluated in parallel by the runner. Leave null to use the "
-        f"runner's default ({DEFAULT_EVAL_CONCURRENCY}).",
+        le=JOB_MAX_CONCURRENCY,
+        description="Max dataset items evaluated in parallel by the runner, from 1 to "
+        f"{JOB_MAX_CONCURRENCY}. Leave null to use the runner's default "
+        f"({DEFAULT_EVAL_CONCURRENCY}).",
     )
     split: EvalSplitName = Field(
         description="Which of the eval's dataset splits to run: train, val, or test. "
