@@ -1,4 +1,7 @@
 import json
+import os
+import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -230,3 +233,26 @@ def test_on_disk_shape(project: Project):
     assert raw["overview"] == "disk"
     assert raw["scope"] == "project"
     assert raw["content"] is None
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes only")
+@pytest.mark.parametrize("umask", [0o022, 0o027, 0o002])
+def test_saved_file_mode_matches_a_normal_write(tmp_path: Path, umask: int):
+    # The atomic write must not leave the file with the 0o600 mode of a
+    # tempfile.mkstemp file. It must match a .kiln file that core writes in place.
+    old_umask = os.umask(umask)
+    try:
+        project = Project(name="mode_test", path=tmp_path / "project.kiln")
+        project.save_to_file()  # core save_to_file: open(path, "w")
+        memory = Memory(parent=project, overview="mode", scope="project")
+        memory.save_to_file()
+        memory.overview = "mode again"
+        memory.save_to_file()  # the update path replaces the file again
+    finally:
+        os.umask(old_umask)
+
+    assert memory.path is not None
+    memory_mode = stat.S_IMODE(memory.path.stat().st_mode)
+    project_mode = stat.S_IMODE((tmp_path / "project.kiln").stat().st_mode)
+    assert memory_mode == project_mode == (0o666 & ~umask)
+    assert list(memory.path.parent.glob(".tmp-*")) == []

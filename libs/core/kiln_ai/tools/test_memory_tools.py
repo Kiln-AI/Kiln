@@ -1,4 +1,5 @@
 import json
+import threading
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ from kiln_ai.datamodel.tool_id import (
     build_memory_tool_id,
     memory_operation_from_tool_id,
 )
+from kiln_ai.memory import MemoryStore
 from kiln_ai.tools.memory_tools import memory_tool_from_id
 from kiln_ai.tools.tool_registry import tool_from_id
 
@@ -149,6 +151,58 @@ async def test_update_clears_content_with_empty_string(project):
     )
     updated = out(await tool(project, "update").run(id=saved["id"], content=""))
     assert updated["memory"]["content"] is None
+
+
+@pytest.mark.parametrize("field", ["overview", "content", "tags", "scope"])
+async def test_update_null_field_is_not_provided(project, field):
+    # A model can send an explicit null. That must leave the field as it is,
+    # not clear it (and not fail on a required field).
+    saved = out(
+        await tool(project, "save").run(
+            overview="orig", scope="project", content="body", tags=["t"]
+        )
+    )
+    result = await tool(project, "update").run(id=saved["id"], **{field: None})
+    assert not result.is_error
+    memory = out(result)["memory"]
+    assert memory["overview"] == "orig"
+    assert memory["content"] == "body"
+    assert memory["tags"] == ["t"]
+    assert memory["scope"] == "project"
+
+
+# --- the store runs off the event loop ---
+
+
+@pytest.mark.parametrize(
+    "operation,store_method,kwargs",
+    [
+        ("save", "save_memory", {"overview": "a", "scope": "project"}),
+        ("list", "list_memories", {}),
+        ("get", "get_memories", {"ids": ["999999999999"]}),
+        ("update", "update_memory", {"id": "999999999999", "overview": "x"}),
+        ("delete", "delete_memory", {"id": "999999999999"}),
+        ("summary", "memory_summary", {}),
+    ],
+)
+async def test_store_call_runs_in_a_worker_thread(
+    project, monkeypatch, operation, store_method, kwargs
+):
+    # The store does blocking disk scans and regex work. The tools are async, so
+    # each store call must run in a worker thread, not on the event loop thread.
+    loop_thread = threading.get_ident()
+    call_threads: list[int] = []
+    original = getattr(MemoryStore, store_method)
+
+    def recording(self, *args, **kw):
+        call_threads.append(threading.get_ident())
+        return original(self, *args, **kw)
+
+    monkeypatch.setattr(MemoryStore, store_method, recording)
+    await tool(project, operation).run(**kwargs)
+
+    assert len(call_threads) == 1
+    assert call_threads[0] != loop_thread
 
 
 # --- error mapping (store errors become tool errors, not exceptions) ---

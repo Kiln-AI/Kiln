@@ -1,3 +1,5 @@
+import json
+import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -6,6 +8,7 @@ from pydantic import ValidationError
 
 from kiln_ai.datamodel import Memory, Project
 from kiln_ai.datamodel.memory import MAX_OVERVIEW_LENGTH
+from kiln_ai.datamodel.model_cache import ModelCache
 from kiln_ai.memory import (
     InvalidContentMatchError,
     MemoryNotFoundError,
@@ -284,3 +287,44 @@ def test_summary_untagged_serialization_excluded(project: Project, store: Memory
     add(project, "tagged", "project", minutes=0, tags=["x"])
     dumped = store.memory_summary().model_dump(mode="json", exclude_none=True)
     assert "untagged" not in dumped["scopes"][0]
+
+
+# --- unreadable rows ---
+
+
+def _break_on_disk(memory: Memory, how: str) -> None:
+    assert memory.path is not None
+    if how == "corrupt_json":
+        memory.path.write_text("{ not json", encoding="utf-8")
+    else:
+        # A row over the overview cap: valid JSON that fails the model's validation.
+        data = json.loads(memory.path.read_text(encoding="utf-8"))
+        data["overview"] = "a" * (MAX_OVERVIEW_LENGTH + 1)
+        memory.path.write_text(json.dumps(data), encoding="utf-8")
+    ModelCache.shared().invalidate(memory.path)
+
+
+@pytest.mark.parametrize("how", ["corrupt_json", "over_cap"])
+def test_list_and_summary_skip_an_unreadable_memory(
+    project: Project,
+    store: MemoryStore,
+    how: str,
+    caplog: pytest.LogCaptureFixture,
+):
+    good_a = add(project, "good a", "project", 1, tags=["x"])
+    bad = add(project, "bad", "project", 2, tags=["x"])
+    good_b = add(project, "good b", "task::1", 3)
+    _break_on_disk(bad, how)
+
+    with caplog.at_level(logging.WARNING, logger="kiln_ai.memory.memory_store"):
+        result = store.list_memories()
+        summary = store.memory_summary()
+
+    assert [listing.id for listing in result.listings] == [good_b.id, good_a.id]
+    assert result.matched == 2
+    assert summary.total == 2
+    assert {s.scope: s.count for s in summary.scopes} == {"project": 1, "task::1": 1}
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 2  # one per call
+    assert all(str(bad.path) in r.getMessage() for r in warnings)

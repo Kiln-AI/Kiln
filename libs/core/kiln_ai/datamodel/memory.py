@@ -1,6 +1,7 @@
 import contextlib
 import os
-import tempfile
+import uuid
+from pathlib import Path
 from typing import Any
 
 from pydantic import Field, field_validator
@@ -10,11 +11,42 @@ from kiln_ai.datamodel.model_cache import ModelCache
 from kiln_ai.utils.validation import validate_tags
 
 # These caps are enforced at write time AND re-applied by pydantic when loading
-# stored rows, so any row exceeding them (e.g. from an out-of-band writer)
-# breaks every listing for its project. Raising them is safe; never lower them.
+# stored rows, so any row exceeding them (e.g. from an out-of-band writer) fails
+# to load: listings skip it with a warning, and fetches by id fail on it.
+# Raising them is safe; never lower them.
 MAX_OVERVIEW_LENGTH = 280
 MAX_CONTENT_LENGTH = 4000
 MAX_SCOPE_LENGTH = 255
+
+# Flags for the temp file of an atomic write. O_EXCL makes the create fail if the
+# name exists, so two writers never share a temp file. O_NOFOLLOW and O_BINARY
+# match what tempfile.mkstemp uses, where the platform has them.
+_TEMP_OPEN_FLAGS = (
+    os.O_WRONLY
+    | os.O_CREAT
+    | os.O_EXCL
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_BINARY", 0)
+)
+_TEMP_CREATE_ATTEMPTS = 100
+
+
+def _create_temp_file(directory: Path) -> tuple[int, str]:
+    """Create a new temp file in directory with the mode of a normal file write.
+
+    tempfile.mkstemp creates its file with mode 0o600, so a file moved into place
+    with os.replace would be private while every other .kiln file is not. This
+    creates the file with mode 0o666, and the kernel applies the process umask,
+    exactly as it does for open(path, "w"). There is no need to read the umask:
+    os.umask can only be read by setting it, which is a race with other threads.
+    """
+    for _ in range(_TEMP_CREATE_ATTEMPTS):
+        name = str(directory / f".tmp-{uuid.uuid4().hex}.kiln")
+        try:
+            return os.open(name, _TEMP_OPEN_FLAGS, 0o666), name
+        except FileExistsError:
+            continue
+    raise FileExistsError(f"No free temp file name in {directory}")
 
 
 class Memory(KilnParentedModel):
@@ -109,7 +141,8 @@ class Memory(KilnParentedModel):
         half-written file. Writing to a temp file in the same directory and then
         os.replace()-ing it into place means every concurrent reader sees either
         the previous complete file or the new complete file — never a torn one.
-        Memory has no attachments, so the plain JSON dump is sufficient.
+        Memory has no attachments, so the plain JSON dump is sufficient. The temp
+        file gets the same mode as a normal write (see _create_temp_file).
         """
         path = self.build_path()
         if path is None:
@@ -121,7 +154,7 @@ class Memory(KilnParentedModel):
 
         json_data = self.model_dump_json(indent=2, exclude={"path"})
 
-        fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".tmp-", suffix=".kiln")
+        fd, tmp_name = _create_temp_file(path.parent)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as file:
                 file.write(json_data)
