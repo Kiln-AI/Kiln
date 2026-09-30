@@ -84,6 +84,40 @@ class TestEventParser:
         assert result.chat_trace_id == tid
         assert any(b"kiln_chat_trace" in line for line in result.lines_to_forward)
 
+    def test_kiln_chat_trace_with_context_usage_passes_through_untouched(self):
+        # The proxy is a raw passthrough: a new ``context_usage`` field on the
+        # ``kiln_chat_trace`` event must reach the client verbatim (architecture
+        # §7). The parser forwards complete lines without reserializing, so the
+        # whole payload — including ``context_usage`` — survives, and the trace
+        # id is still extracted.
+        tid = "d5804b96-851f-4ed6-acb6-b4107968a85a"
+        raw = (
+            f'data: {{"type":"kiln_chat_trace","trace_id":"{tid}",'
+            f'"context_usage":{{"context_tokens":1234,"context_limit":150000,'
+            f'"context_percent":0.0082,"compacted":true}}}}\n\n'
+        ).encode()
+        result = EventParser().parse(raw)
+        assert result.chat_trace_id == tid
+        forwarded = b"\n".join(result.lines_to_forward)
+        assert b"kiln_chat_trace" in forwarded
+        assert b'"context_usage"' in forwarded
+        assert b'"context_tokens":1234' in forwarded
+        assert b'"compacted":true' in forwarded
+
+    def test_kiln_compaction_status_passes_through_untouched(self):
+        # Phase 5: ``kiln_compaction_status`` is a new upstream SSE event the
+        # proxy doesn't model. The parser is a raw passthrough — it forwards
+        # complete lines without reserializing — so an unknown event type must
+        # reach the client verbatim (architecture §4.7). It is neither a chat
+        # trace nor an error, so it leaves the extraction fields untouched.
+        raw = b'data: {"type":"kiln_compaction_status","state":"started"}\n\n'
+        result = EventParser().parse(raw)
+        assert result.chat_trace_id is None
+        assert result.has_error_event is False
+        forwarded = b"\n".join(result.lines_to_forward)
+        assert b"kiln_compaction_status" in forwarded
+        assert b'"state":"started"' in forwarded
+
     def test_kiln_chat_trace_last_wins_in_chunk(self):
         raw = (
             b'data: {"type":"kiln_chat_trace","trace_id":"first-id"}\n'
