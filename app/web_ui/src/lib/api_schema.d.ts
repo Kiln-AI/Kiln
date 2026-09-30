@@ -3928,7 +3928,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List conversations */
+        get: operations["list_conversations_api_conversations_get"];
         put?: never;
         /**
          * Create (or adopt/flip) a conversation
@@ -3937,12 +3938,14 @@ export interface paths {
          *
          *     - ``kind="interactive"``: create-or-adopt the conversation for the
          *       given key. Idempotent: a key resolving to a live record (any kind)
-         *       returns that record's session id; a cold key (upstream root id /
-         *       legacy leaf) is adopted VERBATIM — the backend resolves it on the
-         *       first turn — and rehydrates pending approvals from the persisted
-         *       trace tail (functional spec §5 restart recovery); a dead ``cv_``
-         *       key — the record died with a desktop restart — creates a fresh
-         *       empty record.
+         *       returns that record's session id; a TERMINAL record's key (a
+         *       finished sub-agent reopened from history) continues its trace on a
+         *       fresh interactive record; a cold key (upstream root id / legacy
+         *       leaf) is adopted VERBATIM — the backend resolves it on the first
+         *       turn — and rehydrates pending approvals from the persisted trace
+         *       tail (functional spec §5 restart recovery); a dead ``cv_`` key —
+         *       the record died with a desktop restart — creates a fresh empty
+         *       record.
          *     - ``kind="auto"`` (default): enable auto mode — flip the named
          *       conversation, or create one for the armed-first-send seed (see
          *       ``supervisor.enable_auto`` for the entry shapes, including the
@@ -3952,6 +3955,27 @@ export interface paths {
          *     disconnects.
          */
         post: operations["create_conversation_api_conversations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream conversation state events
+         * @description Registry-level firehose of ``conversation-state`` events (snapshot
+         *     then live).
+         */
+        get: operations["stream_conversation_state_events_api_conversations_events_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4008,8 +4032,11 @@ export interface paths {
         put?: never;
         /**
          * Stop a conversation's run
-         * @description Stop the in-flight turn/burst (auto mode turns off). Idempotent —
-         *     stopping an unknown or idle conversation is a no-op; always 202.
+         * @description Stop the run. Idempotent — stopping an unknown or terminal
+         *     conversation is a no-op (a child's report, if any, is still delivered
+         *     to the parent); always 202. ``cascade=true`` stops the children
+         *     FIRST (their reports are suppressed — the parent is being torn down,
+         *     same order as session deletion) and then the conversation itself.
          */
         post: operations["stop_conversation_api_conversations__session_id__stop_post"];
         delete?: never;
@@ -4030,16 +4057,17 @@ export interface paths {
         /**
          * Flip a conversation's auto-mode flag
          * @description Flip the auto-mode flag on an EXISTING conversation (functional
-         *     spec §2). ``enabled=false`` → disable: cancel a live burst and publish
-         *     the off state with reason ``user_disabled``; the record then swaps
-         *     back to its interactive life. ``enabled=false`` + ``decline`` → the
-         *     consent-decline flow: resolve the pending ``enable_auto_mode`` call as
-         *     declined + denied siblings via an interactive continuation turn that
-         *     streams on the observer channel. ``enabled=true`` → enable/re-arm: the
-         *     record flips to the auto policy (ARMED-only: flag on, no upstream POST
-         *     — the next message starts the burst). 404 unknown, 409 for a decline
-         *     racing an in-flight run, 429 when enabling would exceed the
-         *     concurrency cap.
+         *     spec §2). ``enabled=false`` → disable: cancel a live burst, publish
+         *     the off state with reason ``user_disabled`` and cascade-stop sub-agent
+         *     children; the record then swaps back to its interactive life.
+         *     ``enabled=false`` + ``decline`` → the consent-decline flow: resolve
+         *     the pending gating call — ``enable_auto_mode``, or the FR2
+         *     spawn-consent ``spawn_subagent`` — as declined + denied siblings via
+         *     an interactive continuation turn that streams on the observer channel.
+         *     ``enabled=true`` → enable/re-arm: the record flips to the auto policy
+         *     (ARMED-only: flag on, no upstream POST — the next message starts the
+         *     burst). 404 unknown, 409 for sub-agent records / a decline racing an
+         *     in-flight run, 429 when enabling would exceed the concurrency cap.
          */
         post: operations["set_auto_mode_api_conversations__session_id__auto_post"];
         delete?: never;
@@ -5290,8 +5318,21 @@ export interface components {
             auto_active: boolean;
             /** Auto Run Id */
             auto_run_id?: string | null;
+            /** Agent Type */
+            agent_type?: string | null;
             /** Root Id */
             root_id?: string | null;
+            /** Parent Root Id */
+            parent_root_id?: string | null;
+            /**
+             * Is Subagent
+             * @default false
+             */
+            is_subagent: boolean;
+            /** Subagent Id */
+            subagent_id?: string | null;
+            /** Subagent Status */
+            subagent_status?: string | null;
         };
         /** ChatSessionSnapshot */
         ChatSessionSnapshot: {
@@ -5822,6 +5863,8 @@ export interface components {
          *       persist a restart-proof recovery key (the in-memory ``session_id`` dies
          *       with the desktop process; the recovery key resumes via the backend's
          *       own session-id resolution).
+         *     - ``final_report`` is included only when requested with
+         *       ``include_report``.
          */
         ConversationItem: {
             /** Session Id */
@@ -5830,8 +5873,14 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "interactive" | "auto";
+            kind: "interactive" | "auto" | "subagent";
             state: components["schemas"]["RunState"];
+            /** Name */
+            name?: string | null;
+            /** Agent Type */
+            agent_type?: string | null;
+            /** Parent Session Id */
+            parent_session_id?: string | null;
             /** Root Id */
             root_id?: string | null;
             /**
@@ -5841,6 +5890,23 @@ export interface components {
             auto_flag: boolean;
             /** Idle Reason */
             idle_reason?: string | null;
+            /**
+             * Rounds Used
+             * @default 0
+             */
+            rounds_used: number;
+            /**
+             * Report Available
+             * @default false
+             */
+            report_available: boolean;
+            /**
+             * Report Delivered
+             * @default false
+             */
+            report_delivered: boolean;
+            /** Final Report */
+            final_report?: string | null;
         };
         /**
          * ConversationMessageAccepted
@@ -11640,12 +11706,14 @@ export interface components {
          * RunState
          * @description Lifecycle state of a conversation's run (functional spec §1).
          *
-         *     Conversations cycle IDLE ⇄ RUNNING ⇄ AWAITING_APPROVAL forever; "auto
-         *     mode off" is the ``auto_flag`` axis, not a state. An IDLE conversation
-         *     re-arms on the next message.
+         *     ``COMPLETED``/``FAILED``/``STOPPED``/``TIMEOUT`` are reachable only by
+         *     one-shot (sub-agent) policies. Interactive/auto conversations cycle
+         *     IDLE ⇄ RUNNING ⇄ AWAITING_APPROVAL forever; "auto mode off" is the
+         *     ``auto_flag`` axis, not a state. An IDLE conversation re-arms on the next
+         *     message.
          * @enum {string}
          */
-        RunState: "idle" | "running" | "awaiting_approval";
+        RunState: "idle" | "running" | "awaiting_approval" | "completed" | "failed" | "stopped" | "timeout";
         /**
          * RunSummary
          * @description A summary of a task run for list views.
@@ -22789,6 +22857,38 @@ export interface operations {
             };
         };
     };
+    list_conversations_api_conversations_get: {
+        parameters: {
+            query?: {
+                /** @description Filter to children of this conversation, by the parent's session id. Omit for all live conversations. */
+                parent?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_conversation_api_conversations_post: {
         parameters: {
             query?: never;
@@ -22822,9 +22922,32 @@ export interface operations {
             };
         };
     };
-    get_conversation_api_conversations__session_id__get: {
+    stream_conversation_state_events_api_conversations_events_get: {
         parameters: {
             query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_conversation_api_conversations__session_id__get: {
+        parameters: {
+            query?: {
+                /** @description Include the final report for terminal runs. */
+                include_report?: boolean;
+            };
             header?: never;
             path: {
                 /** @description The conversation session id. */
@@ -22888,7 +23011,10 @@ export interface operations {
     };
     stop_conversation_api_conversations__session_id__stop_post: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Also stop every running sub-agent child (kill the whole tree). Without it an interactive stop only cancels the in-flight turn; auto/sub-agent stops cascade regardless. */
+                cascade?: boolean;
+            };
             header?: never;
             path: {
                 /** @description The conversation session id to stop. */

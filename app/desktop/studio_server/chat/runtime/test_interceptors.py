@@ -8,20 +8,35 @@ upstream request bodies)."""
 from __future__ import annotations
 
 import json
+from typing import ClassVar
 
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
 
 from .interceptors import (
     AUTO_INTERCEPTORS,
+    AUTO_MODE_NOOP_RESULT,
+    DEPTH_LIMIT_RESULT,
     DISABLE_AUTO_MODE_STALE_RESULT,
     ENABLE_AUTO_MODE_RESULT,
     INTERACTIVE_INTERCEPTORS,
+    ORCHESTRATION_TOOL_NAMES,
+    SPAWN_SUBAGENT_TOOL_NAME,
+    SUBAGENT_INTERCEPTORS,
     InterceptContext,
+    intercept_auto_mode_signals_noop,
     intercept_disable_auto_mode_stale,
     intercept_enable_auto_mode_consent,
     intercept_enable_auto_mode_noop,
+    intercept_orchestration_depth_guard,
+    intercept_spawn_requires_auto,
 )
-from .models import ConversationRecord, auto_policy, interactive_policy
+from .models import (
+    ConversationRecord,
+    SubAgentSeed,
+    auto_policy,
+    interactive_policy,
+    subagent_policy,
+)
 
 
 def _event(name: str, tc_id: str = "tc1", input: dict | None = None):
@@ -36,13 +51,43 @@ def _ctx(policy, kind="interactive", events=None, record=None):
     )
 
 
-# ── Byte pins ─────────────────────────────────────────────────────────────────
+# ── Drift guards ───────────────────────────────────────────────────────────────
+#
+# The runtime is the only home of these strings, so every assertion below
+# pins the exact bytes: each string is persisted in traces (tool results,
+# message framings, kickoff text, report frames) and silently changing one
+# would corrupt the protocol contract the golden fixtures also pin.
 
 
-class TestPinnedStrings:
+class TestDriftGuards:
+    def test_orchestration_tool_names_match_backend_contract(self):
+        # Must match the backend's client-visible tool schemas
+        # (kiln_server tools/subagent_tools.py). The executor
+        # (chat/orchestration.py) imports these same objects, so it can't
+        # drift separately.
+        from app.desktop.studio_server.chat import orchestration
+
+        assert ORCHESTRATION_TOOL_NAMES == {
+            "spawn_subagent",
+            "get_subagent_status",
+            "wait_for_subagents",
+            "stop_subagent",
+        }
+        assert orchestration.ORCHESTRATION_TOOL_NAMES == ORCHESTRATION_TOOL_NAMES
+        assert orchestration.SPAWN_SUBAGENT_TOOL_NAME == SPAWN_SUBAGENT_TOOL_NAME
+
     def test_result_constants_pinned(self):
+        # Persisted-in-trace strings, pinned as exact bytes.
         assert ENABLE_AUTO_MODE_RESULT == (
             '{"status": "enabled", "detail": "Auto mode is already enabled."}'
+        )
+        assert (
+            DEPTH_LIMIT_RESULT
+            == '{"error": "Sub-agents cannot spawn or manage sub-agents."}'
+        )
+        assert AUTO_MODE_NOOP_RESULT == (
+            '{"status": "noop", "detail": "This session already runs '
+            'autonomously; auto mode does not apply."}'
         )
         # FR1 stale-disable refusal — persisted in traces (and doubling as
         # the model's pointer to the Stop button), so pinned byte-for-byte.
@@ -51,8 +96,8 @@ class TestPinnedStrings:
             'turned off by the user (Stop button)."}'
         )
 
-    def test_side_note_reminder_pinned(self):
-        from .engine import SIDE_NOTE_REMINDER
+    def test_framing_reminders_pinned(self):
+        from .engine import SIDE_NOTE_REMINDER, STEER_REMINDER
 
         assert SIDE_NOTE_REMINDER == (
             "<system-reminder>"
@@ -63,21 +108,81 @@ class TestPinnedStrings:
             "you to, or your task is already complete."
             "</system-reminder>"
         )
+        assert STEER_REMINDER == (
+            "<system-reminder>"
+            "This message was sent by the user overseeing your background run. "
+            "Incorporate the guidance and continue working in the same turn — do not "
+            "end your turn just to reply. End only when your job (as adjusted) is done, "
+            "with your final report."
+            "</system-reminder>"
+        )
+
+    def test_kickoff_and_seed_body_pinned(self):
+        # Byte-for-byte pin of the sub-agent kickoff message and seed body;
+        # also covered end-to-end by the subagent_seed_and_steer golden
+        # fixture.
+        from .models import build_subagent_seed_body, kickoff_message
+
+        assert kickoff_message("n", "p") == (
+            "n — your assignment:\n\np\n\n"
+            "Begin now, work autonomously, and end with your final report."
+        )
+        assert build_subagent_seed_body(
+            SubAgentSeed(
+                agent_type="general", name="n", prompt="p", parent_trace_id="pt"
+            )
+        ) == {
+            "messages": [{"role": "user", "content": kickoff_message("n", "p")}],
+            "agent": {
+                "agent_type": "general",
+                "seed_prompt": "p",
+                "parent_trace_id": "pt",
+            },
+            "auto_mode": True,
+        }
+
+    def test_report_frame_pinned_and_escapes_title(self):
+        # The frame shape is parsed by the client's report-panel detection AND
+        # persisted in parent traces; the id attribute carries the child's
+        # session id (an opaque handle to the client).
+        from .models import RunState, format_subagent_report
+
+        record = ConversationRecord(
+            kind="subagent",
+            name='evil "title" <x>',
+            agent_type="general",
+            state=RunState.COMPLETED,
+            final_report="All done.",
+        )
+        assert format_subagent_report(record) == (
+            f'<subagent_report id="{record.session_id}" '
+            'agent_type="general" status="completed" '
+            'title="evil &quot;title&quot; &lt;x>">\n'
+            "All done.\n"
+            "</subagent_report>"
+        )
 
 
 # ── Chain composition ─────────────────────────────────────────────────────────
 
 
 def test_chain_order_is_priority():
-    # Consent leads the interactive chain (it must outrank the approval
-    # gate); both chains end in the FR1 stale-disable backstop.
+    # Consent leads the interactive chain (it must outrank the approval gate
+    # AND the spawn gate — an enable+spawn batch surfaces the ENABLE consent
+    # with the spawn as a sibling); the FR2 spawn gate sits second; both
+    # parent chains end in the FR1 stale-disable backstop.
     assert INTERACTIVE_INTERCEPTORS == (
         intercept_enable_auto_mode_consent,
+        intercept_spawn_requires_auto,
         intercept_disable_auto_mode_stale,
     )
     assert AUTO_INTERCEPTORS == (
         intercept_enable_auto_mode_noop,
         intercept_disable_auto_mode_stale,
+    )
+    assert SUBAGENT_INTERCEPTORS == (
+        intercept_orchestration_depth_guard,
+        intercept_auto_mode_signals_noop,
     )
 
 
@@ -98,6 +203,7 @@ class TestEnableConsent:
         assert payload["gating_tool_call_id"] == "tc_e"
         assert payload["enable_tool_call_id"] == "tc_e"
         assert payload["reason"] == "lots to do"
+        assert "spawn" not in payload
         # The consent event carries NO trace_id — accept/decline is keyed by
         # session id (functional spec §4).
         assert "trace_id" not in payload
@@ -106,6 +212,65 @@ class TestEnableConsent:
     def test_passes_other_tools(self):
         ctx = _ctx(interactive_policy())
         assert intercept_enable_auto_mode_consent(_event("add"), ctx) is None
+
+
+class TestSpawnRequiresAuto:
+    # FR2: interactive spawn_subagent requires auto mode. Flag off → the
+    # SAME consent flow as enable_auto_mode, with the spawn in the gating
+    # role; flag on (armed / racing user enable) → the spawn may proceed.
+
+    _SPAWN_INPUT: ClassVar[dict] = {
+        "agent_type": "general",
+        "name": "helper",
+        "prompt": "Dig in.",
+    }
+
+    def test_flag_off_builds_spawn_consent_control_event(self):
+        spawn = _event("spawn_subagent", "tc_spawn", dict(self._SPAWN_INPUT))
+        sibling = _event("add", "tc_s", {"a": 1, "b": 2})
+        ctx = _ctx(interactive_policy(), events=[spawn, sibling])
+        res = intercept_spawn_requires_auto(spawn, ctx)
+        assert res is not None and res.kind == "control"
+        assert res.control_bytes is not None
+        payload = json.loads(res.control_bytes.decode()[6:])
+        assert payload["type"] == "auto-mode-consent-required"
+        assert payload["trigger"] == "spawn_subagent"
+        assert payload["gating_tool_call_id"] == "tc_spawn"
+        # The dialog names what is about to be spawned.
+        assert payload["spawn"] == self._SPAWN_INPUT
+        # The enable-only fields never ride the spawn trigger.
+        assert "enable_tool_call_id" not in payload
+        assert "reason" not in payload
+        assert [s["toolCallId"] for s in payload["sibling_tool_calls"]] == ["tc_s"]
+
+    def test_second_spawn_rides_as_sibling_of_the_gating_first(self):
+        first = _event("spawn_subagent", "tc_one", dict(self._SPAWN_INPUT))
+        second = _event("spawn_subagent", "tc_two", dict(self._SPAWN_INPUT))
+        ctx = _ctx(interactive_policy(), events=[first, second])
+        res = intercept_spawn_requires_auto(first, ctx)
+        assert res is not None
+        payload = json.loads(res.control_bytes.decode()[6:])
+        assert payload["gating_tool_call_id"] == "tc_one"
+        assert [s["toolCallId"] for s in payload["sibling_tool_calls"]] == ["tc_two"]
+
+    def test_flag_on_passes(self):
+        record = ConversationRecord(kind="interactive", auto_flag=True)
+        spawn = _event("spawn_subagent", "tc_spawn", dict(self._SPAWN_INPUT))
+        ctx = _ctx(interactive_policy(), events=[spawn], record=record)
+        assert intercept_spawn_requires_auto(spawn, ctx) is None
+
+    def test_passes_other_tools(self):
+        # Non-spawn orchestration tools are NOT gated (they only observe or
+        # stop already-running children — functional spec FR2).
+        ctx = _ctx(interactive_policy())
+        for name in (
+            "add",
+            "get_subagent_status",
+            "wait_for_subagents",
+            "stop_subagent",
+            "enable_auto_mode",
+        ):
+            assert intercept_spawn_requires_auto(_event(name), ctx) is None
 
 
 class TestDisableStale:
@@ -132,6 +297,35 @@ class TestDisableStale:
             intercept_disable_auto_mode_stale(_event("add"), _ctx(interactive_policy()))
             is None
         )
+
+
+class TestChildInterceptors:
+    def _child_policy(self):
+        return subagent_policy(SubAgentSeed(agent_type="general", name="n", prompt="p"))
+
+    def test_depth_guard_rejects_orchestration_calls(self):
+        policy = self._child_policy()
+        for name in ORCHESTRATION_TOOL_NAMES:
+            res = intercept_orchestration_depth_guard(
+                _event(name), _ctx(policy, kind="subagent")
+            )
+            assert res is not None and res.result_json == DEPTH_LIMIT_RESULT
+
+    def test_depth_guard_passes_at_depth_zero(self):
+        # Parent conversations execute orchestration calls for real (via
+        # execute_tool_batch's dispatch) — the guard is depth-1 only.
+        res = intercept_orchestration_depth_guard(
+            _event("spawn_subagent"), _ctx(interactive_policy())
+        )
+        assert res is None
+
+    def test_auto_signals_resolve_as_noops(self):
+        policy = self._child_policy()
+        for name in ("enable_auto_mode", "disable_auto_mode"):
+            res = intercept_auto_mode_signals_noop(
+                _event(name), _ctx(policy, kind="subagent")
+            )
+            assert res is not None and res.result_json == AUTO_MODE_NOOP_RESULT
 
 
 def test_enable_noop_resolves_already_enabled():

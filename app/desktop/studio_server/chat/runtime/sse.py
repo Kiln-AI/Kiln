@@ -60,6 +60,9 @@ def format_conversation_state(record: ConversationRecord) -> bytes:
     - auto_flag=false + idle_reason   → auto mode just turned off
                                         (user_stopped / user_disabled)
     - state=running ⇔ a turn/burst is working
+    - kind=subagent                   → state/name/report_available; no
+                                        trace_id (browsers never see trace
+                                        ids, functional spec §4)
     """
     payload: dict[str, object] = {
         "type": SSE_TYPE_CONVERSATION_STATE,
@@ -71,6 +74,18 @@ def format_conversation_state(record: ConversationRecord) -> bytes:
     # Optional fields ride only when meaningful, keeping the event compact.
     if record.idle_reason is not None:
         payload["idle_reason"] = record.idle_reason
+    if record.name is not None:
+        payload["name"] = record.name
+    # Lineage rides the event so a firehose observer can attribute an unknown
+    # child to its parent directly, without a racy list-fetch round trip.
+    if record.parent_session_id is not None:
+        payload["parent_session_id"] = record.parent_session_id
+    if record.kind == "subagent":
+        payload["report_available"] = record.final_report is not None
+        # Identity rides along too, so a directly-attributed child renders its
+        # type badge/tooltip immediately instead of waiting for a list fetch.
+        if record.agent_type is not None:
+            payload["agent_type"] = record.agent_type
     return _encode(payload)
 
 
@@ -83,6 +98,7 @@ def format_user_message(content: str, message_id: str | None = None) -> bytes:
     sender) render it immediately, consistent with re-attach/replay.
     ``message_id`` is the injected message's stable id, so a client can dedupe
     the echo if a buffer replay re-emits it for a message it already shows.
+    (Report-injection echoes carry no id.)
     """
     payload: dict[str, str] = {"type": "user-message", "content": content}
     if message_id is not None:

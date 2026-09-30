@@ -1,28 +1,31 @@
 """Data model of the unified conversation runtime.
 
 A conversation has two orthogonal axes on ``ConversationRecord``: ``state``
-(whether a turn is in flight, parked on approvals, or idle) and
-``auto_flag`` (the per-conversation auto-mode flag). Auto mode on/off maps
-onto them as:
+(one ``RunState`` enum for every kind) and ``auto_flag`` (the
+per-conversation auto-mode flag, only meaningful for interactive/auto
+records). Auto mode on/off maps onto them as:
 
 - auto burst in flight           → state=RUNNING,  auto_flag=True
 - auto on, between bursts        → state=IDLE,     auto_flag=True
 - auto stopped by the user       → state=IDLE,     auto_flag=False, idle_reason="user_stopped"
 - auto disabled by the user      → state=IDLE,     auto_flag=False, idle_reason="user_disabled"
 
-Conversations never reach a terminal state — they idle between turns
-(functional spec §1).
+Interactive/auto conversations never reach a terminal state — they idle
+between turns (functional spec §1). A sub-agent run is one-shot: it goes
+RUNNING → a terminal state (COMPLETED / FAILED / STOPPED / TIMEOUT).
 
 Per-kind behavior is data: ``ConversationPolicy`` is a frozen dataclass built
-by the ``interactive_policy`` / ``auto_policy`` factories. A new conversation
-kind is a new policy factory (plus its interceptor chain) — never a subclass
-(architecture §11).
+by the ``interactive_policy`` / ``auto_policy`` / ``subagent_policy``
+factories. A new conversation kind is a new policy factory (plus its
+interceptor chain), and a kind-specific behavior is an explicit policy field
+— never a subclass (architecture §11).
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import os
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -73,20 +76,40 @@ def new_batch_id() -> str:
     return _mint_id("ab")
 
 
-ConversationKind = Literal["interactive", "auto"]
+ConversationKind = Literal["interactive", "auto", "subagent"]
 
 
 class RunState(str, Enum):
     """Lifecycle state of a conversation's run (functional spec §1).
 
-    Conversations cycle IDLE ⇄ RUNNING ⇄ AWAITING_APPROVAL forever; "auto
-    mode off" is the ``auto_flag`` axis, not a state. An IDLE conversation
-    re-arms on the next message.
+    ``COMPLETED``/``FAILED``/``STOPPED``/``TIMEOUT`` are reachable only by
+    one-shot (sub-agent) policies. Interactive/auto conversations cycle
+    IDLE ⇄ RUNNING ⇄ AWAITING_APPROVAL forever; "auto mode off" is the
+    ``auto_flag`` axis, not a state. An IDLE conversation re-arms on the next
+    message.
     """
 
-    IDLE = "idle"  # no turn in flight
+    IDLE = "idle"  # no turn in flight (interactive/auto between turns)
     RUNNING = "running"  # a turn/burst is in flight
     AWAITING_APPROVAL = "awaiting_approval"  # parked on pending tool decisions
+    COMPLETED = "completed"  # one-shot: final plain-text turn = the report
+    FAILED = "failed"  # one-shot: unrecoverable error
+    STOPPED = "stopped"  # one-shot: user or parent called stop
+    TIMEOUT = "timeout"  # one-shot: round cap or wall-clock cap exceeded
+
+    @property
+    def is_terminal(self) -> bool:
+        """Terminal == the run can never advance again (one-shot kinds only).
+
+        An IDLE interactive/auto record is NOT terminal — it re-arms on the
+        next message (Revision R1).
+        """
+        return self in _TERMINAL_STATES
+
+
+_TERMINAL_STATES = frozenset(
+    {RunState.COMPLETED, RunState.FAILED, RunState.STOPPED, RunState.TIMEOUT}
+)
 
 
 class ConversationRecord(BaseModel):
@@ -136,6 +159,12 @@ class ConversationRecord(BaseModel):
     # non-empty chain is what tells the engine this record joined
     # mid-conversation (root-stamp suppression).
     seen_trace_ids: list[str] = Field(default_factory=list)
+    # Sub-agent lineage: the parent conversation's session id. It is stable,
+    # so no alias chaining is needed as the parent's leaves rotate.
+    parent_session_id: str | None = None
+    # Sub-agent identity (None for interactive/auto records).
+    name: str | None = None
+    agent_type: str | None = None
     # The per-conversation auto-mode flag. Flips between turns only — a flip
     # mid-round is impossible because the policy swap happens at run
     # boundaries (architecture §2).
@@ -145,13 +174,22 @@ class ConversationRecord(BaseModel):
     # was just cleared (the off event publishes as a conversation-state
     # change with this reason attached).
     idle_reason: str | None = None
+    # One-shot kinds: the model's final plain-text turn (or its partial-output
+    # base while running). The supervisor's settle path synthesizes the
+    # status-note framing for FAILED/STOPPED/TIMEOUT.
+    final_report: str | None = None
+    # True once the report reached the parent through any channel. Pins the
+    # record against GC while False.
+    report_delivered: bool = False
+    rounds_used: int = 0
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)
 
 
 class InboundMessage(BaseModel):
-    """A user message queued into a conversation (send-while-running or idle
-    re-arm).
+    """A user message queued into a conversation (send-while-running, steer,
+    idle re-arm, or an injected ``<subagent_report>`` frame for an auto-flag
+    parent).
 
     The supervisor echoes the message onto the bus at enqueue time; the
     engine drains WITHOUT re-echoing (echo-once).
@@ -167,6 +205,21 @@ class InboundMessage(BaseModel):
 
     def as_chat_message(self) -> dict[str, Any]:
         return {"role": self.role, "content": self.content}
+
+
+class SubAgentSeed(BaseModel):
+    """Everything needed to start a sub-agent session upstream.
+
+    Desktop-side lineage is the record's ``parent_session_id``.
+    ``parent_trace_id`` rides the ``agent`` block: the BACKEND resolves it
+    into durable lineage on the child session's meta, so it is part of the
+    wire contract even though the desktop keys nothing on it.
+    """
+
+    agent_type: str
+    name: str
+    prompt: str
+    parent_trace_id: str | None = None
 
 
 def continuation_key_fields(record: ConversationRecord) -> dict[str, Any]:
@@ -193,6 +246,50 @@ def continuation_key_fields(record: ConversationRecord) -> dict[str, Any]:
     if record.resume_session_key is not None:
         return {"session_id": record.resume_session_key}
     return {}
+
+
+def kickoff_message(name: str, prompt: str) -> str:
+    """The first user message of a child session. It is persisted in the
+    child's trace, so the text is part of the protocol contract (byte-pinned
+    in ``test_interceptors.py``).
+
+    It carries the full briefing — even though the briefing is ALSO seeded
+    into the system prompt backend-side — so the user sees the sub-agent's
+    instructions when they open its tab (the system prompt is never
+    rendered). The name leads because the session-list title derives from the
+    first user message.
+    """
+    return (
+        f"{name} — your assignment:\n\n{prompt}\n\n"
+        "Begin now, work autonomously, and end with your final report."
+    )
+
+
+def build_subagent_seed_body(seed: SubAgentSeed) -> dict[str, Any]:
+    """The child's first upstream POST (byte-pinned in
+    ``test_interceptors.py``).
+
+    The ``agent`` block is first-turn-only (the backend 400s ``agent`` +
+    ``trace_id`` together); the engine's trace-advance step drops it after
+    the first persisted snapshot. ``auto_mode`` rides every continuation via
+    the engine's ``{**body, ...}`` rebuilds.
+    """
+    agent: dict[str, Any] = {
+        "agent_type": seed.agent_type,
+        "seed_prompt": seed.prompt,
+    }
+    if seed.parent_trace_id is not None:
+        agent["parent_trace_id"] = seed.parent_trace_id
+    return {
+        "messages": [
+            {
+                "role": "user",
+                "content": kickoff_message(seed.name, seed.prompt),
+            }
+        ],
+        "agent": agent,
+        "auto_mode": True,
+    }
 
 
 def build_auto_seed_body(
@@ -222,6 +319,12 @@ def build_auto_seed_body(
     body omits both so the backend starts a fresh conversation and mints the
     first trace on the opening turn; the seed then carries the first user
     message in ``extra_messages`` so the opening turn is never empty.
+
+    Spawn-consent accept (FR2) is the ``enable_tool_call_id=None`` shape: the
+    gating spawn call rides ``sibling_results`` like any auto-approved
+    pending sibling (its ``{"status": "spawned", ...}`` result answers the
+    call), so the seed carries no enable row — the flag flip is the consent,
+    not a tool result.
 
     ``session_id`` is the resume-by-key continuation for records
     adopted from history with no leaf yet (``resume_session_key``): the
@@ -264,11 +367,74 @@ def build_auto_seed_body(
     return {"messages": messages, "auto_mode": True}
 
 
-# What the engine's max-rounds backstop tells the user (surfaces in the UI).
-MAX_ROUNDS_MESSAGE = "Maximum tool rounds exceeded. Please start a new message."
+def format_subagent_report(record: ConversationRecord) -> str:
+    """The framed report injected into the parent conversation as a user-role
+    message. The frame is stripped/specialized on hydration client-side and
+    the skill teaches the model it is machinery, not the user speaking.
+
+    The frame shape (tag, attribute names, body layout) is part of the
+    protocol contract: it is persisted in parent traces and parsed by the
+    client's report-panel detection. The ``id`` attribute carries the child's
+    session id (``cv_``), an opaque handle to the client that stays
+    resolvable.
+    """
+    body = record.final_report or "(no report produced)"
+    return (
+        f'<subagent_report id="{record.session_id}" '
+        f'agent_type="{_escape_attr(record.agent_type or "")}" '
+        f'status="{record.state.value}" '
+        f'title="{_escape_attr(record.name or "")}">\n'
+        f"{body}\n"
+        f"</subagent_report>"
+    )
 
 
-MessageFraming = Literal["none", "side_note"]
+def _escape_attr(value: str) -> str:
+    return value.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
+
+
+# What the engine's max-rounds backstop tells the user, per kind (surfaces in
+# the UI and, for sub-agents, in the report note flow).
+INTERACTIVE_MAX_ROUNDS_MESSAGE = (
+    "Maximum tool rounds exceeded. Please start a new message."
+)
+SUBAGENT_MAX_ROUNDS_MESSAGE = (
+    "Sub-agent exceeded its maximum tool rounds and was stopped. "
+    "Its last output is reported as-is."
+)
+
+# Sub-agent budget knobs: defaults, overridable by operators via env vars.
+DEFAULT_SUBAGENT_MAX_ROUNDS = 50
+SUBAGENT_MAX_ROUNDS_ENV_VAR = "KILN_CHAT_SUBAGENT_MAX_ROUNDS"
+DEFAULT_SUBAGENT_TIMEOUT_SECONDS = 1800.0
+SUBAGENT_TIMEOUT_ENV_VAR = "KILN_CHAT_SUBAGENT_TIMEOUT_SECONDS"
+
+
+def _resolve_positive_int_env(env_var: str, default: int) -> int:
+    raw = os.environ.get(env_var)
+    if raw:
+        try:
+            value = int(raw)
+            if value > 0:
+                return value
+        except ValueError:
+            pass
+    return default
+
+
+def _resolve_positive_float_env(env_var: str, default: float) -> float:
+    raw = os.environ.get(env_var)
+    if raw:
+        try:
+            value = float(raw)
+            if value > 0:
+                return value
+        except ValueError:
+            pass
+    return default
+
+
+MessageFraming = Literal["none", "side_note", "steer"]
 
 
 @dataclass(frozen=True)
@@ -283,25 +449,43 @@ class ConversationPolicy:
     # "gated": tool calls flagged requires_approval park the run for user
     # decisions. "auto": every client tool executes unattended.
     approvals: Literal["gated", "auto"]
-    # How drained inbox messages are framed before riding a continuation:
-    # "side_note" = auto's mid-burst aside frame, "none" = interactive
-    # (messages ride raw).
+    # How drained inbox messages are framed before riding a continuation.
+    # Generalizes the architecture's `side_note_framing: bool`, because the
+    # two unattended kinds use DIFFERENT reminder texts that are persisted
+    # verbatim: "side_note" = auto's mid-burst aside frame, "steer" = the
+    # sub-agent steering frame, "none" = interactive (messages ride raw).
     message_framing: MessageFraming
+    # One-shot lifecycle: a plain-text turn is COMPLETED (its text = the
+    # report) and terminal states are reachable.
+    one_shot: bool
     max_rounds: int
+    # Wall-clock cap the supervisor applies via asyncio.wait_for (one-shot
+    # kinds only). None = no cap.
+    wall_clock_seconds: float | None
     # Ordered signal-tool interception chain (see interceptors.py). Order is
     # PRIORITY: the engine scans the whole round's client events per
     # interceptor, so e.g. the interactive chain's consent interception
     # outranks everything behind it.
     interceptors: tuple["Interceptor", ...]
+    # Child creation: when set, the engine builds the first POST from this
+    # seed (agent block + kickoff message) and echoes the kickoff onto the
+    # stream.
+    seed: SubAgentSeed | None = None
+    # 0 for parent conversations, 1 for children. Children reject
+    # orchestration calls (depth guard interceptor): sub-agents cannot manage
+    # sub-agents.
+    orchestration_depth: int = 0
     # Auto-mode graceful stop (functional spec §4.4(1)): when a stop lands at
     # a round boundary that has client tool calls, surface them via
     # tool-calls-pending for NORMAL approval instead of executing — after the
     # stop the conversation returns to interactive mode where everything is
-    # subject to approval. Interactive turns are cancelled, not gracefully
-    # stopped — hence a policy flag rather than universal behavior.
+    # subject to approval. Sub-agents just end (their calls die with them),
+    # and interactive turns are cancelled, not gracefully stopped — hence a
+    # policy flag rather than universal behavior.
     graceful_stop_surfaces_pending: bool = False
-    # kiln-chat-retry events carry the session id as run_id on auto streams
-    # but not on interactive ones.
+    max_rounds_message: str = INTERACTIVE_MAX_ROUNDS_MESSAGE
+    # kiln-chat-retry events carry the session id as run_id on auto and
+    # sub-agent streams but not on interactive ones.
     retry_events_carry_run_id: bool = True
 
 
@@ -329,16 +513,17 @@ class PendingApprovalBatch(BaseModel):
     assistant_text: str
     tool_input_events: list[ToolInputAvailableEvent]
     # Pre-answered calls riding the batch WITHOUT being user decisions
-    # (tool_call_id → result JSON). Recovery: a rehydrated trace tail can
-    # carry unanswered SIGNAL calls (enable/disable_auto_mode) next to real
-    # client calls — signals are never executed as tools, so the resume run
-    # pre-answers them purely so the persisted trace has no dangling tool
-    # call: a pending enable_auto_mode resolves as {"status": "declined"}
-    # (its consent dialog died with the restart, mirroring the decline
-    # flow); a stale pending disable_auto_mode resolves with the FR1 refusal
-    # shape (DISABLE_AUTO_MODE_STALE_RESULT — the model has no off-switch).
-    # Empty for live batches (the interceptor chain answers signals before a
-    # park can ever include one).
+    # (tool_call_id → result JSON). Recovery: a rehydrated trace tail
+    # can carry unanswered SIGNAL calls (enable/disable_auto_mode — and,
+    # FR2, a flag-off gating spawn_subagent) next to real client calls —
+    # signals are never executed as tools, so the resume run pre-answers
+    # them purely so the persisted trace has no dangling tool call: a
+    # pending enable_auto_mode (or flag-off spawn_subagent) resolves as
+    # {"status": "declined"} (its consent dialog died with the restart,
+    # mirroring the decline flow); a stale pending disable_auto_mode
+    # resolves with the FR1 refusal shape (DISABLE_AUTO_MODE_STALE_RESULT —
+    # the model has no off-switch). Empty for live batches (the interceptor
+    # chain answers signals before a park can ever include one).
     preresolved_results: dict[str, str] = Field(default_factory=dict)
     # Set by the supervisor's decide() exactly once; the engine wakes, reads
     # `decisions`, and resumes. Partial decision sets are rejected upstream of
@@ -351,10 +536,12 @@ class PendingApprovalBatch(BaseModel):
 
 
 def interactive_policy() -> ConversationPolicy:
-    """Interactive: gated approvals, no framing, MAX_TOOL_ROUNDS.
+    """Interactive: gated approvals, not one-shot, no framing, MAX_TOOL_ROUNDS.
 
     Approval-requiring tools park the run; enable_auto_mode surfaces the
-    consent control event. A stale disable_auto_mode call resolves as the FR1
+    consent control event, and a spawn_subagent without auto mode surfaces
+    the SAME consent flow with the spawn in the gating role (FR2: spawning
+    requires auto mode). A stale disable_auto_mode call resolves as the FR1
     refusal and the turn continues (the model has no auto-mode off-switch).
     """
     from app.desktop.studio_server.chat.runtime.interceptors import (
@@ -364,14 +551,18 @@ def interactive_policy() -> ConversationPolicy:
     return ConversationPolicy(
         approvals="gated",
         message_framing="none",
+        one_shot=False,
         max_rounds=MAX_TOOL_ROUNDS,
+        wall_clock_seconds=None,
         interceptors=INTERACTIVE_INTERCEPTORS,
+        max_rounds_message=INTERACTIVE_MAX_ROUNDS_MESSAGE,
+        # Interactive retry events carry no run_id.
         retry_events_carry_run_id=False,
     )
 
 
 def auto_policy() -> ConversationPolicy:
-    """Auto mode: auto approvals, side-note framing.
+    """Auto mode: auto approvals, side-note framing, not one-shot.
 
     Every client tool runs unattended; a graceful stop surfaces the
     boundary's tool calls for normal approval. Auto mode turns off only by
@@ -385,7 +576,51 @@ def auto_policy() -> ConversationPolicy:
     return ConversationPolicy(
         approvals="auto",
         message_framing="side_note",
+        one_shot=False,
         max_rounds=MAX_TOOL_ROUNDS,
+        wall_clock_seconds=None,
         interceptors=AUTO_INTERCEPTORS,
         graceful_stop_surfaces_pending=True,
+        max_rounds_message=INTERACTIVE_MAX_ROUNDS_MESSAGE,
+    )
+
+
+def subagent_policy(
+    seed: SubAgentSeed,
+    *,
+    max_rounds: int | None = None,
+    wall_clock_seconds: float | None = None,
+) -> ConversationPolicy:
+    """Sub-agent: auto approvals (consent granted at spawn), one-shot, child
+    budgets, steer framing, depth-1 interception.
+
+    Budgets not passed explicitly resolve from the env-var overrides, then
+    the defaults.
+    """
+    from app.desktop.studio_server.chat.runtime.interceptors import (
+        SUBAGENT_INTERCEPTORS,
+    )
+
+    return ConversationPolicy(
+        approvals="auto",
+        message_framing="steer",
+        one_shot=True,
+        max_rounds=(
+            max_rounds
+            if max_rounds is not None
+            else _resolve_positive_int_env(
+                SUBAGENT_MAX_ROUNDS_ENV_VAR, DEFAULT_SUBAGENT_MAX_ROUNDS
+            )
+        ),
+        wall_clock_seconds=(
+            wall_clock_seconds
+            if wall_clock_seconds is not None
+            else _resolve_positive_float_env(
+                SUBAGENT_TIMEOUT_ENV_VAR, DEFAULT_SUBAGENT_TIMEOUT_SECONDS
+            )
+        ),
+        interceptors=SUBAGENT_INTERCEPTORS,
+        seed=seed,
+        orchestration_depth=1,
+        max_rounds_message=SUBAGENT_MAX_ROUNDS_MESSAGE,
     )

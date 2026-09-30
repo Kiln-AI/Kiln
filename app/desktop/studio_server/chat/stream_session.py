@@ -12,7 +12,7 @@ upstream mechanics every conversation kind uses:
   transient-failure retry wrapper (identical classification/backoff for
   every kind);
 - ``execute_tool`` / ``execute_tool_batch`` — client tool execution with
-  approval decisions;
+  approval decisions + orchestration dispatch;
 - ``_build_openai_tool_continuation`` — the continuation body builder (the
   persisted-trace shape contract, pinned by the golden fixtures);
 - the pending/consent/retry SSE formatters (re-exported by
@@ -25,7 +25,12 @@ import logging
 import random
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Callable, Literal
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Literal
+
+if TYPE_CHECKING:
+    from app.desktop.studio_server.chat.orchestration import (
+        OrchestrationContext,
+    )
 
 import httpx
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
@@ -138,19 +143,25 @@ def _format_tool_calls_pending_sse(events: list[ToolInputAvailableEvent]) -> byt
 
 def _format_consent_required_sse(
     *,
-    trigger: Literal["enable_auto_mode"],
+    trigger: Literal["enable_auto_mode", "spawn_subagent"],
     gating_tool_call_id: str,
     siblings: list[ToolInputAvailableEvent],
     reason: str | None = None,
+    spawn: dict[str, Any] | None = None,
 ) -> bytes:
     """Format the ``auto-mode-consent-required`` SSE the engine emits when an
-    interactive conversation needs the user's auto-mode consent (the model
-    called ``enable_auto_mode``).
+    interactive conversation needs the user's auto-mode consent — either the
+    model called ``enable_auto_mode`` (``trigger="enable_auto_mode"``) or it
+    called ``spawn_subagent`` with auto mode off (``trigger="spawn_subagent"``,
+    FR2: spawning requires auto mode, so the spawn call takes the gating role).
 
     ``gating_tool_call_id`` is the call whose accept/decline resolution the
     consent flow owes an answer to; ``enable_tool_call_id`` carries the same
-    id, and ``reason`` is the model's stated reason. ``trigger`` names the
-    tool that surfaced the consent flow.
+    id for the enable trigger only (browser bundles that key on that name
+    still read it), and ``reason`` (the model's stated reason)
+    rides only with the enable trigger too. The spawn trigger instead carries
+    ``spawn`` — the gating call's input (``agent_type``/``name``/``prompt``)
+    so the dialog can name what is about to be spawned.
 
     ``sibling_tool_calls`` carries any other (non-server) client tool calls from
     the same round so the accept/decline paths can resolve every ``tool_call_id``
@@ -166,10 +177,13 @@ def _format_consent_required_sse(
         "type": SSE_TYPE_AUTO_MODE_CONSENT_REQUIRED,
         "trigger": trigger,
         "gating_tool_call_id": gating_tool_call_id,
-        "enable_tool_call_id": gating_tool_call_id,
-        "reason": reason,
-        "sibling_tool_calls": [_pending_item_from_event(e) for e in siblings],
     }
+    if trigger == "enable_auto_mode":
+        payload["enable_tool_call_id"] = gating_tool_call_id
+        payload["reason"] = reason
+    else:
+        payload["spawn"] = spawn
+    payload["sibling_tool_calls"] = [_pending_item_from_event(e) for e in siblings]
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
 
 
@@ -466,8 +480,25 @@ async def iter_round_with_retries(
 async def execute_tool_batch(
     tool_calls: list[ToolCallInfo],
     decisions: dict[str, bool],
+    orchestration_ctx: "OrchestrationContext | None" = None,
 ) -> dict[str, str]:
-    """Execute a batch of client tool calls, honoring approval decisions."""
+    """Execute a batch of client tool calls, honoring approval decisions.
+
+    Sub-agent orchestration tools (spawn/status/wait/stop) are not kiln_ai
+    registry tools — they need the owning conversation's identity and the
+    conversation supervisor, carried by ``orchestration_ctx``. Callers that own
+    a conversation (the engine's rounds and approval resumes, the spawn-consent
+    accept) thread their ctx through; a ``None`` ctx resolves those calls to an
+    error result instead of executing.
+    """
+    # Lazy import: the orchestration module targets the runtime supervisor,
+    # whose engine imports this module's round mechanics, so a top-level
+    # import would be circular.
+    from app.desktop.studio_server.chat.orchestration import (
+        ORCHESTRATION_TOOL_NAMES,
+        execute_orchestration_tool,
+    )
+
     results: dict[str, str] = {}
     for tc in tool_calls:
         if tc.requires_approval:
@@ -475,6 +506,20 @@ async def execute_tool_batch(
             if approved is not True:
                 results[tc.tool_call_id] = DENIED_TOOL_OUTPUT
                 continue
+        if tc.tool_name in ORCHESTRATION_TOOL_NAMES:
+            if orchestration_ctx is None:
+                results[tc.tool_call_id] = json.dumps(
+                    {
+                        "status": "error",
+                        "message": "Sub-agent orchestration is unavailable in this context.",
+                    },
+                    ensure_ascii=False,
+                )
+            else:
+                results[tc.tool_call_id] = await execute_orchestration_tool(
+                    tc.tool_name, tc.input, orchestration_ctx
+                )
+            continue
         tool_result = await execute_tool(tc.tool_name, tc.input)
         results[tc.tool_call_id] = tool_result
     return results

@@ -16,12 +16,12 @@ from fastapi import FastAPI
 from kiln_server.custom_errors import connect_custom_errors
 
 # Absolute imports so the patched module attributes are the same instances the
-# app wiring resolves.
+# app wiring resolves (see the note in chat/test_orchestration.py).
 from app.desktop.studio_server.chat import routes as routes_module
 from app.desktop.studio_server.chat.runtime import api as conversations_api_module
 from app.desktop.studio_server.chat.runtime.api import connect_conversations_api
 from app.desktop.studio_server.chat.runtime.engine import ConversationEngine
-from app.desktop.studio_server.chat.runtime.models import RunState, auto_policy
+from app.desktop.studio_server.chat.runtime.models import RunState, SubAgentSeed
 from app.desktop.studio_server.chat.runtime.supervisor import ConversationSupervisor
 from app.desktop.studio_server.chat.stream_session import _pending_item_from_event
 from app.desktop.studio_server.chat.test_fakes import (
@@ -119,41 +119,81 @@ def _seeded_interactive(supervisor: ConversationSupervisor, leaf: str):
     return record
 
 
-def _running_interactive(supervisor: ConversationSupervisor):
-    record = supervisor.create_conversation(
-        "interactive", upstream_url="https://example.test", headers={}
+def _spawn(supervisor: ConversationSupervisor, parent_key: str = "trace:leaf-1"):
+    return supervisor.spawn_subagent(
+        SubAgentSeed(
+            agent_type="general",
+            name="helper",
+            prompt="Briefing.",
+            parent_trace_id="leaf-1",
+        ),
+        parent_session_id=parent_key,
+        upstream_url="https://example.test",
+        headers={},
     )
-    supervisor.start_run(
-        record.session_id, {"messages": [{"role": "user", "content": "go"}]}
-    )
-    return record
 
 
-async def test_get_conversation(supervisor, hang_engine, client):
-    record = _running_interactive(supervisor)
+async def test_list_and_get(supervisor, hang_engine, client):
+    # The parent is a real interactive supervisor record; its leaf resolves
+    # through the whole-chain trace index.
+    parent = await supervisor.adopt_interactive(
+        "leaf-1", upstream_url="https://example.test", headers={}
+    )
+    record = _spawn(supervisor, parent_key=parent.session_id)
+
+    r = await client.get("/api/conversations")
+    assert r.status_code == 200
+    assert {item["session_id"] for item in r.json()} == {
+        parent.session_id,
+        record.session_id,
+    }
+
+    # The parent handle is the SESSION id — the browser keys the children
+    # sync on main_conversation_store.sessionId. A leaf is just an unknown
+    # value: correct empty list.
+    r = await client.get("/api/conversations", params={"parent": parent.session_id})
+    assert [item["session_id"] for item in r.json()] == [record.session_id]
+
+    r = await client.get("/api/conversations", params={"parent": "leaf-1"})
+    assert r.json() == []
+    r = await client.get("/api/conversations", params={"parent": "other-leaf"})
+    assert r.json() == []
 
     r = await client.get(f"/api/conversations/{record.session_id}")
     assert r.status_code == 200
-    body = r.json()
-    assert body["session_id"] == record.session_id
-    assert body["state"] == "running"
-    assert body["kind"] == "interactive"
-    assert body["auto_flag"] is False
+    assert r.json()["state"] == "running"
+    assert r.json()["name"] == "helper"
+    assert r.json()["kind"] == "subagent"
     # Trace ids never ride the browser surface (functional spec §4).
-    assert "current_trace_id" not in body
-    assert "current_leaf_trace_id" not in body
+    assert "current_trace_id" not in r.json()
 
     r = await client.get("/api/conversations/cv_missing")
     assert r.status_code == 404
     await supervisor.stop(record.session_id)
 
 
+async def test_get_include_report(supervisor, hang_engine, client):
+    record = _spawn(supervisor)
+    await supervisor.stop(record.session_id)
+    r = await client.get(
+        f"/api/conversations/{record.session_id}",
+        params={"include_report": "true"},
+    )
+    body = r.json()
+    assert body["state"] == "stopped"
+    # The stopped run's report is synthesized with a status note (the
+    # supervisor's settle path).
+    assert "STOPPED" in body["final_report"]
+    # Without include_report the report stays out of the payload.
+    r = await client.get(f"/api/conversations/{record.session_id}")
+    assert "final_report" not in r.json()
+
+
 async def test_stop_endpoint_idempotent(supervisor, hang_engine, client):
-    record = _running_interactive(supervisor)
+    record = _spawn(supervisor)
     r = await client.post(f"/api/conversations/{record.session_id}/stop")
     assert r.status_code == 202
-    assert supervisor.get(record.session_id).state == RunState.IDLE
-    assert supervisor._conversations[record.session_id].task is None
+    assert supervisor.get(record.session_id).state == RunState.STOPPED
     # Idempotent, including unknown ids.
     assert (
         await client.post(f"/api/conversations/{record.session_id}/stop")
@@ -161,8 +201,38 @@ async def test_stop_endpoint_idempotent(supervisor, hang_engine, client):
     assert (await client.post("/api/conversations/cv_missing/stop")).status_code == 202
 
 
+async def test_stop_cascade_kills_children(supervisor, hang_engine, client):
+    parent = await supervisor.adopt_interactive(
+        "leaf-1", upstream_url="https://example.test", headers={}
+    )
+    supervisor.start_run(parent.session_id, {"messages": []})
+    child_a = _spawn(supervisor, parent_key=parent.session_id)
+    child_b = _spawn(supervisor, parent_key=parent.session_id)
+
+    # Plain stop on an interactive parent cancels the turn but deliberately
+    # leaves its children running (functional spec §2).
+    r = await client.post(f"/api/conversations/{parent.session_id}/stop")
+    assert r.status_code == 202
+    assert supervisor.get(child_a.session_id).state == RunState.RUNNING
+    assert supervisor.get(child_b.session_id).state == RunState.RUNNING
+
+    # cascade=true is the kill-the-tree affordance: every running child stops
+    # (reports suppressed) and the parent stops. Works whether or not the
+    # parent still has a live run (it idled above).
+    r = await client.post(
+        f"/api/conversations/{parent.session_id}/stop", params={"cascade": "true"}
+    )
+    assert r.status_code == 202
+    assert supervisor.get(child_a.session_id).state == RunState.STOPPED
+    assert supervisor.get(child_b.session_id).state == RunState.STOPPED
+    # The cascade suppressed the children's reports: nothing queued to wake
+    # the (torn-down) parent.
+    assert supervisor.get(child_a.session_id).report_delivered is True
+    assert supervisor.get(child_b.session_id).report_delivered is True
+
+
 async def test_messages_endpoint(supervisor, hang_engine, client):
-    record = _running_interactive(supervisor)
+    record = _spawn(supervisor)
     r = await client.post(
         f"/api/conversations/{record.session_id}/messages",
         json={"content": "also check model B"},
@@ -174,11 +244,6 @@ async def test_messages_endpoint(supervisor, hang_engine, client):
     assert [m.content for m in conv.inbox] == ["also check model B"]
     assert r.json()["message_id"] == conv.inbox[0].id
     await supervisor.stop(record.session_id)
-
-    # The narrow disable window (flag off, auto policy still attached) refuses
-    # a send with 409 rather than auto-approving without consent.
-    conv.policy = auto_policy()
-    conv.record.auto_flag = False
     r = await client.post(
         f"/api/conversations/{record.session_id}/messages",
         json={"content": "too late"},
@@ -191,25 +256,95 @@ async def test_messages_endpoint(supervisor, hang_engine, client):
     assert r.status_code == 404
 
 
-async def test_observer_stream_opens_with_state_marker(supervisor, hang_engine, client):
-    # The observer stream never ends for a live conversation, and httpx's ASGI
-    # transport drives the app to completion (no client-disconnect signal), so
-    # the stream GENERATOR is exercised directly; the route wrapper adds
-    # nothing beyond it.
-    record = _running_interactive(supervisor)
-    stream = conversations_api_module._observer_stream(record.session_id)
-    try:
-        first = await asyncio.wait_for(stream.__anext__(), timeout=2.0)
-    finally:
-        await stream.aclose()
-    state = json.loads(first.decode().removeprefix("data: "))
-    assert state["type"] == "conversation-state"
-    assert state["session_id"] == record.session_id
-    assert state["state"] == "running"
+async def test_observer_events_replay_and_terminal(supervisor, hang_engine, client):
+    record = _spawn(supervisor)
     await supervisor.stop(record.session_id)
+
+    # A late observer of a terminal run gets the conversation-state marker
+    # and EOF.
+    async with client.stream(
+        "GET", f"/api/conversations/{record.session_id}/events"
+    ) as response:
+        assert response.status_code == 200
+        collected = b""
+        async for chunk in response.aiter_bytes():
+            collected += chunk
+            if b'"stopped"' in collected:
+                break
+    assert b"conversation-state" in collected
+    payloads = [
+        json.loads(line[6:])
+        for line in collected.decode().split("\n")
+        if line.startswith("data: ")
+    ]
+    states = [p for p in payloads if p.get("type") == "conversation-state"]
+    assert states and states[-1]["session_id"] == record.session_id
+    assert states[-1]["state"] == "stopped"
+    assert states[-1]["kind"] == "subagent"
+    assert states[-1]["report_available"] is True
+    # Identity rides subagent state events so an event-attributed tab renders
+    # its type immediately.
+    assert states[-1]["agent_type"] == "general"
 
     r = await client.get("/api/conversations/cv_missing/events")
     assert r.status_code == 404
+
+
+async def test_state_firehose_snapshot_then_live(supervisor, hang_engine):
+    # The firehose opens with one conversation-state event per known record
+    # before going live.
+    #
+    # Exercised on the route's stream GENERATOR, not over ASGITransport: the
+    # firehose never ends by design, and httpx's ASGI transport drives the app
+    # to completion (no client-disconnect signal), so an HTTP-level test would
+    # hang forever (HTTP-level stream tests only stream TERMINAL runs). The
+    # route wrapper adds nothing beyond this generator.
+    record = _spawn(supervisor)
+    stream = conversations_api_module._state_firehose_stream()
+    try:
+        snapshot = await asyncio.wait_for(stream.__anext__(), timeout=2.0)
+        assert b"conversation-state" in snapshot
+        assert record.session_id.encode() in snapshot
+        assert b'"running"' in snapshot
+        # The snapshot replay carries lineage, so a firehose subscriber can
+        # attribute a child it has never seen without a list fetch.
+        snapshot_event = json.loads(snapshot.decode().removeprefix("data: "))
+        assert snapshot_event["parent_session_id"] == record.parent_session_id
+
+        # Live tail: a state change publishes to attached firehose observers.
+        stop_task = asyncio.create_task(supervisor.stop(record.session_id))
+        live = await asyncio.wait_for(stream.__anext__(), timeout=2.0)
+        await stop_task
+        assert record.session_id.encode() in live
+        assert b'"stopped"' in live
+    finally:
+        await stream.aclose()
+
+
+async def test_state_firehose_delivers_child_spawned_after_connect(
+    supervisor, hang_engine
+):
+    # A sub-agent spawned AFTER a firehose observer connected (its single
+    # spawn-time "running" publish is the only event it emits until it
+    # settles) must reach that observer. The firehose subscriber is registered
+    # before the snapshot is built so a spawn racing (re)connect can't fall in
+    # a gap; end-to-end this proves a fresh running child's event flows
+    # through the live tail.
+    first = _spawn(supervisor)
+    stream = conversations_api_module._state_firehose_stream()
+    try:
+        snapshot = await asyncio.wait_for(stream.__anext__(), timeout=2.0)
+        assert first.session_id.encode() in snapshot
+
+        # Spawn a second child now that the observer is live; its running-state
+        # publish must arrive on the tail.
+        second = _spawn(supervisor, parent_key="trace:leaf-2")
+        seen = b""
+        while second.session_id.encode() not in seen:
+            seen += await asyncio.wait_for(stream.__anext__(), timeout=2.0)
+        assert b'"running"' in seen
+    finally:
+        await stream.aclose()
 
 
 # ── Auto-mode surface ─────────────────────────────────────────────────────────
@@ -263,6 +398,50 @@ async def test_create_auto_unknown_session_returns_404(
     assert r.status_code == 404
 
 
+async def test_list_children_of_auto_parent_by_session_id(
+    supervisor, client, mock_api_key
+):
+    # The browser's ONLY parent handle is the session id (chat.svelte keys
+    # syncForConversation on main_conversation_store.sessionId), and children
+    # carry parent_session_id verbatim — no trace-index resolution of parent
+    # handles.
+    seeded = _seeded_interactive(supervisor, "t1")
+    round1 = [trace("t2"), text_delta("hi"), finish("stop")]
+    fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
+    with patch.object(httpx, "AsyncClient", return_value=fake):
+        session_id = (
+            await client.post(
+                "/api/conversations",
+                json={
+                    "session_id": seeded.session_id,
+                    "enable_tool_call_id": "tc_enable",
+                },
+            )
+        ).json()["session_id"]
+        await _wait_idle(supervisor, session_id)
+
+    child = supervisor.create_conversation(
+        "subagent",
+        upstream_url="https://example.test",
+        headers={},
+        parent_session_id=session_id,
+        seed=SubAgentSeed(
+            agent_type="general",
+            name="helper",
+            prompt="Briefing.",
+            parent_trace_id="t2",
+        ),
+    )
+
+    r = await client.get("/api/conversations", params={"parent": session_id})
+    assert [i["session_id"] for i in r.json()] == [child.session_id]
+    # Leaf trace ids are not parent handles (the browser never holds them);
+    # they yield the correct empty list like any unknown value.
+    for handle in ("t1", "t2", "never-seen"):
+        r = await client.get("/api/conversations", params={"parent": handle})
+        assert r.json() == [], handle
+
+
 async def test_create_auto_cap_returns_429(supervisor, client, mock_api_key):
     seeded = _seeded_interactive(supervisor, "t1")
     supervisor._auto_max_concurrent = 0  # cap reached: any enable is rejected
@@ -312,7 +491,7 @@ async def test_decline_via_sid_auto_streams_on_observer(
             json={
                 "enabled": False,
                 "decline": {
-                    "gating_tool_call_id": "tc_enable",
+                    "enable_tool_call_id": "tc_enable",
                     "siblings": [
                         {
                             "toolCallId": "tc_sib",
@@ -340,15 +519,103 @@ async def test_decline_via_sid_auto_streams_on_observer(
     # Unknown conversation → 404.
     r = await client.post(
         "/api/conversations/cv_missing/auto",
-        json={"enabled": False, "decline": {"gating_tool_call_id": "tc"}},
+        json={"enabled": False, "decline": {"enable_tool_call_id": "tc"}},
     )
     assert r.status_code == 404
+
+
+@pytest.mark.parametrize("field", ["gating_tool_call_id", "enable_tool_call_id"])
+async def test_decline_accepts_gating_and_legacy_spelling(
+    supervisor, client, mock_api_key, field
+):
+    # The decline context's canonical field is gating_tool_call_id (FR2: the
+    # gating call can be a spawn, not just the enable call); the
+    # enable_tool_call_id spelling must also work, for an open browser tab
+    # whose bundle still sends that name.
+    record = _seeded_interactive(supervisor, "t1")
+    continuation = [text_delta("staying manual"), trace("t2"), finish("stop")]
+    fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=continuation)])
+    with patch.object(httpx, "AsyncClient", return_value=fake):
+        r = await client.post(
+            f"/api/conversations/{record.session_id}/auto",
+            json={"enabled": False, "decline": {field: "tc_gate"}},
+        )
+        assert r.status_code == 202
+        await _wait_idle(supervisor, record.session_id)
+    (sent_body,) = fake.bodies
+    assert sent_body["messages"] == [
+        {
+            "role": "tool",
+            "tool_call_id": "tc_gate",
+            "content": '{"status": "declined"}',
+        }
+    ]
+    assert record.auto_flag is False
+
+
+async def test_create_auto_spawn_consent_accept_executes_pending_spawn(
+    supervisor, client, mock_api_key
+):
+    # FR2 spawn-consent accept: POST /api/conversations kind=auto with NO
+    # enable_tool_call_id and the gating spawn in pending_tool_calls — the
+    # flip happens, the spawn executes (patched batch executor), and its
+    # result seeds the burst as the only role:tool row.
+    from unittest.mock import AsyncMock
+
+    from app.desktop.studio_server.chat.runtime import (
+        supervisor as supervisor_module,
+    )
+
+    seeded = _seeded_interactive(supervisor, "t1")
+    spawn_result = json.dumps(
+        {"status": "spawned", "subagent_id": "cv_child", "name": "helper"},
+        ensure_ascii=False,
+    )
+    execute_mock = AsyncMock(return_value={"tc_spawn": spawn_result})
+    round1 = [text_delta("child spawned, working"), trace("t2"), finish("stop")]
+    fake = FakeUpstreamClient([FakeUpstreamResponse(chunks=round1)])
+    with (
+        patch.object(supervisor_module, "execute_tool_batch", execute_mock),
+        patch.object(httpx, "AsyncClient", return_value=fake),
+    ):
+        r = await client.post(
+            "/api/conversations",
+            json={
+                "session_id": seeded.session_id,
+                "pending_tool_calls": [
+                    {
+                        "toolCallId": "tc_spawn",
+                        "toolName": "spawn_subagent",
+                        "input": {
+                            "agent_type": "general",
+                            "name": "helper",
+                            "prompt": "p",
+                        },
+                        "requiresApproval": True,
+                    }
+                ],
+            },
+        )
+        assert r.status_code == 200
+        assert r.json()["session_id"] == seeded.session_id
+        await _wait_idle(supervisor, seeded.session_id)
+
+    execute_mock.assert_awaited_once()
+    seed_body = fake.bodies[0]
+    assert seed_body["trace_id"] == "t1"
+    assert seed_body["auto_mode"] is True
+    assert seed_body["messages"] == [
+        {"role": "tool", "tool_call_id": "tc_spawn", "content": spawn_result}
+    ]
+    record = supervisor.get(seeded.session_id)
+    assert record.kind == "auto" and record.auto_flag is True
 
 
 async def test_set_auto_flag_endpoint(supervisor, hang_engine, client, mock_api_key):
     auto = supervisor.create_conversation(
         "auto", upstream_url="https://example.test", headers={}
     )
+    child = _spawn(supervisor)
 
     # Disable: flag off, reason user_disabled, and the swap back to the
     # interactive life.
@@ -367,9 +634,24 @@ async def test_set_auto_flag_endpoint(supervisor, hang_engine, client, mock_api_
     assert auto.auto_flag is True and auto.idle_reason == "armed"
     assert auto.kind == "auto"
 
-    # Unknown → 404.
+    # Unknown → 404; sub-agent records are never flippable → 409.
     r = await client.post("/api/conversations/cv_missing/auto", json={"enabled": True})
     assert r.status_code == 404
+    r = await client.post(
+        f"/api/conversations/{child.session_id}/auto", json={"enabled": True}
+    )
+    assert r.status_code == 409
+    await supervisor.stop(child.session_id)
+
+
+def test_resolve_endpoint_is_gone(app):
+    # No trace-keyed resync endpoint: the browser keys conversations on
+    # session ids and an observed conversation converges via replay + the
+    # state marker, so nothing resolves trace ids.
+    assert not any(
+        getattr(route, "path", None) == "/api/conversations/resolve"
+        for route in app.routes
+    )
 
 
 async def test_message_idle_auto_starts_burst_then_interactive_after_stop(
