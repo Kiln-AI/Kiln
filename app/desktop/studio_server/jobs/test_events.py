@@ -4,7 +4,12 @@ import asyncio
 
 import pytest
 
-from app.desktop.studio_server.jobs.events import JobEvent, JobEventBus
+from app.desktop.studio_server.jobs.events import (
+    JobEvent,
+    JobEventBus,
+    KeepalivePing,
+    iter_with_keepalive,
+)
 from app.desktop.studio_server.jobs.models import BackgroundJobStatus, JobRecord
 
 
@@ -143,3 +148,47 @@ async def test_shutdown_unblocks_subscriber_waiting_without_timeout():
     await asyncio.sleep(0)  # let the waiter block on queue.get()
     bus.shutdown()
     await asyncio.wait_for(waiter, timeout=1.0)
+
+
+async def _quiet_then(items: list[str], gate: asyncio.Event, closed: list[bool]):
+    try:
+        await gate.wait()
+        for item in items:
+            yield item
+    finally:
+        closed.append(True)
+
+
+@pytest.mark.asyncio
+async def test_iter_with_keepalive_pings_on_quiet_without_ending_subscription():
+    gate = asyncio.Event()
+    closed: list[bool] = []
+    it = iter_with_keepalive(_quiet_then(["a", "b"], gate, closed), 0.02)
+
+    first = await asyncio.wait_for(it.__anext__(), timeout=1.0)
+    second = await asyncio.wait_for(it.__anext__(), timeout=1.0)
+    assert isinstance(first, KeepalivePing)
+    assert isinstance(second, KeepalivePing)
+    assert closed == []
+
+    gate.set()
+    received: list[str] = []
+    async for item in it:
+        if isinstance(item, KeepalivePing):
+            continue
+        received.append(item)
+    assert received == ["a", "b"]
+    assert closed == [True]
+
+
+@pytest.mark.asyncio
+async def test_iter_with_keepalive_close_closes_subscription():
+    gate = asyncio.Event()
+    closed: list[bool] = []
+    it = iter_with_keepalive(_quiet_then(["a"], gate, closed), 0.02)
+
+    assert isinstance(
+        await asyncio.wait_for(it.__anext__(), timeout=1.0), KeepalivePing
+    )
+    await it.aclose()
+    assert closed == [True]

@@ -1,0 +1,588 @@
+"""ConversationEngine — THE chat round loop (architecture §3).
+
+One loop drives every conversation kind (interactive turns and auto
+bursts). The differences between kinds are exclusively:
+
+- frozen ``ConversationPolicy`` data (approval gating, message framing,
+  round budget, graceful-stop behavior), and
+- the policy's ``interceptors`` chain (signal-tool handling).
+
+Design invariants:
+
+- **Zero HTTP awareness.** The engine never touches FastAPI/SSE responses.
+  Everything flows through the ``EngineIO`` callback bundle; the only network
+  the engine drives is the upstream chat POST via the SHARED round primitives
+  in ``stream_session.py`` (``iter_round_with_retries`` /
+  ``iter_upstream_round``), so retry classification and error shapes are
+  defined once.
+- **Stable upstream protocol.** Continuation bodies, ``auto_mode``
+  propagation, message framings, and tool results are pinned by
+  test_golden_protocol.py (functional spec §3).
+- **Outcome via the record.** The engine records its outcome on the
+  ``ConversationRecord`` (state / idle_reason / auto_flag). The supervisor's
+  single settle path normalizes cancellation/exception on top and does all
+  publishing.
+- **Stop semantics.** ``io.stop_requested`` is polled at round retries,
+  post-round, and post-execution. Hard cancellation (task.cancel) is the
+  supervisor's job.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from typing import Any, Awaitable, Callable
+
+import httpx
+from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
+
+from app.desktop.studio_server.chat.constants import CHAT_TIMEOUT
+from app.desktop.studio_server.chat.stream_session import (
+    RetryRoundResult,
+    ToolCallInfo,
+    _build_openai_tool_continuation,
+    _pending_item_from_event,
+    execute_tool_batch,
+    iter_round_with_retries,
+)
+from app.desktop.studio_server.chat.tool_metadata import (
+    tool_input_executor_is_server,
+    tool_requires_user_approval,
+)
+
+from .interceptors import (
+    InterceptContext,
+    InterceptResult,
+)
+from .models import (
+    MAX_ROUNDS_MESSAGE,
+    ConversationPolicy,
+    ConversationRecord,
+    InboundMessage,
+    PendingApprovalBatch,
+    RunState,
+)
+from .sse import (
+    format_error,
+    format_tool_calls_pending,
+    format_tool_exec_end,
+    format_tool_exec_start,
+    format_tool_output,
+)
+
+logger = logging.getLogger(__name__)
+
+
+# Framing prepended to a user message that arrives WHILE an auto burst is in
+# flight (drained mid-round). Without it the model treats the message as a
+# fresh conversational turn, replies in plain text, and that text-only turn
+# settles the burst IDLE ("asked_user") — so a quick aside from the user halts
+# the autonomous run. Framed as a side note, the model weaves its reply into a
+# turn that still carries tool calls, so it answers AND keeps working. It does
+# NOT apply to seed messages (the task itself) or to a message that wakes an
+# idle run (those ride unframed — see the supervisor's idle re-arm).
+# Byte-pinned in test_interceptors.py because it is persisted in traces.
+SIDE_NOTE_REMINDER = (
+    "<system-reminder>"
+    "This message arrived from the user while you are working autonomously in auto "
+    "mode. Treat it as a side note: weave any acknowledgment or answer into your "
+    "ongoing work and keep going in the same turn — do not end your turn just to "
+    "reply. Stop only if the message explicitly asks you to, or your task is "
+    "already complete."
+    "</system-reminder>"
+)
+
+
+def _frame_inbox_message(
+    msg: InboundMessage, policy: ConversationPolicy
+) -> dict[str, Any]:
+    """Frame a drained inbox message per the policy (side note for auto,
+    raw for interactive)."""
+    base = msg.as_chat_message()
+    # `or ""` so an explicit None content can't become the string "None".
+    content = str(base.get("content") or "")
+    if policy.message_framing == "side_note":
+        return {**base, "content": f"{SIDE_NOTE_REMINDER}\n\n{content}"}
+    return base
+
+
+def _append_messages(
+    body: dict[str, Any], messages: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Append messages after whatever the continuation already carries (they
+    come last so the backend reads them as the latest input)."""
+    existing = list(body.get("messages", []))
+    existing.extend(messages)
+    return {**body, "messages": existing}
+
+
+@dataclass
+class EngineIO:
+    """Everything the engine can do to the outside world (architecture §3).
+
+    Bundled so the engine has exactly one seam: the supervisor wires these to
+    the conversation's bus/inbox/batch machinery, and tests wire them to
+    lists. All callbacks must be non-blocking except the awaitables.
+    """
+
+    # Push one SSE byte payload to the conversation's bus + replay buffer.
+    emit: Callable[[bytes], None]
+    # Called with each newly persisted leaf trace id, AFTER the engine updated
+    # record.current_leaf_trace_id / seen_trace_ids (the record is the run
+    # loop's to write — single-writer rule; the supervisor only maintains its
+    # trace→session index and bookkeeping here).
+    on_trace: Callable[[str], Awaitable[None]] | None = None
+    # Atomically take (and clear) user messages queued since the last drain.
+    # The supervisor echoes messages at ENQUEUE time; the engine never
+    # re-echoes drained messages (echo-once).
+    drain_inbox: Callable[[], list[InboundMessage]] = field(default=lambda: [])
+    # Park on a pending approval batch until the user decides; returns the
+    # decision map. Only gated policies call this. No upstream connection is
+    # held while parked — the run task simply awaits the batch event.
+    await_decisions: (
+        Callable[[PendingApprovalBatch], Awaitable[dict[str, bool]]] | None
+    ) = None
+    # Graceful-stop intent, polled at round retries, post-round, and
+    # post-execution.
+    stop_requested: Callable[[], bool] = field(default=lambda: False)
+
+
+class ConversationEngine:
+    """Drives the chat round loop for ONE run (an interactive turn or an
+    auto burst) against the upstream chat endpoint.
+
+    A plain class: construct with the upstream target, call ``run`` once per
+    run. The engine is stateless across runs — all conversation state lives on
+    the record (and the supervisor's machinery), which is what lets an auto
+    flip swap the policy on the SAME record between turns.
+    """
+
+    def __init__(self, upstream_url: str, headers: dict[str, str]) -> None:
+        self._url = upstream_url
+        self._headers = headers
+
+    async def run(
+        self,
+        record: ConversationRecord,
+        policy: ConversationPolicy,
+        io: EngineIO,
+        initial_body: dict[str, Any] | None = None,
+        resume_batch: PendingApprovalBatch | None = None,
+    ) -> None:
+        """Run one turn/burst/run to its natural end, recording the outcome on
+        ``record``. Raises only on unexpected internal errors (the supervisor
+        classifies those per architecture §9); upstream errors are handled
+        in-band (error SSE + idle settle).
+
+        ``resume_batch`` resumes a conversation whose pending approval batch
+        had NO parked run task — the restart/refresh recovery contract
+        (architecture §2: the batch is reconstructible from the persisted
+        trace tail) and the graceful-stop leftover-calls shape. Instead of
+        opening with an upstream round, the run starts by executing the
+        already-decided batch and continuing from its stored round context.
+        """
+        if resume_batch is not None:
+            body = await self._execute_resumed_batch(io, resume_batch)
+        elif initial_body is not None:
+            body = dict(initial_body)
+        else:
+            raise ValueError("ConversationEngine.run needs an initial_body")
+
+        record.state = RunState.RUNNING
+        # Seed the error-correlation trace id from the body (the conversation
+        # continuation leaf) or the record.
+        trace_id_for_error: str | None = (
+            body.get("trace_id") or record.current_leaf_trace_id
+        )
+
+        async with httpx.AsyncClient(timeout=CHAT_TIMEOUT) as client:
+            for _ in range(policy.max_rounds):
+                # ── 1. Round (shared retry helper — identical transient-error
+                # classification/backoff for every kind). ────────────────────
+                result = RetryRoundResult()
+                async for payload in iter_round_with_retries(
+                    client,
+                    self._url,
+                    self._headers,
+                    body,
+                    trace_id_for_error,
+                    result,
+                    # Retry events carry the session id as run_id on auto
+                    # streams only.
+                    run_id=(
+                        record.session_id if policy.retry_events_carry_run_id else None
+                    ),
+                    stop_requested=io.stop_requested,
+                ):
+                    # Early ROOT/leaf stamp: the parser sets
+                    # round_state.trace_id BEFORE the kiln_chat_trace payload
+                    # is yielded (iter_upstream_round parses each chunk, then
+                    # forwards its lines), so stamping here — before the emit —
+                    # guarantees the record already carries the durable root
+                    # when the browser's turn-persisted item GET lands (that
+                    # GET is triggered BY this very byte; stamping only at the
+                    # round boundary left a race window for single-turn
+                    # conversations). The FULL trace advance (seen chain,
+                    # on_trace index, continuation rebuild) still happens once
+                    # at step 2 below; the `root_id is None` check keeps the
+                    # two sites idempotent.
+                    live_state = result.round_state
+                    if live_state is not None and live_state.trace_id:
+                        if record.root_id is None and not record.seen_trace_ids:
+                            record.root_id = live_state.trace_id
+                        record.current_leaf_trace_id = live_state.trace_id
+                    io.emit(payload)
+
+                round_state = result.round_state
+                if round_state is not None:
+                    trace_id_for_error = round_state.trace_id_for_error
+                if result.status == "stopped":
+                    # Stop pressed mid-retry: the helper surfaced no error;
+                    # settle stopped.
+                    self._finish_stopped(record)
+                    return
+                if result.status != "ok" or round_state is None:
+                    # Non-retryable or retry-exhausted upstream error; the
+                    # error SSE was already emitted. The run idles with reason
+                    # "error" — the flag stays on so the user can retry or
+                    # stop.
+                    self._finish_idle(record, "error")
+                    return
+
+                # ── 2. Trace advance. ────────────────────────────────────────
+                if round_state.trace_id:
+                    # Single-writer rule: the run loop owns the leaf pointer.
+                    # A FRESH conversation's first persisted snapshot is its
+                    # durable root (backend stamps session_meta.root_id =
+                    # snapshot_id on the first persist — see
+                    # stream_orchestration.save_chat_snapshot), so stamp
+                    # record.root_id (the browser's restart-recovery key).
+                    # Normally already done by the early pre-emit stamp in the
+                    # round loop above — this is the boundary backstop,
+                    # idempotent via the None check.
+                    # Adopted records (seen_trace_ids seeded at adopt) joined
+                    # mid-chain and never stamp from a trace.
+                    if record.root_id is None and not record.seen_trace_ids:
+                        record.root_id = round_state.trace_id
+                    record.current_leaf_trace_id = round_state.trace_id
+                    if round_state.trace_id not in record.seen_trace_ids:
+                        record.seen_trace_ids.append(round_state.trace_id)
+                    if io.on_trace is not None:
+                        await io.on_trace(round_state.trace_id)
+                    # Rebuild the continuation base: continue from the new
+                    # leaf with empty messages. `session_id` (a resume-by-key
+                    # first POST) is dropped: once a real leaf exists the turn
+                    # continues by trace_id, and the backend 400s the two keys
+                    # together. Everything else ({**body}) is preserved so
+                    # auto_mode and any extra body fields keep riding every
+                    # continuation.
+                    body = {k: v for k, v in body.items() if k != "session_id"}
+                    body = {**body, "trace_id": round_state.trace_id, "messages": []}
+
+                # ── 3/4. Natural end (no tool-call finish boundary). ─────────
+                if not round_state.finish_tool_calls:
+                    if io.stop_requested():
+                        # Graceful stop on a plain-text final round: finish
+                        # what streamed, then settle stopped — nothing to
+                        # approve, and queued inbox is dropped (a stop never
+                        # starts a new round).
+                        self._finish_stopped(record)
+                        return
+                    # Drain-before-idle: a message sent the instant the run
+                    # would settle must not be dropped — continue with it as a
+                    # fresh (framed) user turn instead of settling. The
+                    # interactive inbox is fed by the primary tab's mid-turn
+                    # sends and by other tabs.
+                    injected = io.drain_inbox()
+                    if injected:
+                        body = {
+                            **body,
+                            "messages": [
+                                _frame_inbox_message(m, policy) for m in injected
+                            ],
+                        }
+                        continue
+                    # Assistant emitted only text (a question or a wrap-up):
+                    # the run settles idle awaiting the user.
+                    self._finish_idle(record, "asked_user")
+                    return
+
+                # ── 5. Partition tool events via the interceptor chain. ─────
+                client_events = [
+                    e
+                    for e in round_state.tool_input_events
+                    if not tool_input_executor_is_server(e)
+                ]
+                ictx = InterceptContext(
+                    record=record,
+                    policy=policy,
+                    client_events=client_events,
+                )
+
+                # Priority scan: the first interceptor (in chain order) whose
+                # result takes over the round wins (the interactive consent
+                # interception outranks the rest of the batch). Plain resolves
+                # are collected afterwards; interceptors are pure so
+                # re-invoking them below is safe.
+                takeover: tuple[ToolInputAvailableEvent, InterceptResult] | None = None
+                for interceptor in policy.interceptors:
+                    for e in client_events:
+                        res = interceptor(e, ictx)
+                        if res is not None and res.kind != "resolve":
+                            takeover = (e, res)
+                            break
+                    if takeover is not None:
+                        break
+
+                if takeover is not None:
+                    _, res = takeover
+                    # "control" is the only takeover kind: the interactive
+                    # enable_auto_mode consent interception — emit the
+                    # consent-required control event and END the turn without
+                    # executing anything. The gating call is resolved
+                    # out-of-band by the accept/decline flow, which flips the
+                    # policy on accept.
+                    assert res.kind == "control" and res.control_bytes is not None
+                    io.emit(res.control_bytes)
+                    # An idle turn boundary: the consent-pending bookkeeping
+                    # is the enable endpoint's job.
+                    record.state = RunState.IDLE
+                    return
+
+                # ── 8. Graceful stop at a tool boundary (auto policy only):
+                # the in-flight round finished streaming (no cut-off). Do NOT
+                # execute this round's client tool calls and do NOT start a
+                # new round — surface them for normal approval via
+                # tool-calls-pending (everything after the stop is subject to
+                # approval), then settle stopped. Positioned after the
+                # takeover scan, before execution. ───────────────────────────
+                if (
+                    policy.graceful_stop_surfaces_pending
+                    and io.stop_requested()
+                    and client_events
+                ):
+                    io.emit(format_tool_calls_pending(client_events))
+                    self._finish_stopped(record)
+                    return
+
+                # Plain per-event resolves (auto enable no-op, the stale
+                # disable_auto_mode refusal): the call is answered locally,
+                # never executed, and the batch otherwise proceeds.
+                intercepted: dict[str, str] = {}
+                executable: list[ToolInputAvailableEvent] = []
+                for e in client_events:
+                    resolved = self._plain_resolve(e, ictx, policy)
+                    if resolved is not None:
+                        intercepted[e.toolCallId] = resolved
+                    else:
+                        executable.append(e)
+
+                # ── 5b. Approval gate (gated policy; architecture §3.5). ─────
+                decisions: dict[str, bool] = {}
+                if policy.approvals == "gated":
+                    needs_approval = [
+                        e for e in executable if tool_requires_user_approval(e)
+                    ]
+                    if needs_approval:
+                        # The pending event lists the WHOLE client batch (the
+                        # user sees non-approval siblings for context).
+                        io.emit(format_tool_calls_pending(client_events))
+                        batch = PendingApprovalBatch(
+                            items=[_pending_item_from_event(e) for e in client_events],
+                            body=body,
+                            assistant_text=round_state.assistant_text,
+                            tool_input_events=round_state.tool_input_events,
+                        )
+                        if io.await_decisions is None:
+                            raise RuntimeError(
+                                "gated policy requires io.await_decisions"
+                            )
+                        # Park. No upstream connection is held; the task
+                        # simply awaits the decision event.
+                        record.state = RunState.AWAITING_APPROVAL
+                        decisions = await io.await_decisions(batch)
+                        record.state = RunState.RUNNING
+
+                # ── 6. Execute the batch. ────────────────────────────────────
+                # requiresApproval per call:
+                # - auto policy: False for everything (AUTO-APPROVE).
+                # - gated: the metadata verdict — exactly the flags the
+                #   pending event surfaced (all False when the round never
+                #   parked, by construction — otherwise we'd have parked).
+                def _requires_approval(e: ToolInputAvailableEvent) -> bool:
+                    if policy.approvals != "gated":
+                        return False
+                    return tool_requires_user_approval(e)
+
+                tool_calls = [
+                    ToolCallInfo(
+                        toolCallId=e.toolCallId,
+                        toolName=e.toolName,
+                        input=e.input,
+                        requiresApproval=_requires_approval(e),
+                    )
+                    for e in executable
+                ]
+                # exec framing counts: start = the round's client batch size,
+                # end = number of results.
+                io.emit(format_tool_exec_start(len(client_events)))
+                results = await execute_tool_batch(tool_calls, decisions)
+                results.update(intercepted)
+                for tc_id, output in results.items():
+                    io.emit(format_tool_output(tc_id, output))
+                io.emit(format_tool_exec_end(len(results)))
+
+                # ── 4b. No client tool results to feed back (e.g. a
+                # server-only batch): nothing to continue with. ───────────────
+                if not results:
+                    if io.stop_requested():
+                        # On graceful stop just settle — nothing to surface
+                        # for approval.
+                        self._finish_stopped(record)
+                        return
+                    injected = io.drain_inbox()
+                    if injected:
+                        body = {
+                            **body,
+                            "messages": [
+                                _frame_inbox_message(m, policy) for m in injected
+                            ],
+                        }
+                        continue
+                    # A tool batch that produced no results settles "done".
+                    self._finish_idle(record, "done")
+                    return
+
+                # ── 7. Continuation. ─────────────────────────────────────────
+                body = _build_openai_tool_continuation(
+                    body,
+                    round_state.assistant_text,
+                    round_state.tool_input_events,
+                    results,
+                )
+                # Graceful stop after a fully executed round: the tool results
+                # were fed into the continuation body conceptually, but no new
+                # round starts (the persisted trace already holds the calls —
+                # acceptable for a stop).
+                if io.stop_requested():
+                    self._finish_stopped(record)
+                    return
+                # Messages queued during this round ride the continuation
+                # after the tool results (framed per policy) so the backend
+                # sees both on the next turn.
+                injected = io.drain_inbox()
+                if injected:
+                    body = _append_messages(
+                        body, [_frame_inbox_message(m, policy) for m in injected]
+                    )
+
+        # Loop exhausted max_rounds without a natural exit: settle idle with
+        # reason "max_rounds" — the flag stays on so the user can re-arm.
+        io.emit(format_error(MAX_ROUNDS_MESSAGE, trace_id_for_error))
+        self._finish_idle(record, "max_rounds")
+
+    async def _execute_resumed_batch(
+        self,
+        io: EngineIO,
+        batch: PendingApprovalBatch,
+    ) -> dict[str, Any]:
+        """Execute an already-decided RUNLESS batch and return the
+        continuation body for the round loop (the recovery entry).
+
+        Mirrors the engine's normal parked execution (steps 6-7) driven from
+        the batch's stored round context instead of live round state, and —
+        through ``_build_openai_tool_continuation`` over the batch's
+        ``{trace_id, messages: []}`` base — produces a continuation body of
+        ``role:tool`` results only, so the persisted trace matches the live
+        path.
+
+        ``requiresApproval`` per call comes from the batch ITEMS (for a live
+        batch these are the metadata verdicts the pending event surfaced; for
+        a trace-tail-rehydrated batch every item is conservatively True, see
+        the supervisor's rehydration). A denied call resolves to
+        DENIED_TOOL_OUTPUT exactly like the parked path.
+        """
+        decisions = dict(batch.decisions or {})
+        item_flags = {
+            str(item.get("toolCallId")): bool(item.get("requiresApproval"))
+            for item in batch.items
+        }
+        # Execute only the calls the batch surfaced (its items are the round's
+        # CLIENT events — server-executor calls never enter a batch); the full
+        # tool_input_events list is kept for the continuation builder, which
+        # needs every event to reconstruct the assistant message.
+        client_events = [
+            e for e in batch.tool_input_events if e.toolCallId in item_flags
+        ]
+        tool_calls = [
+            ToolCallInfo(
+                toolCallId=e.toolCallId,
+                toolName=e.toolName,
+                input=e.input,
+                requiresApproval=item_flags.get(e.toolCallId, True),
+            )
+            for e in client_events
+        ]
+        # Same exec framing the normal parked path emits (start = batch size,
+        # end = result count) so observers render one tool round.
+        io.emit(format_tool_exec_start(len(client_events)))
+        results = await execute_tool_batch(tool_calls, decisions)
+        # Pre-answered calls (rehydrated signal siblings resolved as declined
+        # — see PendingApprovalBatch.preresolved_results) merge in exactly
+        # like the main loop's `intercepted` resolves: never executed, but
+        # answered on the continuation so the trace has no dangling call,
+        # and surfaced to observers alongside the executed outputs.
+        results.update(batch.preresolved_results)
+        for tc_id, output in results.items():
+            io.emit(format_tool_output(tc_id, output))
+        io.emit(format_tool_exec_end(len(results)))
+
+        return _build_openai_tool_continuation(
+            batch.body,
+            batch.assistant_text,
+            batch.tool_input_events,
+            results,
+        )
+
+    # ── Outcome helpers (the supervisor's settle path publishes them). ─────
+
+    def _finish_idle(self, record: ConversationRecord, reason: str | None) -> None:
+        # The idle vocabulary (asked_user/done/error/max_rounds/user_stopped)
+        # is recorded uniformly, including on interactive records, which keeps
+        # the engine kind-agnostic. Conversation-state events therefore carry
+        # idle_reason for interactive conversations too; the frontend keys any
+        # idle_reason rendering on auto mode.
+        record.state = RunState.IDLE
+        if reason is not None:
+            record.idle_reason = reason
+
+    def _finish_stopped(self, record: ConversationRecord) -> None:
+        # Auto graceful stop clears the conversation flag (auto mode off with
+        # reason user_stopped); for interactive records the flag is already
+        # off, so this is a no-op there.
+        record.auto_flag = False
+        self._finish_idle(record, "user_stopped")
+
+    # ── Interception application. ────────────────────────────────────────────
+
+    def _plain_resolve(
+        self,
+        event: ToolInputAvailableEvent,
+        ictx: InterceptContext,
+        policy: ConversationPolicy,
+    ) -> str | None:
+        """First chain match for this event, if it is a plain resolve.
+
+        Round-takeover kinds were already handled by the priority scan; if one
+        matches here it belongs to a DIFFERENT event than the takeover winner
+        (only one winner takes over a round) — treat it as executable.
+        """
+        for interceptor in policy.interceptors:
+            res = interceptor(event, ictx)
+            if res is None:
+                continue
+            if res.kind == "resolve":
+                assert res.result_json is not None
+                return res.result_json
+            return None
+        return None

@@ -570,7 +570,9 @@ def connect_run_api(app: FastAPI):
         tags=["Runs"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_runs(
+    # Sync on purpose: the body scans run files on disk, so FastAPI runs it in
+    # its threadpool instead of stalling the event loop.
+    def get_runs(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -648,7 +650,9 @@ def connect_run_api(app: FastAPI):
         tags=["Runs"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_runs_summary(
+    # Sync on purpose: the body scans run files on disk, so FastAPI runs it in
+    # its threadpool instead of stalling the event loop.
+    def get_runs_summary(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -998,7 +1002,9 @@ def connect_run_api(app: FastAPI):
         tags=["Runs"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_tags(
+    # Sync on purpose: the body scans run files on disk, so FastAPI runs it in
+    # its threadpool instead of stalling the event loop.
+    def get_tags(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],

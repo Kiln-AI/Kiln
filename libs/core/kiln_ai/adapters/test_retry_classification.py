@@ -229,7 +229,9 @@ class TestEmptyModelResponseClassification:
             raise_for_empty_model_response(
                 {"finish_reason": "stop", "message": {"content": None}}
             )
-        assert str(exc_info.value) == EMPTY_RESPONSE_ERROR_MESSAGE
+        assert str(exc_info.value) == (
+            f"{EMPTY_RESPONSE_ERROR_MESSAGE} (finish_reason='stop')"
+        )
         assert is_retryable_error(exc_info.value) is True
 
     def test_real_content_filter_raise_site_is_not_retryable(self):

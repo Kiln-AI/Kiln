@@ -6,11 +6,19 @@ from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from pydantic import TypeAdapter
 
 CHAT_TIMEOUT = httpx.Timeout(timeout=300.0, connect=30.0)
-MAX_TOOL_ROUNDS = 100
+MAX_TOOL_ROUNDS = 1000
 
 SSE_TYPE_TOOL_CALLS_PENDING = "tool-calls-pending"
 SSE_TYPE_TOOL_EXEC_START = "kiln-tool-execution-start"
 SSE_TYPE_TOOL_EXEC_END = "kiln-tool-execution-end"
+# Emitted when the model calls enable_auto_mode in an interactive
+# conversation: the user must consent before the conversation flips to auto
+# mode (runtime/interceptors.py).
+SSE_TYPE_AUTO_MODE_CONSENT_REQUIRED = "auto-mode-consent-required"
+# Emitted between retry attempts after a transient upstream failure, so the UI
+# can show "retrying N/M…" instead of a hard error. Carries
+# {attempt, max_attempts, status_code?, run_id?}.
+SSE_TYPE_CHAT_RETRY = "kiln-chat-retry"
 
 DENIED_TOOL_OUTPUT = json.dumps(
     {"error": "The user did not accept the toolcall"}, ensure_ascii=False

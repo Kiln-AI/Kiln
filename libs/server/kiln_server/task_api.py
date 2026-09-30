@@ -320,7 +320,9 @@ def connect_task_api(app: FastAPI):
         tags=["Tasks"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def task_summaries() -> TaskSummariesResponse:
+    # Sync on purpose: the body loads every project and task file, so FastAPI
+    # runs it in its threadpool instead of stalling the event loop.
+    def task_summaries() -> TaskSummariesResponse:
         """Return a workspace-wide list of projects and their tasks, with truncated
         task.instruction values. Unlike typical list endpoints, entries here are
         intentionally lossy — the shape is tuned for LLM-agent context efficiency,
