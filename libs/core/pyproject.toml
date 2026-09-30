@@ -45,7 +45,7 @@ dependencies = [
     "llama-index-vector-stores-lancedb>=0.4.2",
     "mcp[cli]>=1.10.1",
     "typer>=0.9.0",
-    "litellm>=1.87.0,<1.88",
+    "litellm>=1.102.0,<1.103",
     "websockets>=15.0.1",
 ]
 
