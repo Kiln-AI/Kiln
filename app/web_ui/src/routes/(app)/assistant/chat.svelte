@@ -23,6 +23,11 @@
   import ChatTranscript from "./chat_transcript.svelte"
   import BrailleSpinner from "./braille_spinner.svelte"
   import ContextUsageGauge from "$lib/ui/context_usage_gauge.svelte"
+  import {
+    chat_debug_log_enabled,
+    load_chat_debug_status,
+  } from "$lib/chat/chat_debug_status"
+  import { dev_tools_enabled } from "$lib/utils/dev_tools"
 
   export let store: ChatSessionStore = chatSessionStore
 
@@ -56,6 +61,18 @@
   // the auto indicator off — the desktop-owned run is unaffected by observer
   // connection loss.
   const mainConnection = main_conversation_store.connection
+
+  // Assistant forensic debug logging (KILN_CHAT_DEBUG_LOG): when the desktop
+  // flag is on, surface the conversation id — the join key for the desktop
+  // and server debug logs — with click-to-copy.
+  let debugIdCopied = false
+  $: debugConversationId = $mainSessionId ?? $store.sessionId
+  function copyDebugConversationId() {
+    if (!debugConversationId) return
+    void navigator.clipboard?.writeText(debugConversationId)
+    debugIdCopied = true
+    setTimeout(() => (debugIdCopied = false), 1200)
+  }
 
   // The footer "Auto mode" toggle is shown whenever auto mode is off (the {:else}
   // branch), and is ALWAYS clickable, including on a brand-new
@@ -235,6 +252,13 @@
   onMount(() => {
     // Surface the upgrade banners up front, before any message is sent.
     void store.checkVersionPolicy()
+
+    // Debug-log affordance: show the conversation id when the flag is on.
+    // Dev-tools-only — without the flag the widget never renders, so skip
+    // the status fetch entirely.
+    if (dev_tools_enabled) {
+      void load_chat_debug_status()
+    }
 
     const container = messagesContainer
     if (container) {
@@ -609,11 +633,22 @@
           Auto mode
         </button>
       {/if}
-      {#if contextUsage}
-        <div class="ml-auto flex items-center gap-2">
+      <div class="ml-auto flex items-center gap-2">
+        {#if dev_tools_enabled && $chat_debug_log_enabled && debugConversationId}
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs font-mono text-[10px] text-base-content/40 hover:text-base-content/70"
+            on:click={copyDebugConversationId}
+            title="Assistant debug logging is on. Click to copy this conversation's id, the key for the desktop and server debug logs."
+            aria-label="Copy conversation id"
+          >
+            {debugIdCopied ? "copied" : debugConversationId}
+          </button>
+        {/if}
+        {#if contextUsage}
           <ContextUsageGauge usage={contextUsage} />
-        </div>
-      {/if}
+        {/if}
+      </div>
     </div>
   </div>
 </div>
