@@ -10,8 +10,9 @@ from kiln_ai.datamodel.model_cache import ModelCache
 from kiln_ai.utils.validation import validate_tags
 
 # These caps are enforced at write time AND re-applied by pydantic when loading
-# stored rows, so any row exceeding them (e.g. from an out-of-band writer)
-# breaks every listing for its project. Raising them is safe; never lower them.
+# stored rows, so any row exceeding them (e.g. from an out-of-band writer) fails
+# to load: listings skip it with a warning, and fetches by id fail on it.
+# Raising them is safe; never lower them.
 MAX_OVERVIEW_LENGTH = 280
 MAX_CONTENT_LENGTH = 4000
 MAX_SCOPE_LENGTH = 255

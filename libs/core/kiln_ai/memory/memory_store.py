@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from collections import Counter
 from datetime import datetime
@@ -9,6 +10,8 @@ from pydantic import BaseModel
 
 from kiln_ai.datamodel.basemodel import KilnParentModel
 from kiln_ai.datamodel.memory import Memory
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryNotFoundError(ValueError):
@@ -87,9 +90,16 @@ class MemoryStore:
         self.memory_model = memory_model
 
     def _all(self) -> list[Memory]:
-        return self.memory_model.all_children_of_parent_path(
+        # One unreadable file (corrupt JSON, a row over a length cap, a file from a
+        # newer Kiln) must not break listing for the whole project. Skip it and log it.
+        memories, errors = self.memory_model.all_children_of_parent_path_with_errors(
             self.parent.path, readonly=True
         )
+        for error in errors:
+            logger.warning(
+                "Skipping unreadable memory file %s: %s", error.path, error.message
+            )
+        return memories
 
     def save_memory(
         self,
