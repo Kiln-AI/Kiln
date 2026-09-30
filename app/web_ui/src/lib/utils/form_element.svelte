@@ -6,6 +6,12 @@
     loading_text?: string
     disabled?: boolean
   }
+
+  export type RadioOption = {
+    value: string
+    label: string
+    description?: string
+  }
 </script>
 
 <script lang="ts">
@@ -22,7 +28,8 @@
     | "fancy_select"
     | "multi_select"
     | "header_only"
-    | "checkbox" = "input"
+    | "checkbox"
+    | "radio" = "input"
   export let id: string
   export let label: string = ""
   export let value: unknown
@@ -37,17 +44,25 @@
   export let select_options: [unknown, string][] = []
   export let select_options_grouped: [string, [unknown, string][]][] = []
   export let fancy_select_options: OptionGroup[] = []
+  export let radio_options: RadioOption[] = []
   export let on_select: (e: Event) => void = () => {}
   export let disabled: boolean = false
   export let info_msg: string | null = null
-  export let height: "base" | "medium" | "large" | "xl" = "base"
+  export let height: "base" | "compact" | "medium" | "large" | "xl" = "base"
   export let empty_label: string = "Select an option"
   export let empty_state_message: string = "No options available"
   export let empty_state_subtitle: string | null = null
   export let empty_state_link: string | null = null
   export let inline_action: InlineAction | null = null
   export let aria_label: string | null = null
+  // The id of an element elsewhere on the page that describes this field — a
+  // live hint or an advisory the control itself does not own. Null for every
+  // caller that has nothing to point at, which leaves the attribute off.
+  export let aria_describedby: string | null = null
   export let hide_label: boolean = false
+  export let min: number | null = null
+  export let max: number | null = null
+  export let on_radio_change: (() => void) | null = null
 
   function is_empty(value: unknown): boolean {
     if (value === null || value === undefined) {
@@ -142,6 +157,7 @@
 
   const height_class = {
     base: "h-18",
+    compact: "h-24",
     medium: "h-36",
     large: "h-60",
     xl: "h-96",
@@ -161,14 +177,14 @@
         {disabled}
       />
     {/if}
-    {#if !hide_label && (label || inline_action || info_description || error_message || description)}
+    {#if label || inline_action || info_description || error_message || description}
       <label
         for={id}
         class="text-sm font-medium text-left flex flex-col gap-1 w-full"
       >
         {#if label || inline_action || info_description || error_message}
           <div class="flex flex-row items-center">
-            {#if label}
+            {#if label && !hide_label}
               <span class={light_label ? "text-xs text-gray-500 h-4" : ""}
                 >{label}</span
               >
@@ -216,6 +232,7 @@
     {#if inputType === "textarea"}
       <textarea
         aria-label={aria_label || label}
+        aria-describedby={aria_describedby}
         placeholder={error_message || placeholder || label}
         {id}
         class="textarea text-base textarea-bordered w-full {height_class[
@@ -230,6 +247,7 @@
     {:else if inputType === "input"}
       <input
         aria-label={aria_label || label}
+        aria-describedby={aria_describedby}
         type="text"
         placeholder={error_message || placeholder || label}
         {id}
@@ -245,6 +263,7 @@
     {:else if inputType === "input_number"}
       <input
         aria-label={aria_label || label}
+        aria-describedby={aria_describedby}
         type="number"
         placeholder={error_message || placeholder || label}
         {id}
@@ -256,10 +275,13 @@
         autocomplete="off"
         data-op-ignore="true"
         {disabled}
+        {min}
+        {max}
       />
     {:else if inputType === "select"}
       <select
         aria-label={aria_label || label}
+        aria-describedby={aria_describedby}
         {id}
         class="select select-bordered w-full {error_message || inline_error
           ? 'select-error'
@@ -303,6 +325,45 @@
         {empty_state_subtitle}
         {empty_state_link}
       />
+    {:else if inputType === "radio"}
+      <div
+        role="radiogroup"
+        aria-label={aria_label || label}
+        class="flex flex-col gap-2 {error_message ? 'input-error' : ''}"
+        {id}
+        tabindex="-1"
+        data-testid="radio-group-{id}"
+      >
+        {#each radio_options as option}
+          <label
+            class="flex items-start gap-2.5 cursor-pointer rounded-lg border px-3 py-2.5 transition-colors
+              {value === option.value
+              ? 'border-primary/30 bg-primary/[0.03]'
+              : 'border-base-300 hover:border-base-content/20'}
+              {disabled ? 'opacity-50 pointer-events-none' : ''}
+              {error_message ? 'border-error/50' : ''}"
+          >
+            <input
+              type="radio"
+              name={id}
+              class="radio radio-sm radio-primary mt-0.5 flex-none"
+              value={option.value}
+              checked={value === option.value}
+              on:change={() => {
+                value = option.value
+                if (on_radio_change) on_radio_change()
+              }}
+              {disabled}
+            />
+            <span class="flex flex-col gap-0.5">
+              <span class="text-sm font-medium">{option.label}</span>
+              {#if option.description}
+                <span class="text-xs text-gray-500">{option.description}</span>
+              {/if}
+            </span>
+          </label>
+        {/each}
+      </div>
     {/if}
     {#if inline_error || (inputType === "select" && error_message)}
       <span

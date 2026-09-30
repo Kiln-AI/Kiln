@@ -3,7 +3,8 @@ import pickle
 
 import pytest
 
-from kiln_ai.adapters.eval.g_eval import TOKEN_TO_SCORE_MAP, GEval, GEvalTask
+from kiln_ai.adapters.eval.eval_utils.scoring_utils import TOKEN_TO_SCORE_MAP
+from kiln_ai.adapters.eval.g_eval import GEval, GEvalTask
 from kiln_ai.adapters.eval.test_g_eval_data import serialized_run_output
 from kiln_ai.adapters.ml_model_list import built_in_models
 from kiln_ai.adapters.model_adapters.base_adapter import RunOutput

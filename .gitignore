@@ -22,6 +22,15 @@ dist/
 test_output/
 
 .mcp.json
+.python-version
+
+# playwright-cli scratch. .playwright-cli/ is snapshots and screenshots, written
+# into whatever directory the tool was run from. .playwright/ is a workspace
+# config the tool writes if someone runs `playwright-cli install` here — our setup
+# scripts deliberately write the global ~/.playwright one instead, but a stray
+# local copy should not end up in a commit either.
+.playwright/
+.playwright-cli/
 
 .specs_skill_state/
 .config/wt/user_settings.sh

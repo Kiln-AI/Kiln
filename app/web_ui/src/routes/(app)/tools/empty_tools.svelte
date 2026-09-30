@@ -16,7 +16,7 @@
       title="Add Tools to Your Project"
       description_paragraphs={[
         "Tools can provide powerful capabilities to your AI tasks.",
-        "Add search tools, MCP servers, or Kiln Tasks as tools to give your system new skills.",
+        "Add code tools, search tools, MCP servers, or Kiln Tasks to give your system new skills.",
       ]}
       action_buttons={[
         {

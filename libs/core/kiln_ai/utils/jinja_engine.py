@@ -27,17 +27,85 @@ if TYPE_CHECKING:
     from kiln_ai.datamodel.input_transform import InputTransform
 
 
+class JinjaExtractionError(ValueError):
+    """Raised when a Jinja2 filter encounters invalid data during extraction.
+
+    For example, the ``fromjson`` filter raises this when the input string is
+    not valid JSON.
+    """
+
+
+def _fromjson(value: object) -> Any:
+    """Jinja2 filter: parse a JSON string into a Python object.
+
+    Raises ``JinjaExtractionError`` on non-string input or invalid JSON.
+    """
+    if not isinstance(value, str):
+        raise JinjaExtractionError(
+            f"fromjson filter expected a string, got {type(value).__name__}"
+        )
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as e:
+        raise JinjaExtractionError(f"value is not valid JSON: {e}") from e
+
+
+def _format_trace(value: Any) -> str:
+    """Jinja2 filter: render a conversation trace as the canonical
+    role-labelled transcript (EvalTraceFormatter's format).
+
+    Templates over ``EvalTaskInput`` use ``{{ trace | format_trace }}`` so an
+    LLM sees the same human-readable transcript everywhere the trace is
+    rendered, instead of raw message JSON.
+
+    Raises ``JinjaExtractionError`` when the value isn't a message list.
+    """
+    # Local import: jinja_engine is a low-level util imported by datamodel
+    # modules; importing the formatter at module scope would be circular.
+    from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import (
+        EvalTraceFormatter,
+    )
+
+    if not isinstance(value, list):
+        raise JinjaExtractionError(
+            f"format_trace filter expected a list of messages, got {type(value).__name__}"
+        )
+    for index, message in enumerate(value):
+        if not isinstance(message, dict):
+            # Name the offending member, not the container — "got list" would
+            # hide which message is malformed.
+            raise JinjaExtractionError(
+                f"format_trace filter expected a list of messages, but message "
+                f"{index} is {type(message).__name__}, not a dict"
+            )
+    try:
+        # Loose dicts are the runtime reality for traces; the formatter reads
+        # them like its typed message params.
+        return EvalTraceFormatter.trace_to_formatted_conversation_history(value)
+    except Exception as e:
+        # Traces arrive as loose dicts; a malformed message (e.g. missing
+        # 'role') must surface as an extraction error the evaluator can treat
+        # as a skip, not an unhandled crash mid-render.
+        raise JinjaExtractionError(
+            f"trace is not a renderable message list: {e}"
+        ) from e
+
+
 _template_env = SandboxedEnvironment(
     undefined=StrictUndefined,
     trim_blocks=True,
     lstrip_blocks=True,
 )
+_template_env.filters["fromjson"] = _fromjson
+_template_env.filters["format_trace"] = _format_trace
 
 _expression_env = SandboxedEnvironment(
     undefined=Undefined,
     trim_blocks=True,
     lstrip_blocks=True,
 )
+_expression_env.filters["fromjson"] = _fromjson
+_expression_env.filters["format_trace"] = _format_trace
 
 
 def compile_template_or_raise(template: str) -> None:

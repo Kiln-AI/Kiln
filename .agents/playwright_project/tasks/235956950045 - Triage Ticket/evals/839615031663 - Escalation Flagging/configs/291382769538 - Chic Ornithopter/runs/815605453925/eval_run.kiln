@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "815605453925",
+  "created_at": "2026-08-17T21:32:57.894643Z",
+  "created_by": "root",
+  "dataset_id": "106695015830",
+  "task_run_config_id": "293284619675",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"Can we add two more seats mid-cycle?\", \"body\": \"We hired two engineers starting Monday and need seats for them. Will we be charged a prorated amount now, or does it roll into next month's invoice? Also, can I assign seats before their start date?\", \"customer_plan\": \"pro\"}",
+  "output": "{\"team\": \"billing\", \"priority\": \"low\", \"needs_human_review\": false, \"summary\": \"Customer on Pro plan asks whether adding two seats mid-cycle will be prorated now or next invoice and if seats can be assigned before the new engineers' Monday start date.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output passes.\n\n- The ticket is an ordinary billing/planning question about adding seats and prorated charges.\n- It does not involve data loss, a security concern, a billing dispute, or any legal/regulatory issue.\n- Setting `needs_human_review` to `false` is correct.\n- Routing to `billing` with low priority is appropriate, and the summary is accurate and concise.",
+    "reasoning": "We need answer final with required schema. Need evaluate escalation_flagging pass/fail. We already reasoned pass. Need output JSON object with escalation_flagging \"pass\"."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 874,
+    "output_tokens": 1007,
+    "total_tokens": 1881,
+    "cost": 0.00040432,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 12617
+  },
+  "model_type": "eval_run"
+}

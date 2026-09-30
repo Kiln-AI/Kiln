@@ -201,6 +201,7 @@ export async function saveConfig(config: {
   auth_mode?: string
   sync_mode?: string
   remove_conflicting_id?: boolean
+  trusted?: boolean
 }): Promise<GitSyncConfigResponse> {
   return post("/api/git_sync/save_config", config)
 }

@@ -28,7 +28,12 @@ from kiln_ai.tools.built_in_tools.math_tools import (
 )
 from kiln_ai.tools.kiln_task_tool import KilnTaskTool
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
-from kiln_ai.tools.tool_registry import tool_definitions_from_ids, tool_from_id
+from kiln_ai.tools.tool_registry import (
+    tool_definitions_from_ids,
+    tool_from_id,
+    tool_from_id_and_project,
+    validate_unique_allowlist_tool_names,
+)
 
 
 class TestToolRegistry:
@@ -66,6 +71,39 @@ class TestToolRegistry:
         assert isinstance(tool, DivideTool)
         assert await tool.id() == KilnBuiltInToolId.DIVIDE_NUMBERS
         assert await tool.name() == "divide"
+
+    async def test_tool_from_id_llm(self):
+        """LLM tool ID returns an LlmTool instance."""
+        from kiln_ai.tools.built_in_tools.llm_tools import LlmTool
+
+        tool = tool_from_id(KilnBuiltInToolId.LLM)
+
+        assert isinstance(tool, LlmTool)
+        assert await tool.id() == KilnBuiltInToolId.LLM
+        assert await tool.name() == "llm"
+
+    async def test_tool_from_id_llm_judge(self):
+        """LLM_JUDGE tool ID returns an LlmJudgeTool instance."""
+        from kiln_ai.tools.built_in_tools.llm_tools import LlmJudgeTool
+
+        tool = tool_from_id(KilnBuiltInToolId.LLM_JUDGE)
+
+        assert isinstance(tool, LlmJudgeTool)
+        assert await tool.id() == KilnBuiltInToolId.LLM_JUDGE
+        assert await tool.name() == "llm_judge"
+
+    async def test_tool_from_id_and_project_llm_tools_by_string(self):
+        """Both LLM tool IDs resolve via tool_from_id_and_project with no project."""
+        from kiln_ai.tools.built_in_tools.llm_tools import LlmJudgeTool, LlmTool
+
+        assert isinstance(
+            tool_from_id_and_project("kiln_tool::llm"),
+            LlmTool,
+        )
+        assert isinstance(
+            tool_from_id_and_project("kiln_tool::llm_judge"),
+            LlmJudgeTool,
+        )
 
     async def test_tool_from_id_call_kiln_api(self):
         tool = tool_from_id(KilnBuiltInToolId.CALL_KILN_API)
@@ -787,3 +825,173 @@ class TestToolRegistry:
             match="Kiln Task External tool server not found: nonexistent_server in project ID test_project_id",
         ):
             tool_from_id(tool_id, task=mock_task)
+
+
+class TestToolFromIdAndProject:
+    """Tests for tool_from_id_and_project — the core resolver accepting a project directly."""
+
+    async def test_builtins_work_without_project(self):
+        tool = tool_from_id_and_project(KilnBuiltInToolId.ADD_NUMBERS)
+        assert isinstance(tool, AddTool)
+        assert await tool.name() == "add"
+
+    def test_mcp_tool_with_project(self):
+        mock_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={"server_url": "https://example.com", "is_archived": False},
+        )
+        mock_project = Mock(spec=Project)
+        mock_project.id = "proj_id"
+        mock_project.external_tool_servers.return_value = [mock_server]
+
+        tool_id = f"{MCP_REMOTE_TOOL_ID_PREFIX}{mock_server.id}::echo"
+        tool = tool_from_id_and_project(tool_id, project=mock_project)
+        assert isinstance(tool, MCPServerTool)
+
+    def test_mcp_tool_without_project_raises(self):
+        with pytest.raises(ValueError, match="Requires a parent project"):
+            tool_from_id_and_project(f"{MCP_REMOTE_TOOL_ID_PREFIX}s::t")
+
+
+class TestCodeToolRegistry:
+    """Tests for code tool resolution via tool_from_id."""
+
+    def test_code_tool_resolves(self, tmp_path):
+        from kiln_ai.datamodel.code_tool import CodeTool
+        from kiln_ai.tools.code_tool import PythonCodeTool
+
+        project = Project(name="test_proj", path=tmp_path / "project")
+        project.save_to_file()
+
+        ct = CodeTool(
+            name="My Tool",
+            tool_function_name="my_tool",
+            tool_description="Does things",
+            parameters_schema={
+                "type": "object",
+                "properties": {"x": {"type": "string"}},
+            },
+            code="def run(x):\n    return x\n",
+            parent=project,
+        )
+        ct.save_to_file()
+
+        tool_id = f"kiln_tool::code::{ct.id}"
+        tool = tool_from_id_and_project(tool_id, project=project)
+        assert isinstance(tool, PythonCodeTool)
+
+    async def test_code_tool_definition(self, tmp_path):
+        from kiln_ai.datamodel.code_tool import CodeTool
+
+        project = Project(name="test_proj", path=tmp_path / "project")
+        project.save_to_file()
+
+        ct = CodeTool(
+            name="My Tool",
+            tool_function_name="my_tool",
+            tool_description="Does things",
+            parameters_schema={
+                "type": "object",
+                "properties": {"x": {"type": "string"}},
+            },
+            code="def run(x):\n    return x\n",
+            parent=project,
+        )
+        ct.save_to_file()
+
+        tool_id = f"kiln_tool::code::{ct.id}"
+        tool = tool_from_id_and_project(tool_id, project=project)
+        defn = await tool.toolcall_definition()
+        assert defn["function"]["name"] == "my_tool"
+        assert defn["function"]["description"] == "Does things"
+
+    def test_code_tool_missing_raises(self, tmp_path):
+        project = Project(name="test_proj", path=tmp_path / "project")
+        project.save_to_file()
+
+        with pytest.raises(ValueError, match="Code tool not found"):
+            tool_from_id_and_project("kiln_tool::code::nonexistent_id", project=project)
+
+    def test_code_tool_no_project_raises(self):
+        with pytest.raises(ValueError, match="Requires a parent project"):
+            tool_from_id_and_project("kiln_tool::code::12345")
+
+
+class TestValidateUniqueAllowlistToolNames:
+    def _make_code_tool(self, project, function_name):
+        from kiln_ai.datamodel.code_tool import CodeTool
+
+        ct = CodeTool(
+            name=function_name,
+            tool_function_name=function_name,
+            tool_description="d",
+            parameters_schema={"type": "object", "properties": {}},
+            code="def run() -> str:\n    return 'ok'\n",
+            parent=project,
+        )
+        ct.save_to_file()
+        return ct
+
+    @pytest.fixture
+    def project(self, tmp_path):
+        project = Project(name="test_proj", path=tmp_path / "project.kiln")
+        project.save_to_file()
+        return project
+
+    async def test_accepts_unique_and_empty(self, project):
+        tool_a = self._make_code_tool(project, "tool_a")
+        tool_b = self._make_code_tool(project, "tool_b")
+        await validate_unique_allowlist_tool_names([], project)
+        await validate_unique_allowlist_tool_names(
+            [f"kiln_tool::code::{tool_a.id}", f"kiln_tool::code::{tool_b.id}"],
+            project,
+        )
+
+    async def test_rejects_duplicate_function_names(self, project):
+        dup_a = self._make_code_tool(project, "dup_tool")
+        dup_b = self._make_code_tool(project, "dup_tool")
+        with pytest.raises(ValueError, match="share the same function name: dup_tool"):
+            await validate_unique_allowlist_tool_names(
+                [f"kiln_tool::code::{dup_a.id}", f"kiln_tool::code::{dup_b.id}"],
+                project,
+            )
+
+    async def test_tolerates_mcp_only_collisions(self, project):
+        # MCP tool names come from the servers and can't be renamed in Kiln,
+        # so a collision only among MCP tools is left to the sandbox bridge's
+        # call-time error rather than blocking creation.
+        server_a = ExternalToolServer(
+            name="server_a",
+            type=ToolServerType.remote_mcp,
+            properties={"server_url": "https://a.example.com", "is_archived": False},
+            parent=project,
+        )
+        server_a.save_to_file()
+        server_b = ExternalToolServer(
+            name="server_b",
+            type=ToolServerType.remote_mcp,
+            properties={"server_url": "https://b.example.com", "is_archived": False},
+            parent=project,
+        )
+        server_b.save_to_file()
+
+        await validate_unique_allowlist_tool_names(
+            [
+                f"mcp::remote::{server_a.id}::search",
+                f"mcp::remote::{server_b.id}::search",
+            ],
+            project,
+        )
+
+        # A Kiln-owned tool joining the collision is fixable by renaming it,
+        # so that still rejects.
+        code_tool = self._make_code_tool(project, "search")
+        with pytest.raises(ValueError, match="share the same function name: search"):
+            await validate_unique_allowlist_tool_names(
+                [
+                    f"mcp::remote::{server_a.id}::search",
+                    f"kiln_tool::code::{code_tool.id}",
+                ],
+                project,
+            )

@@ -1,0 +1,28 @@
+{
+  "v": 1,
+  "id": "294204053347",
+  "created_at": "2026-08-17T21:33:36.611322Z",
+  "created_by": "root",
+  "dataset_id": "219379828532",
+  "task_run_config_id": "293284619675",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"CSV export is missing the last three days\", \"body\": \"I pulled the usage export this morning and the file stops at Tuesday. The dashboard shows data through today, so the numbers do not match. Same result whether I export from the UI or the scheduled email.\", \"customer_plan\": \"free\"}",
+  "output": "{\"team\": \"security\", \"priority\": \"medium\", \"needs_human_review\": true, \"summary\": \"Investigate why the usage CSV export omits the last three days (both UI and scheduled email) while the dashboard shows current data; likely a data pipeline bug affecting a free-tier customer.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output is incorrect.\n\n- The ticket describes a usage CSV export missing recent data while the dashboard still shows current data. That is a regular bug report / data pipeline issue, not a security incident, privacy exposure, billing dispute, or actual data loss.\n- Therefore `needs_human_review` should be `false`.\n- The assigned team should be something like engineering or product support, not `security`.\n- The summary itself says it is “likely a data pipeline bug,” which contradicts flagging it for security review.\n\nVerdict: **Fail** — the model does not exhibit the desired behaviour."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 0.0
+  },
+  "task_run_usage": {
+    "input_tokens": 731,
+    "output_tokens": 1304,
+    "total_tokens": 2035,
+    "cost": 0.00046746000000000005,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 16873
+  },
+  "model_type": "eval_run"
+}

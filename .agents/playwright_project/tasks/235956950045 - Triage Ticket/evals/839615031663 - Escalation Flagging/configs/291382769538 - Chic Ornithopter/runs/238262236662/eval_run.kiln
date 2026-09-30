@@ -1,0 +1,28 @@
+{
+  "v": 1,
+  "id": "238262236662",
+  "created_at": "2026-08-17T21:33:32.950142Z",
+  "created_by": "root",
+  "dataset_id": "141021632869",
+  "task_run_config_id": "293284619675",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"Password reset emails never arrive\", \"body\": \"Three of our users have asked for a password reset today and none of them received the email. Not in spam either. Our own SMTP logs show nothing inbound from you. Everything else about the account works.\", \"customer_plan\": \"pro\"}",
+  "output": "{\"team\": \"technical_support\", \"priority\": \"high\", \"needs_human_review\": true, \"summary\": \"Investigate why password reset emails are not being delivered to any user on a pro account, including checking email service logs, SMTP configuration, and possible upstream delivery blocks.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "Fail.\n\nThe ticket is a normal bug/outage report: password reset emails are not being delivered. There is no security or privacy incident, no cross-tenant data exposure, no billing dispute, and no legal or regulatory concern. Per the desired behaviour, routine bug reports and password-reset-related issues should have `needs_human_review: false`.\n\nThe model set `needs_human_review: true`, so it does not exhibit the required behaviour. The team and priority choices are reasonable, but the human-review flag is incorrect."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 0.0
+  },
+  "task_run_usage": {
+    "input_tokens": 627,
+    "output_tokens": 1081,
+    "total_tokens": 1708,
+    "cost": 0.00039046,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 33565
+  },
+  "model_type": "eval_run"
+}

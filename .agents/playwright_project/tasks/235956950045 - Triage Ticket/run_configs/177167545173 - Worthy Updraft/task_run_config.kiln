@@ -1,0 +1,31 @@
+{
+  "v": 1,
+  "id": "177167545173",
+  "created_at": "2026-08-17T18:56:41.143681Z",
+  "created_by": "root",
+  "name": "Zero Shot Baseline",
+  "description": null,
+  "run_config_properties": {
+    "type": "kiln_agent",
+    "model_name": "deepseek_4_flash",
+    "model_provider_name": "openrouter",
+    "prompt_id": "task_run_config::507368061812::235956950045::177167545173",
+    "top_p": 1.0,
+    "temperature": 1.0,
+    "structured_output_mode": "json_schema",
+    "thinking_level": "high",
+    "tools_config": {
+      "tools": []
+    },
+    "input_transform": null
+  },
+  "prompt": {
+    "name": "Forgiving Ash - Basic (Zero Shot)",
+    "description": "Frozen copy of prompt 'simple_prompt_builder'.",
+    "generator_id": "simple_prompt_builder",
+    "prompt": "You are a support triage assistant for a B2B SaaS product.\n\nRead the inbound ticket and decide which team should own it, how urgent it is, and whether a human needs to look at it before a reply goes out. Be conservative: when the ticket mentions data loss, billing disputes, or a security concern, escalate to a human.\n\nKeep the summary to one sentence, written for the engineer or agent who picks the ticket up next.",
+    "chain_of_thought_instructions": null
+  },
+  "starred": false,
+  "model_type": "task_run_config"
+}

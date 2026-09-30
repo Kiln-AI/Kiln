@@ -10,11 +10,18 @@
 
   $: project_id = $ui_state.current_project_id
   $: task_id = $ui_state.current_task_id
+
+  // A successful connect returns to eval creation at the type picker — or the
+  // home page if ui_state has no current project/task to build a URL from.
+  $: success_redirect_url =
+    project_id && task_id
+      ? `/specs/${project_id}/${task_id}/select_template`
+      : "/"
 </script>
 
 <CopilotAuthPage
   title="Create Eval"
   docs_link="https://docs.kiln.tech/docs/evals-and-specs"
   breadcrumbs={[{ label: "Evals", href: `/specs/${project_id}/${task_id}` }]}
-  success_redirect_url={`/specs/${project_id}/${task_id}/select_template`}
+  {success_redirect_url}
 />

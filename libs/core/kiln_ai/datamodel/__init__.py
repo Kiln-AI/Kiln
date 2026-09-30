@@ -22,6 +22,8 @@ from kiln_ai.datamodel import (
     strict_mode,
 )
 from kiln_ai.datamodel.basemodel import generate_model_id
+from kiln_ai.datamodel.claim_review import ClaimReview, GradedClaim
+from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.data_guide import DataGuide
 from kiln_ai.datamodel.datamodel_enums import (
     FeedbackSource,
@@ -52,21 +54,30 @@ from kiln_ai.datamodel.task_output import (
     TaskOutput,
     TaskOutputRating,
 )
-from kiln_ai.datamodel.task_run import MessageUsage, TaskRun, Usage
+from kiln_ai.datamodel.task_run import (
+    EvalItemSource,
+    MessageUsage,
+    TaskRun,
+    Usage,
+)
 
 __all__ = [
     "BasePrompt",
+    "ClaimReview",
+    "CodeTool",
     "DataGuide",
     "DataSource",
     "DataSourceProperty",
     "DataSourceType",
     "DatasetSplit",
     "DatasetSplitDefinition",
+    "EvalItemSource",
     "ExternalToolServer",
     "Feedback",
     "FeedbackSource",
     "FineTuneStatusType",
     "Finetune",
+    "GradedClaim",
     "MessageUsage",
     "Priority",
     "Project",

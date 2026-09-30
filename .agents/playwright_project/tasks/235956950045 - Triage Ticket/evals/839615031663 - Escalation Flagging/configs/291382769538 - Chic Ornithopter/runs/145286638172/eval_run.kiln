@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "145286638172",
+  "created_at": "2026-08-17T21:29:02.029209Z",
+  "created_by": "root",
+  "dataset_id": "820034106688",
+  "task_run_config_id": null,
+  "eval_config_eval": true,
+  "input": "{\"subject\": \"Someone else's data showed up in my dashboard\", \"body\": \"I opened the Reports tab and saw three rows belonging to a company that is not us, including what look like their customer email addresses. I took a screenshot and closed the tab immediately. This needs looking at right now.\", \"customer_plan\": \"enterprise\"}",
+  "output": "{\"team\": \"security\", \"priority\": \"urgent\", \"needs_human_review\": true, \"summary\": \"Enterprise customer reporting another company's data (including customer emails) in their Reports tab—immediate security/privacy escalation required before any reply is sent.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output passes.\n\n- The ticket clearly describes a potential cross-tenant data exposure: another company’s data, including customer email addresses, appeared in the customer’s dashboard.\n- This is a privacy/security incident, so `needs_human_review: true` is correct.\n- Routing to `security` is appropriate.\n- Marking it `urgent` is reasonable given the sensitivity and the customer’s escalation.\n- The summary is one sentence and clearly flags why human review is required before replying.\n\nThis matches the desired behavior and the correct example of a cross-tenant data exposure being escalated.",
+    "reasoning": "We need to answer the user's final request: \"Considering the above, return a final result.\" This is an evaluation task. The user has provided a step-by-step evaluation, and we need to produce a final result. The model's output should be evaluated as pass/fail. Based on our reasoning, it passes. So we should output a concise final result indicating pass."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 244,
+    "output_tokens": 173,
+    "total_tokens": 417,
+    "cost": 0.0000826,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 3519
+  },
+  "model_type": "eval_run"
+}

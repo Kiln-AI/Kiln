@@ -347,8 +347,14 @@ def _skills_block(project: Project) -> AgentOverviewSkills:
 def _specs_block(task: Task) -> AgentOverviewSpecs:
     items: list[AgentOverviewSpec] = []
     archived_count = 0
+    # Priority/status live on the eval; the spec's own fields are only a
+    # fallback for legacy files that predate the move.
+    evals_by_id = {ev.id: ev for ev in task.evals(readonly=True) if ev.id}
     for spec in task.specs(readonly=True):
-        if spec.status.value == "archived":
+        ev = evals_by_id.get(spec.eval_id) if spec.eval_id else None
+        priority = ev.resolved_priority(spec) if ev else spec.priority
+        status = ev.resolved_status(spec) if ev else spec.status
+        if status.value == "archived":
             archived_count += 1
             continue
         items.append(
@@ -356,8 +362,8 @@ def _specs_block(task: Task) -> AgentOverviewSpecs:
                 eval_id=spec.eval_id,
                 name=spec.name,
                 spec_type=spec.properties.get("spec_type", "unknown"),
-                priority=spec.priority.name,
-                status=spec.status.value,
+                priority=priority.name,
+                status=status.value,
                 tags=spec.tags,
             )
         )

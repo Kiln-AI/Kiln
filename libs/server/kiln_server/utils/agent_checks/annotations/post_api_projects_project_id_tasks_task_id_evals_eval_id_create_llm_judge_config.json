@@ -1,0 +1,8 @@
+{
+  "method": "post",
+  "path": "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/create_llm_judge_config",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

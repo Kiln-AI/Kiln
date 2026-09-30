@@ -1,21 +1,51 @@
 import os
 import shutil
+import sys
 import uuid
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 from unittest.mock import patch
 
-import litellm
 import pytest
 from dotenv import load_dotenv
-from kiln_ai.datamodel.basemodel import KilnAttachmentModel
 from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
 from kiln_ai.pytest_test_output import make_test_output_dir
 from kiln_ai.utils.config import Config
 
+if TYPE_CHECKING:
+    from kiln_ai.datamodel.basemodel import KilnAttachmentModel
+
 
 @pytest.fixture(autouse=True)
-def _clear_httpx_clients() -> None:
+def _litellm_per_test_setup() -> None:
+    # Importing litellm costs several seconds, and pytest imports this conftest on
+    # every invocation. Most test modules never touch litellm, so this only runs
+    # once something else has already imported it. Skipping it is safe: with no
+    # litellm import there are no cached HTTP clients to flush.
+    #
+    # The tradeoff is that litellm logging is configured no earlier than the first
+    # test to run after litellm is in sys.modules. Two cases go unconfigured: a run
+    # that never imports litellm at all, and a test that imports it partway through
+    # its own body — this fixture has already run and returned by then, so that one
+    # test executes with the "LiteLLM" logger at its default level and no
+    # "ModelCalls" handler. Collection-time imports are covered, since pytest
+    # imports every test module before running any test. Nothing depends on either
+    # gap today.
+    #
+    # setup_litellm_logging resolves its log path here rather than at session
+    # scope, so it reads whatever Config.settings_dir() returns at this moment.
+    # Two vector-store test modules patch settings_dir to tmp_path via their own
+    # autouse fixtures; this stays correct because pytest instantiates autouse
+    # fixtures from the root conftest before module-level ones, so the real path
+    # is what gets cached in the handler.
+    litellm = sys.modules.get("litellm")
+    if litellm is None:
+        return
+
+    from kiln_ai.utils.logging import setup_litellm_logging
+
+    # Idempotent: returns immediately once a CustomLiteLLMLogger is registered.
+    setup_litellm_logging("test_model_calls.log")
     litellm.in_memory_llm_clients_cache.flush_cache()
 
 
@@ -49,14 +79,6 @@ def use_temp_settings_dir(tmp_path):
         Config, "settings_path", return_value=str(tmp_path / "settings.yaml")
     ):
         yield
-
-
-@pytest.fixture(scope="session", autouse=True)
-def setup_test_logging():
-    from kiln_ai.utils.logging import setup_litellm_logging
-
-    setup_litellm_logging("test_model_calls.log")
-    yield
 
 
 def pytest_addoption(parser):
@@ -233,7 +255,9 @@ def mock_attachment_factory(mock_file_factory):
     def create_attachment(
         mime_type: MockFileFactoryMimeType,
         text: str | None = None,
-    ) -> KilnAttachmentModel:
+    ) -> "KilnAttachmentModel":
+        from kiln_ai.datamodel.basemodel import KilnAttachmentModel
+
         if text is not None:
             return KilnAttachmentModel.from_data(text, mime_type)
 

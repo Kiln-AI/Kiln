@@ -1,5 +1,5 @@
 import { client } from "$lib/api_client"
-import type { TaskRun } from "$lib/types"
+import type { TaskRun, TaskRunOutput } from "$lib/types"
 
 /**
  * A task sample example consisting of an input/output pair.
@@ -26,7 +26,7 @@ export type TaskSampleFetchResult = {
 /**
  * Checks if a task run has a 5-star rating.
  */
-function is_five_star_rated(run: TaskRun): boolean {
+export function is_five_star_rated(run: TaskRun): boolean {
   const rating = run.output?.rating
   if (!rating) return false
   return rating.type === "five_star" && rating.value === 5
@@ -35,7 +35,7 @@ function is_five_star_rated(run: TaskRun): boolean {
 /**
  * Extract the output string from a task run, preferring repaired output.
  */
-function get_output_string(run: TaskRun): string {
+function get_output_string(run: TaskRun | TaskRunOutput): string {
   if (run.repaired_output?.output) {
     return run.repaired_output.output
   }
@@ -45,7 +45,9 @@ function get_output_string(run: TaskRun): string {
 /**
  * Converts a TaskRun to a TaskSampleExample.
  */
-export function task_run_to_example(run: TaskRun): TaskSampleExample {
+export function task_run_to_example(
+  run: TaskRun | TaskRunOutput,
+): TaskSampleExample {
   return {
     input: run.input ?? "",
     output: get_output_string(run),
@@ -55,7 +57,7 @@ export function task_run_to_example(run: TaskRun): TaskSampleExample {
 /**
  * Fetches task runs and determines the task sample selection status.
  *
- * Priority:
+ * Priority (over the runs `candidate_filter` keeps; no filter = all runs):
  * 1. If a 5-star rated sample exists, auto-select it (confident)
  * 2. If samples exist but none are 5-star, auto-select the most recent
  * 3. If no samples exist, indicate manual entry is needed
@@ -65,6 +67,7 @@ export function task_run_to_example(run: TaskRun): TaskSampleExample {
 export async function fetch_task_sample_candidates(
   project_id: string,
   task_id: string,
+  candidate_filter?: (run: TaskRun) => boolean,
 ): Promise<TaskSampleFetchResult> {
   const { data: runs, error } = await client.GET(
     "/api/projects/{project_id}/tasks/{task_id}/runs",
@@ -79,11 +82,12 @@ export async function fetch_task_sample_candidates(
     throw new Error(
       typeof error === "string"
         ? error
-        : (error as { detail?: string }).detail ?? "Failed to fetch runs",
+        : (error as { message?: string }).message ?? "Failed to fetch runs",
     )
   }
 
-  if (!runs || runs.length === 0) {
+  const candidates = candidate_filter ? runs?.filter(candidate_filter) : runs
+  if (!candidates || candidates.length === 0) {
     return {
       auto_select_type: null,
       selected_example: null,
@@ -92,7 +96,7 @@ export async function fetch_task_sample_candidates(
   }
 
   // Sort runs by recency (most recent first)
-  const sorted_runs = [...runs].sort((a, b) => {
+  const sorted_runs = [...candidates].sort((a, b) => {
     const a_date = a.created_at ? new Date(a.created_at).getTime() : 0
     const b_date = b.created_at ? new Date(b.created_at).getTime() : 0
     return b_date - a_date
@@ -143,7 +147,7 @@ export async function build_prompt_with_task_sample(
     throw new Error(
       typeof error === "string"
         ? error
-        : (error as { detail?: string }).detail ?? "Failed to build prompt",
+        : (error as { message?: string }).message ?? "Failed to build prompt",
     )
   }
 

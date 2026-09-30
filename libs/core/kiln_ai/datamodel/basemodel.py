@@ -431,7 +431,10 @@ class KilnBaseModel(BaseModel):
             mtime_ns = os.fstat(file.fileno()).st_mtime_ns
             file_data = file.read()
             parsed_json = json.loads(file_data)
-            m = cls.model_validate(parsed_json, context={"loading_from_file": True})
+            m = cls.model_validate(
+                parsed_json,
+                context={"loading_from_file": True, "source_dir": path.parent},
+            )
             if not isinstance(m, cls):
                 raise ValueError(f"Loaded model is not of type {cls.__name__}")
             m._loaded_from_file = True
@@ -526,6 +529,19 @@ class KilnBaseModel(BaseModel):
     # increment for breaking changes
     def max_schema_version(self) -> int:
         return 1
+
+
+class ChildLoadError(BaseModel):
+    """A child model file that could not be loaded, and why.
+
+    Returned by ``KilnParentedModel.all_children_of_parent_path_with_errors`` so callers
+    can surface partial results instead of failing the whole load.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    path: Path = Field(description="Path of the child file that failed to load.")
+    message: str = Field(description="Why the child file failed to load.")
 
 
 class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
@@ -678,14 +694,53 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
                     yield child_file
 
     @classmethod
+    def _load_children_of_parent_path(
+        cls: Type[PT],
+        parent_path: Path | None,
+        readonly: bool,
+        error_on_first: bool,
+    ) -> tuple[list[PT], list[ChildLoadError]]:
+        children: list[PT] = []
+        errors: list[ChildLoadError] = []
+        for child_path in cls.iterate_children_paths_of_parent_path(parent_path):
+            try:
+                children.append(cls.load_from_file(child_path, readonly=readonly))
+            except Exception as e:
+                if error_on_first:
+                    raise
+                errors.append(ChildLoadError(path=child_path, message=str(e)))
+        return children, errors
+
+    @classmethod
     def all_children_of_parent_path(
         cls: Type[PT], parent_path: Path | None, readonly: bool = False
     ) -> list[PT]:
-        children = []
-        for child_path in cls.iterate_children_paths_of_parent_path(parent_path):
-            item = cls.load_from_file(child_path, readonly=readonly)
-            children.append(item)
+        """Load every child of a parent, raising on the first child that fails to load.
+
+        Use this when a child that can't be loaded should fail the whole operation.
+        Use ``all_children_of_parent_path_with_errors`` when partial results are useful.
+        """
+        children, _ = cls._load_children_of_parent_path(
+            parent_path, readonly=readonly, error_on_first=True
+        )
         return children
+
+    @classmethod
+    def all_children_of_parent_path_with_errors(
+        cls: Type[PT], parent_path: Path | None, readonly: bool = False
+    ) -> tuple[list[PT], list[ChildLoadError]]:
+        """Load every child of a parent, collecting per-child failures instead of raising.
+
+        Project folders sync between clients running different Kiln versions, so a child
+        file written by a newer build can be unreadable here while its siblings are fine.
+        Returns the children that loaded, and a ``ChildLoadError`` for each one that didn't.
+
+        Errors raised while listing the children (for example an unreadable parent) are
+        not per-child failures, and still propagate.
+        """
+        return cls._load_children_of_parent_path(
+            parent_path, readonly=readonly, error_on_first=False
+        )
 
     @classmethod
     def from_id_and_parent_path(
@@ -712,7 +767,7 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
 
     @classmethod
     def from_ids_and_parent_path(
-        cls: Type[PT], ids: Set[str], parent_path: Path | None
+        cls: Type[PT], ids: Set[str], parent_path: Path | None, readonly: bool = False
     ) -> Dict[str, PT]:
         """
         Bulk equivalent of from_id_and_parent_path, much faster for large collections.
@@ -720,6 +775,9 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         It picks out the matching models from the directory only once. This avoids
         doing individual costly lookups that scan the whole directory in scenarios
         where we need to iterate over a large collection of models (e.g. bulk tagging).
+
+        Pass readonly=True for read-only consumers: cache hits are returned directly,
+        skipping a deep copy per matched model.
         """
         if parent_path is None:
             return {}
@@ -730,9 +788,9 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         for child_path in cls.iterate_children_paths_of_parent_path(parent_path):
             child_id = ModelCache.shared().get_model_id(child_path, cls)
             if child_id in ids:
-                children[child_id] = cls.load_from_file(child_path)
+                children[child_id] = cls.load_from_file(child_path, readonly=readonly)
             if child_id is None:
-                child = cls.load_from_file(child_path)
+                child = cls.load_from_file(child_path, readonly=readonly)
                 if child.id in ids:
                     children[child.id] = child
 

@@ -1,0 +1,25 @@
+{
+  "v": 1,
+  "id": "117940161350",
+  "created_at": "2026-08-17T22:05:39.339072Z",
+  "created_by": "root",
+  "name": "Gemini 3p5 Flash Lite w Default Prompts",
+  "is_archived": false,
+  "description": "Gemini 3.5 Flash Lite with the default extraction prompts. Markdown and plaintext documents are passed through without a model call.",
+  "model_provider_name": "openrouter",
+  "model_name": "gemini_3_5_flash_lite",
+  "output_format": "text/markdown",
+  "passthrough_mimetypes": [
+    "text/plain",
+    "text/markdown"
+  ],
+  "extractor_type": "litellm",
+  "properties": {
+    "extractor_type": "litellm",
+    "prompt_document": "Transcribe the document into text/markdown.\n\n- Accurately transcribe all text content.\n- If the document contains images or figures, describe them in the output.\n- If the document contains tables, reproduce them in the output using the correct format, and also add a brief descriptive sentence summarizing the table as a whole.\n- Preserve the structure and order of the document.\n- Format the output as valid text/markdown.\n- Do not transcribe formatting elements such as bold, italic, underline, newlines, etc.\n- Do NOT include any prefatory or explanatory text outside of the transcription itself.\n",
+    "prompt_image": "Describe the image in text/markdown.\n\n- Provide a clear description of the visual content.\n- If the image contains text, transcribe it exactly.\n- Mention notable visual details (e.g., people, objects, actions, setting, style, colors) when relevant.\n- Do NOT include any prefatory or explanatory text outside of the description itself.\n",
+    "prompt_video": "Describe the video in text/markdown.\n\n- Provide a chronological description of what happens in the video, covering both visual and audio content.\n- Accurately transcribe all spoken words.\n- When the audio does not contain speech (e.g., music, laughter, background sounds, silence, noise), describe these sounds in brackets.\n- When relevant, describe notable visual details (e.g., actions, gestures, scene changes, on-screen text).\n- Do NOT include any prefatory or explanatory text outside of the transcription itself.\n",
+    "prompt_audio": "Transcribe the audio into text/markdown.\n\n- Accurately transcribe all spoken words.\n- When the audio does not contain speech (e.g., music, laughter, background sounds, silence, noise), describe these sounds in brackets.\n- Maintain the natural order of events in the audio.\n- Do NOT include any prefatory or explanatory text outside of the transcription itself.\n"
+  },
+  "model_type": "extractor_config"
+}

@@ -24,6 +24,7 @@
   import FinetuneIcon from "$lib/ui/icons/finetune_icon.svelte"
   import { encode_splits_for_url } from "$lib/utils/splits_util"
   import { build_eval_options } from "./eval_options"
+  import { build_synth_generation_splits } from "$lib/utils/eval_generation_splits"
 
   export let generate_subtopics: () => void
   export let generate_samples: () => void
@@ -91,7 +92,7 @@
         throw error
       }
       evals_by_id = {}
-      for (const eval_item of data) {
+      for (const eval_item of data.evals) {
         if (eval_item.id) {
           evals_by_id[eval_item.id] = eval_item
         }
@@ -114,25 +115,13 @@
       alert("This eval is not ready yet. Please configure its judge first.")
       return
     }
-    const eval_set_filter_id = evaluator.eval_set_filter_id
-    const eval_configs_filter_id = evaluator.eval_configs_filter_id ?? null
-    const splits: Record<string, number> = {}
-    if (
-      eval_set_filter_id.startsWith("tag::") &&
-      (eval_configs_filter_id === null ||
-        eval_configs_filter_id.startsWith("tag::"))
-    ) {
-      const eval_set_tag = eval_set_filter_id.split("::")[1]
-      if (eval_configs_filter_id) {
-        const eval_configs_tag = eval_configs_filter_id.split("::")[1]
-        splits[eval_set_tag] = 0.8
-        splits[eval_configs_tag] = 0.2
-      } else {
-        splits[eval_set_tag] = 1.0
-      }
-    } else {
+    // Generated cases are spread over the eval's splits, written as runs or as eval inputs
+    // depending on which store each split holds. The test split is the one we can't do
+    // without: no tag to write the cases into means there is nothing to generate for.
+    const generation_splits = build_synth_generation_splits(evaluator)
+    if (!generation_splits) {
       alert(
-        "We can't generate synthetic data for this eval as its eval sets are not defined by tag filters. Select an eval which uses tags to define eval sets.",
+        "We can't generate synthetic data for this eval because its test set isn't defined by a tag filter. Select an eval which uses tags to define its datasets.",
       )
       return
     }
@@ -152,7 +141,14 @@
     }
 
     // .set will automatically URL encode
-    params.set("splits", encode_splits_for_url(splits))
+    params.set("splits", encode_splits_for_url(generation_splits.splits))
+    // Which of those tags the synth page has to write as eval inputs instead of runs.
+    if (generation_splits.eval_input_tags.length > 0) {
+      params.set(
+        "eval_input_splits",
+        generation_splits.eval_input_tags.join(","),
+      )
+    }
 
     // For reference answer evals, redirect to QnA page instead of synth page
     if (template_id === "rag") {

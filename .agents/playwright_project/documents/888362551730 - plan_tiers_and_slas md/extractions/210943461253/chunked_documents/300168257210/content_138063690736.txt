@@ -1,0 +1,21 @@
+It is not escalated, and it does not change the ticket's priority.
+The correct response to a missed target is to reply, not to reprioritise the queue
+around the clock.
+
+## Common misreadings
+
+The target is per ticket, not per message. A customer who sends four follow-ups
+before anyone replies is owed one first response, not four.
+
+The target does not restart when a ticket is reassigned between teams. The clock runs
+from when the customer first wrote in.
+
+Downgrades take effect at the start of the next billing period, so a customer who
+downgraded yesterday still has their previous tier's targets until their period ends.
+Upgrades take effect immediately, including on tickets that are already open.
+
+## Where the tiers are recorded
+
+The customer_plan field on a triaged ticket carries the tier at the moment the ticket
+was received. It is a snapshot, not a live lookup, so a ticket raised before an
+upgrade keeps the old value even after the upgrade lands.

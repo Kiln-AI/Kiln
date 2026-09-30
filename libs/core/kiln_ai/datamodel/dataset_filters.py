@@ -1,10 +1,13 @@
 import re
 from enum import Enum
-from typing import Annotated, ClassVar, Dict, List, Protocol
+from typing import TYPE_CHECKING, Annotated, ClassVar, Dict, List, Protocol
 
 from pydantic import AfterValidator
 
 from kiln_ai.datamodel.task_run import TaskRun
+
+if TYPE_CHECKING:
+    from kiln_ai.datamodel.eval import EvalInput
 
 
 class DatasetFilter(Protocol):
@@ -181,3 +184,76 @@ def dataset_filter_from_id(id: DatasetFilterId) -> DatasetFilter:
         return static_dataset_filters[static_filter]
     except ValueError:
         raise ValueError(f"Invalid dataset filter ID: {id}")
+
+
+# --- EvalInput filters (V2) ---
+
+
+class EvalInputFilter(Protocol):
+    """Protocol for filters that operate on EvalInput objects (V2 evals)."""
+
+    def __call__(self, eval_input: "EvalInput") -> bool: ...
+
+
+class AllEvalInputFilter:
+    """An EvalInput filter that includes every input."""
+
+    def __call__(self, eval_input: "EvalInput") -> bool:
+        return True
+
+
+class TagEvalInputFilter:
+    """An EvalInput filter that matches inputs with a specific tag."""
+
+    def __init__(self, tag: str):
+        self.tag = tag
+
+    def __call__(self, eval_input: "EvalInput") -> bool:
+        return self.tag in eval_input.tags
+
+
+class StaticEvalInputFilters(str, Enum):
+    """Static eval-input filter names."""
+
+    ALL = "all"
+
+
+static_eval_input_filters: Dict[StaticEvalInputFilters, EvalInputFilter] = {
+    StaticEvalInputFilters.ALL: AllEvalInputFilter(),
+}
+
+
+def _check_eval_input_filter_id(id: str) -> str:
+    """Validate that the eval-input filter ID is well-formed."""
+    if id in [f.value for f in StaticEvalInputFilters]:
+        return id
+
+    if id.startswith("tag::") and len(id) > 5:
+        return id
+
+    raise ValueError(f"Invalid eval-input filter ID: {id}")
+
+
+EvalInputFilterId = Annotated[
+    str,
+    AfterValidator(lambda v: _check_eval_input_filter_id(v)),
+]
+"""
+A pydantic type that validates strings containing a valid eval-input filter ID.
+
+Eval-input filter IDs can be one of:
+- A built-in eval-input filter name (e.g. "all")
+- A tag::<tag> filter, where <tag> is a string
+"""
+
+
+def eval_input_filter_from_id(id: EvalInputFilterId) -> EvalInputFilter:
+    """Get an EvalInputFilter from an ID."""
+    if id.startswith("tag::") and len(id) > 5:
+        return TagEvalInputFilter(id[5:])
+
+    try:
+        static_filter = StaticEvalInputFilters(id)
+        return static_eval_input_filters[static_filter]
+    except ValueError:
+        raise ValueError(f"Invalid eval-input filter ID: {id}")

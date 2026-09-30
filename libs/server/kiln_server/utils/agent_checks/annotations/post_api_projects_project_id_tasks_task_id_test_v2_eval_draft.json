@@ -1,0 +1,8 @@
+{
+  "method": "post",
+  "path": "/api/projects/{project_id}/tasks/{task_id}/test_v2_eval_draft",
+  "agent_policy": {
+    "permission": "deny",
+    "requires_approval": false
+  }
+}

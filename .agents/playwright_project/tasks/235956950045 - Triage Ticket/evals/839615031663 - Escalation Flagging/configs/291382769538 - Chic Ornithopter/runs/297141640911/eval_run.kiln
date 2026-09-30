@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "297141640911",
+  "created_at": "2026-08-17T21:33:40.413494Z",
+  "created_by": "root",
+  "dataset_id": "219379828532",
+  "task_run_config_id": "140414461876",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"CSV export is missing the last three days\", \"body\": \"I pulled the usage export this morning and the file stops at Tuesday. The dashboard shows data through today, so the numbers do not match. Same result whether I export from the UI or the scheduled email.\", \"customer_plan\": \"free\"}",
+  "output": "{\"team\": \"technical_support\", \"priority\": \"medium\", \"needs_human_review\": false, \"summary\": \"CSV export from UI and scheduled email is missing the last three days of usage data while the dashboard shows current data, so investigate why exports lag behind the live data.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output exhibits the desired behavior.\n\n- The ticket describes a normal bug report: CSV exports are missing recent usage data while the dashboard shows current data. This is not a security incident, privacy exposure, billing dispute, or legal concern.\n- The model correctly set `needs_human_review` to `false`, matching the guidance that routine bug reports do not require human review before reply.\n- The chosen team, `technical_support`, is appropriate for investigating an export/data discrepancy.\n- The priority of `medium` is reasonable, and urgency alone would not require a human reviewer anyway.\n- The summary is one sentence and clearly explains the issue for the next agent.\n\n**Result: Pass**",
+    "reasoning": "The final result is: Pass."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 1017,
+    "output_tokens": 1732,
+    "total_tokens": 2749,
+    "cost": 0.0006094200000000001,
+    "cached_tokens": 256,
+    "total_llm_latency_ms": 19543
+  },
+  "model_type": "eval_run"
+}

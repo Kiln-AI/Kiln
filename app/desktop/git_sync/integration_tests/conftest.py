@@ -6,10 +6,10 @@ helpers, network failure simulation, and conflict helpers.
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from collections.abc import Generator
 from typing import Callable, Protocol
 from unittest.mock import patch
 

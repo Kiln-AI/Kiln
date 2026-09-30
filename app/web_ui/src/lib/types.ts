@@ -16,6 +16,7 @@ export type ActionButton = {
 // Project-Input is a variant with path
 export type Project = components["schemas"]["Project-Input"]
 export type Task = components["schemas"]["Task"]
+export type TurnMode = components["schemas"]["TurnMode"]
 export type TaskRun = components["schemas"]["TaskRun-Input"]
 export type TaskRunOutput = components["schemas"]["TaskRun-Output"]
 export type TaskRequirement = components["schemas"]["TaskRequirement"]
@@ -63,6 +64,7 @@ export type EvalRunResult = components["schemas"]["EvalRunResult"]
 export type EvalConfigCompareSummary =
   components["schemas"]["EvalConfigCompareSummary"]
 export type EvalRun = components["schemas"]["EvalRun"]
+export type EvalRunWithTrace = components["schemas"]["EvalRunWithTrace"]
 export type EvalProgress = components["schemas"]["EvalProgress"]
 export type RatingOption = components["schemas"]["RatingOption"]
 export type RatingOptionResponse = components["schemas"]["RatingOptionResponse"]
@@ -138,12 +140,21 @@ export type Trace = TraceMessage[]
 export type ErrorWithTrace = components["schemas"]["ErrorWithTrace"]
 export type ToolCallMessageParam =
   components["schemas"]["ChatCompletionMessageFunctionToolCallParam"]
+export type RunChainEntry = components["schemas"]["RunChainEntry"]
 export type SearchToolApiDescription =
   components["schemas"]["SearchToolApiDescription"]
+export type CodeToolResponse = components["schemas"]["CodeToolResponse"]
+export type CodeToolCreateResponse =
+  components["schemas"]["CodeToolCreateResponse"]
+export type TestCodeToolResponse = components["schemas"]["TestCodeToolResponse"]
+export type ToolCallLogEntryResponse =
+  components["schemas"]["ToolCallLogEntryResponse"]
 export type Skill = components["schemas"]["SkillResponse"]
 export type DocumentLibraryState = components["schemas"]["DocumentLibraryState"]
 export type Spec = components["schemas"]["Spec"]
-export type SpecStatus = components["schemas"]["SpecStatus"]
+export type EvalStatus = components["schemas"]["EvalStatus"]
+// Status moved from specs to evals; the old name is kept for existing call sites.
+export type SpecStatus = EvalStatus
 export type Priority = components["schemas"]["Priority"]
 export type Feedback = components["schemas"]["Feedback"]
 export type FeedbackSource = components["schemas"]["FeedbackSource"]

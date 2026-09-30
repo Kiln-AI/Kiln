@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, setContext } from "svelte"
+  import { onMount, setContext, tick } from "svelte"
   import { createEventDispatcher } from "svelte"
   import { KilnError } from "./error_handlers"
   import { beforeNavigate } from "$app/navigation"
@@ -97,6 +97,9 @@
 
   export async function validate_only(): Promise<boolean> {
     await trigger_validation()
+    // Flush Svelte DOM updates so error classes (e.g. input-error) are
+    // rendered before we query the DOM for validation indicators.
+    await tick()
     const firstError = first_error()
     if (firstError) {
       has_validation_errors = true

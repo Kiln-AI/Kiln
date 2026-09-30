@@ -12,6 +12,7 @@ from litellm.types.utils import ChatCompletionMessageToolCall, Choices, ModelRes
 from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
 from kiln_ai.adapters.chat.chat_formatter import ChatFormatter, chat_message_to_dict
 from kiln_ai.adapters.litellm_utils.litellm_streaming import StreamingCompletion
+from kiln_ai.adapters.litellm_utils.tool_calls import function_tool_calls
 from kiln_ai.adapters.ml_model_list import KilnModelProvider
 from kiln_ai.adapters.model_adapters.stream_events import (
     AdapterStreamEvent,
@@ -25,7 +26,7 @@ if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 
 MAX_CALLS_PER_TURN = 10
-MAX_TOOL_CALLS_PER_TURN = 30
+MAX_TOOL_CALLS_PER_TURN = 100
 
 logger = logging.getLogger(__name__)
 
@@ -238,7 +239,7 @@ class AdapterStream:
             ) + call_latency_ms
 
             content = response_choice.message.content
-            tool_calls = response_choice.message.tool_calls
+            tool_calls = function_tool_calls(response_choice.message.tool_calls)
             if not content and not tool_calls:
                 raise_for_empty_model_response(response_choice)
 

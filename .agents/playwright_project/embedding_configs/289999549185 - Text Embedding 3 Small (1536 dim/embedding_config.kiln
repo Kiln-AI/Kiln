@@ -1,0 +1,12 @@
+{
+  "v": 1,
+  "id": "289999549185",
+  "created_at": "2026-08-17T22:09:31.371971Z",
+  "created_by": "root",
+  "name": "Text Embedding 3 Small (1536 dimensions)",
+  "description": "OpenAI text-embedding-3-small served through OpenRouter. 1536 dimensions keeps the committed vectors small enough to live in the repo.",
+  "model_provider_name": "openrouter",
+  "model_name": "openai_text_embedding_3_small",
+  "properties": {},
+  "model_type": "embedding_config"
+}

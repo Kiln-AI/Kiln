@@ -4,9 +4,61 @@ This module contains helper functions for creating specs and their associated ev
 These functions are used by both the core spec API and the desktop copilot API.
 """
 
-from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
-from kiln_ai.datamodel.eval import EvalDataType, EvalOutputScore, EvalTemplateId
+from collections.abc import Sequence
+from typing import NamedTuple
+
+from kiln_ai.datamodel.datamodel_enums import (
+    EvalStatus,
+    Priority,
+    TaskOutputRatingType,
+)
+from kiln_ai.datamodel.dataset_filters import DatasetFilterId
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalDataType,
+    EvalInputSplit,
+    EvalOutputScore,
+    EvalSplitName,
+    EvalTemplateId,
+    SplitRef,
+    TaskRunSplit,
+)
+from kiln_ai.datamodel.eval_splits import ItemSource
 from kiln_ai.datamodel.spec_properties import SpecType
+from kiln_ai.datamodel.task import Task
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from pydantic import BaseModel, Field
+
+# The splits a spec eval is created with when the caller names no shape.
+ALL_SPLIT_NAMES: tuple[EvalSplitName, ...] = ("test", "train", "val")
+
+
+class SplitShare(BaseModel):
+    """One split of a new eval and its relative share of the dealt cases."""
+
+    split: EvalSplitName
+    weight: int = Field(
+        ge=1,
+        description="Relative share. No sum rule; 20/20/20 and 1/1/1 are the same deal.",
+    )
+
+
+def split_names(shares: Sequence[SplitShare]) -> list[EvalSplitName]:
+    """The splits a shares list names, in order.
+
+    Raises ValueError on a missing test split or a split named twice.
+    """
+    names: list[EvalSplitName] = [share.split for share in shares]
+    if "test" not in names:
+        raise ValueError(
+            "`splits` must name the test split: it is the split the eval runs."
+        )
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        raise ValueError(
+            f"`splits` names a split more than once: {', '.join(duplicates)}."
+        )
+    return names
 
 
 def spec_eval_output_score(spec_name: str) -> EvalOutputScore:
@@ -15,6 +67,20 @@ def spec_eval_output_score(spec_name: str) -> EvalOutputScore:
         name=spec_name,
         type=TaskOutputRatingType.pass_fail,
         instruction=f"Evaluate if the model's behaviour meets the spec: {spec_name}.",
+    )
+
+
+def eval_pass_fail_output_score(eval_name: str) -> EvalOutputScore:
+    """Default score for an eval created without a spec.
+
+    Same shape as spec_eval_output_score, kept beside it so the two creation
+    paths can't drift; only the instruction wording differs (there is no spec
+    to refer to).
+    """
+    return EvalOutputScore(
+        name=eval_name,
+        type=TaskOutputRatingType.pass_fail,
+        instruction=f"Evaluate whether the model's behaviour passes the eval: {eval_name}.",
     )
 
 
@@ -32,10 +98,16 @@ def spec_eval_data_type(
 
 
 def spec_eval_template(spec_type: SpecType) -> EvalTemplateId | None:
-    """Get the eval template for a spec type."""
+    """Get the eval template for a spec type.
+
+    Tool use deliberately maps to None: the legacy "tool_call" template means a
+    pre-spec LLM judge over the full trace, while new tool evals are scored by
+    the tool_call_check programmatic judge. Recording the legacy template on
+    them would conflate the two.
+    """
     match spec_type:
         case SpecType.appropriate_tool_use:
-            return EvalTemplateId.tool_call
+            return None
         case SpecType.reference_answer_accuracy:
             return EvalTemplateId.rag
         case SpecType.factual_correctness:
@@ -65,33 +137,122 @@ def spec_eval_template(spec_type: SpecType) -> EvalTemplateId | None:
             return None
 
 
-def generate_spec_eval_tags(spec_name: str) -> tuple[str, str, str]:
-    """Generate eval, train, and golden tags for a spec.
+class SpecEvalTags(NamedTuple):
+    """The dataset tags a new spec eval's items carry.
 
-    Args:
-        spec_name: The name of the spec
+    A NamedTuple so existing positional unpacking keeps working, while callers that only
+    want one of four same-typed strings can name it instead of counting positions.
+    """
 
-    Returns:
-        Tuple of (eval_tag, train_tag, golden_tag)
+    test_tag: str
+    train_tag: str
+    val_tag: str
+    golden_tag: str
+
+
+def generate_spec_eval_tags(spec_name: str) -> SpecEvalTags:
+    """Generate test, train, val, and golden tags for a spec.
+
+    Only newly created evals are affected by the names chosen here: an eval stores the
+    concrete tag strings in its saved filters, so evals created by earlier builds keep
+    the tags they were created with.
     """
     tag_suffix = spec_name.lower().replace(" ", "_")
-    eval_tag = f"eval_{tag_suffix}"
-    train_tag = f"train_{tag_suffix}"
-    golden_tag = f"eval_golden_{tag_suffix}"
-    return eval_tag, train_tag, golden_tag
+    return SpecEvalTags(
+        test_tag=f"test_{tag_suffix}",
+        train_tag=f"train_{tag_suffix}",
+        val_tag=f"val_{tag_suffix}",
+        golden_tag=f"golden_{tag_suffix}",
+    )
 
 
-def generate_spec_eval_filter_ids(
-    eval_tag: str, train_tag: str, golden_tag: str
-) -> tuple[str, str, str]:
-    """Generate filter IDs for eval set, train set, and eval configs.
+def tag_filter_id(tag: str) -> DatasetFilterId:
+    """The dataset filter that selects the items carrying a tag."""
+    return f"tag::{tag}"
 
-    Args:
-        eval_tag: The eval dataset tag
-        train_tag: The train dataset tag
-        golden_tag: The golden dataset tag
 
-    Returns:
-        Tuple of (eval_set_filter_id, train_set_filter_id, eval_configs_filter_id)
+def spec_eval_splits(
+    *,
+    test_tag: str,
+    train_tag: str,
+    val_tag: str,
+    test_source: ItemSource = "task_run",
+    train_source: ItemSource = "task_run",
+    val_source: ItemSource = "task_run",
+    split_names: Sequence[EvalSplitName] = ALL_SPLIT_NAMES,
+) -> dict[EvalSplitName, SplitRef]:
+    """The splits a new spec eval is created with, each backed by its source.
+
+    A source is the store a split's items live in: tagged TaskRuns, or EvalInputs for a
+    creator that mints its own cases. A split the caller leaves out of `split_names` is
+    absent from the eval rather than present and empty. Golden is not a split and is not
+    returned here.
     """
-    return f"tag::{eval_tag}", f"tag::{train_tag}", f"tag::{golden_tag}"
+    tagged_sources: dict[EvalSplitName, tuple[str, ItemSource]] = {
+        "test": (test_tag, test_source),
+        "train": (train_tag, train_source),
+        "val": (val_tag, val_source),
+    }
+    return {name: _split_ref(*tagged_sources[name]) for name in split_names}
+
+
+def _split_ref(tag: str, source: ItemSource) -> SplitRef:
+    """The split reference for one tag, in the store the source names."""
+    match source:
+        case "task_run":
+            return TaskRunSplit(filter_id=tag_filter_id(tag))
+        case "eval_input":
+            return EvalInputSplit(filter_id=tag_filter_id(tag))
+        case _:
+            raise_exhaustive_enum_error(source)
+
+
+def build_spec_eval(
+    *,
+    task: Task,
+    name: str,
+    spec_type: SpecType,
+    evaluate_full_trace: bool,
+    priority: Priority | None = None,
+    status: EvalStatus | None = None,
+    test_source: ItemSource = "task_run",
+    train_source: ItemSource = "task_run",
+    val_source: ItemSource = "task_run",
+    split_names: Sequence[EvalSplitName] = ALL_SPLIT_NAMES,
+) -> tuple[Eval, SpecEvalTags]:
+    """A new spec eval with the splits `split_names` asks for, and its dataset tags.
+
+    Both the splits and the tags naming their items derive from `name`. The eval is not
+    saved, and a caller that generates the items tags them with the returned tags.
+    """
+    tags = generate_spec_eval_tags(name)
+    splits = spec_eval_splits(
+        test_tag=tags.test_tag,
+        train_tag=tags.train_tag,
+        val_tag=tags.val_tag,
+        test_source=test_source,
+        train_source=train_source,
+        val_source=val_source,
+        split_names=split_names,
+    )
+    # Eval.splits is keyed by str, and dict key types are invariant, so the narrower
+    # mapping has to be widened rather than passed through.
+    widened_splits: dict[str, SplitRef] = {
+        split_name: split for split_name, split in splits.items()
+    }
+
+    eval = Eval(
+        parent=task,
+        name=name,
+        description=None,
+        template=spec_eval_template(spec_type),
+        output_scores=[spec_eval_output_score(name)],
+        splits=widened_splits,
+        eval_configs_filter_id=tag_filter_id(tags.golden_tag),
+        template_properties=None,
+        evaluation_data_type=spec_eval_data_type(spec_type, evaluate_full_trace),
+        priority=priority,
+        status=status,
+    )
+
+    return eval, tags

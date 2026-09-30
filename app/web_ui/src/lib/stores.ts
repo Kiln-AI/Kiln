@@ -551,11 +551,13 @@ const provider_name_map: Record<ModelProviderName, string> = {
   gemini_api: "Gemini API",
   azure_openai: "Azure OpenAI",
   huggingface: "Hugging Face",
-  vertex: "Gemini Enterprise Agent Platform (formerly Vertex AI)",
+  vertex: "Gemini Enterprise Agent Platform",
   together_ai: "Together AI",
   siliconflow_cn: "SiliconFlow CN",
   cerebras: "Cerebras",
   docker_model_runner: "Docker Model Runner",
+  featherless_ai: "Featherless AI",
+  typesafe: "TypeSafe AI",
 }
 
 export function provider_name_from_id(provider_id: string): string {

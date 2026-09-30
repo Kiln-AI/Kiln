@@ -56,7 +56,7 @@
     {
       name: "OpenAI",
       id: "openai",
-      description: "The OG home to GPT-4o and more. Supports fine-tuning.",
+      description: "The OG home to GPT.",
       featured: false,
       pill_text: highlight_finetune ? "Tuneable" : undefined,
       api_key_steps: [
@@ -69,16 +69,49 @@
         "Note: the OpenAI API requires a separate account from ChatGPT.",
     },
     {
+      name: "Anthropic",
+      id: "anthropic",
+      description: "The home of Opus, Sonnet, and Fable.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://console.anthropic.com/settings/keys",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
       name: "Ollama",
       id: "ollama",
       description: "Run models locally. No API key required.",
       featured: false,
     },
     {
-      name: "Docker Model Runner",
-      id: "docker_model_runner",
-      description: "Run models locally with Docker. No API key required.",
+      name: "Fireworks AI",
+      id: "fireworks_ai",
+      description: "Open models, plus the ability to fine-tune.",
+      pill_text: highlight_finetune ? "Tuneable" : undefined,
+      api_key_steps: [
+        "Go to https://app.fireworks.ai/settings/users/api-keys",
+        "Create a new API Key and paste it below",
+        "Go to https://app.fireworks.ai/settings/account",
+        "Copy the Account ID, paste it below, and click 'Connect'",
+      ],
       featured: false,
+      api_key_fields: ["API Key", "Account ID"],
+    },
+    {
+      name: "Together.ai",
+      id: "together_ai",
+      description: "Inference service from Together.ai",
+      featured: false,
+      pill_text: highlight_finetune ? "Tuneable" : undefined,
+      api_key_steps: [
+        "Create a Together account.",
+        "Create an API Key (or user key) here: https://api.together.ai/settings/api-keys",
+        "Copy the API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
     },
     {
       name: "Groq",
@@ -92,26 +125,12 @@
       ],
     },
     {
-      name: "Fireworks AI",
-      id: "fireworks_ai",
-      description: "Open models (Llama, Phi), plus the ability to fine-tune.",
-      pill_text: highlight_finetune ? "Tuneable" : undefined,
-      api_key_steps: [
-        "Go to https://app.fireworks.ai/settings/users/api-keys",
-        "Create a new API Key and paste it below",
-        "Go to https://app.fireworks.ai/settings/account",
-        "Copy the Account ID, paste it below, and click 'Connect'",
-      ],
-      featured: false,
-      api_key_fields: ["API Key", "Account ID"],
-    },
-    {
-      name: "Anthropic",
-      id: "anthropic",
-      description: "The home of Sonnet, Haiku, and Opus.",
+      name: "Cerebras",
+      id: "cerebras",
+      description: "Remarkably fast inference on custom hardware.",
       featured: false,
       api_key_steps: [
-        "Go to https://console.anthropic.com/settings/keys",
+        "Go to https://cloud.cerebras.ai/platform",
         "Create a new API Key",
         "Copy the new API Key, paste it below and click 'Connect'",
       ],
@@ -120,8 +139,7 @@
     {
       name: "Google Gemini API",
       id: "gemini_api",
-      description:
-        "Google's Gemini API (aka AI Studio). Not to be confused with Gemini Enterprise Agent Platform (formerly Vertex AI).",
+      description: "Google's Gemini API (aka AI Studio).",
       featured: false,
       api_key_steps: [
         "Go to https://aistudio.google.com/app/apikey",
@@ -133,8 +151,7 @@
     {
       name: "Gemini Enterprise Agent Platform",
       id: "vertex",
-      description:
-        "Google's Gemini Enterprise Agent Platform (formerly Vertex AI). Not to be confused with Gemini API.",
+      description: "Google's enterprise platform. Formerly Vertex AI.",
       featured: false,
       pill_text: highlight_finetune ? "Tuneable" : undefined,
       api_key_steps: [
@@ -176,19 +193,6 @@
       api_key_fields: ["API Key"],
     },
     {
-      name: "Together.ai",
-      id: "together_ai",
-      description: "Inference service from Together.ai",
-      featured: false,
-      pill_text: highlight_finetune ? "Tuneable" : undefined,
-      api_key_steps: [
-        "Create a Together account.",
-        "Create an API Key (or user key) here: https://api.together.ai/settings/api-keys",
-        "Copy the API Key, paste it below and click 'Connect'",
-      ],
-      api_key_fields: ["API Key"],
-    },
-    {
       name: "Amazon Bedrock",
       id: "amazon_bedrock",
       description: "So your company has an AWS contract?",
@@ -202,6 +206,12 @@
       api_key_warning:
         "Bedrock is quite difficult to setup.\nFor beginners we suggest other providers, like OpenRouter, as they are easier to set up and have more models.",
       api_key_fields: ["Access Key", "Secret Key"],
+    },
+    {
+      name: "Docker Model Runner",
+      id: "docker_model_runner",
+      description: "Run models locally with Docker. No API key required.",
+      featured: false,
     },
     {
       name: "SiliconFlow (硅基流动)",
@@ -218,12 +228,25 @@
       api_key_fields: ["API Key"],
     },
     {
-      name: "Cerebras",
-      id: "cerebras",
-      description: "Exceptionally fast inference on custom hardware.",
+      name: "Featherless AI",
+      id: "featherless_ai",
+      description: "Serverless inference for thousands of open models.",
       featured: false,
       api_key_steps: [
-        "Go to https://cloud.cerebras.ai/platform",
+        "Go to https://featherless.ai/account/api-keys",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
+      name: "TypeSafe AI",
+      id: "typesafe",
+      description:
+        "Classification models that return a probability for every answer.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://console.typesafe.ai/keys",
         "Create a new API Key",
         "Copy the new API Key, paste it below and click 'Connect'",
       ],
@@ -366,6 +389,18 @@
       error: null,
       custom_description: null,
     },
+    featherless_ai: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    typesafe: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
     kiln_copilot: {
       connected: false,
       connecting: false,
@@ -381,8 +416,25 @@
   export let intermediate_step = false
   export let centered = false
   let api_key_provider: Provider | null = null
+  let api_key_issue = false
+  let api_key_submitting = false
+  let api_key_message: string | null = null
   $: {
     intermediate_step = api_key_provider != null
+  }
+
+  const show_api_key_dialog = (provider: Provider) => {
+    api_key_provider = provider
+    api_key_issue = false
+    api_key_message = null
+    api_key_submitting = false
+  }
+
+  const dismiss_api_key_dialog = () => {
+    api_key_provider = null
+    api_key_issue = false
+    api_key_message = null
+    api_key_submitting = false
   }
 
   const disconnect_provider = async (provider: Provider) => {
@@ -458,7 +510,7 @@
     }
 
     if (provider.api_key_steps) {
-      api_key_provider = provider
+      show_api_key_dialog(provider)
     }
   }
 
@@ -629,9 +681,6 @@
       custom_url_str
   }
 
-  let api_key_issue = false
-  let api_key_submitting = false
-  let api_key_message: string | null = null
   const submit_api_key = async () => {
     const apiKeyFields = document.getElementById(
       "api-key-fields",
@@ -677,10 +726,8 @@
         provider_id: provider_id,
       })
 
-      api_key_issue = false
-      api_key_message = null
       status[provider_id].connected = true
-      api_key_provider = null
+      dismiss_api_key_dialog()
 
       // Clear the available models list
       available_tuning_models.set(null)
@@ -755,6 +802,12 @@
       }
       if (data["cerebras_api_key"]) {
         status.cerebras.connected = true
+      }
+      if (data["featherless_ai_api_key"]) {
+        status.featherless_ai.connected = true
+      }
+      if (data["typesafe_api_key"]) {
+        status.typesafe.connected = true
       }
       if (data["kiln_copilot_api_key"]) {
         status.kiln_copilot.connected = true
@@ -905,7 +958,7 @@
       </h1>
 
       {#if api_key_provider.api_key_warning}
-        <div class="pt-2">
+        <div class="pt-4">
           <Warning
             warning_color="warning"
             warning_message={api_key_provider.api_key_warning}
@@ -955,7 +1008,7 @@
       </div>
       <button
         class="link text-center text-sm mt-8"
-        on:click={() => (api_key_provider = null)}
+        on:click={dismiss_api_key_dialog}
       >
         Cancel setting up {api_key_provider.name}
       </button>

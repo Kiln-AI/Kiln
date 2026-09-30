@@ -44,6 +44,7 @@ class KilnEmbeddingModelFamily(str, Enum):
     netease = "netease"
     mistral = "mistral"
     sentence_transformers = "sentence_transformers"
+    voyage = "voyage"
 
 
 class EmbeddingModelName(str, Enum):
@@ -91,6 +92,10 @@ class EmbeddingModelName(str, Enum):
     sentence_transformers_paraphrase_minilm_l6_v2 = (
         "sentence_transformers_paraphrase_minilm_l6_v2"
     )
+    voyage_4 = "voyage_4"
+    voyage_4_large = "voyage_4_large"
+    voyage_4_lite = "voyage_4_lite"
+    voyage_code_4 = "voyage_code_4"
 
 
 class KilnEmbeddingModelProvider(BaseModel):
@@ -231,7 +236,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
             ),
         ],
     ),
-    # Gemini Embedding 002 (Preview)
+    # Gemini Embedding 2. GA since 2026-04; was gemini-embedding-2-preview.
     KilnEmbeddingModel(
         family=KilnEmbeddingModelFamily.gemini,
         name=EmbeddingModelName.gemini_embedding_002,
@@ -239,7 +244,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
         providers=[
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.gemini_api,
-                model_id="gemini-embedding-2-preview",
+                model_id="gemini-embedding-2",
                 n_dimensions=3072,
                 max_input_tokens=8192,
                 supports_custom_dimensions=True,
@@ -247,7 +252,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
             ),
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.openrouter,
-                model_id="google/gemini-embedding-2-preview",
+                model_id="google/gemini-embedding-2",
                 n_dimensions=3072,
                 max_input_tokens=8192,
                 # litellm rejecting - but model itself supports it
@@ -267,6 +272,9 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 model_id="text-embedding-004",
                 n_dimensions=768,
                 max_input_tokens=2048,
+                # Google shut down the text-embedding-004 endpoint on
+                # 2026-01-14. Replaced by gemini-embedding-001.
+                deprecated=True,
             ),
         ],
     ),
@@ -447,6 +455,9 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 n_dimensions=1024,
                 max_input_tokens=512,
                 supports_custom_dimensions=False,
+                # Together removed this from serverless inference (2026-02-06);
+                # dedicated endpoints only. OpenRouter still serves it.
+                deprecated=True,
             ),
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.openrouter,
@@ -476,6 +487,9 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 n_dimensions=768,
                 max_input_tokens=512,
                 supports_custom_dimensions=False,
+                # Together removed this from serverless inference (2026-02);
+                # dedicated endpoints only. Fireworks/OpenRouter still serve it.
+                deprecated=True,
             ),
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.openrouter,
@@ -603,6 +617,9 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 n_dimensions=768,
                 max_input_tokens=32_768,
                 supports_custom_dimensions=False,
+                # Together removed this from serverless inference (2026-02-06).
+                # No other provider serves it, so the model is fully dead.
+                deprecated=True,
             ),
         ],
     ),
@@ -618,6 +635,9 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 n_dimensions=768,
                 max_input_tokens=8192,
                 supports_custom_dimensions=False,
+                # Together removed this from serverless inference (2026-02-25).
+                # No other provider serves it, so the model is fully dead.
+                deprecated=True,
             ),
         ],
     ),
@@ -634,6 +654,10 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 n_dimensions=1024,
                 max_input_tokens=512,
                 supports_custom_dimensions=False,
+                # Together dropped serverless for this model (2026-09-14);
+                # dedicated endpoints only. The non-instruct multilingual-e5-large
+                # on OpenRouter is the closest live replacement.
+                deprecated=True,
             ),
         ],
     ),
@@ -800,6 +824,75 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 n_dimensions=1536,
                 max_input_tokens=8192,
                 # litellm rejecting - but model itself supports it
+                supports_custom_dimensions=False,
+            ),
+        ],
+    ),
+    # Voyage 4 — general purpose, multilingual. Shares an embedding space
+    # with the rest of the Voyage 4 family, so query and document models can be mixed.
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.voyage,
+        name=EmbeddingModelName.voyage_4,
+        friendly_name="Voyage 4",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="voyageai/voyage-4",
+                n_dimensions=1024,
+                max_input_tokens=32_000,
+                # Matryoshka dims (2048/1024/512/256) are supported by the
+                # model, but we don't expose them on the OpenRouter path.
+                supports_custom_dimensions=False,
+            ),
+        ],
+    ),
+    # Voyage 4 Large — MoE, highest retrieval accuracy of the family
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.voyage,
+        name=EmbeddingModelName.voyage_4_large,
+        friendly_name="Voyage 4 Large",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="voyageai/voyage-4-large",
+                n_dimensions=1024,
+                max_input_tokens=32_000,
+                # Matryoshka dims (2048/1024/512/256) are supported by the
+                # model, but we don't expose them on the OpenRouter path.
+                supports_custom_dimensions=False,
+            ),
+        ],
+    ),
+    # Voyage 4 Lite — cheapest of the family
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.voyage,
+        name=EmbeddingModelName.voyage_4_lite,
+        friendly_name="Voyage 4 Lite",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="voyageai/voyage-4-lite",
+                n_dimensions=1024,
+                max_input_tokens=32_000,
+                # Matryoshka dims (2048/1024/512/256) are supported by the
+                # model, but we don't expose them on the OpenRouter path.
+                supports_custom_dimensions=False,
+            ),
+        ],
+    ),
+    # Voyage Code 4 — code retrieval
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.voyage,
+        name=EmbeddingModelName.voyage_code_4,
+        friendly_name="Voyage Code 4",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="voyageai/voyage-code-4",
+                n_dimensions=1024,
+                max_input_tokens=32_000,
+                # Matryoshka dims (2048/1024/512/256) are supported by the
+                # model, but we don't expose them on the OpenRouter path.
                 supports_custom_dimensions=False,
             ),
         ],

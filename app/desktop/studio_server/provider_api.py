@@ -9,12 +9,6 @@ import httpx
 import litellm
 import openai
 import requests
-from app.desktop.studio_server.api_client.kiln_ai_server_client.api.auth import (
-    create_api_key_v1_create_api_key_post,
-)
-from app.desktop.studio_server.api_client.kiln_server_client import (
-    get_oauth_authenticated_client,
-)
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 from kiln_ai.adapters.docker_model_runner_tools import (
@@ -40,6 +34,7 @@ from kiln_ai.adapters.ollama_tools import (
     parse_ollama_tags,
 )
 from kiln_ai.adapters.provider_tools import (
+    PLACEHOLDER_API_KEY,
     get_all_user_models,
     get_legacy_custom_models,
     provider_name_from_id,
@@ -54,6 +49,13 @@ from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.wandb_utils import AuthenticationError, get_wandb_default_entity
 from kiln_server.utils.agent_checks.policy import ALLOW_AGENT, DENY_AGENT
 from pydantic import BaseModel, Field
+
+from app.desktop.studio_server.api_client.kiln_ai_server_client.api.auth import (
+    create_api_key_v1_create_api_key_post,
+)
+from app.desktop.studio_server.api_client.kiln_server_client import (
+    get_oauth_authenticated_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +161,7 @@ class ModelDetails(BaseModel):
     suggested_for_data_gen: bool
     supports_logprobs: bool
     suggested_for_evals: bool
+    suggested_for_synthetic_user: bool
     supports_function_calling: bool
     uncensored: bool
     suggested_for_uncensored_data_gen: bool
@@ -322,6 +325,7 @@ def connect_provider_api(app: FastAPI):
                                 supports_logprobs=provider.supports_logprobs,
                                 supports_function_calling=provider.supports_function_calling,
                                 suggested_for_evals=provider.suggested_for_evals,
+                                suggested_for_synthetic_user=provider.suggested_for_synthetic_user,
                                 uncensored=provider.uncensored,
                                 suggested_for_uncensored_data_gen=provider.suggested_for_uncensored_data_gen,
                                 structured_output_mode=provider.structured_output_mode,
@@ -906,6 +910,10 @@ def connect_provider_api(app: FastAPI):
                 return await connect_siliconflow(parse_api_key(key_data))
             case ModelProviderName.cerebras:
                 return await connect_cerebras(parse_api_key(key_data))
+            case ModelProviderName.featherless_ai:
+                return await connect_featherless(parse_api_key(key_data))
+            case ModelProviderName.typesafe:
+                return await connect_typesafe(parse_api_key(key_data))
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
@@ -979,6 +987,10 @@ def connect_provider_api(app: FastAPI):
                     Config.shared().siliconflow_cn_api_key = None
                 case ModelProviderName.cerebras:
                     Config.shared().cerebras_api_key = None
+                case ModelProviderName.featherless_ai:
+                    Config.shared().featherless_ai_api_key = None
+                case ModelProviderName.typesafe:
+                    Config.shared().typesafe_api_key = None
                 case (
                     ModelProviderName.kiln_custom_registry
                     | ModelProviderName.kiln_fine_tune
@@ -1550,6 +1562,101 @@ async def connect_cerebras(key: str):
         )
 
 
+async def connect_featherless(key: str):
+    try:
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        # Featherless has no authenticated GET endpoint we can ping: /v1/models is
+        # public (returns 200 without a key), so it can't validate anything.
+        #
+        # Instead we POST to chat/completions with a model slug that intentionally
+        # doesn't exist. Featherless checks auth *before* resolving the model, so a
+        # bad key returns 401 while a good key falls through to a model error. That
+        # validates the key without spending tokens, and without depending on any
+        # real model slug staying available.
+        response = requests.post(
+            "https://api.featherless.ai/v1/chat/completions",
+            headers=headers,
+            json={
+                "model": "kiln-ai/__connection_test__",
+                "messages": [{"role": "user", "content": "."}],
+                "max_tokens": 1,
+            },
+        )
+
+        if response.status_code == 401:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "message": "Failed to connect to Featherless AI. Invalid API key."
+                },
+            )
+        elif response.status_code >= 500:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to connect to Featherless AI. Error: [{response.status_code}]"
+                },
+            )
+        else:
+            # Any non-auth response means the key was accepted.
+            Config.shared().featherless_ai_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to Featherless AI"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to Featherless AI. Error: {e!s}"},
+        )
+
+
+async def connect_typesafe(key: str):
+    try:
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        # /v1/models is account-scoped and rejects a bad key, and listing models spends
+        # no tokens, so it validates the key without a POST.
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.typesafe.ai/v1/models",
+                headers=headers,
+                timeout=10,
+                follow_redirects=True,
+            )
+
+        if response.status_code in (401, 403):
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "message": "Failed to connect to TypeSafe AI. Invalid API key."
+                },
+            )
+        elif response.status_code != 200:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to connect to TypeSafe AI. Error: [{response.status_code}]"
+                },
+            )
+        else:
+            Config.shared().typesafe_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to TypeSafe AI"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to TypeSafe AI. Error: {e!s}"},
+        )
+
+
 async def connect_bedrock(key_data: dict):
     access_key = key_data.get("Access Key")
     secret_key = key_data.get("Secret Key")
@@ -1658,6 +1765,7 @@ async def available_ollama_models() -> AvailableModels | None:
                             supports_logprobs=False,  # Ollama doesn't support logprobs https://github.com/ollama/ollama/issues/2415
                             suggested_for_data_gen=ollama_provider.suggested_for_data_gen,
                             suggested_for_evals=ollama_provider.suggested_for_evals,
+                            suggested_for_synthetic_user=ollama_provider.suggested_for_synthetic_user,
                             supports_function_calling=ollama_provider.supports_function_calling,
                             uncensored=False,
                             suggested_for_uncensored_data_gen=False,
@@ -1688,6 +1796,7 @@ async def available_ollama_models() -> AvailableModels | None:
                     untested_model=True,
                     suggested_for_data_gen=False,
                     suggested_for_evals=False,
+                    suggested_for_synthetic_user=False,
                     uncensored=False,
                     suggested_for_uncensored_data_gen=False,
                     # Ollama has constrained decode and all models support json_schema. Use it!
@@ -1772,6 +1881,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                             supports_logprobs=docker_provider.supports_logprobs,
                             suggested_for_data_gen=docker_provider.suggested_for_data_gen,
                             suggested_for_evals=docker_provider.suggested_for_evals,
+                            suggested_for_synthetic_user=docker_provider.suggested_for_synthetic_user,
                             uncensored=docker_provider.uncensored,
                             suggested_for_uncensored_data_gen=docker_provider.suggested_for_uncensored_data_gen,
                             supports_vision=docker_provider.supports_vision,
@@ -1794,6 +1904,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                     untested_model=True,
                     suggested_for_data_gen=False,
                     suggested_for_evals=False,
+                    suggested_for_synthetic_user=False,
                     uncensored=False,
                     suggested_for_uncensored_data_gen=False,
                     supports_vision=False,
@@ -1914,6 +2025,7 @@ def legacy_custom_models_as_available() -> Dict[str, List[ModelDetails]]:
                 untested_model=True,
                 suggested_for_data_gen=False,
                 suggested_for_evals=False,
+                suggested_for_synthetic_user=False,
                 uncensored=False,
                 suggested_for_uncensored_data_gen=False,
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -1993,6 +2105,7 @@ def user_models_as_available() -> Dict[str, List[ModelDetails]]:
                 untested_model=True,
                 suggested_for_data_gen=False,
                 suggested_for_evals=False,
+                suggested_for_synthetic_user=False,
                 uncensored=overrides.get("uncensored", False),
                 suggested_for_uncensored_data_gen=False,
                 structured_output_mode=structured_output_mode_value,
@@ -2051,6 +2164,7 @@ def all_fine_tuned_models() -> AvailableModels | None:
                             task_filter=[str(task.id)],
                             suggested_for_data_gen=False,
                             suggested_for_evals=False,
+                            suggested_for_synthetic_user=False,
                             uncensored=False,
                             suggested_for_uncensored_data_gen=False,
                             structured_output_mode=fine_tune_model_structured_output_mode(
@@ -2143,18 +2257,18 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
             logger.warning("No name for OpenAI compatible provider %s", provider)
             continue
 
-        # API key is optional, as some providers don't require it
-        api_key = provider.get("api_key") or ""
-        openai_client = openai.OpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            # Important: max_retries must be 0 for performance.
-            # It's common for these servers to be down sometimes (could be local app that isn't running)
-            # OpenAI client will retry a few times, with a sleep in between! Big loading perf hit.
-            max_retries=0,
-        )
+        # API key optional - some providers like Ollama don't use it, but the OpenAI client errors without one
+        api_key = provider.get("api_key") or PLACEHOLDER_API_KEY
 
         try:
+            openai_client = openai.OpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                # Important: max_retries must be 0 for performance.
+                # It's common for these servers to be down sometimes (could be local app that isn't running)
+                # OpenAI client will retry a few times, with a sleep in between! Big loading perf hit.
+                max_retries=0,
+            )
             provider_models = openai_client.models.list()
             for model in provider_models:
                 models.append(
@@ -2168,6 +2282,7 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
                         untested_model=True,
                         suggested_for_data_gen=False,
                         suggested_for_evals=False,
+                        suggested_for_synthetic_user=False,
                         uncensored=False,
                         suggested_for_uncensored_data_gen=False,
                         # OpenAI compatible models could be anything. JSON instructions is the only safe bet that works everywhere.
@@ -2190,7 +2305,9 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
             )
         except Exception:
             logger.error(
-                "Error connecting to OpenAI compatible provider %s", name, exc_info=True
+                "Error loading models from OpenAI compatible provider %s",
+                name,
+                exc_info=True,
             )
             has_error = True
             continue

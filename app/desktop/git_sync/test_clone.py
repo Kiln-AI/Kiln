@@ -320,6 +320,7 @@ class TestTestRemoteAccess:
                 "https://github.com/org/repo.git", pat_token="ghp_token"
             )
             assert success is True
+            assert msg == "Access successful"
             assert mode == "pat_token"
 
     def test_auth_failure(self):
@@ -343,7 +344,7 @@ class TestTestRemoteAccess:
     def test_explicit_auth_mode(self):
         with patch("app.desktop.git_sync.clone._ls_remote_pygit2") as mock:
             mock.return_value = _make_ref_dicts([("HEAD", None)])
-            success, msg, mode = check_remote_access(
+            success, _msg, mode = check_remote_access(
                 "https://github.com/org/repo.git",
                 pat_token="ghp_token",
                 auth_mode="pat_token",
@@ -392,7 +393,7 @@ class TestListRemoteBranches:
         )
         with patch("app.desktop.git_sync.clone._ls_remote_pygit2") as mock:
             mock.return_value = refs
-            branches, default = list_remote_branches("https://github.com/org/repo.git")
+            _branches, default = list_remote_branches("https://github.com/org/repo.git")
             assert default == "main"
 
     def test_no_symref_falls_back_to_master(self):
@@ -404,7 +405,7 @@ class TestListRemoteBranches:
         )
         with patch("app.desktop.git_sync.clone._ls_remote_pygit2") as mock:
             mock.return_value = refs
-            branches, default = list_remote_branches("https://github.com/org/repo.git")
+            _branches, default = list_remote_branches("https://github.com/org/repo.git")
             assert default == "master"
 
     def test_ignores_tags(self):
@@ -483,7 +484,7 @@ class TestTestWriteAccessFreesRepository:
             patch("app.desktop.git_sync.clone.make_credentials"),
             patch("app.desktop.git_sync.clone.make_push_callbacks"),
         ):
-            success, msg, denied = check_write_access(Path("/tmp/clone"))
+            success, _msg, denied = check_write_access(Path("/tmp/clone"))
 
         assert success is True
         assert denied is False
@@ -499,7 +500,7 @@ class TestTestWriteAccessFreesRepository:
             ),
             patch("app.desktop.git_sync.clone.pygit2.Signature"),
         ):
-            success, msg, denied = check_write_access(Path("/tmp/clone"))
+            success, _msg, denied = check_write_access(Path("/tmp/clone"))
 
         assert success is False
         assert denied is False
@@ -515,7 +516,7 @@ class TestTestWriteAccessFreesRepository:
             ),
             patch("app.desktop.git_sync.clone.pygit2.Signature"),
         ):
-            success, msg, denied = check_write_access(Path("/tmp/clone"))
+            success, _msg, denied = check_write_access(Path("/tmp/clone"))
 
         assert success is False
         assert denied is False
@@ -624,6 +625,7 @@ class TestWriteAccessDeniedClassification:
 
         assert success is False
         assert denied is False
+        assert "network timeout" in msg
 
 
 class TestWriteAccessRollbackDummyCommit:
@@ -653,7 +655,7 @@ class TestWriteAccessRollbackDummyCommit:
             patch("app.desktop.git_sync.clone.make_credentials"),
             patch("app.desktop.git_sync.clone.make_push_callbacks"),
         ):
-            success, msg, denied = check_write_access(Path("/tmp/clone"))
+            success, _msg, _denied = check_write_access(Path("/tmp/clone"))
 
         assert success is False
         mock_repo.reset.assert_called_once_with("abc123", pygit2.enums.ResetMode.HARD)
@@ -673,7 +675,7 @@ class TestWriteAccessRollbackDummyCommit:
             patch("app.desktop.git_sync.clone.make_credentials"),
             patch("app.desktop.git_sync.clone.make_push_callbacks"),
         ):
-            success, msg, denied = check_write_access(Path("/tmp/clone"))
+            success, _msg, _denied = check_write_access(Path("/tmp/clone"))
 
         assert success is False
         mock_repo.reset.assert_called_once_with("abc123", pygit2.enums.ResetMode.HARD)
@@ -689,7 +691,7 @@ class TestWriteAccessRollbackDummyCommit:
             ),
             patch("app.desktop.git_sync.clone.pygit2.Signature"),
         ):
-            success, msg, denied = check_write_access(Path("/tmp/clone"))
+            success, _msg, _denied = check_write_access(Path("/tmp/clone"))
 
         assert success is False
         mock_repo.reset.assert_called_once_with("abc123", pygit2.enums.ResetMode.HARD)
@@ -706,7 +708,7 @@ class TestWriteAccessRollbackDummyCommit:
             patch("app.desktop.git_sync.clone.make_credentials"),
             patch("app.desktop.git_sync.clone.make_push_callbacks"),
         ):
-            success, msg, denied = check_write_access(Path("/tmp/clone"))
+            success, _msg, _denied = check_write_access(Path("/tmp/clone"))
 
         assert success is True
         mock_repo.reset.assert_not_called()
@@ -727,7 +729,7 @@ class TestWriteAccessRollbackDummyCommit:
             patch("app.desktop.git_sync.clone.make_credentials"),
             patch("app.desktop.git_sync.clone.make_push_callbacks"),
         ):
-            success, msg, denied = check_write_access(Path("/tmp/clone"))
+            success, msg, _denied = check_write_access(Path("/tmp/clone"))
 
         assert success is False
         assert "network timeout" in msg

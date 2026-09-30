@@ -1,0 +1,24 @@
+{
+  "v": 1,
+  "id": "839615031663",
+  "created_at": "2026-08-17T21:16:05.352465Z",
+  "created_by": "root",
+  "name": "Escalation Flagging",
+  "description": null,
+  "template": "desired_behaviour",
+  "current_config_id": "291382769538",
+  "eval_set_filter_id": "tag::eval_escalation_flagging",
+  "eval_configs_filter_id": "tag::eval_golden_escalation_flagging",
+  "train_set_filter_id": "tag::train_escalation_flagging",
+  "output_scores": [
+    {
+      "name": "Escalation Flagging",
+      "instruction": "Evaluate if the model's behaviour meets the spec: Escalation Flagging.",
+      "type": "pass_fail"
+    }
+  ],
+  "favourite": false,
+  "template_properties": null,
+  "evaluation_data_type": "final_answer",
+  "model_type": "eval"
+}

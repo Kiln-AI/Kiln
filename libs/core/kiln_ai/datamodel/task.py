@@ -16,9 +16,10 @@ from kiln_ai.datamodel.datamodel_enums import (
     Priority,
     StructuredOutputMode,
     TaskOutputRatingType,
+    TurnMode,
 )
 from kiln_ai.datamodel.dataset_split import DatasetSplit
-from kiln_ai.datamodel.eval import Eval
+from kiln_ai.datamodel.eval import Eval, EvalInput
 from kiln_ai.datamodel.finetune import Finetune
 from kiln_ai.datamodel.json_schema import (
     JsonObjectSchema,
@@ -134,6 +135,7 @@ class Task(
         "prompt_optimization_jobs": PromptOptimizationJob,
         "prompts": Prompt,
         "evals": Eval,
+        "eval_inputs": EvalInput,
         "specs": Spec,
         "run_configs": TaskRunConfig,
         "data_guides": DataGuide,
@@ -177,6 +179,27 @@ class Task(
         description="ID of the run config to use for this task by default. Must exist in saved run configs for this task.",
     )
 
+    turn_mode: TurnMode = Field(
+        default=TurnMode.single_turn,
+        frozen=True,
+        description="Whether this task is single-turn (each run independent) or multi-turn (runs continue prior runs). Immutable after construction: changing it would invalidate existing TaskRuns. To change, clone the task.",
+    )
+
+    @model_validator(mode="after")
+    def validate_turn_mode_compatibility(self) -> "Task":
+        if self.turn_mode == TurnMode.multiturn:
+            if self.input_json_schema is not None:
+                raise ValueError(
+                    "Multi-turn tasks cannot have a structured input schema. "
+                    "Use plaintext input for multi-turn tasks."
+                )
+            if self.output_json_schema is not None:
+                raise ValueError(
+                    "Multi-turn tasks do not support structured output yet. "
+                    "Use plaintext output, or set turn_mode to single_turn."
+                )
+        return self
+
     def output_schema(self) -> Dict | None:
         if self.output_json_schema is None:
             return None
@@ -192,8 +215,9 @@ class Task(
         self,
         readonly: bool = False,
         include_intermediate_runs: bool = False,
+        include_eval_generated: bool = False,
     ) -> list[TaskRun]:
-        """Return TaskRuns for this task with leaf-only filtering by default.
+        """Return TaskRuns for this task with leaf-only, dataset-only filtering by default.
 
         For multiturn tasks, child TaskRuns reference their parent via
         ``parent_task_run_id``. By default we return only the leaves of those
@@ -207,15 +231,31 @@ class Task(
         complete on-disk set (e.g. walking ancestors, diagnostics). For
         single-turn tasks the two modes are equivalent.
 
-        Note: this filter only affects in-process iteration. Filesystem-level
+        ``runs/`` also holds eval-generated traces (``eval_source`` set) alongside the
+        dataset corpus. Those are excluded by default: they are a byproduct of running
+        an eval, not data the user curated, and leaking them into fine-tune sets or
+        few-shot prompts would feed a model its own eval outputs. Default-exclude rather
+        than an opt-out filter is deliberate - forgetting to handle eval traces then
+        fails visibly (missing data) instead of silently (contaminated data).
+        ``include_eval_generated=True`` is meant for the eval runner alone, which needs
+        to find the traces it can reuse; nothing else should pass it.
+
+        The two filters compose: a run must pass both to be returned.
+
+        Note: these filters only affect in-process iteration. Filesystem-level
         operations that copy the ``runs/`` directory (e.g. project export)
-        copy every run regardless of leaf-ness.
+        copy every run regardless.
         """
-        raw = self._runs(readonly=readonly)  # type: ignore[attr-defined]
-        if include_intermediate_runs:
-            return raw
-        parent_ids = {r.parent_task_run_id for r in raw if r.parent_task_run_id}
-        return [r for r in raw if r.id not in parent_ids]
+        runs = self._runs(readonly=readonly)  # type: ignore[attr-defined]
+        # Eval filter first: an excluded eval-generated run must not count as a parent
+        # either, or an eval child chained onto a dataset run would hide that dataset
+        # run from the default view while itself being filtered out.
+        if not include_eval_generated:
+            runs = [r for r in runs if r.eval_source is None]
+        if not include_intermediate_runs:
+            parent_ids = {r.parent_task_run_id for r in runs if r.parent_task_run_id}
+            runs = [r for r in runs if r.id not in parent_ids]
+        return runs
 
     # These wrappers help for typechecking. We should fix this in KilnParentModel
     def dataset_splits(self, readonly: bool = False) -> list[DatasetSplit]:
@@ -229,6 +269,9 @@ class Task(
 
     def evals(self, readonly: bool = False) -> list[Eval]:
         return super().evals(readonly=readonly)  # type: ignore
+
+    def eval_inputs(self, readonly: bool = False) -> list[EvalInput]:
+        return super().eval_inputs(readonly=readonly)  # type: ignore
 
     def run_configs(self, readonly: bool = False) -> list[TaskRunConfig]:
         return super().run_configs(readonly=readonly)  # type: ignore

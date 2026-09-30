@@ -11,9 +11,14 @@ from litellm.types.utils import ModelResponseStream
 from kiln_ai.adapters.chat.chat_formatter import (
     ChatFormatter,
     MultiturnFormatter,
+    chat_strategy_for_run,
     get_chat_formatter,
 )
-from kiln_ai.adapters.errors import KilnRunError, format_error_message
+from kiln_ai.adapters.errors import (
+    KilnRunError,
+    StructuredOutputParseError,
+    format_error_message,
+)
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     StructuredOutputMode,
@@ -45,7 +50,7 @@ from kiln_ai.datamodel import (
     TaskRun,
     Usage,
 )
-from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
+from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
@@ -53,17 +58,10 @@ from kiln_ai.datamodel.run_config import (
 )
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.task_output import TASK_OUTPUT_SCHEMA_ERROR_PREFIX
 from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX, skill_id_from_tool_id
-
-# Import agent run context for run lifecycle management
-from kiln_ai.run_context import (
-    clear_agent_run_id,
-    generate_agent_run_id,
-    get_agent_run_id,
-    set_agent_run_id,
-)
 from kiln_ai.tools import KilnToolInterface
-from kiln_ai.tools.mcp_session_manager import MCPSessionManager
+from kiln_ai.tools.mcp_session_manager import mcp_session_scope
 from kiln_ai.tools.skill_tool import SkillTool
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
@@ -275,16 +273,26 @@ class BaseAdapter(metaclass=ABCMeta):
                 if self.output_schema is not None:
                     # Parse json to dict if we have structured output
                     if isinstance(parsed_output.output, str):
-                        parsed_output.output = parse_json_string(parsed_output.output)
+                        try:
+                            parsed_output.output = parse_json_string(
+                                parsed_output.output
+                            )
+                        except ValueError as e:
+                            # Re-type (message unchanged) so retries treat bad
+                            # JSON like a schema mismatch: a one-off model slip.
+                            raise StructuredOutputParseError(str(e)) from e
 
                     if not isinstance(parsed_output.output, dict):
-                        raise RuntimeError(
+                        # Valid JSON of the wrong shape (often the object wrapped
+                        # in a list) is the same one-off model slip as bad JSON,
+                        # so it carries the retryable type too.
+                        raise StructuredOutputParseError(
                             f"structured response is not a dict: {parsed_output.output}"
                         )
                     validate_schema_with_value_error(
                         parsed_output.output,
                         self.output_schema,
-                        "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+                        TASK_OUTPUT_SCHEMA_ERROR_PREFIX,
                     )
                 else:
                     if not isinstance(parsed_output.output, str):
@@ -365,25 +373,10 @@ class BaseAdapter(metaclass=ABCMeta):
         prior_trace: list[ChatCompletionMessageParam] | None = None,
         parent_task_run: TaskRun | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
-        # Determine if this is the root agent (no existing run context)
-        is_root_agent = get_agent_run_id() is None
-
-        if is_root_agent:
-            run_id = generate_agent_run_id()
-            set_agent_run_id(run_id)
-
-        try:
+        async with mcp_session_scope():
             return await self._run_returning_run_output(
                 input, input_source, prior_trace, parent_task_run
             )
-        finally:
-            if is_root_agent:
-                try:
-                    run_id = get_agent_run_id()
-                    if run_id:
-                        await MCPSessionManager.shared().cleanup_session(run_id)
-                finally:
-                    clear_agent_run_id()
 
     def invoke_openai_stream(
         self,
@@ -474,15 +467,23 @@ class BaseAdapter(metaclass=ABCMeta):
 
             if self.output_schema is not None:
                 if isinstance(parsed_output.output, str):
-                    parsed_output.output = parse_json_string(parsed_output.output)
+                    try:
+                        parsed_output.output = parse_json_string(parsed_output.output)
+                    except ValueError as e:
+                        # Re-type (message unchanged) so retries treat bad JSON
+                        # like a schema mismatch: a one-off model slip.
+                        raise StructuredOutputParseError(str(e)) from e
                 if not isinstance(parsed_output.output, dict):
-                    raise RuntimeError(
+                    # Valid JSON of the wrong shape (often the object wrapped in
+                    # a list) is the same one-off model slip as bad JSON, so it
+                    # carries the retryable type too.
+                    raise StructuredOutputParseError(
                         f"structured response is not a dict: {parsed_output.output}"
                     )
                 validate_schema_with_value_error(
                     parsed_output.output,
                     self.output_schema,
-                    "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+                    TASK_OUTPUT_SCHEMA_ERROR_PREFIX,
                 )
             else:
                 if not isinstance(parsed_output.output, str):
@@ -669,45 +670,21 @@ class BaseAdapter(metaclass=ABCMeta):
         cot_prompt = self.prompt_builder.chain_of_thought_prompt()
         system_message = self.build_prompt()
 
-        # If no COT prompt, use the single turn strategy. Even when a tuned strategy is set, as the tuned strategy is either already single turn, or won't work without a COT prompt.
-        if not cot_prompt:
-            return get_chat_formatter(
-                strategy=ChatStrategy.single_turn,
-                system_message=system_message,
-                user_input=input,
-            )
-
-        # Some models like finetunes are trained with a specific chat strategy. Use that.
-        # However, don't use that if it is single turn. The user selected a COT prompt, and we give explicit prompt selection priority over the tuned strategy.
-        tuned_chat_strategy = self.model_provider().tuned_chat_strategy
-        if tuned_chat_strategy and tuned_chat_strategy != ChatStrategy.single_turn:
-            return get_chat_formatter(
-                strategy=tuned_chat_strategy,
-                system_message=system_message,
-                user_input=input,
-                thinking_instructions=cot_prompt,
-            )
-
-        # Pick the best chat strategy for the model given it has a cot prompt.
-        reasoning_capable = self.model_provider().reasoning_capable
-        if reasoning_capable:
-            # "Thinking" LLM designed to output thinking in a structured format. We'll use its native format.
-            # A simple message with the COT prompt appended to the message list is sufficient
-            return get_chat_formatter(
-                strategy=ChatStrategy.single_turn_r1_thinking,
-                system_message=system_message,
-                user_input=input,
-                thinking_instructions=cot_prompt,
-            )
-        else:
-            # Unstructured output with COT
-            # Two calls to separate the thinking from the final response
-            return get_chat_formatter(
-                strategy=ChatStrategy.two_message_cot,
-                system_message=system_message,
-                user_input=input,
-                thinking_instructions=cot_prompt,
-            )
+        # The model only enters the decision once a COT prompt is in play, so keep the
+        # provider lookup lazy: a plain prompt is single turn whatever the model is, and
+        # resolving a provider can fail.
+        provider = self.model_provider() if cot_prompt else None
+        strategy = chat_strategy_for_run(
+            cot_prompt=cot_prompt,
+            tuned_chat_strategy=provider.tuned_chat_strategy if provider else None,
+            reasoning_capable=provider.reasoning_capable if provider else False,
+        )
+        return get_chat_formatter(
+            strategy=strategy,
+            system_message=system_message,
+            user_input=input,
+            thinking_instructions=cot_prompt,
+        )
 
     # create a run and task output
     def generate_run(
@@ -822,32 +799,59 @@ class BaseAdapter(metaclass=ABCMeta):
         if tool_config is None or tool_config.tools is None:
             return []
 
-        non_skill_tool_ids = [
-            tid for tid in tool_config.tools if not tid.startswith(SKILL_TOOL_ID_PREFIX)
-        ]
+        return await assemble_unique_agent_tools(
+            self.task, tool_config.tools, self._resolve_skills()
+        )
 
-        tools: list[KilnToolInterface] = [
-            tool_from_id(tool_id, self.task) for tool_id in non_skill_tool_ids
-        ]
 
-        skills = self._resolve_skills()
-        if skills:
-            seen_names: set[str] = set()
-            for skill in skills:
-                if skill.name in seen_names:
-                    raise ValueError(
-                        f"Duplicate skill name '{skill.name}'. Each skill must have a unique name."
-                    )
-                seen_names.add(skill.name)
-            tools.append(SkillTool(f"{SKILL_TOOL_ID_PREFIX}_combined", skills))
+async def assemble_unique_agent_tools(
+    task: Task, tool_ids: list[str], skills: list[Skill]
+) -> list[KilnToolInterface]:
+    """Resolve a run config's tool IDs into tool instances, rejecting name collisions.
 
-        tool_names = [await tool.name() for tool in tools]
-        if len(tool_names) != len(set(tool_names)):
-            raise ValueError(
-                "Each tool must have a unique name. Either de-select the duplicate tools, or modify their names to describe their unique purpose. Model will struggle if tools do not have descriptive names and tool execution will be undefined."
+    Names may repeat across a project, but within one run config every tool the
+    model sees must have a unique function name (and every attached skill a
+    unique skill name — skills are loaded by name through the single "skill"
+    tool). Shared by creation-time validation of run configs, which catches
+    collisions at selection time, and by the runtime adapter, which stays the
+    backstop for configs whose tools were renamed after creation (e.g. via
+    edit_kiln_task_tool) or that were created outside the API.
+    """
+    non_skill_tool_ids = [
+        tid for tid in tool_ids if not tid.startswith(SKILL_TOOL_ID_PREFIX)
+    ]
+
+    tools: list[KilnToolInterface] = [
+        tool_from_id(tool_id, task) for tool_id in non_skill_tool_ids
+    ]
+
+    if skills:
+        seen_names: set[str] = set()
+        for skill in skills:
+            if skill.name in seen_names:
+                raise ValueError(
+                    f"Duplicate skill name '{skill.name}'. Each skill must have a unique name."
+                )
+            seen_names.add(skill.name)
+        tools.append(SkillTool(f"{SKILL_TOOL_ID_PREFIX}_combined", skills))
+
+    tool_names = [await tool.name() for tool in tools]
+    if len(tool_names) != len(set(tool_names)):
+        duplicates = sorted({n for n in tool_names if tool_names.count(n) > 1})
+        message = (
+            f"Multiple selected tools share the same function name: {', '.join(duplicates)}. "
+            "Each tool must have a unique name. Either de-select the duplicate tools, or "
+            "modify their names to describe their unique purpose. The model will struggle "
+            "if tools do not have descriptive names and tool execution will be undefined."
+        )
+        if skills and "skill" in duplicates:
+            message += (
+                " The name 'skill' is reserved for the tool that loads skills, "
+                "so no other tool may use it while skills are selected."
             )
+        raise ValueError(message)
 
-        return tools
+    return tools
 
 
 class OpenAIStreamResult:
@@ -886,11 +890,7 @@ class OpenAIStreamResult:
 
     async def __aiter__(self) -> AsyncIterator[ModelResponseStream]:
         self._task_run = None
-        is_root_agent = get_agent_run_id() is None
-        if is_root_agent:
-            set_agent_run_id(generate_agent_run_id())
-
-        try:
+        async with mcp_session_scope():
             adapter_stream = self._adapter._prepare_stream(
                 self._input, self._prior_trace
             )
@@ -902,14 +902,6 @@ class OpenAIStreamResult:
             self._task_run = self._adapter._finalize_stream(
                 adapter_stream, self._input, self._input_source, self._parent_task_run
             )
-        finally:
-            if is_root_agent:
-                try:
-                    run_id = get_agent_run_id()
-                    if run_id:
-                        await MCPSessionManager.shared().cleanup_session(run_id)
-                finally:
-                    clear_agent_run_id()
 
 
 class AiSdkStreamResult:
@@ -949,11 +941,7 @@ class AiSdkStreamResult:
 
     async def __aiter__(self) -> AsyncIterator[AiSdkStreamEvent]:
         self._task_run = None
-        is_root_agent = get_agent_run_id() is None
-        if is_root_agent:
-            set_agent_run_id(generate_agent_run_id())
-
-        try:
+        async with mcp_session_scope():
             adapter_stream = self._adapter._prepare_stream(
                 self._input, self._prior_trace
             )
@@ -993,11 +981,3 @@ class AiSdkStreamResult:
             else:
                 for ai_event in converter.finalize():
                     yield ai_event
-        finally:
-            if is_root_agent:
-                try:
-                    run_id = get_agent_run_id()
-                    if run_id:
-                        await MCPSessionManager.shared().cleanup_session(run_id)
-                finally:
-                    clear_agent_run_id()

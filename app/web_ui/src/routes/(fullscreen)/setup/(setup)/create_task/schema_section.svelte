@@ -10,6 +10,7 @@
 
   let id = Math.random().toString(36)
   export let warn_about_required: boolean = false
+  export let structured_label: string = "Structured JSON"
 
   // Not the best svelte bindings here.
   // We're reactive for setting the schema_string, which allows the caller to set a well known schema (like the demo/example)
@@ -108,6 +109,10 @@
     }
     return schema_form_element?.get_schema_string(name) || null
   }
+
+  export function is_plaintext(): boolean {
+    return plaintext
+  }
 </script>
 
 <div>
@@ -132,7 +137,7 @@
         value={false}
         bind:group={plaintext}
       />
-      <span class="label-text text-left grow">Structured JSON</span>
+      <span class="label-text text-left grow">{structured_label}</span>
     </label>
   </div>
 
