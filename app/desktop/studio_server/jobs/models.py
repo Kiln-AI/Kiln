@@ -80,9 +80,11 @@ class JobDerivedState(BaseModel):
         default=0,
         description="Number of items confirmed complete by reading source-of-truth entities.",
     )
-    error: int = Field(
-        default=0,
-        description="Number of items confirmed failed by reading source-of-truth entities.",
+    error: int | None = Field(
+        default=None,
+        description="Number of items confirmed failed by reading source-of-truth entities, "
+        "or null when failures leave nothing on disk to count. Null keeps the error count "
+        "the job reported while it ran.",
     )
     is_complete: bool = Field(
         default=False,

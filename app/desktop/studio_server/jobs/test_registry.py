@@ -191,6 +191,34 @@ class TotalThenNoneWorker(JobWorker[_EmptyParams, _EmptyResult]):
         return _EmptyResult()
 
 
+class ErrorThenNoneWorker(JobWorker[_EmptyParams, _EmptyResult]):
+    """run() reports a non-zero error count, then compute_state returns error=None:
+    failed items leave nothing on disk to count. A reconcile must keep the live
+    error count, not reset it to 0.
+    """
+
+    type_name = "error_then_none"
+    params_model = _EmptyParams
+    result_model = _EmptyResult
+    supports_pause = True
+    started: asyncio.Event
+    gate: asyncio.Event
+
+    async def compute_state(self, params):
+        return JobDerivedState(total=5, success=3, is_complete=False)
+
+    async def run(self, params, ctx):
+        await ctx.report_progress(success=1, error=2, total=5, message="working")
+        type(self).started.set()
+        try:
+            await type(self).gate.wait()
+        except asyncio.CancelledError:
+            task = asyncio.current_task()
+            if task is not None and hasattr(task, "uncancel"):
+                task.uncancel()
+        return _EmptyResult()
+
+
 class ReconcileCompleteWorker(JobWorker[_EmptyParams, _EmptyResult]):
     """compute_state reports complete only once the test flips `done`, so a
     get() issued while the job is still running (run() is a long sleep)
@@ -624,6 +652,42 @@ async def test_apply_derived_preserves_total_when_compute_state_returns_none():
     assert result.progress.total == 10
     assert result.progress.success == 2
     assert result.progress.error == 1
+
+
+@pytest.mark.asyncio
+async def test_apply_derived_preserves_error_when_compute_state_returns_none():
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(ErrorThenNoneWorker)
+    ErrorThenNoneWorker.started = asyncio.Event()
+    ErrorThenNoneWorker.gate = asyncio.Event()
+    job = await reg.create("error_then_none", {})
+    await wait_for_status(reg, job.id, BackgroundJobStatus.RUNNING)
+    await asyncio.wait_for(ErrorThenNoneWorker.started.wait(), timeout=3.0)
+    assert reg._jobs[job.id].progress.error == 2
+
+    result = await reg.pause(job.id)
+    assert result.status == BackgroundJobStatus.PAUSED
+    assert result.progress.error == 2
+    assert result.progress.success == 3
+
+
+@pytest.mark.asyncio
+async def test_succeeded_job_with_failed_items_keeps_its_error_count_on_get():
+    # A job whose items partly failed still succeeds. Every GET reconciles against
+    # disk, where the failed items left nothing; the job must not then look clean.
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(ErrorThenNoneWorker)
+    ErrorThenNoneWorker.started = asyncio.Event()
+    ErrorThenNoneWorker.gate = asyncio.Event()
+    ErrorThenNoneWorker.gate.set()
+    job = await reg.create("error_then_none", {})
+    await wait_for_status(reg, job.id, BackgroundJobStatus.SUCCEEDED)
+
+    got = await reg.get(job.id)
+    assert got is not None
+    assert got.status == BackgroundJobStatus.SUCCEEDED
+    assert got.progress.success == 3
+    assert got.progress.error == 2
 
 
 @pytest.mark.asyncio
