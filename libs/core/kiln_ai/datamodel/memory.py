@@ -47,6 +47,7 @@ class Memory(KilnParentedModel):
         "lever_prompt, verdict_accept, evidence_weak).",
     )
     scope: str = Field(
+        max_length=MAX_SCOPE_LENGTH,
         description="Opaque scope string, exact-match filterable. Conventions: "
         "'project' for project-wide knowledge (constraints, environment "
         "facts); 'task::<task_id>' for task-scoped work. Not validated "

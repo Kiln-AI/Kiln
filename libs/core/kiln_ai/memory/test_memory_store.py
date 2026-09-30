@@ -107,6 +107,16 @@ def test_list_limit_offset(project: Project, store: MemoryStore):
     assert [row.overview for row in result.listings] == ["m3", "m2"]
 
 
+@pytest.mark.parametrize("limit,offset", [(-1, 0), (0, -1), (-2, -3)])
+def test_list_rejects_negative_pagination(
+    project: Project, store: MemoryStore, limit: int, offset: int
+):
+    # Negative values would slice from the end and report a wrong remaining count.
+    add(project, "m0", "project", minutes=0)
+    with pytest.raises(ValueError):
+        store.list_memories(limit=limit, offset=offset)
+
+
 def test_list_content_length(project: Project, store: MemoryStore):
     add(project, "null content", "project", minutes=1)
     add(project, "has content", "project", minutes=0, content="12345")
