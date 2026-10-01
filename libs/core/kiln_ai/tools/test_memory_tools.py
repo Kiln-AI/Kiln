@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.memory import MAX_OVERVIEW_LENGTH
 from kiln_ai.datamodel.tool_id import (
     build_memory_tool_id,
@@ -81,6 +82,47 @@ async def test_toolcall_definition(project, operation, name, required):
     # scope is an explicit param on every write tool (no injection).
     if operation in ("save", "update"):
         assert "scope" in definition["function"]["parameters"]["properties"]
+
+
+def _descriptions(node) -> list[str]:
+    if isinstance(node, dict):
+        found = (
+            [node["description"]] if isinstance(node.get("description"), str) else []
+        )
+        return found + [d for value in node.values() for d in _descriptions(value)]
+    if isinstance(node, list):
+        return [d for value in node for d in _descriptions(value)]
+    return []
+
+
+@pytest.mark.parametrize(
+    "operation", ["save", "list", "get", "update", "delete", "summary"]
+)
+async def test_descriptions_do_not_invite_null(project, operation):
+    # The adapter checks arguments against the schema before run(), and the
+    # schemas do not allow null, so a null the model was told to send ends the run.
+    definition = await tool(project, operation).toolcall_definition()
+    for text in _descriptions(definition["function"]):
+        assert "null" not in text.lower(), text
+
+
+@pytest.mark.parametrize(
+    "operation, args, valid",
+    [
+        ("save", {"overview": "o", "scope": "project"}, True),
+        ("save", {"overview": "o", "scope": "project", "content": None}, False),
+        ("update", {"id": "1", "content": ""}, True),
+        ("update", {"id": "1", "tags": None}, False),
+    ],
+)
+async def test_schema_check_the_adapter_runs(project, operation, args, valid):
+    definition = await tool(project, operation).toolcall_definition()
+    schema = json.dumps(definition["function"]["parameters"])
+    if valid:
+        validate_schema_with_value_error(args, schema)
+    else:
+        with pytest.raises(ValueError):
+            validate_schema_with_value_error(args, schema)
 
 
 # --- run round-trip ---

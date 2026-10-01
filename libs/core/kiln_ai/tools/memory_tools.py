@@ -119,7 +119,7 @@ class SaveMemoryTool(_MemoryTool):
         "(e.g. 'batch API 429'd at 50rps on 07-04'), never universal rules. "
         "List related memories first and update instead of duplicating. The "
         "overview must let a future reader decide whether to fetch the content; "
-        "for a very short memory the overview IS the whole memory (leave content null)."
+        "for a very short memory the overview IS the whole memory (omit content)."
     )
     _parameters_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
@@ -257,8 +257,8 @@ class GetMemoriesTool(_MemoryTool):
 class UpdateMemoryTool(_MemoryTool):
     _name: ClassVar[str] = "update_memory"
     _description: ClassVar[str] = (
-        "Replace provided fields on an existing memory (omitted or null fields "
-        "are untouched). Use this to correct or refresh a memory whose overview or "
+        "Replace provided fields on an existing memory (omitted fields are "
+        "untouched). Use this to correct or refresh a memory whose overview or "
         "content is wrong or outdated; delete instead if the memory should be "
         "removed entirely. Passing an empty content clears it. Conflicts resolve "
         "last-writer-wins."
@@ -277,7 +277,7 @@ class UpdateMemoryTool(_MemoryTool):
                 "type": "string",
                 "description": (
                     f"New body (<={MAX_CONTENT_LENGTH} chars). Empty string clears it; "
-                    "null or omitted leaves it as is."
+                    "omit it to leave it as is."
                 ),
             },
             "tags": _TAGS_SCHEMA,
