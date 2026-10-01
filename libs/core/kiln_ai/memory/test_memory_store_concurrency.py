@@ -59,8 +59,9 @@ def test_multiprocess_appends_all_survive(tmp_path: Path):
     assert len(all_ids) == expected
     assert len(set(all_ids)) == expected
 
-    # A fresh store sees every record on disk, and every record parses (no torn
-    # reads even though the writes were concurrent).
+    # A fresh store sees every record on disk, and every record parses. Each file
+    # has one writer and is read after the pool joins, so this cannot see a torn
+    # read; test_memory.py checks the atomic write itself.
     fresh = MemoryStore(Project.load_from_file(project.path))
     listed = fresh.list_memories(limit=expected + 10)
     assert listed.matched == expected
