@@ -61,6 +61,11 @@ TERMINAL_STATUSES = frozenset(
 JOB_TRANSIENT_ERROR_MAX_RETRIES = 3
 JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS = 5.0
 
+# The most items a background job may process in parallel. Each item is at least
+# one model call and holds a connection and its buffers while it waits, so an
+# unbounded value lets one request open thousands of provider calls at once.
+JOB_MAX_CONCURRENCY = 100
+
 
 class JobProgress(BaseModel):
     """Count-based progress for a job.

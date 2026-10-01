@@ -7297,7 +7297,7 @@ export interface components {
             run_config_id: string;
             /**
              * Concurrency
-             * @description Max dataset items evaluated in parallel by the runner. Leave null to use the runner's default (25).
+             * @description Max dataset items evaluated in parallel by the runner, from 1 to 100. Leave null to use the runner's default (25).
              */
             concurrency?: number | null;
             /**

@@ -23,6 +23,7 @@ from kiln_ai.datamodel.task import Task, TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX
 from kiln_ai.utils.async_job_runner import AsyncJobRunnerObserver
+from kiln_ai.utils.git_sync_protocols import SaveContext
 from pydantic import BaseModel, Field
 
 from app.desktop.git_sync.save_context import save_context_for_project
@@ -31,6 +32,7 @@ from app.desktop.studio_server.eval_api import (
     task_run_config_from_id,
 )
 from app.desktop.studio_server.jobs.models import (
+    JOB_MAX_CONCURRENCY,
     JOB_TRANSIENT_ERROR_MAX_RETRIES,
     JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS,
     JobContext,
@@ -120,8 +122,10 @@ class EvalJobParams(BaseModel):
     concurrency: int | None = Field(
         default=None,
         ge=1,
-        description="Max dataset items evaluated in parallel by the runner. Leave null to use the "
-        f"runner's default ({DEFAULT_EVAL_CONCURRENCY}).",
+        le=JOB_MAX_CONCURRENCY,
+        description="Max dataset items evaluated in parallel by the runner, from 1 to "
+        f"{JOB_MAX_CONCURRENCY}. Leave null to use the runner's default "
+        f"({DEFAULT_EVAL_CONCURRENCY}).",
     )
     split: EvalSplitName = Field(
         description="Which of the eval's dataset splits to run: train, val, or test. "
@@ -397,7 +401,17 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
         baseline = await self.compute_state(params)
         baseline_success = baseline.success
 
-        eval_runner = self._build_eval_runner(params)
+        # save_context_for_project stays on the event loop: it wakes the git
+        # background sync through an asyncio.Event, which is not thread-safe. The
+        # entity loads and the split resolution in _build_eval_runner are blocking
+        # IO, so they run in a thread like compute_state and describe.
+        save_context = save_context_for_project(
+            params.project_id,
+            context=f"eval job {params.eval_id}/{params.run_config_id}",
+        )
+        eval_runner = await asyncio.to_thread(
+            self._build_eval_runner, params, save_context
+        )
 
         success = baseline_success
         total = baseline.total if baseline.total is not None else baseline_success
@@ -421,7 +435,9 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
 
         return EvalJobResult(total=total, success=success, error=error)
 
-    def _build_eval_runner(self, params: EvalJobParams) -> EvalRunner:
+    def _build_eval_runner(
+        self, params: EvalJobParams, save_context: SaveContext | None
+    ) -> EvalRunner:
         eval_config = eval_config_from_id(
             params.project_id,
             params.task_id,
@@ -432,10 +448,6 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
             params.project_id,
             params.task_id,
             params.run_config_id,
-        )
-        save_context = save_context_for_project(
-            params.project_id,
-            context=f"eval job {params.eval_id}/{params.run_config_id}",
         )
         eval, task = self._eval_and_task(eval_config)
         return EvalRunner(

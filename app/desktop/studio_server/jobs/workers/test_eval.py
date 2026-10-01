@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from contextlib import contextmanager
 from typing import AsyncIterator
 from unittest.mock import patch
@@ -1283,39 +1284,83 @@ def test_error_detail_handles_kiln_run_error_with_buggy_original_str():
 # -- save_context wiring -----------------------------------------------------
 
 
-def test_build_eval_runner_passes_save_context_when_git_sync_enabled(
+class _SilentCtx:
+    job_id = "j_test"
+    run_id = "run_test"
+
+    async def report_progress(self, success, error=0, total=None, message=None):
+        pass
+
+    async def report_error(self, error_message, **extra):
+        pass
+
+
+async def _run_and_capture_the_build(params, save_context) -> dict:
+    """Run the job with a stubbed EvalRunner.run. Return the runner that run() built,
+    the thread that built it, and the thread and arguments of the save context lookup."""
+    captured: dict = {}
+    build = EvalJobWorker._build_eval_runner
+
+    def spy_build(self, params, save_context):
+        captured["build_thread"] = threading.get_ident()
+        captured["runner"] = build(self, params, save_context)
+        return captured["runner"]
+
+    def spy_save_context_for_project(project_id, context):
+        captured["save_context_thread"] = threading.get_ident()
+        captured["save_context_args"] = (project_id, context)
+        return save_context
+
+    with (
+        patch.object(EvalJobWorker, "_build_eval_runner", spy_build),
+        patch(
+            "app.desktop.studio_server.jobs.workers.eval.save_context_for_project",
+            side_effect=spy_save_context_for_project,
+        ),
+        _stub_eval_runner_run([]),
+    ):
+        await EvalJobWorker().run(params, _SilentCtx())
+    return captured
+
+
+async def test_run_builds_the_runner_off_the_event_loop(
+    resolve_project, task, eval_config, run_config, params
+):
+    loop_thread = threading.get_ident()
+
+    captured = await _run_and_capture_the_build(params, save_context=None)
+
+    # The entity loads and the split resolution are blocking IO.
+    assert captured["build_thread"] != loop_thread
+    # The save context lookup wakes the git background sync through an asyncio.Event,
+    # which is only safe to set from the event loop thread.
+    assert captured["save_context_thread"] == loop_thread
+
+
+async def test_run_passes_save_context_when_git_sync_enabled(
     resolve_project, task, eval_config, run_config, params
 ):
     sentinel = object()
 
-    with patch(
-        "app.desktop.studio_server.jobs.workers.eval.save_context_for_project",
-        return_value=sentinel,
-    ) as mock_helper:
-        runner = EvalJobWorker()._build_eval_runner(params)
+    captured = await _run_and_capture_the_build(params, save_context=sentinel)
 
-    mock_helper.assert_called_once_with(
+    assert captured["save_context_args"] == (
         params.project_id,
-        context=f"eval job {params.eval_id}/{params.run_config_id}",
+        f"eval job {params.eval_id}/{params.run_config_id}",
     )
     # The helper's SaveContext is threaded straight into the runner.
-    assert runner._save_context is sentinel
+    assert captured["runner"]._save_context is sentinel
 
 
-def test_build_eval_runner_defaults_to_noop_when_not_git_sync(
+async def test_run_defaults_to_noop_save_context_when_not_git_sync(
     resolve_project, task, eval_config, run_config, params
 ):
     from kiln_ai.utils.git_sync_protocols import default_save_context
 
-    with patch(
-        "app.desktop.studio_server.jobs.workers.eval.save_context_for_project",
-        return_value=None,
-    ) as mock_helper:
-        runner = EvalJobWorker()._build_eval_runner(params)
+    captured = await _run_and_capture_the_build(params, save_context=None)
 
-    mock_helper.assert_called_once()
     # EvalRunner coalesces None to the no-op default_save_context.
-    assert runner._save_context is default_save_context
+    assert captured["runner"]._save_context is default_save_context
 
 
 # -- split resolution --------------------------------------------------------
@@ -1328,7 +1373,7 @@ def test_build_eval_runner_passes_the_evals_resolved_test_split(
     in_split = _make_task_run(task, data_source, "eval_set")
     _make_task_run(task, data_source, "golden")
 
-    runner = EvalJobWorker()._build_eval_runner(params)
+    runner = EvalJobWorker()._build_eval_runner(params, None)
 
     assert runner.split is not None
     assert runner.split.name == "test"
@@ -1343,7 +1388,7 @@ def test_build_eval_runner_resolves_an_eval_input_backed_test_split(
     the item source is the split's, not the eval's."""
     eval_input = _make_eval_input(task, "inputs")
 
-    runner = EvalJobWorker()._build_eval_runner(_input_backed_params())
+    runner = EvalJobWorker()._build_eval_runner(_input_backed_params(), None)
 
     assert runner.split is not None
     assert runner.split.source == "eval_input"
@@ -1362,7 +1407,7 @@ def test_build_eval_runner_passes_the_requested_split(
     in_val = _make_task_run(task, data_source, "val_set")
 
     runner = EvalJobWorker()._build_eval_runner(
-        params.model_copy(update={"split": "val"})
+        params.model_copy(update={"split": "val"}), None
     )
 
     assert runner.split is not None
@@ -1374,7 +1419,9 @@ def test_build_eval_runner_missing_split_raises(
     resolve_project, task, eval_config, run_config, data_source, params
 ):
     with pytest.raises(ValueError, match="Eval 'eval1' has no 'val' split"):
-        EvalJobWorker()._build_eval_runner(params.model_copy(update={"split": "val"}))
+        EvalJobWorker()._build_eval_runner(
+            params.model_copy(update={"split": "val"}), None
+        )
 
 
 # -- end-to-end via registry -------------------------------------------------
