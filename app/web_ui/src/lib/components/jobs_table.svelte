@@ -298,16 +298,18 @@
                         Prompt: {p.run_config_prompt_name}
                       </div>
                     {/if}
-                    <div>
-                      Tools: {p.run_config_tools_count > 0
-                        ? `${p.run_config_tools_count} available`
-                        : "None"}
-                    </div>
-                    <div>
-                      Skills: {p.run_config_skills_count > 0
-                        ? `${p.run_config_skills_count} available`
-                        : "None"}
-                    </div>
+                    {#if p.run_config_model_name}
+                      <div>
+                        Tools: {p.run_config_tools_count > 0
+                          ? `${p.run_config_tools_count} available`
+                          : "None"}
+                      </div>
+                      <div>
+                        Skills: {p.run_config_skills_count > 0
+                          ? `${p.run_config_skills_count} available`
+                          : "None"}
+                      </div>
+                    {/if}
                     <div
                       class="truncate"
                       title="{p.judge_name} ({judge_algorithm_display(p)})"
