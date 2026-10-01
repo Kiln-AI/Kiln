@@ -325,11 +325,11 @@
                 {:else}
                   <span class="font-medium">{job_type_display(job.type)}</span>
                 {/if}
-                <span class="text-[11px] text-gray-400 mt-2"
+                <span class="text-xs text-gray-500 mt-2"
                   >{formatDate(job.created_at)}</span
                 >
                 <span
-                  class="font-mono text-[11px] text-gray-400 truncate"
+                  class="font-mono text-xs text-gray-500 truncate"
                   title={job.id}>ID: {job.id}</span
                 >
               </div>
