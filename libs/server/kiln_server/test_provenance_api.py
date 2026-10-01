@@ -3,7 +3,10 @@ from unittest.mock import patch
 import pytest
 from fastapi import HTTPException
 from kiln_ai.datamodel import Project, Prompt, Task
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.task import TaskRunConfig
 
 from kiln_server.provenance_api import validate_provenance_or_400
 
@@ -47,6 +50,41 @@ def test_first_unknown_sibling_is_named_in_400(task_with_prompts, ids, unknown):
         validate_provenance_or_400(provenance(ids), "new-id", Prompt, task.path)
     assert exc.value.status_code == 400
     assert exc.value.detail == f"derived_from_ids references unknown sibling: {unknown}"
+
+
+def test_existing_id_of_another_type_in_the_same_scope_is_400(task_with_prompts):
+    task, _ = task_with_prompts
+    run_config = TaskRunConfig(
+        name="Run Config",
+        parent=task,
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4o",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+    run_config.save_to_file()
+    with pytest.raises(HTTPException) as exc:
+        validate_provenance_or_400(
+            provenance([str(run_config.id)]), "new-id", Prompt, task.path
+        )
+    assert exc.value.status_code == 400
+    assert "unknown sibling" in exc.value.detail
+
+
+def test_existing_id_of_the_same_type_in_another_scope_is_400(task_with_prompts):
+    task, _ = task_with_prompts
+    other_task = Task(name="Other Task", instruction="Other.", parent=task.parent)
+    other_task.save_to_file()
+    other_prompt = Prompt(name="Other Prompt", prompt="text", parent=other_task)
+    other_prompt.save_to_file()
+    with pytest.raises(HTTPException) as exc:
+        validate_provenance_or_400(
+            provenance([str(other_prompt.id)]), "new-id", Prompt, task.path
+        )
+    assert exc.value.status_code == 400
+    assert "unknown sibling" in exc.value.detail
 
 
 def test_self_reference_is_400(task_with_prompts):
