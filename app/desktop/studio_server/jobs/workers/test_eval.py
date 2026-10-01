@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import threading
 from contextlib import contextmanager
 from typing import AsyncIterator
@@ -1533,6 +1534,59 @@ async def test_eval_job_missing_entity_marks_failed(
     final = registry._jobs[job.id]
     assert final.status == BackgroundJobStatus.FAILED
     assert final.error is not None
+
+
+async def test_eval_job_pause_then_resume_works_each_item_once(
+    resolve_project, task, eval_config, run_config, data_source, params
+):
+    # One item stores its EvalRun at once; the others wait on a gate. Pausing
+    # cancels the waiting ones, which store nothing. Resuming runs only those.
+    items = [_make_task_run(task, data_source, "eval_set") for _ in range(3)]
+    first = str(items[0].id)
+    gate = asyncio.Event()
+    seen: list[str] = []
+
+    async def gated_run_job(self, job) -> bool:
+        item_id = str(job.item.id)
+        seen.append(item_id)
+        if item_id != first:
+            await gate.wait()
+        _make_eval_run(job.eval_config, job.item.id, job.task_run_config.id)
+        return True
+
+    registry = JobRegistry()
+    registry.register_type(EvalJobWorker)
+
+    with patch(
+        "kiln_ai.adapters.eval.eval_runner.EvalRunner.run_job", new=gated_run_job
+    ):
+        job = await registry.create("eval", params, project_id=params.project_id)
+        for _ in range(200):
+            if len(eval_config.runs()) == 1 and len(seen) == 3:
+                break
+            await asyncio.sleep(0.01)
+        assert len(eval_config.runs()) == 1
+
+        paused = await registry.pause(job.id)
+        assert paused.status == BackgroundJobStatus.PAUSED
+        assert paused.progress.total == 3
+        assert paused.progress.success == 1
+        assert len(eval_config.runs()) == 1
+
+        seen.clear()
+        gate.set()
+        await registry.resume(job.id)
+        await registry._tasks[job.id]
+
+    final = registry._jobs[job.id]
+    assert final.status == BackgroundJobStatus.SUCCEEDED
+    assert sorted(seen) == sorted(str(item.id) for item in items[1:])
+    assert final.progress.total == 3
+    assert final.progress.success == 3
+    assert final.progress.error == 0
+    assert final.result == {"total": 3, "success": 3, "error": 0}
+    stored = [run.dataset_id for run in eval_config.runs()]
+    assert sorted(stored) == sorted(item.id for item in items)
 
 
 async def test_compute_state_measures_only_the_named_items(
