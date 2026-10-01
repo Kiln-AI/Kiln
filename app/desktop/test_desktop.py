@@ -1,6 +1,7 @@
 import os
 import random
 import sys
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
@@ -11,6 +12,7 @@ import app.desktop.desktop_server as desktop_server
 from app.desktop.desktop import DesktopApp, DesktopServer
 
 TEST_PORT = 8123
+UNPATCHED_START_LINUX_SNI_TRAY = DesktopApp.start_linux_sni_tray
 
 
 @pytest.fixture(autouse=True)
@@ -18,6 +20,15 @@ def mock_gui_modules():
     """Mock GUI modules globally to prevent display errors in headless CI."""
     with patch("app.desktop.desktop.tk.Tk"):
         yield
+
+
+@pytest.fixture(autouse=True)
+def mock_linux_sni_tray():
+    """Keep tests off the real session bus; by default the SNI tray is unavailable."""
+    with patch.object(
+        DesktopApp, "start_linux_sni_tray", return_value=None
+    ) as mock_start:
+        yield mock_start
 
 
 @pytest.fixture
@@ -235,6 +246,107 @@ class TestDesktopApp:
             # Check first menu item has default=False
             menu_calls = mock_kiln_menu_item.call_args_list
             assert menu_calls[0][1]["default"] is False
+
+    @patch("app.desktop.desktop.sys.platform", "linux")
+    def test_run_tray_linux_uses_sni_tray_when_available(
+        self, mock_tk_root, mock_linux_sni_tray
+    ):
+        sni_tray = Mock()
+        mock_linux_sni_tray.return_value = sni_tray
+        app = DesktopApp(port=TEST_PORT)
+
+        with patch("app.desktop.desktop.KilnTray") as kiln_tray_class:
+            app.run_tray()
+
+        assert app.tray is sni_tray
+        kiln_tray_class.assert_not_called()
+
+    @patch("app.desktop.desktop.sys.platform", "linux")
+    def test_run_tray_linux_falls_back_to_pystray(
+        self,
+        mock_tk_root,
+        mock_image,
+        mock_kiln_tray,
+        mock_kiln_menu_item,
+        mock_linux_sni_tray,
+    ):
+        app = DesktopApp(port=TEST_PORT)
+
+        with patch.object(app, "resource_path", return_value="taskbar.png"):
+            app.run_tray()
+
+        mock_linux_sni_tray.assert_called_once()
+        assert app.tray == mock_kiln_tray
+        mock_kiln_tray.run_detached.assert_called_once()
+
+    @pytest.mark.parametrize("platform", ["darwin", "win32"])
+    def test_run_tray_other_platforms_skip_sni_tray(
+        self,
+        mock_tk_root,
+        mock_image,
+        mock_kiln_tray,
+        mock_kiln_menu_item,
+        mock_linux_sni_tray,
+        platform,
+    ):
+        app = DesktopApp(port=TEST_PORT)
+
+        with (
+            patch("app.desktop.desktop.sys.platform", platform),
+            patch.object(app, "resource_path", return_value="taskbar.png"),
+        ):
+            app.run_tray()
+
+        mock_linux_sni_tray.assert_not_called()
+        assert app.tray == mock_kiln_tray
+
+    @patch("app.desktop.desktop.sys.platform", "linux")
+    def test_run_tray_linux_pystray_failure_is_not_fatal(
+        self, mock_tk_root, mock_image, mock_kiln_tray, mock_kiln_menu_item
+    ):
+        mock_kiln_tray.run_detached.side_effect = RuntimeError("no tray")
+        app = DesktopApp(port=TEST_PORT)
+
+        with patch.object(app, "resource_path", return_value="taskbar.png"):
+            app.run_tray()
+
+        assert app.tray is None
+
+    @pytest.mark.skipif(sys.platform != "linux", reason="SNI tray module is Linux-only")
+    def test_start_linux_sni_tray_passes_menu_and_icons(self, mock_tk_root):
+        app = DesktopApp(port=TEST_PORT)
+        mock_start = Mock()
+
+        with (
+            patch("app.desktop.linux_tray.sni_tray.start_sni_tray", mock_start),
+            patch.object(app, "show_studio") as show_studio,
+            patch.object(app, "on_quit") as on_quit,
+        ):
+            assert UNPATCHED_START_LINUX_SNI_TRAY(app) is mock_start.return_value
+            kwargs = mock_start.call_args.kwargs
+            open_item, quit_item = kwargs["menu_items"]
+            open_item.on_click()
+            quit_item.on_click()
+
+        assert kwargs["title"] == "Kiln"
+        assert kwargs["icon_dir"] == Path(app.resource_path("linux_tray/icons"))
+        assert kwargs["on_activate"] == show_studio
+        assert (open_item.label, quit_item.label) == ("Open Kiln Studio", "Quit")
+        show_studio.assert_called_once()
+        on_quit.assert_called_once()
+
+    def test_start_linux_sni_tray_never_raises(self, mock_tk_root):
+        app = DesktopApp(port=TEST_PORT)
+
+        with patch.dict(sys.modules, {"app.desktop.linux_tray.sni_tray": None}):
+            assert UNPATCHED_START_LINUX_SNI_TRAY(app) is None
+
+    def test_linux_tray_icon_dir_is_bundled(self):
+        build_script = (Path(__file__).parent / "build_desktop_app.sh").read_text()
+        icon_dir = Path(__file__).parent / "linux_tray" / "icons"
+
+        assert "--add-data ../linux_tray/icons:./linux_tray/icons" in build_script
+        assert (icon_dir / "kiln-symbolic.svg").is_file()
 
     def test_close_splash_with_pyi_splash(self, mock_tk_root):
         """Test close_splash when pyi_splash is available."""

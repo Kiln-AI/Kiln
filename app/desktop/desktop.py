@@ -10,6 +10,8 @@ import os
 import sys
 import tkinter as tk
 import webbrowser
+from pathlib import Path
+from typing import Protocol
 
 import sentry_sdk
 from kiln_ai.utils.config import Config
@@ -38,6 +40,10 @@ os.environ["LLAMA_INDEX_CACHE_DIR"] = os.path.join(
 os.environ["NLTK_DATA"] = os.path.join(Config.settings_dir(), "cache", "nltk_data")
 
 
+class Tray(Protocol):
+    def stop(self) -> None: ...
+
+
 class DesktopApp:
     def __init__(self, port: int):
         self.port = port
@@ -45,7 +51,7 @@ class DesktopApp:
         self.root = tk.Tk()
         self.root.title("Kiln")
         self.root.withdraw()
-        self.tray: KilnTray | None = None
+        self.tray: Tray | None = None
 
     def start(self):
         """
@@ -117,6 +123,13 @@ class DesktopApp:
         if self.tray is not None:
             return
 
+        if sys.platform == "linux":
+            self.tray = self.start_linux_sni_tray()
+            if self.tray is not None:
+                logger.info("Linux tray: using StatusNotifierItem over D-Bus")
+                return
+            logger.info("Linux tray: falling back to pystray")
+
         tray_image = Image.open(self.resource_path("taskbar.png"))
 
         # Use default on Windows to get "left click to open" behaviour.
@@ -130,11 +143,12 @@ class DesktopApp:
             KilnMenuItem("Quit", self.on_quit),
         )
 
-        self.tray = KilnTray("kiln", tray_image, "Kiln", menu)
+        tray = KilnTray("kiln", tray_image, "Kiln", menu)
+        self.tray = tray
 
         try:
             # running detached since we use tk mainloop to get events from dock icon
-            self.tray.run_detached()
+            tray.run_detached()
         except Exception:
             logger.error("Error running tray", exc_info=True)
             # Tray not starting on MacOS or Windows is critical.
@@ -143,6 +157,29 @@ class DesktopApp:
                 raise
             else:
                 self.tray = None
+
+    def start_linux_sni_tray(self) -> Tray | None:
+        """
+        The tray on Linux panels that host StatusNotifierItems (most of them), with an icon the panel recolors.
+        Returns None, without raising, if it can't start.
+        """
+
+        try:
+            from app.desktop.linux_tray.sni_protocol import MenuItem
+            from app.desktop.linux_tray.sni_tray import start_sni_tray
+
+            return start_sni_tray(
+                title="Kiln",
+                icon_dir=Path(self.resource_path("linux_tray/icons")),
+                menu_items=(
+                    MenuItem("Open Kiln Studio", self.show_studio),
+                    MenuItem("Quit", self.on_quit),
+                ),
+                on_activate=self.show_studio,
+            )
+        except Exception:
+            logger.error("Error starting Linux StatusNotifierItem tray", exc_info=True)
+            return None
 
     def close_splash(self):
         try:

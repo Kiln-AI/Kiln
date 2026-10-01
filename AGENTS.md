@@ -54,10 +54,30 @@ These prompts can be accessed from the `get_prompt` tool, and you may request se
 ### General Agent Guidance
 
 - When spawning subagents, always use the same model as the current agent
-- Don't include comments in code explaining changes, explain changes in chat instead. This covers comments that defend code which is now simply correct — e.g. explaining why a route declares no 401 response after you deleted a bogus one. If a comment only makes sense next to the diff, cut it.
 - `CLAUDE.md` is generated from `AGENTS.md` and overwritten by setup. Edit `AGENTS.md`, never `CLAUDE.md`; keep personal notes in `~/.claude/CLAUDE.md`.
 - Use `TODO` comments to mark any temporary code, placeholders, or items that must be addressed before merging to main. CI enforces that no `TODO` comments remain on main, so they are a safe way to flag work-in-progress during development. Clean up all `TODO` comments before the final PR.
 - Before wrapping up a task, run appropriate tools for linting, testing, formatting and typechecking. Fix any issues you introduced.
+
+### Code Comments
+
+Comments are rare in well-written code: names, types and structure carry the meaning. Write every comment for someone opening the file cold a year from now, not for the reviewer of this PR.
+
+Comment only when a careful reader would otherwise be confused or likely to break something:
+- Facts about the outside world that shaped the code: "Provider X rejects the first request after a cold start; the retry is required." "This API returns 404 for permission errors."
+- Constraints the code can't express: required ordering, units, invariants enforced elsewhere.
+- A link to the upstream bug a workaround exists for.
+
+Never write comments that:
+- Narrate the change: "switched to X", "now uses Y", "no longer needed", "previously".
+- Record or justify a decision: "we chose httpx because...", "kept simple on purpose". Decisions go in specs, commit messages, or the PR.
+- Restate the code, or add section banners over obvious blocks.
+- Address the reviewer or defend code against an imagined objection.
+
+Docstrings describe the contract (purpose, inputs, outputs, errors) for a first-time caller. No history, no rationale.
+
+Before writing a comment, try a better name or extracting a function. Anything you want the reviewer to know goes in your recap or the PR description.
+
+Review-bot findings about comments, including ones labelled nitpick, are required fixes.
 
 ### Reporting Back: End-of-Turn Recaps
 
@@ -96,7 +116,7 @@ Write it for a person who has not read your working notes and will not scroll up
 
 ### Code Review Guidelines
 
-If asked to perform a code review, read our [code review guidelines](.agents/code_review_guidelines.md).
+If code reviewing, always read [`.agents/code_review_guidelines.md`](.agents/code_review_guidelines.md) before starting your review.
 
 ### Pull Requests
 

@@ -4,7 +4,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 import litellm
 from litellm.types.utils import (
@@ -22,6 +22,7 @@ from openai.types.chat.chat_completion_message_tool_call_param import (
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
 from kiln_ai.adapters.chat.chat_formatter import chat_message_to_dict
+from kiln_ai.adapters.litellm_utils.tool_calls import function_tool_calls
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     ModelProviderName,
@@ -67,6 +68,32 @@ from kiln_ai.utils.open_ai_types import (
 
 MAX_CALLS_PER_TURN = 10
 MAX_TOOL_CALLS_PER_TURN = 100
+
+# Cerebras validates assistant messages strictly and rejects the reasoning fields
+# LiteLLM attaches to responses from reasoning models, so prior assistant turns are
+# sent back without them.
+CEREBRAS_UNSUPPORTED_ASSISTANT_FIELDS = frozenset(
+    {"reasoning_content", "provider_specific_fields"}
+)
+
+
+def strip_assistant_fields_for_cerebras(messages: Iterable[Any]) -> list[Any]:
+    """Return a copy of ``messages`` with ``CEREBRAS_UNSUPPORTED_ASSISTANT_FIELDS``
+    removed from assistant entries. LiteLLM ``Message`` objects are converted to
+    dicts the same way LiteLLM does before the request is sent."""
+    stripped: list[Any] = []
+    for message in messages:
+        if isinstance(message, LiteLLMMessage):
+            message = message.model_dump(exclude_none=True)
+        if isinstance(message, dict) and message.get("role") == "assistant":
+            message = {
+                k: v
+                for k, v in message.items()
+                if k not in CEREBRAS_UNSUPPORTED_ASSISTANT_FIELDS
+            }
+        stripped.append(message)
+    return stripped
+
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +196,7 @@ class LiteLlmAdapter(BaseAdapter):
             if not hasattr(response_choice, "message"):
                 raise ValueError("Response choice has no message")
             content = response_choice.message.content
-            tool_calls = response_choice.message.tool_calls
+            tool_calls = function_tool_calls(response_choice.message.tool_calls)
             if not content and not tool_calls:
                 raise_for_empty_model_response(response_choice)
 
@@ -776,7 +803,10 @@ class LiteLlmAdapter(BaseAdapter):
         if len(allowed_openai_params) > 0:
             completion_kwargs["allowed_openai_params"] = allowed_openai_params
 
-        completion_kwargs["messages"] = sanitize_messages_for_provider(messages)
+        provider_messages = sanitize_messages_for_provider(messages)
+        if provider.name == ModelProviderName.cerebras:
+            provider_messages = strip_assistant_fields_for_cerebras(provider_messages)
+        completion_kwargs["messages"] = provider_messages
 
         return completion_kwargs
 
@@ -957,7 +987,7 @@ class LiteLlmAdapter(BaseAdapter):
         if hasattr(raw_message, "tool_calls"):
             # Convert ChatCompletionMessageToolCall to ChatCompletionMessageToolCallParam
             open_ai_tool_calls: List[ChatCompletionMessageToolCallParam] = []
-            for litellm_tool_call in raw_message.tool_calls or []:
+            for litellm_tool_call in function_tool_calls(raw_message.tool_calls):
                 # Optional in the SDK for streaming responses, but should never be None at this point.
                 if litellm_tool_call.function.name is None:
                     raise ValueError(
