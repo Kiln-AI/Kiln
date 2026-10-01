@@ -211,8 +211,8 @@ class ListMemoriesTool(_MemoryTool):
                 scope=kwargs.get("scope"),
                 tags=kwargs.get("tags"),
                 content_match=kwargs.get("content_match"),
-                limit=kwargs.get("limit", 50),
-                offset=kwargs.get("offset", 0),
+                limit=_whole_number(kwargs.get("limit", 50), "limit"),
+                offset=_whole_number(kwargs.get("offset", 0), "offset"),
             )
         except (ValidationError, ValueError) as e:
             return self._error(e)
@@ -377,6 +377,16 @@ _TOOL_CLASSES: dict[str, type[_MemoryTool]] = {
     "delete": DeleteMemoryTool,
     "summary": MemorySummaryTool,
 }
+
+
+def _whole_number(value: Any, name: str) -> int:
+    # JSON Schema's integer type accepts 50.0, and some providers send every number
+    # as a float. A float cannot be a slice index, so convert it here.
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    raise ValueError(f"{name} must be a whole number")
 
 
 def _render_truncation_note(result: MemoryListResult) -> str:

@@ -271,6 +271,28 @@ async def test_list_negative_pagination_is_tool_error(project):
     assert result.is_error
 
 
+async def test_list_accepts_whole_number_floats_for_paging(project):
+    # The adapter's schema check lets 2.0 through as an integer, and some
+    # providers send every number as a float.
+    for i in range(3):
+        await tool(project, "save").run(overview=f"m{i}", scope="project")
+    definition = await tool(project, "list").toolcall_definition()
+    args = {"limit": 2.0, "offset": 1.0}
+    validate_schema_with_value_error(
+        args, json.dumps(definition["function"]["parameters"])
+    )
+
+    result = await tool(project, "list").run(**args)
+    assert not result.is_error
+    assert [m["overview"] for m in out(result)["memories"]] == ["m1", "m0"]
+
+
+@pytest.mark.parametrize("args", [{"limit": 2.5}, {"offset": "1"}, {"limit": True}])
+async def test_list_non_whole_number_paging_is_tool_error(project, args):
+    result = await tool(project, "list").run(**args)
+    assert result.is_error
+
+
 async def test_list_invalid_regex_is_tool_error(project):
     result = await tool(project, "list").run(content_match="[unclosed")
     assert result.is_error
