@@ -211,7 +211,10 @@ def _session_handler(capacity: _Capacity) -> Callable[[ServerConnection], None]:
         try:
             _run_session(websocket)
         finally:
+            # Like OpenEnv: free the slot before closing the socket, so a client that
+            # waits for the close can reset again straight away.
             capacity.release()
+            websocket.close()
 
     return handle
 
@@ -256,8 +259,6 @@ def _run_session(websocket: ServerConnection) -> None:
             websocket.send(json.dumps(response))
     except ConnectionClosed:
         pass
-    finally:
-        websocket.close()
 
 
 def _http_routes(
