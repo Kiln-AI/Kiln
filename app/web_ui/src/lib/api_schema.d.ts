@@ -13958,7 +13958,10 @@ export interface components {
         WorldEpisode: {
             /** @description The world and reset() keyword arguments this episode was started from: the input's world_reset. */
             reset: components["schemas"]["WorldReset"];
-            /** Episode Id */
+            /**
+             * Episode Id
+             * @description Kiln's id for this episode, passed to the environment's reset() as `episode_id`.
+             */
             episode_id: string;
             /**
              * World Version

@@ -59,9 +59,15 @@ class OpenEnvTool(BaseModel):
 
     A runtime value object, never persisted: the environment is the source of truth."""
 
-    name: str = Field(min_length=1)
-    description: str = ""
-    input_schema: dict[str, Any] = Field(default_factory=dict)
+    name: str = Field(
+        min_length=1, description="The tool's function name, as the model sees it."
+    )
+    description: str = Field(
+        default="", description="The tool's description, as the model sees it."
+    )
+    input_schema: dict[str, Any] = Field(
+        default_factory=dict, description="JSON schema of the tool's arguments."
+    )
 
 
 class WorldReset(BaseModel):
@@ -94,7 +100,10 @@ class WorldEpisode(BaseModel):
     reset: WorldReset = Field(
         description="The world and reset() keyword arguments this episode was started from: the input's world_reset."
     )
-    episode_id: str = Field(min_length=1)
+    episode_id: str = Field(
+        min_length=1,
+        description="Kiln's id for this episode, passed to the environment's reset() as `episode_id`.",
+    )
     world_version: str = Field(
         min_length=1,
         description="The environment's name@version as its server reported it when the episode started: what produced this state. Kiln trusts a version to be immutable.",
@@ -126,7 +135,9 @@ class World(KilnParentedModel):
     """A pointer to a running OpenEnv environment."""
 
     name: FilenameString = Field(description="User-facing display name.")
-    description: str | None = Field(default=None)
+    description: str | None = Field(
+        default=None, description="User-facing notes about the world."
+    )
     kind: Literal["openenv"] = Field(
         default="openenv",
         description="The kind of environment behind env_url. Only OpenEnv today.",
@@ -139,6 +150,8 @@ class World(KilnParentedModel):
     @field_validator("env_url")
     @classmethod
     def validate_env_url(cls, value: str | None) -> str | None:
+        """Require an http(s) URL with a host, so a typo fails when the world is saved
+        rather than when an eval first connects."""
         if value is None:
             return None
         parts = urlsplit(value)
