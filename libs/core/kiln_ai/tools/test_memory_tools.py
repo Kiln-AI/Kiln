@@ -4,14 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel import Memory, Project, Task
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.memory import MAX_OVERVIEW_LENGTH
 from kiln_ai.datamodel.tool_id import (
     build_memory_tool_id,
     memory_operation_from_tool_id,
 )
-from kiln_ai.memory import MemoryStore
+from kiln_ai.memory import MemoryListResult, MemoryStore, MemorySummary
 from kiln_ai.tools.memory_tools import memory_tool_from_id
 from kiln_ai.tools.tool_registry import tool_from_id
 
@@ -245,6 +245,89 @@ async def test_store_call_runs_in_a_worker_thread(
 
     assert len(call_threads) == 1
     assert call_threads[0] != loop_thread
+
+
+# --- every schema property reaches the store ---
+
+
+_SAVED = Memory(overview="o", scope="project")
+_FORWARDING_CASES = [
+    (
+        "save",
+        "save_memory",
+        _SAVED,
+        {"overview": "o", "scope": "task::1", "content": "c", "tags": ["t"]},
+        (),
+        {"overview": "o", "scope": "task::1", "content": "c", "tags": ["t"]},
+    ),
+    (
+        "list",
+        "list_memories",
+        MemoryListResult(listings=[], matched=0, remaining=0, remaining_tag_counts={}),
+        {
+            "scope": "task::1",
+            "tags": ["t"],
+            "content_match": "x",
+            "limit": 3,
+            "offset": 2,
+        },
+        (),
+        {
+            "scope": "task::1",
+            "tags": ["t"],
+            "content_match": "x",
+            "limit": 3,
+            "offset": 2,
+        },
+    ),
+    ("get", "get_memories", [], {"ids": ["1", "2"]}, (["1", "2"],), {}),
+    (
+        "update",
+        "update_memory",
+        _SAVED,
+        {"id": "1", "overview": "o", "content": "c", "tags": ["t"], "scope": "s"},
+        ("1",),
+        {"overview": "o", "content": "c", "tags": ["t"], "scope": "s"},
+    ),
+    ("delete", "delete_memory", None, {"id": "1"}, ("1",), {}),
+    (
+        "summary",
+        "memory_summary",
+        MemorySummary(total=0, scopes=[]),
+        {"scope": "task::1"},
+        (),
+        {"scope": "task::1"},
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "operation, store_method, returns, tool_args, want_args, want_kwargs",
+    _FORWARDING_CASES,
+)
+async def test_tool_forwards_every_parameter_to_the_store(
+    project,
+    monkeypatch,
+    operation,
+    store_method,
+    returns,
+    tool_args,
+    want_args,
+    want_kwargs,
+):
+    definition = await tool(project, operation).toolcall_definition()
+    assert set(tool_args) == set(definition["function"]["parameters"]["properties"])
+    calls: list[tuple[tuple, dict]] = []
+
+    def recording(self, *args, **kwargs):
+        calls.append((args, kwargs))
+        return returns
+
+    monkeypatch.setattr(MemoryStore, store_method, recording)
+    result = await tool(project, operation).run(**tool_args)
+
+    assert not result.is_error, result.output
+    assert calls == [(want_args, want_kwargs)]
 
 
 # --- error mapping (store errors become tool errors, not exceptions) ---
