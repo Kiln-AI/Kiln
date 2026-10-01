@@ -7180,6 +7180,74 @@ class TestCreateLlmJudgeConfig:
         assert response.status_code == 200
         assert response.json()["properties"]["reference_keys"] == ["reference_answer"]
 
+    def _post(self, client, eval_obj, extra: dict):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = eval_obj
+            return client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                    **extra,
+                },
+            )
+
+    def test_provenance_stored_with_sibling_lineage(self, client, mock_v2_eval):
+        parent = self._post(client, mock_v2_eval, {"name": "parent"})
+        assert parent.status_code == 200
+        parent_id = parent.json()["id"]
+
+        response = self._post(
+            client,
+            mock_v2_eval,
+            {
+                "name": "child",
+                "provenance": {
+                    "origin": "human",
+                    "derived_from_ids": [parent_id],
+                    "notes": "Second judge for the same eval.",
+                },
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["provenance"] == {
+            "origin": "human",
+            "derived_from_ids": [parent_id],
+            "notes": "Second judge for the same eval.",
+        }
+        saved = next(c for c in mock_v2_eval.configs() if c.name == "child")
+        assert saved.provenance is not None
+        assert saved.provenance.origin == "human"
+        assert saved.provenance.derived_from_ids == [parent_id]
+
+    def test_provenance_unknown_sibling_400_and_nothing_saved(
+        self, client, mock_v2_eval
+    ):
+        response = self._post(
+            client,
+            mock_v2_eval,
+            {"provenance": {"origin": "human", "derived_from_ids": ["missing"]}},
+        )
+        assert response.status_code == 400
+        assert "unknown sibling" in response.json()["message"]
+        assert mock_v2_eval.configs() == []
+
+    def test_provenance_invalid_origin_422(self, client, mock_v2_eval):
+        response = self._post(client, mock_v2_eval, {"provenance": {"origin": "x"}})
+        assert response.status_code == 422
+
+    def test_provenance_omitted_writes_no_key(self, client, mock_v2_eval):
+        response = self._post(client, mock_v2_eval, {})
+        assert response.status_code == 200
+        assert response.json().get("provenance") is None
+        saved = mock_v2_eval.configs()[0]
+        assert saved.provenance is None
+        assert saved.path is not None
+        assert "provenance" not in json.loads(saved.path.read_text())
+
 
 class TestV1CoexistenceAPI:
     """V1 coexistence regression guards at the API layer.

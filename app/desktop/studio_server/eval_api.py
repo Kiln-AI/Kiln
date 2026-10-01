@@ -442,6 +442,10 @@ class CreateLlmJudgeConfigRequest(LlmJudgeBuilderInput):
     """Request to create a V2 llm_judge eval config with server-baked template."""
 
     name: str | None = Field(default=None, description="The name of the eval config.")
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this eval config exists and what it was derived from.",
+    )
 
 
 class TestV2EvalRequest(BaseModel):
@@ -2455,6 +2459,7 @@ def connect_evals_api(app: FastAPI):
                 name=name,
                 config_type=EvalConfigType.v2,
                 properties=properties,
+                provenance=request.provenance,
                 parent=eval,
             )
         except (ValidationError, ValueError) as e:
@@ -2462,6 +2467,12 @@ def connect_evals_api(app: FastAPI):
                 status_code=400,
                 detail=str(e),
             )
+        validate_provenance_or_400(
+            eval_config.provenance,
+            eval_config.id,
+            EvalConfig,
+            eval.path,
+        )
         eval_config.save_to_file()
         return eval_config
 

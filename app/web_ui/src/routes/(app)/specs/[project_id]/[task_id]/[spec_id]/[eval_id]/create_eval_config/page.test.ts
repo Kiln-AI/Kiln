@@ -1964,7 +1964,7 @@ describe("Reference data save gate", () => {
   })
 
   describe("reference_keys on save", () => {
-    it("llm_judge: the request carries no reference_keys, the server derives them", async () => {
+    it("llm_judge: the request carries no reference_keys and stamps human provenance", async () => {
       setInitialLlmJudgeValues({
         selected_algo: "llm_as_judge",
         combined_model_name: "openai:gpt-4o",
@@ -2019,6 +2019,7 @@ describe("Reference data save gate", () => {
       // derived from the eval, so a UI that could not collect them turned the
       // requirement off. The field is gone from the request.
       expect(savedPayload).not.toHaveProperty("reference_keys")
+      expect(savedPayload.provenance).toEqual({ origin: "human" })
     })
 
     it("code_eval: reference_keys are empty when no reference data is entered", async () => {
@@ -2148,7 +2149,7 @@ describe("Save flow — handle_submit logic", () => {
     cleanup()
   })
 
-  it("contains: save after passing test calls createEvalConfig", async () => {
+  it("contains: save after passing test calls createEvalConfig with human provenance", async () => {
     const { container } = await renderBuilder("contains")
 
     await tick()
@@ -2191,6 +2192,9 @@ describe("Save flow — handle_submit logic", () => {
     await tick()
 
     expect(mockCreateEvalConfig).toHaveBeenCalledTimes(1)
+    expect(mockCreateEvalConfig.mock.calls[0][3].provenance).toEqual({
+      origin: "human",
+    })
     expect(showCalls).not.toContain("Save Without Testing?")
   })
 
