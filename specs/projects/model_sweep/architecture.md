@@ -144,7 +144,7 @@ Always written, even on failure, as the session's final message: counts, branche
 
 > Read `.agents/skills/kiln-model-sweep/SKILL.md` and run it with `--mode sweep --host cloud --skip-paid`.
 
-Network allowlist for the cloud environment is the domain list Mike posted in #models on 2026-08-28 plus `api.github.com` and `slack.com`.
+Network allowlist for the cloud environment is the provider domain list the team keeps for cloud environments plus `api.github.com` and `slack.com`.
 
 ## Secrets and Identity
 

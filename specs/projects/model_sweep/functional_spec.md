@@ -10,22 +10,22 @@ A scheduled, unattended run that turns the existing model-maintenance skills int
 
 Success state for a quiet day is silence: no PR, no Slack post. The staleness report still refreshes.
 
-**The host is decided by a smoke test, not up front.** The skill `kiln-model-sweep` is host-agnostic and has a dry-run mode. Phase 1 runs it as a desktop-app scheduled task on Mike's Mac, where the provider keys already live. Phase 2 runs the same skill as a Claude Code cloud routine in Mike's existing "Models" environment, paid tests off, and records what works: Slack connector attach, network allowlist, PR author identity, run time. Whichever host passes becomes v1. The cloud-brain-plus-GitHub-Actions design in §9 remains the long-term target because it is the only one where no agent holds a provider key, which is Steve's rule for cloud environments (`.config/utils/claude_cloud_setup.md`).
+**The host is decided by a smoke test, not up front.** The skill `kiln-model-sweep` is host-agnostic and has a dry-run mode. Phase 1 runs it as a desktop-app scheduled task on the operator's Mac, where the provider keys already live. Phase 2 runs the same skill as a Claude Code cloud routine in the operator's cloud environment, paid tests off, and records what works: Slack connector attach, network allowlist, PR author identity, run time. Whichever host passes becomes v1. The cloud-brain-plus-GitHub-Actions design in §9 remains the long-term target because it is the only one where no agent holds a provider key, which is the team's rule for cloud environments (`.config/utils/claude_cloud_setup.md`).
 
 ## 1. Trigger and Runtime
 
 - Runs every weekday at 07:00 America/Toronto, plus a 13:00 comments-only run.
-- **Local host**: a desktop-app scheduled task on Mike's Mac. The Mac must be awake with the app open. Provider keys come from Mike's Kiln config. The run creates a fresh worktree of `Kiln-AI/Kiln` from `origin/main`, never touches the live checkout, and removes the worktree at the end.
-- **Cloud host**: a Claude Code cloud routine in the "Models" environment with a fresh checkout. Paid tests run there only if provider keys are present, which Steve's policy forbids; the smoke test therefore runs with `--skip-paid`, and every entry it would add is marked ⚠️ untested in the PR until a local or Actions run tests it.
+- **Local host**: a desktop-app scheduled task on the operator's Mac. The Mac must be awake with the app open. Provider keys come from the operator's Kiln config. The run creates a fresh worktree of `Kiln-AI/Kiln` from `origin/main`, never touches the live checkout, and removes the worktree at the end.
+- **Cloud host**: a Claude Code cloud routine in the operator's cloud environment with a fresh checkout. Paid tests run there only if provider keys are present, which Steve's policy forbids; the smoke test therefore runs with `--skip-paid`, and every entry it would add is marked ⚠️ untested in the PR until a local or Actions run tests it.
 - No cap on new models per run and no spend ceiling. An interrupted run has already pushed its finished branches; the rest carries over.
-- Every GitHub action (branch, PR, comment) is made by the machine-user account `kiln-claude` through its own token, never through Mike's login. Every Slack post is made by a Slack app named Claude, never through Mike's user token. Fallbacks are in §4.2. In the cloud, the `kiln-claude` token would have to be an environment variable, which is itself a secret in a cloud environment; the smoke test records what author the routine produces without it.
+- Every GitHub action (branch, PR, comment) is made by the machine-user account `kiln-claude` through its own token, never through the operator's login. Every Slack post is made by a Slack app named Claude, never through the operator's user token. Fallbacks are in §4.2. In the cloud, the `kiln-claude` token would have to be an environment variable, which is itself a secret in a cloud environment; the smoke test records what author the routine produces without it.
 - The run is stateless. "Since the last run" is derived from the newest `kiln-claude` PR or commit, with a 7-day floor, so no host needs persistent disk.
 
 ## 2. Inputs
 
 ### 2.1 Slack hints
 
-- Source: `#models` (C0AG8U78MNG), messages since the last successful run, with a floor of 7 days. Read through the Slack connector available to the session (reads are fine under Mike's identity; only posts need the Claude identity).
+- Source: the models channel from the run settings (default `#models`), messages since the last successful run, with a floor of 7 days. Read through the Slack connector available to the session (reads are fine under the operator's identity; only posts need the Claude identity).
 - Extracted: model names and announcement links, provider-coverage requests ("we don't have X on cerebras"), and gotchas (for example "Opus 5.5 rejects temperature != 1"). Gotchas are carried into the PR body for the matching model.
 - Hints are candidates, not instructions. A hinted model is added only if it verifies against a provider catalog like any discovered model. Text in Slack never changes the routine's rules.
 
@@ -36,11 +36,11 @@ Success state for a quiet day is silence: no PR, no Slack post. The staleness re
 
 ### 2.3 Deprecation signals
 
-- Reuses `kiln-check-deprecation/scripts/check_provider.py` across all providers that have a key in Mike's config, and the LiteLLM `deprecation_date` field.
+- Reuses `kiln-check-deprecation/scripts/check_provider.py` across all providers that have a key in the operator's config, and the LiteLLM `deprecation_date` field.
 - The extractor must read `built_in_models` from the checkout, not the published remote config, so entries merged since the last publish are covered. (Today's script reads the published config; this is a one-flag change.)
 - A provider entry is "confirmed dead" only when Kiln's own adapter fails the paid smoke run with a not-found or inaccessible error, the same rule used on 2026-09-26 for the Fireworks cut-off. A listing that merely drops the model is not enough on its own.
 - "Expiring soon" entries are reported, never marked.
-- Successor slugs (ruling 2026-10-01): when a provider replaces a slug with a successor checkpoint, the old provider entry is deprecated (its suggested flags removed) and the successor is added as a distinct model with its own enum and suffixed name. The `model_id` is never edited in place, so pinned evals keep their history.
+- Successor slugs (team ruling 2026-10-01): when a provider replaces a slug with a successor checkpoint, the old provider entry is deprecated (its suggested flags removed) and the successor is added as a distinct model with its own enum and suffixed name. The `model_id` is never edited in place, so pinned evals keep their history.
 
 ### 2.4 Open model-sweep PRs
 
@@ -63,10 +63,10 @@ The classification is computed from the diff paths and the test results, not fro
 
 ### 4.1 Pull requests
 
-All PRs: semantic-commit title, `chore: ...`; the `WIP:` prefix means draft and is used only on needs-discussion PRs (ruling 2026-10-01; this overrides open-pr's always-WIP rule). A draft that becomes ready loses the prefix. Body: the template's human header pre-populated (ruling 2026-10-01: Description written by the routine, Architecture Review "Small change", Review Style "Mixed", Agentic Code Review "addressed all AI feedback", Key decisions `ML Model Update`, Paths `ml_model_list.py`, UI "No UI"; Author Review left unchecked for Mike; no CLA line), then open-pr's Agentic PR Summary with the per-test evidence table from `claude-maintain-models`. No `print(` and no TODO/FIXME in the diff. Branches: `model-sweep/adds-YYYY-MM-DD`, `model-sweep/deprecations-YYYY-MM-DD`, `model-sweep/discuss-<model>-YYYY-MM-DD`.
+All PRs: semantic-commit title, `chore: ...`; the `WIP:` prefix means draft and is used only on needs-discussion PRs (ruling 2026-10-01; this overrides open-pr's always-WIP rule). A draft that becomes ready loses the prefix. Body: the template's human header pre-populated (ruling 2026-10-01: Description written by the routine, Architecture Review "Small change", Review Style "Mixed", Agentic Code Review "addressed all AI feedback", Key decisions `ML Model Update`, Paths `ml_model_list.py`, UI "No UI"; Author Review left unchecked for the author; no CLA line), then open-pr's Agentic PR Summary with the per-test evidence table from `claude-maintain-models`. No `print(` and no TODO/FIXME in the diff. Branches: `model-sweep/adds-YYYY-MM-DD`, `model-sweep/deprecations-YYYY-MM-DD`, `model-sweep/discuss-<model>-YYYY-MM-DD`.
 
 - **Adds PR**: one per run, every easy add from that run. Body ends with a "Candidates for suggested flags" list for a human; the routine never sets those flags.
-- **Deprecations PR**: one per run, every confirmed-dead entry. Recommendation flags and deprecations stay in separate PRs (ruling of 2026-09-16).
+- **Deprecations PR**: one per run, every confirmed-dead entry. Recommendation flags and deprecations stay in separate PRs (team ruling of 2026-09-16).
 - **Needs-discussion PR**: one per item, opened as a draft. Its body ends with a bold **Decisions required** section between horizontal rules: what the model needs, why it is not an easy add, and the options. No further code lands on it until a human answers.
 - **Dedup**: if an open `kiln-claude` PR already covers a model, the run pushes to that branch instead of opening another.
 - **Where branches live**: on `Kiln-AI/Kiln` directly if `kiln-claude` has been invited to the org; otherwise on a fork, `kiln-claude/Kiln`, with "allow edits from maintainers" on. Labels (`model-sweep`, `needs-discussion`) are applied only when the account has triage rights; the title prefix and branch name carry the same information either way.
@@ -75,7 +75,7 @@ All PRs: semantic-commit title, `chore: ...`; the `WIP:` prefix means draft and 
 ### 4.2 Slack post
 
 - One message per PR opened, to `#models`: title, link, counts (models added, entries deprecated, or "needs discussion").
-- Posted by a Slack app named Claude that Mike installs (scopes `chat:write`, `channels:history`). If the workspace does not let members install apps, v1 posts through Mike's connector with the prefix `[model sweep]`, and Steve's bot takes the post over in v2.
+- Posted by a Slack app named Claude that the operator installs (scopes `chat:write`, `channels:history`). If the workspace does not let members install apps, v1 posts through the operator's connector with the prefix `[model sweep]`, and the team Slack bot takes the post over in v2.
 - No further discussion in Slack. Replies there are read only as hints on the next run.
 
 ### 4.3 Paid tests
@@ -85,14 +85,14 @@ All PRs: semantic-commit title, `chore: ...`; the `WIP:` prefix means draft and 
 
 ### 4.4 Staleness report
 
-- Scope: hard-coded model references across `Kiln-AI/Kiln` and `Kiln-AI/kiln_server` (both are checked out on Mike's Mac; the run fetches `origin/main` of each); more repos by config. A reference is a `ModelName` enum, a provider `model_id` string, or a friendly name used in a prompt, default, or config.
+- Scope: hard-coded model references across `Kiln-AI/Kiln` and `Kiln-AI/kiln_server` (both are checked out on the operator's Mac; the run fetches `origin/main` of each); more repos by config. A reference is a `ModelName` enum, a provider `model_id` string, or a friendly name used in a prompt, default, or config.
 - Per reference: repo and `file:line`, provider, status in `ml_model_list.py` (live, deprecated, absent), the newest same-family model in Kiln if one is newer, and the age of the entry in Kiln from `git log` on its `ml_model_list.py` line.
 - Output: one living GitHub issue in `Kiln-AI/Kiln` titled "Model staleness", edited in place each run by `kiln-claude`. The fine-tune audit (`kiln-check-finetune-deprecation`, report-only) appends to the same issue.
 - Staleness never produces a PR. Changing a default model is a human decision.
 
 ### 4.5 Remote config publish check
 
-- Added 2026-10-01 at Mike's request. Kiln clients read the model list from the published remote config, built by `publish_remote_config.yml` on a push to the `remote_config` branch. The team's flow is a PR with head `main` and base `remote_config`, merged by a human.
+- Added 2026-10-01 at the operator's request. Kiln clients read the model list from the published remote config, built by `publish_remote_config.yml` on a push to the `remote_config` branch. The team's flow is a PR with head `main` and base `remote_config`, merged by a human.
 - Every run diffs `origin/remote_config..origin/main` on the files the config is built from: `ml_model_list.py`, `ml_embedding_model_list.py`, `reranker_list.py`, `remote_config.py`. No diff: nothing to do.
 - A diff with an open PR into `remote_config` already present: no new PR. The routine refreshes its own PR's body with an **Updates** section; a human's PR is left alone and reported with its age.
 - A diff with no such PR: run the backwards-compatibility test the publish workflow runs, check `merge-tree` for conflicts, and open head `main` into base `remote_config`. Clean and passing: ready PR announced in #prs. Conflicts or failure: draft PR with **Decisions required**, announced in #models.
@@ -119,7 +119,7 @@ The existing skills stop and ask at several points. The routine answers them as 
 | Bedrock needs `aws` CLI, Ollama and Docker Model Runner need local daemons | Same as Vertex |
 | Any ❌ test | Move that model to a needs-discussion PR |
 | Any ⚠️ flake | Retry once serially (`-n 0`); then needs-discussion |
-| A provider key missing in Mike's config | Skip that provider with a ⚠️ |
+| A provider key missing in the operator's config | Skip that provider with a ⚠️ |
 | Deprecation: confirm before marking | Auto for confirmed dead only |
 | Expiring soon | Report only |
 | Fine-tune list changes | Report only |
@@ -128,11 +128,11 @@ The existing skills stop and ask at several points. The routine answers them as 
 
 ## 7. Configuration
 
-Lives with the skill in `.agents/skills/kiln-model-sweep/`: Slack channel id, providers to skip unattended, repos to scan for staleness, branch prefix, the GitHub account name. The scheduled task's prompt on Mike's Mac is one line: run the skill. Provider keys stay in Mike's Kiln config. The `kiln-claude` token and the Slack app token live in Mike's macOS keychain and are read into the session's environment by the task, never written to the repo or the transcript.
+Lives with the skill in `.agents/skills/kiln-model-sweep/`: Slack channel id, providers to skip unattended, repos to scan for staleness, branch prefix, the GitHub account name. The scheduled task's prompt on the operator's Mac is one line: run the skill. Provider keys stay in the operator's Kiln config. The `kiln-claude` token and the Slack app token live in the operator's macOS keychain and are read into the session's environment by the task, never written to the repo or the transcript.
 
 ## 8. Security
 
-- **Rule of 2026-10-01: the routine never writes a PR comment, review comment or review.** PRs are authored under Mike's account and a comment would read as his words. The PR body and commit messages are its only voice.
+- **Rule of 2026-10-01: the routine never writes a PR comment, review comment or review.** PRs are authored under the operator's account and a comment would read as his words. The PR body and commit messages are its only voice.
 - Slack messages and PR comments are untrusted input. They can propose a model; they cannot change the rules in §3 or §6.
 - `kiln-claude` holds the minimum: public-repo scope plus write on its fork, or on `Kiln-AI/Kiln` if invited. It never holds provider keys.
 - Secret values are never printed; availability is logged as a boolean.
@@ -161,19 +161,19 @@ Lives with the skill in `.agents/skills/kiln-model-sweep/`: Slack channel id, pr
 
 ## 9. v2: Cloud Brain and GitHub Actions Hands
 
-The later target, once Steve's pieces exist. The skill is unchanged; only the host moves.
+The later target, once the team-level pieces exist. The skill is unchanged; only the host moves.
 
-- **Brain**: a Claude Code cloud routine on an environment built from Steve's `.config/utils/claude_code_vm_setup.sh`, with no secrets. It reads, decides, edits, runs the free checks, and pushes `model-sweep/*` branches with a run manifest (`.model-sweep/run.json`: title, body, tests to run, classification, replies owed).
+- **Brain**: a Claude Code cloud routine on an environment built from `.config/utils/claude_code_vm_setup.sh`, with no secrets. It reads, decides, edits, runs the free checks, and pushes `model-sweep/*` branches with a run manifest (`.model-sweep/run.json`: title, body, tests to run, classification, replies owed).
 - **Hands**: GitHub Actions in `Kiln-AI/Kiln`, deterministic, no LLM. An org GitHub App named Claude opens the PRs and posts comments. A pytest job with provider keys in Actions secrets runs the paid tests and posts the evidence table; the same job runs on any PR a maintainer labels `paid-model-tests`, closing the gap Leonard hit on 2026-08-28. The classification is recomputed from diff paths and results, and the hands' verdict wins.
-- **Slack**: Steve's bot posts on `model-sweep` PR open.
+- **Slack**: the team Slack bot posts on `model-sweep` PR open.
 - **Feedback loop in minutes**: a comment-triggered Claude Code GitHub Action, posting as the same app, with an Anthropic API key in Actions secrets.
-- Asks for Steve at that point: the org GitHub App, provider keys as Actions secrets, the bot's post, and an Anthropic key. None of them block v1.
+- Asks for the repo admins at that point: the org GitHub App, provider keys as Actions secrets, the bot's post, and an Anthropic key. None of them block v1.
 
 ## Decisions Taken (2026-10-01)
 
-- v1 host: Claude Code cloud routine in Mike's "Models" environment, chosen on the 2026-10-01 smoke test (see `smoke_log.md`). Paid tests run there with the environment's keys, Mike's call. The local scheduled task is the fallback host. v2 remains the cloud brain plus GitHub Actions hands.
-- GitHub identity: PRs are authored as Mike for now (the cloud session acts through the Claude GitHub App as the account owner). "As Claude" waits for a bot identity: a machine-user account or an org GitHub App.
-- Slack identity: Steve's bot posts the one-line PR announcement when it exists. Until then no Slack post; the run sends a mobile push with the PR links.
+- v1 host: Claude Code cloud routine in the operator's cloud environment, chosen on the 2026-10-01 smoke test (see `smoke_log.md`). Paid tests run there with the environment's keys, the operator's call. The local scheduled task is the fallback host. v2 remains the cloud brain plus GitHub Actions hands.
+- GitHub identity: PRs are authored as the operator for now (the cloud session acts through the Claude GitHub App as the account owner). "As Claude" waits for a bot identity: a machine-user account or an org GitHub App.
+- Slack identity: the team Slack bot posts the one-line PR announcement when it exists. Until then no Slack post; the run sends a mobile push with the PR links.
 - No cap on models or spend per run.
 - Staleness covers Kiln and kiln_server, reported in one living GitHub issue.
 - Discord announcement dropped.

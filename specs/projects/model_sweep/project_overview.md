@@ -20,5 +20,5 @@ In addition, this will also look at ALL models used in Kiln-AI projects, and tra
 ## Context
 
 - Today the flow is manual: someone posts a model link in #models and tags me, I tag the cloud @Claude with "read `.agents/skills/claude-maintain-models/SKILL.md` and follow its instructions", and the cloud session cannot run the paid tests, so the PR is finished locally.
-- Steve is doing a Slack bot for the hackathon: a general one we can add to, plus PR staleness/velocity. This project should hand him the Slack side rather than build a second bot.
+- A teammate is doing a Slack bot for the hackathon: a general one we can add to, plus PR staleness/velocity. This project should hand that bot the Slack side rather than build a second bot.
 - The building blocks exist in the repo: `claude-maintain-models`, `kiln-check-deprecation`, `kiln-check-finetune-deprecation`, and `open-pr` under `.agents/skills/`.
