@@ -673,6 +673,7 @@ def test_create_mcp_run_config_unknown_sibling_400(client, tmp_path):
 
     assert response.status_code == 400
     assert "unknown sibling" in response.json()["message"]
+    assert task.run_configs() == []
 
 
 def test_create_task_from_tool_stamps_provenance(client, tmp_path):

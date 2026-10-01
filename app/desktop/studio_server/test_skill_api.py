@@ -172,6 +172,7 @@ class TestCreateSkillProvenance:
         )
         assert response.status_code == 400
         assert "unknown sibling" in response.json()["message"]
+        assert test_project.skills() == []
 
     def test_create_derived_from_archived_sibling_allowed(
         self, client, test_project, mock_project_from_id, sample_skill_data

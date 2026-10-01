@@ -158,6 +158,7 @@ def test_create_prompt_derived_from_unknown_sibling_400(client, project_and_task
         )
     assert response.status_code == 400
     assert "unknown sibling" in response.json()["message"]
+    assert task.prompts() == []
 
 
 def test_create_prompt_same_parent_with_and_without_prefix_422(
