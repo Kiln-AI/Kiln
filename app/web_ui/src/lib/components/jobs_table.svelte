@@ -24,6 +24,7 @@
     pause_job,
     resume_job,
     type JobError,
+    type EvalJobProperties,
     type JobErrorEntry,
     type JobRecord,
   } from "$lib/stores/jobs_api"
@@ -35,6 +36,10 @@
   import { getDetailedModelNameFromParts } from "$lib/utils/run_config_formatters"
   import { load_model_info, model_info } from "$lib/stores"
   import type { EvalConfigType } from "$lib/types"
+  import {
+    getV2EvalTypeMetadata,
+    getV2TypeFromEvalConfig,
+  } from "$lib/utils/eval_types/registry"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
 
   let action_error: KilnError | null = null
@@ -44,9 +49,15 @@
   $: completed = completed_jobs($jobs)
 
   // The eval summary resolves raw model ids to display names. The table also
-  // renders in the jobs dialog on any page, so load the model list here. The
-  // call does nothing when the list is already loaded.
-  $: if ($jobs.some((job) => eval_job_properties(job))) {
+  // renders in the jobs dialog on any page, so load the model list here, once
+  // per table: $jobs changes on every progress event, and a failed load must
+  // not be retried on each of them. Without the list, ids show as raw ids.
+  let model_info_requested = false
+  $: if (
+    !model_info_requested &&
+    $jobs.some((job) => eval_job_properties(job))
+  ) {
+    model_info_requested = true
     load_model_info()
   }
 
@@ -102,10 +113,18 @@
     return capitalize(type)
   }
 
-  // UI name for an eval job's judge algorithm. The properties dict carries it as
-  // a plain string; narrow to EvalConfigType here so the markup stays cast-free.
-  function judge_algorithm_display(algorithm: string): string {
-    return eval_config_to_ui_name(algorithm as EvalConfigType)
+  // UI name for an eval job's judge type. A V2 judge is named by its specific
+  // type (e.g. "Exact Match"), not just "V2". The properties dict carries the
+  // values as plain strings; narrow them here so the markup stays cast-free.
+  function judge_algorithm_display(p: EvalJobProperties): string {
+    const v2_type = getV2TypeFromEvalConfig({
+      config_type: p.judge_algorithm,
+      properties: p.judge_v2_type ? { type: p.judge_v2_type } : null,
+    })
+    if (v2_type) {
+      return getV2EvalTypeMetadata(v2_type).label
+    }
+    return eval_config_to_ui_name(p.judge_algorithm as EvalConfigType)
   }
 
   function has_errors(job: JobRecord): boolean {
@@ -291,13 +310,9 @@
                     </div>
                     <div
                       class="truncate"
-                      title="{p.judge_name} ({judge_algorithm_display(
-                        p.judge_algorithm,
-                      )})"
+                      title="{p.judge_name} ({judge_algorithm_display(p)})"
                     >
-                      Judge: {p.judge_name} ({judge_algorithm_display(
-                        p.judge_algorithm,
-                      )})
+                      Judge: {p.judge_name} ({judge_algorithm_display(p)})
                     </div>
                     {#if judge_model}
                       <div class="truncate" title={judge_model}>

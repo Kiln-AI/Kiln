@@ -349,20 +349,32 @@ export function clear_available_models_cache() {
 // Model Info
 export const model_info = writable<ProviderModels | null>(null)
 
-export async function load_model_info() {
-  try {
-    if (get(model_info)) {
-      return
-    }
-    const { data, error } = await client.GET("/api/providers/models")
-    if (error) {
-      throw error
-    }
-    model_info.set(data)
-  } catch (error: unknown) {
-    console.error(createKilnError(error).getMessage())
-    model_info.set(null)
+// The request in flight, so concurrent callers share one request instead of
+// each starting their own while the first is still pending.
+let model_info_request: Promise<void> | null = null
+
+export async function load_model_info(): Promise<void> {
+  if (get(model_info)) {
+    return
   }
+  if (model_info_request) {
+    return model_info_request
+  }
+  model_info_request = (async () => {
+    try {
+      const { data, error } = await client.GET("/api/providers/models")
+      if (error) {
+        throw error
+      }
+      model_info.set(data)
+    } catch (error: unknown) {
+      console.error(createKilnError(error).getMessage())
+      model_info.set(null)
+    } finally {
+      model_info_request = null
+    }
+  })()
+  return model_info_request
 }
 
 export function available_model_details(

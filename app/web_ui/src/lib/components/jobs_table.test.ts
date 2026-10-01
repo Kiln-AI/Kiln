@@ -191,6 +191,63 @@ describe("JobsTable", () => {
     expect(load_model_info).toHaveBeenCalled()
   })
 
+  it("names a V2 judge by its specific type", () => {
+    jobs.set([
+      makeJob({
+        id: "j_eval_v2",
+        type: "eval",
+        properties: {
+          eval_name: "Exact check",
+          run_config_name: "GLM run",
+          run_config_model_name: "gpt-4o",
+          run_config_model_provider: "openai",
+          run_config_prompt_name: "Few-Shot",
+          run_config_tools_count: 0,
+          run_config_skills_count: 0,
+          judge_name: "Exact judge",
+          judge_algorithm: "v2",
+          judge_model_name: "",
+          judge_model_provider: "",
+          judge_v2_type: "exact_match",
+        },
+      }),
+    ])
+    const { getByText, queryByText } = render(JobsTable)
+    expect(getByText(/Judge: Exact judge \(Exact Match\)/)).not.toBeNull()
+    // A V2 type that uses no model has no judge model line.
+    expect(queryByText(/Judge model:/)).toBeNull()
+  })
+
+  it("requests the model list once, not on every job update", async () => {
+    const evalJob = (progress: number) =>
+      makeJob({
+        id: "j_eval",
+        type: "eval",
+        progress: { total: 10, success: progress, error: 0 },
+        properties: {
+          eval_name: "E",
+          run_config_name: "R",
+          run_config_model_name: "gpt-4o",
+          run_config_model_provider: "openai",
+          run_config_prompt_name: "P",
+          run_config_tools_count: 0,
+          run_config_skills_count: 0,
+          judge_name: "J",
+          judge_algorithm: "g_eval",
+          judge_model_name: "gpt-4o",
+          judge_model_provider: "openai",
+        },
+      })
+    jobs.set([evalJob(0)])
+    render(JobsTable)
+    // Progress events replace the job list repeatedly while the job runs.
+    for (let i = 1; i <= 5; i++) {
+      jobs.set([evalJob(i)])
+      await Promise.resolve()
+    }
+    expect(load_model_info).toHaveBeenCalledTimes(1)
+  })
+
   it("renders no eval properties for non-eval jobs", () => {
     jobs.set([makeJob({ id: "j_noop", type: "noop" })])
     const { queryByText } = render(JobsTable)

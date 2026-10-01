@@ -25,6 +25,8 @@ export type EvalJobProperties = {
   judge_algorithm: string
   judge_model_name: string
   judge_model_provider: string
+  // V2 judges only: the eval type (e.g. "llm_judge"). Null for legacy judges.
+  judge_v2_type?: string | null
 }
 
 export function eval_job_properties(job: JobRecord): EvalJobProperties | null {
