@@ -14,7 +14,12 @@ from kiln_server.utils.agent_checks.policy import (
 )
 from pydantic import BaseModel, Field, ValidationError
 
-from app.desktop.studio_server.eval_api import eval_from_id, resolved_split_or_422
+from app.desktop.studio_server.eval_api import (
+    eval_config_from_id,
+    eval_from_id,
+    resolved_split_or_422,
+    task_run_config_from_id,
+)
 
 from . import error_log
 from .events import JobEvent
@@ -85,14 +90,19 @@ class WaitForJobsRequest(BaseModel):
 
 
 def _check_eval_job_request(params: EvalJobParams) -> None:
-    """Raise unless the job can run: 404 if the eval is missing, 422 if it has no such
-    split or if `item_ids` names an item that is not in the split.
+    """Raise unless the job can run: 404 if the eval, the eval config or the run config
+    is missing, 422 if the eval has no such split or if `item_ids` names an item that is
+    not in the split.
 
     Deliberately discards what it resolved. The worker resolves the split again when the
     job actually runs, because a job runs the items as they are then, not as they were
     when it was requested.
     """
     eval = eval_from_id(params.project_id, params.task_id, params.eval_id)
+    eval_config_from_id(
+        params.project_id, params.task_id, params.eval_id, params.eval_config_id
+    )
+    task_run_config_from_id(params.project_id, params.task_id, params.run_config_id)
     task = task_from_id(params.project_id, params.task_id)
     split = resolved_split_or_422(task, eval, params.split)
     if params.item_ids is None:

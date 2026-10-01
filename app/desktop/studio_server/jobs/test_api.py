@@ -987,6 +987,24 @@ async def test_run_eval_job_with_an_unknown_eval_404(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("override", "missing"),
+    [
+        ({"eval_config_id": "ec_missing"}, "ec_missing"),
+        ({"run_config_id": "rc_missing"}, "rc_missing"),
+    ],
+)
+async def test_run_eval_job_with_an_unknown_config_404(
+    client, registry, stub_eval_worker, split_eval, override, missing
+):
+    resp = await client.post(_EVAL_RUN_PATH, json=_eval_params(**override))
+
+    assert resp.status_code == 404, resp.text
+    assert missing in resp.text
+    assert registry._jobs == {}
+
+
+@pytest.mark.asyncio
 async def test_run_eval_job_with_an_invalid_split_value_422(
     client, registry, stub_eval_worker, split_eval
 ):
