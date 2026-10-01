@@ -102,6 +102,11 @@ def test_derived_from_ids_create_rejects_duplicates_ignoring_surrounding_space()
         KilnArtifactProvenance(origin="human", derived_from_ids=["a1", " a1 "])
 
 
+def test_derived_from_ids_create_stores_stripped_ids():
+    p = KilnArtifactProvenance(origin="human", derived_from_ids=[" a1 ", "b2\n"])
+    assert p.derived_from_ids == ["a1", "b2"]
+
+
 def test_derived_from_ids_load_accepts_imperfect_list_as_is():
     dirty = ["a1", "a1", "", None]
     result = load({"origin": "human", "derived_from_ids": dirty})

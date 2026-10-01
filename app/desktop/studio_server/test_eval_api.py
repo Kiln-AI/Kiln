@@ -52,6 +52,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.eval_splits import ItemSource, ResolvedSplit
 from kiln_ai.datamodel.prompt import BasePrompt
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
@@ -996,6 +997,65 @@ def test_list_eval_configs_forward_compat_provenance_does_not_500(
     assert response.status_code == 200
     saved = next(c for c in response.json() if c["name"] == "future-config")
     assert saved["provenance"]["origin"] == "future_origin"
+
+
+STORED_PROVENANCES = [
+    {"origin": "tool", "notes": "x" * 2500},
+    {"notes": "written before origin existed"},
+    {"origin": "agent", "derived_from_ids": ["dup", "dup", ""]},
+]
+
+
+def stored_provenance(data: dict) -> KilnArtifactProvenance:
+    return KilnArtifactProvenance.model_validate(
+        data, context={"loading_from_file": True}
+    )
+
+
+def assert_provenance_returned(returned: dict, stored: dict) -> None:
+    assert returned["origin"] == stored.get("origin")
+    assert returned["notes"] == stored.get("notes")
+    assert returned["derived_from_ids"] == stored.get("derived_from_ids", [])
+
+
+@pytest.mark.parametrize("stored", STORED_PROVENANCES)
+def test_read_endpoints_return_stored_provenance_valid_only_on_load(
+    client, mock_task_from_id, mock_task, mock_eval, mock_eval_config, stored
+):
+    mock_run_config = TaskRunConfig(
+        parent=mock_task,
+        id="lenient_run_config",
+        name="Lenient Run Config",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        provenance=stored_provenance(stored),
+    )
+    mock_run_config.save_to_file()
+    mock_eval_config.provenance = stored_provenance(stored)
+    mock_eval_config.save_to_file()
+
+    run_configs = client.get("/api/projects/project1/tasks/task1/run_configs")
+    assert run_configs.status_code == 200, run_configs.text
+    listed = next(rc for rc in run_configs.json() if rc["id"] == "lenient_run_config")
+    assert_provenance_returned(listed["provenance"], stored)
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+        eval_configs = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_configs"
+        )
+        eval_config = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1"
+        )
+
+    assert eval_configs.status_code == 200, eval_configs.text
+    assert_provenance_returned(eval_configs.json()[0]["provenance"], stored)
+    assert eval_config.status_code == 200, eval_config.text
+    assert_provenance_returned(eval_config.json()["provenance"], stored)
 
 
 CODE_EVAL_PROPERTIES = {

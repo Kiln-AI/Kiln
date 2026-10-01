@@ -1944,6 +1944,92 @@ async def test_get_rag_config_not_found(client, mock_project):
     assert "RAG config not found" in response.json()["message"]
 
 
+STORED_PROVENANCES = [
+    {"origin": "tool", "notes": "x" * 2500},
+    {"notes": "written before origin existed"},
+    {"origin": "agent", "derived_from_ids": ["dup", "dup", ""]},
+]
+
+
+@pytest.mark.parametrize("stored", STORED_PROVENANCES)
+async def test_read_endpoints_return_stored_provenance_valid_only_on_load(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_fts,
+    mock_reranker_config,
+    stored,
+):
+    sub_configs = [
+        mock_extractor_config,
+        mock_chunker_config,
+        mock_embedding_config,
+        mock_vector_store_config_fts,
+        mock_reranker_config,
+    ]
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Lenient RAG Config",
+        tool_name="lenient_search_tool",
+        tool_description="A search tool with a stored provenance",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
+        reranker_config_id=mock_reranker_config.id,
+    )
+    for model in [rag_config, *sub_configs]:
+        model.provenance = KilnArtifactProvenance.model_validate(
+            stored, context={"loading_from_file": True}
+        )
+        model.save_to_file()
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        base = f"/api/projects/{mock_project.id}"
+        rag_list = client.get(f"{base}/rag_configs")
+        rag_get = client.get(f"{base}/rag_configs/{rag_config.id}")
+        extractor_get = client.get(
+            f"{base}/extractor_configs/{mock_extractor_config.id}"
+        )
+        sub_config_lists = [
+            client.get(f"{base}/{route}")
+            for route in [
+                "extractor_configs",
+                "chunker_configs",
+                "embedding_configs",
+                "vector_store_configs",
+                "reranker_configs",
+            ]
+        ]
+
+    for response in [rag_list, rag_get, extractor_get, *sub_config_lists]:
+        assert response.status_code == 200, response.text
+
+    listed_rag = next(r for r in rag_list.json() if r["id"] == rag_config.id)
+    returned = [listed_rag, rag_get.json(), extractor_get.json()]
+    for rag in (listed_rag, rag_get.json()):
+        returned += [
+            rag[key]
+            for key in [
+                "extractor_config",
+                "chunker_config",
+                "embedding_config",
+                "vector_store_config",
+                "reranker_config",
+            ]
+        ]
+    returned += [response.json()[0] for response in sub_config_lists]
+    for item in returned:
+        assert item["provenance"]["origin"] == stored.get("origin")
+        assert item["provenance"]["notes"] == stored.get("notes")
+        assert item["provenance"]["derived_from_ids"] == stored.get(
+            "derived_from_ids", []
+        )
+
+
 async def test_create_rag_config_with_reranker(
     client,
     mock_project,

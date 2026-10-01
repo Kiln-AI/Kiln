@@ -4,11 +4,18 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.skill import Skill
 from kiln_server.custom_errors import connect_custom_errors
 
 from app.desktop.studio_server.skill_api import connect_skill_api
 from app.desktop.studio_server.tool_api import connect_tool_servers_api
+
+STORED_PROVENANCES = [
+    {"origin": "tool", "notes": "x" * 2500},
+    {"notes": "written before origin existed"},
+    {"origin": "agent", "derived_from_ids": ["dup", "dup", ""]},
+]
 
 
 @pytest.fixture
@@ -214,29 +221,32 @@ class TestCreateSkillProvenance:
         )
         assert response.status_code == 422
 
+    @pytest.mark.parametrize("stored", STORED_PROVENANCES)
     def test_read_forward_compat_provenance_does_not_500(
-        self, client, test_project, mock_project_from_id
+        self, client, test_project, mock_project_from_id, stored
     ):
-        # A skill written by a newer client (unknown origin, over-length notes,
-        # dirty ids) must be readable via the API, returned as-is, never 500.
-        skill = Skill.model_validate(
-            {
-                "name": "future-skill",
-                "description": "From a newer client.",
-                "provenance": {
-                    "origin": "future_origin",
-                    "derived_from_ids": ["dup", "dup"],
-                    "notes": "y" * 3000,
-                },
-            },
-            context={"loading_from_file": True},
+        # A skill whose stored provenance is valid only on load (unknown or
+        # missing origin, over-length notes, dirty ids) must be readable via the
+        # list and get endpoints, returned as-is, never 500.
+        skill = Skill(
+            name="future-skill",
+            description="From a newer client.",
+            provenance=KilnArtifactProvenance.model_validate(
+                stored, context={"loading_from_file": True}
+            ),
+            parent=test_project,
         )
-        skill.parent = test_project
         skill.save_to_file()
 
-        response = client.get(f"/api/projects/{test_project.id}/skills/{skill.id}")
-        assert response.status_code == 200
-        assert response.json()["provenance"]["origin"] == "future_origin"
+        listed = client.get(f"/api/projects/{test_project.id}/skills")
+        fetched = client.get(f"/api/projects/{test_project.id}/skills/{skill.id}")
+
+        assert listed.status_code == 200, listed.text
+        assert fetched.status_code == 200, fetched.text
+        for returned in (listed.json()[0]["provenance"], fetched.json()["provenance"]):
+            assert returned["origin"] == stored.get("origin")
+            assert returned["notes"] == stored.get("notes")
+            assert returned["derived_from_ids"] == stored.get("derived_from_ids", [])
 
     def test_patch_forward_compat_provenance_does_not_500(
         self, client, test_project, mock_project_from_id
