@@ -81,6 +81,7 @@ class ProjectScopedWorker(JobWorker[_ProjectParams, _EmptyResult]):
     params_model = _ProjectParams
     result_model = _EmptyResult
     supports_pause = True
+    generic_create_allowed = True
 
     async def run(self, params, ctx):
         await asyncio.sleep(5)
@@ -99,6 +100,7 @@ class ReconcileCompleteWorker(JobWorker[_EmptyParams, _EmptyResult]):
     params_model = _EmptyParams
     result_model = _EmptyResult
     supports_pause = True
+    generic_create_allowed = True
     done = False
 
     async def compute_state(self, params):
@@ -117,6 +119,7 @@ class NonPausableWorker(JobWorker[_EmptyParams, _EmptyResult]):
     params_model = _EmptyParams
     result_model = _EmptyResult
     supports_pause = False
+    generic_create_allowed = True
 
     async def run(self, params, ctx):
         await asyncio.sleep(5)
@@ -1139,6 +1142,27 @@ async def test_generic_create_refuses_a_type_with_a_typed_endpoint(
 
     assert resp.status_code == 400, resp.text
     assert _EVAL_RUN_PATH in resp.json()["detail"]
+    assert registry._jobs == {}
+
+
+class _NotOptedInWorker(JobWorker[_EmptyParams, _EmptyResult]):
+    type_name = "not_opted_in"
+    params_model = _EmptyParams
+    result_model = _EmptyResult
+
+    async def run(self, params, ctx):
+        return _EmptyResult()
+
+
+@pytest.mark.asyncio
+async def test_generic_create_refuses_a_type_that_did_not_opt_in(client, registry):
+    # The generic route lets an agent create a job without approval, so a worker
+    # that declares nothing is refused there rather than allowed by default.
+    registry.register_type(_NotOptedInWorker)
+
+    resp = await client.post("/api/jobs/not_opted_in", json={"params": {}})
+
+    assert resp.status_code == 400, resp.text
     assert registry._jobs == {}
 
 

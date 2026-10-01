@@ -313,6 +313,11 @@ def connect_jobs_api(app: FastAPI) -> None:
                 status_code=400,
                 detail=f"Create '{type}' jobs with POST {worker.create_path}.",
             )
+        if not worker.generic_create_allowed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"'{type}' jobs cannot be created with this endpoint.",
+            )
 
         try:
             validated = worker.params_model.model_validate(request.params)

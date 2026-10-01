@@ -316,9 +316,14 @@ class JobWorker(Generic[TParams, TResult]):
     supports_pause: ClassVar[bool] = False
     # The dedicated endpoint that creates jobs of this type. When set, the generic
     # POST /api/jobs/{type} refuses the type, so the dedicated endpoint's request
-    # checks and agent policy cannot be bypassed. None for workers that the
-    # generic endpoint creates.
+    # checks and agent policy cannot be bypassed.
     create_path: ClassVar[str | None] = None
+    # Whether the generic POST /api/jobs/{type} may create jobs of this type. That
+    # route lets an agent create a job without approval, so a worker opts in only
+    # when its jobs are safe to start that way (no model calls, no credit spend).
+    # False by default: a new worker is refused there until someone decides
+    # otherwise.
+    generic_create_allowed: ClassVar[bool] = False
 
     async def describe(self, params: TParams) -> BaseModel | None:
         """Return static, worker-specific descriptive properties for the UI.
