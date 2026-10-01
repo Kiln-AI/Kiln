@@ -2265,7 +2265,7 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         response = self._post(client, project, task, single_turn_request_data)
 
         assert response.status_code == 400
-        assert "unknown sibling" in response.json()["message"]
+        assert "new eval" in response.json()["message"]
         assert task.evals() == []
         assert task.specs() == []
         assert task.eval_inputs() == []
