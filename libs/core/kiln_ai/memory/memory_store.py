@@ -163,6 +163,10 @@ class MemoryStore:
             memory.tags = list(tags) if tags else []
         if scope is not _UNSET:
             memory.scope = scope
+        # save_to_file creates missing folders, so an update that lands after a
+        # delete in another process would bring the memory back.
+        if memory.path is None or not memory.path.is_file():
+            raise MemoryNotFoundError(memory_id)
         memory.save_to_file()
         return memory
 

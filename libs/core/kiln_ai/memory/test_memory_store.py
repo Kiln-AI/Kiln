@@ -254,6 +254,17 @@ def test_delete_of_a_concurrently_deleted_memory_raises_not_found(
         store.delete_memory(memory.id)
 
 
+def test_update_does_not_bring_back_a_concurrently_deleted_memory(
+    project: Project, store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+):
+    memory = add(project, "junk", "project", minutes=0)
+    assert memory.path is not None
+    _delete_after_lookup(store, monkeypatch)
+    with pytest.raises(MemoryNotFoundError):
+        store.update_memory(memory.id, overview="edited")
+    assert not memory.path.parent.exists()
+
+
 # --- summary ---
 
 
