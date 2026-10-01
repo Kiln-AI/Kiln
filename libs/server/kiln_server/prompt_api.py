@@ -11,7 +11,7 @@ from kiln_ai.adapters.prompt_builders import (
 from kiln_ai.datamodel import BasePrompt, Prompt, PromptId, Task
 from kiln_ai.datamodel.prompt_type import prompt_type_label
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.task_api import task_from_id
@@ -135,8 +135,30 @@ class PromptCreateRequest(BaseModel):
     )
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Provenance: why this prompt exists and what it was derived from.",
+        description=(
+            "Provenance: why this prompt exists and what it was derived from. "
+            "derived_from_ids accepts a saved prompt's id with or without the "
+            "'id::' prefix; it is stored without the prefix."
+        ),
     )
+
+    @field_validator("provenance")
+    @classmethod
+    def _store_raw_prompt_ids(
+        cls, provenance: KilnArtifactProvenance | None
+    ) -> KilnArtifactProvenance | None:
+        if provenance is None or not provenance.derived_from_ids:
+            return provenance
+        return KilnArtifactProvenance.model_validate(
+            {
+                **provenance.model_dump(),
+                "derived_from_ids": [
+                    pid.removeprefix("id::")
+                    for pid in provenance.derived_from_ids
+                    if pid is not None
+                ],
+            }
+        )
 
 
 class PromptGenerator(BaseModel):
