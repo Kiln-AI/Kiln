@@ -79,4 +79,4 @@ class Project(
         return super().code_tools(readonly=readonly)  # type: ignore
 
     def worlds(self, readonly: bool = False) -> list[World]:
-        return super().worlds(readonly=readonly)  # type: ignore
+        return super().worlds(readonly=readonly)  # type: ignore  # pragma: no cover

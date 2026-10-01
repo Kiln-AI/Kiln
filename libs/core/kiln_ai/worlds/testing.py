@@ -6,7 +6,9 @@ Speaks the subset of OpenEnv's HTTP and WebSocket protocol that Kiln's session m
 `reset(**kwargs)` starts an episode, `append_note` adds a note and pays a reward,
 `read_notes` lists them, `explode` fails, `sleep` stalls for a while, and `state`
 reports the notes. The reset kwargs `fail_reset` and `fail_state` make those messages
-fail, for testing error paths.
+fail, and `nested_metadata` reports reset metadata only inside the observation, as older
+OpenEnv servers do. A `raw` message is answered with its `data` verbatim, for testing
+replies that are not OpenEnv messages.
 
 `serve_in_thread` runs it in-process on a free localhost port, optionally holding at
 most `max_sessions` sessions (answering one more with OpenEnv's capacity error) or
@@ -76,27 +78,25 @@ class CounterEnv:
         if kwargs.pop("fail_reset", False):
             raise ValueError("reset refused")
         self.fail_state = bool(kwargs.pop("fail_state", False))
+        nested_metadata = bool(kwargs.pop("nested_metadata", False))
         self.episode_id = kwargs.pop("episode_id", None)
         self.fixture_id = str(kwargs.pop("fixture_id", "default"))
         self.frozen_time = kwargs.pop("frozen_time", None)
         self.extra = dict(kwargs)
         self.notes = []
         self.step_count = 0
-        return {
+        metadata = {"fixture_id": self.fixture_id, "frozen_time": self.frozen_time}
+        response: dict[str, Any] = {
             "observation": {
                 "message": f"ready:{self.fixture_id}",
-                "metadata": {
-                    "fixture_id": self.fixture_id,
-                    "frozen_time": self.frozen_time,
-                },
+                "metadata": metadata,
             },
             "reward": None,
             "done": False,
-            "metadata": {
-                "fixture_id": self.fixture_id,
-                "frozen_time": self.frozen_time,
-            },
         }
+        if not nested_metadata:
+            response["metadata"] = metadata
+        return response
 
     def step(self, action: dict[str, Any]) -> dict[str, Any]:
         kind = action.get("type")
@@ -192,6 +192,9 @@ class _Capacity:
 def _session_handler(capacity: _Capacity) -> Callable[[ServerConnection], None]:
     def handle(websocket: ServerConnection) -> None:
         if not capacity.acquire():
+            # Answer the first message rather than the bare connection, so the client
+            # reliably reads the error instead of racing the close.
+            websocket.recv()
             websocket.send(
                 json.dumps(
                     {
@@ -234,6 +237,9 @@ def _run_session(websocket: ServerConnection) -> None:
                     response = {"type": "state", "data": env.state}
                 elif kind == "close":
                     break
+                elif kind == "raw":
+                    websocket.send(str(message.get("data")))
+                    continue
                 else:
                     response = {
                         "type": "error",
@@ -255,12 +261,14 @@ def _run_session(websocket: ServerConnection) -> None:
 
 
 def _http_routes(
-    version: str, refuse_sessions: bool
+    version: str, refuse_sessions: bool, metadata: Any
 ) -> Callable[[ServerConnection, Request], Response | None]:
     """Answer the plain HTTP endpoints; `/ws` falls through to the WebSocket handshake."""
-    bodies = {
+    bodies: dict[str, Any] = {
         "/health": {"status": "healthy"},
-        "/metadata": {"name": ENV_NAME, "version": version, "description": "test env"},
+        "/metadata": metadata
+        if metadata is not None
+        else {"name": ENV_NAME, "version": version, "description": "test env"},
     }
 
     def process_request(
@@ -292,14 +300,16 @@ def serve_in_thread(
     version: str = ENV_VERSION,
     max_sessions: int | None = None,
     refuse_sessions: bool = False,
+    metadata: Any = None,
 ) -> Iterator[str]:
-    """Run the test environment on localhost in a background thread; yields its base URL."""
+    """Run the test environment on localhost in a background thread; yields its base URL.
+    `metadata` replaces the `/metadata` body."""
     port = port or free_port()
     server = serve(
         _session_handler(_Capacity(max_sessions)),
         "127.0.0.1",
         port,
-        process_request=_http_routes(version, refuse_sessions),
+        process_request=_http_routes(version, refuse_sessions, metadata),
         max_size=None,
     )
     thread = threading.Thread(target=server.serve_forever, daemon=True)

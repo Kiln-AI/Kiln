@@ -1,6 +1,9 @@
 """Tests for the OpenEnv session manager against the test environment server. Kiln only
 connects to a running server named by `env_url`; it never starts one."""
 
+from unittest.mock import AsyncMock
+
+import httpx
 import pytest
 
 from kiln_ai.datamodel.project import Project
@@ -60,7 +63,6 @@ class TestRemoteSessions:
             "sleep",
         ]
         assert tools[0].input_schema["required"] == ["note"]
-        assert tools[0].toolcall_definition()["function"]["name"] == "append_note"
         # Cached per server: a second call does not open a session.
         assert await session_manager.list_tools(remote_world) is tools
         assert await session_manager.world_version(remote_world) == f"{ENV_NAME}@1.0.0"
@@ -211,9 +213,7 @@ class TestFailurePaths:
             world = World(name="full", parent=project, env_url=base_url)
             world.save_to_file()
             first = await session_manager.start_episode(world, {})
-            # OpenEnv sends its capacity error and closes at once, so the reset meets
-            # either the error or the closed socket; both are transient.
-            with pytest.raises(OpenEnvTransientError):
+            with pytest.raises(OpenEnvTransientError, match="max_concurrent_envs"):
                 await session_manager.start_episode(world, {})
             await session_manager.release(first)
             second = await session_manager.start_episode(world, {})
@@ -240,6 +240,96 @@ class TestFailurePaths:
                 await session_manager._request(
                     ws, {"type": "step", "data": {"type": "list_tools"}}, "state"
                 )
+
+
+class TestUnexpectedReplies:
+    async def _request(self, session_manager, world, message, expected="observation"):
+        server = await session_manager._server_for(world)
+        async with session_manager._connect(server) as ws:
+            return await session_manager._request(ws, message, expected)
+
+    @pytest.mark.parametrize(
+        "raw,match",
+        [
+            ("not json", "invalid JSON: not json"),
+            ("[1, 2]", r"unexpected message: \[1, 2\]"),
+            ("x" * 2000, r"invalid JSON: x+\.\.\. \(2000 chars\)"),
+        ],
+    )
+    async def test_replies_that_are_not_messages(
+        self, session_manager, remote_world, raw, match
+    ):
+        with pytest.raises(OpenEnvError, match=match):
+            await self._request(
+                session_manager, remote_world, {"type": "raw", "data": raw}
+            )
+
+    async def test_session_closed_mid_request_is_transient(
+        self, session_manager, remote_world
+    ):
+        with pytest.raises(OpenEnvTransientError, match="closed the session"):
+            await self._request(session_manager, remote_world, {"type": "close"})
+
+    async def test_unknown_action_is_rejected(self, session_manager, remote_world):
+        with pytest.raises(OpenEnvRejectedError, match="Unknown action type"):
+            await self._request(
+                session_manager,
+                remote_world,
+                {"type": "step", "data": {"type": "bogus"}},
+            )
+
+    async def test_reset_metadata_nested_in_the_observation(
+        self, session_manager, remote_world
+    ):
+        """Older OpenEnv servers report reset metadata only inside the observation."""
+        episode = await session_manager.start_episode(
+            remote_world, {"fixture_id": "old", "nested_metadata": True}
+        )
+        assert episode.reset_metadata["fixture_id"] == "old"
+        await session_manager.release(episode)
+
+    async def test_metadata_must_be_an_object(self, session_manager, project):
+        with serve_in_thread(metadata=[1, 2]) as base_url:
+            world = World(name="odd", parent=project, env_url=base_url)
+            world.save_to_file()
+            with pytest.raises(OpenEnvError, match="not a JSON object"):
+                await session_manager.world_version(world)
+            async with httpx.AsyncClient() as client:
+                assert (await client.get(f"{base_url}/nope")).status_code == 404
+
+    async def test_server_gone_after_metadata_is_transient(
+        self, session_manager, project
+    ):
+        with serve_in_thread() as base_url:
+            world = World(name="gone", parent=project, env_url=base_url)
+            world.save_to_file()
+            await session_manager.world_version(world)
+        with pytest.raises(OpenEnvTransientError, match="Could not open a session"):
+            await session_manager.start_episode(world, {})
+
+    async def test_unsaved_world_is_an_error(self, session_manager, remote_world):
+        unsaved = remote_world.model_copy(update={"id": None})
+        with pytest.raises(ValueError, match="must be saved"):
+            await session_manager.start_episode(unsaved, {})
+        with pytest.raises(ValueError, match="must be saved"):
+            await session_manager.list_tools(unsaved)
+
+    async def test_close_quietly_ignores_a_failing_close(self, session_manager):
+        ws = AsyncMock()
+        ws.close.side_effect = RuntimeError("already gone")
+        await session_manager._close_quietly(ws)
+        ws.close.assert_awaited_once()
+
+
+class TestSharedSessionManager:
+    async def test_one_manager_per_process_until_shutdown(self):
+        first = session_manager_module.shared_session_manager()
+        assert session_manager_module.shared_session_manager() is first
+        await session_manager_module.shutdown_shared_session_manager()
+        second = session_manager_module.shared_session_manager()
+        assert second is not first
+        await session_manager_module.shutdown_shared_session_manager()
+        await session_manager_module.shutdown_shared_session_manager()
 
 
 class TestWorldsWithoutUrl:

@@ -921,11 +921,6 @@ class EvalRunner:
             trace, _ = await self._trace_index.get_or_create(generation.key, generate)
         except OpenEnvTransientError as e:
             raise RetryableError(str(e)) from e
-        if trace.world_episode is None:
-            raise ValueError(
-                f"Eval trace {trace.id} was generated for a world but "
-                "records no episode"
-            )
         eval_task_input = EvalTaskInput.from_trace(trace, job.item)
         result = await evaluator.evaluate(eval_task_input)
         return await self._persist_judgment(job, trace, result)

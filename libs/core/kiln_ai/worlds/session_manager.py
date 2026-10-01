@@ -30,6 +30,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Protocol
@@ -45,7 +46,6 @@ from kiln_ai.datamodel.world import (
     WorldEpisode,
     WorldReset,
 )
-from kiln_ai.run_context import generate_episode_id
 
 logger = logging.getLogger(__name__)
 
@@ -156,45 +156,37 @@ class WorldSessionManager(Protocol):
         """Identity of the environment code an episode would run, without starting one.
         One per environment, whatever an episode is reset with. Folded into the trace
         fingerprint: change it and traces regenerate."""
-        ...
 
     async def refresh(self, world: World) -> None:
         """Re-read the environment's identity, so an environment restarted at a new
         version on the same URL is seen as new. Its tools are re-listed when the
         version changed."""
-        ...
 
     async def list_tools(self, world: World, fresh: bool = False) -> list[OpenEnvTool]:
         """The tools the world's environment serves. Cached per environment version;
         `fresh` re-reads the environment's metadata and tools."""
-        ...
 
     async def start_episode(
         self, world: World, reset_kwargs: dict[str, JsonValue]
     ) -> WorldEpisode:
         """Open a session on the world's environment and reset it with `reset_kwargs`.
         The session stays live until `end_episode` or `release`."""
-        ...
 
     async def call_tool(
         self, episode: WorldEpisode, tool_name: str, arguments: dict[str, Any]
     ) -> ToolCallOutcome:
         """Call one of the environment's tools inside a live episode."""
-        ...
 
     async def end_episode(self, episode: WorldEpisode) -> WorldEpisode:
         """Read the environment's final state and close the session. Returns the
         episode with `final_state` set: the durable record graders read."""
-        ...
 
     async def release(self, episode: WorldEpisode) -> None:
         """Close an episode's session without reading its state, e.g. after a
         failed generation."""
-        ...
 
     async def shutdown(self) -> None:
         """Close every live session and forget every environment."""
-        ...
 
 
 @dataclass
@@ -266,7 +258,7 @@ class OpenEnvSessionManager:
         if world.id is None:
             raise ValueError("World must be saved before starting an episode")
         server = await self._server_for(world)
-        episode_id = generate_episode_id()
+        episode_id = f"ep_{uuid.uuid4().hex[:16]}"
         ws = await self._open(server)
         try:
             data = await self._request(

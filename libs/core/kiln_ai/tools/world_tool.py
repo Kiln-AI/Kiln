@@ -24,6 +24,19 @@ from kiln_ai.tools.base_tool import (
 )
 
 
+def openenv_toolcall_definition(tool: OpenEnvTool) -> ToolCallDefinition:
+    """The function definition the model sees for an environment's tool, exactly as
+    the environment described it."""
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.input_schema or {"type": "object", "properties": {}},
+        },
+    }
+
+
 class OpenEnvToolProxy(KilnToolInterface):
     """One of a world's tools, called on the live session of the episode in `context`.
     Its name, description and schema are whatever the environment reported."""
@@ -52,7 +65,7 @@ class OpenEnvToolProxy(KilnToolInterface):
         return self._tool.description
 
     async def toolcall_definition(self) -> ToolCallDefinition:
-        return self._tool.toolcall_definition()
+        return openenv_toolcall_definition(self._tool)
 
     async def run(
         self, context: ToolCallContext | None = None, **kwargs: Any

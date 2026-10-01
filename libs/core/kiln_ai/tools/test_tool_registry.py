@@ -1059,6 +1059,28 @@ class TestProjectToolFunctionName:
             == "summarize"
         )
 
+    def test_rag_name_from_config(self, project):
+        from kiln_ai.datamodel.rag import RagConfig
+        from kiln_ai.datamodel.tool_id import build_rag_tool_id
+        from kiln_ai.tools.tool_registry import project_tool_function_name
+
+        rag = RagConfig(
+            parent=project,
+            name="docs",
+            tool_name="search_docs",
+            tool_description="Searches the docs",
+            extractor_config_id="e",
+            chunker_config_id="c",
+            embedding_config_id="m",
+            vector_store_config_id="v",
+        )
+        rag.save_to_file()
+        assert (
+            project_tool_function_name(build_rag_tool_id(rag.id), project)
+            == "search_docs"
+        )
+        assert project_tool_function_name(build_rag_tool_id("missing"), project) is None
+
     def test_non_project_ids_and_no_project(self, project):
         from kiln_ai.tools.tool_registry import project_tool_function_name
 

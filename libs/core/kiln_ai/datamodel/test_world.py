@@ -80,29 +80,13 @@ class TestOnDiskLayout:
         assert loaded.description == "hosted"
 
 
+def test_project_lists_its_worlds(project):
+    world = World(name="w", parent=project, env_url="http://127.0.0.1:8000")
+    world.save_to_file()
+    assert [w.id for w in project.worlds()] == [world.id]
+
+
 class TestOpenEnvTool:
-    def test_toolcall_definition_shape(self):
-        tool = OpenEnvTool(
-            name="lookup", description="finds things", input_schema=SCHEMA
-        )
-        assert tool.toolcall_definition() == {
-            "type": "function",
-            "function": {
-                "name": "lookup",
-                "description": "finds things",
-                "parameters": SCHEMA,
-            },
-        }
-
-    def test_empty_schema_defaults_to_object(self):
-        tool = OpenEnvTool(name="ping")
-        definition = tool.toolcall_definition()
-        assert definition["function"]["description"] == ""
-        assert definition["function"]["parameters"] == {
-            "type": "object",
-            "properties": {},
-        }
-
     def test_name_required(self):
         with pytest.raises(ValidationError):
             OpenEnvTool(name="")

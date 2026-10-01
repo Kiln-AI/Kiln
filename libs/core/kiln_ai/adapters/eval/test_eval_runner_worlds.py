@@ -19,7 +19,7 @@ from unittest.mock import patch
 import pytest
 
 from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
-from kiln_ai.adapters.eval.eval_runner import EvalRunner
+from kiln_ai.adapters.eval.eval_runner import EvalJob, EvalRunner
 from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.datamodel_enums import (
     StructuredOutputMode,
@@ -695,6 +695,65 @@ async def test_edited_reset_regenerates_the_trace(
         "a",
         "b",
     ]
+
+
+async def test_episode_ending_without_state_saves_no_trace(
+    project, task, world, syn_tool_id, run_config, eval_, session_manager
+):
+    """An episode whose session was already gone when it ended has no state to
+    record, so its trace is not saved."""
+    _input(task, "note", _reset(world, "a"), id="ei_a")
+    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
+
+    async def stateless_end(episode):
+        await session_manager.release(episode)
+        return episode
+
+    with (
+        patch.object(
+            BaseV2EvalBridge, "run_task", new=ToolCallingGenerator(task, syn_tool_id)
+        ),
+        patch.object(session_manager, "end_episode", new=stateless_end),
+    ):
+        runner = _runner([cfg], run_config, session_manager)
+        with pytest.raises(OpenEnvError, match="ended without a final state"):
+            await runner.run_job(runner.collect_tasks()[0])
+    assert _traces(task) == []
+
+
+async def test_world_needs_a_project(
+    project, task, world, run_config, eval_, session_manager
+):
+    _input(task, "note", _reset(world, "a"), id="ei_a")
+    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
+    runner = _runner([cfg], run_config, session_manager)
+    job = runner.collect_tasks()[0]
+    with (
+        patch.object(Task, "parent_project", return_value=None),
+        pytest.raises(ValueError, match="belong to a project"),
+    ):
+        await runner.run_job(job)
+
+
+async def test_generation_guards(
+    project, task, world, run_config, eval_, session_manager
+):
+    """Callers check these first; the generation builders refuse rather than build a
+    trace key from nothing."""
+    ei = _multi_turn_input(task, world)
+    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
+    runner = _runner([cfg], run_config, session_manager)
+    job = runner.collect_tasks()[0]
+    without_run_config = EvalJob(
+        item=job.item, type=job.type, eval_config=job.eval_config
+    )
+    with pytest.raises(ValueError, match="requires a run config"):
+        runner._single_turn_generation(without_run_config, RecordingJudge(cfg))
+    with pytest.raises(ValueError, match="requires a run config"):
+        runner._multi_turn_generation(without_run_config, ei, ei.data)
+    undrivable = ei.data.model_copy(update={"drive_config": None})
+    with pytest.raises(ValueError, match="should have been skipped"):
+        runner._multi_turn_generation(job, ei, undrivable)
 
 
 async def test_new_version_on_the_same_url_regenerates_the_trace(

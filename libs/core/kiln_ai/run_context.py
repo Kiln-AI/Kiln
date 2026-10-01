@@ -10,15 +10,9 @@ usable for logging, caching, metrics, or any run-scoped operations.
 import uuid
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from kiln_ai.datamodel.world import (
-        OpenEnvTool,
-        World,
-        WorldEpisode,
-    )
-    from kiln_ai.worlds.session_manager import WorldSessionManager
+from kiln_ai.datamodel.world import OpenEnvTool, World, WorldEpisode
+from kiln_ai.worlds.session_manager import WorldSessionManager
 
 _agent_run_id: ContextVar[str | None] = ContextVar("agent_run_id", default=None)
 
@@ -77,8 +71,3 @@ def set_episode(
 def reset_episode(token: Token["EpisodeContext | None"]) -> None:
     """Restore the episode that was current before the matching `set_episode`."""
     _episode.reset(token)
-
-
-def generate_episode_id() -> str:
-    """A fresh, unique id for a new episode."""
-    return f"ep_{uuid.uuid4().hex[:16]}"

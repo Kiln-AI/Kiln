@@ -46,15 +46,12 @@ tool-call checks read the same.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, JsonValue, field_validator
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
-
-if TYPE_CHECKING:
-    from kiln_ai.tools.base_tool import ToolCallDefinition
 
 
 class OpenEnvTool(BaseModel):
@@ -65,16 +62,6 @@ class OpenEnvTool(BaseModel):
     name: str = Field(min_length=1)
     description: str = ""
     input_schema: dict[str, Any] = Field(default_factory=dict)
-
-    def toolcall_definition(self) -> "ToolCallDefinition":
-        return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.description,
-                "parameters": self.input_schema or {"type": "object", "properties": {}},
-            },
-        }
 
 
 class WorldReset(BaseModel):

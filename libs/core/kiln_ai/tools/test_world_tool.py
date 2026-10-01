@@ -32,6 +32,7 @@ from kiln_ai.tools.code_tool import PythonCodeTool
 from kiln_ai.tools.tool_registry import tool_from_id_and_project
 from kiln_ai.tools.world_tool import (
     OpenEnvToolProxy,
+    openenv_toolcall_definition,
     render_tool_error,
     render_tool_result,
 )
@@ -257,7 +258,34 @@ class TestRenderError:
         }
 
 
+class TestToolcallDefinition:
+    def test_shape(self):
+        tool = OpenEnvTool(
+            name="lookup", description="finds things", input_schema=SCHEMA
+        )
+        assert openenv_toolcall_definition(tool) == {
+            "type": "function",
+            "function": {
+                "name": "lookup",
+                "description": "finds things",
+                "parameters": SCHEMA,
+            },
+        }
+
+    def test_empty_schema_defaults_to_object(self):
+        definition = openenv_toolcall_definition(OpenEnvTool(name="ping"))
+        assert definition["function"]["description"] == ""
+        assert definition["function"]["parameters"] == {
+            "type": "object",
+            "properties": {},
+        }
+
+
 class TestRenderResult:
+    def test_unserializable_result_falls_back_to_text(self):
+        result = {"value": {1, 2}}
+        assert render_tool_result(result) == str(result)
+
     def test_shapes(self):
         assert render_tool_result(None) == "null"
         assert render_tool_result("text") == "text"
