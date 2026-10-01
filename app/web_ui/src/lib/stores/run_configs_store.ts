@@ -127,6 +127,19 @@ export async function load_task_run_configs(
   return promise
 }
 
+// The lineage parent for a clone of this run config. A fine-tuned model's run
+// config is built in memory from the fine-tune, so it is not a saved sibling run
+// config and cannot be a lineage parent.
+export function run_config_clone_parent_id(
+  source: TaskRunConfig | null,
+): string | null {
+  const id = source?.id
+  if (!id || id.startsWith("finetune_run_config::")) {
+    return null
+  }
+  return id
+}
+
 // Save a new task run configuration
 export async function save_new_task_run_config(
   project_id: string,
