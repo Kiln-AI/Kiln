@@ -6118,7 +6118,7 @@ export interface components {
              * @description Legacy `sdg_session_config` path only: the run config whose tools and skills describe the target task while examples are generated. Omit to use the task's default run config. The eval builder generates nothing, so this does not apply to it.
              */
             run_config_id?: string | null;
-            /** @description Provenance stamped onto the created judge eval config. */
+            /** @description Provenance stamped onto the created judge eval config. The judge belongs to a new eval, so derived_from_ids must be empty. */
             provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
@@ -6141,7 +6141,7 @@ export interface components {
              * @description The instruction for the new task.
              */
             instruction: string;
-            /** @description Provenance stamped onto the created run config. */
+            /** @description Provenance stamped onto the created run config. The run config belongs to a new task, so derived_from_ids must be empty. */
             provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
@@ -10405,7 +10405,7 @@ export interface components {
              * @description Chain of thought instructions to include in the prompt.
              */
             chain_of_thought_instructions?: string | null;
-            /** @description Provenance: why this prompt exists and what it was derived from. */
+            /** @description Provenance: why this prompt exists and what it was derived from. derived_from_ids accepts a saved prompt's id with or without the 'id::' prefix; it is stored without the prefix. */
             provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
