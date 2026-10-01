@@ -352,6 +352,31 @@ def test_update_clears_content_with_empty_string(client, project):
     assert resp.json()["content"] is None
 
 
+@pytest.mark.parametrize("field, cleared", [("content", None), ("tags", [])])
+def test_update_null_clears_content_and_tags(client, project, field, cleared):
+    m = add(project, "orig", "project", 0, content="body", tags=["t"])
+    with _patch(project):
+        resp = client.patch(
+            f"/api/projects/{project.id}/memories/{m.id}", json={field: None}
+        )
+    assert resp.status_code == 200
+    assert resp.json()[field] == cleared
+    assert getattr(project.memories()[0], field) == cleared
+
+
+@pytest.mark.parametrize("field", ["overview", "scope"])
+def test_update_null_overview_or_scope_is_422(client, project, field):
+    m = add(project, "orig", "project", 0)
+    with _patch(project):
+        resp = client.patch(
+            f"/api/projects/{project.id}/memories/{m.id}", json={field: None}
+        )
+    assert resp.status_code == 422
+    assert resp.json()["source_errors"][0]["loc"][0] == field
+    stored = project.memories()[0]
+    assert (stored.overview, stored.scope) == ("orig", "project")
+
+
 def test_update_unknown_id_is_404(client, project):
     with _patch(project):
         resp = client.patch(

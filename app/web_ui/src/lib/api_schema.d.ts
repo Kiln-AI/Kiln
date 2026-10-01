@@ -13849,8 +13849,9 @@ export interface components {
         };
         /**
          * UpdateMemoryRequest
-         * @description Body for updating a memory. Only provided fields are changed; an explicit
-         *     null clears `content`. Omitted fields are left untouched.
+         * @description Body for updating a memory. Only provided fields are changed; omitted
+         *     fields are left untouched. An explicit null clears `content` and `tags`, and
+         *     is rejected for `overview` and `scope`.
          */
         UpdateMemoryRequest: {
             /**
@@ -13865,7 +13866,7 @@ export interface components {
             content?: string | null;
             /**
              * Tags
-             * @description Snake_case tags (no spaces) for filtering.
+             * @description Snake_case tags (no spaces) for filtering. Null clears them.
              */
             tags?: string[] | null;
             /**

@@ -53,8 +53,9 @@ class SaveMemoryRequest(BaseModel):
 
 
 class UpdateMemoryRequest(BaseModel):
-    """Body for updating a memory. Only provided fields are changed; an explicit
-    null clears `content`. Omitted fields are left untouched."""
+    """Body for updating a memory. Only provided fields are changed; omitted
+    fields are left untouched. An explicit null clears `content` and `tags`, and
+    is rejected for `overview` and `scope`."""
 
     overview: str | None = Field(
         default=None,
@@ -66,7 +67,9 @@ class UpdateMemoryRequest(BaseModel):
         max_length=MAX_CONTENT_LENGTH,
         description="New memory body. Empty or null clears it.",
     )
-    tags: list[str] | None = Field(default=None, description=_TAGS_DESC)
+    tags: list[str] | None = Field(
+        default=None, description=f"{_TAGS_DESC} Null clears them."
+    )
     scope: str | None = Field(
         default=None, max_length=MAX_SCOPE_LENGTH, description=_SCOPE_DESC
     )
