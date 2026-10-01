@@ -23,6 +23,7 @@ from kiln_ai.datamodel.eval import (
     MultiTurnDriveConfig,
 )
 from kiln_ai.datamodel.json_schema import validate_schema
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.spec import (
     Spec,
     SpecStatus,
@@ -33,6 +34,7 @@ from kiln_ai.datamodel.spec import (
 from kiln_ai.datamodel.spec_properties import SpecProperties
 from kiln_ai.datamodel.task_output import TaskOutputRating
 from kiln_ai.utils.name_generator import generate_memorable_name
+from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -331,6 +333,10 @@ class CreateSpecWithCopilotRequest(BaseModel):
         "whose tools and skills describe the target task while examples are "
         "generated. Omit to use the task's default run config. The eval "
         "builder generates nothing, so this does not apply to it.",
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance stamped onto the created judge eval config.",
     )
 
     @field_validator("splits")
@@ -1307,6 +1313,13 @@ def connect_copilot_api(app: FastAPI):
                     multi_turn=request.evaluate_full_trace,
                 ),
             ),
+            provenance=request.provenance,
+        )
+        validate_provenance_or_400(
+            eval_config.provenance,
+            eval_config.id,
+            EvalConfig,
+            eval.path,
         )
 
         # Set as default config after ID is assigned
