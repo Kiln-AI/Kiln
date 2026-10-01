@@ -107,7 +107,12 @@ class TestWorlds:
         r = client.patch(f"/api/projects/p1/worlds/{world_id}", json={"unknown": 1})
         assert r.status_code == 422
         r = client.patch(f"/api/projects/p1/worlds/{world_id}", json={"name": "  "})
+        assert r.status_code == 422
+        r = client.patch(
+            f"/api/projects/p1/worlds/{world_id}", json={"env_url": "not a url"}
+        )
         assert r.status_code == 400
+        assert "env_url must be an http:// or https:// URL" in r.json()["message"]
 
     def test_delete(self, client, world_id):
         assert client.delete(f"/api/projects/p1/worlds/{world_id}").status_code == 200
@@ -116,6 +121,13 @@ class TestWorlds:
 
     def test_invalid_name(self, client):
         r = client.post("/api/projects/p1/worlds", json={"name": "   "})
+        assert r.status_code == 422
+
+    @pytest.mark.parametrize("env_url", ["ftp://host", "localhost:8000", "http://"])
+    def test_invalid_env_url(self, client, env_url):
+        r = client.post(
+            "/api/projects/p1/worlds", json={"name": "W", "env_url": env_url}
+        )
         assert r.status_code == 400
 
     def test_missing_world(self, client):
@@ -161,6 +173,7 @@ class TestTools:
                 "append_note",
                 "read_notes",
                 "explode",
+                "sleep",
             ]
             assert tools[0]["tool_id"] == build_world_tool_id(world_id, "append_note")
             assert tools[0]["description"] == "Append a note to the episode's notebook."

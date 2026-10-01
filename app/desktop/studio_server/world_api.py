@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import FastAPI, HTTPException, Path
+from kiln_ai.datamodel.basemodel import FilenameString
 from kiln_ai.datamodel.tool_id import build_world_tool_id
 from kiln_ai.datamodel.world import World
 from kiln_ai.worlds.session_manager import OpenEnvError, shared_session_manager
@@ -25,36 +26,61 @@ from pydantic import ValidationError as PydanticValidationError
 logger = logging.getLogger(__name__)
 
 
+_NAME_DESCRIPTION = "User-facing display name."
+_DESCRIPTION_DESCRIPTION = "User-facing notes about the world."
+_ENV_URL_DESCRIPTION = (
+    "Base URL of an OpenEnv server that is already running (e.g. "
+    "http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in "
+    "this world send their tool calls to it."
+)
+
+
 class WorldCreateRequest(BaseModel):
-    name: str
-    description: str | None = None
-    env_url: str | None = None
+    """A new world: a pointer to a running OpenEnv environment."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: FilenameString = Field(description=_NAME_DESCRIPTION)
+    description: str | None = Field(default=None, description=_DESCRIPTION_DESCRIPTION)
+    env_url: str | None = Field(default=None, description=_ENV_URL_DESCRIPTION)
 
 
 class WorldUpdateRequest(BaseModel):
+    """Changes to a world. Only the fields sent are changed."""
+
     model_config = ConfigDict(extra="forbid")
 
-    name: str | None = None
-    description: str | None = None
-    env_url: str | None = None
+    name: FilenameString | None = Field(default=None, description=_NAME_DESCRIPTION)
+    description: str | None = Field(default=None, description=_DESCRIPTION_DESCRIPTION)
+    env_url: str | None = Field(default=None, description=_ENV_URL_DESCRIPTION)
 
 
 class WorldResponse(BaseModel):
-    id: str | None = None
-    name: str
-    description: str | None = None
-    env_url: str | None = None
-    created_at: datetime | None = None
-    created_by: str | None = None
+    """A world: a pointer to a running OpenEnv environment."""
+
+    id: str | None = Field(default=None, description="The world's id.")
+    name: str = Field(description=_NAME_DESCRIPTION)
+    description: str | None = Field(default=None, description=_DESCRIPTION_DESCRIPTION)
+    env_url: str | None = Field(default=None, description=_ENV_URL_DESCRIPTION)
+    created_at: datetime | None = Field(
+        default=None, description="When the world was created."
+    )
+    created_by: str | None = Field(default=None, description="Who created the world.")
 
 
 class WorldToolResponse(BaseModel):
+    """One tool the world's environment serves."""
+
     tool_id: str = Field(
         description="The id a run config uses to list this tool directly: kiln_tool::world::<world_id>::<tool_name>."
     )
-    name: str
-    description: str = ""
-    input_schema: dict[str, Any] = Field(default_factory=dict)
+    name: str = Field(description="The tool's function name, as the model sees it.")
+    description: str = Field(
+        default="", description="The tool's description, as the model sees it."
+    )
+    input_schema: dict[str, Any] = Field(
+        default_factory=dict, description="JSON schema of the tool's arguments."
+    )
 
 
 def _world_from_id(project_id: str, world_id: str) -> World:
@@ -81,10 +107,14 @@ def connect_world_api(app: FastAPI):
         "/api/projects/{project_id}/worlds",
         summary="Create World",
         tags=["Worlds"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to create a world? Evals run in it will send their data to its environment URL."
+        ),
     )
     async def create_world(
-        project_id: Annotated[str, Path(description="The project id.")],
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
         request: WorldCreateRequest,
     ) -> WorldResponse:
         project = project_from_id(project_id)
@@ -107,7 +137,9 @@ def connect_world_api(app: FastAPI):
         openapi_extra=ALLOW_AGENT,
     )
     async def list_worlds(
-        project_id: Annotated[str, Path(description="The project id.")],
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
     ) -> list[WorldResponse]:
         project = project_from_id(project_id)
         worlds = project.worlds(readonly=True)
@@ -121,8 +153,12 @@ def connect_world_api(app: FastAPI):
         openapi_extra=ALLOW_AGENT,
     )
     async def get_world(
-        project_id: Annotated[str, Path(description="The project id.")],
-        world_id: Annotated[str, Path(description="The world id.")],
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        world_id: Annotated[
+            str, Path(description="The unique identifier of the world.")
+        ],
     ) -> WorldResponse:
         return _world_response(_world_from_id(project_id, world_id))
 
@@ -130,11 +166,17 @@ def connect_world_api(app: FastAPI):
         "/api/projects/{project_id}/worlds/{world_id}",
         summary="Update World",
         tags=["Worlds"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to update a world? Changing its environment URL changes where evals run in it send their data."
+        ),
     )
     async def update_world(
-        project_id: Annotated[str, Path(description="The project id.")],
-        world_id: Annotated[str, Path(description="The world id.")],
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        world_id: Annotated[
+            str, Path(description="The unique identifier of the world.")
+        ],
         request: WorldUpdateRequest,
     ) -> WorldResponse:
         world = _world_from_id(project_id, world_id)
@@ -150,26 +192,32 @@ def connect_world_api(app: FastAPI):
         "/api/projects/{project_id}/worlds/{world_id}",
         summary="Delete World",
         tags=["Worlds"],
-        openapi_extra=agent_policy_require_approval(
-            "Allow agent to delete a world, including its environment folder?"
-        ),
+        openapi_extra=agent_policy_require_approval("Allow agent to delete a world?"),
     )
     async def delete_world(
-        project_id: Annotated[str, Path(description="The project id.")],
-        world_id: Annotated[str, Path(description="The world id.")],
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        world_id: Annotated[
+            str, Path(description="The unique identifier of the world.")
+        ],
     ) -> None:
         _world_from_id(project_id, world_id).delete()
 
     @app.get(
         "/api/projects/{project_id}/worlds/{world_id}/tools",
         summary="List World Tools",
-        description="The tools the world's OpenEnv environment serves, read from the running server at env_url.",
+        description="The tools the world's OpenEnv environment serves, read fresh from the running server at env_url.",
         tags=["Worlds"],
         openapi_extra=ALLOW_AGENT,
     )
     async def list_world_tools(
-        project_id: Annotated[str, Path(description="The project id.")],
-        world_id: Annotated[str, Path(description="The world id.")],
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        world_id: Annotated[
+            str, Path(description="The unique identifier of the world.")
+        ],
     ) -> list[WorldToolResponse]:
         world = _world_from_id(project_id, world_id)
         if not world.env_url:
@@ -179,7 +227,7 @@ def connect_world_api(app: FastAPI):
                 "start environments: run the OpenEnv server and set env_url.",
             )
         try:
-            tools = await shared_session_manager().list_tools(world)
+            tools = await shared_session_manager().list_tools(world, fresh=True)
         except (OpenEnvError, ValueError) as e:
             raise HTTPException(status_code=502, detail=str(e))
         return [

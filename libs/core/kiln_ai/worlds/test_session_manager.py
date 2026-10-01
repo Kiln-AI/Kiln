@@ -8,7 +8,9 @@ from kiln_ai.datamodel.world import World
 from kiln_ai.worlds import session_manager as session_manager_module
 from kiln_ai.worlds.session_manager import (
     OpenEnvError,
+    OpenEnvRejectedError,
     OpenEnvSessionManager,
+    OpenEnvTransientError,
     read_observation_error,
 )
 from kiln_ai.worlds.testing import (
@@ -51,7 +53,12 @@ async def session_manager():
 class TestRemoteSessions:
     async def test_list_tools_and_content_version(self, session_manager, remote_world):
         tools = await session_manager.list_tools(remote_world)
-        assert [t.name for t in tools] == ["append_note", "read_notes", "explode"]
+        assert [t.name for t in tools] == [
+            "append_note",
+            "read_notes",
+            "explode",
+            "sleep",
+        ]
         assert tools[0].input_schema["required"] == ["note"]
         assert tools[0].toolcall_definition()["function"]["name"] == "append_note"
         # Cached per server: a second call does not open a session.
@@ -131,8 +138,8 @@ class TestRemoteSessions:
     async def test_error_responses_raise(self, session_manager, remote_world):
         server = await session_manager._server_for(remote_world)
         async with session_manager._connect(server) as ws:
-            with pytest.raises(OpenEnvError, match="Unknown message type"):
-                await session_manager._request(ws, {"type": "bogus"})
+            with pytest.raises(OpenEnvRejectedError, match="Unknown message type"):
+                await session_manager._request(ws, {"type": "bogus"}, "observation")
 
     async def test_unreachable_url_is_an_error(self, session_manager, project):
         world = World(
@@ -147,6 +154,92 @@ class TestRemoteSessions:
         assert session_manager._sessions
         await session_manager.shutdown()
         assert not session_manager._sessions and not session_manager._servers
+
+
+class TestFailurePaths:
+    """What a flaky, overloaded or misbehaving environment does to a session: every
+    failure is an `OpenEnvError`, the ones that may not recur are transient, and no
+    failure leaves a session behind."""
+
+    async def test_timed_out_call_drops_the_session(self, project, server_url):
+        """A late answer would otherwise be read as the answer to the next call, and
+        `end_episode` would record it as the final state."""
+        world = World(name="slow", parent=project, env_url=server_url)
+        world.save_to_file()
+        session_manager = OpenEnvSessionManager(step_timeout_s=0.3)
+        try:
+            episode = await session_manager.start_episode(world, {})
+            with pytest.raises(OpenEnvTransientError, match=r"within 0\.3s"):
+                await session_manager.call_tool(episode, "sleep", {"seconds": 1})
+            assert session_manager._sessions == {}
+            with pytest.raises(RuntimeError, match="no live session"):
+                await session_manager.call_tool(episode, "read_notes", {})
+        finally:
+            await session_manager.shutdown()
+
+    async def test_rejected_call_keeps_the_session(self, session_manager, remote_world):
+        """An error answer leaves the session in step, so it stays usable."""
+        episode = await session_manager.start_episode(remote_world, {})
+        with pytest.raises(OpenEnvRejectedError):
+            await session_manager.call_tool(episode, "sleep", {"seconds": "soon"})
+        listed = await session_manager.call_tool(episode, "read_notes", {})
+        assert listed.result == []
+        await session_manager.release(episode)
+
+    async def test_rejected_reset_leaves_no_session(
+        self, session_manager, remote_world
+    ):
+        with pytest.raises(OpenEnvRejectedError, match="reset refused"):
+            await session_manager.start_episode(remote_world, {"fail_reset": True})
+        assert session_manager._sessions == {}
+
+    async def test_failed_state_still_ends_the_session(
+        self, session_manager, remote_world
+    ):
+        episode = await session_manager.start_episode(
+            remote_world, {"fail_state": True}
+        )
+        with pytest.raises(OpenEnvRejectedError, match="state unavailable"):
+            await session_manager.end_episode(episode)
+        assert session_manager._sessions == {}
+        # The ended session freed its slot: a one-session server takes the next reset.
+        again = await session_manager.start_episode(remote_world, {})
+        await session_manager.release(again)
+
+    async def test_full_server_is_transient(self, session_manager, project):
+        with serve_in_thread(max_sessions=1) as base_url:
+            world = World(name="full", parent=project, env_url=base_url)
+            world.save_to_file()
+            first = await session_manager.start_episode(world, {})
+            # OpenEnv sends its capacity error and closes at once, so the reset meets
+            # either the error or the closed socket; both are transient.
+            with pytest.raises(OpenEnvTransientError):
+                await session_manager.start_episode(world, {})
+            await session_manager.release(first)
+            second = await session_manager.start_episode(world, {})
+            await session_manager.release(second)
+
+    async def test_refused_session_is_an_open_env_error(self, session_manager, project):
+        """A server that answers /metadata but refuses the websocket (an auth wall, a
+        proxy, something that isn't OpenEnv) is reported, not leaked as a library
+        exception."""
+        with serve_in_thread(refuse_sessions=True) as base_url:
+            world = World(name="walled", parent=project, env_url=base_url)
+            world.save_to_file()
+            with pytest.raises(OpenEnvError, match="refused a session"):
+                await session_manager.list_tools(world)
+
+    async def test_reply_of_the_wrong_type_is_an_error(
+        self, session_manager, remote_world
+    ):
+        server = await session_manager._server_for(remote_world)
+        async with session_manager._connect(server) as ws:
+            with pytest.raises(
+                OpenEnvError, match="'observation' message, not 'state'"
+            ):
+                await session_manager._request(
+                    ws, {"type": "step", "data": {"type": "list_tools"}}, "state"
+                )
 
 
 class TestWorldsWithoutUrl:

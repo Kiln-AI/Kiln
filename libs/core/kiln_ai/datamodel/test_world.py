@@ -1,4 +1,4 @@
-"""Tests for the world datamodel: worlds, environment refs, instance records."""
+"""Tests for the world datamodel: worlds, resets, episode records and world tool ids."""
 
 import json
 from datetime import datetime, timezone
@@ -109,7 +109,7 @@ class TestOpenEnvTool:
 
 
 class TestToolIds:
-    def test_synthetic_id_round_trip(self):
+    def test_world_tool_id_round_trip(self):
         tool_id = build_world_tool_id("w1", "lookup")
         assert tool_id == "kiln_tool::world::w1::lookup"
         assert world_and_tool_name_from_id(tool_id) == ("w1", "lookup")
@@ -117,7 +117,7 @@ class TestToolIds:
     @pytest.mark.parametrize(
         "bad", ["kiln_tool::world::w1", "kiln_tool::world::::t1", "x"]
     )
-    def test_synthetic_id_rejects_malformed(self, bad):
+    def test_world_tool_id_rejects_malformed(self, bad):
         with pytest.raises(ValueError):
             world_and_tool_name_from_id(bad)
 
@@ -146,20 +146,20 @@ class TestToolIds:
             )
 
 
-class TestEnvironmentAndInstance:
-    def test_environment_requires_world_id(self):
+class TestResetAndEpisode:
+    def test_reset_requires_world_id(self):
         with pytest.raises(ValidationError):
             WorldReset(world_id="")
         assert WorldReset(world_id="w").reset_kwargs == {}
 
-    def test_environment_config_is_opaque_json(self):
+    def test_reset_kwargs_are_opaque_json(self):
         env = WorldReset(
             world_id="w",
             reset_kwargs={"fixture_id": "f", "seed": 42, "opts": {"a": [1, 2]}},
         )
         assert env.reset_kwargs["opts"] == {"a": [1, 2]}
 
-    def test_eval_input_round_trips_environment(self, project):
+    def test_eval_input_round_trips_world_reset(self, project):
         task = Task(name="t", instruction="i", parent=project)
         task.save_to_file()
         ei = EvalInput(
@@ -175,7 +175,7 @@ class TestEnvironmentAndInstance:
         assert loaded.world_reset is not None
         assert loaded.world_reset.reset_kwargs["fixture_id"] == "f1"
 
-    def test_eval_input_defaults_to_no_environment(self):
+    def test_eval_input_defaults_to_no_world_reset(self):
         ei = EvalInput(
             data=SingleTurnEvalInputData(user_message=UserMessage(text="hi"))
         )
@@ -230,10 +230,25 @@ class TestEnvironmentAndInstance:
 
     def test_eval_task_input_carries_the_full_episode(self):
         ep = self._episode(final_state={"big": list(range(100))})
-        defs = EvalTaskInput.model_json_schema().get("$defs", {})
-        assert "final_state" in defs["WorldEpisode"]["properties"]
-        assert "Episode" not in defs
-        assert ep.to_sandbox_dict()["final_state"] == {"big": list(range(100))}
+        eval_input = EvalTaskInput(final_message="done", world_episode=ep)
+        restored = EvalTaskInput.model_validate_json(eval_input.model_dump_json())
+        assert restored.world_episode == ep
+
+    def test_files_saved_before_worlds_still_load(self):
+        """Records written before worlds existed carry none of the new fields."""
+        legacy_input = EvalInput.model_validate(
+            {
+                "data": {
+                    "type": "single_turn",
+                    "user_message": {"text": "hi"},
+                }
+            }
+        )
+        assert legacy_input.world_reset is None
+        legacy_run = TaskRun.model_validate(
+            {"input": "hi", "output": {"output": "hello"}}
+        )
+        assert legacy_run.world_episode is None
 
     def test_task_run_persists_world_episode(self, project):
         task = Task(name="t", instruction="i", parent=project)

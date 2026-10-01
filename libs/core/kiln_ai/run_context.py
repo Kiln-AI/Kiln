@@ -41,9 +41,10 @@ def generate_agent_run_id() -> str:
 
 @dataclass(frozen=True)
 class EpisodeContext:
-    """The episode an eval job is running against, plus what the registry
-    needs to swap tools: the world, the session manager that holds the live session, and the
-    tools the environment serves (by function name), resolved once per job.
+    """The episode an eval job is generating against, plus what the tool registry
+    needs to resolve the world's tool ids: the world, the session manager that holds the
+    live session, and the tools the environment serves (by function name), resolved once
+    per world per eval run.
     """
 
     episode: "WorldEpisode"
@@ -52,12 +53,12 @@ class EpisodeContext:
     tools: dict[str, "OpenEnvTool"] = field(default_factory=dict)
 
 
-# Set by the eval runner for the duration of one job (generation and grading), and
-# reset with the token in a `finally`. The reset is correctness, not hygiene:
-# `AsyncJobRunner` reuses long-lived worker tasks, and consecutive jobs on one worker
-# share a context. Request handlers and other tasks copy the *server's* context at
-# creation, so they never observe a job's value; that is why the registry override
-# below can never leak into API, chat, or export code paths.
+# Set by the eval runner while one job generates, and reset with the token in a
+# `finally`. The reset is correctness, not hygiene: `AsyncJobRunner` reuses long-lived
+# worker tasks, and consecutive jobs on one worker share a context. Request handlers and
+# other tasks copy the *server's* context at creation, so they never observe a job's
+# value; that is why world tool ids can never resolve in API, chat, or export code
+# paths. Graders read the episode from the trace, not from here.
 _episode: ContextVar["EpisodeContext | None"] = ContextVar("episode", default=None)
 
 

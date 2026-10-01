@@ -2906,7 +2906,7 @@ export interface paths {
         };
         /**
          * List World Tools
-         * @description The tools the world's OpenEnv environment serves, read from the running server at env_url.
+         * @description The tools the world's OpenEnv environment serves, read fresh from the running server at env_url.
          */
         get: operations["list_world_tools_api_projects__project_id__worlds__world_id__tools_get"];
         put?: never;
@@ -13924,13 +13924,25 @@ export interface components {
          * @enum {string}
          */
         VectorStoreType: "lancedb_fts" | "lancedb_hybrid" | "lancedb_vector";
-        /** WorldCreateRequest */
+        /**
+         * WorldCreateRequest
+         * @description A new world: a pointer to a running OpenEnv environment.
+         */
         WorldCreateRequest: {
-            /** Name */
+            /**
+             * Name
+             * @description User-facing display name.
+             */
             name: string;
-            /** Description */
+            /**
+             * Description
+             * @description User-facing notes about the world.
+             */
             description?: string | null;
-            /** Env Url */
+            /**
+             * Env Url
+             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this world send their tool calls to it.
+             */
             env_url?: string | null;
         };
         /**
@@ -13974,8 +13986,9 @@ export interface components {
          *     the episode the trace records.
          *
          *     `reset_kwargs` is opaque to Kiln: it is passed as the keyword arguments of the
-         *     environment's `reset` (a dataset or scenario identifier, a seed, a clock override). It is
-         *     part of the trace key, so two inputs with different kwargs never share a generation.
+         *     environment's `reset` (a dataset or scenario identifier, a seed, a clock override). The
+         *     trace key carries a digest of the whole reset, so an input whose reset is edited
+         *     after its trace was made generates a new one rather than reusing it.
          */
         WorldReset: {
             /**
@@ -13991,47 +14004,90 @@ export interface components {
                 [key: string]: components["schemas"]["JsonValue"];
             };
         };
-        /** WorldResponse */
+        /**
+         * WorldResponse
+         * @description A world: a pointer to a running OpenEnv environment.
+         */
         WorldResponse: {
-            /** Id */
+            /**
+             * Id
+             * @description The world's id.
+             */
             id?: string | null;
-            /** Name */
+            /**
+             * Name
+             * @description User-facing display name.
+             */
             name: string;
-            /** Description */
+            /**
+             * Description
+             * @description User-facing notes about the world.
+             */
             description?: string | null;
-            /** Env Url */
+            /**
+             * Env Url
+             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this world send their tool calls to it.
+             */
             env_url?: string | null;
-            /** Created At */
+            /**
+             * Created At
+             * @description When the world was created.
+             */
             created_at?: string | null;
-            /** Created By */
+            /**
+             * Created By
+             * @description Who created the world.
+             */
             created_by?: string | null;
         };
-        /** WorldToolResponse */
+        /**
+         * WorldToolResponse
+         * @description One tool the world's environment serves.
+         */
         WorldToolResponse: {
             /**
              * Tool Id
              * @description The id a run config uses to list this tool directly: kiln_tool::world::<world_id>::<tool_name>.
              */
             tool_id: string;
-            /** Name */
+            /**
+             * Name
+             * @description The tool's function name, as the model sees it.
+             */
             name: string;
             /**
              * Description
+             * @description The tool's description, as the model sees it.
              * @default
              */
             description: string;
-            /** Input Schema */
+            /**
+             * Input Schema
+             * @description JSON schema of the tool's arguments.
+             */
             input_schema?: {
                 [key: string]: unknown;
             };
         };
-        /** WorldUpdateRequest */
+        /**
+         * WorldUpdateRequest
+         * @description Changes to a world. Only the fields sent are changed.
+         */
         WorldUpdateRequest: {
-            /** Name */
+            /**
+             * Name
+             * @description User-facing display name.
+             */
             name?: string | null;
-            /** Description */
+            /**
+             * Description
+             * @description User-facing notes about the world.
+             */
             description?: string | null;
-            /** Env Url */
+            /**
+             * Env Url
+             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this world send their tool calls to it.
+             */
             env_url?: string | null;
         };
     };
@@ -20814,7 +20870,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project id. */
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -20846,7 +20902,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project id. */
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -20882,9 +20938,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project id. */
+                /** @description The unique identifier of the project. */
                 project_id: string;
-                /** @description The world id. */
+                /** @description The unique identifier of the world. */
                 world_id: string;
             };
             cookie?: never;
@@ -20916,9 +20972,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project id. */
+                /** @description The unique identifier of the project. */
                 project_id: string;
-                /** @description The world id. */
+                /** @description The unique identifier of the world. */
                 world_id: string;
             };
             cookie?: never;
@@ -20950,9 +21006,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project id. */
+                /** @description The unique identifier of the project. */
                 project_id: string;
-                /** @description The world id. */
+                /** @description The unique identifier of the world. */
                 world_id: string;
             };
             cookie?: never;
@@ -20988,9 +21044,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project id. */
+                /** @description The unique identifier of the project. */
                 project_id: string;
-                /** @description The world id. */
+                /** @description The unique identifier of the world. */
                 world_id: string;
             };
             cookie?: never;

@@ -1,0 +1,9 @@
+{
+  "method": "delete",
+  "path": "/api/projects/{project_id}/worlds/{world_id}",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": true,
+    "approval_description": "Allow agent to delete a world?"
+  }
+}

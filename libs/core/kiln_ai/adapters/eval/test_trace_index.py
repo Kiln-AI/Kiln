@@ -5,7 +5,12 @@ from typing import Awaitable, Callable
 
 import pytest
 
-from kiln_ai.adapters.eval.trace_index import TraceIndex, TraceKey, trace_key
+from kiln_ai.adapters.eval.trace_index import (
+    TraceIndex,
+    TraceKey,
+    trace_key,
+    world_trace_tag,
+)
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -548,9 +553,30 @@ def test_stored_world_version_separates_traces(task):
         output="from fixture a",
     )
     index = TraceIndex(task)
+    reset = WorldReset(world_id="w1")
     assert index._paths[("eval_input", "item1", "rc1", "")] == plain.path
-    assert index._paths[("eval_input", "item1", "rc1", "syn1:a")] == fixture_a.path
-    assert ("eval_input", "item1", "rc1", "syn1:b") not in index._paths
+    assert (
+        index._paths[("eval_input", "item1", "rc1", world_trace_tag("syn1:a", reset))]
+        == fixture_a.path
+    )
+    assert (
+        "eval_input",
+        "item1",
+        "rc1",
+        world_trace_tag("syn1:b", reset),
+    ) not in index._paths
+
+
+def test_world_trace_tag_separates_resets():
+    """The world half of the key covers the reset as well as the version, so an input
+    whose world_reset was edited no longer matches the trace made from the old one."""
+    a = WorldReset(world_id="w1", reset_kwargs={"fixture_id": "a", "seed": 1})
+    same_a = WorldReset(world_id="w1", reset_kwargs={"seed": 1, "fixture_id": "a"})
+    b = WorldReset(world_id="w1", reset_kwargs={"fixture_id": "b", "seed": 1})
+    assert world_trace_tag("env@1", a) == world_trace_tag("env@1", same_a)
+    assert world_trace_tag("env@1", a) != world_trace_tag("env@1", b)
+    assert world_trace_tag("env@1", a) != world_trace_tag("env@2", a)
+    assert world_trace_tag("env@1", a).startswith("env@1#")
 
 
 def test_unsettled_world_trace_is_never_indexed(task):

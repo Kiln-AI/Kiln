@@ -54,7 +54,12 @@ from kiln_ai.run_context import get_episode
 from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
 from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.tool_registry import tool_from_id
-from kiln_ai.worlds.session_manager import OpenEnvError, OpenEnvSessionManager
+from kiln_ai.utils.async_job_runner import RetryableError
+from kiln_ai.worlds.session_manager import (
+    OpenEnvError,
+    OpenEnvSessionManager,
+    OpenEnvTransientError,
+)
 from kiln_ai.worlds.testing import ENV_NAME, free_port, serve_in_thread
 
 SCHEMA = {"type": "object", "properties": {"note": {"type": "string"}}}
@@ -222,9 +227,8 @@ class ToolCallingGenerator:
     async def __call__(self, item, run_config_id=None) -> TaskRun:
         await asyncio.sleep(0)
         tool = tool_from_id(self.tool_id, self.task)
-        ctx = get_episode()
         result = await tool.run(
-            ToolCallContext(episode=ctx.episode if ctx is not None else None),
+            ToolCallContext(),
             note=item.data.user_message.text,
         )
         if not self.allow_error:
@@ -267,16 +271,17 @@ class ToolCallingGenerator:
 
 
 class RecordingJudge(BaseV2EvalBridge):
-    """A judge that records what it was shown and what state it could see."""
+    """A judge that records what it was shown and the state its input carried."""
 
     seen: ClassVar[list[EvalTaskInput]] = []
     states: ClassVar[dict[str, dict | None]] = {}
 
     async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
         RecordingJudge.seen.append(eval_input)
-        ctx = get_episode()
-        if ctx is not None:
-            RecordingJudge.states[eval_input.task_input or ""] = ctx.episode.final_state
+        if eval_input.world_episode is not None:
+            RecordingJudge.states[eval_input.task_input or ""] = (
+                eval_input.world_episode.final_state
+            )
         return V2EvalResult(scores={"accuracy": 1.0})
 
 
@@ -411,7 +416,6 @@ async def test_project_run_config_runs_project_tools_without_an_environment(
     start_episode.assert_not_called()
     (trace,) = _traces(task)
     assert trace.world_episode is None
-    assert trace.world_episode is None
     (seen,) = RecordingJudge.seen
     assert seen.world_episode is None
     assert cfg.runs(readonly=True)[0].scores == {"accuracy": 1.0}
@@ -451,8 +455,9 @@ async def test_unserved_project_tools_ignore_the_environment(
 ):
     """An input with a world, run under a run config whose only tools
     are real ones the world does not serve, is a plain real-tools job: nothing is
-    launched and no episode or world_version is recorded. The environment only matters to
-    tools that use it."""
+    launched and no episode or world_version is recorded. The environment is still asked
+    which tools it serves, to refuse a run config listing the project's own version of
+    one."""
     run_config = _run_config(task, [build_code_tool_id(other_tool.id)], name="other rc")
     _input(task, "note", _reset(world, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
@@ -468,7 +473,6 @@ async def test_unserved_project_tools_ignore_the_environment(
     start_episode.assert_not_called()
     traces = _traces(task)
     assert len(traces) == 1
-    assert traces[0].world_episode is None
     assert traces[0].world_episode is None
     assert not session_manager._sessions
 
@@ -563,6 +567,136 @@ async def test_changed_environment_version_regenerates_the_trace(
     assert len({t.world_episode.episode_id for t in traces}) == 2
 
 
+def _multi_turn_input(task, world, id="ei_multi"):
+    ei = EvalInput(
+        id=id,
+        parent=task,
+        data=MultiTurnSyntheticEvalInputData(
+            first_message=UserMessage(text="first note"),
+            synthetic_user_info=SyntheticUserInfo(
+                persona="a technician", goal="log two notes", behavior_guidance=None
+            ),
+            drive_config=MultiTurnDriveConfig(
+                model_name="claude_4_5_haiku", model_provider="openrouter", turns=2
+            ),
+        ),
+        world_reset=_reset(world, "a"),
+    )
+    ei.save_to_file()
+    return ei
+
+
+@pytest.mark.parametrize("lane", ["single_turn", "multi_turn"])
+async def test_failed_generation_releases_the_episode(
+    project, task, world, syn_tool_id, run_config, eval_, session_manager, lane
+):
+    """A generation that raises after touching the world releases its episode's
+    session, saves nothing, and leaves the next attempt a fresh episode."""
+    if lane == "single_turn":
+        _input(task, "note", _reset(world, "a"), id="ei_a")
+    else:
+        _multi_turn_input(task, world)
+    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
+    tool_calling = ToolCallingGenerator(task, syn_tool_id)
+
+    async def failing_generation(*args, **kwargs):
+        tool = tool_from_id(syn_tool_id, task)
+        await tool.run(ToolCallContext(), note="written before the failure")
+        raise RuntimeError("model call failed")
+
+    started: list[str] = []
+    original_start = session_manager.start_episode
+
+    async def recording_start(world_, reset_kwargs):
+        episode = await original_start(world_, reset_kwargs)
+        started.append(episode.episode_id)
+        return episode
+
+    with (
+        patch.object(BaseV2EvalBridge, "run_task", new=failing_generation),
+        patch(
+            "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
+            new=failing_generation,
+        ),
+        patch.object(session_manager, "start_episode", new=recording_start),
+    ):
+        runner = _runner([cfg], run_config, session_manager)
+        with pytest.raises(RuntimeError, match="model call failed"):
+            await runner.run_job(runner.collect_tasks()[0])
+        assert session_manager._sessions == {}
+        assert _traces(task) == []
+
+        if lane == "single_turn":
+            with patch.object(BaseV2EvalBridge, "run_task", new=tool_calling):
+                await runner.run_job(runner.collect_tasks()[0])
+            (trace,) = _traces(task)
+            assert trace.world_episode.episode_id == started[-1] != started[0]
+            assert trace.world_episode.final_state["notes"] == ["note"]
+    assert len(started) == (2 if lane == "single_turn" else 1)
+
+
+async def test_transient_environment_error_is_retried(
+    project, task, world, run_config, eval_, session_manager
+):
+    """A failure that may not recur (a dropped connection, a timeout, a full server)
+    asks the job runner for another attempt instead of failing the job."""
+    _input(task, "note", _reset(world, "a"), id="ei_a")
+    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
+
+    async def full_server(*args, **kwargs):
+        raise OpenEnvTransientError("Server at capacity")
+
+    with patch.object(session_manager, "start_episode", new=full_server):
+        runner = _runner([cfg], run_config, session_manager)
+        with pytest.raises(RetryableError, match="Server at capacity"):
+            await runner.run_job(runner.collect_tasks()[0])
+
+
+async def test_failed_world_resolution_is_remembered_for_the_run(
+    project, task, eval_, session_manager
+):
+    """An environment that is down or hangs costs one attempt per run, not one per
+    job."""
+    world = World(
+        name="Dead", parent=project, env_url=f"http://127.0.0.1:{free_port()}"
+    )
+    world.save_to_file()
+    run_config = _run_config(task, [build_world_tool_id(world.id, "append_note")])
+    for name in ("a", "b", "c"):
+        _input(task, name, _reset(world, name), id=f"ei_{name}")
+    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
+    with patch.object(
+        session_manager, "refresh", wraps=session_manager.refresh
+    ) as refresh:
+        runner = _runner([cfg], run_config, session_manager)
+        for job in runner.collect_tasks():
+            with pytest.raises(OpenEnvError, match="did not answer /metadata"):
+                await runner.run_job(job)
+    assert refresh.call_count == 1
+
+
+async def test_edited_reset_regenerates_the_trace(
+    project, task, world, syn_tool_id, run_config, eval_, session_manager
+):
+    """The trace key covers the input's reset, so editing it (possible through the
+    SDK) generates a new trace instead of grading the state a different reset left."""
+    ei = _input(task, "note", _reset(world, "a"), id="ei_a")
+    generator = ToolCallingGenerator(task, syn_tool_id)
+    first = _config(eval_, ExactMatchProperties(expected_value="x"), name="first")
+    with patch.object(BaseV2EvalBridge, "run_task", new=generator):
+        await _drain(_runner([first], run_config, session_manager))
+    ei.world_reset = _reset(world, "b")
+    ei.save_to_file()
+    second = _config(eval_, ExactMatchProperties(expected_value="x"), name="second")
+    with patch.object(BaseV2EvalBridge, "run_task", new=generator):
+        await _drain(_runner([second], run_config, session_manager))
+    traces = _traces(task)
+    assert sorted(t.world_episode.reset.reset_kwargs["fixture_id"] for t in traces) == [
+        "a",
+        "b",
+    ]
+
+
 async def test_new_version_on_the_same_url_regenerates_the_trace(
     project, task, eval_, session_manager
 ):
@@ -594,8 +728,8 @@ async def test_failed_episode_end_saves_no_trace(
     project, task, world, syn_tool_id, run_config, eval_, session_manager
 ):
     """An episode that fails to end leaves nothing on disk: a trace is saved only with
-    its episode's final state, so the retry generates again instead of a later run
-    reusing a trace graders would read no state from."""
+    its episode's final state, so the next attempt generates again instead of reusing a
+    trace graders would read no state from."""
     _input(task, "note", _reset(world, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     generator = ToolCallingGenerator(task, syn_tool_id)
@@ -765,7 +899,7 @@ async def test_multi_turn_drive_shares_one_episode_across_turns(
             ctx = get_episode()
             assert ctx is not None, "the drive must run with the episode in context"
             seen_episodes.append(ctx.episode.episode_id)
-            result = await tool.run(ToolCallContext(episode=ctx.episode), note=note)
+            result = await tool.run(ToolCallContext(), note=note)
             assert not result.is_error, result.output
             chain.append(
                 TaskRun(

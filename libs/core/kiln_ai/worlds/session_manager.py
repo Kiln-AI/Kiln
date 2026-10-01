@@ -30,13 +30,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, AsyncIterator, Protocol
 
 import httpx
 from pydantic import JsonValue
 from websockets.asyncio.client import ClientConnection, connect
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import ConnectionClosed, WebSocketException
 
 from kiln_ai.datamodel.world import (
     OpenEnvTool,
@@ -52,8 +53,9 @@ STEP_TIMEOUT_S = 600.0
 """How long one reset, step or state call may take. Tool calls block the LLM loop, so
 this is deliberately generous; an environment enforces its own per-tool timeouts.
 A call that stalls the environment's event loop never reaches this ceiling: the
-keepalive below closes the session after PING_TIMEOUT_S of unanswered pings, so a
-stalled loop surfaces as a closed session at 120s, not a step timeout at 600s."""
+keepalive below closes the session once a ping goes PING_TIMEOUT_S unanswered, so a
+stalled loop surfaces as a closed session after roughly two minutes, not a step timeout
+at ten."""
 
 PING_INTERVAL_S = 20.0
 """How often the websockets keepalive pings the environment. Stated rather than left to
@@ -67,9 +69,41 @@ library's 20s timeout would drop every session on the box at once, so this match
 120s a world framework's own client allows for it. Stated for the same reason as the
 interval above."""
 
+CONNECT_TIMEOUT_S = 30.0
+"""How long reading `/metadata` or opening a session may take before the environment
+is treated as unreachable."""
+
+CLOSE_TIMEOUT_S = 5.0
+"""How long to wait for the environment to close a session after Kiln asks it to."""
+
+MAX_MESSAGE_BYTES = 64 * 1024 * 1024
+"""The largest message Kiln accepts from an environment. Generous, because a `state`
+can be large, but finite: a runaway environment closes the session with an error
+instead of exhausting memory or writing an enormous trace."""
+
+_ERROR_PREVIEW_CHARS = 500
+
+_CAPACITY_HINT = (
+    " The environment holds max_concurrent_envs sessions at once (OpenEnv's default "
+    "is 1) and Kiln runs up to 25 eval jobs at once: start the server with "
+    "max_concurrent_envs of at least 25, then re-run the eval to run the jobs that "
+    "failed."
+)
+
 
 class OpenEnvError(RuntimeError):
     """The environment answered a request with an error, or could not be reached."""
+
+
+class OpenEnvTransientError(OpenEnvError):
+    """A failure that may not recur on a fresh session: the connection dropped or
+    timed out, or the environment was at its session capacity. The eval runner
+    retries these."""
+
+
+class OpenEnvRejectedError(OpenEnvError):
+    """The environment answered a message with an error. The session is still in
+    step, so it stays usable."""
 
 
 def read_observation_error(error: Any) -> tuple[str | None, str | None, Any]:
@@ -130,8 +164,9 @@ class WorldSessionManager(Protocol):
         version changed."""
         ...
 
-    async def list_tools(self, world: World) -> list[OpenEnvTool]:
-        """The tools the world's environment serves."""
+    async def list_tools(self, world: World, fresh: bool = False) -> list[OpenEnvTool]:
+        """The tools the world's environment serves. Cached per environment version;
+        `fresh` re-reads the environment's metadata and tools."""
         ...
 
     async def start_episode(
@@ -203,15 +238,14 @@ class OpenEnvSessionManager:
     async def refresh(self, world: World) -> None:
         await self._server_for(world, refresh=True)
 
-    async def list_tools(self, world: World) -> list[OpenEnvTool]:
-        server = await self._server_for(world)
-        if server.tools is not None:
+    async def list_tools(self, world: World, fresh: bool = False) -> list[OpenEnvTool]:
+        server = await self._server_for(world, refresh=fresh)
+        if server.tools is not None and not fresh:
             return server.tools
         async with self._connect(server) as ws:
             data = await self._request(
-                ws, {"type": "step", "data": {"type": "list_tools"}}
+                ws, {"type": "step", "data": {"type": "list_tools"}}, "observation"
             )
-            await self._end_session(ws)
         observation = data.get("observation") or {}
         raw_tools = observation.get("tools") or []
         tools = [
@@ -238,6 +272,7 @@ class OpenEnvSessionManager:
             data = await self._request(
                 ws,
                 {"type": "reset", "data": {**reset_kwargs, "episode_id": episode_id}},
+                "observation",
             )
         except BaseException:
             await self._end_session(ws)
@@ -267,17 +302,28 @@ class OpenEnvSessionManager:
                 "can only be called during generation"
             )
         async with session.lock:
-            data = await self._request(
-                session.ws,
-                {
-                    "type": "step",
-                    "data": {
-                        "type": "call_tool",
-                        "tool_name": tool_name,
-                        "arguments": arguments,
+            try:
+                data = await self._request(
+                    session.ws,
+                    {
+                        "type": "step",
+                        "data": {
+                            "type": "call_tool",
+                            "tool_name": tool_name,
+                            "arguments": arguments,
+                        },
                     },
-                },
-            )
+                    "observation",
+                )
+            except OpenEnvRejectedError:
+                raise
+            except BaseException:
+                # A late answer to this call would be read as the answer to the next
+                # one: OpenEnv responses carry no request id. The session is dropped
+                # so nothing reads from it again.
+                self._sessions.pop(episode.episode_id, None)
+                await self._close_quietly(session.ws)
+                raise
         reward = data.get("reward")
         observation = data.get("observation") or {}
         error, error_code, error_details = read_observation_error(
@@ -298,14 +344,12 @@ class OpenEnvSessionManager:
         session = self._sessions.pop(episode.episode_id, None)
         if session is None:
             return episode
-        state: dict[str, JsonValue] | None = None
         try:
             async with session.lock:
-                data = await self._request(session.ws, {"type": "state"})
-                state = {str(k): v for k, v in data.items()}
-                await self._end_session(session.ws)
+                data = await self._request(session.ws, {"type": "state"}, "state")
         finally:
-            await self._close_quietly(session.ws)
+            await self._end_session(session.ws)
+        state: dict[str, JsonValue] = {str(k): v for k, v in data.items()}
         return episode.model_copy(update={"final_state": state})
 
     async def release(self, episode: WorldEpisode) -> None:
@@ -350,7 +394,7 @@ class OpenEnvSessionManager:
 
     async def _connect_remote(self, world: World, base_url: str) -> _EnvServer:
         assert world.id
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=CONNECT_TIMEOUT_S) as client:
             try:
                 response = await client.get(f"{base_url}/metadata")
                 response.raise_for_status()
@@ -360,6 +404,11 @@ class OpenEnvSessionManager:
                     f"World '{world.name}' points at {base_url}, which did "
                     f"not answer /metadata: {e}"
                 ) from e
+        if not isinstance(meta, dict):
+            raise OpenEnvError(
+                f"World '{world.name}' points at {base_url}, whose /metadata is not "
+                f"a JSON object: {_preview(meta)}"
+            )
         name = str(meta.get("name") or world.name)
         version = meta.get("version")
         return _EnvServer(
@@ -376,65 +425,91 @@ class OpenEnvSessionManager:
         try:
             return await connect(
                 server.ws_url,
-                max_size=None,
-                open_timeout=30,
+                max_size=MAX_MESSAGE_BYTES,
+                open_timeout=CONNECT_TIMEOUT_S,
                 ping_interval=PING_INTERVAL_S,
                 ping_timeout=PING_TIMEOUT_S,
             )
-        except (OSError, ConnectionClosed) as e:
-            raise OpenEnvError(
+        except (OSError, ConnectionClosed, asyncio.TimeoutError) as e:
+            raise OpenEnvTransientError(
                 f"Could not open a session on {server.base_url}: {e}"
             ) from e
+        except WebSocketException as e:
+            raise OpenEnvError(
+                f"{server.base_url} refused a session; is it an OpenEnv server? {e}"
+            ) from e
 
-    def _connect(self, server: _EnvServer) -> "_SessionScope":
-        return _SessionScope(self, server)
+    @asynccontextmanager
+    async def _connect(self, server: _EnvServer) -> AsyncIterator[ClientConnection]:
+        """A short-lived session for one request, ended however the request went."""
+        ws = await self._open(server)
+        try:
+            yield ws
+        finally:
+            await self._end_session(ws)
 
     async def _send(self, ws: ClientConnection, message: dict[str, Any]) -> None:
-        await ws.send(json.dumps(message))
+        await ws.send(json.dumps(message, ensure_ascii=False))
 
     async def _request(
-        self, ws: ClientConnection, message: dict[str, Any]
+        self, ws: ClientConnection, message: dict[str, Any], expected_type: str
     ) -> dict[str, Any]:
-        """Send one message and return the response's `data`, raising on an error
-        response."""
+        """Send one message and return the response's `data`. An error response
+        raises `OpenEnvRejectedError`; a dropped or silent connection raises
+        `OpenEnvTransientError`; any other reply, including one of the wrong type,
+        raises `OpenEnvError`."""
+        kind = message.get("type")
         try:
             await self._send(ws, message)
             raw = await asyncio.wait_for(ws.recv(), timeout=self._step_timeout_s)
         except ConnectionClosed as e:
-            hint = ""
-            if message.get("type") == "reset":
-                hint = (
-                    " An OpenEnv server accepts one session by default; if this "
-                    "happens under concurrent eval jobs, raise its max_concurrent_envs."
-                )
-            raise OpenEnvError(f"The environment closed the session: {e}.{hint}") from e
+            hint = _CAPACITY_HINT if kind == "reset" else ""
+            raise OpenEnvTransientError(
+                f"The environment closed the session: {e}.{hint}"
+            ) from e
         except asyncio.TimeoutError as e:
-            raise OpenEnvError(
-                f"The environment did not answer a '{message.get('type')}' message "
-                f"within {self._step_timeout_s:.0f}s"
+            raise OpenEnvTransientError(
+                f"The environment did not answer a '{kind}' message "
+                f"within {self._step_timeout_s:g}s"
             ) from e
         try:
             response = json.loads(raw)
         except json.JSONDecodeError as e:
-            raise OpenEnvError(f"The environment sent invalid JSON: {raw!r}") from e
-        if not isinstance(response, dict):
-            raise OpenEnvError(f"The environment sent an unexpected message: {raw!r}")
-        data = response.get("data")
-        if response.get("type") == "error":
-            detail = data.get("message") if isinstance(data, dict) else data
             raise OpenEnvError(
-                f"The environment rejected a '{message.get('type')}' message: {detail}"
+                f"The environment sent invalid JSON: {_preview(raw)}"
+            ) from e
+        if not isinstance(response, dict):
+            raise OpenEnvError(
+                f"The environment sent an unexpected message: {_preview(raw)}"
+            )
+        data = response.get("data")
+        response_type = response.get("type")
+        if response_type == "error":
+            detail = data.get("message") if isinstance(data, dict) else data
+            code = data.get("code") if isinstance(data, dict) else None
+            rejection = (
+                f"The environment rejected a '{kind}' message: {_preview(detail)}"
+            )
+            if str(code).lower() == "capacity_reached":
+                raise OpenEnvTransientError(rejection + _CAPACITY_HINT)
+            raise OpenEnvRejectedError(rejection)
+        if response_type != expected_type:
+            raise OpenEnvError(
+                f"The environment answered a '{kind}' message with a "
+                f"'{response_type}' message, not '{expected_type}'"
             )
         return data if isinstance(data, dict) else {}
 
     async def _end_session(self, ws: ClientConnection) -> None:
-        """Tell the environment the session is over and let it close the socket, so
-        its handler sees a clean close rather than an abnormal disconnect. Every path
-        that drops a session goes through here, including failures and shutdown; the
-        socket is closed regardless."""
+        """Tell the environment the session is over and wait for it to close the
+        socket. OpenEnv frees the session's slot before it closes the socket, so
+        waiting guarantees the slot is free before the next reset; on a server that
+        holds one session, a bare close could leave the next reset over capacity.
+        Every path that drops a session goes through here, including failures and
+        shutdown; the socket is closed regardless."""
         try:
             await self._send(ws, {"type": "close"})
-            await asyncio.wait_for(ws.wait_closed(), timeout=5)
+            await asyncio.wait_for(ws.wait_closed(), timeout=CLOSE_TIMEOUT_S)
         except (ConnectionClosed, asyncio.TimeoutError, OSError):
             pass
         finally:
@@ -445,23 +520,6 @@ class OpenEnvSessionManager:
             await ws.close()
         except Exception:
             pass
-
-
-class _SessionScope:
-    def __init__(
-        self, session_manager: OpenEnvSessionManager, server: _EnvServer
-    ) -> None:
-        self._session_manager = session_manager
-        self._server = server
-        self._ws: ClientConnection | None = None
-
-    async def __aenter__(self) -> ClientConnection:
-        self._ws = await self._session_manager._open(self._server)
-        return self._ws
-
-    async def __aexit__(self, *exc: object) -> None:
-        if self._ws is not None:
-            await self._session_manager._close_quietly(self._ws)
 
 
 _shared: OpenEnvSessionManager | None = None
@@ -490,7 +548,19 @@ async def shutdown_shared_session_manager() -> None:
 
 def _compose_world_version(name: str, version: str | None) -> str:
     """The environment's identity as it reports it, readable on a trace: a run keyed by
-    `helpdesk_toy@1.0.0` says what produced its state. Kiln trusts a version to be
-    immutable, the way it trusts an input id; an environment that changes without
-    bumping its version will have old traces reused against it."""
+    `helpdesk_toy@1.0.0` says what produced its state.
+
+    Kiln trusts a version to be immutable, the way it trusts an input id: an
+    environment that changes without bumping its version has old traces reused against
+    it. OpenEnv's default `get_metadata()` reports the class name and version `1.0.0`
+    for every environment, so an environment used as a world should override
+    `get_metadata()` and bump its version whenever its behaviour changes. One that
+    reports no version is keyed by its name alone and never regenerates."""
     return f"{name}@{version}" if version else name
+
+
+def _preview(value: Any) -> str:
+    text = value if isinstance(value, str) else repr(value)
+    if len(text) <= _ERROR_PREVIEW_CHARS:
+        return text
+    return f"{text[:_ERROR_PREVIEW_CHARS]}... ({len(text)} chars)"

@@ -348,58 +348,41 @@ class TestAsyncScorerEndToEnd:
 
 
 # ---------------------------------------------------------------------------
-# World instances
+# World episodes
 # ---------------------------------------------------------------------------
 
 
 class TestEpisodeHandoff:
-    def _ctx(self):
-        from kiln_ai.datamodel.world import World, WorldEpisode, WorldReset
-        from kiln_ai.run_context import EpisodeContext
+    async def test_scorer_receives_the_input_episode(self):
+        """The scorer reads the episode from the eval input, as LLM judges do, so the
+        two graders agree wherever the input carries one."""
+        from kiln_ai.datamodel.world import WorldEpisode, WorldReset
 
+        cfg = _make_config(
+            code="def score(output, world_episode):\n    return {'accuracy': 1.0}\n"
+        )
         episode = WorldEpisode(
             reset=WorldReset(world_id="w"),
             episode_id="ep_x",
             world_version="w@1",
             final_state={"notes": ["a"]},
         )
-        return EpisodeContext(
-            episode=episode, world=World(name="w"), session_manager=Mock()
-        )
-
-    async def test_scorer_receives_full_record_and_context(self):
-        from kiln_ai.run_context import reset_episode, set_episode
-
-        cfg = _make_config(
-            code="def score(output, world_episode):\n    return {'accuracy': 1.0}\n"
-        )
-        adapter = CodeEvalAdapter(cfg)
-        ctx = self._ctx()
-        token = set_episode(ctx)
-        try:
-            with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_bridge:
-                mock_bridge.return_value = BridgeResult(
-                    result_msg={"ok": {"accuracy": 1.0}}
-                )
-                await adapter.evaluate(_inp())
-        finally:
-            reset_episode(token)
-        _, kwargs = mock_bridge.call_args
-        inputs = kwargs["args"][1]
-        assert inputs["world_episode"]["episode_id"] == "ep_x"
-        assert inputs["world_episode"]["final_state"] == {"notes": ["a"]}
-        assert kwargs["server"]._context.episode is ctx.episode
-
-    async def test_no_context_passes_none(self):
-        adapter = CodeEvalAdapter(_make_config())
         with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_bridge:
             mock_bridge.return_value = BridgeResult(
                 result_msg={"ok": {"accuracy": 1.0}}
             )
-            await adapter.evaluate(_inp())
+            await CodeEvalAdapter(cfg).evaluate(_inp(world_episode=episode))
+        _, kwargs = mock_bridge.call_args
+        assert kwargs["args"][1]["world_episode"] == episode.to_sandbox_dict()
+
+    async def test_no_episode_passes_none(self):
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_bridge:
+            mock_bridge.return_value = BridgeResult(
+                result_msg={"ok": {"accuracy": 1.0}}
+            )
+            await CodeEvalAdapter(_make_config()).evaluate(_inp())
         _, kwargs = mock_bridge.call_args
         assert kwargs["args"][1]["world_episode"] is None
-        assert kwargs["server"]._context.episode is None
 
     def test_worker_passes_world_episode_only_when_declared(self, tmp_path):
         from kiln_ai.adapters.eval.conftest import run_scorer

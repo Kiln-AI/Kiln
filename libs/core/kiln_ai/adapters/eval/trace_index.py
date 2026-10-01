@@ -1,7 +1,8 @@
 """The live lookup that decides whether an eval job generates a trace or reuses one.
 
-Reuse is keyed on `(source_type, source_id, run_config_id)` — the dataset item plus the
-run config, and deliberately not the eval config. That is what lets a second judge score
+Reuse is keyed on `(source_type, source_id, run_config_id, world)` — the dataset item
+plus the run config (and, for a world trace, the environment version and reset it ran
+with), and deliberately not the eval config. That is what lets a second judge score
 generations the first judge already paid for (functional spec §2.1).
 
 The lookup has to be live, not precomputed like the `already_run` set in
@@ -13,6 +14,7 @@ what makes a retry after a scoring failure re-score rather than regenerate
 (functional spec §4.2, §4.3).
 """
 
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -24,25 +26,40 @@ from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.eval_splits import ItemKey, ItemSource
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_run import TaskRun, eval_item_key
+from kiln_ai.datamodel.world import WorldReset
 from kiln_ai.utils.lock import AsyncLockManager
 
 logger = logging.getLogger(__name__)
 
 TraceKey = Tuple[ItemSource, str, str, str]
-"""What identifies a reusable eval trace: `(source_type, source_id, run_config_id, world_version)`.
+"""What identifies a reusable eval trace: `(source_type, source_id, run_config_id, world)`.
 
 `str` rather than the `ID_TYPE` (`Optional[str]`) the id fields carry, because this tuple
 is a dict key: an id-less item and an id-less run config would produce one
 `(source_type, None, None, "")` key that every id-less job collides on, handing them each
 other's traces. `trace_key()` is where that impossibility is enforced.
 
-`world_version` separates generations of the same item under the same run config made in
-different versions of a world. It is read from the run's `world_episode` record, and is `""` for
-runs without one, so ordinary traces keep matching the jobs that produced them."""
+`world` is `world_trace_tag()` of the environment version and the reset a world trace
+ran with, read from the run's `world_episode` record. It separates generations of the same
+item under the same run config made in different versions of a world, or from a reset the
+input has since been edited away from. It is `""` for runs without an episode, so ordinary
+traces keep matching the jobs that produced them."""
+
+
+def world_trace_tag(world_version: str, reset: WorldReset) -> str:
+    """The world half of a trace key: the environment version, plus a digest of the
+    reset. Both sides build it the same way: the runner from the input's `world_reset`,
+    the index from the reset the episode recorded. An input whose reset was edited after
+    its trace was made therefore no longer matches that trace, and regenerates."""
+    canonical = json.dumps(
+        reset.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+    )
+    digest = hashlib.sha256(canonical.encode()).hexdigest()[:16]
+    return f"{world_version}#{digest}"
 
 
 def trace_key(
-    item: ItemKey, run_config_id: ID_TYPE, world_version: str | None = None
+    item: ItemKey, run_config_id: ID_TYPE, world: str | None = None
 ) -> TraceKey:
     """The trace key for running `item` under `run_config_id`.
 
@@ -58,7 +75,7 @@ def trace_key(
             f"(got item={item}, run_config_id={run_config_id}). Traces are looked up by "
             "the pair, so a missing half would match every other record missing it."
         )
-    return (source_type, source_id, run_config_id, world_version or "")
+    return (source_type, source_id, run_config_id, world or "")
 
 
 def _stored_trace_key(run: TaskRun) -> TraceKey | None:
@@ -77,10 +94,13 @@ def _stored_trace_key(run: TaskRun) -> TraceKey | None:
     run_config_id = run.output.source.run_config_id if run.output.source else None
     if not run_config_id:
         return None
+    episode = run.world_episode
     return trace_key(
         eval_item_key(run.eval_source),
         run_config_id,
-        run.world_episode.world_version if run.world_episode is not None else None,
+        world_trace_tag(episode.world_version, episode.reset)
+        if episode is not None
+        else None,
     )
 
 
@@ -203,8 +223,8 @@ class TraceIndex:
         Enforces both halves of `generate`'s contract: persisted, and findable again.
 
         The index files the run under the key the *caller* asked for, but a later process
-        rebuilds the index from the run's own `eval_source` and
-        `output.source.run_config_id`. If those disagree, everything looks right for the
+        rebuilds the index from the run's own `eval_source`,
+        `output.source.run_config_id` and `world_episode`. If those disagree, everything looks right for the
         rest of this run and the trace is never reused again — every future eval
         regenerates it, with no error to notice. So the disagreement is caught here,
         where the mistake was made.
@@ -219,8 +239,8 @@ class TraceIndex:
         if stored != key:
             raise ValueError(
                 f"Generating the eval trace for {key} persisted a run that files itself "
-                f"under {stored}: its eval_source and output.source.run_config_id are "
-                "what a later index reads. A run that disagrees with the key it was "
+                f"under {stored}: its eval_source, output.source.run_config_id and "
+                "world_episode are what a later index reads. A run that disagrees with the key it was "
                 "generated for is never found again, so the trace is regenerated on "
                 "every eval, forever."
             )
