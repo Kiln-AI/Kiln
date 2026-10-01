@@ -114,7 +114,7 @@ Unit-tested with fixture diffs for each rule.
 
 ### slack_post.py
 
-- With a Slack app token: `chat.postMessage` to `C0AG8U78MNG`, one line per PR: `<title> <url> — N added / N deprecated / needs discussion`.
+- With a Slack app token: `chat.postMessage` to the models channel, one line per PR: `<title> <url> — N added / N deprecated / needs discussion`.
 - Without: prints the same line for the skill to send through the connector with the `[model sweep]` prefix.
 
 ### staleness.py
