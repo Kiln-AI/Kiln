@@ -180,16 +180,23 @@ def data_source():
     )
 
 
+def _params(**overrides) -> EvalJobParams:
+    return EvalJobParams(
+        **{
+            "project_id": "project1",
+            "task_id": "task1",
+            "eval_id": "eval1",
+            "eval_config_id": "eval_config1",
+            "run_config_id": "run_config1",
+            "split": "test",
+            **overrides,
+        }
+    )
+
+
 @pytest.fixture
 def params():
-    return EvalJobParams(
-        project_id="project1",
-        task_id="task1",
-        eval_id="eval1",
-        eval_config_id="eval_config1",
-        run_config_id="run_config1",
-        split="test",
-    )
+    return _params()
 
 
 @pytest.fixture
@@ -250,6 +257,23 @@ def _make_eval_input_run(eval_config, eval_input_id, run_config_id) -> EvalRun:
     )
     eval_run.save_to_file()
     return eval_run
+
+
+class _RecordingCtx:
+    """A JobContext stand-in that records the progress and errors a run reports."""
+
+    job_id = "j_test"
+    run_id = "run_test"
+
+    def __init__(self) -> None:
+        self.progress: list[tuple[int, int, int | None]] = []
+        self.errors: list[tuple[str, dict]] = []
+
+    async def report_progress(self, success, error=0, total=None, message=None):
+        self.progress.append((success, error, total))
+
+    async def report_error(self, error_message, **extra):
+        self.errors.append((error_message, extra))
 
 
 @contextmanager
@@ -379,14 +403,7 @@ async def test_compute_state_missing_eval_config_raises(
     # No EvalConfig (or Eval) with this id exists on disk: the entity loader
     # raises rather than silently reporting "no progress", so the failure is
     # visible to the registry during reconciliation.
-    bad_params = EvalJobParams(
-        project_id="project1",
-        task_id="task1",
-        eval_id="missing_eval",
-        eval_config_id="missing_eval_config",
-        run_config_id="run_config1",
-        split="test",
-    )
+    bad_params = _params(eval_id="missing_eval", eval_config_id="missing_eval_config")
 
     with pytest.raises(Exception):
         await EvalJobWorker().compute_state(bad_params)
@@ -603,14 +620,7 @@ async def test_describe_counts_tools_skills_and_frozen_prompt(
     )
     run_config.save_to_file()
 
-    params = EvalJobParams(
-        project_id="project1",
-        task_id="task1",
-        eval_id="eval1",
-        eval_config_id="eval_config1",
-        run_config_id="run_config_tools",
-        split="test",
-    )
+    params = _params(run_config_id="run_config_tools")
 
     props = await EvalJobWorker().describe(params)
 
@@ -641,14 +651,7 @@ async def test_describe_resolves_custom_prompt_name(
     )
     run_config.save_to_file()
 
-    params = EvalJobParams(
-        project_id="project1",
-        task_id="task1",
-        eval_id="eval1",
-        eval_config_id="eval_config1",
-        run_config_id="run_config_custom_prompt",
-        split="test",
-    )
+    params = _params(run_config_id="run_config_custom_prompt")
 
     props = await EvalJobWorker().describe(params)
 
@@ -691,14 +694,7 @@ async def test_describe_resolves_reused_frozen_prompt_name(
     )
     reuser.save_to_file()
 
-    params = EvalJobParams(
-        project_id="project1",
-        task_id="task1",
-        eval_id="eval1",
-        eval_config_id="eval_config1",
-        run_config_id="frozen_reuser",
-        split="test",
-    )
+    params = _params(run_config_id="frozen_reuser")
 
     props = await EvalJobWorker().describe(params)
 
@@ -722,14 +718,7 @@ async def test_describe_resolves_fine_tune_prompt_name(
     )
     run_config.save_to_file()
 
-    params = EvalJobParams(
-        project_id="project1",
-        task_id="task1",
-        eval_id="eval1",
-        eval_config_id="eval_config1",
-        run_config_id="run_config_finetune",
-        split="test",
-    )
+    params = _params(run_config_id="run_config_finetune")
 
     props = await EvalJobWorker().describe(params)
 
@@ -755,14 +744,7 @@ async def test_describe_falls_back_to_raw_id_when_unresolvable(
     )
     run_config.save_to_file()
 
-    params = EvalJobParams(
-        project_id="project1",
-        task_id="task1",
-        eval_id="eval1",
-        eval_config_id="eval_config1",
-        run_config_id="run_config_missing_prompt",
-        split="test",
-    )
+    params = _params(run_config_id="run_config_missing_prompt")
 
     props = await EvalJobWorker().describe(params)
 
@@ -792,14 +774,7 @@ async def test_describe_mcp_run_config_blanks_agent_fields(
     )
     run_config.save_to_file()
 
-    params = EvalJobParams(
-        project_id="project1",
-        task_id="task1",
-        eval_id="eval1",
-        eval_config_id="eval_config1",
-        run_config_id="run_config_mcp",
-        split="test",
-    )
+    params = _params(run_config_id="run_config_mcp")
 
     props = await EvalJobWorker().describe(params)
 
@@ -817,14 +792,7 @@ async def test_describe_mcp_run_config_blanks_agent_fields(
 async def test_describe_missing_entity_raises(resolve_project, task, run_config):
     # Mirrors compute_state: the entity loader raises rather than silently
     # returning partial info. The registry guard (_describe) swallows this.
-    bad_params = EvalJobParams(
-        project_id="project1",
-        task_id="task1",
-        eval_id="missing_eval",
-        eval_config_id="missing_eval_config",
-        run_config_id="run_config1",
-        split="test",
-    )
+    bad_params = _params(eval_id="missing_eval", eval_config_id="missing_eval_config")
 
     with pytest.raises(Exception):
         await EvalJobWorker().describe(bad_params)
@@ -860,14 +828,7 @@ async def test_registry_create_guards_describe_failure(
 ):
     # describe() raises (eval/eval_config missing): create must still succeed,
     # leaving properties unset rather than failing the whole job creation.
-    bad_params = EvalJobParams(
-        project_id="project1",
-        task_id="task1",
-        eval_id="missing_eval",
-        eval_config_id="missing_eval_config",
-        run_config_id="run_config1",
-        split="test",
-    )
+    bad_params = _params(eval_id="missing_eval", eval_config_id="missing_eval_config")
 
     registry = JobRegistry()
     registry.register_type(EvalJobWorker)
@@ -899,28 +860,10 @@ async def test_run_forwards_concurrency_to_runner(
         for _ in ():
             yield  # pragma: no cover — never yields; typed as a generator
 
-    params = EvalJobParams(
-        project_id="project1",
-        task_id="task1",
-        eval_id="eval1",
-        eval_config_id="eval_config1",
-        run_config_id="run_config1",
-        split="test",
-        concurrency=concurrency,
-    )
-
-    class FakeCtx:
-        job_id = "j_test"
-        run_id = "run_test"
-
-        async def report_progress(self, success, error=0, total=None, message=None):
-            pass
-
-        async def report_error(self, error_message, **extra):
-            pass
+    params = _params(concurrency=concurrency)
 
     with patch("kiln_ai.adapters.eval.eval_runner.EvalRunner.run", new=fake_run):
-        await EvalJobWorker().run(params, FakeCtx())
+        await EvalJobWorker().run(params, _RecordingCtx())
 
     assert received["concurrency"] == concurrency
     assert received["max_retries"] == JOB_TRANSIENT_ERROR_MAX_RETRIES
@@ -932,15 +875,7 @@ def test_concurrency_below_one_rejected(bad_value):
     # ge=1 surfaces invalid concurrency as a 422 at the API boundary rather than a
     # runner-side ValueError (mirrors max_samples / stop_after_failures validation).
     with pytest.raises(ValidationError):
-        EvalJobParams(
-            project_id="project1",
-            task_id="task1",
-            eval_id="eval1",
-            eval_config_id="eval_config1",
-            run_config_id="run_config1",
-            split="test",
-            concurrency=bad_value,
-        )
+        _params(concurrency=bad_value)
 
 
 async def test_run_maps_progress_and_returns_result(
@@ -952,40 +887,20 @@ async def test_run_maps_progress_and_returns_result(
         Progress(complete=2, total=3, errors=1),
     ]
 
-    reported: list[tuple[int, int, int | None]] = []
-
-    class FakeCtx:
-        job_id = "j_test"
-        run_id = "run_test"
-
-        async def report_progress(self, success, error=0, total=None, message=None):
-            reported.append((success, error, total))
-
-        async def report_error(self, error_message, **extra):
-            pass
+    ctx = _RecordingCtx()
 
     with _stub_eval_runner_run(progresses):
-        result = await EvalJobWorker().run(params, FakeCtx())
+        result = await EvalJobWorker().run(params, ctx)
 
-    assert reported == [(0, 0, 3), (1, 0, 3), (2, 1, 3)]
+    assert ctx.progress == [(0, 0, 3), (1, 0, 3), (2, 1, 3)]
     assert result == EvalJobResult(total=3, success=2, error=1)
 
 
 async def test_run_no_items_returns_zero_summary(
     resolve_project, task, eval_config, run_config, data_source, params
 ):
-    class FakeCtx:
-        job_id = "j_test"
-        run_id = "run_test"
-
-        async def report_progress(self, success, error=0, total=None, message=None):
-            pass
-
-        async def report_error(self, error_message, **extra):
-            pass
-
     # Real EvalRunner with an empty dataset yields only the initial Progress(0,0,0).
-    result = await EvalJobWorker().run(params, FakeCtx())
+    result = await EvalJobWorker().run(params, _RecordingCtx())
 
     assert result == EvalJobResult(total=0, success=0, error=0)
 
@@ -1012,21 +927,11 @@ async def test_run_idempotent_skips_already_scored(
         ).save_to_file()
         return True
 
-    class FakeCtx:
-        job_id = "j_test"
-        run_id = "run_test"
-
-        async def report_progress(self, success, error=0, total=None, message=None):
-            pass
-
-        async def report_error(self, error_message, **extra):
-            pass
-
     with patch(
         "kiln_ai.adapters.eval.eval_runner.EvalRunner.run_job",
         new=fake_run_job,
     ):
-        result = await EvalJobWorker().run(params, FakeCtx())
+        result = await EvalJobWorker().run(params, _RecordingCtx())
 
     # Only the single not-yet-scored item should have been processed.
     assert processed_dataset_ids == [task_runs[2].id]
@@ -1057,24 +962,14 @@ async def test_run_reports_full_set_totals_on_partial_resume(
         Progress(complete=3, total=3, errors=0),
     ]
 
-    reported: list[tuple[int, int, int | None]] = []
-
-    class FakeCtx:
-        job_id = "j_test"
-        run_id = "run_test"
-
-        async def report_progress(self, success, error=0, total=None, message=None):
-            reported.append((success, error, total))
-
-        async def report_error(self, error_message, **extra):
-            pass
+    ctx = _RecordingCtx()
 
     with _stub_eval_runner_run(progresses):
-        result = await EvalJobWorker().run(params, FakeCtx())
+        result = await EvalJobWorker().run(params, ctx)
 
     # Reported success = baseline (2) + complete; total = baseline (2) + 3 = 5.
     # The snapshot must not regress below the baseline of 2 already-scored items.
-    assert reported == [(2, 0, 5), (3, 0, 5), (4, 0, 5), (5, 0, 5)]
+    assert ctx.progress == [(2, 0, 5), (3, 0, 5), (4, 0, 5), (5, 0, 5)]
     assert result == EvalJobResult(total=5, success=5, error=0)
 
 
@@ -1095,17 +990,7 @@ async def test_run_reports_totals_against_the_requested_split(
     train_runs = [_make_task_run(task, data_source, "train_set") for _ in range(3)]
     _make_eval_run(eval_config, train_runs[0].id, run_config.id)
 
-    reported: list[tuple[int, int, int | None]] = []
-
-    class FakeCtx:
-        job_id = "j_test"
-        run_id = "run_test"
-
-        async def report_progress(self, success, error=0, total=None, message=None):
-            reported.append((success, error, total))
-
-        async def report_error(self, error_message, **extra):
-            pass
+    ctx = _RecordingCtx()
 
     # The runner sees the 2 unscored train items.
     with _stub_eval_runner_run(
@@ -1116,10 +1001,10 @@ async def test_run_reports_totals_against_the_requested_split(
         ]
     ):
         result = await EvalJobWorker().run(
-            params.model_copy(update={"split": "train"}), FakeCtx()
+            params.model_copy(update={"split": "train"}), ctx
         )
 
-    assert reported == [(1, 0, 3), (2, 0, 3), (3, 0, 3)]
+    assert ctx.progress == [(1, 0, 3), (2, 0, 3), (3, 0, 3)]
     assert result == EvalJobResult(total=3, success=3, error=0)
 
 
@@ -1137,21 +1022,11 @@ async def test_run_over_an_eval_input_backed_split_works_its_items(
         processed_item_ids.append(job.item.id)
         return True
 
-    class FakeCtx:
-        job_id = "j_test"
-        run_id = "run_test"
-
-        async def report_progress(self, success, error=0, total=None, message=None):
-            pass
-
-        async def report_error(self, error_message, **extra):
-            pass
-
     with patch(
         "kiln_ai.adapters.eval.eval_runner.EvalRunner.run_job",
         new=fake_run_job,
     ):
-        result = await EvalJobWorker().run(_input_backed_params(), FakeCtx())
+        result = await EvalJobWorker().run(_input_backed_params(), _RecordingCtx())
 
     assert sorted(processed_item_ids) == sorted(item.id for item in eval_inputs)
     assert result == EvalJobResult(total=3, success=3, error=0)
@@ -1168,27 +1043,17 @@ async def test_run_logs_failed_items_to_error_log(
     async def failing_run_job(self, job) -> bool:
         raise ValueError("scoring exploded")
 
-    logged: list[tuple[str, dict]] = []
-
-    class FakeCtx:
-        job_id = "j_test"
-        run_id = "run_test"
-
-        async def report_progress(self, success, error=0, total=None, message=None):
-            pass
-
-        async def report_error(self, error_message, **extra):
-            logged.append((error_message, extra))
+    ctx = _RecordingCtx()
 
     with patch(
         "kiln_ai.adapters.eval.eval_runner.EvalRunner.run_job",
         new=failing_run_job,
     ):
-        result = await EvalJobWorker().run(params, FakeCtx())
+        result = await EvalJobWorker().run(params, ctx)
 
     assert result.error == 1
-    assert len(logged) == 1
-    message, extra = logged[0]
+    assert len(ctx.errors) == 1
+    message, extra = ctx.errors[0]
     assert "scoring exploded" in message
     assert extra["dataset_id"] == task_run.id
     assert extra["item_source"] == "task_run"
@@ -1205,26 +1070,16 @@ async def test_run_logs_the_item_source_for_an_eval_input_backed_split(
     async def failing_run_job(self, job) -> bool:
         raise ValueError("scoring exploded")
 
-    logged: list[tuple[str, dict]] = []
-
-    class FakeCtx:
-        job_id = "j_test"
-        run_id = "run_test"
-
-        async def report_progress(self, success, error=0, total=None, message=None):
-            pass
-
-        async def report_error(self, error_message, **extra):
-            logged.append((error_message, extra))
+    ctx = _RecordingCtx()
 
     with patch(
         "kiln_ai.adapters.eval.eval_runner.EvalRunner.run_job",
         new=failing_run_job,
     ):
-        result = await EvalJobWorker().run(_input_backed_params(), FakeCtx())
+        result = await EvalJobWorker().run(_input_backed_params(), ctx)
 
     assert result.error == 1
-    _message, extra = logged[0]
+    _message, extra = ctx.errors[0]
     assert extra["dataset_id"] == eval_input.id
     assert extra["item_source"] == "eval_input"
 
@@ -1247,27 +1102,17 @@ async def test_run_logs_original_error_for_kiln_run_error(
             original=original,
         )
 
-    logged: list[tuple[str, dict]] = []
-
-    class FakeCtx:
-        job_id = "j_test"
-        run_id = "run_test"
-
-        async def report_progress(self, success, error=0, total=None, message=None):
-            pass
-
-        async def report_error(self, error_message, **extra):
-            logged.append((error_message, extra))
+    ctx = _RecordingCtx()
 
     with patch(
         "kiln_ai.adapters.eval.eval_runner.EvalRunner.run_job",
         new=failing_run_job,
     ):
-        result = await EvalJobWorker().run(params, FakeCtx())
+        result = await EvalJobWorker().run(params, ctx)
 
     assert result.error == 1
-    assert len(logged) == 1
-    message, extra = logged[0]
+    assert len(ctx.errors) == 1
+    message, extra = ctx.errors[0]
     assert message == "provider 500: model is overloaded right now"
     assert "An unexpected error occurred." not in message
     assert extra["dataset_id"] == task_run.id
@@ -1336,17 +1181,6 @@ def test_error_detail_handles_kiln_run_error_with_buggy_original_str():
 # -- save_context wiring -----------------------------------------------------
 
 
-class _SilentCtx:
-    job_id = "j_test"
-    run_id = "run_test"
-
-    async def report_progress(self, success, error=0, total=None, message=None):
-        pass
-
-    async def report_error(self, error_message, **extra):
-        pass
-
-
 async def _run_and_capture_the_build(params, save_context) -> dict:
     """Run the job with a stubbed EvalRunner.run. Return the runner that run() built,
     the thread that built it, and the thread and arguments of the save context lookup."""
@@ -1371,7 +1205,7 @@ async def _run_and_capture_the_build(params, save_context) -> dict:
         ),
         _stub_eval_runner_run([]),
     ):
-        await EvalJobWorker().run(params, _SilentCtx())
+        await EvalJobWorker().run(params, _RecordingCtx())
     return captured
 
 
@@ -1515,14 +1349,7 @@ async def test_eval_job_missing_entity_marks_failed(
     # last-known state), but run() then calls compute_state for its baseline,
     # which raises and is caught by _supervise -> the job fails rather than
     # treating the missing entity as "no progress".
-    bad_params = EvalJobParams(
-        project_id="project1",
-        task_id="task1",
-        eval_id="missing_eval",
-        eval_config_id="missing_eval_config",
-        run_config_id="run_config1",
-        split="test",
-    )
+    bad_params = _params(eval_id="missing_eval", eval_config_id="missing_eval_config")
 
     registry = JobRegistry()
     registry.register_type(EvalJobWorker)
