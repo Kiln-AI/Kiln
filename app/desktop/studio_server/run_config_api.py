@@ -42,7 +42,7 @@ class CreateTaskFromToolRequest(BaseModel):
     )
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Provenance stamped onto the created run config.",
+        description="Provenance stamped onto the created run config. The run config belongs to a new task, so derived_from_ids must be empty.",
     )
 
 
@@ -338,6 +338,11 @@ def connect_run_config_api(app: FastAPI):
         ],
         request: CreateTaskFromToolRequest,
     ) -> Task:
+        if request.provenance is not None and request.provenance.derived_from_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="derived_from_ids must be empty: the run config belongs to a new task, which has no run config to derive from.",
+            )
         project = project_from_id(project_id)
 
         try:
@@ -394,12 +399,6 @@ def connect_run_config_api(app: FastAPI):
                 # Per functional spec §5.3, this second TaskRunConfig create path
                 # also accepts + stamps provenance (typically just origin).
                 provenance=request.provenance,
-            )
-            validate_provenance_or_400(
-                task_run_config.provenance,
-                task_run_config.id,
-                TaskRunConfig,
-                task.path,
             )
             task_run_config.save_to_file()
 
