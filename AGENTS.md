@@ -116,7 +116,7 @@ Write it for a person who has not read your working notes and will not scroll up
 
 ### Code Review Guidelines
 
-If asked to perform a code review, read our [code review guidelines](.agents/code_review_guidelines.md).
+If code reviewing, always read [`.agents/code_review_guidelines.md`](.agents/code_review_guidelines.md) before starting your review.
 
 ### Pull Requests
 
