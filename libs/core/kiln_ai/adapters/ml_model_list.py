@@ -5908,7 +5908,7 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.together_ai,
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
-                model_id="deepseek-ai/DeepSeek-V4-Pro",
+                model_id="deepseek-ai/DeepSeek-V4-Pro-0813",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
             ),
