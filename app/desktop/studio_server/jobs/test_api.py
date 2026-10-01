@@ -9,6 +9,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
+from kiln_ai.adapters.eval.eval_runner import EvalRunner
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel import (
     DataSource,
@@ -19,7 +20,13 @@ from kiln_ai.datamodel import (
     TaskOutputRatingType,
     TaskRun,
 )
-from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalOutputScore, EvalRun
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfig,
+    EvalInputSplit,
+    EvalOutputScore,
+    EvalRun,
+)
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
 from pydantic import BaseModel
@@ -1001,6 +1008,55 @@ async def test_run_eval_job_with_an_unknown_config_404(
 
     assert resp.status_code == 404, resp.text
     assert missing in resp.text
+    assert registry._jobs == {}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_with_a_v1_judge_on_eval_inputs_400(
+    client, registry, stub_eval_worker, split_eval
+):
+    task = split_eval.parent_task()
+    assert task is not None
+    input_eval = Eval(
+        id="e_inputs",
+        name="Input Eval",
+        description="test",
+        splits={"test": EvalInputSplit(filter_id="tag::inputs")},
+        output_scores=split_eval.output_scores,
+        parent=task,
+    )
+    input_eval.save_to_file()
+    EvalConfig(
+        id="ec_inputs",
+        name="V1 Judge",
+        model_name="gpt-4",
+        model_provider="openai",
+        properties={"eval_steps": ["step1"]},
+        parent=input_eval,
+    ).save_to_file()
+
+    resp = await client.post(
+        _EVAL_RUN_PATH,
+        json=_eval_params(eval_id="e_inputs", eval_config_id="ec_inputs"),
+    )
+
+    assert resp.status_code == 400, resp.text
+    assert registry._jobs == {}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_with_undrivable_multi_turn_items_400(
+    client, registry, stub_eval_worker, split_eval
+):
+    with patch.object(
+        EvalRunner,
+        "validate_multi_turn_drive_readiness",
+        side_effect=ValueError("run config 'MCP one' is not a Kiln agent config"),
+    ):
+        resp = await client.post(_EVAL_RUN_PATH, json=_EVAL_PARAMS)
+
+    assert resp.status_code == 400, resp.text
+    assert "MCP one" in resp.text
     assert registry._jobs == {}
 
 
