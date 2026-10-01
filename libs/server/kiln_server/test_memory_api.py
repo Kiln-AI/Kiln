@@ -241,6 +241,34 @@ def test_list_includes_stored_178_char_overview_row(client, project):
     assert fetched.json()[0]["overview"] == long_overview
 
 
+def test_by_id_endpoints_skip_an_unreadable_memory(client, project):
+    good = add(project, "good", "project", 0)
+    doomed = add(project, "doomed", "project", 1)
+    bad = add(project, "bad", "project", 2)
+    bad.path.write_text("{ not json", encoding="utf-8")
+
+    with _patch(project):
+        fetched = client.get(
+            f"/api/projects/{project.id}/memories/by_ids",
+            params={"ids": [good.id, bad.id]},
+        )
+        patched = client.patch(
+            f"/api/projects/{project.id}/memories/{good.id}",
+            json={"overview": "edited"},
+        )
+        deleted = client.delete(f"/api/projects/{project.id}/memories/{doomed.id}")
+        bad_patch = client.patch(
+            f"/api/projects/{project.id}/memories/{bad.id}", json={"overview": "x"}
+        )
+
+    assert fetched.status_code == 200
+    assert [r["id"] for r in fetched.json()] == [good.id]
+    assert patched.status_code == 200
+    assert patched.json()["overview"] == "edited"
+    assert deleted.status_code == 200
+    assert bad_patch.status_code == 404
+
+
 # --- summary ---
 
 

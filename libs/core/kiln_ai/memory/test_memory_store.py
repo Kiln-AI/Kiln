@@ -328,3 +328,46 @@ def test_list_and_summary_skip_an_unreadable_memory(
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 2  # one per call
     assert all(str(bad.path) in r.getMessage() for r in warnings)
+
+
+@pytest.mark.parametrize("how", ["corrupt_json", "over_cap"])
+def test_by_id_operations_skip_an_unreadable_memory(
+    project: Project, store: MemoryStore, how: str
+):
+    goods = [add(project, f"good {i}", "project", i) for i in range(5)]
+    bad = add(project, "bad", "project", 10)
+    _break_on_disk(bad, how)
+
+    got = store.get_memories([g.id for g in goods] + [bad.id])
+    assert {m.id for m in got} == {g.id for g in goods}
+
+    for good in goods[:3]:
+        assert store.update_memory(good.id, overview="edited").overview == "edited"
+    for good in goods[3:]:
+        store.delete_memory(good.id)
+    assert store.list_memories().matched == 3
+
+    with pytest.raises(MemoryNotFoundError):
+        store.update_memory(bad.id, overview="x")
+    with pytest.raises(MemoryNotFoundError):
+        store.delete_memory(bad.id)
+
+
+def test_by_id_lookup_skips_a_sibling_deleted_mid_scan(
+    project: Project, store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+):
+    target = add(project, "target", "project", 0)
+    others = [add(project, f"other {i}", "project", i + 1) for i in range(3)]
+    ModelCache.shared().clear()
+    real_load = Memory.load_from_file.__func__
+
+    def load_after_sibling_deleted(cls, path, readonly=False):
+        for other in others:
+            if other.path == path and path.exists():
+                path.unlink()
+        return real_load(cls, path, readonly=readonly)
+
+    monkeypatch.setattr(
+        Memory, "load_from_file", classmethod(load_after_sibling_deleted)
+    )
+    assert [m.id for m in store.get_memories([target.id])] == [target.id]

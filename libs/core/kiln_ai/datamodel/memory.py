@@ -12,7 +12,7 @@ from kiln_ai.utils.validation import validate_tags
 
 # These caps are enforced at write time AND re-applied by pydantic when loading
 # stored rows, so any row exceeding them (e.g. from an out-of-band writer) fails
-# to load: listings skip it with a warning, and fetches by id fail on it.
+# to load: the memory store skips it with a warning, in listings and fetches by id.
 # Raising them is safe; never lower them.
 MAX_OVERVIEW_LENGTH = 280
 MAX_CONTENT_LENGTH = 4000

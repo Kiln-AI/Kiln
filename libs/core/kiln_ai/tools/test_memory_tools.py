@@ -250,6 +250,17 @@ async def test_get_unknown_ids_omitted(project):
     assert len(got["memories"]) == 1
 
 
+async def test_get_skips_an_unreadable_memory(project):
+    good = out(await tool(project, "save").run(overview="good", scope="project"))
+    bad = out(await tool(project, "save").run(overview="bad", scope="project"))
+    bad_path = project.path.parent / "assistant_memory" / bad["id"] / "memory.kiln"
+    bad_path.write_text("{ not json", encoding="utf-8")
+
+    result = await tool(project, "get").run(ids=[good["id"], bad["id"]])
+    assert not result.is_error
+    assert [m["id"] for m in out(result)["memories"]] == [good["id"]]
+
+
 # --- registry integration ---
 
 
