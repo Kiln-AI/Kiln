@@ -820,7 +820,7 @@ class EvalOutputScore(BaseModel):
     )
     direction: ScoreDirection = Field(
         default=ScoreDirection.higher_is_better,
-        description="The direction of improvement for this score: 'higher_is_better', 'lower_is_better', or 'informational' (context only, no preferred direction). Rating scales ('five_star', 'pass_fail', 'pass_fail_critical') are higher-is-better by definition, so they allow 'higher_is_better' and 'informational' but not 'lower_is_better'.",
+        description="The direction of improvement for this score: 'higher_is_better', 'lower_is_better', or 'informational' (context only, no preferred direction). Rating scales ('five_star', 'pass_fail', 'pass_fail_critical') are higher-is-better by definition, so they allow 'higher_is_better' and 'informational' but not 'lower_is_better'. 'lower_is_better' is reserved for custom scores, which evaluators do not currently support.",
     )
 
     def json_key(self) -> str:
@@ -849,7 +849,7 @@ class EvalOutputScore(BaseModel):
             ):
                 if self.direction == ScoreDirection.lower_is_better:
                     raise ValueError(
-                        f"Score '{self.name}' has type '{self.type.value}', which is higher-is-better by definition. 'lower_is_better' is only valid for custom scores."
+                        f"Score '{self.name}' has type '{self.type.value}', which is higher-is-better by definition. 'lower_is_better' is reserved for custom scores, which evaluators do not currently support."
                     )
             case TaskOutputRatingType.custom:
                 # Any direction is valid for custom scores (unbounded numeric metrics).

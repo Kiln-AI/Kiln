@@ -637,7 +637,7 @@ def test_eval_output_score_direction_valid(score_type, direction):
 def test_eval_output_score_direction_lower_rejected(score_type):
     with pytest.raises(
         ValidationError,
-        match=r"'my score'.*higher-is-better by definition",
+        match=r"'my score'.*higher-is-better by definition.*reserved for custom scores",
     ):
         EvalOutputScore(
             name="my score",

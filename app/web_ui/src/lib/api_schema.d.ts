@@ -7238,7 +7238,7 @@ export interface components {
             /** @description The type of rating to use ('five_star', 'pass_fail', 'pass_fail_critical'). */
             type: components["schemas"]["TaskOutputRatingType"];
             /**
-             * @description The direction of improvement for this score: 'higher_is_better', 'lower_is_better', or 'informational' (context only, no preferred direction). Rating scales ('five_star', 'pass_fail', 'pass_fail_critical') are higher-is-better by definition, so they allow 'higher_is_better' and 'informational' but not 'lower_is_better'.
+             * @description The direction of improvement for this score: 'higher_is_better', 'lower_is_better', or 'informational' (context only, no preferred direction). Rating scales ('five_star', 'pass_fail', 'pass_fail_critical') are higher-is-better by definition, so they allow 'higher_is_better' and 'informational' but not 'lower_is_better'. 'lower_is_better' is reserved for custom scores, which evaluators do not currently support.
              * @default higher_is_better
              */
             direction: components["schemas"]["ScoreDirection"];
