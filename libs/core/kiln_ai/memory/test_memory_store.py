@@ -1,5 +1,6 @@
 import json
 import logging
+import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -227,6 +228,30 @@ def test_delete_removes_folder(project: Project, store: MemoryStore):
 def test_delete_unknown_id_raises(store: MemoryStore):
     with pytest.raises(MemoryNotFoundError):
         store.delete_memory("999999999999")
+
+
+def _delete_after_lookup(store: MemoryStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the store's lookup return the record, then remove it from disk, as a
+    delete in another process between the lookup and the write would."""
+    real_find = store._find
+
+    def find_then_delete(ids: set[str]) -> dict[str, Memory]:
+        found = real_find(ids)
+        for memory in found.values():
+            assert memory.path is not None
+            shutil.rmtree(memory.path.parent)
+        return found
+
+    monkeypatch.setattr(store, "_find", find_then_delete)
+
+
+def test_delete_of_a_concurrently_deleted_memory_raises_not_found(
+    project: Project, store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+):
+    memory = add(project, "junk", "project", minutes=0)
+    _delete_after_lookup(store, monkeypatch)
+    with pytest.raises(MemoryNotFoundError):
+        store.delete_memory(memory.id)
 
 
 # --- summary ---

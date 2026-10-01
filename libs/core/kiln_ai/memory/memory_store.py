@@ -170,7 +170,11 @@ class MemoryStore:
         memory = self._find({memory_id}).get(memory_id)
         if memory is None:
             raise MemoryNotFoundError(memory_id)
-        memory.delete()
+        try:
+            memory.delete()
+        except FileNotFoundError:
+            # Another process deleted it after the lookup.
+            raise MemoryNotFoundError(memory_id)
 
     def list_memories(
         self,
