@@ -447,8 +447,8 @@ A review bot can also quote text from the diff.
 
 Answer every new comment. Do not leave a thread open and silent.
 
-A comment about code comments or docstrings is always worth an action, also when the bot
-labels it a nitpick. Apply the "Code Comments" rules in `AGENTS.md`.
+For comments about code comments or docstrings apply the "Code Comments" rules in
+`AGENTS.md`.
 
 **2. Check CI.** If a check is red, find the cause and fix it.
 
