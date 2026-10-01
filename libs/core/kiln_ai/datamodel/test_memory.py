@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from kiln_ai.datamodel import Memory, Project
+from kiln_ai.datamodel import memory as memory_module
 from kiln_ai.datamodel.memory import (
     MAX_CONTENT_LENGTH,
     MAX_OVERVIEW_LENGTH,
@@ -255,4 +256,52 @@ def test_saved_file_mode_matches_a_normal_write(tmp_path: Path, umask: int):
     memory_mode = stat.S_IMODE(memory.path.stat().st_mode)
     project_mode = stat.S_IMODE((tmp_path / "project.kiln").stat().st_mode)
     assert memory_mode == project_mode == (0o666 & ~umask)
+    assert list(memory.path.parent.glob(".tmp-*")) == []
+
+
+def _replace_failing(times: int, calls: list[str]):
+    real_replace = os.replace
+
+    def replace(src, dst):
+        calls.append(src)
+        if len(calls) <= times:
+            raise PermissionError("target is open in another process")
+        real_replace(src, dst)
+
+    return replace
+
+
+def test_save_retries_a_blocked_replace_on_windows(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+):
+    memory = Memory(parent=project, overview="before", scope="project")
+    memory.save_to_file()
+    calls: list[str] = []
+    monkeypatch.setattr(memory_module, "_RETRY_REPLACE", True)
+    monkeypatch.setattr(memory_module.time, "sleep", lambda _: None)
+    monkeypatch.setattr(memory_module.os, "replace", _replace_failing(2, calls))
+
+    memory.overview = "after"
+    memory.save_to_file()
+
+    assert len(calls) == 3
+    assert json.loads(memory.path.read_text())["overview"] == "after"
+    assert list(memory.path.parent.glob(".tmp-*")) == []
+
+
+def test_save_does_not_retry_a_blocked_replace_off_windows(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+):
+    memory = Memory(parent=project, overview="before", scope="project")
+    memory.save_to_file()
+    calls: list[str] = []
+    monkeypatch.setattr(memory_module, "_RETRY_REPLACE", False)
+    monkeypatch.setattr(memory_module.os, "replace", _replace_failing(1, calls))
+
+    memory.overview = "after"
+    with pytest.raises(PermissionError):
+        memory.save_to_file()
+
+    assert len(calls) == 1
+    assert json.loads(memory.path.read_text())["overview"] == "before"
     assert list(memory.path.parent.glob(".tmp-*")) == []

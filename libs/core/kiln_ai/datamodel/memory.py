@@ -1,5 +1,7 @@
 import contextlib
 import os
+import sys
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -47,6 +49,25 @@ def _create_temp_file(directory: Path) -> tuple[int, str]:
         except FileExistsError:
             continue
     raise FileExistsError(f"No free temp file name in {directory}")
+
+
+# On Windows, os.replace fails with PermissionError while another handle has the
+# target open, because Python's open() does not share delete access. Readers hold
+# a memory file only for the time of one read, so a short retry gets through.
+_RETRY_REPLACE = sys.platform == "win32"
+_REPLACE_ATTEMPTS = 20
+_REPLACE_RETRY_DELAY_SECONDS = 0.01
+
+
+def _replace(src: str, dst: Path) -> None:
+    for attempt in range(_REPLACE_ATTEMPTS):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if not _RETRY_REPLACE or attempt == _REPLACE_ATTEMPTS - 1:
+                raise
+            time.sleep(_REPLACE_RETRY_DELAY_SECONDS)
 
 
 class Memory(KilnParentedModel):
@@ -158,7 +179,7 @@ class Memory(KilnParentedModel):
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as file:
                 file.write(json_data)
-            os.replace(tmp_name, path)
+            _replace(tmp_name, path)
         except BaseException:
             with contextlib.suppress(OSError):
                 os.unlink(tmp_name)
