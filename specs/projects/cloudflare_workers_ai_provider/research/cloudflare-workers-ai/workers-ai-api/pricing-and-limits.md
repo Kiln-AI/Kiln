@@ -64,4 +64,4 @@ General Cloudflare API limit: "The global rate limit for the Cloudflare API is 1
 
 What matters for Kiln users:
 - Kiln runs many parallel requests during evals and synthetic data generation. At 20 rpm, paid-only frontier models (Kimi, GLM 5.x, DeepSeek V4) will throttle heavily; Kiln's concurrency for Workers AI should be conservative and retry on 3040.
-- Two different 429s: 3036 (daily free Neurons exhausted — not retryable today) and 3040 (capacity — retryable).
+- Three different 429s: 3021 (per-minute rate limit, observed in the [live test](../../../live_test_findings.md#rate-limits) — retryable), 3036 (daily free Neurons exhausted — not retryable today) and 3040 (capacity — retryable).
