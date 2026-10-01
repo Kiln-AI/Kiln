@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Set
+from typing import Any, Set
 
 from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.eval_runner import (
@@ -9,7 +9,13 @@ from kiln_ai.adapters.eval.eval_runner import (
     EvalJob,
     EvalRunner,
 )
-from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalInput, EvalSplitName
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfig,
+    EvalConfigType,
+    EvalInput,
+    EvalSplitName,
+)
 from kiln_ai.datamodel.eval_splits import (
     ItemKey,
     ItemSource,
@@ -190,6 +196,11 @@ class EvalJobProperties(BaseModel):
     judge_model_provider: str = Field(
         description="Raw model provider id used by the judge. The frontend resolves it to a display name."
     )
+    judge_v2_type: str | None = Field(
+        default=None,
+        description="For a V2 judge, its eval type (for example llm_judge or exact_match), "
+        "so the UI can name the specific judge type instead of just 'V2'. Null for legacy judges.",
+    )
 
 
 def _scoped_item_keys(split: ResolvedSplit, params: EvalJobParams) -> Set[ItemKey]:
@@ -263,6 +274,9 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
             tools_count = 0
             skills_count = 0
 
+        judge_model_name, judge_model_provider, judge_v2_type = self._judge_details(
+            eval_config
+        )
         return EvalJobProperties(
             eval_name=eval.name,
             run_config_name=run_config.name,
@@ -273,12 +287,39 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
             run_config_skills_count=skills_count,
             judge_name=eval_config.name,
             judge_algorithm=eval_config.config_type.value,
-            # V2 configs have no root-level judge model, so these are Optional on the
-            # model now; the display fields are plain strings, and blank reads the same
-            # way the MCP run-config fields above do.
-            judge_model_name=eval_config.model_name or "",
-            judge_model_provider=eval_config.model_provider or "",
+            judge_model_name=judge_model_name,
+            judge_model_provider=judge_model_provider,
+            judge_v2_type=judge_v2_type,
         )
+
+    @staticmethod
+    def _judge_details(eval_config: EvalConfig) -> tuple[str, str, str | None]:
+        """The judge's model, provider and V2 eval type, for display.
+
+        A legacy config keeps its model at the root. A V2 config has no root-level
+        model: an LLM judge keeps it in its typed properties, and the other V2 types
+        (exact match, code eval, ...) use no model, so the fields stay blank.
+        """
+        if (
+            eval_config.config_type == EvalConfigType.v2
+            and eval_config.properties is not None
+        ):
+            props = eval_config.properties
+
+            def field(name: str) -> Any:
+                # V2 properties are typed models; tolerate a dict for older files.
+                if isinstance(props, dict):
+                    return props.get(name)
+                return getattr(props, name, None)
+
+            raw_type = field("type")
+            v2_type = getattr(raw_type, "value", raw_type)
+            return (
+                str(field("model_name") or ""),
+                str(field("model_provider") or ""),
+                str(v2_type) if v2_type else None,
+            )
+        return eval_config.model_name or "", eval_config.model_provider or "", None
 
     def _prompt_display_name(
         self,

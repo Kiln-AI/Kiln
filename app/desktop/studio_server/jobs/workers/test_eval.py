@@ -20,10 +20,13 @@ from kiln_ai.datamodel import (
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
+    EvalConfigType,
     EvalInput,
     EvalInputSplit,
     EvalOutputScore,
     EvalRun,
+    ExactMatchProperties,
+    LlmJudgeProperties,
     SingleTurnEvalInputData,
     TaskRunSplit,
     UserMessage,
@@ -524,6 +527,53 @@ async def test_describe_returns_properties(
     )
 
 
+async def test_describe_v2_llm_judge_reads_model_from_properties(
+    resolve_project, task, eval, run_config, params
+):
+    # A V2 config has no root-level model; an LLM judge keeps it in its properties.
+    EvalConfig(
+        id="eval_config_v2",
+        name="V2 Judge",
+        config_type=EvalConfigType.v2,
+        properties=LlmJudgeProperties(
+            model_name="gpt-4o",
+            model_provider="openai",
+            prompt_template="Evaluate: {{ final_message }}",
+        ),
+        parent=eval,
+    ).save_to_file()
+
+    props = await EvalJobWorker().describe(
+        params.model_copy(update={"eval_config_id": "eval_config_v2"})
+    )
+
+    assert props.judge_algorithm == "v2"
+    assert props.judge_v2_type == "llm_judge"
+    assert props.judge_model_name == "gpt-4o"
+    assert props.judge_model_provider == "openai"
+
+
+async def test_describe_v2_judge_without_model(
+    resolve_project, task, eval, run_config, params
+):
+    # V2 types other than an LLM judge use no model: the type is still published.
+    EvalConfig(
+        id="eval_config_exact",
+        name="Exact",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="yes"),
+        parent=eval,
+    ).save_to_file()
+
+    props = await EvalJobWorker().describe(
+        params.model_copy(update={"eval_config_id": "eval_config_exact"})
+    )
+
+    assert props.judge_v2_type == "exact_match"
+    assert props.judge_model_name == ""
+    assert props.judge_model_provider == ""
+
+
 async def test_describe_counts_tools_skills_and_frozen_prompt(
     resolve_project, task, eval, eval_config, data_source
 ):
@@ -800,6 +850,7 @@ async def test_registry_create_populates_properties(
         "judge_algorithm": "g_eval",
         "judge_model_name": "gpt-4",
         "judge_model_provider": "openai",
+        "judge_v2_type": None,
     }
 
 
