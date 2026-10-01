@@ -5127,6 +5127,11 @@ built_in_models: List[KilnModel] = [
                 model_id="meta-models/Muse-Glimmer-30B",
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/muse-glimmer-30b",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
         ],
     ),
     # Mistral Large 2512
