@@ -332,3 +332,23 @@ async def test_tool_from_id_resolves_bound_to_project(task, operation):
 def test_tool_from_id_without_project_raises():
     with pytest.raises(ValueError):
         tool_from_id(build_memory_tool_id("list"), None)
+
+
+@pytest.mark.parametrize(
+    "operation, store_method, kwargs",
+    [
+        ("get", "get_memories", {"ids": ["1"]}),
+        ("summary", "memory_summary", {}),
+    ],
+)
+@pytest.mark.parametrize("error", [ValueError("bad"), FileNotFoundError("gone")])
+async def test_read_tool_store_failure_is_tool_error(
+    project, monkeypatch, operation, store_method, kwargs, error
+):
+    def failing(self, *args, **kw):
+        raise error
+
+    monkeypatch.setattr(MemoryStore, store_method, failing)
+    result = await tool(project, operation).run(**kwargs)
+    assert result.is_error
+    assert result.error_message == str(error)

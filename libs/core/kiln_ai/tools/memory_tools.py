@@ -250,7 +250,10 @@ class GetMemoriesTool(_MemoryTool):
         self, context: ToolCallContext | None = None, **kwargs
     ) -> ToolCallResult:
         ids = kwargs.get("ids") or []
-        records = await asyncio.to_thread(self._store.get_memories, list(ids))
+        try:
+            records = await asyncio.to_thread(self._store.get_memories, list(ids))
+        except (OSError, ValueError) as e:
+            return self._error(e)
         return self._ok({"memories": [self._record(m) for m in records]})
 
 
@@ -357,9 +360,12 @@ class MemorySummaryTool(_MemoryTool):
     async def run(
         self, context: ToolCallContext | None = None, **kwargs
     ) -> ToolCallResult:
-        summary = await asyncio.to_thread(
-            self._store.memory_summary, scope=kwargs.get("scope")
-        )
+        try:
+            summary = await asyncio.to_thread(
+                self._store.memory_summary, scope=kwargs.get("scope")
+            )
+        except (OSError, ValueError) as e:
+            return self._error(e)
         return self._ok(summary.model_dump(mode="json", exclude_none=True))
 
 
