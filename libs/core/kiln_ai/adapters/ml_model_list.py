@@ -1427,6 +1427,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5.3-chat",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_doc_extraction=True,
                 supports_vision=True,
@@ -2790,6 +2791,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
                 model_id="claude-opus-4-1-20250805",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.function_calling,
                 temp_top_p_exclusive=True,
             ),
@@ -2804,6 +2806,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-opus-4",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.function_calling,
             ),
             KilnModelProvider(
@@ -4289,6 +4292,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
                 model_id="gemini-2.0-flash",
+                deprecated=True,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
@@ -4349,6 +4353,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
                 model_id="gemini-2.0-flash-lite",
+                deprecated=True,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
@@ -4530,6 +4535,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="nvidia/nemotron-3-nano-30b-a3b:free",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
             ),
@@ -4865,6 +4871,7 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=False,
                 supports_data_gen=False,
                 model_id="meta-llama/llama-3.2-11b-vision-instruct",
+                deprecated=True,
                 supports_function_calling=False,
                 supports_vision=True,
                 supports_doc_extraction=True,
@@ -5660,6 +5667,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="google/gemma-3n-e4b-it",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=False,
                 supports_function_calling=False,
@@ -6315,6 +6323,7 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 model_id="deepseek/deepseek-r1-distill-llama-70b",
+                deprecated=True,
                 r1_openrouter_options=True,
                 require_openrouter_reasoning=True,
                 parser=ModelParserID.r1_thinking,
@@ -9291,6 +9300,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Pro/zai-org/GLM-5",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
