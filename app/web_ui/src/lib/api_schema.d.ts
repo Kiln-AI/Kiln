@@ -5957,6 +5957,8 @@ export interface components {
              * @description The name of the eval config.
              */
             name?: string | null;
+            /** @description Provenance: why this eval config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateMcpRunConfigRequest
@@ -6116,6 +6118,8 @@ export interface components {
              * @description Legacy `sdg_session_config` path only: the run config whose tools and skills describe the target task while examples are generated. Omit to use the task's default run config. The eval builder generates nothing, so this does not apply to it.
              */
             run_config_id?: string | null;
+            /** @description Provenance stamped onto the created judge eval config. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateTaskFromToolRequest
