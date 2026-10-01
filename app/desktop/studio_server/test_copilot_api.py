@@ -2219,6 +2219,68 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         assert on_disk["eval_configs_filter_id"] == "tag::golden_single_turn_spec"
         assert "eval_input_filter_id" not in first_bytes
 
+    def test_judge_eval_config_stores_provenance(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        project, task = project_and_task
+        single_turn_request_data["provenance"] = {
+            "origin": "human",
+            "notes": "Judge calibrated in the spec builder.",
+        }
+
+        response = self._post(client, project, task, single_turn_request_data)
+
+        assert response.status_code == 200, response.text
+        configs = task.evals()[0].configs()
+        assert len(configs) == 1
+        provenance = configs[0].provenance
+        assert provenance is not None
+        assert provenance.origin == "human"
+        assert provenance.derived_from_ids == []
+        assert provenance.notes == "Judge calibrated in the spec builder."
+
+    def test_judge_eval_config_without_provenance_writes_no_key(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        project, task = project_and_task
+
+        response = self._post(client, project, task, single_turn_request_data)
+
+        assert response.status_code == 200, response.text
+        config = task.evals()[0].configs()[0]
+        assert config.provenance is None
+        assert config.path is not None
+        assert "provenance" not in json.loads(config.path.read_text())
+
+    def test_judge_eval_config_lineage_400_and_nothing_saved(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        # The eval is new, so its judge has no sibling eval config to derive from.
+        project, task = project_and_task
+        single_turn_request_data["provenance"] = {
+            "origin": "human",
+            "derived_from_ids": ["some_other_config"],
+        }
+
+        response = self._post(client, project, task, single_turn_request_data)
+
+        assert response.status_code == 400
+        assert "unknown sibling" in response.json()["message"]
+        assert task.evals() == []
+        assert task.specs() == []
+        assert task.eval_inputs() == []
+
+    def test_judge_eval_config_invalid_origin_422(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        project, task = project_and_task
+        single_turn_request_data["provenance"] = {"origin": "robot"}
+
+        response = self._post(client, project, task, single_turn_request_data)
+
+        assert response.status_code == 422
+        assert task.evals() == []
+
     def test_404_when_batch_tag_matches_nothing(
         self, client, project_and_task, single_turn_request_data
     ):
