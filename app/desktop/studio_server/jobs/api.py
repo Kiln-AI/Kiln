@@ -390,9 +390,9 @@ def connect_jobs_api(app: FastAPI) -> None:
     ) -> JobRecord:
         """Block until the job reaches a terminal state, then return its record.
 
-        A pure observer, like the SSE stream: if the client disconnects, uvicorn
-        cancels this handler coroutine, which cancels the wait() await and tears
-        down only the awaiter — the job's supervising task keeps running."""
+        A pure observer: waiting never stops the job. A client that disconnects
+        does not cancel this handler, so a wait without a timeout on a job that
+        never ends (for example a paused one) lasts until that job ends."""
         try:
             return await job_registry.wait(id, timeout=timeout)
         except JobNotFoundError:
