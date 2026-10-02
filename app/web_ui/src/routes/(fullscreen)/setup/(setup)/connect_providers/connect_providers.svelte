@@ -10,7 +10,6 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { client, base_url } from "$lib/api_client"
   import Warning from "$lib/ui/warning.svelte"
-  import { available_tuning_models } from "$lib/stores/fine_tune_store"
   import { clear_available_models_cache } from "$lib/stores"
   import { get_provider_image } from "$lib/ui/provider_image"
   import posthog from "posthog-js"
@@ -498,7 +497,6 @@
         setCopilotConnected(false)
       }
 
-      available_tuning_models.set(null)
       clear_available_models_cache()
     } catch (e) {
       console.error("disconnect_provider error", e)
@@ -747,7 +745,6 @@
       status[provider_id].connected = true
       dismiss_api_key_dialog()
 
-      available_tuning_models.set(null)
       clear_available_models_cache()
     } catch (e) {
       console.error("submit_api_key error", e)
