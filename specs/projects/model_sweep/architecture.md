@@ -18,10 +18,10 @@ host (scheduled task | cloud routine)
        ├─ scripts/run_paid_tests.py   smoke + full suite per (enum, provider)  →  results.json + table.md
        ├─ scripts/classify_diff.py    easy | needs-discussion, with reasons
        ├─ scripts/deprecations.py     check_provider + adapter smoke on dead entries  →  deprecations.json
-       ├─ scripts/open_prs.py         branches, PR create/update as kiln-claude, first comment
-       ├─ scripts/slack_post.py       one line per PR (Slack app) or connector fallback
+       ├─ scripts/open_prs.py         branches, PR create/update under the active identity, body sections
+       ├─ scripts/slack_post.py       one message per PR: drafts → models webhook, ready → PR-review webhook
        ├─ scripts/staleness.py        scan repos  →  table  →  edit the living issue
-       ├─ scripts/pr_feedback.py      new comments on kiln-claude PRs  →  feedback.json ; reply
+       ├─ scripts/pr_feedback.py      new comments on model-sweep/* PRs  →  feedback.json ; update-body
        └─ run report (markdown) printed at the end, always
 ```
 
@@ -61,12 +61,12 @@ All intermediate files live under `.model-sweep/` in the worktree, git-ignored, 
 - `--host local`: `git -C <main checkout> fetch origin`, `git worktree add -b model-sweep/run-<date> <sibling dir> origin/main`; `uv sync` happens lazily via `uv run`. Removes the worktree on exit unless a branch was pushed from it.
 - `--host cloud`: uses the checkout as is.
 - Prints key availability as booleans by importing `kiln_ai.utils.config.Config` (local) or reading the environment (cloud). Never prints a value.
-- Exports `GH_TOKEN` for `kiln-claude` from `security find-generic-password -s kiln-claude-gh -w` (local) or `KILN_CLAUDE_GH_TOKEN` (cloud). If absent, sets `SWEEP_BOT=none`; later steps then run as if `--dry-run` for anything that writes to GitHub, and the report says why.
+- Resolves the GitHub identity: in v1 the operator's own credentials (the cloud session's GitHub App grant, or `gh` on a laptop); when a bot identity exists later, its token from the keychain (local) or an environment variable (cloud). If no identity can write, later steps run as if `--dry-run` for anything that writes to GitHub, and the report says why.
 - Reads `SLACK_MODELS_WEBHOOK` and `SLACK_PRS_WEBHOOK` from the environment and reports each as present or absent, booleans only.
 
 ### discover.py
 
-Inputs: `hints.json`, `ml_model_list.py` on `main`, open `kiln-claude` PR branches (fetched; their `ml_model_list.py` diffs count as "already covered").
+Inputs: `hints.json`, `ml_model_list.py` on `main`, open `model-sweep/*` and `add-model/*` PR branches, whatever account authored them (fetched; their `ml_model_list.py` diffs count as "already covered").
 
 - Sources, in the order the maintain-models skill uses them: LiteLLM `model_catalog` (one search per hint family plus the standing list of families; budget 60 requests, leaving headroom under the 100/day limit), `models.dev/api.json`, `openrouter.ai/api/v1/models`, Together (`TOGETHERAI_API_KEY` if present), Featherless, Fireworks model pages, SiliconFlow.
 - Lagging-provider backfill: for the 10 most recently added models (by `git log -S` on their enum), check Fireworks, Together, SiliconFlow for a matching slug not yet in the entry.
@@ -145,9 +145,9 @@ Always written, even on failure, as the session's final message: counts, branche
 
 > In /Users/mikechatzidakis/dev/Kiln/Kiln read `.agents/skills/kiln-model-sweep/SKILL.md` and run it with `--mode sweep --host local`. (13:00 task: `--mode comments --host local`.)
 
-**Cloud routine** (environment "Models", Slack connector attached, Sonnet 5, cron `0 11 * * 1-5` UTC):
+**Cloud routine** (the operator's cloud environment, Slack connector attached, Opus 5.5, cron `0 11 * * 1-5` UTC). The message carries only the run settings and an instruction to fetch the skill from the branch under test; see `routine_prompt.md`:
 
-> Read `.agents/skills/kiln-model-sweep/SKILL.md` and run it with `--mode sweep --host cloud --skip-paid`.
+> Run settings: models channel, `SLACK_CC_USER_ID`, the two webhook variables, and the skill source branch. Then: `git fetch origin <branch> && git show origin/<branch>:.agents/skills/kiln-model-sweep/SKILL.md > /tmp/kiln-model-sweep.md`, read it in full, follow it exactly; all work branches from `origin/main`; stop and report if the fetch fails.
 
 The scheduler takes a UTC cron and no timezone, so `0 11 * * 1-5` is 07:00 America/Toronto in summer and 06:00 in winter. The functional spec accepts the drift; move the routine to `0 12 * * 1-5` after the autumn change if the local hour matters.
 
@@ -158,7 +158,7 @@ Network allowlist for the cloud environment is the provider domain list the team
 v1 runs under the operator's own GitHub account (functional spec, Decisions). The bot identity below is the later target; nothing in the run logic depends on which identity is active.
 
 - Provider keys: Kiln `Config` on the local host. Never in the cloud environment.
-- `kiln-claude` GitHub token: macOS keychain item `kiln-claude-gh` locally. Scopes: `public_repo` (and `repo` only if invited to the org for private pushes, which this repo does not need). In the cloud, it would have to be `KILN_CLAUDE_GH_TOKEN`; the smoke test runs without it and records the resulting author.
+- GitHub identity: v1 uses the operator's own credentials, so nothing extra is stored. A later bot identity would be a token in the keychain (local) or an environment variable (cloud), scoped to public-repo writes.
 - Slack: the two incoming-webhook URLs as environment variables on the host; on a laptop, keychain items read into the environment by the task.
 - Nothing is ever echoed. `sweep_env.sh` prints `HAS_<NAME>=true|false` only.
 
@@ -173,6 +173,6 @@ v1 runs under the operator's own GitHub account (functional spec, Decisions). Th
 
 - Unit tests (`pytest`, free, in the skill's `tests/`): `classify_diff.py` against fixture diffs for each rule; `discover.py` against recorded catalog responses (`responses` fixtures), including the LiteLLM-quota fallback; `staleness.py` against a fixture repo tree; `deprecations.py` verdict table; `open_prs.py` branch naming and dedup with a stubbed `gh`.
 - Smoke 1, local: `--dry-run --only "<one known-new model>"`. Expect candidates, an edited worktree, a real paid run for that model, a classification, and a report listing the PR that would have been opened.
-- Smoke 2, local, live: same without `--dry-run`. One PR from `kiln-claude`, one Slack line.
-- Smoke 3, cloud: `--dry-run --skip-paid --only "<same model>"` as a routine run-now. Records: connector attached, sources reachable, author identity, duration.
+- Smoke 2, local, live: same without `--dry-run`. One PR under the active identity, one Slack post.
+- Smoke 3, cloud: `--dry-run --skip-paid --only "<same model>"` as a routine run-now. Records: Slack connector attached, sources reachable, author identity, duration.
 - The debug_detector greps run as a unit test over the skill's own scripts.
