@@ -248,6 +248,34 @@ describe("JobsTable", () => {
     expect(load_model_info).toHaveBeenCalledTimes(1)
   })
 
+  it("claims no tools or skills for a run config that is not a Kiln agent", () => {
+    // The worker blanks the model, prompt and counts for an MCP run config.
+    jobs.set([
+      makeJob({
+        id: "j_eval_mcp",
+        type: "eval",
+        properties: {
+          eval_name: "MCP check",
+          run_config_name: "MCP tool",
+          run_config_model_name: "",
+          run_config_model_provider: "",
+          run_config_prompt_name: "",
+          run_config_tools_count: 0,
+          run_config_skills_count: 0,
+          judge_name: "J",
+          judge_algorithm: "g_eval",
+          judge_model_name: "gpt-4o",
+          judge_model_provider: "openai",
+        },
+      }),
+    ])
+    const { getByText, queryByText } = render(JobsTable)
+    expect(getByText(/Run config: MCP tool/)).not.toBeNull()
+    expect(queryByText(/Model:/)).toBeNull()
+    expect(queryByText(/Tools:/)).toBeNull()
+    expect(queryByText(/Skills:/)).toBeNull()
+  })
+
   it("renders no eval properties for non-eval jobs", () => {
     jobs.set([makeJob({ id: "j_noop", type: "noop" })])
     const { queryByText } = render(JobsTable)

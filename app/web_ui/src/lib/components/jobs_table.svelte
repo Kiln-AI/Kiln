@@ -298,16 +298,18 @@
                         Prompt: {p.run_config_prompt_name}
                       </div>
                     {/if}
-                    <div>
-                      Tools: {p.run_config_tools_count > 0
-                        ? `${p.run_config_tools_count} available`
-                        : "None"}
-                    </div>
-                    <div>
-                      Skills: {p.run_config_skills_count > 0
-                        ? `${p.run_config_skills_count} available`
-                        : "None"}
-                    </div>
+                    {#if p.run_config_model_name}
+                      <div>
+                        Tools: {p.run_config_tools_count > 0
+                          ? `${p.run_config_tools_count} available`
+                          : "None"}
+                      </div>
+                      <div>
+                        Skills: {p.run_config_skills_count > 0
+                          ? `${p.run_config_skills_count} available`
+                          : "None"}
+                      </div>
+                    {/if}
                     <div
                       class="truncate"
                       title="{p.judge_name} ({judge_algorithm_display(p)})"
@@ -323,11 +325,11 @@
                 {:else}
                   <span class="font-medium">{job_type_display(job.type)}</span>
                 {/if}
-                <span class="text-[11px] text-gray-400 mt-2"
+                <span class="text-xs text-gray-500 mt-2"
                   >{formatDate(job.created_at)}</span
                 >
                 <span
-                  class="font-mono text-[11px] text-gray-400 truncate"
+                  class="font-mono text-xs text-gray-500 truncate"
                   title={job.id}>ID: {job.id}</span
                 >
               </div>

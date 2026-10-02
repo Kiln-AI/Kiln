@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Annotated, Any, AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Path, Query, Response
+from kiln_ai.adapters.eval.eval_runner import EvalRunner
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
@@ -14,7 +15,13 @@ from kiln_server.utils.agent_checks.policy import (
 )
 from pydantic import BaseModel, Field, ValidationError
 
-from app.desktop.studio_server.eval_api import eval_from_id, resolved_split_or_422
+from app.desktop.studio_server.eval_api import (
+    eval_config_from_id,
+    eval_from_id,
+    require_dataset_run_items_or_400,
+    resolved_split_or_422,
+    task_run_config_from_id,
+)
 
 from . import error_log
 from .events import JobEvent
@@ -85,26 +92,45 @@ class WaitForJobsRequest(BaseModel):
 
 
 def _check_eval_job_request(params: EvalJobParams) -> None:
-    """Raise unless the job can run: 404 if the eval is missing, 422 if it has no such
-    split or if `item_ids` names an item that is not in the split.
+    """Raise unless the job can run: 404 if the eval, the eval config or the run config
+    is missing, 422 if the eval has no such split or if `item_ids` names an item that is
+    not in the split, and 400 for the checks the run_comparison endpoint also makes
+    before it runs (a V1 judge on items it can't score, multi-turn items that can't be
+    driven). Without those, the job would start and fail every item one by one.
 
     Deliberately discards what it resolved. The worker resolves the split again when the
     job actually runs, because a job runs the items as they are then, not as they were
     when it was requested.
     """
     eval = eval_from_id(params.project_id, params.task_id, params.eval_id)
+    eval_config = eval_config_from_id(
+        params.project_id, params.task_id, params.eval_id, params.eval_config_id
+    )
+    run_config = task_run_config_from_id(
+        params.project_id, params.task_id, params.run_config_id
+    )
     task = task_from_id(params.project_id, params.task_id)
     split = resolved_split_or_422(task, eval, params.split)
-    if params.item_ids is None:
-        return
-    split_ids = {item.id for item in split.items}
-    outside = [item_id for item_id in params.item_ids if item_id not in split_ids]
-    if outside:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Items not in the '{params.split}' split of eval '{eval.id}': "
-            + ", ".join(outside),
-        )
+    if params.item_ids is not None:
+        split_ids = {item.id for item in split.items}
+        outside = [item_id for item_id in params.item_ids if item_id not in split_ids]
+        if outside:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Items not in the '{params.split}' split of eval '{eval.id}': "
+                + ", ".join(outside),
+            )
+    require_dataset_run_items_or_400(eval, eval_config.config_type, split)
+    try:
+        EvalRunner(
+            eval_configs=[eval_config],
+            run_configs=[run_config],
+            eval_run_type="task_run_eval",
+            split=split,
+            item_ids=set(params.item_ids) if params.item_ids is not None else None,
+        ).validate_multi_turn_drive_readiness()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 def _format_sse(event: JobEvent) -> str:
@@ -288,6 +314,11 @@ def connect_jobs_api(app: FastAPI) -> None:
                 status_code=400,
                 detail=f"Create '{type}' jobs with POST {worker.create_path}.",
             )
+        if not worker.generic_create_allowed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"'{type}' jobs cannot be created with this endpoint.",
+            )
 
         try:
             validated = worker.params_model.model_validate(request.params)
@@ -360,9 +391,9 @@ def connect_jobs_api(app: FastAPI) -> None:
     ) -> JobRecord:
         """Block until the job reaches a terminal state, then return its record.
 
-        A pure observer, like the SSE stream: if the client disconnects, uvicorn
-        cancels this handler coroutine, which cancels the wait() await and tears
-        down only the awaiter — the job's supervising task keeps running."""
+        A pure observer: waiting never stops the job. A client that disconnects
+        does not cancel this handler, so a wait without a timeout on a job that
+        never ends (for example a paused one) lasts until that job ends."""
         try:
             return await job_registry.wait(id, timeout=timeout)
         except JobNotFoundError:
