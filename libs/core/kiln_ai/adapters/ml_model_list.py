@@ -5988,6 +5988,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="deepseek-ai/DeepSeek-V4-Pro-0813",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
@@ -6022,9 +6024,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
-                model_id="deepseek-ai/DeepSeek-V4-Pro-0813",
+                model_id="deepseek-ai/DeepSeek-V4-Pro",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
             ),
