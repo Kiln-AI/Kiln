@@ -13,4 +13,4 @@ Details for every phase are in [architecture.md](./architecture.md). Every phase
 
 ## PR 2: Models and Skills (after a client release that includes PR 1)
 
-- [ ] Phase 3: Add the 10 `ml_model_list.py` entries, with per-model flags set by the maintain-models skill's per-model tests, and the prerelease whitelist entry. Add Cloudflare support to `provider_utils.py` and the deprecation-check script, and update the maintain-models, deprecation-check and prerelease-check skill docs.
+- [x] Phase 3: Add the 10 `ml_model_list.py` entries, with per-model flags set by the maintain-models skill's per-model tests, and the prerelease whitelist entry. Add Cloudflare support to `provider_utils.py` and the deprecation-check script, and update the maintain-models, deprecation-check and prerelease-check skill docs.
