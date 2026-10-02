@@ -9787,9 +9787,15 @@ export interface components {
         MemoryListResult: {
             /** Listings */
             listings: components["schemas"]["MemoryListing"][];
-            /** Matched */
+            /**
+             * Matched
+             * @description How many memories matched the filters, across all pages.
+             */
             matched: number;
-            /** Remaining */
+            /**
+             * Remaining
+             * @description How many matching memories come after this page.
+             */
             remaining: number;
             /** Remaining Tag Counts */
             remaining_tag_counts: {
@@ -9819,7 +9825,11 @@ export interface components {
             /** Created By */
             created_by: string;
         };
-        /** MemorySummary */
+        /**
+         * MemorySummary
+         * @description An orientation view of a memory store, with no record content: the total and
+         *     one ScopeSummary per scope, newest scope first.
+         */
         MemorySummary: {
             /** Total */
             total: number;
@@ -11784,7 +11794,10 @@ export interface components {
              */
             projects: components["schemas"]["ProjectInfo"][];
         };
-        /** ScopeSummary */
+        /**
+         * ScopeSummary
+         * @description Counts for the memories of one scope: how many, the newest, and per-tag counts.
+         */
         ScopeSummary: {
             /** Scope */
             scope: string;
@@ -11799,7 +11812,10 @@ export interface components {
             tags: {
                 [key: string]: number;
             };
-            /** Untagged */
+            /**
+             * Untagged
+             * @description How many memories in this scope have no tags. Null when none.
+             */
             untagged?: number | null;
         };
         /**

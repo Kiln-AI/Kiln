@@ -109,6 +109,8 @@ class _MemoryTool(KilnToolInterface):
 
 
 class SaveMemoryTool(_MemoryTool):
+    """Agent tool that saves a new memory to the project's MemoryStore."""
+
     _name: ClassVar[str] = "save_memory"
     _description: ClassVar[str] = (
         "Record a durable memory of your work on this project so it survives "
@@ -170,6 +172,8 @@ class SaveMemoryTool(_MemoryTool):
 
 
 class ListMemoriesTool(_MemoryTool):
+    """Agent tool that lists memory summaries from the project's MemoryStore, filtered and paged."""
+
     _name: ClassVar[str] = "list_memories"
     _description: ClassVar[str] = (
         "List memory summaries (id, overview, tags, scope, content_length, "
@@ -228,6 +232,8 @@ class ListMemoriesTool(_MemoryTool):
 
 
 class GetMemoriesTool(_MemoryTool):
+    """Agent tool that fetches full memory records by id from the project's MemoryStore."""
+
     _name: ClassVar[str] = "get_memories"
     _description: ClassVar[str] = (
         "Fetch full memory records by id. content_length 0 in a listing means the "
@@ -258,6 +264,8 @@ class GetMemoriesTool(_MemoryTool):
 
 
 class UpdateMemoryTool(_MemoryTool):
+    """Agent tool that changes the given fields of a memory in the project's MemoryStore."""
+
     _name: ClassVar[str] = "update_memory"
     _description: ClassVar[str] = (
         "Replace provided fields on an existing memory (omitted fields are "
@@ -313,6 +321,8 @@ class UpdateMemoryTool(_MemoryTool):
 
 
 class DeleteMemoryTool(_MemoryTool):
+    """Agent tool that permanently deletes a memory from the project's MemoryStore."""
+
     _name: ClassVar[str] = "delete_memory"
     _description: ClassVar[str] = (
         "Hard-delete a memory by id. For junk, wrong, or obsolete memories; use "
@@ -340,6 +350,8 @@ class DeleteMemoryTool(_MemoryTool):
 
 
 class MemorySummaryTool(_MemoryTool):
+    """Agent tool that returns per-scope counts from the project's MemoryStore, with no record content."""
+
     _name: ClassVar[str] = "memory_summary"
     _description: ClassVar[str] = (
         "Cheap orientation with no record content: per-scope counts, newest "
