@@ -4025,8 +4025,11 @@ export interface paths {
          * Run Eval Job
          * @description Start a background job that runs one split of an eval against one run
          *     config, and return at once. Items that already have a score for this eval
-         *     config and run config are skipped. Poll `GET /api/jobs/{id}` or
-         *     `POST /api/jobs/wait` for progress and the result.
+         *     config and run config are skipped. If an identical job (same eval, judge,
+         *     run config, split and items) is still pending, running or paused, returns
+         *     that job instead of starting a second one that would score the same items
+         *     again. Poll `GET /api/jobs/{id}` or `POST /api/jobs/wait` for progress and
+         *     the result.
          */
         post: operations["run_eval_job_api_jobs_evals_run_post"];
         delete?: never;
