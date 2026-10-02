@@ -8,6 +8,8 @@ allowed-tools: Read Grep Glob Bash
 
 Kiln screens are built from a small set of shared controls and DaisyUI classes. A screen assembled from Tailwind copied off a house control looks right in a screenshot and wrong next to the rest of the app, and the next screen copies it. This skill exists because that happened repeatedly on the eval builder while every unit passed review and visual sign-off. The fix is not "read the guide harder": it is to write down which control each element is, before code, and to prove it at handback in a form that does not need eyes.
 
+For code structure (stores, API calls, module layout), also follow `kiln-conventions` → `references/web_ui.md` (`.agents/skills/kiln-conventions/references/web_ui.md`).
+
 ## 0. Read, every time (5 minutes)
 
 1. `.agents/frontend_design_guide.md` and `.agents/frontend_controls.md`.

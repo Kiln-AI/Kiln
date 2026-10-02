@@ -1,0 +1,11 @@
+# Allowlist for conventions_gate.py. One Python regex per line, searched in
+# "<repo-relative path><TAB><stripped line>". Prefix a line with "<rule-id>:" to
+# silence only that rule; a bare line silences every rule on a matching line.
+# Each entry has a "#" line above it saying why the hit is not a violation.
+# Blank lines and "#" lines are ignored.
+
+# Animation "phases" are stages of the animation timeline, not project plan phases.
+history-comment:^app/web_ui/src/lib/ui/animations/.*\bPHASE \d
+
+# PATH, SHELL and HOME describe the host OS, not app config; subprocess code reads them where it spawns.
+env-access:os\.environ\.get\("(?:PATH|SHELL|HOME)"
