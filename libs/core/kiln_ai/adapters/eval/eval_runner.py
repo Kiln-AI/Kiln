@@ -934,7 +934,8 @@ class EvalRunner:
         first time: an environment restarted at a new version on the same URL keys
         this run's traces by its new version, never reusing the old version's. A
         failure is remembered for the run too, so an environment that is down or hangs
-        costs one wait, not one per job."""
+        costs one wait, not one per job. A transient failure is not: it asks the job
+        runner for another attempt, which must reach the environment again."""
         world_id = world_reset.world_id
         async with self._world_target_locks.acquire(world_id):
             cached = self._world_targets.get(world_id)
@@ -944,6 +945,8 @@ class EvalRunner:
                 return cached
             try:
                 target = await self._load_world_target(world_id)
+            except OpenEnvTransientError as e:
+                raise RetryableError(str(e)) from e
             except Exception as e:
                 self._world_targets[world_id] = e
                 raise

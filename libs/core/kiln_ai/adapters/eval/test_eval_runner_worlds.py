@@ -675,6 +675,34 @@ async def test_failed_world_resolution_is_remembered_for_the_run(
     assert refresh.call_count == 1
 
 
+async def test_transient_world_resolution_failure_is_retried(
+    project, task, world, run_config, eval_, session_manager
+):
+    """A transient failure while resolving the world (a full server when listing its
+    tools) is not remembered: the job is retried, and the retry reaches the
+    environment again instead of replaying the cached failure."""
+    _input(task, "note", _reset(world, "a"), id="ei_a")
+    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
+    original_list_tools = session_manager.list_tools
+    calls = 0
+
+    async def full_once(world_):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OpenEnvTransientError("Server at capacity")
+        return await original_list_tools(world_)
+
+    with patch.object(session_manager, "list_tools", new=full_once):
+        runner = _runner([cfg], run_config, session_manager)
+        job = runner.collect_tasks()[0]
+        with pytest.raises(RetryableError, match="Server at capacity"):
+            await runner.run_job(job)
+        target = await runner._resolve_world_target(_reset(world, "a"))
+    assert target.world.id == world.id
+    assert calls == 2
+
+
 async def test_edited_reset_regenerates_the_trace(
     project, task, world, syn_tool_id, run_config, eval_, session_manager
 ):
