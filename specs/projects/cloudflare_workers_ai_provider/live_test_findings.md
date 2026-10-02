@@ -23,7 +23,7 @@ Inputs for the architecture. Not a spec artifact.
 ## Gateway
 
 - **The header is optional.** Direct calls without it work.
-- `cf-aig-gateway-id: default` works with this token. The token can't list gateways (`GET /ai-gateway/gateways` returns 403 / 10000), and the account owner confirmed it was given no AI Gateway permissions. So **routing through a gateway needs no AI Gateway permission**. Not confirmed: whether the `default` gateway already existed or was auto-created by this call, and whether the call was really logged in the gateway. The response has no `cf-aig-*` headers either way.
+- `cf-aig-gateway-id: default` works with this token. The token can't list gateways (`GET /ai-gateway/gateways` returns 403 / 10000), and the account owner confirmed it was given no AI Gateway permissions. So **this token reached the `default` gateway path without any AI Gateway permission**. That doesn't show what other gateways, routing cases or gateway features need. Not confirmed: whether the `default` gateway already existed or was auto-created by this call, and whether the call was really logged in the gateway. The response has no `cf-aig-*` headers either way.
 - A gateway ID that doesn't exist returns **400 / code 2001, `Please configure AI Gateway in the Cloudflare dashboard`**.
 - A gateway ID with invalid characters (`bad id!`) returns 400 / code 2001, `Invalid request path. Expected path prefix /v1/:accountTag/:gatewayId`.
 - **Free gateway check:** a chat completion for a made-up model ID (`@cf/kiln/connection-check`, `max_tokens: 1`) with the gateway header returns:

@@ -66,14 +66,14 @@ Cloudflare has two token kinds, and this matters for validation:
 |---|---|---|---|---|
 | `GET /user/tokens/verify` | yes (user tokens only) | no | no | free |
 | `GET /accounts/{id}/tokens/verify` | yes (account tokens) | yes | no | free |
-| `GET /accounts/{id}/ai/models/search?per_page=1` | yes (both kinds) | yes | **yes** | free (no inference) |
+| `GET /accounts/{id}/ai/models/search?per_page=1` (live test: `per_page` is ignored) | yes (both kinds) | yes | **yes** | free (no inference) |
 | `POST /accounts/{id}/ai/v1/chat/completions` tiny prompt | yes | yes | yes | burns Neurons; can hit 403/5035 on paid-only models |
 | `GET /accounts/{id}/ai/v1/models` | — | — | — | does not exist (405) |
 
 - `/user/tokens/verify` returns `{"result":{"id":"...","status":"active"},"success":true,...,"messages":[{"code":10000,"message":"This API Token is valid and active"}]}` ([create token](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/)). But it **rejects valid account-owned tokens** with `success:false [{"code":1000,"message":"Invalid API Token"}]`; those must use `GET /accounts/{account_id}/tokens/verify` ([noorinalabs-deploy#511](https://github.com/noorinalabs/noorinalabs-deploy/issues/511), 2026-06-30; same bug hit [favonia/cloudflare-ddns#1197](https://github.com/favonia/cloudflare-ddns/issues/1197)). Also neither verify endpoint checks that the token has Workers AI permission.
 - `GET /accounts/{account_id}/ai/models/search`: "Searches Workers AI models by name or description." Accepted permissions: `Workers AI Write` or `Workers AI Read`. Query params: `per_page`, `page`, `task`, `author`, `source`, `hide_experimental`, `search`, `include_deprecated`, `format` (`openrouter`). Returns the standard envelope `{errors, messages, result[], success}`; declared error response is 404 ([OpenAPI](https://raw.githubusercontent.com/cloudflare/api-schemas/main/openapi.json), [API reference](https://developers.cloudflare.com/api/resources/ai/subresources/models/methods/list/)).
 
-**Recommendation:** validate with `GET https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/models/search?per_page=1` (optionally `&task=Text Generation`). It is free, works for user and account tokens, and exercises the same token + account + Workers AI permission that inference needs.
+**Recommendation:** validate with `GET https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/models/search?per_page=1` (optionally `&task=Text Generation`). It is free, works for user and account tokens, and exercises the same token + account + Workers AI permission that inference needs. The live test found `per_page` is ignored; Kiln's check uses `search=kiln-connection-check` instead, which returns an empty result ([live test findings](../../../live_test_findings.md)).
 
 ### Expected error responses (partly inferred — not tested live)
 
@@ -107,4 +107,4 @@ Verbatim from [Workers AI errors](https://developers.cloudflare.com/workers-ai/p
 
 Also seen in the wild: input-schema validation failures come back as HTTP 400 with code 5006 and messages like `AiError: Bad input: Error: oneOf at '/' not met, ...` ([OmniRoute#2539](https://github.com/diegosouzapw/OmniRoute/issues/2539), on `/ai/run`).
 
-Note for Kiln's error handling: HTTP 429 means two very different things (daily free quota exhausted vs transient capacity). Only 3040 is worth retrying.
+Note for Kiln's error handling: HTTP 429 means three different things. 3021 is the per-minute rate limit (observed in the live test: "rate limiting: inference request per min rate reached"; see [live test findings](../../../live_test_findings.md#rate-limits)), 3036 is the daily free quota and 3040 is transient capacity. 3021 and 3040 are worth retrying; 3036 isn't.

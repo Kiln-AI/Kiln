@@ -33,7 +33,7 @@ flowchart LR
 |---|---|---|
 | Does the response report which model ran? | **No.** A successful call to the aliased `@cf/moonshotai/kimi-k2.5` returns `"model": "@cf/moonshotai/kimi-k2.5"`, even though K2.6 runs. No header carries it either. | **The optional runtime no-substitution check is not built.** The process safeguard in the maintenance skills is the only protection. |
 | Cheapest way to validate a gateway ID | A chat completion for a model ID that doesn't exist, with the gateway header. It returns 400 / 2001 if the gateway is missing, and 400 / 5007 ("No such model") if the gateway is fine. No model runs, so it's free. | Step 3 of the connect check. |
-| Token permissions for a gateway | None beyond Workers AI. Confirmed by the account owner: the test token has no AI Gateway permission and works with the `default` gateway. | No permission text in the UI (already removed). |
+| Token permissions for a gateway | None beyond Workers AI for the `default` gateway, the only one tested. Confirmed by the account owner: the test token has no AI Gateway permission and works with the `default` gateway. Other gateways and gateway features weren't tested. | No permission text in the UI (already removed). |
 | Is the gateway header optional? | Yes. | The header is sent only when a gateway ID is set. |
 | Truncation with no `max_tokens` | None on all 10 included models: complete 700-number outputs of 1,500–5,800 tokens, `finish_reason: stop`. | **Kiln sends no `max_tokens` for this provider.** No provider-specific code. |
 | Qwen 3.8 on `/v1` | Works. It's slow (about 23 tokens/s), and long non-streaming outputs hit Cloudflare's timeout (408 / 3046 after 121 s). | Kept, per the product decision. See [Timeouts](#timeouts). |
@@ -152,12 +152,12 @@ Algorithm:
    - Code 2001 → return 400 with the approved message: `Failed to connect to Cloudflare. AI Gateway '<id>' not found. Check the gateway ID, or remove it.`
    - A 200 (someone deployed a model with that ID) → treat it as success.
    - Anything else → the generic `Error: [<status>] <text>` message.
-4. On success, set `cloudflare_api_key`, `cloudflare_account_id` and `cloudflare_ai_gateway_id` (`None` if not given). Return 200 `Connected to Cloudflare`. **Nothing is saved before every check passes.**
-5. Wrap the body in `try/except Exception` and return 400 `Failed to connect to Cloudflare. Error: {e!s}`, as `connect_fireworks` does.
+4. On success, save `cloudflare_api_key`, `cloudflare_account_id` and `cloudflare_ai_gateway_id` (`None` if not given) in one `Config.shared().update_settings({...})` call. Return 200 `Connected to Cloudflare`. **Nothing is saved before every check passes.**
+5. Wrap the body in `try/except Exception` and return 400 `Failed to connect to Cloudflare. Error: <message>`, where `<message>` is `str(e)`, or `type(e).__name__` when that's empty (an `httpx` timeout has an empty message).
 
 Error-status mapping for the returned `JSONResponse`: 401 for invalid-credential cases, 400 otherwise, matching Fireworks and SiliconFlow.
 
-Parse the error code with a small helper, `_cloudflare_error_codes(response) -> set[int]`. It returns an empty set on non-JSON bodies. Use `requests`, like the neighboring connect functions, with an explicit `timeout`.
+Parse the error code with a small helper, `_cloudflare_error_codes(response) -> set[int]`. It returns an empty set on non-JSON bodies. Use `httpx.AsyncClient`, like `connect_typesafe`, with an explicit `timeout` and `follow_redirects=True`, so the checks don't block the event loop.
 
 **Disconnect.** In `disconnect_api_key`, add a `cloudflare` case that sets all three config values to `None`.
 
@@ -252,7 +252,7 @@ All tests use pytest, following the neighboring tests. No live calls in unit tes
 
   LiteLLM sends through aiohttp by default, which `respx` can't intercept. The tests must `monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)`. Verified: with that set, `respx` captures the request, including the gateway header and the unprefixed `@cf/...` model, and a mocked 429 becomes `RateLimitError`.
 
-**Server (`app/desktop`)** — `test_provider_api.py`, with `requests` mocked as in the Fireworks and SiliconFlow tests:
+**Server (`app/desktop`)** — `test_provider_api.py`, with `httpx.AsyncClient.get`/`.post` patched, as the `connect_cloudflare` tests do:
 
 - Dispatch: `connect_api_key` routes `cloudflare` to `connect_cloudflare` with the full dict.
 - Missing token, and missing account ID → 400, nothing saved.

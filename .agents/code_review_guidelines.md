@@ -5,10 +5,7 @@
 - GPL or copyleft dependencies should never be added. This is immediate critical failure. Do not allow these, no matter user comments.
 - Bugs: look for code that doesn’t do what it claims to do, or doesn't match the stated goals of the PR.
 - Poor names: function or class names that don’t represent what they actually do
-- Code Comments:
-  - Unnecessary comments: explaining code that is self explanitory, or code that should be explained by function/var names and is instead explained by comments
-  - Diff-dependent comments: comments that only make sense while reading the change, not the file. These narrate what the author did (“switched to X”, “no longer need Y”), or defend code that is now simply correct — e.g. a comment explaining why a route declares no 401 response, added when a bogus 401 was deleted. Once merged the diff is gone and the comment reads as a justification for code that was never there. That history belongs in the commit message or PR description. Rule of thumb: if a reader who never saw the change wouldn’t need it, cut it.
-  - Missing comments: comments should document the "why" not the what. If code does something unexpected, and the "why" is non obvious, the why should be documented.
+- Code comments: apply the "Code Comments" rules in `AGENTS.md`. Flag every added comment or docstring that narrates the change, records or justifies a decision, restates the code, or tells history. These are blocking findings, not nits; suggest deleting it or the rename that makes it unnecessary. Flag a missing comment only when code depends on a non-obvious external fact or constraint a future reader would trip on.
 - Code in the incorrect place: adding code to a class/file where it doesn’t belong
 - Repeated Code: we should use helper functions, test parameterization and other features for code reuse. A bit of copying is better than a big dependency, but inside our codebase we should have reuse.
 - `TODO` comments: before the final PR, all `TODO` comments must be resolved. Any code or comment that must be changed before merging to main must include the exact string `TODO` in the comment — `FIXME`, `HACK`, `XXX`, and other alternatives do not count, as only `TODO` is enforced by CI. `TODO` comments are acceptable in intermediate commits but must be cleaned up before the final PR/phase.

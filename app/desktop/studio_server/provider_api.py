@@ -1640,7 +1640,7 @@ def _cloudflare_field(key_data: dict, field: str) -> str | None:
     return value.strip() or None
 
 
-def _cloudflare_error_codes(response: requests.Response) -> set[int]:
+def _cloudflare_error_codes(response: httpx.Response) -> set[int]:
     try:
         errors = response.json().get("errors") or []
         return {error["code"] for error in errors if isinstance(error.get("code"), int)}
@@ -1655,7 +1655,7 @@ def _cloudflare_connect_error(status_code: int, detail: str) -> JSONResponse:
     )
 
 
-def _cloudflare_unexpected_response(response: requests.Response) -> JSONResponse:
+def _cloudflare_unexpected_response(response: httpx.Response) -> JSONResponse:
     return _cloudflare_connect_error(
         400, f"Error: [{response.status_code}] {response.text}"
     )
@@ -1675,58 +1675,65 @@ async def connect_cloudflare(key_data: dict):
 
         # The search term matches no model, which keeps the response tiny. The call
         # still checks the token, the account and the Workers AI permission.
-        search_response = requests.get(
-            f"{CLOUDFLARE_API_BASE}/accounts/{quote(account_id, safe='')}/ai/models/search",
-            headers=auth_headers,
-            params={"search": "kiln-connection-check"},
-            timeout=CLOUDFLARE_CONNECT_TIMEOUT_SECONDS,
-        )
-        if search_response.status_code == 404:
-            return _cloudflare_connect_error(401, "Invalid Account ID.")
-        if search_response.status_code in (400, 401, 403):
-            return _cloudflare_connect_error(
-                401,
-                "Invalid API Token, or the token doesn't have Workers AI access for this Account ID.",
-            )
-        if search_response.status_code != 200:
-            return _cloudflare_unexpected_response(search_response)
-
-        if gateway_id:
-            # The models search API ignores the gateway header, so check the gateway
-            # with a chat call for a model that doesn't exist. Cloudflare rejects a
-            # missing gateway before resolving the model, and no model runs either way.
-            chat_response = requests.post(
-                f"{cloudflare_base_url(account_id)}/chat/completions",
-                headers={**auth_headers, **(cloudflare_headers(gateway_id) or {})},
-                json={
-                    "model": CLOUDFLARE_CONNECTION_CHECK_MODEL,
-                    "messages": [{"role": "user", "content": "ping"}],
-                    "max_tokens": 1,
-                },
+        async with httpx.AsyncClient() as client:
+            search_response = await client.get(
+                f"{CLOUDFLARE_API_BASE}/accounts/{quote(account_id, safe='')}/ai/models/search",
+                headers=auth_headers,
+                params={"search": "kiln-connection-check"},
                 timeout=CLOUDFLARE_CONNECT_TIMEOUT_SECONDS,
+                follow_redirects=True,
             )
-            error_codes = _cloudflare_error_codes(chat_response)
-            if CLOUDFLARE_GATEWAY_NOT_FOUND_CODE in error_codes:
+            if search_response.status_code == 404:
+                return _cloudflare_connect_error(401, "Invalid Account ID.")
+            if search_response.status_code in (400, 401, 403):
                 return _cloudflare_connect_error(
-                    400,
-                    f"AI Gateway '{gateway_id}' not found. Check the gateway ID, or remove it.",
+                    401,
+                    "Invalid API Token, or the token doesn't have Workers AI access for this Account ID.",
                 )
-            gateway_accepted = (
-                chat_response.status_code == 200
-                or CLOUDFLARE_NO_SUCH_MODEL_CODE in error_codes
-            )
-            if not gateway_accepted:
-                return _cloudflare_unexpected_response(chat_response)
+            if search_response.status_code != 200:
+                return _cloudflare_unexpected_response(search_response)
 
-        Config.shared().cloudflare_api_key = token
-        Config.shared().cloudflare_account_id = account_id
-        Config.shared().cloudflare_ai_gateway_id = gateway_id
+            if gateway_id:
+                # The models search API ignores the gateway header, so check the gateway
+                # with a chat call for a model that doesn't exist. Cloudflare rejects a
+                # missing gateway before resolving the model, and no model runs either way.
+                chat_response = await client.post(
+                    f"{cloudflare_base_url(account_id)}/chat/completions",
+                    headers={**auth_headers, **(cloudflare_headers(gateway_id) or {})},
+                    json={
+                        "model": CLOUDFLARE_CONNECTION_CHECK_MODEL,
+                        "messages": [{"role": "user", "content": "ping"}],
+                        "max_tokens": 1,
+                    },
+                    timeout=CLOUDFLARE_CONNECT_TIMEOUT_SECONDS,
+                    follow_redirects=True,
+                )
+                error_codes = _cloudflare_error_codes(chat_response)
+                if CLOUDFLARE_GATEWAY_NOT_FOUND_CODE in error_codes:
+                    return _cloudflare_connect_error(
+                        400,
+                        f"AI Gateway '{gateway_id}' not found. Check the gateway ID, or remove it.",
+                    )
+                gateway_accepted = (
+                    chat_response.status_code == 200
+                    or CLOUDFLARE_NO_SUCH_MODEL_CODE in error_codes
+                )
+                if not gateway_accepted:
+                    return _cloudflare_unexpected_response(chat_response)
+
+        Config.shared().update_settings(
+            {
+                "cloudflare_api_key": token,
+                "cloudflare_account_id": account_id,
+                "cloudflare_ai_gateway_id": gateway_id,
+            }
+        )
         return JSONResponse(
             status_code=200,
             content={"message": "Connected to Cloudflare"},
         )
     except Exception as e:
-        return _cloudflare_connect_error(400, f"Error: {e!s}")
+        return _cloudflare_connect_error(400, f"Error: {str(e) or type(e).__name__}")
 
 
 async def connect_typesafe(key: str):

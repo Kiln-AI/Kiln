@@ -441,7 +441,7 @@ def test_suggested_for_synthetic_user():
     expected = {
         ModelName.gpt_5_6_terra,
         ModelName.gpt_5_6_luna,
-        ModelName.claude_sonnet_5,
+        ModelName.claude_sonnet_5_5,
         ModelName.deepseek_4_flash,
         ModelName.gemini_3_8_flash,
         ModelName.glm_5_3_flash,

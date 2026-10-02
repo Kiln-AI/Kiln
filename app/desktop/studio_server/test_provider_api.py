@@ -4469,13 +4469,16 @@ def _json_body(result: JSONResponse) -> dict:
 @pytest.fixture
 def cf_mocks():
     with (
-        patch("app.desktop.studio_server.provider_api.requests.get") as mock_get,
-        patch("app.desktop.studio_server.provider_api.requests.post") as mock_post,
+        patch(
+            "app.desktop.studio_server.provider_api.httpx.AsyncClient.get"
+        ) as mock_get,
+        patch(
+            "app.desktop.studio_server.provider_api.httpx.AsyncClient.post"
+        ) as mock_post,
         patch("app.desktop.studio_server.provider_api.Config.shared") as mock_shared,
     ):
         mock_get.return_value = _cf_response(200)
         mock_post.return_value = _cf_response(400, error_code=5007)
-        mock_shared.return_value.cloudflare_ai_gateway_id = "previous-gateway"
         yield mock_get, mock_post, mock_shared
 
 
@@ -4556,12 +4559,16 @@ async def test_connect_cloudflare_without_gateway(cf_mocks, gateway_id):
         headers={"Authorization": "Bearer test-token"},
         params={"search": "kiln-connection-check"},
         timeout=30,
+        follow_redirects=True,
     )
     mock_post.assert_not_called()
-    config = mock_shared.return_value
-    assert config.cloudflare_api_key == "test-token"
-    assert config.cloudflare_account_id == "test-account"
-    assert config.cloudflare_ai_gateway_id is None
+    mock_shared.return_value.update_settings.assert_called_once_with(
+        {
+            "cloudflare_api_key": "test-token",
+            "cloudflare_account_id": "test-account",
+            "cloudflare_ai_gateway_id": None,
+        }
+    )
 
 
 @pytest.mark.asyncio
@@ -4601,11 +4608,15 @@ async def test_connect_cloudflare_with_valid_gateway(cf_mocks, chat_response):
             "max_tokens": 1,
         },
         timeout=30,
+        follow_redirects=True,
     )
-    config = mock_shared.return_value
-    assert config.cloudflare_api_key == "test-token"
-    assert config.cloudflare_account_id == "test-account"
-    assert config.cloudflare_ai_gateway_id == "my-gateway"
+    mock_shared.return_value.update_settings.assert_called_once_with(
+        {
+            "cloudflare_api_key": "test-token",
+            "cloudflare_account_id": "test-account",
+            "cloudflare_ai_gateway_id": "my-gateway",
+        }
+    )
 
 
 @pytest.mark.asyncio
@@ -4653,13 +4664,27 @@ async def test_connect_cloudflare_gateway_unexpected_response(
 @pytest.mark.asyncio
 async def test_connect_cloudflare_request_exception(cf_mocks):
     mock_get, _, mock_shared = cf_mocks
-    mock_get.side_effect = Exception("Connection error")
+    mock_get.side_effect = httpx.ConnectError("Connection error")
 
     result = await connect_cloudflare(_cf_key_data())
 
     assert result.status_code == 400
     assert _json_body(result) == {
         "message": "Failed to connect to Cloudflare. Error: Connection error"
+    }
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_connect_cloudflare_timeout_names_the_error(cf_mocks):
+    mock_get, _, mock_shared = cf_mocks
+    mock_get.side_effect = httpx.ReadTimeout("")
+
+    result = await connect_cloudflare(_cf_key_data())
+
+    assert result.status_code == 400
+    assert _json_body(result) == {
+        "message": "Failed to connect to Cloudflare. Error: ReadTimeout"
     }
     mock_shared.assert_not_called()
 

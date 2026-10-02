@@ -42,9 +42,9 @@ There's no new UX beyond the existing connect-provider screen and model picker.
 
 | Field | Required | Stored as | Env var | Notes |
 |---|---|---|---|---|
-| API token | Yes | Kiln config, secret | `CLOUDFLARE_API_KEY` | Needs the Workers AI permission. No AI Gateway permission is needed to route through a gateway (confirmed live: a Workers-AI-only token works with the `default` gateway). |
+| API token | Yes | Kiln config, secret | `CLOUDFLARE_API_KEY` | Needs the Workers AI permission. Live, a Workers-AI-only token worked with the `default` gateway, so the UI asks for no AI Gateway permission. Other gateways and gateway features weren't tested. |
 | Account ID | Yes | Kiln config | `CLOUDFLARE_ACCOUNT_ID` | A 32-character hex string from the Cloudflare dashboard. |
-| AI Gateway ID | No | Kiln config | `CLOUDFLARE_AI_GATEWAY_ID` | When set, every call goes through this gateway. When empty, calls go directly to Workers AI. |
+| AI Gateway ID | No | Kiln config | `CLOUDFLARE_AI_GATEWAY_ID` | When set, every call goes through this gateway. When empty, calls go directly to Workers AI, unless the `CLOUDFLARE_AI_GATEWAY_ID` env var is set (the standard config fallback). |
 
 The env var names match the ones LiteLLM and models.dev use for the first two fields.
 
