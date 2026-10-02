@@ -148,7 +148,7 @@
       })
     }
 
-    // Prompt ID previously was stored in the prompt_builder_name field
+    // Older runs store the prompt ID in prompt_builder_name
     let prompt_id = (
       run?.output?.source?.properties?.prompt_id ||
       run?.output?.source?.properties?.prompt_builder_name ||

@@ -11,6 +11,7 @@ Our OpenAPI spec drives our SDK, Scalar docs, and agent tool use (Kiln Chat call
 5. **`Query(description=...)`** on every query parameter.
 6. **`Field(description=...)`** on Pydantic model properties that aren't completely self-evident from name + type.
 7. **Class docstring** on Pydantic models used as API request/response bodies. These become the schema description in the OpenAPI spec, which agents and SDK users see when inspecting request/response types. Optional but suggested if non-obvious from name.
+8. **Agent policy** on the route decorator: set `openapi_extra` to `ALLOW_AGENT`, `DENY_AGENT` or `agent_policy_require_approval("why")` from `kiln_server.utils.agent_checks.policy`. After adding a route or changing its path, method or policy, run `make annotations` against the running dev server and commit the generated files. See the [agent policy README](../libs/server/kiln_server/utils/agent_checks/README.md).
 
 **Correct HTTP methods:**
 
@@ -30,10 +31,14 @@ Our OpenAPI spec drives our SDK, Scalar docs, and agent tool use (Kiln Chat call
 **Example of a well-documented endpoint:**
 
 ```python
+from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
+
+
 @app.delete(
     "/api/projects/{project_id}",
     summary="Delete Project",
     tags=["Projects"],
+    openapi_extra=agent_policy_require_approval("Allow agent to remove this project?"),
 )
 async def delete_project(
     project_id: Annotated[
@@ -47,6 +52,7 @@ async def delete_project(
 
 - Missing `tags=` on any route decorator
 - Missing `summary=` on any route decorator
+- Missing or inappropriate `openapi_extra` agent policy, or missing or outdated committed policy annotations
 - Missing `Path(description=...)` or `Query(description=...)` on any parameter
 - GET endpoints that perform mutations (unless SSE with documented justification)
 - Singular nouns in path segments where plural is standard

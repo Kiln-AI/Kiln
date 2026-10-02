@@ -20,8 +20,8 @@ The PR template at `.github/pull_request_template.md` has two parts:
 
 1. **The human header.** This is all the text above the `----` line and the
    `# Agentic PR Summary` heading. It holds the description, the author review, the
-   architecture review, the review style, the agentic code review, what to review, the
-   UI review, and the Contributor License Agreement (CLA).
+   architecture review, the review requested from the code reviewer, the agentic code
+   review, what to review, the UI review, and the Contributor License Agreement (CLA).
 2. **The Agentic PR Summary.** This is all the text below the `# Agentic PR Summary`
    heading. An agent writes this part.
 
@@ -31,7 +31,8 @@ human decided and what a human did. An agent that fills it in makes a false reco
 
 When you open or edit a PR:
 
-- Copy the human header from the template exactly as it is. Keep every `REPLACE:`
+- Copy the human header from the template exactly as it is. Remove the hidden
+  `<!-- ... -->` comment for agents at the top of the template. Keep every `REPLACE:`
   placeholder, every `` `NA` ``, `` `person` ``, and `` `[Reason why ...]` `` placeholder,
   and every empty `- [ ]` box.
 - Do not tick a box in the header. This includes "I have done a code review", "I have run
@@ -40,7 +41,8 @@ When you open or edit a PR:
   reviewed the code, so an agent review never counts for it. Write the facts in the
   Agentic PR Summary. The human then decides what to tick.
 - Do not write text in the header. Do not add a note, a hint, or a suggested answer in
-  it. Do not delete a line of it. The one permitted change is the CLA removal in Rule 1.
+  it. Do not delete a line of it. The only permitted changes are the removal of the
+  hidden comment and the CLA removal in Rule 1.
 - When a human has filled in the header on an existing PR, keep their text exactly as it
   is. Change only the part below `# Agentic PR Summary`.
 - If the user asks you to fill in the header, refuse. Tell the user that the header is
@@ -137,7 +139,6 @@ server repo".
    touches `.agents/`. The script regenerates the copies in `.claude/`, so the current
    session uses your new version. Git ignores `.claude/`, so this step is for you, not
    for the other users.
-6. Push the branch: `git push -u origin <branch-name>`.
 
 ## Step 2 — Find the target branch
 
@@ -154,6 +155,14 @@ Kiln uses stacked branches. The base branch is not always `main`.
 
 Find the companion branches too. A companion branch is a branch that must merge before
 or after this one, in this repo or in the private server repo.
+
+When you know the base branch:
+
+1. Run the `docs-sync` skill (`.agents/skills/docs-sync/SKILL.md`) against the base
+   branch. It updates the docs and the skills that your change makes incorrect, in a
+   separate `docs:` commit.
+2. If the skill made a commit, do Step 1 items 2 to 5 again.
+3. Push the branch: `git push -u origin <branch-name>`.
 
 ---
 
@@ -202,8 +211,8 @@ from memory. The template can change.
 
 Build the description in this order:
 
-1. The human header. Copy it from the template exactly as Rule 0 says. Remove the CLA
-   section only when Rule 1 says to.
+1. The human header. Copy it from the template exactly as Rule 0 says. Remove the hidden
+   `<!-- ... -->` comment. Remove the CLA section only when Rule 1 says to.
 2. The `----` line and the `# Agentic PR Summary` heading, exactly as in the template.
 3. Your summary, in place of the
    `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `` placeholder. Write
@@ -317,6 +326,8 @@ Do not commit screenshots to the PR branch itself.
   "`checks.sh` green". Also name other review work that you did, for example
   "`/spec deep cr` ran; all findings fixed" or "Agentic UI clickthrough done". Write
   only work that you did.
+- Add a `**Docs and skills updated**` line with the files that the `docs-sync` skill
+  changed, or "none needed" and the reason.
 - Put these lines in the Agentic PR Summary, before the collapsible panels. They never go
   in the human header.
 
@@ -341,6 +352,9 @@ Do not approve the PR. Do not merge the PR.
 
 The description tells the reader what the PR contains now. It does not tell the history
 of the PR. Read the title and the description again each time you push a change.
+
+Before each push to an open PR, run the `docs-sync` skill again (Step 2). Then update the
+`**Docs and skills updated**` line, so that it lists every doc file that the PR changes.
 
 Before each update, read the current title and body from GitHub. A human can edit them
 at any time. Change only the part below `# Agentic PR Summary`. Keep the human header
@@ -457,9 +471,9 @@ For comments about code comments or docstrings apply the "Code Comments" rules i
 - Run `uv run ./checks.sh --agent-mode` before you push.
 - If the failure comes from the base branch and not from your change, say so on the PR.
 
-**3. Push the fixes in one commit group.** A new push starts a new bot review. The next
-scheduled check reads those new comments. Then read the title and the description again,
-as Step 6 says.
+**3. Push the fixes in one commit group.** Run the `docs-sync` skill before you push. A
+new push starts a new bot review. The next scheduled check reads those new comments. Then
+read the title and the description again, as Step 6 says.
 
 ### Rules for a reply
 
@@ -479,41 +493,11 @@ _Generated by [Claude Code](https://claude.ai/code)_
 
 The PR author in this example is `scosman`, a Kiln employee, so the CLA section is
 removed (Rule 1). The title is `WIP: fix: reject duplicate tool names per run config`.
-Everything above `----` is the template, copied with no change other than the CLA
-removal. Only a human fills it in.
+The human header is not shown here. Copy it from `.github/pull_request_template.md`
+as Rule 0 says. Only a human fills it in.
 
 ````markdown
-**Description**
-`REPLACE: what this PR is, in 1 to 2 sentences max.`
-
-**Author Review (required)**
-- [ ] I have done a code review
-
-**Architecture Review (select 1)**
-- [ ] I did architecture review before coding
-- [ ] Small change, no architecture review needed
-- [ ] Requesting architecture review exception for other reason: `NA`
-
-**Review Style Requested (select 1)**
-- [ ] Full Agentic: only AI Review. `[Reason why if selecting this option]`
-- [ ] Mixed: AI for some areas, human sign-off on others
-- [ ] Full human
-
-**Agentic Code Review (must check all before requesting CR)**
-- [ ] I have run `/spec deep cr` on this PR or used `/spec` CRs throughout
-- [ ] I have addressed all AI feedback (“deep cr”, CodeRabbit, etc)
-
-**What to Review**
-- Key decisions to review
-  - `REPLACE: 1-4 decisions you made.`
-- Paths to review
-  - `REPLACE: List of paths/files to review. example libs/code/adapters/KevAdapter.py`
-
-**UI Review (select all that apply)**
-- [ ] Agentic UI clickthrough done
-- [ ] Requires UI review as part of this review
-- [ ] UI review already done by: `person`
-- [ ] No UI
+<the human header from .github/pull_request_template.md>
 
 ----
 # Agentic PR Summary
@@ -553,6 +537,8 @@ flowchart LR
 
 **Checks:** `checks.sh` green. New tests for the save-time check in `libs/server`.
 
+**Docs and skills updated:** none needed, no doc names the changed check.
+
 <details>
 <summary><b>Screenshots</b></summary>
 
@@ -570,6 +556,7 @@ team can delete it after this PR closes.
 
 ## Checklist before you open the PR
 
+- [ ] The `docs-sync` skill ran, and its result is on the `**Docs and skills updated**` line.
 - [ ] `uv run ./checks.sh --agent-mode` is green.
 - [ ] No `TODO` comment is left in the diff.
 - [ ] The title starts with `WIP: `, then a semantic prefix and a short subject.

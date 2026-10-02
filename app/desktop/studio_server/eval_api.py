@@ -696,7 +696,7 @@ class EvalRunWithTrace(BaseModel):
             eval_run=eval_run,
             input=trace.input if trace is not None else None,
             # Never repaired_output: a repair can happen after scoring, so it is not
-            # what the score was computed over (functional spec 5.2).
+            # what the score was computed over.
             output=trace.output.output if trace is not None else None,
             task_run_trace=serialize_trace(trace.trace)
             if trace is not None and trace.trace
@@ -1094,8 +1094,8 @@ def scored_trace_usage_for_run_config(
     """Usage per scored TaskRun, for the traces this run config's summary will report on.
 
     Loaded in one pass for the whole request rather than per eval: each bulk load scans
-    the task's `runs/` directory, which now holds every eval trace as well as the
-    dataset corpus.
+    the task's `runs/` directory, which holds every eval trace as well as the dataset
+    corpus.
 
     Only the usage is kept, not the TaskRun. Traces are the large field, and this is the
     only thing read off them here - holding whole runs for the life of the request would
@@ -1241,7 +1241,7 @@ def _fill_missing_inputs_from_source_items(
     """Fill in `input` for the records no trace could supply one for, in two bulk loads.
 
     Bulk rather than per record: each lookup scans the task's `runs/` directory, which
-    now holds every eval trace alongside the dataset corpus.
+    holds every eval trace alongside the dataset corpus.
     """
     needs_input = [result for result in resolved if result.input is None]
     if not needs_input:
@@ -1313,9 +1313,8 @@ def _cached_test_split(
     unchanged would name whichever eval reached the filter first.
 
     `task` is deliberately NOT part of the key, so a cache must not outlive one task: the
-    same (source, filter_id) selects different items in a different task. The one caller
-    builds the cache inside a single request and passes the task it loaded, which holds
-    that invariant positionally. A second caller has to keep it too, or key on the task.
+    same (source, filter_id) selects different items in a different task. Build the cache
+    inside a single request, for the task that request loaded.
     """
     split_ref = eval.splits.get("test")
     if split_ref is None:
@@ -1433,7 +1432,7 @@ def comparable_eval_configs_or_422(eval: Eval) -> List[EvalConfig]:
     StreamingResponse's generator is running arrives after a 200 with an empty body. It
     also has to beat the runner because the runner's first act is to write a durable
     scoreless `EvalRun` per item — records nothing in the UI clears, which then read as
-    "already run" and suppress the re-run a later fix would need (functional spec 6.2).
+    "already run" and suppress the re-run a later fix would need.
 
     An eval with no judges at all is left to `EvalRunner`, which already names that case.
     """
@@ -1643,8 +1642,7 @@ def compute_score_summary(
     Takes the resolved split rather than a set of ids so the aggregate is scoped to one
     store as well as one item set: a run is counted only when the item it scored is in
     this split, keyed on (source, id). A bare id would let an EvalInput's score be
-    averaged into a TaskRun-backed split's mean, which no reader could then detect
-    (functional spec 5.3).
+    averaged into a TaskRun-backed split's mean, which no reader could then detect.
     """
     split_items = split.item_keys()
     if len(split_items) == 0:
@@ -2549,10 +2547,9 @@ def connect_evals_api(app: FastAPI):
         except (ValueError, NotImplementedError, ValidationError) as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    # GET for an operation that writes, per .agents/api_code_review.md's SSE exception.
-    # The web client is no longer an EventSource — run_eval.svelte reads this with fetch
-    # so it can see a 4xx refusal's body — but GET stays: it is the shape every SSE
-    # consumer expects, and switching to POST would break any client that is one.
+    # GET for an operation that writes, per .agents/api_code_review.md's SSE exception:
+    # SSE consumers (including EventSource clients) expect GET. run_eval.svelte reads
+    # this with fetch so it can see a 4xx refusal's body.
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_comparison",
         summary="Run Run Config Comparison",
@@ -2678,10 +2675,9 @@ def connect_evals_api(app: FastAPI):
 
         return eval
 
-    # GET for an operation that writes, per .agents/api_code_review.md's SSE exception.
-    # The web client is no longer an EventSource — run_eval.svelte reads this with fetch
-    # so it can see a 4xx refusal's body — but GET stays: it is the shape every SSE
-    # consumer expects, and switching to POST would break any client that is one.
+    # GET for an operation that writes, per .agents/api_code_review.md's SSE exception:
+    # SSE consumers (including EventSource clients) expect GET. run_eval.svelte reads
+    # this with fetch so it can see a 4xx refusal's body.
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/run_calibration",
         summary="Run Calibration",
@@ -2801,10 +2797,8 @@ def connect_evals_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
         eval = eval_from_id(project_id, task_id, eval_id)
 
-        # Every split size is resolved in its own store, so an EvalInput-backed eval
-        # reports its real counts rather than the 400 that used to stand here. That 400
-        # was never a policy about golden sets — it fired because this code could only
-        # count TaskRuns (functional spec 6.1).
+        # Every split size is resolved in its own store, so EvalInput-backed and
+        # TaskRun-backed evals both report real counts.
         test_split = resolved_split_or_422(task, eval, "test")
         train_split = resolve_split(task, eval, "train")
         val_split = resolve_split(task, eval, "val")
@@ -2905,7 +2899,7 @@ def connect_evals_api(app: FastAPI):
         # share a test filter, so cache it. Keyed on (source, filter_id) rather than the
         # filter id alone: the `tag::` grammar is shared across both stores, so
         # "tag::golden" over task.runs() and over task.eval_inputs() are different item
-        # sets behind the same string (functional spec 5.3).
+        # sets behind the same string.
         split_cache: Dict[Tuple[ItemSource, str], ResolvedSplit] = {}
         evals_out: Dict[ID_TYPE, EvalResultsSummaryEvalInfo] = {}
         scores_out: Dict[ID_TYPE, Dict[ID_TYPE, EvalResultsSummaryResultCell]] = {}
@@ -3139,7 +3133,7 @@ def connect_evals_api(app: FastAPI):
     ) -> RunConfigEvalScoresSummary:
         task = task_from_id(project_id, task_id)
 
-        # Verify the run config exists
+        # Called for its 404 when the run config doesn't exist.
         task_run_config_from_id(project_id, task_id, run_config_id)
 
         # Build a mapping from eval_id to spec for evals that are associated with
@@ -3163,7 +3157,7 @@ def connect_evals_api(app: FastAPI):
         eval_results: List[RunConfigEvalResult] = []
 
         # The usage reported below is the evaluated task's, which lives on the scored
-        # TaskRun for every record written since the trace/score split.
+        # TaskRun for every record that has a `scored_run_id`.
         usage_by_scored_run_id = scored_trace_usage_for_run_config(
             task, evals, run_config_id
         )

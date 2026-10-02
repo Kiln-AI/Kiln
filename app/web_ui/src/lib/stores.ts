@@ -113,10 +113,7 @@ function get_current_project(): Project | null {
 
 export async function load_projects() {
   try {
-    const {
-      data: project_list, // only present if 2XX response
-      error, // only present if 4XX or 5XX response
-    } = await client.GET("/api/projects")
+    const { data: project_list, error } = await client.GET("/api/projects")
     if (error) {
       throw error
     }
@@ -139,17 +136,17 @@ export async function load_task(
   project_id: string,
   task_id: string,
 ): Promise<Task | null> {
-  const {
-    data, // only present if 2XX response
-    error, // only present if 4XX or 5XX response
-  } = await client.GET("/api/projects/{project_id}/tasks/{task_id}", {
-    params: {
-      path: {
-        project_id: project_id,
-        task_id: task_id,
+  const { data, error } = await client.GET(
+    "/api/projects/{project_id}/tasks/{task_id}",
+    {
+      params: {
+        path: {
+          project_id: project_id,
+          task_id: task_id,
+        },
       },
     },
-  })
+  )
   if (error) {
     throw error
   }
@@ -531,6 +528,7 @@ const provider_name_map: Record<ModelProviderName, string> = {
   cerebras: "Cerebras",
   docker_model_runner: "Docker Model Runner",
   featherless_ai: "Featherless AI",
+  cloudflare: "Cloudflare",
   typesafe: "TypeSafe AI",
 }
 

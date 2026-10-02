@@ -447,13 +447,10 @@ def _eager_parse_code_eval_on_load(
     `V2EvalConfigProperties | dict | None` union would recover from the nested
     member's error by falling back to the dict branch, masking the real cause
     (e.g. a missing scorer.py or a bad score() function) behind a generic
-    "V2 config requires typed properties". See functional spec §2.2 / §4.
+    "V2 config requires typed properties".
 
     Only touches code_eval properties during a file load, gated explicitly on
-    `type == code_eval`; every other input passes through unchanged. Lifted
-    verbatim from EvalConfig.dispatch_properties_parsing so the code-eval load
-    path is a clearly-named, code-eval-local step rather than smeared into the
-    generic dispatcher.
+    `type == code_eval`; every other input passes through unchanged.
     """
     if not ctx.get("loading_from_file"):
         return data
