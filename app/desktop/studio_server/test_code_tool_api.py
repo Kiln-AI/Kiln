@@ -253,6 +253,7 @@ class TestCreateCodeToolProvenance:
             )
         assert response.status_code == 400
         assert "unknown sibling" in response.json()["message"]
+        assert test_project.code_tools() == []
 
     def test_create_derived_from_archived_sibling_allowed(
         self,

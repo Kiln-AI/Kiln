@@ -34,7 +34,6 @@ from kiln_ai.datamodel.spec import (
 from kiln_ai.datamodel.spec_properties import SpecProperties
 from kiln_ai.datamodel.task_output import TaskOutputRating
 from kiln_ai.utils.name_generator import generate_memorable_name
-from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -336,7 +335,7 @@ class CreateSpecWithCopilotRequest(BaseModel):
     )
     provenance: KilnArtifactProvenance | None = Field(
         default=None,
-        description="Provenance stamped onto the created judge eval config.",
+        description="Provenance stamped onto the created judge eval config. The judge belongs to a new eval, so derived_from_ids must be empty.",
     )
 
     @field_validator("splits")
@@ -1315,12 +1314,14 @@ def connect_copilot_api(app: FastAPI):
             ),
             provenance=request.provenance,
         )
-        validate_provenance_or_400(
-            eval_config.provenance,
-            eval_config.id,
-            EvalConfig,
-            eval.path,
-        )
+        if (
+            eval_config.provenance is not None
+            and eval_config.provenance.derived_from_ids
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="derived_from_ids must be empty: the judge eval config belongs to a new eval, which has no eval config to derive from.",
+            )
 
         # Set as default config after ID is assigned
         eval.current_config_id = eval_config.id

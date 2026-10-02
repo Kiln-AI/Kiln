@@ -108,8 +108,10 @@ def test_get_prompts_success(client, project_and_task):
     assert res["prompts"][0]["name"] == "Test Prompt"
 
 
-@pytest.mark.parametrize("padding", ["", "  "])
-def test_create_prompt_with_valid_provenance(client, project_and_task, padding):
+@pytest.mark.parametrize(
+    "padding,prefix", [("", ""), ("  ", ""), ("", "id::"), ("  ", "id::")]
+)
+def test_create_prompt_with_valid_provenance(client, project_and_task, padding, prefix):
     project, task = project_and_task
 
     parent_prompt = Prompt(name="Parent Prompt", prompt="Parent text", parent=task)
@@ -120,7 +122,7 @@ def test_create_prompt_with_valid_provenance(client, project_and_task, padding):
         "prompt": "Derived text",
         "provenance": {
             "origin": "human",
-            "derived_from_ids": [f"{padding}{parent_prompt.id}{padding}"],
+            "derived_from_ids": [f"{padding}{prefix}{parent_prompt.id}{padding}"],
             "notes": "Cloned from the parent prompt.",
         },
     }
@@ -156,6 +158,30 @@ def test_create_prompt_derived_from_unknown_sibling_400(client, project_and_task
         )
     assert response.status_code == 400
     assert "unknown sibling" in response.json()["message"]
+    assert task.prompts() == []
+
+
+def test_create_prompt_same_parent_with_and_without_prefix_422(
+    client, project_and_task
+):
+    project, task = project_and_task
+    parent_prompt = Prompt(name="Parent Prompt", prompt="Parent text", parent=task)
+    parent_prompt.save_to_file()
+    prompt_data = {
+        "name": "Duplicate Lineage",
+        "prompt": "text",
+        "provenance": {
+            "origin": "human",
+            "derived_from_ids": [f"id::{parent_prompt.id}", parent_prompt.id],
+        },
+    }
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts", json=prompt_data
+        )
+    assert response.status_code == 422
+    assert [p.name for p in task.prompts()] == ["Parent Prompt"]
 
 
 def test_create_prompt_invalid_origin_422(client, project_and_task):

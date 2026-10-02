@@ -665,6 +665,7 @@ async def test_create_task_run_config_unknown_sibling_400(
     )
     assert response.status_code == 400
     assert "unknown sibling" in response.json()["message"]
+    assert "Bad Lineage" not in [rc.name for rc in mock_task.run_configs()]
 
 
 @pytest.mark.asyncio
@@ -939,6 +940,7 @@ async def test_create_eval_config_unknown_sibling_400(
 
     assert response.status_code == 400
     assert "unknown sibling" in response.json()["message"]
+    assert "Bad Lineage" not in [c.name for c in mock_eval.configs()]
 
 
 @pytest.mark.asyncio

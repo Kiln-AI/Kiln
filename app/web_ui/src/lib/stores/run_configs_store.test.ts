@@ -17,8 +17,11 @@ vi.mock("$lib/stores", () => ({
     `${project_id}::${task_id}`,
 }))
 
-import { save_new_task_run_config } from "./run_configs_store"
-import type { RunConfigProperties } from "$lib/types"
+import {
+  run_config_clone_parent_id,
+  save_new_task_run_config,
+} from "./run_configs_store"
+import type { RunConfigProperties, TaskRunConfig } from "$lib/types"
 
 const run_config_properties: RunConfigProperties = {
   type: "kiln_agent",
@@ -88,5 +91,25 @@ describe("save_new_task_run_config provenance wiring", () => {
 
     const post_call = mockPost.mock.calls[0]
     expect(post_call[1].body.provenance).toEqual({ origin: "human" })
+  })
+})
+
+describe("run_config_clone_parent_id", () => {
+  const run_config = (id: string | null) =>
+    ({ id, name: "rc", run_config_properties }) as TaskRunConfig
+
+  it("returns the id of a saved run config", () => {
+    expect(run_config_clone_parent_id(run_config("123456"))).toBe("123456")
+  })
+
+  it.each([
+    ["a fine-tuned model's run config", "finetune_run_config::p1::t1::ft1"],
+    ["a run config with no id", null],
+  ])("returns null for %s", (_label, id) => {
+    expect(run_config_clone_parent_id(run_config(id))).toBeNull()
+  })
+
+  it("returns null when there is no source", () => {
+    expect(run_config_clone_parent_id(null)).toBeNull()
   })
 })

@@ -273,6 +273,7 @@
             properties: judge_properties,
             model_name: null,
             provider: null,
+            provenance: { origin: "human" },
           },
         )
         if (eval_config.id) {

@@ -673,6 +673,7 @@ def test_create_mcp_run_config_unknown_sibling_400(client, tmp_path):
 
     assert response.status_code == 400
     assert "unknown sibling" in response.json()["message"]
+    assert task.run_configs() == []
 
 
 def test_create_task_from_tool_stamps_provenance(client, tmp_path):
@@ -715,6 +716,45 @@ def test_create_task_from_tool_stamps_provenance(client, tmp_path):
     rc = created_task.run_configs()[0]
     assert rc.provenance is not None
     assert rc.provenance.origin == "agent"
+
+
+def test_create_task_from_tool_rejects_derived_from_ids_before_any_write(
+    client, tmp_path
+):
+    project = Project(
+        id="project_prov_tft_lineage",
+        name="Provenance TaskFromTool Lineage Project",
+        path=tmp_path / "project_prov_tft_lineage" / "project.kiln",
+    )
+    project.save_to_file()
+    project_dir = tmp_path / "project_prov_tft_lineage"
+    entries_before = sorted(p.name for p in project_dir.iterdir())
+    fake_tool = FakeMcpTool({"type": "object", "properties": {}}, None)
+
+    with (
+        patch(
+            "app.desktop.studio_server.run_config_api.project_from_id",
+            return_value=project,
+        ),
+        patch(
+            "app.desktop.studio_server.run_config_api._resolve_mcp_tool_from_id",
+            return_value=fake_tool,
+        ),
+    ):
+        response = client.post(
+            "/api/projects/project_prov_tft_lineage/create_task_from_tool",
+            json={
+                "tool_id": "mcp::local::server::fake_tool",
+                "task_name": "Lineage Task",
+                "instruction": "Use the tool.",
+                "provenance": {"origin": "agent", "derived_from_ids": ["123"]},
+            },
+        )
+
+    assert response.status_code == 400
+    assert "new task" in response.json()["message"]
+    assert project.tasks() == []
+    assert sorted(p.name for p in project_dir.iterdir()) == entries_before
 
 
 def test_create_mcp_run_config_success(client, tmp_path):

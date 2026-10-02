@@ -5687,6 +5687,7 @@ async def test_create_embedding_config_unknown_sibling_400(client, mock_project)
 
     assert response.status_code == 400
     assert "unknown sibling" in response.json()["message"]
+    assert EmbeddingConfig.all_children_of_parent_path(mock_project.path) == []
 
 
 @pytest.mark.parametrize(
@@ -5792,6 +5793,7 @@ async def test_create_vector_store_config_unknown_sibling_400(client, mock_proje
 
     assert response.status_code == 400
     assert "unknown sibling" in response.json()["message"]
+    assert VectorStoreConfig.all_children_of_parent_path(mock_project.path) == []
 
 
 async def test_create_chunker_config_with_valid_provenance(
@@ -5846,6 +5848,7 @@ async def test_create_chunker_config_unknown_sibling_400(client, mock_project):
 
     assert response.status_code == 400
     assert "unknown sibling" in response.json()["message"]
+    assert ChunkerConfig.all_children_of_parent_path(mock_project.path) == []
 
 
 async def test_create_reranker_config_with_valid_provenance(
@@ -5908,6 +5911,7 @@ async def test_create_reranker_config_unknown_sibling_400(client, mock_project):
 
     assert response.status_code == 400
     assert "unknown sibling" in response.json()["message"]
+    assert RerankerConfig.all_children_of_parent_path(mock_project.path) == []
 
 
 async def test_create_extractor_config_with_valid_provenance(
@@ -5988,6 +5992,7 @@ async def test_create_extractor_config_unknown_sibling_400(client, mock_project)
 
     assert response.status_code == 400
     assert "unknown sibling" in response.json()["message"]
+    assert ExtractorConfig.all_children_of_parent_path(mock_project.path) == []
 
 
 def _rag_sibling(
@@ -6130,6 +6135,7 @@ async def test_create_rag_config_unknown_sibling_400(
 
     assert response.status_code == 400
     assert "unknown sibling" in response.json()["message"]
+    assert RagConfig.all_children_of_parent_path(mock_project.path) == []
 
 
 async def test_create_rag_config_invalid_origin_422(
