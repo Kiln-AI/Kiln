@@ -5987,6 +5987,12 @@ built_in_models: List[KilnModel] = [
                 openrouter_reasoning_object=True,
             ),
             KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/deepseek-v4-pro-0813",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="deepseek-ai/DeepSeek-V4-Pro-0813",
                 structured_output_mode=StructuredOutputMode.json_instructions,
