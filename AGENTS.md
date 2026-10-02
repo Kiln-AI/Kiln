@@ -122,6 +122,8 @@ If code reviewing, always read [`.agents/code_review_guidelines.md`](.agents/cod
 
 Use the `open-pr` skill (`.agents/skills/open-pr/SKILL.md`) to open a PR or to write a PR description.
 
+Before you open a PR, and before each `git push` to a branch with an open PR, run the `docs-sync` skill (`.agents/skills/docs-sync/SKILL.md`) to update the docs and skills that the change makes stale.
+
 ### Never Make Legal Decisions as an Agent
 
 Agents are not allowed to make any legal decisions, including:
