@@ -35,6 +35,7 @@ from kiln_ai.datamodel.dataset_split import (
     Train80Test20SplitDefinition,
     Train80Val20SplitDefinition,
 )
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     ToolsRunConfig,
@@ -733,6 +734,7 @@ async def test_create_finetune(
         validation_split_name="validation",
         data_strategy=data_strategy,
         run_config=None,
+        provenance=None,
     )
 
 
@@ -824,6 +826,78 @@ def test_create_finetune_invalid_provider(client, mock_task_from_id_disk_backed)
     assert (
         response.json()["message"] == "Fine tune provider 'invalid_provider' not found"
     )
+
+
+def _finetune_request_with_provenance(provenance):
+    return {
+        "name": "Derived Finetune",
+        "dataset_id": "split1",
+        "train_split_name": "train",
+        "parameters": {"epochs": 10},
+        "provider": "test_provider",
+        "base_model_id": "base_model_1",
+        "custom_system_message": "Test system message",
+        "data_strategy": "final_only",
+        "provenance": provenance,
+    }
+
+
+def test_create_finetune_threads_valid_provenance(
+    client, mock_task_from_id_disk_backed, mock_finetune_registry, mock_finetune_adapter
+):
+    # ft1 is a real sibling finetune in the disk-backed task.
+    mock_finetune_registry["test_provider"] = mock_finetune_adapter
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/finetunes",
+        json=_finetune_request_with_provenance(
+            {"origin": "human", "derived_from_ids": ["ft1"]}
+        ),
+    )
+
+    assert response.status_code == 200, response.text
+    # Provenance is threaded into create_and_start (where the Finetune is built + saved).
+    call_kwargs = mock_finetune_adapter.create_and_start.await_args[1]
+    provenance = call_kwargs["provenance"]
+    assert provenance is not None
+    assert provenance.origin == "human"
+    assert provenance.derived_from_ids == ["ft1"]
+
+
+def test_create_finetune_unknown_sibling_400(
+    client, mock_task_from_id_disk_backed, mock_finetune_registry, mock_finetune_adapter
+):
+    mock_finetune_registry["test_provider"] = mock_finetune_adapter
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/finetunes",
+        json=_finetune_request_with_provenance(
+            {"origin": "human", "derived_from_ids": ["missing"]}
+        ),
+    )
+
+    assert response.status_code == 400
+    assert "unknown sibling" in response.json()["message"]
+    mock_finetune_adapter.create_and_start.assert_not_awaited()
+
+
+def test_create_finetune_invalid_origin_422(
+    client, mock_task_from_id_disk_backed, mock_finetune_registry, mock_finetune_adapter
+):
+    mock_finetune_registry["test_provider"] = mock_finetune_adapter
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/finetunes",
+        json=_finetune_request_with_provenance({"origin": "banana"}),
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_finetune_model_has_no_provenance_field():
+    from app.desktop.studio_server.finetune_api import UpdateFinetuneRequest
+
+    assert "provenance" not in UpdateFinetuneRequest.model_fields
 
 
 def test_create_finetune_invalid_dataset(
@@ -1276,6 +1350,38 @@ def test_get_finetune_not_found(client, mock_task_from_id_disk_backed):
     assert response.json()["message"] == "Finetune with ID 'nonexistent' not found"
 
     mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
+
+
+STORED_PROVENANCES = [
+    {"origin": "tool", "notes": "x" * 2500},
+    {"notes": "written before origin existed"},
+    {"origin": "agent", "derived_from_ids": ["dup", "dup", ""]},
+]
+
+
+@pytest.mark.parametrize("stored", STORED_PROVENANCES)
+def test_read_endpoints_return_stored_provenance_valid_only_on_load(
+    client, test_task, mock_task_from_id_disk_backed, stored
+):
+    finetune = next(ft for ft in test_task.finetunes() if ft.id == "ft1")
+    finetune.provenance = KilnArtifactProvenance.model_validate(
+        stored, context={"loading_from_file": True}
+    )
+    finetune.save_to_file()
+
+    listed = client.get("/api/projects/project1/tasks/task1/finetunes")
+    fetched = client.get("/api/projects/project1/tasks/task1/finetunes/ft1")
+
+    assert listed.status_code == 200, listed.text
+    assert fetched.status_code == 200, fetched.text
+    listed_ft1 = next(ft for ft in listed.json() if ft["id"] == "ft1")
+    for returned in (
+        listed_ft1["provenance"],
+        fetched.json()["finetune"]["provenance"],
+    ):
+        assert returned["origin"] == stored.get("origin")
+        assert returned["notes"] == stored.get("notes")
+        assert returned["derived_from_ids"] == stored.get("derived_from_ids", [])
 
 
 async def test_get_finetunes_with_status_update(

@@ -470,6 +470,7 @@
           judge_prompt: llm_judge_prompt ?? null,
           system_prompt: llm_system_prompt ?? null,
           judge_instructions: cleaned_judge_instructions(),
+          provenance: { origin: "human" },
         })
       } else if (eval_config_type && v2FormComponent) {
         if (v2FormComponent.validate) {
@@ -496,6 +497,7 @@
           properties,
           model_name: null,
           provider: null,
+          provenance: { origin: "human" },
         })
       } else {
         throw new Error("No eval type selected")

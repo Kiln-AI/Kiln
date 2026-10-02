@@ -53,6 +53,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.eval_splits import ItemSource, ResolvedSplit
 from kiln_ai.datamodel.prompt import BasePrompt
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
@@ -66,6 +67,7 @@ from kiln_server.custom_errors import connect_custom_errors
 from app.desktop.studio_server.eval_api import (
     CreateEvalConfigRequest,
     CreateEvaluatorRequest,
+    UpdateRunConfigRequest,
     _cached_test_split,
     compute_score_summary,
     connect_evals_api,
@@ -657,6 +659,88 @@ async def test_create_task_run_config_reuses_existing_frozen_prompt(
     assert len(frozen_prompts) == 1
 
 
+@pytest.mark.asyncio
+async def test_create_task_run_config_with_valid_provenance(
+    client, mock_task_from_id, mock_task, mock_run_config
+):
+    mock_task_from_id.return_value = mock_task
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/run_configs",
+        json={
+            "name": "Derived Run Config",
+            "run_config_properties": {
+                "model_name": "gpt-4o",
+                "model_provider_name": "openai",
+                "prompt_id": "id::prompt_123",
+                "structured_output_mode": "json_schema",
+            },
+            "provenance": {
+                "origin": "human",
+                "derived_from_ids": [mock_run_config.id],
+                "notes": "Cloned from the seed run config.",
+            },
+        },
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["provenance"]["origin"] == "human"
+    assert result["provenance"]["derived_from_ids"] == [mock_run_config.id]
+
+    # Returned on read (datamodel is serialized directly).
+    fetch = client.get("/api/projects/project1/tasks/task1/run_configs")
+    derived = next(rc for rc in fetch.json() if rc["id"] == result["id"])
+    assert derived["provenance"]["derived_from_ids"] == [mock_run_config.id]
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_config_unknown_sibling_400(
+    client, mock_task_from_id, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+    response = client.post(
+        "/api/projects/project1/tasks/task1/run_configs",
+        json={
+            "name": "Bad Lineage",
+            "run_config_properties": {
+                "model_name": "gpt-4o",
+                "model_provider_name": "openai",
+                "prompt_id": "id::prompt_123",
+                "structured_output_mode": "json_schema",
+            },
+            "provenance": {"origin": "human", "derived_from_ids": ["missing"]},
+        },
+    )
+    assert response.status_code == 400
+    assert "unknown sibling" in response.json()["message"]
+    assert "Bad Lineage" not in [rc.name for rc in mock_task.run_configs()]
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_config_invalid_origin_422(
+    client, mock_task_from_id, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+    response = client.post(
+        "/api/projects/project1/tasks/task1/run_configs",
+        json={
+            "name": "Bad Origin",
+            "run_config_properties": {
+                "model_name": "gpt-4o",
+                "model_provider_name": "openai",
+                "prompt_id": "id::prompt_123",
+                "structured_output_mode": "json_schema",
+            },
+            "provenance": {"origin": "banana"},
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_update_run_config_model_has_no_provenance_field():
+    assert "provenance" not in UpdateRunConfigRequest.model_fields
+
+
 def test_reusable_frozen_prompt_id_no_match(mock_task):
     assert (
         reusable_frozen_prompt_id(mock_task, "project1", "some prompt text", None)
@@ -845,6 +929,183 @@ async def test_create_eval_config_invalid_v2_properties(
     body = response.json()
     assert "Invalid properties for eval config type" in body["message"]
     assert "v2" in body["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_eval_config_with_valid_provenance(
+    client, mock_task_from_id, mock_eval, mock_task, mock_eval_config
+):
+    mock_task_from_id.return_value = mock_task
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+        response = client.post(
+            "/api/projects/project1/tasks/task1/evals/eval1/create_eval_config",
+            json={
+                "name": "Derived Config",
+                "type": "g_eval",
+                "properties": {"eval_steps": ["step1"]},
+                "model_name": "gpt-4",
+                "provider": "openai",
+                "provenance": {
+                    "origin": "human",
+                    "derived_from_ids": [mock_eval_config.id],
+                    "notes": "Cloned from the seed eval config.",
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["provenance"]["origin"] == "human"
+    assert result["provenance"]["derived_from_ids"] == [mock_eval_config.id]
+
+    # Persisted and returned on read (datamodel serialized directly).
+    derived = next(c for c in mock_eval.configs() if c.name == "Derived Config")
+    assert derived.provenance is not None
+    assert derived.provenance.derived_from_ids == [mock_eval_config.id]
+
+
+@pytest.mark.asyncio
+async def test_create_eval_config_unknown_sibling_400(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+        response = client.post(
+            "/api/projects/project1/tasks/task1/evals/eval1/create_eval_config",
+            json={
+                "name": "Bad Lineage",
+                "type": "g_eval",
+                "properties": {"eval_steps": ["step1"]},
+                "model_name": "gpt-4",
+                "provider": "openai",
+                "provenance": {"origin": "human", "derived_from_ids": ["missing"]},
+            },
+        )
+
+    assert response.status_code == 400
+    assert "unknown sibling" in response.json()["message"]
+    assert "Bad Lineage" not in [c.name for c in mock_eval.configs()]
+
+
+@pytest.mark.asyncio
+async def test_create_eval_config_invalid_origin_422(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+        response = client.post(
+            "/api/projects/project1/tasks/task1/evals/eval1/create_eval_config",
+            json={
+                "name": "Bad Origin",
+                "type": "g_eval",
+                "properties": {"eval_steps": ["step1"]},
+                "model_name": "gpt-4",
+                "provider": "openai",
+                "provenance": {"origin": "banana"},
+            },
+        )
+
+    assert response.status_code == 422
+
+
+def test_list_eval_configs_forward_compat_provenance_does_not_500(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    # An eval config written by a newer client (unknown origin, over-length notes,
+    # dirty ids) must list via the API, returned as-is, never 500.
+    fc_config = EvalConfig.model_validate(
+        {
+            "name": "future-config",
+            "config_type": "g_eval",
+            "properties": {"eval_steps": ["step1"]},
+            "model_name": "gpt-4",
+            "model_provider": "openai",
+            "provenance": {
+                "origin": "future_origin",
+                "derived_from_ids": ["dup", "dup"],
+                "notes": "y" * 3000,
+            },
+        },
+        context={"loading_from_file": True},
+    )
+    fc_config.parent = mock_eval
+    fc_config.save_to_file()
+
+    mock_task_from_id.return_value = mock_task
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_configs"
+        )
+
+    assert response.status_code == 200
+    saved = next(c for c in response.json() if c["name"] == "future-config")
+    assert saved["provenance"]["origin"] == "future_origin"
+
+
+STORED_PROVENANCES = [
+    {"origin": "tool", "notes": "x" * 2500},
+    {"notes": "written before origin existed"},
+    {"origin": "agent", "derived_from_ids": ["dup", "dup", ""]},
+]
+
+
+def stored_provenance(data: dict) -> KilnArtifactProvenance:
+    return KilnArtifactProvenance.model_validate(
+        data, context={"loading_from_file": True}
+    )
+
+
+def assert_provenance_returned(returned: dict, stored: dict) -> None:
+    assert returned["origin"] == stored.get("origin")
+    assert returned["notes"] == stored.get("notes")
+    assert returned["derived_from_ids"] == stored.get("derived_from_ids", [])
+
+
+@pytest.mark.parametrize("stored", STORED_PROVENANCES)
+def test_read_endpoints_return_stored_provenance_valid_only_on_load(
+    client, mock_task_from_id, mock_task, mock_eval, mock_eval_config, stored
+):
+    mock_run_config = TaskRunConfig(
+        parent=mock_task,
+        id="lenient_run_config",
+        name="Lenient Run Config",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        provenance=stored_provenance(stored),
+    )
+    mock_run_config.save_to_file()
+    mock_eval_config.provenance = stored_provenance(stored)
+    mock_eval_config.save_to_file()
+
+    run_configs = client.get("/api/projects/project1/tasks/task1/run_configs")
+    assert run_configs.status_code == 200, run_configs.text
+    listed = next(rc for rc in run_configs.json() if rc["id"] == "lenient_run_config")
+    assert_provenance_returned(listed["provenance"], stored)
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+        eval_configs = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_configs"
+        )
+        eval_config = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1"
+        )
+
+    assert eval_configs.status_code == 200, eval_configs.text
+    assert_provenance_returned(eval_configs.json()[0]["provenance"], stored)
+    assert eval_config.status_code == 200, eval_config.text
+    assert_provenance_returned(eval_config.json()["provenance"], stored)
 
 
 CODE_EVAL_PROPERTIES = {
@@ -6968,6 +7229,74 @@ class TestCreateLlmJudgeConfig:
             )
         assert response.status_code == 200
         assert response.json()["properties"]["reference_keys"] == ["reference_answer"]
+
+    def _post(self, client, eval_obj, extra: dict):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = eval_obj
+            return client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                    **extra,
+                },
+            )
+
+    def test_provenance_stored_with_sibling_lineage(self, client, mock_v2_eval):
+        parent = self._post(client, mock_v2_eval, {"name": "parent"})
+        assert parent.status_code == 200
+        parent_id = parent.json()["id"]
+
+        response = self._post(
+            client,
+            mock_v2_eval,
+            {
+                "name": "child",
+                "provenance": {
+                    "origin": "human",
+                    "derived_from_ids": [parent_id],
+                    "notes": "Second judge for the same eval.",
+                },
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["provenance"] == {
+            "origin": "human",
+            "derived_from_ids": [parent_id],
+            "notes": "Second judge for the same eval.",
+        }
+        saved = next(c for c in mock_v2_eval.configs() if c.name == "child")
+        assert saved.provenance is not None
+        assert saved.provenance.origin == "human"
+        assert saved.provenance.derived_from_ids == [parent_id]
+
+    def test_provenance_unknown_sibling_400_and_nothing_saved(
+        self, client, mock_v2_eval
+    ):
+        response = self._post(
+            client,
+            mock_v2_eval,
+            {"provenance": {"origin": "human", "derived_from_ids": ["missing"]}},
+        )
+        assert response.status_code == 400
+        assert "unknown sibling" in response.json()["message"]
+        assert mock_v2_eval.configs() == []
+
+    def test_provenance_invalid_origin_422(self, client, mock_v2_eval):
+        response = self._post(client, mock_v2_eval, {"provenance": {"origin": "x"}})
+        assert response.status_code == 422
+
+    def test_provenance_omitted_writes_no_key(self, client, mock_v2_eval):
+        response = self._post(client, mock_v2_eval, {})
+        assert response.status_code == 200
+        assert response.json().get("provenance") is None
+        saved = mock_v2_eval.configs()[0]
+        assert saved.provenance is None
+        assert saved.path is not None
+        assert "provenance" not in json.loads(saved.path.read_text())
 
 
 class TestV1CoexistenceAPI:

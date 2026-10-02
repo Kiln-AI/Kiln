@@ -4196,6 +4196,7 @@
                   turns: saved_turns_per_case,
                 },
               },
+              provenance: { origin: "human" },
             },
             signal: new_copilot_abort_signal(),
           },
@@ -4292,6 +4293,7 @@
             // The auto-picked sample that grounded planning and input
             // minting, recorded on the Spec for provenance (v1 parity).
             task_sample: grounding_sample,
+            provenance: { origin: "human" },
           },
           signal: new_copilot_abort_signal(),
         },
