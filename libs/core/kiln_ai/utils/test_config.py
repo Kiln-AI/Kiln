@@ -775,3 +775,18 @@ def test_typesafe_api_key_property():
     prop = Config()._properties["typesafe_api_key"]
     assert prop.env_var == "TYPESAFE_API_KEY"
     assert prop.sensitive is True
+
+
+@pytest.mark.parametrize(
+    "key,env_var,sensitive",
+    [
+        ("cloudflare_api_key", "CLOUDFLARE_API_KEY", True),
+        ("cloudflare_account_id", "CLOUDFLARE_ACCOUNT_ID", False),
+        ("cloudflare_ai_gateway_id", "CLOUDFLARE_AI_GATEWAY_ID", False),
+    ],
+)
+def test_cloudflare_properties(key, env_var, sensitive):
+    prop = Config()._properties[key]
+    assert prop.type is str
+    assert prop.env_var == env_var
+    assert prop.sensitive is sensitive
