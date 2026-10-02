@@ -43,7 +43,7 @@
 
 ## What is Kiln?
 
-Kiln is a workbench for the full AI development loop: evals, optimization, prompts, RAG, fine-tuning, synthetic data, agents, and tools - all working together. The desktop app lets your whole team contribute (PMs, subject-experts, and QA can rate outputs and add data without writing code). The MIT-licensed Python library ships the same tasks to production. Runs locally - bring your own API keys, or go fully offline with Ollama.
+Kiln is a workbench for the full AI development loop: evals, optimization, prompts, RAG, fine-tuning, synthetic data, agents, and tools - all working together. The desktop app lets your whole team contribute (PMs, subject-matter experts, and QA can rate outputs and add data without writing code). The MIT-licensed Python library ships the same tasks to production. Runs locally - bring your own API keys, or go fully offline with Ollama.
 
 ## Highlights
 
