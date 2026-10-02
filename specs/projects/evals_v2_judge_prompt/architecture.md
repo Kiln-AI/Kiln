@@ -155,6 +155,7 @@ async def get_default_llm_judge_prompt(project_id, task_id, eval_id) -> DefaultL
     return DefaultLlmJudgePromptResponse(
         judge_prompt=build_default_llm_judge_prompt(eval),
         system_prompt=_DEFAULT_SYSTEM_PROMPT,
+        reference_keys=derived_reference_keys(eval),
     )
 ```
 
@@ -164,6 +165,11 @@ with response model:
 class DefaultLlmJudgePromptResponse(BaseModel):
     judge_prompt: str
     system_prompt: str
+    # Added later: the reference data keys the server will require of a judge for this
+    # eval, derived by `derived_reference_keys(eval)` — the same call that bakes them
+    # onto a saved config. Returned so the builder's Test Judge pane can offer a place
+    # to supply them instead of re-deriving the rule from the prompt's text.
+    reference_keys: list[str] = []
 ```
 
 (`_DEFAULT_SYSTEM_PROMPT` imported from `base_eval`.) 404 handled by `eval_from_id`.
@@ -172,7 +178,7 @@ class DefaultLlmJudgePromptResponse(BaseModel):
 
 **`app/web_ui/src/lib/api/v2_eval_api.ts`**
 
-- `getDefaultLlmJudgePrompt(projectId, taskId, evalId): Promise<{ judge_prompt: string; system_prompt: string }>` — GET the new endpoint.
+- `getDefaultLlmJudgePrompt(projectId, taskId, evalId): Promise<DefaultLlmJudgePromptResponse>` — GET the new endpoint. (Originally hand-written as `Promise<{ judge_prompt: string; system_prompt: string }>`; now the generated type, so a field added to the response reaches callers without a second edit.)
 - Regenerate OpenAPI types (`generate_schema.sh`); `judge_prompt`/`system_prompt` appear on
   `CreateLlmJudgeConfigRequest` / `LlmJudgeBuilderInput`. Thread them through
   `createLlmJudgeConfig` and `testV2EvalLlmJudge` (add optional params, default undefined).

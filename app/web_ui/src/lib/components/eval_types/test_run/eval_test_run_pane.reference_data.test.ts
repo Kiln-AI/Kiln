@@ -50,6 +50,15 @@ function makeRun(
 
 const run1 = makeRun("r1", "input one", "output one")
 
+// An llm_judge's mode is decided by its own signals in both flag states, so the
+// llm_judge cases below need a prompt that actually reads reference data.
+const REFERENCE_SIGNALS = {
+  prompt_template:
+    "Grade {{ final_message }} against {{ reference_data.reference_answer }}",
+  server_reference_keys: [] as string[],
+  prompt_unavailable: false,
+}
+
 // ---------------------------------------------------------------------------
 // Tests: EvalTestRunPane
 // ---------------------------------------------------------------------------
@@ -67,6 +76,7 @@ describe("EvalTestRunPane", () => {
           available_runs: [run1],
           selected_run: run1,
           runs_loading: false,
+          judge_reference_signals: REFERENCE_SIGNALS,
         },
       })
 
@@ -87,7 +97,7 @@ describe("EvalTestRunPane reference data visibility by eval type", () => {
     cleanup()
   })
 
-  it("hides reference data field for pattern_match (none mode) in ready state", () => {
+  it("shows reference data field for pattern_match (optional mode) in ready state", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { container } = render(EvalTestRunPane as any, {
       props: {
@@ -100,7 +110,7 @@ describe("EvalTestRunPane reference data visibility by eval type", () => {
     const refField = container.querySelector(
       '[data-testid="reference-data-field"]',
     )
-    expect(refField).toBeNull()
+    expect(refField).not.toBeNull()
   })
 
   it("hides reference data field for tool_call_check (none mode) in ready state", () => {
@@ -143,6 +153,7 @@ describe("EvalTestRunPane reference data visibility by eval type", () => {
         selected_run: run1,
         runs_loading: false,
         eval_config_type: "llm_judge",
+        judge_reference_signals: REFERENCE_SIGNALS,
       },
     })
     const refField = container.querySelector(
@@ -183,7 +194,7 @@ describe("EvalTestRunPane reference data visibility by eval type", () => {
     expect(refField).not.toBeNull()
   })
 
-  it("hides reference data field for pattern_match in results state", () => {
+  it("shows reference data field for pattern_match in results state", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { container } = render(EvalTestRunPane as any, {
       props: {
@@ -201,7 +212,7 @@ describe("EvalTestRunPane reference data visibility by eval type", () => {
     const refField = container.querySelector(
       '[data-testid="reference-data-field"]',
     )
-    expect(refField).toBeNull()
+    expect(refField).not.toBeNull()
   })
 
   it("shows reference data field for llm_judge in results state", () => {
@@ -212,6 +223,7 @@ describe("EvalTestRunPane reference data visibility by eval type", () => {
         selected_run: run1,
         runs_loading: false,
         eval_config_type: "llm_judge",
+        judge_reference_signals: REFERENCE_SIGNALS,
         test_result: {
           scores: { accuracy: 1.0 },
           skipped_reason: null,

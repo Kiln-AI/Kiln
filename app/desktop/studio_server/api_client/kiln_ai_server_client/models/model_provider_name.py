@@ -7,6 +7,7 @@ class ModelProviderName(str, Enum):
     AZURE_OPENAI = "azure_openai"
     CEREBRAS = "cerebras"
     DOCKER_MODEL_RUNNER = "docker_model_runner"
+    FEATHERLESS_AI = "featherless_ai"
     FIREWORKS_AI = "fireworks_ai"
     GEMINI_API = "gemini_api"
     GROQ = "groq"

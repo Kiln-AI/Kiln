@@ -12,9 +12,12 @@ import os
 import re
 import subprocess
 import sys
+import time
+from datetime import date
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 
@@ -85,7 +88,22 @@ PROVIDER_CONFIG = {
         "type": "vertex",
         "env": "VERTEX_PROJECT_ID",
     },
+    "cloudflare": {
+        # Credentials are optional: without them the public catalog JSON is used.
+        "type": "cloudflare",
+        "env": "CLOUDFLARE_API_KEY",
+        "account_env": "CLOUDFLARE_ACCOUNT_ID",
+    },
 }
+
+# Providers whose model listing works without credentials, so a missing key
+# must not skip the check.
+KEY_OPTIONAL_PROVIDERS = {"cloudflare"}
+
+CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4"
+CLOUDFLARE_PUBLIC_MODELS_URL = "https://ai-cloudflare-com.pages.dev/api/models"
+CLOUDFLARE_TEXT_GENERATION_TASK = "Text Generation"
+CLOUDFLARE_SEARCH_PAGE_SIZE = 100
 
 SKIP_PROVIDERS = {
     "amazon_bedrock",
@@ -96,6 +114,8 @@ SKIP_PROVIDERS = {
     "openai_compatible",
     "azure_openai",
     "huggingface",
+    # TypeSafe AI's System One API has no OpenAI-compatible model listing to enumerate.
+    "typesafe",
 }
 
 CASE_INSENSITIVE_PROVIDERS = {"siliconflow_cn"}
@@ -240,6 +260,103 @@ def fetch_vertex_with_aliases(project_id: str) -> set[str]:
         if re.match(r".*-\d{3}$", model_id):
             with_aliases.add(re.sub(r"-\d{3}$", "", model_id))
     return with_aliases
+
+
+def _cloudflare_property(model: dict, property_id: str) -> Any:
+    for prop in model.get("properties") or []:
+        if prop.get("property_id") == property_id:
+            return prop.get("value")
+    return None
+
+
+def _fetch_cloudflare_search(api_key: str, account_id: str) -> list[dict]:
+    """Page through the official models-search API for text-generation models.
+
+    include_deprecated=true keeps models visible for up to three months after
+    retirement, so their planned_deprecation_date is still reported.
+    """
+    headers = {"Authorization": f"Bearer {api_key}"}
+    models: list[dict] = []
+    seen: set[str] = set()
+    page = 1
+    while True:
+        url = (
+            f"{CLOUDFLARE_API_BASE}/accounts/{quote(account_id, safe='')}/ai/models/search"
+            f"?task=Text%20Generation&include_deprecated=true"
+            f"&per_page={CLOUDFLARE_SEARCH_PAGE_SIZE}&page={page}"
+        )
+        data = fetch_json(url, headers)
+        if not data.get("success", False):
+            raise RuntimeError(f"Cloudflare models search failed: {data.get('errors')}")
+        batch = data.get("result") or []
+        new = [m for m in batch if m.get("name") not in seen]
+        models.extend(new)
+        seen.update(m.get("name") for m in new)
+        if not new or len(batch) < CLOUDFLARE_SEARCH_PAGE_SIZE:
+            return models
+        page += 1
+
+
+def _fetch_cloudflare_public(attempts: int = 3) -> list[dict]:
+    """Fetch Cloudflare's public, unauthenticated model catalog (~900 KB).
+
+    The endpoint sometimes returns a transient 502, so retry a few times.
+    """
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return fetch_json(CLOUDFLARE_PUBLIC_MODELS_URL, timeout=60)["models"]
+        except OSError as e:
+            last_error = e
+            if attempt + 1 < attempts:
+                time.sleep(2)
+    raise RuntimeError(f"Cloudflare public model catalog failed: {last_error}")
+
+
+def cloudflare_availability(
+    models: list[dict], today: date
+) -> tuple[set[str], dict[str, str]]:
+    """Split Cloudflare model records into (available_ids, deprecation_dates).
+
+    Only text-generation models count. A model whose planned_deprecation_date
+    is today or earlier is retired: it is left out of available_ids even if
+    the listing still shows it, because Cloudflare may silently alias a
+    retired ID to a different model. Every dated model is returned in
+    deprecation_dates so it can be removed before the date.
+    """
+    available: set[str] = set()
+    deprecation_dates: dict[str, str] = {}
+    for model in models:
+        task = model.get("task") or {}
+        if task.get("name") != CLOUDFLARE_TEXT_GENERATION_TASK:
+            continue
+        name = model["name"]
+        planned = _cloudflare_property(model, "planned_deprecation_date")
+        if planned:
+            deprecation_dates[name] = str(planned)
+            try:
+                if date.fromisoformat(str(planned)) <= today:
+                    continue
+            except ValueError:
+                pass
+        available.add(name)
+    return available, deprecation_dates
+
+
+def fetch_cloudflare(
+    api_key: str | None, account_id: str | None
+) -> tuple[set[str], dict[str, str]]:
+    """Returns (model_ids, deprecation_dates) for Cloudflare Workers AI.
+
+    Uses the authenticated models-search API when both credentials are set,
+    otherwise the public catalog JSON. Never use LiteLLM's Cloudflare catalog:
+    it is months stale.
+    """
+    if api_key and account_id:
+        models = _fetch_cloudflare_search(api_key, account_id)
+    else:
+        models = _fetch_cloudflare_public()
+    return cloudflare_availability(models, date.today())
 
 
 def fetch_fireworks_individual(api_key: str, model_ids: list[str]) -> set[str]:

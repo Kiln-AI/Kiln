@@ -46,7 +46,7 @@ function make_score(
   name: string,
   type: EvalOutputScore["type"],
 ): EvalOutputScore {
-  return { name, type, instruction: null }
+  return { name, type, instruction: null, direction: "higher_is_better" }
 }
 
 describe("CodeEvalForm", () => {
@@ -194,12 +194,11 @@ describe("CodeEvalForm", () => {
   it("renders example tabs including the LLM tool examples", () => {
     const { container } = render(CodeEvalForm)
     const tabs = container.querySelectorAll(".tab")
-    expect(tabs.length).toBe(5)
+    expect(tabs.length).toBe(4)
     expect(tabs[0].textContent?.trim()).toBe("Parse JSON")
     expect(tabs[1].textContent?.trim()).toBe("Check tool usage")
-    expect(tabs[2].textContent?.trim()).toBe("Domain-specific grading")
-    expect(tabs[3].textContent?.trim()).toBe("LLM judge")
-    expect(tabs[4].textContent?.trim()).toBe("Triage then LLM judge")
+    expect(tabs[2].textContent?.trim()).toBe("LLM judge")
+    expect(tabs[3].textContent?.trim()).toBe("Triage then LLM judge")
   })
 
   it("switches active example tab on click", async () => {
@@ -226,7 +225,7 @@ describe("CodeEvalForm", () => {
     expect(tablist?.getAttribute("aria-label")).toBe("Examples")
     expect(tablist?.classList.contains("tabs-boxed")).toBe(true)
     expect(tablist?.classList.contains("flex-wrap")).toBe(true)
-    expect(container.querySelectorAll('[role="tab"]').length).toBe(5)
+    expect(container.querySelectorAll('[role="tab"]').length).toBe(4)
   })
 
   it("wraps each label so an over-long one ellipsizes", () => {
@@ -242,6 +241,7 @@ describe("CodeEvalForm", () => {
   it("moves the active example tab with the arrow, home and end keys", async () => {
     const { container } = render(CodeEvalForm)
     const tabs = container.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+    const last = tabs[tabs.length - 1]
 
     await fireEvent.keyDown(tabs[0], { key: "ArrowRight" })
     expect(tabs[1].getAttribute("aria-selected")).toBe("true")
@@ -250,15 +250,15 @@ describe("CodeEvalForm", () => {
     // Wraps around both ends so the group is a single loop
     await fireEvent.keyDown(tabs[1], { key: "ArrowLeft" })
     await fireEvent.keyDown(tabs[0], { key: "ArrowLeft" })
-    expect(tabs[4].getAttribute("aria-selected")).toBe("true")
+    expect(last.getAttribute("aria-selected")).toBe("true")
 
-    await fireEvent.keyDown(tabs[4], { key: "ArrowRight" })
+    await fireEvent.keyDown(last, { key: "ArrowRight" })
     expect(tabs[0].getAttribute("aria-selected")).toBe("true")
 
     await fireEvent.keyDown(tabs[0], { key: "End" })
-    expect(tabs[4].getAttribute("aria-selected")).toBe("true")
+    expect(last.getAttribute("aria-selected")).toBe("true")
 
-    await fireEvent.keyDown(tabs[4], { key: "Home" })
+    await fireEvent.keyDown(last, { key: "Home" })
     expect(tabs[0].getAttribute("aria-selected")).toBe("true")
   })
 
@@ -382,8 +382,8 @@ describe("examples grant the tools they call", () => {
     await tick()
   }
 
-  const LLM_JUDGE_TAB = 3
-  const TRIAGE_TAB = 4
+  const LLM_JUDGE_TAB = 2
+  const TRIAGE_TAB = 3
   const PARSE_JSON_TAB = 0
 
   it("grants llm_judge for the LLM judge example", async () => {
@@ -474,25 +474,6 @@ describe("example code correctness", () => {
   function get_example_code(container: HTMLElement): string {
     return container.querySelector(".whitespace-pre")?.textContent ?? ""
   }
-
-  it("Domain-specific grading uses KilnEvalHelpers.pass_fail with assert_contains result", async () => {
-    const { container } = render(CodeEvalForm)
-    const tabs = container.querySelectorAll(".tab")
-    await fireEvent.click(tabs[2])
-    const domainCode = get_example_code(container)
-    expect(domainCode).toContain("KilnEvalHelpers.pass_fail(contains)")
-  })
-
-  it("Domain-specific grading asserts against a literal marker", async () => {
-    const { container } = render(CodeEvalForm)
-    const tabs = container.querySelectorAll(".tab")
-    await fireEvent.click(tabs[2])
-    const domainCode = get_example_code(container)
-    expect(domainCode).toContain(
-      'contains = KilnEvalHelpers.assert_contains(output, "Summary:")',
-    )
-    expect(domainCode).not.toContain("if expected else True")
-  })
 
   it("no example mentions reference data", async () => {
     const { container } = render(CodeEvalForm)

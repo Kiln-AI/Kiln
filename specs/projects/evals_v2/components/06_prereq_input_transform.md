@@ -362,7 +362,7 @@ This is here so the implementer knows the constraints from the first consumer, b
    {
      "final_message": str | dict,  # TaskRun.output.output
      "trace": list | None,         # TaskRun.trace (modified OpenAI format)
-     "reference_data": dict | None, # EvalInput.reference
+     "reference_data": dict | None, # ground truth for the item (see components/40)
      "task_input": str | dict       # TaskRun.input
    }
    ```

@@ -1,7 +1,26 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeAll } from "vitest"
-import { render, fireEvent } from "@testing-library/svelte"
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  beforeEach,
+  afterEach,
+} from "vitest"
+import { render, fireEvent, cleanup } from "@testing-library/svelte"
 import { tick } from "svelte"
+import * as svelteMod from "svelte"
+
+const mockFetchTaskRuns = vi.fn()
+
+vi.mock("$lib/api/v2_eval_api", async (importOriginal) => {
+  const original = (await importOriginal()) as Record<string, unknown>
+  return {
+    ...original,
+    fetchTaskRuns: (...args: unknown[]) => mockFetchTaskRuns(...args),
+  }
+})
 
 vi.mock("$lib/components/code_editor.svelte", async () => {
   const StubModule = await import(
@@ -49,7 +68,52 @@ function render_form(judge_type: "code_eval" | "pattern_match", name: string) {
   })
 }
 
+/**
+ * Render the form and run the onMount callbacks, which load the task runs the
+ * Test Judge pane selects from. onMount doesn't fire on its own under vitest,
+ * so collect the callbacks and invoke them by hand.
+ */
+async function render_form_with_runs(runs: unknown[]) {
+  mockFetchTaskRuns.mockResolvedValue(runs)
+
+  const on_mount_callbacks: Array<() => unknown> = []
+  const spy = vi
+    .spyOn(svelteMod, "onMount")
+    .mockImplementation((fn: () => unknown) => {
+      on_mount_callbacks.push(fn)
+    })
+  const result = render_form("pattern_match", "My Eval")
+  spy.mockRestore()
+
+  for (const callback of on_mount_callbacks) {
+    await callback()
+  }
+  await tick()
+  return result
+}
+
+function task_run(id: string, trace: unknown[] | null) {
+  return {
+    v: 1,
+    id,
+    input: `input ${id}`,
+    output: { output: `output ${id}`, source: { type: "human" as const } },
+    tags: [],
+    created_at: new Date().toISOString(),
+    trace,
+  }
+}
+
 describe("CreateSpecJudgeForm", () => {
+  beforeEach(() => {
+    mockFetchTaskRuns.mockReset()
+    mockFetchTaskRuns.mockResolvedValue([])
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
   it("seeds the code judge with the real score key, never the quality fallback", () => {
     // With a valid name the starter regenerates with the real key; the
     // placeholder only appears while the name is empty or invalid. Neither
@@ -121,9 +185,46 @@ describe("CreateSpecJudgeForm", () => {
     )
   })
 
+  describe("default test run selection", () => {
+    async function selected_run_text(runs: unknown[]) {
+      const { container } = await render_form_with_runs(runs)
+      const card = container.querySelector(
+        '[data-testid="selected-run-card"]',
+      ) as HTMLElement
+      expect(card).not.toBeNull()
+      return card.textContent ?? ""
+    }
+
+    it("auto-selects the newest run that has a trace", async () => {
+      const text = await selected_run_text([
+        task_run("no_trace", null),
+        task_run("traced", [{ role: "user", content: "hi" }]),
+      ])
+      expect(text).toContain("input traced")
+      expect(text).not.toContain("input no_trace")
+    })
+
+    it("treats an empty trace as no trace", async () => {
+      const text = await selected_run_text([
+        task_run("empty_trace", []),
+        task_run("traced", [{ role: "user", content: "hi" }]),
+      ])
+      expect(text).toContain("input traced")
+    })
+
+    it("falls back to the newest run when none have a trace", async () => {
+      const text = await selected_run_text([
+        task_run("newest", null),
+        task_run("older", null),
+      ])
+      expect(text).toContain("input newest")
+    })
+  })
+
   // Note: hiding the score-key note while the name field has a validation
   // error (name_error -> no output_scores) isn't testable here — FormElement
-  // only starts validating after onMount, which jsdom/vitest doesn't run.
+  // only starts validating after onMount, which plain render_form doesn't
+  // drive (see render_form_with_runs for the manual onMount path).
   // The render-side behavior (no scores -> no note) is covered in
   // code_eval_form.test.ts.
 })

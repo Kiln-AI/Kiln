@@ -166,7 +166,7 @@ export function generate_default_code(
     Args:
         output: The model's final output string.
         trace: List of message dicts from the conversation.
-        reference_data: Dict of reference/expected data (if any).
+        reference_data: Dict of expected data, or None. Dataset items supply their stored output as 'reference_answer'.
         task_input: The original task input string.
 
     Return dictionary:
@@ -216,11 +216,6 @@ export function generate_examples(
     "used_search",
     "max(min(call_count, 5), 1)",
   )
-  const domain_return = build_example_return(
-    scores,
-    "contains",
-    "5 if word_count < 50 else 3 if word_count < 150 else 1",
-  )
   const triage_safe_return = build_return_dict(scores, "passing")
 
   return [
@@ -255,33 +250,6 @@ def score(trace):
     call_count = KilnEvalHelpers.count_tool_calls(tool_calls, "search")
 
     ${tool_return}
-`,
-    },
-    {
-      label: "Domain-specific grading",
-      required_tool_ids: [],
-      code: SHOW_REFERENCE_DATA_UI
-        ? `from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
-
-def score(output, reference_data):
-    """Grade output against domain-specific criteria."""
-    expected = (reference_data or {}).get("expected_answer", "")
-
-    contains = KilnEvalHelpers.assert_contains(output, expected) if expected else True
-
-    word_count = len(output.split())
-
-    ${domain_return}
-`
-        : `from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
-
-def score(output):
-    """Grade output against domain-specific criteria."""
-    contains = KilnEvalHelpers.assert_contains(output, "Summary:")
-
-    word_count = len(output.split())
-
-    ${domain_return}
 `,
     },
     {

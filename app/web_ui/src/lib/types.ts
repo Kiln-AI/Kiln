@@ -16,6 +16,7 @@ export type ActionButton = {
 // Project-Input is a variant with path
 export type Project = components["schemas"]["Project-Input"]
 export type Task = components["schemas"]["Task"]
+export type TurnMode = components["schemas"]["TurnMode"]
 export type TaskRun = components["schemas"]["TaskRun-Input"]
 export type TaskRunOutput = components["schemas"]["TaskRun-Output"]
 export type TaskRequirement = components["schemas"]["TaskRequirement"]
@@ -139,6 +140,7 @@ export type Trace = TraceMessage[]
 export type ErrorWithTrace = components["schemas"]["ErrorWithTrace"]
 export type ToolCallMessageParam =
   components["schemas"]["ChatCompletionMessageFunctionToolCallParam"]
+export type RunChainEntry = components["schemas"]["RunChainEntry"]
 export type SearchToolApiDescription =
   components["schemas"]["SearchToolApiDescription"]
 export type CodeToolResponse = components["schemas"]["CodeToolResponse"]
@@ -151,7 +153,7 @@ export type Skill = components["schemas"]["SkillResponse"]
 export type DocumentLibraryState = components["schemas"]["DocumentLibraryState"]
 export type Spec = components["schemas"]["Spec"]
 export type EvalStatus = components["schemas"]["EvalStatus"]
-// Status moved from specs to evals; the old name is kept for existing call sites.
+// Status lives on the eval; spec call sites use this alias.
 export type SpecStatus = EvalStatus
 export type Priority = components["schemas"]["Priority"]
 export type Feedback = components["schemas"]["Feedback"]

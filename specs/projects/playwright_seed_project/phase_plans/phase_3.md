@@ -259,9 +259,11 @@ Whole-fixture spend on the authoring key, including everything phase 2 generated
 
 Neither of these is a phase-3 anecdote; both are properties of the create-eval flow.
 
-- **The eval's name fixes its three dataset tags** — `generate_spec_eval_tags` lowercases it
+- **The eval's name fixes its four dataset tags** — `generate_spec_eval_tags` lowercases it
   and replaces spaces with underscores — and nothing in the UI shows that before you submit
-  the form. Choose the name knowing it becomes `eval_…`, `train_…` and `eval_golden_…`.
+  the form. Choose the name knowing it becomes `test_…`, `train_…`, `val_…` and `golden_…`.
+  (The committed fixture predates that naming and carries the older `eval_…` /
+  `eval_golden_…` tags, which is why its files disagree with this list.)
 - **The named pass/fail control only renders on runs already carrying the golden tag.**
   `get_rating_options` returns each eval's output scores with
   `show_for_tags=[golden_set_tag]`, so tagging must come before rating. Rating a golden run

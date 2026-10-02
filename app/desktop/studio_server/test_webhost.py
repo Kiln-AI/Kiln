@@ -4,10 +4,11 @@ import tempfile
 from unittest.mock import patch
 
 import pytest
-from app.desktop.studio_server.webhost import connect_webhost
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_server.custom_errors import connect_custom_errors
+
+from app.desktop.studio_server.webhost import connect_webhost
 
 WEB_APP_404_BODY = "<html><body>custom not found</body></html>"
 

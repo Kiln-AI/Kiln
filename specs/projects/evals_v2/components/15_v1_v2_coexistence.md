@@ -160,7 +160,6 @@ class EvalRun(KilnParentedModel):
 
     # --- V2 additions ---
     eval_input_id: ID_TYPE | None = None     # V2 EvalInput source (A2.6)
-    reference_data: dict[str, JsonValue] | None = None  # V2 reference (A2.7)
     skipped_reason: str | None = None  # per E.18 — tolerant str, SkippedReason convention
     skipped_detail: str | None = None  # per E.18 — case-specific detail
 ```
@@ -181,7 +180,7 @@ V1 EvalRuns always have `dataset_id` set and `eval_input_id = None`, passing thi
 
 ### 3.3 Reference data coexistence (A2.7)
 
-V1 EvalRuns use `reference_answer: str | None` (snapshotted from `TaskRun.output.output` for `EvalDataType.reference_answer` evals). V2 EvalRuns use `reference_data: dict[str, JsonValue] | None` (sourced from `EvalInput.reference`). The two fields coexist; the existing `validate_reference_answer` validator gates only `reference_answer` and is untouched. No new validator for `reference_data` at this layer — V2 data-contract validation is per-config at adapter bind time (per A2.3).
+V1 EvalRuns use `reference_answer: str | None` (snapshotted from `TaskRun.output.output` for `EvalDataType.reference_answer` evals). V2 EvalRuns persist no reference of their own: the reference a scorer saw lives on the runtime `EvalTaskInput.reference_data` and is derived from the item the record names, so there is nothing here to coexist with. The existing `validate_reference_answer` validator gates only `reference_answer` and is untouched. V2 data-contract validation is per-config at adapter bind time (per A2.3).
 
 ### 3.4 `validate_output_fields` V2 bypass (C.runner.2)
 
@@ -507,7 +506,7 @@ Ordered by dependency (from `reference/backwards_compat_plan_grounded.md`, recon
 
 1. **EvalConfig schema extension (Phase 0, sub-task 1):** Add `v2` to enum, add V2 properties types, change `model_name`/`model_provider` to optional, add `mode="before"` routing validator (A2.8), extend `validate_properties` (A2.1), guard `validate_json_serializable`.
 2. **Eval model extension (Phase 0, sub-task 2):** Add `eval_input_filter_id` (A2.5), make `eval_set_filter_id` optional (A2.9), add mutual-exclusivity validator, fix `validate_template_properties` guard.
-3. **EvalRun model extension (Phase 0, sub-task 3):** Add `eval_input_id` (A2.6), `reference_data` (A2.7), `skipped_reason` (E.18). Change `dataset_id` to optional. Add `validate_input_source` validator. Add `validate_output_fields` V2 bypass (C.runner.2).
+3. **EvalRun model extension (Phase 0, sub-task 3):** Add `eval_input_id` (A2.6) and `skipped_reason` (E.18); A2.7's reference data lands on the runtime `EvalTaskInput`, not on `EvalRun`. Change `dataset_id` to optional. Add `validate_input_source` validator. Add `validate_output_fields` V2 bypass (C.runner.2).
 4. **EvalInput entity (Phase 0, sub-task 4):** New model, add to `Task.parent_of`. No dependencies on sub-tasks 1-3.
 5. **EvalInputFilter (Phase 0, sub-task 5):** New protocol + basic filters + registry. Depends on sub-task 4.
 6. **Registry + BaseEval helper extraction (Phase 0, sub-task 6):** Change registry signature (A2.11), extract `model_and_provider()` helper (A2.10). Depends on sub-task 1.
@@ -538,7 +537,6 @@ Sub-tasks 1-4 are independent and can be parallelized. Sub-task 5 depends on 4. 
 | Fix `validate_template_properties` None guard | (pre-existing bug) | 0.2 |
 | Change `EvalRun.dataset_id` to optional | A2.6 | 0.3 |
 | Add `EvalRun.eval_input_id` | A2.6 | 0.3 |
-| Add `EvalRun.reference_data` | A2.7 | 0.3 |
 | Add `EvalRun.skipped_reason` | E.18 | 0.3 |
 | Add `EvalRun.validate_input_source` XOR validator | A2.6 | 0.3 |
 | Extend `EvalRun.validate_output_fields` with V2 bypass | C.runner.2 | 0.3 |

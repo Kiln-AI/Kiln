@@ -10,6 +10,7 @@ from litellm.types.utils import (
     Function,
     ModelResponse,
 )
+from litellm.types.utils import Message as LiteLLMMessage
 
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
@@ -363,6 +364,7 @@ async def test_json_schema_response_format_adds_required_to_nested(config, tmp_p
         (ModelProviderName.featherless_ai, "featherless_ai"),
         # for openai-compatible providers, we expect openai as the provider name
         (ModelProviderName.siliconflow_cn, "openai"),
+        (ModelProviderName.cloudflare, "openai"),
     ],
 )
 def test_litellm_model_id_standard_providers(
@@ -452,6 +454,21 @@ def test_litellm_model_id_caching(config, mock_task):
 
     assert model_id == "cached-value"
     mock_model_provider.assert_not_called()
+
+
+def test_litellm_model_id_typesafe_not_supported(config, mock_task):
+    """TypeSafe AI is served by its own adapter, so LiteLLM must refuse to map it."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.typesafe
+    mock_provider.model_id = "jev-1.13.0"
+
+    with patch.object(adapter, "model_provider", return_value=mock_provider):
+        with pytest.raises(
+            ValueError, match="TypeSafe AI models do not run through LiteLLM"
+        ):
+            adapter.litellm_model_id()
 
 
 def test_litellm_model_id_unknown_provider(config, mock_task):
@@ -1128,6 +1145,92 @@ def test_allowed_openai_params_raises_for_non_string_items(config, mock_task):
         adapter._allowed_openai_params_for_completion_kwargs(
             {"allowed_openai_params": ["valid", 123]}
         )
+
+
+def _reasoning_history_messages() -> list:
+    return [
+        {"role": "user", "content": "hi"},
+        LiteLLMMessage(
+            role="assistant",
+            content="hello",
+            reasoning_content="thinking",
+            provider_specific_fields={"reasoning": "thinking", "refusal": None},
+        ),
+        {
+            "role": "assistant",
+            "content": None,
+            "reasoning_content": "thinking",
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "add", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "content": "2", "tool_call_id": "c1"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_strips_reasoning_fields_for_cerebras(
+    config, mock_task
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.cerebras
+    mock_provider.temp_top_p_exclusive = False
+    messages = _reasoning_history_messages()
+    original = copy.deepcopy(messages)
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="cerebras/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    assert kwargs["messages"] == [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "add", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "content": "2", "tool_call_id": "c1"},
+    ]
+    assert messages == original
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_keeps_reasoning_fields_for_other_providers(
+    config, mock_task
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.openrouter
+    mock_provider.temp_top_p_exclusive = False
+    messages = _reasoning_history_messages()
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openrouter/test"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    assert kwargs["messages"][1] is messages[1]
+    assert kwargs["messages"][1].reasoning_content == "thinking"
+    assert kwargs["messages"][2]["reasoning_content"] == "thinking"
 
 
 @pytest.mark.asyncio

@@ -265,11 +265,11 @@ When the eval runner prepares a case for scoring, it assembles an `EvalTaskInput
 class EvalTaskInput(BaseModel):
     final_message: str | dict[str, Any]
     trace: list[ChatCompletionMessageParam] | None = None
-    reference_data: dict[str, JsonValue] | None = None  # <-- from EvalInput.reference
+    reference_data: dict[str, JsonValue] | None = None  # <-- from the item being evaluated
     task_input: str | dict[str, Any]
 ```
 
-The mapping is direct: `EvalTaskInput.reference_data = eval_input.reference`. The field is renamed from `reference` to `reference_data` to avoid collision with Pydantic's internal `reference` handling and to be self-documenting in template expressions (`{{ reference_data.reference_answer }}` reads better than `{{ reference.reference_answer }}`).
+For an EvalInput-backed item the mapping is direct: `EvalTaskInput.reference_data = eval_input.reference`. For a TaskRun-backed dataset item there is no separate reference record -- the item's own stored output *is* the curated answer, so it is supplied as `{"reference_answer": item.output.output}`. The one exception is a TaskRun scored as itself (judge calibration), which gets `None`: the item and the scored run are the same record there, so a reference would be byte-identical to `final_message`. The field is renamed from `reference` to `reference_data` to avoid collision with Pydantic's internal `reference` handling and to be self-documenting in template expressions (`{{ reference_data.reference_answer }}` reads better than `{{ reference.reference_answer }}`).
 
 Templates access reference data as `reference_data.<key>`:
 
@@ -302,7 +302,7 @@ V1's reference-data mechanism is documented in `reports/kiln_reference_data_toda
 | Per-case criteria | Not supported | Via reference keys (e.g., `llm_judge_criteria: list[str]`) |
 | Validation | Eval-level `EvalDataType.reference_answer` toggle; validator on EvalRun | Per-config at bind time; `required_var` / `reference_key` mechanisms |
 
-V1 reference-data paths continue to work unchanged for V1 EvalConfigs (per A0.1). V2 EvalConfigs use the new `EvalInput.reference` dict exclusively.
+V1 reference-data paths continue to work unchanged for V1 EvalConfigs (per A0.1). V2 EvalConfigs read the structured `reference_data` dict exclusively -- sourced from `EvalInput.reference` for an EvalInput-backed item, or from a TaskRun-backed dataset item's own stored output under the `reference_answer` key (see section 6). Neither path denormalizes a copy onto `EvalRun`.
 
 ---
 

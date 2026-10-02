@@ -16,8 +16,10 @@ worth knowing before you conclude a keyless sandbox cannot exercise RAG at all.
 
 Searching is the part that does need a key: the vector store is `lancedb_hybrid`, and
 a hybrid or vector query embeds the query string live. A full-text-only store would
-not. Connect OpenRouter through Settings → Providers and the tool's own Search panel
-returns chunks from the seeded documents.
+not. With a provider connected — which a sandbox seeded from `OPENROUTER_QA_KEY`
+already has, and `playwright_server.sh start` says so — the tool's own Search panel
+returns chunks from the seeded documents. Without one, connect OpenRouter through
+Settings → Providers first.
 
 Two things about the chain that read like bugs and are not:
 

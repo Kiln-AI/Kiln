@@ -89,6 +89,19 @@ class Config:
                 str,
                 env_var="FIREWORKS_ACCOUNT_ID",
             ),
+            "cloudflare_api_key": ConfigProperty(
+                str,
+                env_var="CLOUDFLARE_API_KEY",
+                sensitive=True,
+            ),
+            "cloudflare_account_id": ConfigProperty(
+                str,
+                env_var="CLOUDFLARE_ACCOUNT_ID",
+            ),
+            "cloudflare_ai_gateway_id": ConfigProperty(
+                str,
+                env_var="CLOUDFLARE_AI_GATEWAY_ID",
+            ),
             "anthropic_api_key": ConfigProperty(
                 str,
                 env_var="ANTHROPIC_API_KEY",
@@ -170,6 +183,11 @@ class Config:
             "featherless_ai_api_key": ConfigProperty(
                 str,
                 env_var="FEATHERLESS_AI_API_KEY",
+                sensitive=True,
+            ),
+            "typesafe_api_key": ConfigProperty(
+                str,
+                env_var="TYPESAFE_API_KEY",
                 sensitive=True,
             ),
             "kiln_copilot_api_key": ConfigProperty(

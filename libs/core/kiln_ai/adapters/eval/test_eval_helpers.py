@@ -81,6 +81,23 @@ class TestTraceNavigation:
         assert calls[2]["name"] == ""
         assert calls[2]["id"] is None
 
+    def test_get_tool_calls_null_function(self, helpers: KilnEvalHelpers):
+        """A present-but-null (or non-dict) "function" must not raise."""
+        trace = [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {"id": "c1", "function": None},
+                    {"id": "c2", "function": "oops"},
+                ],
+            }
+        ]
+        calls = helpers.get_tool_calls(trace)
+        assert [c["name"] for c in calls] == ["", ""]
+        assert [c["arguments"] for c in calls] == [{}, {}]
+        assert [c["id"] for c in calls] == ["c1", "c2"]
+
     @pytest.mark.parametrize(
         "trace",
         [None, []],
@@ -118,6 +135,24 @@ class TestTraceNavigation:
         results = helpers.get_tool_results(trace)
         assert len(results) == 2
         assert results[0]["content"] == "result1"
+
+    def test_get_tool_results_openai_role_tool(self, helpers: KilnEvalHelpers):
+        # Kiln traces store tool results as OpenAI-style role "tool" messages,
+        # so a scorer reading a real trace must get them back.
+        trace = [
+            {"role": "user", "content": "question"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": "call_1", "type": "function"}],
+            },
+            {"role": "tool", "tool_call_id": "call_1", "content": "tool output"},
+            {"role": "assistant", "content": "answer"},
+        ]
+        results = helpers.get_tool_results(trace)
+        assert len(results) == 1
+        assert results[0]["tool_call_id"] == "call_1"
+        assert results[0]["content"] == "tool output"
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +247,10 @@ class TestScoring:
     def test_five_star_bool_rejected(self, helpers: KilnEvalHelpers):
         with pytest.raises(ValueError, match="must be a number"):
             helpers.five_star(True)  # type: ignore[arg-type]
+
+    def test_five_star_nan_rejected(self, helpers: KilnEvalHelpers):
+        with pytest.raises(ValueError, match="between 1 and 5"):
+            helpers.five_star(float("nan"))
 
 
 # ---------------------------------------------------------------------------

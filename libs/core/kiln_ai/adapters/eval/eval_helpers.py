@@ -8,6 +8,7 @@ Stdlib only -- no Pydantic, no Kiln-model/DB/UI imports.
 """
 
 import json
+import math
 import re
 from typing import Any
 
@@ -32,7 +33,11 @@ class KilnEvalHelpers:
             if msg.get("role") != "assistant":
                 continue
             for tc in msg.get("tool_calls") or []:
-                func = tc.get("function", {}) if isinstance(tc, dict) else {}
+                # .get("function", {}) isn't enough: the default only covers an
+                # absent key, so a present-but-null value raises on the .get below.
+                func = tc.get("function") if isinstance(tc, dict) else None
+                if not isinstance(func, dict):
+                    func = {}
                 args_str = func.get("arguments", "{}")
                 try:
                     args = (
@@ -66,13 +71,18 @@ class KilnEvalHelpers:
 
     @staticmethod
     def get_tool_results(trace: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
-        """Return all tool-result entries from a trace."""
+        """Return all tool-result entries from a trace.
+
+        Kiln traces store tool results as OpenAI-style ``role: "tool"``
+        messages; ``tool_result``-shaped entries are also matched.
+        """
         if not trace:
             return []
         return [
             entry
             for entry in trace
-            if entry.get("role") == "tool_result" or entry.get("type") == "tool_result"
+            if entry.get("role") in ("tool", "tool_result")
+            or entry.get("type") == "tool_result"
         ]
 
     # -- Tool-call matching -------------------------------------------------
@@ -128,7 +138,8 @@ class KilnEvalHelpers:
         """
         if not isinstance(rating, (int, float)) or isinstance(rating, bool):
             raise ValueError(f"rating must be a number, got {type(rating).__name__}")
-        if rating < 1 or rating > 5:
+        # NaN compares False against both range bounds, so it needs its own check.
+        if not math.isfinite(rating) or rating < 1 or rating > 5:
             raise ValueError(f"rating must be between 1 and 5, got {rating}")
         return float(rating)
 

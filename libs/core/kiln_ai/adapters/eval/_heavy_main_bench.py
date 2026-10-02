@@ -11,9 +11,9 @@ re-imports the parent's ``__main__`` module during bootstrap
 (``multiprocessing.spawn.get_preparation_data`` reads
 ``sys.modules['__main__'].__file__``).  So if the spawn path does NOT
 prevent the re-import, the child re-executes the heavy import chain
-(~1-3 s per call) -- the exact bug this benchmark catches. The scorer now
+(~1-3 s per call), which is what this benchmark catches. The scorer
 spawns through ``run_bridged_child``, which uses
-``start_process_with_light_main`` to keep the fix.
+``start_process_with_light_main`` to prevent it.
 
 Usage (from repo root):
     uv run python libs/core/kiln_ai/adapters/eval/_heavy_main_bench.py

@@ -1,3 +1,5 @@
+"""Kiln's built-in model list: model families and names, per-provider model configs, and lookup helpers."""
+
 from enum import Enum
 from typing import List
 
@@ -9,12 +11,6 @@ from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
 )
-
-"""
-Provides model configuration and management for various LLM providers and models.
-This module handles the integration with different AI model providers and their respective models,
-including configuration, validation, and instantiation of language models.
-"""
 
 
 class ModelFamily(str, Enum):
@@ -48,6 +44,7 @@ class ModelFamily(str, Enum):
     arcee = "arcee"
     sakana = "sakana"
     thinking_machines = "thinking_machines"
+    jev = "jev"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -57,9 +54,12 @@ class ModelName(str, Enum):
     Where models have instruct and raw versions, instruct is default and raw is specified.
     """
 
+    fugu_max = "fugu_max"
+    fugu_ultra_v2 = "fugu_ultra_v2"
     fugu_ultra = "fugu_ultra"
     muse_spark_1_2 = "muse_spark_1_2"
     muse_spark_1_1 = "muse_spark_1_1"
+    muse_glimmer_30b = "muse_glimmer_30b"
     llama_3_1_8b = "llama_3_1_8b"
     llama_3_1_70b = "llama_3_1_70b"
     llama_3_1_405b = "llama_3_1_405b"
@@ -70,6 +70,10 @@ class ModelName(str, Enum):
     llama_3_3_70b = "llama_3_3_70b"
     llama_4_maverick = "llama_4_maverick"
     llama_4_scout = "llama_4_scout"
+    gpt_6_1_sol = "gpt_6_1_sol"
+    gpt_6_astra = "gpt_6_astra"
+    gpt_6_sol = "gpt_6_sol"
+    gpt_6_luna = "gpt_6_luna"
     gpt_5_6_sol = "gpt_5_6_sol"
     gpt_5_6_terra = "gpt_5_6_terra"
     gpt_5_6_luna = "gpt_5_6_luna"
@@ -139,6 +143,7 @@ class ModelName(str, Enum):
     gemma_3_27b = "gemma_3_27b"
     gemma_3n_2b = "gemma_3n_2b"
     gemma_3n_4b = "gemma_3n_4b"
+    claude_fable_5_1 = "claude_fable_5_1"
     claude_fable_5 = "claude_fable_5"
     claude_3_5_haiku = "claude_3_5_haiku"
     claude_4_5_haiku = "claude_4_5_haiku"
@@ -146,10 +151,12 @@ class ModelName(str, Enum):
     claude_3_7_sonnet = "claude_3_7_sonnet"
     claude_3_7_sonnet_thinking = "claude_3_7_sonnet_thinking"
     claude_sonnet_4 = "claude_sonnet_4"
+    claude_sonnet_5_5 = "claude_sonnet_5_5"
     claude_sonnet_5 = "claude_sonnet_5"
     claude_sonnet_4_6 = "claude_sonnet_4_6"
     claude_sonnet_4_5 = "claude_sonnet_4_5"
     claude_opus_4 = "claude_opus_4"
+    claude_opus_5_5 = "claude_opus_5_5"
     claude_opus_5 = "claude_opus_5"
     claude_opus_4_1 = "claude_opus_4_1"
     claude_opus_4_5 = "claude_opus_4_5"
@@ -169,11 +176,13 @@ class ModelName(str, Enum):
     gemini_3_1_flash_lite_preview = "gemini_3_1_flash_lite_preview"
     gemini_3_1_pro_preview = "gemini_3_1_pro_preview"
     gemini_3_pro_preview = "gemini_3_pro_preview"
+    gemini_3_8_flash = "gemini_3_8_flash"
     gemini_3_7_flash = "gemini_3_7_flash"
     gemini_3_6_flash = "gemini_3_6_flash"
     gemini_3_5_flash = "gemini_3_5_flash"
     gemini_3_flash = "gemini_3_flash"
     nemotron_70b = "nemotron_70b"
+    nemotron_3p5_lightning = "nemotron_3p5_lightning"
     nemotron_3_ultra = "nemotron_3_ultra"
     nemotron_3_super = "nemotron_3_super"
     nemotron_3_nano = "nemotron_3_nano"
@@ -186,6 +195,8 @@ class ModelName(str, Enum):
     qwen_2p5_vl_32b = "qwen_2p5_vl_32b"
     qwen_2p5_vl_72b = "qwen_2p5_vl_72b"
     qwq_32b = "qwq_32b"
+    deepseek_4_1_flash = "deepseek_4_1_flash"
+    deepseek_4_pro_0813 = "deepseek_4_pro_0813"
     deepseek_4_pro = "deepseek_4_pro"
     deepseek_4_flash = "deepseek_4_flash"
     deepseek_3_2 = "deepseek_3_2"
@@ -205,6 +216,7 @@ class ModelName(str, Enum):
     grok_2 = "grok_2"
     grok_3 = "grok_3"
     grok_3_mini = "grok_3_mini"
+    grok_4_7 = "grok_4_7"
     grok_4_5 = "grok_4_5"
     grok_4_3 = "grok_4_3"
     grok_4_20 = "grok_4_20"
@@ -215,12 +227,18 @@ class ModelName(str, Enum):
     qwen_3p5_122b_a10b = "qwen_3p5_122b_a10b"
     qwen_3p5_27b = "qwen_3p5_27b"
     qwen_3p5_35b_a3b = "qwen_3p5_35b_a3b"
+    qwen_3p8_max = "qwen_3p8_max"
+    qwen_3p8_max_prime = "qwen_3p8_max_prime"
     qwen_3p8_2p4t_a95b = "qwen_3p8_2p4t_a95b"
+    qwen_3p8_flash = "qwen_3p8_flash"
+    qwen_3p8_omni_flash = "qwen_3p8_omni_flash"
+    qwen_3p8_27b = "qwen_3p8_27b"
     qwen_3p7_flash = "qwen_3p7_flash"
     qwen_3p7_plus = "qwen_3p7_plus"
     qwen_3p7_max = "qwen_3p7_max"
     qwen_3p6_flash = "qwen_3p6_flash"
     qwen_3p6_35b_a3b = "qwen_3p6_35b_a3b"
+    qwen_3p6_27b = "qwen_3p6_27b"
     qwen_3p6_plus = "qwen_3p6_plus"
     qwen_3p5_plus = "qwen_3p5_plus"
     qwen_3p5_397b_a17b = "qwen_3p5_397b_a17b"
@@ -260,12 +278,18 @@ class ModelName(str, Enum):
     qwen_3_vl_8b_no_thinking = "qwen_3_vl_8b_no_thinking"
     qwen_long_l1_32b = "qwen_long_l1_32b"
     kimi_k3 = "kimi_k3"
+    kimi_k3_fast = "kimi_k3_fast"
     kimi_k2_6 = "kimi_k2_6"
     kimi_k2 = "kimi_k2"
     kimi_k2_0905 = "kimi_k2_0905"
     kimi_k2_thinking = "kimi_k2_thinking"
     kimi_k2_5 = "kimi_k2_5"
     kimi_dev_72b = "kimi_dev_72b"
+    glm_5_3 = "glm_5_3"
+    glm_5_3_fast = "glm_5_3_fast"
+    glm_5_3_prime = "glm_5_3_prime"
+    glm_5_3_flash = "glm_5_3_flash"
+    glm_5_3_flashx = "glm_5_3_flashx"
     glm_5_2 = "glm_5_2"
     glm_5_2_fast = "glm_5_2_fast"
     glm_5_1 = "glm_5_1"
@@ -304,7 +328,11 @@ class ModelName(str, Enum):
     mimo_v2_omni = "mimo_v2_omni"
     mimo_v2_5 = "mimo_v2_5"
     mimo_v2_5_pro = "mimo_v2_5_pro"
+    mimo_v2_6_pro = "mimo_v2_6_pro"
+    mimo_v2_6_pro_ultraspeed = "mimo_v2_6_pro_ultraspeed"
+    mimo_v2_6_flash = "mimo_v2_6_flash"
     inkling = "inkling"
+    jev_1_13 = "jev_1_13"
 
 
 class ModelParserID(str, Enum):
@@ -324,6 +352,15 @@ class ModelFormatterID(str, Enum):
     qwen3_style_no_think = "qwen3_style_no_think"
 
 
+class ModelAdapterId(str, Enum):
+    """
+    Enumeration of the Kiln adapters that can run a model.
+    """
+
+    litellm = "litellm"
+    jev = "jev"
+
+
 class KilnModelProvider(BaseModel):
     """
     Configuration for a specific model provider.
@@ -340,14 +377,17 @@ class KilnModelProvider(BaseModel):
         tuned_chat_strategy: Used when a model is finetuned with a specific chat strategy, and it's best to use it at call time.
         supports_doc_extraction: Whether the provider is meant to support document extraction
         suggested_for_doc_extraction: Whether the model is suggested for document extraction
+        suggested_for_synthetic_user: Whether the model is suggested to play the synthetic user in multi-turn evals: a fast, inexpensive chat model that reads a whole conversation each turn
         multimodal_capable: Whether the model supports multimodal inputs (e.g. images, audio, video, PDFs, etc.)
         multimodal_mime_types: The mime types that the model supports for multimodal inputs (e.g. image/jpeg, video/mp4, application/pdf, etc.)
         multimodal_requires_pdf_as_image: Whether the model requires PDFs to be processed as images
         supports_vision: Whether the model supports vision inputs (e.g. images, video)
+        adapter: Which Kiln adapter runs this model. Defaults to LiteLLM; set to jev for TypeSafe's System One API.
     """
 
     name: ModelProviderName
     model_id: str | None = None
+    adapter: ModelAdapterId = ModelAdapterId.litellm
     supports_structured_output: bool = True
     supports_data_gen: bool = True
     suggested_for_data_gen: bool = False
@@ -365,6 +405,7 @@ class KilnModelProvider(BaseModel):
     tuned_chat_strategy: ChatStrategy | None = None
     supports_doc_extraction: bool = False
     suggested_for_doc_extraction: bool = False
+    suggested_for_synthetic_user: bool = False
     multimodal_capable: bool = False
     multimodal_mime_types: List[str] | None = None
     multimodal_requires_pdf_as_image: bool = False
@@ -490,6 +531,40 @@ GPT_5_4_PRO_OPENAI_THINKING_LEVELS = {
     "Extra High": "xhigh",
 }
 
+# GPT-6 Astra supports reasoning effort levels low/medium/high/xhigh/max with a
+# default of medium. Unlike the GPT-5.x models it does NOT support `none` or
+# `minimal`, and it adds a new `max` level, so it needs its own constant.
+# GPT-6.1 Sol on OpenRouter uses the same levels.
+GPT_6_ASTRA_OPENAI_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
+}
+
+# GPT-6.1 Sol on OpenAI direct. The model page lists `max` as well, but
+# /v1/chat/completions (which Kiln uses) rejects it with a 400; only
+# /v1/responses accepts it. `none` and `minimal` are rejected on both.
+# https://developers.openai.com/api/docs/models/gpt-6.1-sol
+GPT_6_1_SOL_OPENAI_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+}
+
+# GPT-6 Sol and Luna support the same levels as Astra plus `none`, and default
+# to medium. https://developers.openai.com/api/docs/models/gpt-6-sol
+GPT_6_OPENAI_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
+}
+
 GPT_5_1_OPENAI_THINKING_LEVELS = {
     "Off/None": "none",
     "Low": "low",
@@ -609,6 +684,20 @@ CLAUDE_OPUS_5_ANTHROPIC_THINKING_LEVELS = {
     "Max": "max",
 }
 
+# Claude Opus 5.5 and Sonnet 5.5 support the same five effort levels as Opus 5
+# and Sonnet 5, but thinking={"type": "disabled"} is a 400 on both at every
+# effort level (Opus 5.5 always thinks; Sonnet 5.5 only offers "between_tools"
+# as its lowest setting), so "none" is omitted. The API default is medium on
+# Opus 5.5 and high on Sonnet 5.5.
+# https://platform.claude.com/docs/en/build-with-claude/effort
+CLAUDE_5_5_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
+}
+
 CLAUDE_FABLE_5_ANTHROPIC_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
@@ -651,15 +740,272 @@ GROK_4_5_OPENROUTER_THINKING_LEVELS = {
     "High": "high",
 }
 
+# Groq restricts reasoning_effort on Qwen 3.6 to `none` or `default`; any other
+# value is rejected with "`reasoning_effort` must be one of `none` or `default`".
+QWEN_3P6_GROQ_THINKING_LEVELS = {
+    "Off": "none",
+    "On": "default",
+}
+
+QWEN_3P8_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+}
+
+# Groq caps Qwen 3.8 27B output at 2048 tokens unless max_completion_tokens is
+# set, and `high` reasoning alone exceeds that (finish_reason "length", empty
+# content), so Groq omits it.
+QWEN_3P8_GROQ_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+}
+
 
 built_in_models: List[KilnModel] = [
+    # GPT 6.1 Sol
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_1_sol,
+        friendly_name="GPT-6.1 Sol",
+        featured_rank=4,
+        editorial_notes="OpenAI's balanced GPT-6.1 model. Near-Astra quality at a mid-tier price.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="gpt-6.1-sol",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_1_SOL_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
+                # for gpt-5.4+. Disable function calling until Kiln routes these
+                # models to /v1/responses.
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="openai/gpt-6.1-sol",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 6 Astra
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_astra,
+        friendly_name="GPT-6 Astra",
+        featured_rank=2,
+        editorial_notes="OpenAI's flagship GPT-6 model. Powerful reasoning and multimodal.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="gpt-6-astra",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
+                # for gpt-5.4+. Disable function calling until Kiln routes these
+                # models to /v1/responses.
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="openai/gpt-6-astra",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 6 Sol
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_sol,
+        friendly_name="GPT-6 Sol",
+        editorial_notes="OpenAI's previous-generation balanced GPT-6 model. Strong reasoning and multimodal at a mid-tier price.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-6-sol",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
+                # for gpt-5.4+. Disable function calling until Kiln routes these
+                # models to /v1/responses.
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-6-sol",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 6 Luna
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_luna,
+        friendly_name="GPT-6 Luna",
+        featured_rank=13,
+        editorial_notes="OpenAI's fast, cost-efficient GPT-6 model. Optimized for speed and high-volume tasks.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="gpt-6-luna",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
+                # for gpt-5.4+. Disable function calling until Kiln routes these
+                # models to /v1/responses.
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="openai/gpt-6-luna",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # GPT 5.6 Sol
     KilnModel(
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_6_sol,
         friendly_name="GPT-5.6 Sol",
-        featured_rank=1,
-        editorial_notes="OpenAI's most capable GPT model. Powerful reasoning and multimodal.",
+        editorial_notes="OpenAI's previous-generation flagship GPT model. Powerful reasoning and multimodal.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -671,8 +1017,6 @@ built_in_models: List[KilnModel] = [
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
                 supports_function_calling=False,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -696,8 +1040,6 @@ built_in_models: List[KilnModel] = [
                 # when tools are sent (the bare reasoning_effort param is
                 # silently dropped on tool calls for these models).
                 openrouter_reasoning_object=True,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -718,14 +1060,18 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_6_terra,
         friendly_name="GPT-5.6 Terra",
+        featured_rank=9,
         editorial_notes="OpenAI's balanced GPT-5.6 model. Strong reasoning and multimodal at a lower cost.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                suggested_for_synthetic_user=True,
                 model_id="gpt-5.6-terra",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
-                default_thinking_level="none",
+                default_thinking_level="medium",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -745,10 +1091,13 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                suggested_for_synthetic_user=True,
                 model_id="openai/gpt-5.6-terra",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
-                default_thinking_level="none",
+                default_thinking_level="medium",
                 # Use OpenRouter's reasoning object so reasoning is preserved
                 # when tools are sent (the bare reasoning_effort param is
                 # silently dropped on tool calls for these models).
@@ -773,10 +1122,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_6_luna,
         friendly_name="GPT-5.6 Luna",
-        editorial_notes="OpenAI's fast, cost-efficient GPT-5.6 model. Optimized for speed and high-volume tasks.",
+        editorial_notes="OpenAI's previous-generation fast, cost-efficient model. Optimized for speed and high-volume tasks.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
+                suggested_for_synthetic_user=True,
                 model_id="gpt-5.6-luna",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
@@ -800,6 +1150,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_synthetic_user=True,
                 model_id="openai/gpt-5.6-luna",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
@@ -895,8 +1246,6 @@ built_in_models: List[KilnModel] = [
                 # for gpt-5.4 direct. Disable function calling until Kiln routes
                 # these models to /v1/responses. The OpenRouter route is unaffected.
                 supports_function_calling=False,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -916,8 +1265,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -945,8 +1292,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_PRO_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -966,8 +1311,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_PRO_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -993,8 +1336,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openai,
                 model_id="gpt-5.4-mini",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1012,8 +1353,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1077,7 +1416,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openai,
                 model_id="gpt-5.3-chat-latest",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1094,8 +1432,8 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5.3-chat",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1123,7 +1461,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_2_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1143,7 +1480,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_2_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1171,7 +1507,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_2_PRO_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1191,7 +1526,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_2_PRO_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1395,7 +1729,6 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_nano,
         friendly_name="GPT-5 Nano",
-        featured_rank=10,
         editorial_notes="OpenAI on a budget. 3% the cost of GPT 5. Great for easier tasks.",
         providers=[
             KilnModelProvider(
@@ -1478,7 +1811,6 @@ built_in_models: List[KilnModel] = [
                 model_id="gpt-4.1",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1931,7 +2263,6 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_oss_120b,
         friendly_name="GPT OSS 120B",
-        featured_rank=7,
         editorial_notes="OpenAI's capable open-weight model. Speeds of >1,000 tokens/s on Cerebras and Groq.",
         providers=[
             KilnModelProvider(
@@ -1964,6 +2295,14 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="openai/gpt-oss-120b",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                # Featherless doesn't advertise tool_use for this model
+                supports_function_calling=False,
+            ),
         ],
     ),
     # GPT OSS 20B
@@ -1987,6 +2326,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/gpt-oss-20b",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
             ),
@@ -2064,12 +2404,65 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Claude Fable 5.1
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_fable_5_1,
+        friendly_name="Claude Fable 5.1",
+        featured_rank=1,
+        editorial_notes="Anthropic's most powerful publicly-available model (Mythos-class). State-of-the-art across software engineering, knowledge work, and vision.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="anthropic/claude-fable-5.1",
+                # OpenRouter routes Claude Fable to Bedrock/Azure backends that ignore response_format json_schema while reasoning is on (returns prose); use prompt-injected JSON instructions instead.
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                openrouter_reasoning_object=True,
+                available_thinking_levels=CLAUDE_FABLE_5_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="claude-fable-5-1",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                available_thinking_levels=CLAUDE_FABLE_5_ANTHROPIC_THINKING_LEVELS,
+                default_thinking_level="high",
+                anthropic_summarized_thinking=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # Claude Fable 5
     KilnModel(
         family=ModelFamily.claude,
         name=ModelName.claude_fable_5,
         friendly_name="Claude Fable 5",
-        editorial_notes="Anthropic's most powerful publicly-available model (Mythos-class). State-of-the-art across software engineering, knowledge work, and vision.",
+        editorial_notes="Anthropic's previous-generation Mythos-class model. Strong across software engineering, knowledge work, and vision.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -2078,8 +2471,6 @@ built_in_models: List[KilnModel] = [
                 openrouter_reasoning_object=True,
                 available_thinking_levels=CLAUDE_FABLE_5_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="high",
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -2100,8 +2491,58 @@ built_in_models: List[KilnModel] = [
                 available_thinking_levels=CLAUDE_FABLE_5_ANTHROPIC_THINKING_LEVELS,
                 default_thinking_level="high",
                 anthropic_summarized_thinking=True,
-                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # Claude Opus 5.5
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_opus_5_5,
+        friendly_name="Claude Opus 5.5",
+        featured_rank=3,
+        editorial_notes="Anthropic's best Claude model. Built for long-running agentic coding and knowledge work.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
                 suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="anthropic/claude-opus-5.5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                openrouter_reasoning_object=True,
+                available_thinking_levels=CLAUDE_5_5_THINKING_LEVELS,
+                default_thinking_level="medium",
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="claude-opus-5-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                available_thinking_levels=CLAUDE_5_5_THINKING_LEVELS,
+                default_thinking_level="medium",
+                anthropic_summarized_thinking=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -2120,8 +2561,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.claude,
         name=ModelName.claude_opus_5,
         friendly_name="Claude Opus 5",
-        featured_rank=2,
-        editorial_notes="Anthropic's best Claude model. Expensive, but often the best.",
+        editorial_notes="Anthropic's previous flagship Opus model. Expensive, but still very strong.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -2130,8 +2570,6 @@ built_in_models: List[KilnModel] = [
                 openrouter_reasoning_object=True,
                 available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="none",
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -2152,8 +2590,6 @@ built_in_models: List[KilnModel] = [
                 available_thinking_levels=CLAUDE_OPUS_5_ANTHROPIC_THINKING_LEVELS,
                 default_thinking_level="high",
                 anthropic_summarized_thinking=True,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -2360,6 +2796,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
                 model_id="claude-opus-4-1-20250805",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.function_calling,
                 temp_top_p_exclusive=True,
             ),
@@ -2374,6 +2811,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-opus-4",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.function_calling,
             ),
             KilnModelProvider(
@@ -2384,11 +2822,66 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Claude Sonnet 5.5
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_sonnet_5_5,
+        friendly_name="Claude 5.5 Sonnet",
+        featured_rank=10,
+        editorial_notes="Anthropic's fast Claude model for everyday coding, agents, and knowledge work. Strong quality at a mid-tier price.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                suggested_for_synthetic_user=True,
+                model_id="anthropic/claude-sonnet-5.5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                openrouter_reasoning_object=True,
+                available_thinking_levels=CLAUDE_5_5_THINKING_LEVELS,
+                default_thinking_level="medium",
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                suggested_for_synthetic_user=True,
+                model_id="claude-sonnet-5-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                available_thinking_levels=CLAUDE_5_5_THINKING_LEVELS,
+                default_thinking_level="medium",
+                anthropic_summarized_thinking=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # Claude Sonnet 5
     KilnModel(
         family=ModelFamily.claude,
         name=ModelName.claude_sonnet_5,
         friendly_name="Claude 5 Sonnet",
+        editorial_notes="Anthropic's previous-generation Sonnet model. Fast and capable.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -2396,9 +2889,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 openrouter_reasoning_object=True,
                 available_thinking_levels=CLAUDE_SONNET_5_OPENROUTER_THINKING_LEVELS,
-                default_thinking_level="none",
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
+                default_thinking_level="medium",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -2418,8 +2909,6 @@ built_in_models: List[KilnModel] = [
                 temp_top_p_exclusive=True,
                 available_thinking_levels=CLAUDE_SONNET_5_ANTHROPIC_THINKING_LEVELS,
                 default_thinking_level="high",
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -2598,11 +3087,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.claude,
         name=ModelName.claude_4_5_haiku,
         friendly_name="Claude 4.5 Haiku",
-        featured_rank=11,
         editorial_notes="Claude on a budget. 20% the cost of Claude Opus. Great for easier tasks.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_synthetic_user=True,
                 model_id="anthropic/claude-haiku-4.5",
                 structured_output_mode=StructuredOutputMode.function_calling,
                 openrouter_reasoning_object=True,
@@ -2611,6 +3100,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
+                suggested_for_synthetic_user=True,
                 model_id="claude-haiku-4-5-20251001",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
@@ -2645,12 +3135,127 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Gemini 3.8 Flash
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_3_8_flash,
+        friendly_name="Gemini 3.8 Flash",
+        featured_rank=12,
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                suggested_for_synthetic_user=True,
+                model_id="google/gemini-3.8-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                # 3.8 Flash exposes low/medium/high thinking levels (default medium)
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                default_thinking_level="medium",
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                suggested_for_synthetic_user=True,
+                model_id="gemini-3.8-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                default_thinking_level="medium",
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                suggested_for_synthetic_user=True,
+                model_id="gemini-3.8-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                default_thinking_level="medium",
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    # Unlike Gemini 3.7 Flash on Vertex, this model's compressed-audio
+                    # transcriptions are not blocked by Vertex's content filter: MP3 and
+                    # OGG extraction both passed 10/10 runs, so all audio types are enabled.
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+        ],
+    ),
     # Gemini 3.7 Flash
     KilnModel(
         family=ModelFamily.gemini,
         name=ModelName.gemini_3_7_flash,
         friendly_name="Gemini 3.7 Flash",
-        featured_rank=6,
         editorial_notes="Google's latest Flash model. Stronger agentic and multimodal performance at a lower cost than Gemini 3.6 Flash.",
         providers=[
             KilnModelProvider(
@@ -2659,8 +3264,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 # while the model is capable of reasoning, it doesn't always return it in the response
                 # reasoning_capable=True,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
@@ -2692,8 +3295,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.gemini_api,
                 model_id="gemini-3.7-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
@@ -2725,8 +3326,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.vertex,
                 model_id="gemini-3.7-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
@@ -2763,7 +3362,6 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemini,
         name=ModelName.gemini_3_6_flash,
         friendly_name="Gemini 3.6 Flash",
-        featured_rank=6,
         editorial_notes="Google's latest Flash model. Stronger agentic and multimodal performance at a lower cost than Gemini 3.5 Flash.",
         providers=[
             KilnModelProvider(
@@ -2772,8 +3370,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 # while the model is capable of reasoning, it doesn't always return it in the response
                 # reasoning_capable=True,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
@@ -2803,8 +3399,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.gemini_api,
                 model_id="gemini-3.6-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
@@ -2836,8 +3430,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.vertex,
                 model_id="gemini-3.6-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
@@ -2978,8 +3570,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="google/gemini-3.5-flash-lite",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 suggested_for_doc_extraction=True,
                 multimodal_capable=True,
@@ -3010,8 +3600,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.gemini_api,
                 model_id="gemini-3.5-flash-lite",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 suggested_for_doc_extraction=True,
                 multimodal_capable=True,
@@ -3042,8 +3630,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.vertex,
                 model_id="gemini-3.5-flash-lite",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 suggested_for_doc_extraction=True,
                 multimodal_capable=True,
@@ -3077,15 +3663,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemini,
         name=ModelName.gemini_3_1_pro_preview,
         friendly_name="Gemini 3.1 Pro Preview",
-        featured_rank=3,
         editorial_notes="Google's state-of-the-art model. Great for tough problems.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="google/gemini-3.1-pro-preview",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 suggested_for_doc_extraction=True,
                 multimodal_capable=True,
@@ -3115,8 +3698,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.gemini_api,
                 model_id="gemini-3.1-pro-preview",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 suggested_for_doc_extraction=True,
                 multimodal_capable=True,
@@ -3144,8 +3725,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.vertex,
                 model_id="gemini-3.1-pro-preview",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 gemini_reasoning_enabled=True,
                 available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
                 default_thinking_level="high",
@@ -3399,7 +3978,6 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemini,
         name=ModelName.gemini_3_flash,
         friendly_name="Gemini 3 Flash",
-        featured_rank=8,
         editorial_notes="Google's faster and cheaper model. 25% the cost of Gemini 3 Pro.",
         providers=[
             KilnModelProvider(
@@ -3719,6 +4297,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
                 model_id="gemini-2.0-flash",
+                deprecated=True,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
@@ -3779,6 +4358,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
                 model_id="gemini-2.0-flash-lite",
+                deprecated=True,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
@@ -3884,6 +4464,28 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Nemotron 3.5 Lightning
+    KilnModel(
+        family=ModelFamily.nemotron,
+        name=ModelName.nemotron_3p5_lightning,
+        friendly_name="Nemotron 3.5 Lightning",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="nvidia/nemotron-3.5-lightning",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                require_openrouter_reasoning=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/nemotron-lightning-3p5-30b-a3b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+            ),
+            # Together AI does not host Nemotron 3.5 Lightning. The /v1/models
+            # listing has the Nemotron 3 family only. Omitted until Together
+            # adds it.
+        ],
+    ),
     # Nemotron 3 Ultra
     KilnModel(
         family=ModelFamily.nemotron,
@@ -3927,6 +4529,11 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                model_id="@cf/nvidia/nemotron-3-120b-a12b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
         ],
     ),
     # Nemotron 3 Nano
@@ -3938,6 +4545,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="nvidia/nemotron-3-nano-30b-a3b:free",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
             ),
@@ -4163,6 +4771,7 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=True,
                 supports_data_gen=True,
                 model_id="llama-3.3-70b-versatile",
+                deprecated=True,
                 supports_function_calling=False,
             ),
             KilnModelProvider(
@@ -4272,6 +4881,7 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=False,
                 supports_data_gen=False,
                 model_id="meta-llama/llama-3.2-11b-vision-instruct",
+                deprecated=True,
                 supports_function_calling=False,
                 supports_vision=True,
                 supports_doc_extraction=True,
@@ -4474,6 +5084,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.groq,
                 model_id="llama-3.1-8b-instant",
+                deprecated=True,
                 supports_function_calling=False,
             ),
             KilnModelProvider(
@@ -4521,7 +5132,6 @@ built_in_models: List[KilnModel] = [
                 deprecated=True,
                 structured_output_mode=StructuredOutputMode.function_calling,
                 supports_data_gen=False,
-                suggested_for_evals=False,
                 supports_function_calling=False,
             ),
             KilnModelProvider(
@@ -4585,6 +5195,44 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
                 multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Muse Glimmer 30B — dense 30B model distilled from Muse Spark
+    KilnModel(
+        family=ModelFamily.muse,
+        name=ModelName.muse_glimmer_30b,
+        friendly_name="Muse Glimmer 30B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="meta/muse-glimmer-30b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents (html and csv excluded, as on the Muse Spark entries)
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="meta-models/Muse-Glimmer-30B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="meta-models/Muse-Glimmer-30B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_function_calling=False,
             ),
         ],
     ),
@@ -4741,6 +5389,13 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.ollama,
                 model_id="mistral-small:24b",
+                uncensored=True,
+                supports_function_calling=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="mistralai/Mistral-Small-24B-Instruct-2501",
+                structured_output_mode=StructuredOutputMode.json_instructions,
                 uncensored=True,
                 supports_function_calling=False,
             ),
@@ -4935,6 +5590,19 @@ built_in_models: List[KilnModel] = [
                 ],
                 max_parallel_requests=2,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="google/gemma-4-31B-it",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+            ),
         ],
     ),
     # Gemma 4 27B (26B A4B MoE)
@@ -4973,6 +5641,21 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
                 max_parallel_requests=2,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                model_id="@cf/google/gemma-4-26b-a4b-it",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
@@ -5015,6 +5698,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="google/gemma-3n-e4b-it",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=False,
                 supports_function_calling=False,
@@ -5247,20 +5931,122 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # DeepSeek V4.1 Flash
+    KilnModel(
+        family=ModelFamily.deepseek,
+        name=ModelName.deepseek_4_1_flash,
+        friendly_name="DeepSeek V4.1 Flash",
+        featured_rank=11,
+        editorial_notes="Latest V4.1 Flash variant. 1M context, configurable reasoning, and adds native image input.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="deepseek/deepseek-v4.1-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="accounts/fireworks/models/deepseek-v4p1-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="deepseek-ai/DeepSeek-V4.1-Flash",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="deepseek-ai/DeepSeek-V4.1-Flash",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_function_calling=False,
+            ),
+        ],
+    ),
+    # DeepSeek V4 Pro 0813
+    KilnModel(
+        family=ModelFamily.deepseek,
+        name=ModelName.deepseek_4_pro_0813,
+        friendly_name="DeepSeek V4 Pro 0813",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="deepseek/deepseek-v4-pro-0813",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="deepseek-ai/DeepSeek-V4-Pro-0813",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
+        ],
+    ),
     # DeepSeek V4 Pro
     KilnModel(
         family=ModelFamily.deepseek,
         name=ModelName.deepseek_4_pro,
         friendly_name="DeepSeek V4 Pro",
-        featured_rank=4,
+        featured_rank=8,
         editorial_notes="Open source flagship with 1.6T params (49B activated). 1M context, configurable reasoning.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="deepseek/deepseek-v4-pro",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
-                suggested_for_evals=True,
                 available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="high",
                 openrouter_reasoning_object=True,
@@ -5268,15 +6054,34 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/deepseek-v4-pro",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
-                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="deepseek-ai/DeepSeek-V4-Pro",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="deepseek-ai/DeepSeek-V4-Pro",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="deepseek-ai/DeepSeek-V4-Pro",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                model_id="@cf/deepseek-ai/deepseek-v4-pro-0813",
+                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
@@ -5285,11 +6090,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.deepseek,
         name=ModelName.deepseek_4_flash,
         friendly_name="DeepSeek V4 Flash",
-        featured_rank=6,
         editorial_notes="Faster V4 variant with 284B params (13B activated). 1M context, same reasoning capabilities.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_synthetic_user=True,
                 model_id="deepseek/deepseek-v4-flash-0731",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
@@ -5300,14 +6105,22 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/deepseek-v4-flash-0731",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
+                suggested_for_synthetic_user=True,
                 model_id="deepseek-ai/DeepSeek-V4-Flash-0731",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                suggested_for_synthetic_user=True,
+                model_id="@cf/deepseek-ai/deepseek-v4-flash-0731",
+                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
@@ -5316,7 +6129,6 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.deepseek,
         name=ModelName.deepseek_3_2,
         friendly_name="DeepSeek 3.2",
-        featured_rank=5,
         editorial_notes="Open and powerful. A fraction of the cost of other large models.",
         providers=[
             KilnModelProvider(
@@ -5337,6 +6149,11 @@ built_in_models: List[KilnModel] = [
                 model_id="Pro/deepseek-ai/DeepSeek-V3.2",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="deepseek-ai/DeepSeek-V3.2",
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
@@ -5389,6 +6206,11 @@ built_in_models: List[KilnModel] = [
                 deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="deepseek-ai/DeepSeek-V3.1",
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
@@ -5578,6 +6400,7 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 model_id="deepseek/deepseek-r1-distill-llama-70b",
+                deprecated=True,
                 r1_openrouter_options=True,
                 require_openrouter_reasoning=True,
                 parser=ModelParserID.r1_thinking,
@@ -5817,6 +6640,36 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Grok 4.7
+    KilnModel(
+        family=ModelFamily.grok,
+        name=ModelName.grok_4_7,
+        friendly_name="Grok 4.7",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="x-ai/grok-4.7",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GROK_4_5_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="low",
+                openrouter_reasoning_object=True,
+                uncensored=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # Grok 4.5
     KilnModel(
         family=ModelFamily.grok,
@@ -5937,7 +6790,6 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.grok,
         name=ModelName.grok_4,
         friendly_name="Grok 4",
-        featured_rank=12,
         editorial_notes="xAI's flagship model. Less censorship and unfiltered by design.",
         providers=[
             KilnModelProvider(
@@ -5947,7 +6799,6 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=True,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_data_gen=False,
                 uncensored=True,
                 suggested_for_uncensored_data_gen=False,
             ),
@@ -5966,7 +6817,6 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=True,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_data_gen=False,
                 uncensored=True,
             ),
         ],
@@ -6004,6 +6854,65 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Qwen 3.8 Max
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p8_max,
+        friendly_name="Qwen 3.8 Max",
+        featured_rank=6,
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="qwen/qwen3.8-max",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+            ),
+            # Fireworks does not host a distinct Qwen 3.8 Max: the slug
+            # accounts/fireworks/models/qwen3p8-max is an alias whose catalog
+            # page is titled "Qwen3.8-2.4T-A95B" (canonical id
+            # accounts/fireworks/models/qwen3p8-2p4t-a95b), i.e. it resolves to
+            # the Qwen 3.8 2.4T A95B model, not Max. Omitted to avoid misrouting.
+            # Together AI does not host Qwen3.8-Max: the API returns HTTP 404
+            # "model_not_available" (unlike Qwen 3.7 Max, which Together hosts
+            # streaming-only). Omitted until Together adds it.
+        ],
+    ),
+    # Qwen 3.8 Max Prime
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p8_max_prime,
+        friendly_name="Qwen 3.8 Max Prime",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.8-max-prime",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+            ),
+        ],
+    ),
     # Qwen 3.8 2.4T A95B
     KilnModel(
         family=ModelFamily.qwen,
@@ -6012,6 +6921,8 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="qwen/qwen3.8-2.4t-a95b",
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
@@ -6019,17 +6930,165 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
-                model_id="accounts/fireworks/models/qwen3p8-max",
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="accounts/fireworks/models/qwen3p8-2p4t-a95b",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 supports_function_calling=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="Qwen/Qwen3.8-2.4T-A95B",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
                 supports_function_calling=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="Qwen/Qwen3.8-2.4T-A95B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+        ],
+    ),
+    # Qwen 3.8 Flash
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p8_flash,
+        friendly_name="Qwen 3.8 Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="qwen/qwen3.8-flash",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            # Together AI hosts Qwen/Qwen3.8-Flash but only in streaming-only mode
+            # (returns HTTP 400 "This model only supports streaming", code
+            # streaming_required), which Kiln's non-streaming adapter can't use.
+            # Omitted until Together supports non-streaming.
+        ],
+    ),
+    # Qwen 3.8 Omni Flash
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p8_omni_flash,
+        friendly_name="Qwen 3.8 Omni Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.8-omni-flash",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Qwen 3.8 27B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p8_27b,
+        friendly_name="Qwen 3.8 27B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.8-27b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.groq,
+                model_id="qwen/qwen3.8-27b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                available_thinking_levels=QWEN_3P8_GROQ_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Groq serves this model with image input, but no Groq provider in
+                # Kiln is wired for multimodal yet, so it stays text-only here.
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="qwen-3.8-27b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                available_thinking_levels=QWEN_3P8_THINKING_LEVELS,
+                default_thinking_level="medium",
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="Qwen/Qwen3.8-27B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Qwen/Qwen3.8-27B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                model_id="@cf/qwen/qwen3.8-27b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
@@ -6079,6 +7138,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/qwen3p7-plus",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 supports_function_calling=True,
@@ -6206,6 +7266,71 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Qwen 3.6 27B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p6_27b,
+        friendly_name="Qwen 3.6 27B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.6-27b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.groq,
+                model_id="qwen/qwen3.6-27b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=False,
+                supports_function_calling=True,
+                available_thinking_levels=QWEN_3P6_GROQ_THINKING_LEVELS,
+                default_thinking_level="default",
+                # Groq serves this model with image input, but no Groq provider in
+                # Kiln is wired for multimodal yet, so it stays text-only here.
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen3.6:27b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_capable=True,
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="Qwen/Qwen3.6-27B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
@@ -6537,7 +7662,6 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 require_openrouter_reasoning=True,
                 supports_data_gen=True,
-                suggested_for_data_gen=True,
                 r1_openrouter_options=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.r1_thinking,
@@ -6566,6 +7690,12 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.r1_thinking,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="Qwen/Qwen3-235B-A22B-Thinking-2507",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.optional_r1_thinking,
             ),
         ],
     ),
@@ -6619,7 +7749,6 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 siliconflow_enable_thinking=True,
                 supports_data_gen=True,
-                suggested_for_data_gen=False,
             ),
         ],
     ),
@@ -6684,6 +7813,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/qwen3-235b-a22b",
+                deprecated=True,
                 supports_data_gen=True,
                 formatter=ModelFormatterID.qwen3_style_no_think,
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -6902,6 +8032,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/qwen3-30b-a3b",
+                deprecated=True,
                 supports_data_gen=True,
                 formatter=ModelFormatterID.qwen3_style_no_think,
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -8072,41 +9203,247 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # GLM 5.3
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5_3,
+        friendly_name="GLM 5.3",
+        featured_rank=7,
+        editorial_notes="Z.ai's newest flagship, with a 1M token context window and configurable reasoning. Strong long-horizon agentic and coding performance.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="z-ai/glm-5.3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="zai-org/GLM-5.3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="accounts/fireworks/models/glm-5p3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="zai-org/GLM-5.3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="zai-org/GLM-5.3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                model_id="@cf/zai-org/glm-5.3",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # GLM 5.3 Fast — Fireworks speed-optimized serving of GLM 5.3 (routers/ slug, ~2x throughput)
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5_3_fast,
+        friendly_name="GLM 5.3 Fast",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="accounts/fireworks/routers/glm-5p3-fast",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=False,
+            ),
+        ],
+    ),
+    # GLM 5.3 Prime
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5_3_prime,
+        friendly_name="GLM 5.3 Prime",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-5.3-prime",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=False,
+            ),
+        ],
+    ),
+    # GLM 5.3 Flash
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5_3_flash,
+        friendly_name="GLM 5.3 Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                suggested_for_synthetic_user=True,
+                model_id="z-ai/glm-5.3-flash",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                available_thinking_levels=KIMI_K3_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                reasoning_capable=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                suggested_for_synthetic_user=True,
+                model_id="zai-org/GLM-5.3-Flash",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                suggested_for_synthetic_user=True,
+                model_id="accounts/fireworks/models/glm-5p3-flash",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                suggested_for_synthetic_user=True,
+                model_id="@cf/zai-org/glm-5.3-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GLM 5.3 FlashX
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5_3_flashx,
+        friendly_name="GLM 5.3 FlashX",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-5.3-flashx",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                available_thinking_levels=KIMI_K3_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                reasoning_capable=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
     # GLM 5.2
     KilnModel(
         family=ModelFamily.glm,
         name=ModelName.glm_5_2,
         friendly_name="GLM 5.2",
-        featured_rank=4,
-        editorial_notes="Z.ai's newest flagship, with a 1M token context window. Benchmarks land near Claude Opus 4.8, with strong long-horizon agentic and coding performance.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="z-ai/glm-5.2",
                 structured_output_mode=StructuredOutputMode.json_instructions,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/glm-5p2",
                 structured_output_mode=StructuredOutputMode.json_instructions,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="zai-org/GLM-5.2",
                 structured_output_mode=StructuredOutputMode.json_instructions,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="zai-org/GLM-5.2",
                 structured_output_mode=StructuredOutputMode.json_instructions,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="zai-org/GLM-5.2",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                model_id="@cf/zai-org/glm-5.2",
+                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
@@ -8119,6 +9456,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/routers/glm-5p2-fast",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
@@ -8138,6 +9476,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/glm-5p1",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
             ),
@@ -8154,6 +9493,11 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="zai-org/GLM-5.1",
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
@@ -8230,9 +9574,15 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Pro/zai-org/GLM-5",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="zai-org/GLM-5",
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
@@ -8259,8 +9609,14 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cerebras,
                 model_id="zai-glm-4.7",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="zai-org/GLM-4.7",
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
@@ -8269,7 +9625,6 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.glm,
         name=ModelName.glm_4_7_flash,
         friendly_name="GLM 4.7 Flash",
-        featured_rank=9,
         editorial_notes="Cost-effective, fast, and open model from Z.ai.",
         providers=[
             KilnModelProvider(
@@ -8277,6 +9632,11 @@ built_in_models: List[KilnModel] = [
                 model_id="z-ai/glm-4.7-flash",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                model_id="@cf/zai-org/glm-4.7-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
@@ -8532,10 +9892,13 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.kimi,
         name=ModelName.kimi_k3,
         friendly_name="Kimi K3",
+        featured_rank=5,
         editorial_notes="Open, state-of-the-art model from Moonshot AI. 2.8T-parameter MoE with a 1M token context, configurable reasoning, and strong agentic performance.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="moonshotai/kimi-k3",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
@@ -8554,6 +9917,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="accounts/fireworks/models/kimi-k3",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
@@ -8567,9 +9932,50 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
             ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="moonshotai/Kimi-K3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
             # SiliconFlow provider omitted: moonshotai/Kimi-K3 returns HTTP 400
             # "Model does not exist" on the .cn endpoint Kiln uses (it appears live
-            # on the .com site only). Not yet on Together AI (K2.6 / K2.7).
+            # on the .com site only).
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="moonshotai/Kimi-K3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+        ],
+    ),
+    # Kimi K3 Fast — Fireworks speed-optimized serving of Kimi K3 (routers/ slug)
+    KilnModel(
+        family=ModelFamily.kimi,
+        name=ModelName.kimi_k3_fast,
+        friendly_name="Kimi K3 Fast",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/routers/kimi-k3-fast",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
         ],
     ),
     # Kimi K2.6
@@ -8578,15 +9984,14 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.kimi,
         name=ModelName.kimi_k2_6,
         friendly_name="Kimi K2.6",
-        featured_rank=6,
         editorial_notes="Open, state-of-the-art model from Moonshot AI. Excellent price-to-performance ratio. Enhanced agent planning and reasoning capabilities.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/kimi-k2p6",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
-                suggested_for_evals=True,
                 multimodal_capable=True,
                 supports_vision=True,
                 supports_doc_extraction=True,
@@ -8602,7 +10007,6 @@ built_in_models: List[KilnModel] = [
                 model_id="moonshotai/kimi-k2.6",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
-                suggested_for_evals=True,
                 multimodal_capable=True,
                 supports_vision=True,
                 multimodal_requires_pdf_as_image=True,
@@ -8635,6 +10039,35 @@ built_in_models: List[KilnModel] = [
             #     ],
             #     multimodal_requires_pdf_as_image=True,
             # ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="moonshotai/Kimi-K2.6",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                model_id="@cf/moonshotai/kimi-k2.6",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
         ],
     ),
     # Kimi K2.5
@@ -8697,6 +10130,11 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="moonshotai/Kimi-K2.5",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
         ],
     ),
     # Kimi K2 Thinking
@@ -8730,6 +10168,12 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 supports_data_gen=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="moonshotai/Kimi-K2-Thinking",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.optional_r1_thinking,
+            ),
         ],
     ),
     # Kimi K2 Instruct 0905
@@ -8757,7 +10201,6 @@ built_in_models: List[KilnModel] = [
                 deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
-                suggested_for_evals=False,
                 # this model on this provider currently fails the tool call test, but might work in the future
                 supports_function_calling=False,
             ),
@@ -8767,7 +10210,6 @@ built_in_models: List[KilnModel] = [
                 deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
-                suggested_for_evals=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
@@ -8775,7 +10217,6 @@ built_in_models: List[KilnModel] = [
                 deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
-                suggested_for_evals=False,
             ),
         ],
     ),
@@ -8804,7 +10245,6 @@ built_in_models: List[KilnModel] = [
                 deprecated=True,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                suggested_for_evals=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.groq,
@@ -8812,7 +10252,6 @@ built_in_models: List[KilnModel] = [
                 deprecated=True,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_evals=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
@@ -8820,7 +10259,6 @@ built_in_models: List[KilnModel] = [
                 deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
-                suggested_for_evals=False,
             ),
         ],
     ),
@@ -8877,6 +10315,12 @@ built_in_models: List[KilnModel] = [
                 model_id="tencent/hy3",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="tencent/Hy3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_function_calling=False,
+            ),
         ],
     ),
     # Hunyuan A13B Instruct
@@ -8913,7 +10357,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 reasoning_capable=True,
                 supports_data_gen=True,
-                suggested_for_evals=True,
                 r1_openrouter_options=True,
                 require_openrouter_reasoning=True,
                 parser=ModelParserID.r1_thinking,
@@ -8943,7 +10386,40 @@ built_in_models: List[KilnModel] = [
                 model_id="accounts/fireworks/models/minimax-m3",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
-                suggested_for_evals=True,
+            ),
+            # Together serves the raw weights, which emit <think> inline (like
+            # Featherless below). Use the optional parser so the tags are stripped
+            # when present, and leave reasoning_capable False since M3 does not always
+            # emit reasoning. Together advertises this as a text chat endpoint, so no
+            # vision/multimodal here.
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="MiniMaxAI/MiniMax-M3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.optional_r1_thinking,
+                supports_data_gen=True,
+                supports_function_calling=False,
+            ),
+            # Featherless serves the raw weights, which emit <think> inline. Use the
+            # optional parser so the tags are stripped when present, and leave
+            # reasoning_capable False since (per the Fireworks note above) M3 does not
+            # always emit reasoning -- requiring it would error on those responses.
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="MiniMaxAI/MiniMax-M3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.optional_r1_thinking,
+                supports_data_gen=True,
+                # Featherless doesn't advertise tool_use for this model
+                supports_function_calling=False,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
             ),
         ],
     ),
@@ -8969,16 +10445,24 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/minimax-m2p7",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="MiniMaxAI/MiniMax-M2.7",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 reasoning_capable=True,
                 supports_data_gen=True,
                 reasoning_optional_for_structured_output=True,
+                parser=ModelParserID.optional_r1_thinking,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="MiniMaxAI/MiniMax-M2.7",
+                structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.optional_r1_thinking,
             ),
         ],
@@ -9020,6 +10504,12 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 supports_data_gen=True,
                 reasoning_optional_for_structured_output=True,
+                parser=ModelParserID.optional_r1_thinking,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="MiniMaxAI/MiniMax-M2.5",
+                structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.optional_r1_thinking,
             ),
         ],
@@ -9279,6 +10769,87 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # MiMo-V2.6-Pro
+    KilnModel(
+        family=ModelFamily.mimo,
+        name=ModelName.mimo_v2_6_pro,
+        friendly_name="MiMo-V2.6-Pro",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="xiaomi/mimo-v2.6-pro",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # MiMo-V2.6-Pro-UltraSpeed
+    KilnModel(
+        family=ModelFamily.mimo,
+        name=ModelName.mimo_v2_6_pro_ultraspeed,
+        friendly_name="MiMo-V2.6-Pro-UltraSpeed",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="xiaomi/mimo-v2.6-pro-ultraspeed",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # MiMo-V2.6-Flash
+    KilnModel(
+        family=ModelFamily.mimo,
+        name=ModelName.mimo_v2_6_flash,
+        friendly_name="MiMo-V2.6-Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="xiaomi/mimo-v2.6-flash",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # MiMo-V2.5-Pro
     KilnModel(
         family=ModelFamily.mimo,
@@ -9398,6 +10969,66 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Fugu Max
+    KilnModel(
+        family=ModelFamily.sakana,
+        name=ModelName.fugu_max,
+        friendly_name="Fugu Max",
+        editorial_notes="Sakana's largest Fable-tier model from Japan. A learned multi-agent orchestrator that routes across a pool of models, including recursive instances of itself. 1M context, with vision and configurable reasoning.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="sakana/fugu-max",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=FUGU_ULTRA_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="xhigh",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # Fugu Ultra v2
+    KilnModel(
+        family=ModelFamily.sakana,
+        name=ModelName.fugu_ultra_v2,
+        friendly_name="Fugu Ultra v2",
+        editorial_notes="The second generation of Sakana's Fugu Ultra, a Fable-tier model from Japan. A learned multi-agent orchestrator that routes across a pool of models, including recursive instances of itself. 1M context, with vision and configurable reasoning.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="sakana/fugu-ultra-v2",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=FUGU_ULTRA_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="xhigh",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # Fugu Ultra
     KilnModel(
         family=ModelFamily.sakana,
@@ -9425,6 +11056,25 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
+            ),
+        ],
+    ),
+    # Jev 1.13
+    KilnModel(
+        family=ModelFamily.jev,
+        name=ModelName.jev_1_13,
+        friendly_name="Jev 1.13",
+        editorial_notes="TypeSafe AI's classification model. No text generation: it answers a fixed set of typed questions about its input, returning a probability distribution for each. Only runs tasks whose output schema is enums, booleans, bounded integers, or numbers from 0 to 1.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.typesafe,
+                model_id="jev-1.13.0",
+                adapter=ModelAdapterId.jev,
+                supports_structured_output=True,
+                supports_data_gen=False,
+                supports_logprobs=False,
+                supports_function_calling=False,
+                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),

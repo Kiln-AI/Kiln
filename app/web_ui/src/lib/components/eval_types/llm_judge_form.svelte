@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { EvalConfigType, AvailableModels } from "$lib/types"
   import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
+  import { build_suggested_models } from "$lib/ui/run_config_component/suggested_models"
   import { get_provider_image } from "$lib/ui/provider_image"
   import { available_models } from "$lib/stores"
   import Collapse from "$lib/ui/collapse.svelte"
@@ -46,8 +47,25 @@
 
   let prompt_fetch_error: string | null = null
 
+  /**
+   * The reference data keys the server will require of this judge, and whether they
+   * could be fetched at all. Bound out so the Test Judge pane can offer a place to
+   * supply them: the server derives the requirement from the eval, not from the prompt
+   * text, so editing the reference block out of the prompt does not remove it.
+   *
+   * `default_prompt_unavailable` tracks the outcome of each fetch attempt, not just
+   * its failures — see the clear in `onMount`. The pane fails open on "unknown", so a
+   * value left set from a previous attempt would keep offering an input nothing needs.
+   */
+  export let default_reference_keys: string[] = []
+  export let default_prompt_unavailable: boolean = false
+
   onMount(async () => {
     try {
+      // Cleared up front, not left to the initializer: `bind:` seeds this child from
+      // the parent's retained value, so a form recreated after one failed fetch starts
+      // at `true` and would stay there for the session.
+      default_prompt_unavailable = false
       const defaults = await getDefaultLlmJudgePrompt(
         project_id,
         task_id,
@@ -62,9 +80,11 @@
       if (system_prompt === undefined) {
         system_prompt = defaults.system_prompt
       }
+      default_reference_keys = defaults.reference_keys ?? []
     } catch (e) {
       prompt_fetch_error =
         "Could not load default judge prompt. The server will use its default."
+      default_prompt_unavailable = true
       console.warn("Failed to fetch default LLM judge prompt:", e)
     }
   })
@@ -88,74 +108,7 @@
     },
   ]
 
-  type SuggestedModel = {
-    model_name: string
-    provider_name: string
-    model_id: string
-    provider_id: string
-  }
-
-  const provider_id_preferred_order = [
-    "openai",
-    "gemini_api",
-    "vertex",
-    "anthropic",
-    "groq",
-    "openrouter",
-    "ollama",
-  ]
-
-  function build_suggested_models(
-    providers: AvailableModels[],
-  ): SuggestedModel[] {
-    const suggested: SuggestedModel[] = []
-
-    for (const provider of providers) {
-      for (const model of provider.models) {
-        if (model.suggested_for_evals) {
-          const existing_model_index = suggested.findIndex(
-            (s) => s.model_id === model.id,
-          )
-
-          if (existing_model_index !== -1) {
-            const existing_model = suggested[existing_model_index]
-            const current_provider_preference =
-              provider_id_preferred_order.indexOf(provider.provider_id)
-            const existing_provider_preference =
-              provider_id_preferred_order.indexOf(existing_model.provider_id)
-
-            const current_priority =
-              current_provider_preference === -1
-                ? Infinity
-                : current_provider_preference
-            const existing_priority =
-              existing_provider_preference === -1
-                ? Infinity
-                : existing_provider_preference
-
-            if (current_priority < existing_priority) {
-              suggested[existing_model_index] = {
-                model_name: model.name,
-                model_id: model.id,
-                provider_id: provider.provider_id,
-                provider_name: provider.provider_name,
-              }
-            }
-          } else {
-            suggested.push({
-              model_name: model.name,
-              model_id: model.id,
-              provider_id: provider.provider_id,
-              provider_name: provider.provider_name,
-            })
-          }
-        }
-      }
-    }
-
-    return suggested
-  }
-  $: suggested_models = build_suggested_models($available_models || [])
+  $: suggested_models = build_suggested_models($available_models || [], "evals")
   let force_select_dropdown = false
 
   $: unsupported_algos = update_unsupported_algos_and_default_algo(

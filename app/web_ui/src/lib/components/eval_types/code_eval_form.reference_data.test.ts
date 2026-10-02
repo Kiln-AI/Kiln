@@ -6,7 +6,7 @@ vi.mock("$lib/utils/eval_types/reference_data_ui", () => ({
   SHOW_REFERENCE_DATA_UI: true,
 }))
 
-import { render, fireEvent } from "@testing-library/svelte"
+import { render } from "@testing-library/svelte"
 
 vi.mock("$lib/components/code_editor.svelte", async () => {
   const StubModule = await import("./__tests__/code_editor_stub.svelte")
@@ -56,27 +56,5 @@ describe("CodeEvalForm (reference data shown)", () => {
     expect(el?.getAttribute("data-info-description")).toBe(
       "The Python function can use the model's output, trace, and eval's reference data to drive pragmatic scoring. Faster and cheaper than LLM as a judge.",
     )
-  })
-})
-
-describe("example code correctness (reference data shown)", () => {
-  function get_example_code(container: HTMLElement): string {
-    return container.querySelector(".whitespace-pre")?.textContent ?? ""
-  }
-
-  it("Domain-specific grading uses KilnEvalHelpers.pass_fail with assert_contains result", async () => {
-    const { container } = render(CodeEvalForm)
-    const tabs = container.querySelectorAll(".tab")
-    await fireEvent.click(tabs[2])
-    const domainCode = get_example_code(container)
-    expect(domainCode).toContain("KilnEvalHelpers.pass_fail(contains)")
-  })
-
-  it("Domain-specific grading handles empty expected gracefully", async () => {
-    const { container } = render(CodeEvalForm)
-    const tabs = container.querySelectorAll(".tab")
-    await fireEvent.click(tabs[2])
-    const domainCode = get_example_code(container)
-    expect(domainCode).toContain("if expected else True")
   })
 })

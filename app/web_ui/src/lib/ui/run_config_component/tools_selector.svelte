@@ -3,15 +3,15 @@
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import { available_tools, load_available_tools } from "$lib/stores"
   import { onMount } from "svelte"
-  import type { ToolSetApiDescription, ToolSetType } from "$lib/types"
-  import {
-    tools_store,
-    tools_store_initialized,
-    is_tool_selectable_in_context,
-  } from "$lib/stores/tools_store"
+  import type { ToolSetApiDescription } from "$lib/types"
+  import { tools_store, tools_store_initialized } from "$lib/stores/tools_store"
   import type { SandboxCodeContext } from "$lib/stores/tools_store"
   import { goto } from "$app/navigation"
   import type { ToolsSelectorSettings } from "./tools_selector_settings"
+  import {
+    build_tool_option_groups,
+    selectable_tool_sets,
+  } from "./tool_options"
 
   export let project_id: string
   export let task_id: string | null = null
@@ -70,17 +70,12 @@
     sandbox_code_context: SandboxCodeContext,
   ): Set<string> {
     const ids = new Set<string>()
-    for (const tool_set of available_tool_sets ?? []) {
+    for (const tool_set of selectable_tool_sets(
+      available_tool_sets,
+      sandbox_code_context,
+    )) {
       for (const tool of tool_set.tools) {
-        if (
-          is_tool_selectable_in_context(
-            tool.id,
-            tool_set.type,
-            sandbox_code_context,
-          )
-        ) {
-          ids.add(tool.id)
-        }
+        ids.add(tool.id)
       }
     }
     return ids
@@ -188,92 +183,35 @@
     }
   }
 
-  const tool_set_order: ToolSetType[] = [
-    "builtin",
-    "sandbox_code",
-    "code",
-    "search",
-    "kiln_task",
-    "mcp",
-    "demo",
-  ]
-
   function get_tool_options(
     available_tool_sets: ToolSetApiDescription[] | undefined,
     sandbox_code_context: SandboxCodeContext,
   ): OptionGroup[] {
-    // Emptiness is judged on what this picker can actually offer, not on what the
-    // server returned: the sandbox-only built-ins ship in every project, so a raw
-    // length check would never see "no tools" again and the "Add tools" empty state
-    // would be lost for projects that have configured none.
-    const selectable_tool_sets = (available_tool_sets ?? [])
-      .map((tool_set) => ({
-        ...tool_set,
-        tools: tool_set.tools.filter((tool) =>
-          is_tool_selectable_in_context(
-            tool.id,
-            tool_set.type,
-            sandbox_code_context,
-          ),
-        ),
-      }))
-      .filter((tool_set) => tool_set.tools.length > 0)
-
-    if (selectable_tool_sets.length === 0) {
-      // When there are no available tools, we'll show the empty state "Add tools" button
-      return []
-    }
-
-    let option_groups: OptionGroup[] = []
-
-    tool_set_order.forEach((tool_set_type) => {
-      let action_label: string | undefined = undefined
-      let action_handler: (() => void) | undefined = undefined
-
-      const add_create_kiln_task_tool_action =
-        tool_set_type === "kiln_task" &&
-        !tools_selector_settings.hide_create_kiln_task_tool_button
-      if (add_create_kiln_task_tool_action) {
-        action_label = "Create New"
-        action_handler = () => {
-          goto(`/tools/${project_id}/add_tools/kiln_task`)
+    return build_tool_option_groups(available_tool_sets, {
+      value_field: "id",
+      sandbox_code_context,
+      option_disabled: (tool) =>
+        tools_selector_settings.mandatory_tools
+          ? tools_selector_settings.mandatory_tools.includes(tool.id)
+          : false,
+      group_action: (tool_set_type) => {
+        if (
+          tool_set_type !== "kiln_task" ||
+          tools_selector_settings.hide_create_kiln_task_tool_button
+        ) {
+          return undefined
         }
-      }
-
-      const tool_sets = selectable_tool_sets.filter(
-        (tool_set) => tool_set.type === tool_set_type,
-      )
-
-      if (tool_sets.length > 0) {
-        for (const tool_set of tool_sets) {
-          let options = tool_set.tools.map((tool) => ({
-            value: tool.id,
-            label: tool.name,
-            description: tool.description ? tool.description.trim() : undefined,
-            disabled: tools_selector_settings.mandatory_tools
-              ? tools_selector_settings.mandatory_tools.includes(tool.id)
-              : false,
-          }))
-
-          option_groups.push({
-            label: tool_set.set_name,
-            options,
-            action_label,
-            action_handler,
-          })
+        return {
+          action_label: "Create New",
+          action_handler: () => {
+            goto(`/tools/${project_id}/add_tools/kiln_task`)
+          },
+          // Keep the group when the project has no Kiln task tools yet, so the
+          // "Create New" button stays discoverable.
+          empty_group_label: "Kiln Tasks as Tools",
         }
-      } else if (add_create_kiln_task_tool_action) {
-        // Manually add the kiln_task option group when there are no kiln task tools
-        // For discoverability since we want to show the "Create New" button
-        option_groups.push({
-          label: "Kiln Tasks as Tools",
-          options: [],
-          action_label,
-          action_handler,
-        })
-      }
+      },
     })
-    return option_groups
   }
 
   $: common_props = {

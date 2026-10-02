@@ -1,13 +1,14 @@
 from unittest.mock import patch
 
 import pytest
-from app.desktop.studio_server.skill_api import connect_skill_api
-from app.desktop.studio_server.tool_api import connect_tool_servers_api
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.skill import Skill
 from kiln_server.custom_errors import connect_custom_errors
+
+from app.desktop.studio_server.skill_api import connect_skill_api
+from app.desktop.studio_server.tool_api import connect_tool_servers_api
 
 
 @pytest.fixture

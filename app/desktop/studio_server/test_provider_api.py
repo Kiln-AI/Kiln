@@ -1,5 +1,5 @@
 import json
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from datetime import datetime, timedelta
 from http import HTTPStatus
 from unittest.mock import MagicMock, Mock, patch
@@ -8,39 +8,6 @@ import httpx
 import litellm
 import openai
 import pytest
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models.create_api_key_response import (
-    CreateApiKeyResponse,
-)
-from app.desktop.studio_server.provider_api import (
-    AvailableModels,
-    ModelDetails,
-    OllamaConnection,
-    OpenAICompatibleProviderCache,
-    all_fine_tuned_models,
-    available_ollama_embedding_models,
-    available_ollama_models,
-    connect_anthropic,
-    connect_azure_openai,
-    connect_bedrock,
-    connect_docker_model_runner,
-    connect_featherless,
-    connect_gemini,
-    connect_groq,
-    connect_huggingface,
-    connect_ollama,
-    connect_openrouter,
-    connect_provider_api,
-    connect_siliconflow,
-    connect_together,
-    connect_vertex,
-    connect_wandb,
-    embedding_models_from_ollama_tag,
-    legacy_custom_models_as_available,
-    models_from_ollama_tag,
-    openai_compatible_providers,
-    openai_compatible_providers_load_cache,
-    parse_url,
-)
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
@@ -68,6 +35,42 @@ from kiln_ai.adapters.reranker_list import (
 from kiln_ai.utils.config import Config
 from kiln_server.custom_errors import connect_custom_errors
 
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.create_api_key_response import (
+    CreateApiKeyResponse,
+)
+from app.desktop.studio_server.provider_api import (
+    AvailableModels,
+    ModelDetails,
+    OllamaConnection,
+    OpenAICompatibleProviderCache,
+    all_fine_tuned_models,
+    available_ollama_embedding_models,
+    available_ollama_models,
+    connect_anthropic,
+    connect_azure_openai,
+    connect_bedrock,
+    connect_cloudflare,
+    connect_docker_model_runner,
+    connect_featherless,
+    connect_gemini,
+    connect_groq,
+    connect_huggingface,
+    connect_ollama,
+    connect_openrouter,
+    connect_provider_api,
+    connect_siliconflow,
+    connect_together,
+    connect_typesafe,
+    connect_vertex,
+    connect_wandb,
+    embedding_models_from_ollama_tag,
+    legacy_custom_models_as_available,
+    models_from_ollama_tag,
+    openai_compatible_providers,
+    openai_compatible_providers_load_cache,
+    parse_url,
+)
+
 
 @pytest.fixture
 def app():
@@ -83,29 +86,33 @@ def client(app):
 
 
 @contextmanager
-def patched_non_builtin_available_model_sources():
-    with (
-        patch(
-            "app.desktop.studio_server.provider_api.available_docker_model_runner_models",
-            return_value=None,
-        ),
-        patch(
-            "app.desktop.studio_server.provider_api.all_fine_tuned_models",
-            return_value=None,
-        ),
-        patch(
-            "app.desktop.studio_server.provider_api.openai_compatible_providers",
-            return_value=[],
-        ),
-        patch(
-            "app.desktop.studio_server.provider_api.legacy_custom_models_as_available",
-            return_value={},
-        ),
-        patch(
-            "app.desktop.studio_server.provider_api.user_models_as_available",
-            return_value={},
-        ),
-    ):
+def patched_non_builtin_available_model_sources(patch_openai_compatible: bool = True):
+    """Stub out the non-builtin, non-Ollama model sources /api/available_models pulls
+    from (callers patch connect_ollama themselves).
+
+    Pass patch_openai_compatible=False to exercise the real OpenAI compatible path while
+    the other sources stay stubbed.
+    """
+    with ExitStack() as stack:
+        for target, return_value in (
+            ("available_docker_model_runner_models", None),
+            ("all_fine_tuned_models", None),
+            ("legacy_custom_models_as_available", {}),
+            ("user_models_as_available", {}),
+        ):
+            stack.enter_context(
+                patch(
+                    f"app.desktop.studio_server.provider_api.{target}",
+                    return_value=return_value,
+                )
+            )
+        if patch_openai_compatible:
+            stack.enter_context(
+                patch(
+                    "app.desktop.studio_server.provider_api.openai_compatible_providers",
+                    return_value=[],
+                )
+            )
         yield
 
 
@@ -125,6 +132,8 @@ def patched_non_builtin_available_model_sources():
         "together_ai",
         "siliconflow_cn",
         "featherless_ai",
+        "cloudflare",
+        "typesafe",
     ],
 )
 def test_connect_api_key_invalid_payload(client, provider):
@@ -1060,6 +1069,7 @@ async def test_get_available_models(app, client):
                     "supports_data_gen": True,
                     "suggested_for_data_gen": False,
                     "suggested_for_evals": False,
+                    "suggested_for_synthetic_user": False,
                     "supports_function_calling": True,
                     "uncensored": False,
                     "suggested_for_uncensored_data_gen": False,
@@ -1096,6 +1106,7 @@ async def test_get_available_models(app, client):
                     "untested_model": False,
                     "suggested_for_data_gen": False,
                     "suggested_for_evals": False,
+                    "suggested_for_synthetic_user": False,
                     "uncensored": False,
                     "supports_doc_extraction": False,
                     "supports_vision": False,
@@ -1126,6 +1137,7 @@ async def test_get_available_models(app, client):
                     "untested_model": False,
                     "suggested_for_data_gen": False,
                     "suggested_for_evals": True,
+                    "suggested_for_synthetic_user": False,
                     "uncensored": True,
                     "supports_doc_extraction": False,
                     "supports_vision": False,
@@ -1207,6 +1219,7 @@ async def test_get_available_models_ollama_exception(app, client):
                     "untested_model": False,
                     "suggested_for_data_gen": False,
                     "suggested_for_evals": False,
+                    "suggested_for_synthetic_user": False,
                     "uncensored": False,
                     "supports_doc_extraction": False,
                     "supports_vision": False,
@@ -1275,6 +1288,41 @@ async def test_get_available_models_includes_deprecated_flag(app, client):
     assert models[0]["provider_id"] == "gemini_api"
     assert models[0]["models"][0]["id"] == "gemini_3_pro_preview"
     assert models[0]["models"][0]["deprecated"] is True
+
+
+@pytest.mark.asyncio
+async def test_get_available_models_with_blank_api_key_custom_provider(app, client):
+    mock_config = MagicMock()
+    mock_config.get_value.return_value = "mock_key"
+    mock_config.openai_compatible_providers = [
+        {"name": "custom_provider", "base_url": "https://api.test.com", "api_key": ""}
+    ]
+
+    mock_model = MagicMock()
+    mock_model.id = "gpt-4"
+
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.Config.shared",
+            return_value=mock_config,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api._openai_compatible_providers_cache",
+            None,
+        ),
+        patch("openai.resources.models.Models.list", return_value=[mock_model]),
+        patch("app.desktop.studio_server.provider_api.built_in_models", []),
+        patched_non_builtin_available_model_sources(patch_openai_compatible=False),
+        patch(
+            "app.desktop.studio_server.provider_api.connect_ollama",
+            side_effect=HTTPException(status_code=500),
+        ),
+    ):
+        response = client.get("/api/available_models")
+
+    assert response.status_code == 200
+    providers = {p["provider_name"]: p for p in response.json()}
+    assert providers["custom_provider"]["models"][0]["id"] == "custom_provider::gpt-4"
 
 
 def test_get_providers_models(client):
@@ -2007,6 +2055,7 @@ def test_openai_compatible_providers():
                             untested_model=True,
                             suggested_for_data_gen=False,
                             suggested_for_evals=False,
+                            suggested_for_synthetic_user=False,
                             uncensored=False,
                             suggested_for_uncensored_data_gen=False,
                             structured_output_mode="json_instructions",
@@ -2112,6 +2161,68 @@ def test_openai_compatible_providers_uncached_invalid_provider():
         mock_openai.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "provider_config",
+    [
+        {"name": "test_provider", "base_url": "https://api.test.com", "api_key": ""},
+        {"name": "test_provider", "base_url": "https://api.test.com", "api_key": None},
+        {"name": "test_provider", "base_url": "https://api.test.com"},
+    ],
+    ids=["empty_string_key", "none_key", "missing_key"],
+)
+def test_openai_compatible_providers_uncached_blank_api_key(provider_config):
+    # Real OpenAI client construction: it raises without a key, so a blank key must
+    # fall back to a placeholder rather than breaking the whole model list.
+    mock_model = MagicMock()
+    mock_model.id = "gpt-4"
+
+    with (
+        patch("openai.resources.models.Models.list", return_value=[mock_model]),
+        patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
+    ):
+        mock_config.return_value.openai_compatible_providers = [provider_config]
+        result = openai_compatible_providers_load_cache()
+
+        assert not result.had_error
+        assert len(result.providers) == 1
+        assert result.providers[0].models[0].id == "test_provider::gpt-4"
+
+
+def test_openai_compatible_providers_uncached_client_error_isolated():
+    mock_providers = [
+        {
+            "name": "broken_provider",
+            "base_url": "https://api.broken.com",
+            "api_key": "broken_key",
+        },
+        {
+            "name": "working_provider",
+            "base_url": "https://api.test.com",
+            "api_key": "test_key",
+        },
+    ]
+
+    mock_model = MagicMock()
+    mock_model.id = "gpt-4"
+    working_client = MagicMock()
+    working_client.models.list.return_value = [mock_model]
+
+    with (
+        patch(
+            "openai.OpenAI",
+            side_effect=[openai.OpenAIError("Missing credentials"), working_client],
+        ),
+        patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
+    ):
+        mock_config.return_value.openai_compatible_providers = mock_providers
+        result = openai_compatible_providers_load_cache()
+
+        # One bad provider shouldn't take out the others
+        assert result.had_error
+        assert len(result.providers) == 1
+        assert result.providers[0].provider_name == "working_provider"
+
+
 def test_openai_compatible_providers_uncached_api_error():
     mock_providers = [
         {
@@ -2147,6 +2258,10 @@ def mock_config_all_providers():
     mock_config.bedrock_secret_key = "test_key"
     mock_config.siliconflow_cn_api_key = "test_key"
     mock_config.featherless_ai_api_key = "test_key"
+    mock_config.cloudflare_api_key = "test_key"
+    mock_config.cloudflare_account_id = "test_key"
+    mock_config.cloudflare_ai_gateway_id = "test_key"
+    mock_config.typesafe_api_key = "test_key"
     return mock_config
 
 
@@ -4313,3 +4428,419 @@ def test_connect_api_key_featherless_success(mock_connect_featherless, client):
 
     assert response.status_code == 200
     mock_connect_featherless.assert_called_once_with("test_key")
+
+
+# Cloudflare connection tests.
+
+CF_SEARCH_URL = (
+    "https://api.cloudflare.com/client/v4/accounts/test-account/ai/models/search"
+)
+CF_CHAT_URL = (
+    "https://api.cloudflare.com/client/v4/accounts/test-account/ai/v1/chat/completions"
+)
+CF_TOKEN_MESSAGE = "Failed to connect to Cloudflare. Invalid API Token, or the token doesn't have Workers AI access for this Account ID."
+
+
+def _cf_key_data(gateway_id: str | None = None) -> dict:
+    key_data = {"API Token": " test-token ", "Account ID": " test-account "}
+    if gateway_id is not None:
+        key_data["AI Gateway ID - Optional"] = gateway_id
+    return key_data
+
+
+def _cf_response(status_code: int, error_code: int | None = None, text: str = ""):
+    response = MagicMock()
+    response.status_code = status_code
+    response.text = text
+    if error_code is None:
+        response.json.side_effect = ValueError("not json")
+    else:
+        response.json.return_value = {
+            "success": False,
+            "errors": [{"code": error_code, "message": "error"}],
+        }
+    return response
+
+
+def _json_body(result: JSONResponse) -> dict:
+    return json.loads(bytes(result.body))
+
+
+@pytest.fixture
+def cf_mocks():
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.httpx.AsyncClient.get"
+        ) as mock_get,
+        patch(
+            "app.desktop.studio_server.provider_api.httpx.AsyncClient.post"
+        ) as mock_post,
+        patch("app.desktop.studio_server.provider_api.Config.shared") as mock_shared,
+    ):
+        mock_get.return_value = _cf_response(200)
+        mock_post.return_value = _cf_response(400, error_code=5007)
+        yield mock_get, mock_post, mock_shared
+
+
+@patch("app.desktop.studio_server.provider_api.connect_cloudflare")
+def test_connect_api_key_cloudflare_dispatch(mock_connect_cloudflare, client):
+    mock_connect_cloudflare.return_value = {"message": "Connected to Cloudflare"}
+    key_data = _cf_key_data("gw")
+
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "cloudflare", "key_data": key_data},
+    )
+
+    assert response.status_code == 200
+    mock_connect_cloudflare.assert_called_once_with(key_data)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "key_data",
+    [
+        {"Account ID": "test-account"},
+        {"API Token": "test-token"},
+        {"API Token": "   ", "Account ID": "test-account"},
+        {"API Token": "test-token", "Account ID": 123},
+    ],
+)
+async def test_connect_cloudflare_missing_required_fields(cf_mocks, key_data):
+    mock_get, mock_post, mock_shared = cf_mocks
+
+    result = await connect_cloudflare(key_data)
+
+    assert result.status_code == 400
+    assert _json_body(result) == {
+        "message": "Failed to connect to Cloudflare. API Token and Account ID are required."
+    }
+    mock_get.assert_not_called()
+    mock_post.assert_not_called()
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "search_status,expected_status,expected_message",
+    [
+        (404, 401, "Failed to connect to Cloudflare. Invalid Account ID."),
+        (400, 401, CF_TOKEN_MESSAGE),
+        (401, 401, CF_TOKEN_MESSAGE),
+        (403, 401, CF_TOKEN_MESSAGE),
+        (500, 400, "Failed to connect to Cloudflare. Error: [500] boom"),
+    ],
+)
+async def test_connect_cloudflare_search_failures(
+    cf_mocks, search_status, expected_status, expected_message
+):
+    mock_get, mock_post, mock_shared = cf_mocks
+    mock_get.return_value = _cf_response(search_status, text="boom")
+
+    result = await connect_cloudflare(_cf_key_data("gw"))
+
+    assert result.status_code == expected_status
+    assert _json_body(result) == {"message": expected_message}
+    mock_post.assert_not_called()
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("gateway_id", [None, "", "   "])
+async def test_connect_cloudflare_without_gateway(cf_mocks, gateway_id):
+    mock_get, mock_post, mock_shared = cf_mocks
+
+    result = await connect_cloudflare(_cf_key_data(gateway_id))
+
+    assert result.status_code == 200
+    assert _json_body(result) == {"message": "Connected to Cloudflare"}
+    mock_get.assert_called_once_with(
+        CF_SEARCH_URL,
+        headers={"Authorization": "Bearer test-token"},
+        params={"search": "kiln-connection-check"},
+        timeout=30,
+        follow_redirects=True,
+    )
+    mock_post.assert_not_called()
+    mock_shared.return_value.update_settings.assert_called_once_with(
+        {
+            "cloudflare_api_key": "test-token",
+            "cloudflare_account_id": "test-account",
+            "cloudflare_ai_gateway_id": None,
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_connect_cloudflare_account_id_is_url_encoded(cf_mocks):
+    mock_get, _, _ = cf_mocks
+
+    await connect_cloudflare({"API Token": "t", "Account ID": "a/b?c"})
+
+    assert (
+        mock_get.call_args.args[0]
+        == "https://api.cloudflare.com/client/v4/accounts/a%2Fb%3Fc/ai/models/search"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "chat_response",
+    [_cf_response(400, error_code=5007), _cf_response(200)],
+    ids=["no_such_model", "model_exists"],
+)
+async def test_connect_cloudflare_with_valid_gateway(cf_mocks, chat_response):
+    _, mock_post, mock_shared = cf_mocks
+    mock_post.return_value = chat_response
+
+    result = await connect_cloudflare(_cf_key_data(" my-gateway "))
+
+    assert result.status_code == 200
+    mock_post.assert_called_once_with(
+        CF_CHAT_URL,
+        headers={
+            "Authorization": "Bearer test-token",
+            "cf-aig-gateway-id": "my-gateway",
+        },
+        json={
+            "model": "@cf/kiln/connection-check",
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 1,
+        },
+        timeout=30,
+        follow_redirects=True,
+    )
+    mock_shared.return_value.update_settings.assert_called_once_with(
+        {
+            "cloudflare_api_key": "test-token",
+            "cloudflare_account_id": "test-account",
+            "cloudflare_ai_gateway_id": "my-gateway",
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_connect_cloudflare_gateway_not_found(cf_mocks):
+    _, mock_post, mock_shared = cf_mocks
+    mock_post.return_value = _cf_response(400, error_code=2001)
+
+    result = await connect_cloudflare(_cf_key_data("missing-gw"))
+
+    assert result.status_code == 400
+    assert _json_body(result) == {
+        "message": "Failed to connect to Cloudflare. AI Gateway 'missing-gw' not found. Check the gateway ID, or remove it."
+    }
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "chat_response,expected_message",
+    [
+        (
+            _cf_response(502, text="Bad Gateway"),
+            "Failed to connect to Cloudflare. Error: [502] Bad Gateway",
+        ),
+        (
+            _cf_response(401, error_code=10000, text="auth"),
+            "Failed to connect to Cloudflare. Error: [401] auth",
+        ),
+    ],
+    ids=["non_json_502", "unexpected_error_code"],
+)
+async def test_connect_cloudflare_gateway_unexpected_response(
+    cf_mocks, chat_response, expected_message
+):
+    _, mock_post, mock_shared = cf_mocks
+    mock_post.return_value = chat_response
+
+    result = await connect_cloudflare(_cf_key_data("gw"))
+
+    assert result.status_code == 400
+    assert _json_body(result) == {"message": expected_message}
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_connect_cloudflare_request_exception(cf_mocks):
+    mock_get, _, mock_shared = cf_mocks
+    mock_get.side_effect = httpx.ConnectError("Connection error")
+
+    result = await connect_cloudflare(_cf_key_data())
+
+    assert result.status_code == 400
+    assert _json_body(result) == {
+        "message": "Failed to connect to Cloudflare. Error: Connection error"
+    }
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_connect_cloudflare_timeout_names_the_error(cf_mocks):
+    mock_get, _, mock_shared = cf_mocks
+    mock_get.side_effect = httpx.ReadTimeout("")
+
+    result = await connect_cloudflare(_cf_key_data())
+
+    assert result.status_code == 400
+    assert _json_body(result) == {
+        "message": "Failed to connect to Cloudflare. Error: ReadTimeout"
+    }
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_disconnect_api_key_cloudflare(client, mock_config_all_providers):
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config.return_value = mock_config_all_providers
+
+        response = client.post(
+            "/api/provider/disconnect_api_key",
+            params={"provider_id": "cloudflare"},
+        )
+
+        assert response.status_code == 200
+        assert mock_config_all_providers.cloudflare_api_key is None
+        assert mock_config_all_providers.cloudflare_account_id is None
+        assert mock_config_all_providers.cloudflare_ai_gateway_id is None
+        assert mock_config_all_providers.open_ai_api_key is not None
+
+
+# TypeSafe AI connection tests.
+#
+# GET /v1/models rejects a bad key, which is the check connect_typesafe makes. Both the
+# success and the invalid-key branch are mocked at the async client the handler uses.
+
+
+def _typesafe_expected_request(key: str):
+    return {
+        "url": "https://api.typesafe.ai/v1/models",
+        "headers": {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        },
+    }
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_typesafe_success(mock_config_shared, mock_httpx_get):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_httpx_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    result = await connect_typesafe("test_api_key")
+
+    expected = _typesafe_expected_request("test_api_key")
+    mock_httpx_get.assert_called_once_with(
+        expected["url"],
+        headers=expected["headers"],
+        timeout=10,
+        follow_redirects=True,
+    )
+    assert mock_config.typesafe_api_key == "test_api_key"
+    assert result.status_code == 200
+    assert result.body == b'{"message":"Connected to TypeSafe AI"}'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [401, 403])
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_typesafe_invalid_api_key(
+    mock_config_shared, mock_httpx_get, status_code
+):
+    mock_response = MagicMock()
+    mock_response.status_code = status_code
+    mock_httpx_get.return_value = mock_response
+
+    result = await connect_typesafe("invalid_api_key")
+
+    expected = _typesafe_expected_request("invalid_api_key")
+    mock_httpx_get.assert_called_once_with(
+        expected["url"],
+        headers=expected["headers"],
+        timeout=10,
+        follow_redirects=True,
+    )
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 401
+    assert (
+        result.body
+        == b'{"message":"Failed to connect to TypeSafe AI. Invalid API key."}'
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [400, 429, 500, 503])
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_typesafe_other_error(
+    mock_config_shared, mock_httpx_get, status_code
+):
+    """Anything other than a clean 200 is inconclusive — don't save the key."""
+    mock_response = MagicMock()
+    mock_response.status_code = status_code
+    mock_httpx_get.return_value = mock_response
+
+    result = await connect_typesafe("test_api_key")
+
+    mock_httpx_get.assert_called_once()
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 400
+    assert (
+        result.body
+        == f'{{"message":"Failed to connect to TypeSafe AI. Error: [{status_code}]"}}'.encode()
+    )
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_typesafe_request_exception(mock_config_shared, mock_httpx_get):
+    mock_httpx_get.side_effect = httpx.RequestError("Connection error")
+
+    result = await connect_typesafe("test_api_key")
+
+    mock_httpx_get.assert_called_once()
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 400
+    assert (
+        result.body
+        == b'{"message":"Failed to connect to TypeSafe AI. Error: Connection error"}'
+    )
+
+
+@pytest.mark.asyncio
+async def test_disconnect_api_key_typesafe(client, mock_config_all_providers):
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config.return_value = mock_config_all_providers
+
+        response = client.post(
+            "/api/provider/disconnect_api_key",
+            params={"provider_id": "typesafe"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "Provider disconnected"}
+        assert mock_config_all_providers.typesafe_api_key is None
+
+        # Check it didn't unset the other providers
+        assert mock_config_all_providers.open_ai_api_key is not None
+
+
+@patch("app.desktop.studio_server.provider_api.connect_typesafe")
+def test_connect_api_key_typesafe_success(mock_connect_typesafe, client):
+    mock_connect_typesafe.return_value = {"message": "Connected to TypeSafe AI"}
+
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "typesafe", "key_data": {"API Key": "test_key"}},
+    )
+
+    assert response.status_code == 200
+    mock_connect_typesafe.assert_called_once_with("test_key")

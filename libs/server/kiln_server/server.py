@@ -21,7 +21,6 @@ from .utils.agent_checks.policy import ALLOW_AGENT
 
 
 def _get_version() -> str:
-    """Get the version of the kiln-server package."""
     try:
         return version("kiln-server")
     except Exception:
@@ -66,12 +65,24 @@ tags_metadata = [
         "description": "Create and run evaluations for tasks.",
     },
     {
+        "name": "Eval Inputs",
+        "description": "Author and manage eval input datasets for tasks.",
+    },
+    {
         "name": "Statistics",
         "description": "Confidence intervals and significance tests on eval metrics.",
     },
     {
         "name": "Synthetic Data",
         "description": "Generate synthetic data for evals and fine-tuning.",
+    },
+    {
+        "name": "Multiturn SDG",
+        "description": "Generate multi-turn synthetic-user conversation datasets for eval.",
+    },
+    {
+        "name": "Eval Builder",
+        "description": "Eval builder V2 review pipeline: judge and claim/evidence generation over alignment traces.",
     },
     {
         "name": "Fine-tuning",

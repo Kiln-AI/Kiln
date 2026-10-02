@@ -20,7 +20,7 @@ summary: EvalInput flow, adapter dispatch, multi-config orchestration, candidate
 - **Multi-config orchestration:** `task_run_eval` mode runs only `current_config_id`; `eval_config_eval` mode runs all candidate configs. Mode is orthogonal to input source (C.9).
 - **B2.1 runtime translation:** When a V2 EvalConfig consumes TaskRun-source data, the runner synthesizes an in-memory EvalInput per TaskRun. No persist. `EvalRun.dataset_id` points at the source TaskRun.
 - **Skip emission:** The runner emits skipped EvalRuns with `SkippedReason` values from `components/85` before task execution (reference-key, input-shape, trust, type-availability checks) and during extraction (`extraction_failed`). No hard-fail on individual skips.
-- **Score provenance:** EvalRuns carry `reference_data` (from EvalInput.reference) and link to the immutable parent EvalConfig via the existing `parent_of` chain. Cross-ref `components/85`.
+- **Score provenance:** EvalRuns link to the immutable parent EvalConfig via the existing `parent_of` chain, and name the item they scored (`dataset_id` / `eval_input_id`). They carry no copy of the reference data the scorer saw — it is derived from the item. Cross-ref `components/85`.
 
 ---
 
@@ -435,7 +435,6 @@ def _persist_skipped_run(
         input=self._extract_input_text(job.item),
         output=None,           # skipped before execution
         scores={},             # no scores (validator relaxed per E.18)
-        reference_data=self._extract_reference_data(job.item),
     )
     eval_run.save_to_file(parent=job.eval_config)
 ```
@@ -472,7 +471,10 @@ def _build_eval_task_input(self, item: TaskRun | EvalInput, task_run_output: str
         return EvalTaskInput(
             final_message=task_run.output.output if task_run.output else "",
             trace=task_run.trace,
-            reference_data=None,  # TaskRuns don't carry structured reference
+            # The dataset item's own stored output is the curated answer; see
+            # `components/40` section 2. None when the item *is* the trace being
+            # scored (judge calibration).
+            reference_data={"reference_answer": task_run.output.output},
             task_input=task_run.input,
         )
 ```
@@ -562,7 +564,7 @@ Required reference keys are derived per EvalConfigType:
 
 | Type | Required keys source |
 |---|---|
-| `llm_judge` | Keys referenced via `reference_data.*` in `required_var` expressions |
+| `llm_judge` | `reference_keys` on the config's properties. Baked server-side from the eval: a judge told to grade against a reference answer declares `reference_answer` (`materialize_llm_judge_properties`); a judge that is not declares none |
 | `exact_match`, `contains`, `set_check` | `reference_key` field on properties (when `expected_value` / `substring` / `expected_set` is None) |
 | `pattern_match` | None (pattern is on the config, not reference data) |
 | `tool_call_check`, `step_count_check` | None (walk trace directly) |
@@ -615,7 +617,6 @@ def _persist_eval_run(
         scores=scores,
         intermediate_outputs=intermediate_outputs,
         reference_answer=self._extract_reference_answer(job.item),  # V1 field -- None for V2
-        reference_data=self._extract_reference_data(job.item),      # V2 field -- from EvalInput.reference
         task_run_trace=self._serialize_trace(task_run, job),
         task_run_usage=self._extract_usage(task_run),
     )
@@ -641,7 +642,7 @@ Per `components/85_observability_and_audit.md` section 1, V2.0 introduces no new
 EvalRun -> EvalConfig (immutable, carries config_type/properties/model) -> Eval -> Task
 ```
 
-The runner's only provenance responsibility is persisting the EvalRun as a child of the correct EvalConfig. The `EvalRun.reference_data` field (A2.7) carries the structured reference snapshot from EvalInput.reference, providing run-time reference traceability.
+The runner's only provenance responsibility is persisting the EvalRun as a child of the correct EvalConfig. No reference snapshot is stored on the EvalRun: the reference data a scorer saw is derived from the item the record names (`dataset_id` / `eval_input_id`), so a pointer-mode record carries no second copy of what it scored.
 
 ### 10.4 On-read aggregation impact (E.18)
 
@@ -662,9 +663,9 @@ V2 EvalConfigs declare their data needs in their own properties (per A2.3). The 
 # In run_job, after task execution:
 if job.eval_config.config_type == EvalConfigType.v2:
     # V2: data contract is per-config properties, not Eval-level.
-    # Always serialize trace and reference_data if available.
+    # Always serialize the trace if available. No reference snapshot is written:
+    # the reference a scorer saw is derived from the item, not copied onto the record.
     task_run_trace = json.dumps(task_run.trace) if task_run and task_run.trace else None
-    reference_data = self._extract_reference_data(job.item)
 else:
     # Legacy: existing behavior keyed on evaluation_data_type
     if self.eval.evaluation_data_type == EvalDataType.full_trace:

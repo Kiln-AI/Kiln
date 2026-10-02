@@ -9,6 +9,7 @@
   import {
     getV2EvalTypeMetadata,
     manualExampleSupport,
+    NO_JUDGE_PROMPT,
   } from "$lib/utils/eval_types/registry"
   import type { V2EvalType } from "$lib/utils/eval_types/registry"
   import type { V2EvalConfigProperties } from "$lib/api/v2_eval_api"
@@ -22,6 +23,7 @@
   import { filename_string_short_validator } from "$lib/utils/input_validators"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import { validate_result_shape } from "$lib/utils/eval_types/test_run_shape"
+  import { select_default_test_run } from "$lib/utils/eval_types/test_run_selection"
   import {
     parse_reference_data,
     parse_reference_keys,
@@ -111,9 +113,14 @@
   let test_abort_controller: AbortController | null = null
   let trust_dialog: TrustCodeDialog
 
-  // Reference data plumbing, mirroring the add-judge builder. Dormant while
-  // SHOW_REFERENCE_DATA_UI is off (the pane hides the field), but wired so the
-  // creation pane doesn't silently drop it the day the flag flips.
+  // Reference data plumbing, mirroring the add-judge builder. Dormant for every judge
+  // this form builds: they are all non-LLM types, which the pane keeps behind
+  // SHOW_REFERENCE_DATA_UI. Wired so the creation pane doesn't silently drop it the
+  // day the flag flips.
+  //
+  // The pane decides from a judge's prompt and the server's derived reference keys, and
+  // this form has neither to give, so it passes the no-prompt signals explicitly.
+  const judge_reference_signals = NO_JUDGE_PROMPT
   let advanced_reference_data = ""
   let required_reference_fields: string[] = []
   $: reference_candidate_keys = parse_reference_keys(advanced_reference_data)
@@ -125,7 +132,7 @@
       runs_loading = true
       runs_error = null
       available_runs = await fetchTaskRuns(project_id, task_id)
-      selected_task_run = available_runs[0] ?? null
+      selected_task_run = select_default_test_run(available_runs)
     } catch (e) {
       runs_error = createKilnError(e)
     } finally {
@@ -327,7 +334,6 @@
           {reference_candidate_keys}
           code_placeholder_score_key={true}
           {project_id}
-          {task_id}
         />
       </div>
     </FormContainer>
@@ -350,6 +356,7 @@
       {test_shape_warning}
       {test_score_range_warning}
       {test_has_valid_run}
+      {judge_reference_signals}
       manual_example_supported={manual_example_support.supported}
       on:select={(e) => select_task_run(e.detail)}
       on:run={run_test}

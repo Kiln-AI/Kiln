@@ -280,9 +280,8 @@ def connect_jobs_api(app: FastAPI) -> None:
             Query(description="Read the error log for a specific past run id."),
         ] = None,
     ) -> list[dict[str, Any]]:
-        # Always 200, never errors (functional_spec §5). A plain non-reconciling
-        # lookup of the current run_id — we don't recompute state for a
-        # best-effort diagnostic read.
+        # Always 200, never errors: a best-effort diagnostic read, so it looks up
+        # the current run_id without reconciling job state.
         resolved_run_id = run_id or job_registry.run_id_for(id)
         if resolved_run_id is None:
             return []

@@ -2,20 +2,22 @@
 
 Reuse is keyed on `(source_type, source_id, run_config_id)` — the dataset item plus the
 run config, and deliberately not the eval config. That is what lets a second judge score
-generations the first judge already paid for (functional spec §2.1).
+generations the first judge already paid for.
 
 The lookup has to be live, not precomputed like the `already_run` set in
 `EvalRunner.collect_tasks`. A set built before the first job runs cannot see a trace
 persisted by another job in the same run, and `AsyncJobRunner` runs 25 of them at once:
 two jobs sharing an item and a run config but differing in eval config would both miss
 and both generate, spending exactly the money this exists to save. The same liveness is
-what makes a retry after a scoring failure re-score rather than regenerate
-(functional spec §4.2, §4.3).
+what makes a retry after a scoring failure re-score rather than regenerate.
 """
 
+import json
 import logging
 from pathlib import Path
 from typing import Awaitable, Callable, Dict, Tuple
+
+from pydantic import ValidationError
 
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.eval_splits import ItemKey, ItemSource
@@ -89,10 +91,13 @@ class TraceIndex:
 
     def _seed(self) -> None:
         # include_intermediate_runs stays False, so a trace that is the *parent* of
-        # another run is invisible here. Safe only because architecture §3.2 skips
-        # multi-turn items outright, so no eval trace has children today. If multi-turn
-        # evals ever generate traces, this line has to change with them — otherwise those
-        # traces are never found and the eval regenerates them on every run, silently.
+        # another run is invisible here. Safe because eval traces are always
+        # childless: single-turn generations are single runs, and a driven
+        # multi-turn conversation persists as one standalone run whose trace holds
+        # the whole exchange (chain-leaf scoring reads stored dataset runs without
+        # generating at all). Nothing may ever chain a child onto an eval trace
+        # without revisiting this seed — the parent would turn invisible here, and
+        # the eval would silently regenerate its trace on every run.
         for run in self._task.runs(readonly=True, include_eval_generated=True):
             if run.path is None:
                 continue
@@ -112,7 +117,7 @@ class TraceIndex:
 
         Returns `(trace, was_generated)`. `generate` must persist the TaskRun before
         returning, stamped so the run files itself under `key`: the trace has to be
-        durable before scoring is attempted (functional spec §4.1), and durable is only
+        durable before scoring is attempted, and durable is only
         useful if the next run can find it.
 
         Callers racing on one key are serialized, and all but the first reuse the
@@ -138,11 +143,22 @@ class TraceIndex:
             trace = TaskRun.load_from_file(path)
         except FileNotFoundError:
             # The trace was deleted out from under us — sync, or an external delete that
-            # never went through the API's 409 guard. Architecture §8's posture for a
-            # missing trace is to degrade, not to cascade: drop the entry and regenerate,
-            # rather than failing every job that wanted it.
+            # never went through the API's 409 guard. Degrade rather than cascade: drop
+            # the entry and regenerate, rather than failing every job that wanted it.
             logger.warning(
                 "Indexed eval trace for %s is gone from %s; regenerating", key, path
+            )
+            del self._paths[key]
+            return None
+        except (json.JSONDecodeError, ValidationError, ValueError) as error:
+            # The file exists but no longer parses as a TaskRun — truncated by a crash
+            # mid-write, or rewritten by a newer schema. Same posture as a missing file:
+            # drop the entry and regenerate, rather than failing every job on this key.
+            logger.warning(
+                "Indexed eval trace for %s at %s failed to load (%s); regenerating",
+                key,
+                path,
+                error,
             )
             del self._paths[key]
             return None

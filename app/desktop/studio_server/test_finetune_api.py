@@ -4,19 +4,6 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
-from app.desktop.studio_server.finetune_api import (
-    CreateDatasetSplitRequest,
-    CreateFinetuneRequest,
-    DatasetSplitType,
-    FinetuneProviderModel,
-    compute_finetune_tag_info,
-    connect_fine_tune_api,
-    data_strategies_from_finetune_id,
-    fetch_fireworks_finetune_models,
-    infer_data_strategies_for_model,
-    system_message_from_request,
-    thinking_instructions_from_request,
-)
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.adapters.fine_tune.base_finetune import FineTuneParameter
@@ -39,7 +26,7 @@ from kiln_ai.datamodel import (
     TaskOutputRatingType,
     TaskRun,
 )
-from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy, TurnMode
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId
 from kiln_ai.datamodel.dataset_split import (
     AllSplitDefinition,
@@ -55,6 +42,20 @@ from kiln_ai.datamodel.run_config import (
 from kiln_ai.datamodel.skill import Skill
 from kiln_server.custom_errors import connect_custom_errors
 from pydantic import BaseModel
+
+from app.desktop.studio_server.finetune_api import (
+    CreateDatasetSplitRequest,
+    CreateFinetuneRequest,
+    DatasetSplitType,
+    FinetuneProviderModel,
+    compute_finetune_tag_info,
+    connect_fine_tune_api,
+    data_strategies_from_finetune_id,
+    fetch_fireworks_finetune_models,
+    infer_data_strategies_for_model,
+    system_message_from_request,
+    thinking_instructions_from_request,
+)
 
 
 @pytest.fixture
@@ -732,6 +733,75 @@ async def test_create_finetune(
         validation_split_name="validation",
         data_strategy=data_strategy,
         run_config=None,
+    )
+
+
+def _make_multiturn_task(tmp_path) -> Task:
+    project = Project(name="Test Project", path=str(tmp_path / "project.kiln"))
+    project.save_to_file()
+    task = Task(
+        name="Multi-turn Test Task",
+        instruction="Test instruction",
+        parent=project,
+        turn_mode=TurnMode.multiturn,
+    )
+    task.save_to_file()
+    return task
+
+
+def test_create_finetune_multiturn_task_rejected(client, tmp_path, monkeypatch):
+    # Build a fresh multi-turn task locally rather than mutating the shared
+    # test_task fixture (turn_mode is frozen post-construction).
+    multiturn_task = _make_multiturn_task(tmp_path)
+    monkeypatch.setattr(
+        "app.desktop.studio_server.finetune_api.task_from_id",
+        Mock(return_value=multiturn_task),
+    )
+
+    request_data = {
+        "dataset_id": "split1",
+        "train_split_name": "train",
+        "parameters": {},
+        "provider": "openai",
+        "base_model_id": "base_model_1",
+        "custom_system_message": "Test system message",
+        "data_strategy": "final_only",
+    }
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/finetunes", json=request_data
+    )
+
+    assert response.status_code == 400
+    assert (
+        response.json()["message"]
+        == "Fine-tuning is not supported for multi-turn tasks."
+    )
+
+
+def test_download_dataset_jsonl_multiturn_task_rejected(client, tmp_path, monkeypatch):
+    multiturn_task = _make_multiturn_task(tmp_path)
+    monkeypatch.setattr(
+        "app.desktop.studio_server.finetune_api.task_from_id",
+        Mock(return_value=multiturn_task),
+    )
+
+    response = client.get(
+        "/api/download_dataset_jsonl",
+        params={
+            "project_id": "project1",
+            "task_id": "task1",
+            "dataset_id": "split1",
+            "split_name": "train",
+            "format_type": "openai_chat_jsonl",
+            "data_strategy": "final_only",
+        },
+    )
+
+    assert response.status_code == 400
+    assert (
+        response.json()["message"]
+        == "Fine-tuning is not supported for multi-turn tasks."
     )
 
 
@@ -1805,7 +1875,7 @@ def test_finetune_dataset_info_no_tags(
 ):
     """Test finetune_dataset_info when there are no fine_tune tags"""
     # Remove all runs from the task
-    for run in test_task.runs():
+    for run in test_task.runs(include_intermediate_runs=True):
         run.delete()
 
     response = client.get("/api/projects/project1/tasks/task1/finetune_dataset_info")

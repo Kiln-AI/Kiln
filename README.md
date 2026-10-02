@@ -129,7 +129,7 @@ Full docs at [docs.kiln.tech](https://docs.kiln.tech). Common starting points:
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution guidelines.
+See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for development setup and contribution guidelines.
 
 ## License & Trademarks
 

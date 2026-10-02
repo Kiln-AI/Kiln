@@ -255,8 +255,9 @@ const { CREATE_EVAL_LAYOUT_KEY } = await import("./context")
 
 /**
  * Render the picker page with context provided.
+ * Pass spec_id "legacy" to simulate a legacy eval (no backing spec).
  */
-async function renderPickerPage() {
+async function renderPickerPage(spec_id: string = "spec1") {
   onMountCallbacks.length = 0
 
   // The picker page uses getContext("create_eval_layout"). We need to
@@ -276,11 +277,14 @@ async function renderPickerPage() {
       name: "Test Task",
       instruction: "test instruction",
     }),
-    spec: writable({ id: "spec1", name: "Test Spec" }),
+    // The layout never loads a spec for legacy evals, so the store stays null
+    spec: writable(
+      spec_id === "legacy" ? null : { id: spec_id, name: "Test Spec" },
+    ),
     project_id: writable("proj1"),
     task_id: writable("task1"),
     eval_id: writable("eval1"),
-    spec_id: writable("spec1"),
+    spec_id: writable(spec_id),
   })
 
   const result = render(PickerPage, { context: ctx })
@@ -336,8 +340,12 @@ async function renderBuilder(evalType: string = "code_eval") {
 
 /**
  * Render the builder route page ([eval_config_type]/+page.svelte) with context.
+ * Pass spec_id "legacy" to simulate a legacy eval (no backing spec).
  */
-async function renderBuilderRoutePage(evalConfigType: string) {
+async function renderBuilderRoutePage(
+  evalConfigType: string,
+  spec_id: string = "spec1",
+) {
   onMountCallbacks.length = 0
 
   mockPage.set({
@@ -345,11 +353,11 @@ async function renderBuilderRoutePage(evalConfigType: string) {
       project_id: "proj1",
       task_id: "task1",
       eval_id: "eval1",
-      spec_id: "spec1",
+      spec_id,
       eval_config_type: evalConfigType,
     },
     url: new URL(
-      `http://localhost/specs/proj1/task1/spec1/eval1/create_eval_config/${evalConfigType}`,
+      `http://localhost/specs/proj1/task1/${spec_id}/eval1/create_eval_config/${evalConfigType}`,
     ),
   })
 
@@ -369,11 +377,14 @@ async function renderBuilderRoutePage(evalConfigType: string) {
       input_json_schema: "{}",
       output_json_schema: "{}",
     }),
-    spec: writable({ id: "spec1", name: "Test Spec" }),
+    // The layout never loads a spec for legacy evals, so the store stays null
+    spec: writable(
+      spec_id === "legacy" ? null : { id: spec_id, name: "Test Spec" },
+    ),
     project_id: writable("proj1"),
     task_id: writable("task1"),
     eval_id: writable("eval1"),
-    spec_id: writable("spec1"),
+    spec_id: writable(spec_id),
   })
 
   const result = render(BuilderRoutePage, { context: ctx })
@@ -539,6 +550,53 @@ describe("EvalConfigBuilder", () => {
     cleanup()
   })
 
+  describe("default test run selection", () => {
+    function taskRunWithTrace(id: string, trace: unknown[] | null) {
+      return {
+        ...sampleTaskRun,
+        id,
+        input: `input ${id}`,
+        output: { output: `output ${id}`, source: { type: "human" as const } },
+        trace,
+      }
+    }
+
+    async function selectedRunText(runs: unknown[]) {
+      mockFetchTaskRuns.mockResolvedValue(runs)
+      const { container } = await renderBuilder("step_count_check")
+      const card = container.querySelector(
+        "[data-testid='selected-run-card']",
+      ) as HTMLElement
+      expect(card).not.toBeNull()
+      return card.textContent ?? ""
+    }
+
+    it("auto-selects the newest run that has a trace", async () => {
+      const text = await selectedRunText([
+        taskRunWithTrace("no_trace", null),
+        taskRunWithTrace("traced", [{ role: "user", content: "hi" }]),
+      ])
+      expect(text).toContain("input traced")
+      expect(text).not.toContain("input no_trace")
+    })
+
+    it("treats an empty trace as no trace", async () => {
+      const text = await selectedRunText([
+        taskRunWithTrace("empty_trace", []),
+        taskRunWithTrace("traced", [{ role: "user", content: "hi" }]),
+      ])
+      expect(text).toContain("input traced")
+    })
+
+    it("falls back to the newest run when none have a trace", async () => {
+      const text = await selectedRunText([
+        taskRunWithTrace("newest", null),
+        taskRunWithTrace("older", null),
+      ])
+      expect(text).toContain("input newest")
+    })
+  })
+
   describe("trust modal for code_eval", () => {
     it("shows trust dialog when test returns code_eval_not_trusted", async () => {
       const { container } = await renderBuilder("code_eval")
@@ -666,6 +724,50 @@ describe("EvalConfigBuilder", () => {
       expect(mockCreateEvalConfig).toHaveBeenCalledTimes(1)
     })
 
+    it("re-shows the confirm dialog when the config is edited after a passing test", async () => {
+      const { container } = await renderBuilder("exact_match")
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      mockTestV2Eval.mockResolvedValueOnce({
+        scores: { accuracy: 1.0 },
+        skipped_reason: null,
+        skipped_detail: null,
+      })
+
+      await fireEvent.click(
+        container.querySelector(
+          '[data-testid="run-test-btn"]',
+        ) as HTMLButtonElement,
+      )
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      // Edit the form after the passing test. The input bubbles to the wrapper's
+      // on_config_edit, which invalidates the just-passed test.
+      const formStub = container.querySelector(
+        '[data-testid="v2-form-stub"]',
+      ) as HTMLElement
+      await fireEvent.input(formStub)
+      await tick()
+
+      resetCalls()
+      await fireEvent.click(
+        container.querySelector(
+          '[data-testid="column-save-button"]',
+        ) as HTMLButtonElement,
+      )
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(showCalls).toContain("Save Without Testing?")
+      expect(mockCreateEvalConfig).not.toHaveBeenCalled()
+    })
+
     it("shows confirm dialog for code_eval after trust is already granted", async () => {
       const { container } = await renderBuilder("code_eval")
 
@@ -736,7 +838,7 @@ describe("builder route page ([eval_config_type])", () => {
   })
 })
 
-describe("EvalConfigBuilder — Phase 3: container shell + intro", () => {
+describe("EvalConfigBuilder — container shell + intro", () => {
   beforeEach(() => {
     resetCalls()
     mockFetchTaskRuns.mockReset()
@@ -873,7 +975,7 @@ describe("EvalConfigBuilder — Phase 3: container shell + intro", () => {
     expect(mockCreateEvalConfig).not.toHaveBeenCalled()
   })
 
-  it("D10: no Save button in the test run pane", async () => {
+  it("has no Save button in the test run pane", async () => {
     const { container } = await renderBuilder("exact_match")
     const pane = container.querySelector("[data-testid='test-run-pane']")
     expect(pane).not.toBeNull()
@@ -902,7 +1004,7 @@ describe("EvalConfigBuilder — Phase 3: container shell + intro", () => {
   })
 })
 
-describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
+describe("EvalConfigBuilder — trust modal + save-flow behavior", () => {
   beforeEach(() => {
     resetCalls()
     mockTestV2Eval.mockReset()
@@ -1330,7 +1432,70 @@ describe("Breadcrumb — Add Judge", () => {
   })
 })
 
-describe("Phase 9 — Docs-link audit + theme-aware colors", () => {
+describe("Breadcrumbs — legacy evals", () => {
+  afterEach(() => {
+    cleanup()
+    mockPage.set({
+      params: {
+        project_id: "proj1",
+        task_id: "task1",
+        eval_id: "eval1",
+        spec_id: "spec1",
+      },
+      url: new URL(
+        "http://localhost/specs/proj1/task1/spec1/eval1/create_eval_config",
+      ),
+    })
+  })
+
+  function getBreadcrumbs(container: HTMLElement): Array<{
+    label: string
+    href: string
+  }> {
+    const appPage = container.querySelector("[data-testid='app-page-stub']")
+    expect(appPage).not.toBeNull()
+    return JSON.parse(appPage!.getAttribute("data-breadcrumbs") || "[]")
+  }
+
+  it("picker page renders the spec crumb for a real spec", async () => {
+    const { container } = await renderPickerPage()
+    const breadcrumbs = getBreadcrumbs(container)
+    expect(breadcrumbs.map((b) => b.label)).toEqual([
+      "Evals",
+      "Test Spec",
+      "Eval",
+    ])
+    expect(breadcrumbs[1].href).toBe("/specs/proj1/task1/spec1")
+  })
+
+  it("picker page drops the spec crumb for legacy evals, keeping the rest", async () => {
+    const { container } = await renderPickerPage("legacy")
+    const breadcrumbs = getBreadcrumbs(container)
+    expect(breadcrumbs.map((b) => b.label)).toEqual(["Evals", "Eval"])
+    expect(breadcrumbs[0].href).toBe("/specs/proj1/task1")
+    expect(breadcrumbs[1].href).toBe("/specs/proj1/task1/legacy/eval1")
+    // No crumb may link to the (nonexistent) legacy spec detail page
+    expect(
+      breadcrumbs.some((b) => b.href === "/specs/proj1/task1/legacy"),
+    ).toBe(false)
+  })
+
+  it("builder route page drops the spec crumb for legacy evals, keeping the rest", async () => {
+    const { container } = await renderBuilderRoutePage("exact_match", "legacy")
+    const breadcrumbs = getBreadcrumbs(container)
+    expect(breadcrumbs.map((b) => b.label)).toEqual([
+      "Evals",
+      "Eval",
+      "Add Judge",
+    ])
+    expect(breadcrumbs[1].href).toBe("/specs/proj1/task1/legacy/eval1")
+    expect(
+      breadcrumbs.some((b) => b.href === "/specs/proj1/task1/legacy"),
+    ).toBe(false)
+  })
+})
+
+describe("EvalConfigBuilder — docs links + theme-aware colors", () => {
   beforeEach(() => {
     resetCalls()
     mockFetchTaskRuns.mockReset()
@@ -1608,7 +1773,10 @@ describe("Reference data save gate", () => {
       expect(showCalls).toContain("Save Without Testing?")
     })
 
-    it("does not render a reference data editor in the test pane", async () => {
+    it("renders a reference data editor when the prompt uses reference data", async () => {
+      // A reference-answer judge's baked prompt renders a <reference_answer> block.
+      // Without an input here the pane can only test it with that block missing, and
+      // the user then saves a judge that renders it.
       setInitialLlmJudgeValues({
         selected_algo: "llm_as_judge",
         combined_model_name: "openai:gpt-4o",
@@ -1625,10 +1793,145 @@ describe("Reference data save gate", () => {
 
       expect(
         container.querySelector('[data-testid="reference-data-field"]'),
+      ).not.toBeNull()
+    })
+
+    it("renders a reference data editor when the server requires a key the prompt no longer shows", async () => {
+      // The dead-end this closes: edit the <reference_answer> block out of a
+      // reference-answer judge's prompt and the server still requires the key, so
+      // every test run skips with missing_reference_key. Reading only the prompt
+      // would hide the one input that can satisfy it.
+      setInitialLlmJudgeValues({
+        selected_algo: "llm_as_judge",
+        combined_model_name: "openai:gpt-4o",
+        model_name: "gpt-4o",
+        provider_name: "openai",
+        judge_prompt: "Score {{ final_message }} for accuracy.",
+        default_reference_keys: ["reference_answer"],
+      })
+
+      const { container } = await renderBuilder("llm_judge")
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(
+        container.querySelector('[data-testid="reference-data-field"]'),
+      ).not.toBeNull()
+    })
+
+    it("renders a reference data editor when the default prompt could not be fetched", async () => {
+      // Nothing is known about the judge, and save bakes the server default either
+      // way. Fail open rather than leaving a judge the pane cannot test.
+      setInitialLlmJudgeValues({
+        selected_algo: "llm_as_judge",
+        combined_model_name: "openai:gpt-4o",
+        model_name: "gpt-4o",
+        provider_name: "openai",
+        default_prompt_unavailable: true,
+      })
+
+      const { container } = await renderBuilder("llm_judge")
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(
+        container.querySelector('[data-testid="reference-data-field"]'),
+      ).not.toBeNull()
+    })
+
+    it("does not render a reference data editor for a judge that never reads one", async () => {
+      setInitialLlmJudgeValues({
+        selected_algo: "llm_as_judge",
+        combined_model_name: "openai:gpt-4o",
+        model_name: "gpt-4o",
+        provider_name: "openai",
+        judge_prompt: "Score the output for quality.",
+      })
+
+      const { container } = await renderBuilder("llm_judge")
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(
+        container.querySelector('[data-testid="reference-data-field"]'),
       ).toBeNull()
       expect(
         container.querySelector('[data-testid="reference-data-edit"]'),
       ).toBeNull()
+    })
+
+    it("sends a typed reference answer to the test run", async () => {
+      setInitialLlmJudgeValues({
+        selected_algo: "llm_as_judge",
+        combined_model_name: "openai:gpt-4o",
+        model_name: "gpt-4o",
+        provider_name: "openai",
+        judge_prompt: "Score based on {{ reference_data.reference_answer }}",
+      })
+
+      const { container } = await renderBuilder("llm_judge")
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      await fireEvent.click(
+        container.querySelector(
+          '[data-testid="reference-data-edit"]',
+        ) as HTMLButtonElement,
+      )
+      await tick()
+
+      await fireEvent.input(
+        container.querySelector(
+          '[data-testid="reference-data-key"]',
+        ) as HTMLInputElement,
+        { target: { value: "reference_answer" } },
+      )
+      await fireEvent.input(
+        container.querySelector(
+          '[data-testid="reference-data-value"]',
+        ) as HTMLInputElement,
+        { target: { value: '"Frank Herbert."' } },
+      )
+      await tick()
+      // The dialog is stubbed, so invoke its Save action directly; that is what
+      // dispatches the change back to the builder.
+      const saveAction = actionButtonsByTitle["Reference Data"].find(
+        (b: Record<string, unknown>) => b.label === "Save",
+      )
+      expect(saveAction).toBeTruthy()
+      ;(saveAction!.action as () => boolean)()
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      mockTestV2EvalLlmJudge.mockResolvedValueOnce({
+        scores: { quality: 1.0 },
+        skipped_reason: null,
+        skipped_detail: null,
+      })
+      await fireEvent.click(
+        container.querySelector(
+          '[data-testid="run-test-btn"]',
+        ) as HTMLButtonElement,
+      )
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(mockTestV2EvalLlmJudge).toHaveBeenCalledTimes(1)
+      const eval_input = mockTestV2EvalLlmJudge.mock.calls[0][4]
+      expect(eval_input.reference_data).toEqual({
+        reference_answer: "Frank Herbert.",
+      })
     })
 
     it("shows Save Without Testing when prompt does NOT contain reference_data", async () => {
@@ -1661,7 +1964,7 @@ describe("Reference data save gate", () => {
   })
 
   describe("reference_keys on save", () => {
-    it("llm_judge: reference_keys are empty even when the prompt uses reference_data", async () => {
+    it("llm_judge: the request carries no reference_keys, the server derives them", async () => {
       setInitialLlmJudgeValues({
         selected_algo: "llm_as_judge",
         combined_model_name: "openai:gpt-4o",
@@ -1712,7 +2015,10 @@ describe("Reference data save gate", () => {
 
       expect(mockCreateLlmJudgeConfig).toHaveBeenCalledTimes(1)
       const savedPayload = mockCreateLlmJudgeConfig.mock.calls[0][3]
-      expect(savedPayload.reference_keys).toEqual([])
+      // The client used to post these and the endpoint wrote them over the value it
+      // derived from the eval, so a UI that could not collect them turned the
+      // requirement off. The field is gone from the request.
+      expect(savedPayload).not.toHaveProperty("reference_keys")
     })
 
     it("code_eval: reference_keys are empty when no reference data is entered", async () => {

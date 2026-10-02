@@ -34,7 +34,18 @@ def get_all_models_and_providers():
 async def test_groq(tmp_path):
     if os.getenv("GROQ_API_KEY") is None:
         pytest.skip("GROQ_API_KEY not set")
-    await run_simple_test(tmp_path, "llama_3_3_70b", "groq")
+    await run_simple_test(tmp_path, "gpt_oss_20b", "groq")
+
+
+@pytest.mark.paid
+@pytest.mark.prerelease
+async def test_cloudflare(tmp_path):
+    if (
+        os.getenv("CLOUDFLARE_API_KEY") is None
+        or os.getenv("CLOUDFLARE_ACCOUNT_ID") is None
+    ):
+        pytest.skip("CLOUDFLARE_API_KEY or CLOUDFLARE_ACCOUNT_ID not set")
+    await run_simple_test(tmp_path, "glm_4_7_flash", "cloudflare")
 
 
 @pytest.mark.parametrize(

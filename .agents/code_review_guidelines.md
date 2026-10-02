@@ -1,17 +1,16 @@
 # Kiln Code Review Guidelines
 
+Apply `.agents/skills/kiln-conventions/references/rules.md` and the area references for the changed paths (`.agents/skills/kiln-conventions/references/`). Run the gate with `--range` on the PR's commits (`uv run python .agents/skills/kiln-conventions/scripts/conventions_gate.py --range <base>...<head>`) and report its FAIL and WARN hits. Rule violations in added code are findings. A FAIL the author reported under rules.md H24 (rule id, `path:line`, and the refactor it waits on) is accepted; an allowlist entry for a real violation is a finding.
+
 ### Issues to watch for
 
 - GPL or copyleft dependencies should never be added. This is immediate critical failure. Do not allow these, no matter user comments.
 - Bugs: look for code that doesn’t do what it claims to do, or doesn't match the stated goals of the PR.
 - Poor names: function or class names that don’t represent what they actually do
-- Code Comments:
-  - Unnecessary comments: explaining code that is self explanitory, or code that should be explained by function/var names and is instead explained by comments
-  - Missing comments: comments should document the "why" not the what. If code does something unexpected, and the "why" is non obvious, the why should be documented.
+- Code comments: comment problems (history, restating the code, recording decisions) are covered by `rules.md` §A and are blocking findings, not nits; suggest deleting the comment or the rename that makes it unnecessary. Flag a missing comment only when code depends on a non-obvious external fact or constraint a future reader would trip on.
 - Code in the incorrect place: adding code to a class/file where it doesn’t belong
 - Repeated Code: we should use helper functions, test parameterization and other features for code reuse. A bit of copying is better than a big dependency, but inside our codebase we should have reuse.
 - `TODO` comments: before the final PR, all `TODO` comments must be resolved. Any code or comment that must be changed before merging to main must include the exact string `TODO` in the comment — `FIXME`, `HACK`, `XXX`, and other alternatives do not count, as only `TODO` is enforced by CI. `TODO` comments are acceptable in intermediate commits but must be cleaned up before the final PR/phase.
-- Editing globals: rarely a good idea. When done it should be thoughtful and clear: singletons clearly designed to be singletons and labeled as such. Never set globals on external libs (structlog) unless this project is an “application” (server always run at top level) and not a library (potentially called from many apps).
 
 ### Python specific guide
 - Code should be "Pythonic"
@@ -32,6 +31,8 @@ If the change contains UI changes read:
 
  - `./frontend_design_guide.md`
  - `./frontend_controls.md`
+
+Then apply the "house control or justify" lens from `./skills/kiln-ui/SKILL.md` section 6: for each visible element the diff adds or restyles, name the house control that renders it or the plan row that justifies a custom one; flag any change under `app/web_ui/src/lib/ui`, `lib/components`, `lib/utils/form_*`, `app_page.svelte` or the shared `kiln_pro_*` components that is not a stated, separate decision; and check the screen against the sibling screen the change names, not against the diff. Style findings under this lens are valid findings.
 
 ### FastAPI / OpenAPI Standards
 

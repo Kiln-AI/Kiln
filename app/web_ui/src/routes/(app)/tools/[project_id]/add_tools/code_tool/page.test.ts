@@ -71,8 +71,6 @@ function render_example_tabs() {
   return { container, tabs }
 }
 
-// The eval-type version of this picker lives in code_eval_form.svelte and is
-// tested alongside it. Both are maintained in place, so both are pinned.
 describe("Code Tool page — example picker", () => {
   it("renders the examples as a named, wrapping boxed tab group", () => {
     const { container, tabs } = render_example_tabs()

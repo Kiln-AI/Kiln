@@ -1,3 +1,5 @@
+import dataclasses
+
 from kiln_ai.adapters.parsers.base_parser import BaseParser
 from kiln_ai.adapters.run_output import RunOutput
 
@@ -23,8 +25,8 @@ class R1ThinkingParser(BaseParser):
             ValueError: If response format is invalid (missing tags, multiple tags, or no content after closing tag)
         """
 
-        # The upstream providers (litellm, openrouter, fireworks) all keep changing their response formats, sometimes adding reasoning parsing where it didn't previously exist.
-        # If they do it already, great just return. If not we parse it ourselves. Not ideal, but better than upstream changes breaking the app.
+        # Upstream providers (litellm, openrouter, fireworks) parse reasoning for some models and not others, and this changes without notice.
+        # Use their parsed reasoning when present; otherwise parse the tags ourselves.
         if (
             original_output.intermediate_outputs is not None
             and "reasoning" in original_output.intermediate_outputs
@@ -82,7 +84,10 @@ class R1ThinkingParser(BaseParser):
         if thinking_content is not None and len(thinking_content) > 0:
             intermediate_outputs["reasoning"] = thinking_content
 
-        return RunOutput(
+        # replace() rather than a fresh RunOutput so fields we don't touch
+        # (trace, output_logprobs, and anything added later) carry through.
+        return dataclasses.replace(
+            original_output,
             output=result,
             intermediate_outputs=intermediate_outputs,
         )

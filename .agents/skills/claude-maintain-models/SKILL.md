@@ -65,7 +65,7 @@ If the user asks you to find new models, **do NOT just web search "new AI models
 
 ## Phase 1B – Lagging-Provider Backfill Check (every run)
 
-Some providers — **Fireworks AI**, **Together AI**, **SiliconFlow** — expose new models on their own endpoints 1–2 weeks before those entries surface in models.dev / LiteLLM. Relying only on those two catalogs will both under-populate the provider list for the model you're adding now **and** miss the window to backfill recently-added models whose provider support has since grown.
+Some providers — **Fireworks AI**, **Together AI**, **SiliconFlow**, **Cloudflare** — expose new models on their own endpoints 1–2 weeks before those entries surface in models.dev / LiteLLM (or, for Cloudflare, never reach LiteLLM at all). Relying only on those two catalogs will both under-populate the provider list for the model you're adding now **and** miss the window to backfill recently-added models whose provider support has since grown.
 
 Run this check on **every invocation** of the skill, regardless of whether you're in discovery mode or adding a specific model.
 
@@ -74,7 +74,7 @@ Run this check on **every invocation** of the skill, regardless of whether you'r
    git log --follow -p -- libs/core/kiln_ai/adapters/ml_model_list.py | grep -E "^\+\s+name=ModelName\." | head -20
    ```
 
-2. **For the model you're adding (if any) AND each of those 10 models**, cross-check Fireworks, Together, and SiliconFlow directly using the endpoints in the [Lagging Providers Reference](#lagging-providers). Do NOT trust `models.dev` / LiteLLM as the final word for these three providers.
+2. **For the model you're adding (if any) AND each of those 10 models**, cross-check Fireworks, Together, SiliconFlow and Cloudflare directly using the endpoints in the [Lagging Providers Reference](#lagging-providers). Do NOT trust `models.dev` / LiteLLM as the final word for these providers.
 
 3. **If a lagging provider now supports a recently-added model that isn't yet in its `KilnModel` entry**, flag it to the user and propose either bundling the provider addition into the current change or opening a separate PR. Do not silently add it.
 
@@ -136,6 +136,8 @@ All changes go in `libs/core/kiln_ai/adapters/ml_model_list.py`.
 | `vertex` | Usually same as gemini_api | Verify via Vertex docs |
 | `siliconflow_cn` | Vendor/model format | Verify via SiliconFlow docs |
 | `featherless_ai` | HuggingFace repo id, case-sensitive (`zai-org/GLM-5.2`) | Verify via their `/v1/models` — see [Featherless](#featherless-ai) |
+| `typesafe` | Dotted System One version (`jev-1.13.0`) | Their `/v1/models` lists aliases only — verify by `POST /v1/systemone`, see [TypeSafe AI](#typesafe-ai) |
+| `cloudflare` | Cloudflare's own `@cf/<author>/<model>` id, verbatim (`@cf/zai-org/glm-5.3`) — no `cloudflare/` or `openai/` prefix | Verify via Cloudflare's model JSON — see [Cloudflare](#cloudflare-workers-ai) |
 
 **Every single `model_id` must be verified from an authoritative source. No exceptions.**
 
@@ -154,7 +156,7 @@ Then **cross-check against the predecessor**. The predecessor tells you *how* Ki
 
 **Common flags:**
 - `structured_output_mode` – how the model handles JSON output
-- `suggested_for_evals` / `suggested_for_data_gen` – see **zero-sum rule** below
+- `suggested_for_evals` / `suggested_for_data_gen` – see **zero-sum rule** below. If the entry also sets `available_thinking_levels`, its `default_thinking_level` must be a reasoning level — see [Judge Models Must Reason by Default](#judge-models-must-reason-by-default)
 - `multimodal_capable` / `supports_vision` / `supports_doc_extraction` – see **multimodal rules** below
 - `reasoning_capable` – for thinking/reasoning models. **Default new models to `reasoning_capable=False`** unless the model *always* emits its reasoning (see [Reasoning Capable Default](#reasoning-capable-default))
 - `temp_top_p_exclusive` – Anthropic models that can't have both temp and top_p
@@ -242,6 +244,7 @@ If the model supports configurable reasoning effort (not just on/off), add `avai
 - Reuse an existing `_THINKING_LEVELS` constant if the levels match exactly
 - Create a new constant only if levels differ; name it `{MODEL}_{PROVIDER_CONTEXT}_THINKING_LEVELS`
 - `default_thinking_level` must be one of the values in `available_thinking_levels`
+- If the entry sets `suggested_for_evals=True`, `default_thinking_level` must be `"medium"` (or `"low"` if the model has no medium level) — never `"none"`. See [Judge Models Must Reason by Default](#judge-models-must-reason-by-default)
 
 ---
 
@@ -281,7 +284,7 @@ export FEATHERLESS_AI_API_KEY="$(uv run python -c \
   "from kiln_ai.utils.config import Config; print(Config.shared().featherless_ai_api_key)" 2>/dev/null | tail -1)"
 ```
 
-Use the provider's `env_var` name from `libs/core/kiln_ai/utils/config.py`. To check which keys are available before running, print booleans only — never the values:
+Use the provider's `env_var` name from `libs/core/kiln_ai/utils/config.py`. Some providers need more than one value: Cloudflare needs both `CLOUDFLARE_API_KEY` and `CLOUDFLARE_ACCOUNT_ID` (and optionally `CLOUDFLARE_AI_GATEWAY_ID`). To check which keys are available before running, print booleans only — never the values:
 
 ```bash
 uv run python -c "from kiln_ai.utils.config import Config; c=Config.shared(); print(bool(c.fireworks_api_key))"
@@ -394,7 +397,12 @@ After all tests pass, commit the changes and open a PR against `main`.
 
 ### 5b. Create the PR
 
-Use `gh pr create` against `main`. The PR body must follow this exact format:
+Use `gh pr create` against `main`. Follow Rule 0, Rule 1 and Step 3 of the `open-pr` skill (`.agents/skills/open-pr/SKILL.md`) for the human header, the CLA and the title:
+
+- The title is `WIP: chore: ` followed by the model-list subject, for example `WIP: chore: add GLM 5.1 to model list`. Use `chore`, because adding a model is maintenance work, not a new feature. Only a human removes the `WIP: ` prefix.
+- Copy everything above `# Agentic PR Summary` from `.github/pull_request_template.md` with no change. Never fill in a placeholder or tick a box there, and never sign the CLA. Remove the `## Contributor License Agreement` section only when the PR author's GitHub username is `scosman`, `sfierro`, `leonardmq`, `tawnymanticore`, or `chiang-daniel`. Keep it, unsigned, for any other author.
+
+Replace the `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `` placeholder under `# Agentic PR Summary` with the test results, in this exact format:
 
 ```
 ## What does this PR do?
@@ -424,18 +432,13 @@ Use `gh pr create` against `main`. The PR body must follow this exact format:
 ❌ test_name[model_enum-provider] — brief reason
 
 [Repeat for each model+provider combo]
-
-## Checklists
-
-- [X] Tests have been run locally and passed
-- [X] New tests have been added to any work in /lib
 ```
 
 **Rules for the PR body:**
 - Every test that ran must appear in the per-test dump, using the full pytest parametrize ID
 - Group tests by `[Model Name] ([provider]):` headers
 - The summary section at the top gives a quick pass/skip/fail count per model+provider
-- The detailed section below the `---` lists every individual test result
+- The detailed section below the `---` inside the summary (not the `----` above `# Agentic PR Summary`) lists every individual test result
 - Use ⚠️ for content quality flakes (not real failures), ❌ for real errors
 
 ---
@@ -452,6 +455,7 @@ Use `gh pr create` against `main`. The PR body must follow this exact format:
 - [ ] Flags inherited from predecessor and adjusted for quirks
 - [ ] `reasoning_capable` defaulted to `False` for adaptive-reasoning models (only `True` for always-emits-reasoning models — see [Reasoning Capable Default](#reasoning-capable-default))
 - [ ] Thinking levels configured if model supports reasoning effort (see [Thinking Levels Reference](#thinking-levels-reference))
+- [ ] Every `suggested_for_evals` entry with thinking levels defaults to `"medium"` (or `"low"`), never `"none"` (see [Judge Models Must Reason by Default](#judge-models-must-reason-by-default))
 - [ ] Preserve existing comments from predecessor (e.g. reasoning notes, MIME type groupings)
 - [ ] Zero-sum applied if model is suggested for evals/data gen
 - [ ] RAG config templates updated if the new model replaces one used in `app/web_ui/src/routes/(app)/docs/rag_configs/[project_id]/add_search_tool/rag_config_templates.ts`
@@ -459,7 +463,7 @@ Use `gh pr create` against `main`. The PR body must follow this exact format:
 - [ ] Smoke test passed
 - [ ] Full test suite passed
 - [ ] Failures cross-checked against an existing provider before being called regressions (see 4e)
-- [ ] PR created against `main` with test results in the body
+- [ ] PR created against `main` with a `WIP: ` title, the untouched human header, and test results in the Agentic PR Summary
 
 ---
 
@@ -619,6 +623,46 @@ Serverless host for HuggingFace-hosted open weights. Several hard constraints �
 - **Not in models.dev or the LiteLLM catalog**, so their `/v1/models` endpoint is the only authoritative source. See [Lagging Providers](#lagging-providers).
 - Quality varies per deployment — verify with a paid run. Qwen 3.5 397B, for example, returns degenerate output (rambles to the token cap) and was excluded for that reason.
 
+### TypeSafe AI
+
+Serves TypeSafe's Jev models (System One API). The only provider in the catalog that does not run through LiteLLM — read this before adding an entry:
+
+- **Adapter-backed, not LiteLLM-backed.** Every provider entry must set `adapter=ModelAdapterId.jev`; `JevAdapter` calls `POST /v1/systemone` directly. `lite_llm_core_config_for_provider` and `get_litellm_provider_info` raise for `typesafe` on purpose, so the LiteLLM parametrized tests exclude it.
+- **Structured output only.** No text generation, no tools, no multi-turn. A task runs only if its output schema maps onto Jev's question types (enum, boolean, score); anything else fails before the network call. Set `supports_structured_output=True`, `supports_data_gen=False`, `supports_function_calling=False`, and `structured_output_mode=StructuredOutputMode.json_schema`.
+- **No logprobs.** `supports_logprobs=False`. Jev returns its own per-answer probabilities instead, which is what keeps it out of G-Eval.
+- **Not in models.dev or the LiteLLM catalog, and `GET /v1/models` cannot confirm a `model_id`.** It lists aliases (`jev-latest`, `jev-preview`), not the pinned versions Kiln registers, and it returns `{"models": [{"name", ...}]}` rather than the OpenAI `{"data": [{"id", ...}]}` shape, so the shared `fetch_openai_compat` path cannot read it either. That is why `typesafe` is in `SKIP_PROVIDERS` in `.agents/scripts/provider_utils.py` rather than in `PROVIDER_CONFIG`. The authoritative check for a pinned id is a `POST /v1/systemone` round trip that the API accepts — that is how `jev-1.13.0` was confirmed. (The listing is still what the connect flow uses to validate a key; it is account-scoped and rejects a bad one.)
+
+### Cloudflare (Workers AI)
+
+Runs through LiteLLM's generic `openai/` route against Cloudflare's OpenAI-compatible endpoint (`/accounts/{id}/ai/v1/chat/completions`), with an optional AI Gateway header. Kiln does **not** use LiteLLM's `cloudflare/` provider. Read this before adding or changing any entry:
+
+- **Inclusion rule: only Cloudflare's newer, OpenAI-format text-generation models.** Cloudflare has two generations of text model. The newer ones (GLM, Kimi, DeepSeek V4, Gemma 4, Qwen 3.8, Nemotron 3) speak OpenAI Chat Completions natively. The older ones (Llama 3.x/4, Mistral, older Qwen, GPT-OSS, Granite, the LoRA bases) sit behind a translation layer: they default to **256 output tokens** (silent truncation) and have unreliable tool calling and JSON mode. Do not add the older ones.
+- **How to tell them apart:** look at the model's input schema in the catalog JSON. OpenAI-format models list `max_completion_tokens` (and `tool_choice`); older models list `prompt`, `raw` and `lora` instead, and no `max_completion_tokens`:
+  ```bash
+  jq -r '.models[] | select(.task.name=="Text Generation")
+    | [.name, (if (.schema.input | tostring | test("max_completion_tokens")) then "openai-format" else "OLDER - skip" end)] | @tsv' /tmp/cf_models.json
+  ```
+- **Also skip:** coding models (`kimi-*-code`, `qwen*-coder-*`), `llama-guard-*` (classifier), `-lora` bases, and models Kiln has no `ModelName` for unless the user asks for a new model.
+- **Usually a new provider on an existing model.** Most Cloudflare models are already in Kiln under other providers; add a `KilnModelProvider(name=ModelProviderName.cloudflare, ...)` to the existing `KilnModel`.
+- **Setting flags from the catalog's `properties[]`** (confirm every flag with the paid tests — the catalog has no JSON-mode flag):
+
+  | Cloudflare property | Kiln setting |
+  |---|---|
+  | `function_calling: "true"` | leave `supports_function_calling` at its default; set `False` if the tool tests fail |
+  | `vision: "true"` | `supports_vision`, `multimodal_capable`, MIME types TXT/MD/JPG/PNG; start broad, narrow on 400s. Don't set `supports_doc_extraction`: the document extractor doesn't send the AI Gateway header, so extraction would bypass the user's gateway |
+  | `reasoning: "true"` | keep `reasoning_capable=False` (see [Reasoning Capable Default](#reasoning-capable-default)); LiteLLM already reads `reasoning_content` |
+  | `reasoning_effort.supported_efforts` | source for `available_thinking_levels` if you add them; `mandatory: true` means reasoning cannot be turned off. Cloudflare edits these, so re-read on every run |
+  | `require_workers_paid: "true"` | no Kiln field. Free-plan users get 403 / code 5035. Mention it in the PR |
+  | `planned_deprecation_date` present | do **not** add the model |
+
+- **Structured output:** these models take the OpenAI `response_format` envelope, so start from `json_schema` and fall back only on test failures. Cloudflare's JSON mode doesn't support streaming.
+- **Don't send `max_tokens`.** Live tests showed no truncation on the OpenAI-format models without it.
+- **Workers Paid:** many of the newer models need the Workers Paid plan. Paid tests need an account on it.
+- **Rate limits:** 300 requests/minute for most text models, but only 20/minute per model for Workers Paid-only models. Don't run the paid suite with many workers against one model; use `-n 4` or lower.
+- **Slow models:** Qwen 3.8 27B runs at about 23 tokens/s. Long non-streaming generations hit Cloudflare's server-side timeout (HTTP 408, code 3046, after about 2 minutes).
+- **No cost reporting.** Kiln sends bare `@cf/...` ids through LiteLLM's `openai/` route, which never match LiteLLM's price map (its few entries are keyed `cloudflare/@cf/...`), so every Cloudflare run records tokens with `cost: null`.
+- **No Model Substitution.** When Cloudflare retires a model it may **silently alias** the old ID to a different, often more expensive, model (Kimi K2.5 → K2.6 in May 2026). The response still echoes the requested ID, so Kiln can't detect it at runtime. Cloudflare announces retirements by adding `planned_deprecation_date` to the model (notice has been 13–22 days). **Remove or mark deprecated every Kiln Cloudflare entry that gains a `planned_deprecation_date`, before that date.** The `kiln-check-deprecation` skill reports these dates.
+
 ### Qwen3 / Thinking Models
 - Thinking variants: `reasoning_capable=True`, `parser=ModelParserID.r1_thinking`
 - No-thinking variants: `formatter=ModelFormatterID.qwen3_style_no_think`
@@ -651,6 +695,16 @@ No API provides the available thinking levels programmatically — they must be 
    If `reasoning` is absent, the model does not support effort levels — skip thinking levels entirely.
 
 5. **Smoke test** — as a last resort, send a request with an invalid effort level and check the error message, which often enumerates the valid values.
+
+### Judge Models Must Reason by Default
+
+**If a provider entry sets both `suggested_for_evals=True` and `available_thinking_levels`, set `default_thinking_level` to `"medium"` when the model offers a medium level, else `"low"`. Never leave it at `"none"` or unset.**
+
+The V2 LLM judge runner builds the judge model's run config without a `thinking_level`, so the adapter falls back to the provider entry's `default_thinking_level`. A default of `"none"` therefore ships a judge that never reasons, and the eval results page shows no thinking for it.
+
+This applies only to judge-tagged entries. A non-judge entry of the same model may keep `"none"` — the two are set independently per provider entry.
+
+`test_judge_models_with_thinking_levels_default_to_reasoning` in `libs/core/kiln_ai/adapters/test_ml_model_list.py` enforces this across the whole list.
 
 ### Important Distinctions
 
@@ -725,7 +779,7 @@ curl -s https://models.dev/api.json | jq '.["PROVIDER"].models["MODEL_ID"]'
 
 ### Lagging Providers
 
-Fireworks, Together, and SiliconFlow typically expose new models on their own endpoints 1–2 weeks before models.dev / LiteLLM catch up. For these providers, **always** cross-check directly — both when adding a new model and when running the [Phase 1B backfill check](#phase-1b--lagging-provider-backfill-check-every-run).
+Fireworks, Together, SiliconFlow and Cloudflare typically expose new models on their own endpoints 1–2 weeks before models.dev / LiteLLM catch up. For these providers, **always** cross-check directly — both when adding a new model and when running the [Phase 1B backfill check](#phase-1b--lagging-provider-backfill-check-every-run).
 
 **Fireworks AI** — model pages are the most current source. WebFetch directly:
 ```
@@ -779,6 +833,40 @@ grep -Fx "zai-org/GLM-5.2" /tmp/feath_ids.txt   # exit 0 = safe to add
 ```
 
 Slugs are **case-sensitive** (`google/gemma-4-31B-it`, not `-31b-it`). Always confirm `is_gated` is false and cross-check `features.tool_use` / `features.image_input` against the flags you set — don't claim capabilities the endpoint doesn't advertise.
+
+**Cloudflare Workers AI** — the authoritative list is Cloudflare's public, unauthenticated catalog JSON. It is about 900 KB and can return a transient 502, so save it to a file (retry on 502) and filter with `jq`; never WebFetch it:
+
+```bash
+curl -s https://ai-cloudflare-com.pages.dev/api/models -o /tmp/cf_models.json
+
+# Text-generation models, newest first, with Kiln-relevant flags
+jq -r '.models[] | select(.task.name=="Text Generation")
+  | (reduce .properties[] as $p ({}; .[$p.property_id]=$p.value)) as $p
+  | [.name, .created_at[0:10], ($p.context_window//"-"),
+     (if $p.function_calling=="true" then "tools" else "" end),
+     (if $p.vision=="true" then "vision" else "" end),
+     (if $p.reasoning=="true" then "reasoning" else "" end),
+     (if $p.require_workers_paid=="true" then "paid" else "" end),
+     (if $p.lora=="true" then "lora" else "" end),
+     ($p.planned_deprecation_date//"")] | @tsv' /tmp/cf_models.json | sort -t$'\t' -k2 -r
+
+# Full record for one model (drop the large schema)
+jq '.models[] | select(.name=="@cf/zai-org/glm-5.3") | del(.schema)' /tmp/cf_models.json
+```
+
+Model IDs are the `name` field (`@cf/<author>/<model>`). With credentials (`CLOUDFLARE_API_KEY` with Workers AI access, plus `CLOUDFLARE_ACCOUNT_ID`), the official API returns the same records; add `&include_deprecated=true` to see models retired in the last three months:
+
+```bash
+curl -s "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai/models/search?task=Text%20Generation&per_page=100" \
+  -H "Authorization: Bearer $CLOUDFLARE_API_KEY" | jq -r '.result[].name'
+```
+
+- **Cross-check:** models.dev, provider key `cloudflare-workers-ai` (`curl -s https://models.dev/api.json | jq '.["cloudflare-workers-ai"].models | keys[]'`). It syncs hourly and is good for spotting additions, but it no longer deletes retired models, so never use it to decide a model still exists.
+- **Never use LiteLLM's catalog for Cloudflare.** Its `cloudflare/` entries are a one-time import from June 2026: they miss newer models and still list retired ones.
+- **Fallback:** the per-model JSON files in the `cloudflare/cloudflare-docs` GitHub repo, `src/content/workers-ai-models/*.json` (same shape as the catalog).
+- Also scan the [Workers AI changelog](https://developers.cloudflare.com/changelog/product/workers-ai/) for launches in the last two weeks, in case the catalog lags.
+
+See [Cloudflare (Workers AI)](#cloudflare-workers-ai) in Provider Quirks for the inclusion rule and flags.
 
 **SiliconFlow** — WebFetch the public model catalog page, or a specific model page if you have the vendor/model path:
 ```

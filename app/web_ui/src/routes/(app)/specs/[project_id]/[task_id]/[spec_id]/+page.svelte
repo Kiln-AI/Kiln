@@ -631,9 +631,11 @@
                       )
                     : "None"
                   : "Loading...",
-                link: eval_progress?.current_eval_method
-                  ? `/specs/${project_id}/${task_id}/${spec_id}/${spec.eval_id}/eval_configs`
-                  : undefined,
+                link:
+                  eval_progress?.current_eval_method &&
+                  evaluator?.template !== "rag"
+                    ? `/specs/${project_id}/${task_id}/${spec_id}/${spec.eval_id}/eval_configs`
+                    : undefined,
               },
               {
                 name: "Test Dataset",

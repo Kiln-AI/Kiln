@@ -6,6 +6,7 @@ from kiln_ai.adapters.adapter_registry import litellm_core_provider_config
 from kiln_ai.adapters.docker_model_runner_tools import DockerModelRunnerConnection
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
+    ModelAdapterId,
     ModelName,
     ModelParserID,
     ModelProviderName,
@@ -16,7 +17,10 @@ from kiln_ai.adapters.provider_tools import (
     built_in_provider_from_model_id,
     builtin_model_from,
     check_provider_warnings,
+    cloudflare_base_url,
+    cloudflare_headers,
     core_provider,
+    default_adapter_for_provider,
     find_user_model,
     finetune_cache,
     finetune_from_id,
@@ -34,6 +38,7 @@ from kiln_ai.adapters.provider_tools import (
     provider_warnings,
     user_model_to_provider,
 )
+from kiln_ai.adapters.user_model_entry import UserModelEntry
 from kiln_ai.datamodel import Finetune, StructuredOutputMode, Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
@@ -151,6 +156,69 @@ def test_check_provider_warnings_unknown_provider():
     check_provider_warnings("unknown_provider")
 
 
+def test_check_provider_warnings_typesafe_missing_key(mock_config):
+    mock_config.return_value = None
+
+    with pytest.raises(ValueError) as exc_info:
+        check_provider_warnings(ModelProviderName.typesafe)
+
+    assert "Attempted to use TypeSafe AI without an API key set." in str(exc_info.value)
+
+
+def test_cloudflare_provider_warning_requires_key_and_account_not_gateway():
+    assert provider_warnings[ModelProviderName.cloudflare].required_config_keys == [
+        "cloudflare_api_key",
+        "cloudflare_account_id",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "config_values,expected",
+    [
+        ({"cloudflare_api_key": "key", "cloudflare_account_id": "acct"}, True),
+        ({"cloudflare_api_key": "key", "cloudflare_account_id": None}, False),
+        ({"cloudflare_api_key": None, "cloudflare_account_id": "acct"}, False),
+    ],
+)
+async def test_provider_enabled_cloudflare(mock_config, config_values, expected):
+    mock_config.side_effect = lambda key: config_values.get(key)
+
+    assert await provider_enabled(ModelProviderName.cloudflare) is expected
+
+
+def test_cloudflare_base_url():
+    assert (
+        cloudflare_base_url("abc123")
+        == "https://api.cloudflare.com/client/v4/accounts/abc123/ai/v1"
+    )
+
+
+def test_cloudflare_base_url_encodes_path_characters():
+    assert (
+        cloudflare_base_url("a/b?c")
+        == "https://api.cloudflare.com/client/v4/accounts/a%2Fb%3Fc/ai/v1"
+    )
+
+
+@pytest.mark.parametrize(
+    "gateway_id,expected",
+    [
+        (None, None),
+        ("", None),
+        ("gw", {"cf-aig-gateway-id": "gw"}),
+    ],
+)
+def test_cloudflare_headers(gateway_id, expected):
+    assert cloudflare_headers(gateway_id) == expected
+
+
+def test_check_provider_warnings_typesafe_with_key(mock_config):
+    mock_config.return_value = "test-typesafe-key"
+
+    check_provider_warnings(ModelProviderName.typesafe)
+
+
 @pytest.mark.parametrize(
     "provider_name",
     [
@@ -209,6 +277,9 @@ def test_provider_name_from_id_case_sensitivity():
         (ModelProviderName.fireworks_ai, "Fireworks AI"),
         (ModelProviderName.siliconflow_cn, "SiliconFlow"),
         (ModelProviderName.featherless_ai, "Featherless AI"),
+        (ModelProviderName.cloudflare, "Cloudflare"),
+        (ModelProviderName.typesafe, "TypeSafe AI"),
+        (ModelProviderName.vertex, "Gemini Enterprise Agent Platform"),
         (ModelProviderName.kiln_fine_tune, "Fine Tuned Models"),
         (ModelProviderName.kiln_custom_registry, "Custom Models"),
     ],
@@ -1140,6 +1211,54 @@ def test_lite_llm_core_config_incorrect_openai_compatible_provider_name(
         )
 
 
+@pytest.mark.parametrize(
+    "gateway_id,expected_headers",
+    [
+        (None, None),
+        ("my-gateway", {"cf-aig-gateway-id": "my-gateway"}),
+    ],
+)
+def test_lite_llm_core_config_for_provider_cloudflare(
+    mock_config_for_lite_llm_core_config, gateway_id, expected_headers
+):
+    config_instance = mock_config_for_lite_llm_core_config.shared.return_value
+    config_instance.cloudflare_api_key = "test-cloudflare-key"
+    config_instance.cloudflare_account_id = "test-account"
+    config_instance.cloudflare_ai_gateway_id = gateway_id
+
+    config = lite_llm_core_config_for_provider(ModelProviderName.cloudflare)
+
+    assert config == LiteLlmCoreConfig(
+        base_url="https://api.cloudflare.com/client/v4/accounts/test-account/ai/v1",
+        default_headers=expected_headers,
+        additional_body_options={"api_key": "test-cloudflare-key"},
+    )
+
+
+@pytest.mark.parametrize("account_id", [None, ""])
+def test_lite_llm_core_config_for_provider_cloudflare_missing_account(
+    mock_config_for_lite_llm_core_config, account_id
+):
+    config_instance = mock_config_for_lite_llm_core_config.shared.return_value
+    config_instance.cloudflare_api_key = "test-cloudflare-key"
+    config_instance.cloudflare_account_id = account_id
+
+    with pytest.raises(
+        ValueError, match="Attempted to use Cloudflare without an API token"
+    ):
+        lite_llm_core_config_for_provider(ModelProviderName.cloudflare)
+
+
+def test_lite_llm_core_config_for_provider_typesafe_raises(
+    mock_config_for_lite_llm_core_config,
+):
+    # TypeSafe's System One API is served by its own adapter, never LiteLLM.
+    with pytest.raises(
+        ValueError, match="TypeSafe AI models do not run through LiteLLM"
+    ):
+        lite_llm_core_config_for_provider(ModelProviderName.typesafe)
+
+
 def test_lite_llm_core_config_for_provider_with_string(
     mock_config_for_lite_llm_core_config,
 ):
@@ -1614,3 +1733,62 @@ def test_kiln_model_provider_from_legacy_under_custom_registry(mock_config):
     assert provider.model_id == "custom-model"
     assert provider.untested_model is True
     assert provider.supports_structured_output is False
+
+
+@pytest.mark.parametrize(
+    "provider_name,expected",
+    [
+        (ModelProviderName.typesafe, ModelAdapterId.jev),
+        (ModelProviderName.openai, ModelAdapterId.litellm),
+        (ModelProviderName.openai_compatible, ModelAdapterId.litellm),
+        (ModelProviderName.ollama, ModelAdapterId.litellm),
+    ],
+)
+def test_default_adapter_for_provider(provider_name, expected):
+    assert default_adapter_for_provider(provider_name) == expected
+
+
+@pytest.mark.parametrize(
+    "provider_name,expected",
+    [
+        (ModelProviderName.typesafe, ModelAdapterId.jev),
+        (ModelProviderName.openai, ModelAdapterId.litellm),
+    ],
+)
+def test_custom_model_gets_provider_default_adapter(
+    mock_config, provider_name, expected
+):
+    mock_config.return_value = "fake-api-key"
+
+    provider = kiln_model_provider_from("custom_model", provider_name)
+
+    assert provider.adapter == expected
+
+
+@pytest.mark.parametrize(
+    "provider_id,expected",
+    [
+        (ModelProviderName.typesafe, ModelAdapterId.jev),
+        (ModelProviderName.openai, ModelAdapterId.litellm),
+    ],
+)
+def test_user_model_gets_provider_default_adapter(provider_id, expected):
+    entry = UserModelEntry(
+        provider_type="builtin",
+        provider_id=provider_id,
+        model_id="some-model",
+    )
+
+    assert user_model_to_provider(entry).adapter == expected
+
+
+def test_user_model_to_provider_cannot_override_adapter():
+    """The adapter follows the provider: a user override would break routing."""
+    entry = UserModelEntry(
+        provider_type="builtin",
+        provider_id=ModelProviderName.typesafe,
+        model_id="jev-preview",
+        overrides={"adapter": ModelAdapterId.litellm},
+    )
+
+    assert user_model_to_provider(entry).adapter == ModelAdapterId.jev

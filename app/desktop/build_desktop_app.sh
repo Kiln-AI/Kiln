@@ -62,11 +62,11 @@ if [[ $* == *--build-bootloader* ]]; then
   cd desktop/build/bootloader
 
   echo "Downloading pyinstaller"
-  curl -L https://github.com/pyinstaller/pyinstaller/archive/refs/tags/v6.11.1.tar.gz -o pyinstaller.tar.gz
+  curl -L https://github.com/pyinstaller/pyinstaller/archive/refs/tags/v6.22.3.tar.gz -o pyinstaller.tar.gz
   tar -xzf pyinstaller.tar.gz
   # Remove the old pyinstaller if it exists
   rm -rf pyinstaller
-  mv pyinstaller-6.11.1 pyinstaller
+  mv pyinstaller-6.22.3 pyinstaller
   cd pyinstaller/bootloader
 
   echo "Building bootloader"
@@ -100,6 +100,8 @@ elif [ "$(uname)" == "Linux" ]; then
   echo "Building Linux App"
   cp desktop/mac_taskbar.png desktop/build/taskbar.png
   PLATFORM_OPTS="--windowed --onefile --splash=../win_splash.png --icon=../mac_icon.png"
+  # StatusNotifierItem tray: D-Bus client and the icons the panel recolors
+  PLATFORM_OPTS="$PLATFORM_OPTS --add-data ../linux_tray/icons:./linux_tray/icons --hidden-import=app.desktop.linux_tray.sni_tray --hidden-import=jeepney.io.threading"
 else
   echo "Unsupported operating system: $(uname)"
   exit 1
@@ -107,10 +109,13 @@ fi
 
 # Builds the desktop app
 # We should use a spec instead of a long-winded command line
+# eval_helpers is imported only by user scorer code at runtime (the code-eval
+# examples embed the import as a string), so PyInstaller can't discover it.
 pyinstaller $(printf %s "$PLATFORM_OPTS")  \
   --add-data "./taskbar.png:." --add-data "../../web_ui/build:./web_ui/build" \
   --noconfirm --distpath=./desktop/build/dist --workpath=./desktop/build/work \
   -n Kiln --specpath=./desktop/build --hidden-import=tiktoken_ext.openai_public --hidden-import=tiktoken_ext \
+  --hidden-import=kiln_ai.adapters.eval.eval_helpers \
   --hidden-import=litellm \
   --collect-all=litellm \
   --paths=. ./desktop/desktop.py

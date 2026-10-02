@@ -3,14 +3,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import yaml
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from kiln_ai.utils.config import Config
+from kiln_server.custom_errors import connect_custom_errors
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.check_entitlements_v1_check_entitlements_get_response_check_entitlements_v1_check_entitlements_get import (
     CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet,
 )
 from app.desktop.studio_server.settings_api import connect_settings
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from kiln_server.custom_errors import connect_custom_errors
-from kiln_ai.utils.config import Config
 
 
 @pytest.fixture

@@ -8,9 +8,9 @@ The prompt_template is rendered with Jinja2 using the EvalTaskInput fields
 as the template namespace.
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from jinja2 import UndefinedError
+from jinja2 import UndefinedError, meta
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.eval.base_eval import (
@@ -31,6 +31,7 @@ from kiln_ai.adapters.eval.eval_utils.scoring_utils import (
     raw_output_from_logprobs,
     score_from_token_string,
 )
+from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import check_reference_key
 from kiln_ai.adapters.ml_model_list import (
     ModelProviderName,
     built_in_models_from_provider,
@@ -54,6 +55,17 @@ _DEFAULT_SYSTEM_PROMPT = (
     "Your job is to evaluate a model's performance on a task. "
     "Score the output according to the criteria provided."
 )
+
+
+def _unknown_template_variables(template: str, namespace: dict[str, Any]) -> set[str]:
+    """Top-level variables the template uses that aren't EvalTaskInput fields.
+
+    Distinguishes a template-authoring bug (typo'd variable name) from
+    genuinely missing data (e.g. an absent reference_data key) when rendering
+    raises UndefinedError.
+    """
+    ast = _template_env.parse(template)
+    return meta.find_undeclared_variables(ast) - set(namespace)
 
 
 class _LlmJudgeTask(Task, parent_of={}):
@@ -104,6 +116,26 @@ class LlmJudgeEval(BaseV2EvalBridge):
         props = self.properties
         assert isinstance(props, LlmJudgeProperties)
 
+        # Before the render and before any model call: a judge that declares a
+        # reference key it cannot get must skip loudly, not score blind. A template can
+        # be permissive (a hand-written one may guard its own lookups), so this declared
+        # requirement is what refuses missing ground truth. It also runs first for the
+        # backend-baked default, whose `<reference_answer>` block is unconditional —
+        # that one would raise below and land on the same skip, one step later.
+        #
+        # Unlike the runner's early skips, this one cannot be hoisted ahead of trace
+        # generation (`eval_runner.py` run_job): the requirement is a property of this
+        # judge's config, and the runner scores one item against many judges. Reading it
+        # there would put per-type properties back in the runner, which is exactly what
+        # the `evaluate()` contract exists to keep out.
+        for reference_key in props.reference_keys:
+            _, skip_reason, skip_detail = check_reference_key(reference_key, eval_input)
+            if skip_reason is not None:
+                return V2EvalResult(
+                    skipped_reason=skip_reason,
+                    skipped_detail=skip_detail,
+                )
+
         namespace = eval_input.model_dump()
         # Always bound (even when unset) so templates referencing it never hit
         # StrictUndefined; blank steps render as an empty <steps> body.
@@ -120,6 +152,17 @@ class LlmJudgeEval(BaseV2EvalBridge):
                 skipped_detail=f"Template rendering failed: {e}",
             )
         except UndefinedError as e:
+            # A typo'd template variable and genuinely missing reference data
+            # both raise UndefinedError; only the latter is a data problem.
+            unknown = _unknown_template_variables(props.prompt_template, namespace)
+            if unknown:
+                return V2EvalResult(
+                    skipped_reason=SkippedReason.extraction_failed,
+                    skipped_detail=(
+                        "Template references unknown variable(s): "
+                        + ", ".join(sorted(unknown))
+                    ),
+                )
             return V2EvalResult(
                 skipped_reason=SkippedReason.missing_reference_key,
                 skipped_detail=f"Template references missing data: {e}",

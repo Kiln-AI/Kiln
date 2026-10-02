@@ -554,13 +554,10 @@ describe("eval detail page — add eval data", () => {
     return alerts
   }
 
-  it("refuses an eval-input-backed test split with the new-format wording", async () => {
-    // This flow adds TaskRuns, so an EvalInput-backed test split has no tag it can write
-    // under. It gets its own wording rather than the tag-filter one below: "use a tag
-    // filter instead" is not advice that helps when the store is the problem. The copy
-    // names the format rather than the internal types behind it — "eval inputs" and
-    // "task runs" appear nowhere else in the UI. Untested copy is how this branch
-    // already shipped one swapped-description bug (f191e0574).
+  it("hides the add-data button for an eval-input-backed test split and says why", async () => {
+    // This flow adds TaskRuns, so an EvalInput-backed test split has nothing it can
+    // add to. Rather than a button that only ever alerts, the page offers no button
+    // and explains where the data comes from (the eval builder mints it at save).
     setEvalResponse({
       id: "eval1",
       name: "Test Eval",
@@ -571,9 +568,14 @@ describe("eval detail page — add eval data", () => {
       output_scores: [{ name: "accuracy", type: "five_star" }],
     })
 
-    expect(await alert_from_add_eval_data()).toEqual([
-      "This eval uses our new eval dataset format, which can't be generated from this UI.",
-    ])
+    const container = await render_page()
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Add Eval Data",
+    )
+    expect(button).toBeUndefined()
+    expect(container.textContent?.replace(/\s+/g, " ")).toContain(
+      "created by the eval builder and can't be extended here",
+    )
     expect(mockGoto).not.toHaveBeenCalled()
   })
 
@@ -589,7 +591,7 @@ describe("eval detail page — add eval data", () => {
     })
 
     expect(await alert_from_add_eval_data()).toEqual([
-      "No eval or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
+      "No test or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
     ])
     expect(mockGoto).not.toHaveBeenCalled()
   })
@@ -628,6 +630,51 @@ describe("eval detail page — eval data goals", () => {
   })
 
   it("asks for more golden data below 12", async () => {
+    setProgressResponse(progress(25, 11))
+
+    const text = visible_text(await render_page())
+
+    expect(text).toContain(
+      "You require additional eval data. You only have 11 golden items. We suggest at least 12 items.",
+    )
+  })
+
+  it("holds golden to the same 12 once a default judge is set", async () => {
+    // A default judge sends this step down a second branch, and that branch used to
+    // measure golden against the test set's 25 while the copy under it named 12. Every
+    // eval with a judge and 12-24 golden items read "You only have 18 golden items. We
+    // suggest at least 12 golden items." -- a bar it had already cleared.
+    setEvalResponse({
+      id: "eval1",
+      name: "Test Eval",
+      eval_set_filter_id: "tag::test",
+      eval_configs_filter_id: "tag::golden",
+      eval_configs: [],
+      output_scores: [{ name: "accuracy", type: "five_star" }],
+      current_config_id: "eval_config1",
+    })
+    setProgressResponse(progress(25, 12))
+
+    const text = visible_text(await render_page())
+
+    expect(text).toContain(
+      "You have 25 test dataset items and 12 golden items.",
+    )
+    expect(text).not.toContain("You require additional eval data")
+  })
+
+  it("still asks for more golden data below 12 once a default judge is set", async () => {
+    // The pair that pins the branch above to the golden goal rather than to no check at
+    // all.
+    setEvalResponse({
+      id: "eval1",
+      name: "Test Eval",
+      eval_set_filter_id: "tag::test",
+      eval_configs_filter_id: "tag::golden",
+      eval_configs: [],
+      output_scores: [{ name: "accuracy", type: "five_star" }],
+      current_config_id: "eval_config1",
+    })
     setProgressResponse(progress(25, 11))
 
     const text = visible_text(await render_page())

@@ -16,6 +16,15 @@ if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
 
 
+TASK_OUTPUT_SCHEMA_ERROR_PREFIX = (
+    "This task requires a specific output schema. While the model produced JSON, "
+    "that JSON didn't meet the schema. Search 'Troubleshooting Structured Data "
+    "Issues' in our docs for more information."
+)
+"""User-facing prefix for a model output failing the task's output schema.
+Single source of truth: retry classification recognizes these errors by it."""
+
+
 class RequirementRating(BaseModel):
     """Rating for a specific requirement within a task output."""
 
@@ -69,7 +78,7 @@ class TaskOutputRating(KilnBaseModel):
         description="The ratings of the requirements of the task. The ID can be either a task_requirement_id or a named rating for an eval_output_score name (in format 'named::<name>').",
     )
 
-    # Previously we stored rating values as a dict of floats, but now we store them as RequirementRating objects.
+    # Older files store requirement_ratings as a dict of floats; upgrade them to RequirementRating on load.
     @model_validator(mode="before")
     def upgrade_old_format(cls, data: dict) -> dict:
         if not isinstance(data, dict):
@@ -364,7 +373,7 @@ class TaskOutput(KilnBaseModel):
             validate_schema_with_value_error(
                 output_parsed,
                 task.output_json_schema,
-                "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+                TASK_OUTPUT_SCHEMA_ERROR_PREFIX,
             )
         return self
 

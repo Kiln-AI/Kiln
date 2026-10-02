@@ -12,6 +12,7 @@
   import ToolsSelector from "$lib/ui/run_config_component/tools_selector.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import ExampleTabs from "$lib/ui/example_tabs.svelte"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
@@ -25,9 +26,9 @@
     generateCodeToolPlaceholder,
     generateImportHelper,
     shouldInsertImport,
-    isCodeUnmodified,
     generateExamples,
     plainTextParamsSchema,
+    resolveStep2Code,
   } from "$lib/utils/code_tool_helpers"
 
   import { agentInfo } from "$lib/agent"
@@ -90,7 +91,6 @@
   let create_trust_dialog: CodeTrustDialog
   let examples_dialog: Dialog
   let active_example_tab = 0
-  let example_tab_buttons: HTMLButtonElement[] = []
 
   $: examples = generateExamples()
 
@@ -146,26 +146,21 @@
       parameters_schema,
       tool_description,
     )
-    if (current_step === "define") {
-      // First visit to step 2
-      if (clone_code) {
-        code = clone_code
-        clone_code = null
-      } else {
-        code = new_placeholder
-      }
-      generated_placeholder = new_placeholder
-      schema_changed_hint = false
-    } else {
-      // Returning from step 1 after editing schema
-      if (isCodeUnmodified(code, generated_placeholder)) {
-        code = new_placeholder
-        generated_placeholder = new_placeholder
-        schema_changed_hint = false
-      } else if (new_placeholder !== generated_placeholder) {
-        generated_placeholder = new_placeholder
-        schema_changed_hint = true
-      }
+    // Decide the editor contents from the code state itself, not current_step:
+    // browser Back pops the shallow-routing step, so current_step reads
+    // "define" on a return and would wrongly wipe user code with a placeholder.
+    const resolved = resolveStep2Code({
+      code,
+      newPlaceholder: new_placeholder,
+      generatedPlaceholder: generated_placeholder,
+      schemaChangedHint: schema_changed_hint,
+      cloneCode: clone_code,
+    })
+    code = resolved.code
+    generated_placeholder = resolved.generatedPlaceholder
+    schema_changed_hint = resolved.schemaChangedHint
+    if (resolved.cloneConsumed) {
+      clone_code = null
     }
 
     // Push a shallow-routing history entry so browser Back returns to step 1
@@ -182,8 +177,9 @@
     test_panel_has_tested = false
   }
 
-  // Resolve the display name (which is the function name for code tools) from the
-  // available_tools store so the import comment uses the real function name.
+  // Resolve the callable function name (available_tools carries it in
+  // function_name, separate from the display name) so the import comment
+  // matches what the sandbox dispatches on.
   function resolve_tool_function_name(tool_id: string): string {
     const tool_sets = $available_tools[project_id]
     if (!tool_sets) return tool_id
@@ -217,36 +213,6 @@
   function show_examples() {
     active_example_tab = 0
     examples_dialog.show()
-  }
-
-  function focus_example_tab(index: number) {
-    active_example_tab = index
-    example_tab_buttons[index]?.focus()
-  }
-
-  function on_example_tab_keydown(event: KeyboardEvent, index: number) {
-    // Leave browser/OS shortcuts alone (Alt+Left is Back on Windows/Linux).
-    if (event.altKey || event.ctrlKey || event.metaKey) {
-      return
-    }
-    const last = examples.length - 1
-    switch (event.key) {
-      case "ArrowRight":
-        focus_example_tab(index === last ? 0 : index + 1)
-        break
-      case "ArrowLeft":
-        focus_example_tab(index === 0 ? last : index - 1)
-        break
-      case "Home":
-        focus_example_tab(0)
-        break
-      case "End":
-        focus_example_tab(last)
-        break
-      default:
-        return
-    }
-    event.preventDefault()
   }
 
   function use_example(): boolean {
@@ -552,48 +518,7 @@
         },
       ]}
     >
-      <div class="flex flex-col gap-4">
-        <!-- DaisyUI v4 sets .tabs to display:grid, which keeps every tab on one
-             row. flex + flex-wrap lets long labels wrap instead of being clipped. -->
-        <!-- tabs-md is the explicit default size: tabs-sm shrinks the pill to
-             24px, where DaisyUI's outline-offset:-5px focus ring cuts the label. -->
-        <div
-          role="tablist"
-          aria-label="Examples"
-          class="tabs tabs-boxed tabs-md flex flex-wrap gap-1 w-fit max-w-full"
-        >
-          {#each examples as example, i}
-            <button
-              bind:this={example_tab_buttons[i]}
-              type="button"
-              role="tab"
-              id="code_tool_example_tab_{i}"
-              aria-selected={active_example_tab === i}
-              aria-controls="code_tool_example_panel"
-              tabindex={active_example_tab === i ? 0 : -1}
-              class="tab min-w-0 justify-start {active_example_tab === i
-                ? 'tab-active'
-                : ''}"
-              on:click={() => (active_example_tab = i)}
-              on:keydown={(event) => on_example_tab_keydown(event, i)}
-            >
-              <!-- Truncation needs a block container: text-overflow does nothing
-                   on the flex container .tab itself. -->
-              <span class="truncate">{example.label}</span>
-            </button>
-          {/each}
-        </div>
-        <!-- tabindex so keyboard users can scroll the code block (WCAG 2.1.1). -->
-        <div
-          role="tabpanel"
-          id="code_tool_example_panel"
-          aria-labelledby="code_tool_example_tab_{active_example_tab}"
-          tabindex="0"
-          class="bg-base-200 rounded-lg p-4 overflow-x-auto font-mono text-sm whitespace-pre"
-        >
-          {examples[active_example_tab].code}
-        </div>
-      </div>
+      <ExampleTabs {examples} bind:active_index={active_example_tab} />
     </Dialog>
   {/if}
 </div>

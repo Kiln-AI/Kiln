@@ -1,5 +1,6 @@
 import type {
   ExternalToolApiDescription,
+  ToolApiDescription,
   ToolSetApiDescription,
   ToolSetType,
 } from "$lib/types"
@@ -103,10 +104,83 @@ export function get_tool_names_from_ids(
     return tool_ids // Return IDs if we don't have the tools loaded for some reason
   }
 
+  const duplicates = duplicate_tool_names(project_tools)
   const all_tools = project_tools.flatMap((tool_set) => tool_set.tools)
-  const tool_map = new Map(all_tools.map((tool) => [tool.id, tool.name]))
+  const tool_map = new Map(
+    all_tools.map((tool) => [tool.id, tool_display_name(tool, duplicates)]),
+  )
 
   return tool_ids.map((id) => tool_map.get(id) || id) // Fall back to ID if name not found
+}
+
+// Tool names carried by more than one tool. Counted across every tool set it is
+// given rather than within a set, because a Kiln task tool sharing a name with an
+// MCP tool is exactly as ambiguous as two Kiln task tools sharing one.
+export function duplicate_tool_names(
+  tool_sets: ToolSetApiDescription[],
+): Set<string> {
+  const seen = new Set<string>()
+  const duplicates = new Set<string>()
+  for (const tool_set of tool_sets) {
+    for (const tool of tool_set.tools) {
+      if (seen.has(tool.name)) {
+        duplicates.add(tool.name)
+      }
+      seen.add(tool.name)
+    }
+  }
+  return duplicates
+}
+
+// What to call a tool wherever it is listed for a user.
+//
+// Nothing stops two Kiln task tools, code tools, search tools, or skills from
+// carrying the same name and description -- duplicates are allowed within a
+// project, and the Kiln task create form even defaults the name to the task's --
+// which leaves them indistinguishable in a list or a picker. An ambiguous one is
+// qualified by the id inside its tool id, the same id shown on its detail page
+// and in that page's URL, so the user has something to match against.
+//
+// MCP tools never earn the qualifier: they are already grouped under their
+// server, and their id's tail is the tool name itself, not an id.
+export function tool_display_name(
+  tool: ToolApiDescription,
+  duplicate_names: Set<string>,
+): string {
+  if (!duplicate_names.has(tool.name)) {
+    return tool.name
+  }
+  const qualifier_id = tool_qualifier_id(tool.id)
+  return qualifier_id ? `${tool.name} (${qualifier_id})` : tool.name
+}
+
+// The persistent-object id inside a Kiln task, code, search, or skill tool id --
+// the id that disambiguates same-named tools of these types. Null for every
+// other type.
+export function tool_qualifier_id(tool_id: string): string | null {
+  for (const prefix of [
+    KILN_TASK_TOOL_ID_PREFIX,
+    CODE_TOOL_ID_PREFIX,
+    RAG_TOOL_ID_PREFIX,
+    SKILL_TOOL_ID_PREFIX,
+  ]) {
+    if (tool_id.startsWith(prefix)) {
+      return tool_id.slice(prefix.length) || null
+    }
+  }
+  return null
+}
+
+const KILN_TASK_TOOL_ID_PREFIX = "kiln_task::"
+const CODE_TOOL_ID_PREFIX = "kiln_tool::code::"
+const RAG_TOOL_ID_PREFIX = "kiln_tool::rag::"
+
+// The tool server id inside a Kiln task tool id, or null for every other tool type.
+export function kiln_task_tool_server_id(tool_id: string): string | null {
+  if (!tool_id.startsWith(KILN_TASK_TOOL_ID_PREFIX)) {
+    return null
+  }
+  return tool_id.slice(KILN_TASK_TOOL_ID_PREFIX.length) || null
 }
 
 const SKILL_TOOL_ID_PREFIX = "kiln_tool::skill::"

@@ -1,0 +1,10 @@
+# kiln-ui gate allowlist. One extended regex per line, matched against the hit's
+# "<file>:<line>\t<snippet>" text. Prefix a line with "RULE_NAME:" to silence only that rule
+# (RULE_NAME is the second column of a hit); a bare line silences every rule on a matching hit.
+# Add a line only for a HOUSE idiom (something the app already does on a shipped screen), never
+# to silence a hit on a new screen.
+# The citation mark (output.svelte's MARK_CLASS) is a house idiom since 08-29.
+TINTED_BOX:bg-warning/40 rounded px-0\.5
+# The drawer and sidebar chrome in +layout.svelte and chat_bar.svelte are app shell, not screens.
+routes/\(app\)/\+layout\.svelte:
+routes/\(app\)/chat_bar\.svelte:

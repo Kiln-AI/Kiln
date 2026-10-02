@@ -22,9 +22,16 @@
 #   raw.githubusercontent.com          this script's own fetch
 #   cdn.playwright.dev                 the browsers --add-playwright installs
 #   playwright.download.prss.microsoft.com   Playwright's download fallback
+#   openrouter.ai                      only with OPENROUTER_QA_KEY set: where the
+#                                      app's model calls go
 #
 # plus "also include default list of common package managers" for npm, PyPI and
 # apt. On the default Trusted policy the browser downloads get a 403.
+#
+# This script never sees OPENROUTER_QA_KEY and must not: it runs once per
+# environment and its disk is snapshotted, so a key written here would outlive its
+# own rotation. The key is a session variable, read where a browser sandbox is
+# seeded — see claude_cloud_setup.md.
 set -u
 
 REF="${KILN_SETUP_REF:-main}"

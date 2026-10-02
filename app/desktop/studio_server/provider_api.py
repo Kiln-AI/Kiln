@@ -4,17 +4,12 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Annotated, Any, Dict, List, Literal
+from urllib.parse import quote
 
 import httpx
 import litellm
 import openai
 import requests
-from app.desktop.studio_server.api_client.kiln_ai_server_client.api.auth import (
-    create_api_key_v1_create_api_key_post,
-)
-from app.desktop.studio_server.api_client.kiln_server_client import (
-    get_oauth_authenticated_client,
-)
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 from kiln_ai.adapters.docker_model_runner_tools import (
@@ -40,6 +35,10 @@ from kiln_ai.adapters.ollama_tools import (
     parse_ollama_tags,
 )
 from kiln_ai.adapters.provider_tools import (
+    CLOUDFLARE_API_BASE,
+    PLACEHOLDER_API_KEY,
+    cloudflare_base_url,
+    cloudflare_headers,
     get_all_user_models,
     get_legacy_custom_models,
     provider_name_from_id,
@@ -54,6 +53,13 @@ from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.wandb_utils import AuthenticationError, get_wandb_default_entity
 from kiln_server.utils.agent_checks.policy import ALLOW_AGENT, DENY_AGENT
 from pydantic import BaseModel, Field
+
+from app.desktop.studio_server.api_client.kiln_ai_server_client.api.auth import (
+    create_api_key_v1_create_api_key_post,
+)
+from app.desktop.studio_server.api_client.kiln_server_client import (
+    get_oauth_authenticated_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +165,7 @@ class ModelDetails(BaseModel):
     suggested_for_data_gen: bool
     supports_logprobs: bool
     suggested_for_evals: bool
+    suggested_for_synthetic_user: bool
     supports_function_calling: bool
     uncensored: bool
     suggested_for_uncensored_data_gen: bool
@@ -322,6 +329,7 @@ def connect_provider_api(app: FastAPI):
                                 supports_logprobs=provider.supports_logprobs,
                                 supports_function_calling=provider.supports_function_calling,
                                 suggested_for_evals=provider.suggested_for_evals,
+                                suggested_for_synthetic_user=provider.suggested_for_synthetic_user,
                                 uncensored=provider.uncensored,
                                 suggested_for_uncensored_data_gen=provider.suggested_for_uncensored_data_gen,
                                 structured_output_mode=provider.structured_output_mode,
@@ -688,7 +696,6 @@ def connect_provider_api(app: FastAPI):
     async def add_user_model(entry: UserModelEntry) -> JSONResponse:
         """Add a user-defined model to the registry."""
 
-        # Validate provider exists
         if entry.provider_type == "builtin":
             if entry.provider_id not in ModelProviderName.__members__:
                 raise HTTPException(
@@ -713,7 +720,6 @@ def connect_provider_api(app: FastAPI):
                     detail=f"Custom provider not found: {entry.provider_id}",
                 )
 
-        # Add to registry
         registry = Config.shared().user_model_registry or []
 
         # Check for exact duplicate (all identifying fields must match)
@@ -908,6 +914,10 @@ def connect_provider_api(app: FastAPI):
                 return await connect_cerebras(parse_api_key(key_data))
             case ModelProviderName.featherless_ai:
                 return await connect_featherless(parse_api_key(key_data))
+            case ModelProviderName.cloudflare:
+                return await connect_cloudflare(key_data)
+            case ModelProviderName.typesafe:
+                return await connect_typesafe(parse_api_key(key_data))
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
@@ -983,6 +993,12 @@ def connect_provider_api(app: FastAPI):
                     Config.shared().cerebras_api_key = None
                 case ModelProviderName.featherless_ai:
                     Config.shared().featherless_ai_api_key = None
+                case ModelProviderName.cloudflare:
+                    Config.shared().cloudflare_api_key = None
+                    Config.shared().cloudflare_account_id = None
+                    Config.shared().cloudflare_ai_gateway_id = None
+                case ModelProviderName.typesafe:
+                    Config.shared().typesafe_api_key = None
                 case (
                     ModelProviderName.kiln_custom_registry
                     | ModelProviderName.kiln_fine_tune
@@ -1121,7 +1137,6 @@ async def connect_openrouter(key: str):
                 status_code=200,
                 content={"message": "Connected to OpenRouter"},
             )
-            # Any non-200 status code is an error
     except Exception as e:
         # unexpected error
         return JSONResponse(
@@ -1240,16 +1255,13 @@ async def connect_openai(key: str):
                 content={"message": "Failed to connect to OpenAI. Invalid API key."},
             )
 
-        # Any non-200 status code is an error
         response.raise_for_status()
-        # If the request is successful, the function will continue
     except Exception as e:
         return JSONResponse(
             status_code=400,
             content={"message": f"Failed to connect to OpenAI. Error: {e!s}"},
         )
 
-    # It worked! Save the key and return success
     Config.shared().open_ai_api_key = key
 
     return JSONResponse(
@@ -1274,16 +1286,13 @@ async def connect_groq(key: str):
                 content={"message": "Failed to connect to Groq. Invalid API key."},
             )
 
-        # Any non-200 status code is an error
         response.raise_for_status()
-        # If the request is successful, the function will continue
     except Exception as e:
         return JSONResponse(
             status_code=400,
             content={"message": f"Failed to connect to Groq. Error: {e!s}"},
         )
 
-    # It worked! Save the key and return success
     Config.shared().groq_api_key = key
 
     return JSONResponse(
@@ -1606,6 +1615,161 @@ async def connect_featherless(key: str):
         )
 
 
+CLOUDFLARE_TOKEN_FIELD = "API Token"
+CLOUDFLARE_ACCOUNT_FIELD = "Account ID"
+CLOUDFLARE_GATEWAY_FIELD = "AI Gateway ID - Optional"
+CLOUDFLARE_CONNECTION_CHECK_MODEL = "@cf/kiln/connection-check"
+CLOUDFLARE_NO_SUCH_MODEL_CODE = 5007
+CLOUDFLARE_GATEWAY_NOT_FOUND_CODE = 2001
+CLOUDFLARE_CONNECT_TIMEOUT_SECONDS = 30
+
+
+def _cloudflare_field(key_data: dict, field: str) -> str | None:
+    value = key_data.get(field)
+    if not isinstance(value, str):
+        return None
+    return value.strip() or None
+
+
+def _cloudflare_error_codes(response: httpx.Response) -> set[int]:
+    try:
+        errors = response.json().get("errors") or []
+        return {error["code"] for error in errors if isinstance(error.get("code"), int)}
+    except Exception:
+        return set()
+
+
+def _cloudflare_connect_error(status_code: int, detail: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={"message": f"Failed to connect to Cloudflare. {detail}"},
+    )
+
+
+def _cloudflare_unexpected_response(response: httpx.Response) -> JSONResponse:
+    return _cloudflare_connect_error(
+        400, f"Error: [{response.status_code}] {response.text}"
+    )
+
+
+async def connect_cloudflare(key_data: dict):
+    try:
+        token = _cloudflare_field(key_data, CLOUDFLARE_TOKEN_FIELD)
+        account_id = _cloudflare_field(key_data, CLOUDFLARE_ACCOUNT_FIELD)
+        gateway_id = _cloudflare_field(key_data, CLOUDFLARE_GATEWAY_FIELD)
+        if not token or not account_id:
+            return _cloudflare_connect_error(
+                400, "API Token and Account ID are required."
+            )
+
+        auth_headers = {"Authorization": f"Bearer {token}"}
+
+        # The search term matches no model, which keeps the response tiny. The call
+        # still checks the token, the account and the Workers AI permission.
+        async with httpx.AsyncClient() as client:
+            search_response = await client.get(
+                f"{CLOUDFLARE_API_BASE}/accounts/{quote(account_id, safe='')}/ai/models/search",
+                headers=auth_headers,
+                params={"search": "kiln-connection-check"},
+                timeout=CLOUDFLARE_CONNECT_TIMEOUT_SECONDS,
+                follow_redirects=True,
+            )
+            if search_response.status_code == 404:
+                return _cloudflare_connect_error(401, "Invalid Account ID.")
+            if search_response.status_code in (400, 401, 403):
+                return _cloudflare_connect_error(
+                    401,
+                    "Invalid API Token, or the token doesn't have Workers AI access for this Account ID.",
+                )
+            if search_response.status_code != 200:
+                return _cloudflare_unexpected_response(search_response)
+
+            if gateway_id:
+                # The models search API ignores the gateway header, so check the gateway
+                # with a chat call for a model that doesn't exist. Cloudflare rejects a
+                # missing gateway before resolving the model, and no model runs either way.
+                chat_response = await client.post(
+                    f"{cloudflare_base_url(account_id)}/chat/completions",
+                    headers={**auth_headers, **(cloudflare_headers(gateway_id) or {})},
+                    json={
+                        "model": CLOUDFLARE_CONNECTION_CHECK_MODEL,
+                        "messages": [{"role": "user", "content": "ping"}],
+                        "max_tokens": 1,
+                    },
+                    timeout=CLOUDFLARE_CONNECT_TIMEOUT_SECONDS,
+                    follow_redirects=True,
+                )
+                error_codes = _cloudflare_error_codes(chat_response)
+                if CLOUDFLARE_GATEWAY_NOT_FOUND_CODE in error_codes:
+                    return _cloudflare_connect_error(
+                        400,
+                        f"AI Gateway '{gateway_id}' not found. Check the gateway ID, or remove it.",
+                    )
+                gateway_accepted = (
+                    chat_response.status_code == 200
+                    or CLOUDFLARE_NO_SUCH_MODEL_CODE in error_codes
+                )
+                if not gateway_accepted:
+                    return _cloudflare_unexpected_response(chat_response)
+
+        Config.shared().update_settings(
+            {
+                "cloudflare_api_key": token,
+                "cloudflare_account_id": account_id,
+                "cloudflare_ai_gateway_id": gateway_id,
+            }
+        )
+        return JSONResponse(
+            status_code=200,
+            content={"message": "Connected to Cloudflare"},
+        )
+    except Exception as e:
+        return _cloudflare_connect_error(400, f"Error: {str(e) or type(e).__name__}")
+
+
+async def connect_typesafe(key: str):
+    try:
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        # /v1/models is account-scoped and rejects a bad key, and listing models spends
+        # no tokens, so it validates the key without a POST.
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.typesafe.ai/v1/models",
+                headers=headers,
+                timeout=10,
+                follow_redirects=True,
+            )
+
+        if response.status_code in (401, 403):
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "message": "Failed to connect to TypeSafe AI. Invalid API key."
+                },
+            )
+        elif response.status_code != 200:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to connect to TypeSafe AI. Error: [{response.status_code}]"
+                },
+            )
+        else:
+            Config.shared().typesafe_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to TypeSafe AI"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to TypeSafe AI. Error: {e!s}"},
+        )
+
+
 async def connect_bedrock(key_data: dict):
     access_key = key_data.get("Access Key")
     secret_key = key_data.get("Secret Key")
@@ -1714,6 +1878,7 @@ async def available_ollama_models() -> AvailableModels | None:
                             supports_logprobs=False,  # Ollama doesn't support logprobs https://github.com/ollama/ollama/issues/2415
                             suggested_for_data_gen=ollama_provider.suggested_for_data_gen,
                             suggested_for_evals=ollama_provider.suggested_for_evals,
+                            suggested_for_synthetic_user=ollama_provider.suggested_for_synthetic_user,
                             supports_function_calling=ollama_provider.supports_function_calling,
                             uncensored=False,
                             suggested_for_uncensored_data_gen=False,
@@ -1744,6 +1909,7 @@ async def available_ollama_models() -> AvailableModels | None:
                     untested_model=True,
                     suggested_for_data_gen=False,
                     suggested_for_evals=False,
+                    suggested_for_synthetic_user=False,
                     uncensored=False,
                     suggested_for_uncensored_data_gen=False,
                     # Ollama has constrained decode and all models support json_schema. Use it!
@@ -1828,6 +1994,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                             supports_logprobs=docker_provider.supports_logprobs,
                             suggested_for_data_gen=docker_provider.suggested_for_data_gen,
                             suggested_for_evals=docker_provider.suggested_for_evals,
+                            suggested_for_synthetic_user=docker_provider.suggested_for_synthetic_user,
                             uncensored=docker_provider.uncensored,
                             suggested_for_uncensored_data_gen=docker_provider.suggested_for_uncensored_data_gen,
                             supports_vision=docker_provider.supports_vision,
@@ -1850,6 +2017,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                     untested_model=True,
                     suggested_for_data_gen=False,
                     suggested_for_evals=False,
+                    suggested_for_synthetic_user=False,
                     uncensored=False,
                     suggested_for_uncensored_data_gen=False,
                     supports_vision=False,
@@ -1970,6 +2138,7 @@ def legacy_custom_models_as_available() -> Dict[str, List[ModelDetails]]:
                 untested_model=True,
                 suggested_for_data_gen=False,
                 suggested_for_evals=False,
+                suggested_for_synthetic_user=False,
                 uncensored=False,
                 suggested_for_uncensored_data_gen=False,
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -2049,6 +2218,7 @@ def user_models_as_available() -> Dict[str, List[ModelDetails]]:
                 untested_model=True,
                 suggested_for_data_gen=False,
                 suggested_for_evals=False,
+                suggested_for_synthetic_user=False,
                 uncensored=overrides.get("uncensored", False),
                 suggested_for_uncensored_data_gen=False,
                 structured_output_mode=structured_output_mode_value,
@@ -2107,6 +2277,7 @@ def all_fine_tuned_models() -> AvailableModels | None:
                             task_filter=[str(task.id)],
                             suggested_for_data_gen=False,
                             suggested_for_evals=False,
+                            suggested_for_synthetic_user=False,
                             uncensored=False,
                             suggested_for_uncensored_data_gen=False,
                             structured_output_mode=fine_tune_model_structured_output_mode(
@@ -2199,18 +2370,18 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
             logger.warning("No name for OpenAI compatible provider %s", provider)
             continue
 
-        # API key is optional, as some providers don't require it
-        api_key = provider.get("api_key") or ""
-        openai_client = openai.OpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            # Important: max_retries must be 0 for performance.
-            # It's common for these servers to be down sometimes (could be local app that isn't running)
-            # OpenAI client will retry a few times, with a sleep in between! Big loading perf hit.
-            max_retries=0,
-        )
+        # API key optional - some providers like Ollama don't use it, but the OpenAI client errors without one
+        api_key = provider.get("api_key") or PLACEHOLDER_API_KEY
 
         try:
+            openai_client = openai.OpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                # Important: max_retries must be 0 for performance.
+                # It's common for these servers to be down sometimes (could be local app that isn't running)
+                # OpenAI client will retry a few times, with a sleep in between! Big loading perf hit.
+                max_retries=0,
+            )
             provider_models = openai_client.models.list()
             for model in provider_models:
                 models.append(
@@ -2224,6 +2395,7 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
                         untested_model=True,
                         suggested_for_data_gen=False,
                         suggested_for_evals=False,
+                        suggested_for_synthetic_user=False,
                         uncensored=False,
                         suggested_for_uncensored_data_gen=False,
                         # OpenAI compatible models could be anything. JSON instructions is the only safe bet that works everywhere.
@@ -2246,7 +2418,9 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
             )
         except Exception:
             logger.error(
-                "Error connecting to OpenAI compatible provider %s", name, exc_info=True
+                "Error loading models from OpenAI compatible provider %s",
+                name,
+                exc_info=True,
             )
             has_error = True
             continue

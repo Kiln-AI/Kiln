@@ -109,6 +109,7 @@
 
   let loading = true
   $: error = task_load_error || copilot_check_error
+  $: is_multiturn = current_task?.turn_mode === "multiturn"
 
   type EvalWithConfig = {
     eval: Eval
@@ -516,11 +517,19 @@
         evals_with_configs[index].has_default_config = data.has_default_config
         evals_with_configs[index].has_train_set = data.has_train_set
         evals_with_configs[index].model_is_supported = data.model_is_supported
+        if (data.unsupported_reason) {
+          evals_with_configs[index].other_error = data.unsupported_reason
+        }
 
-        // If has train set, fetch the size. has_train_set is already
-        // TaskRun-backed-only (the remote optimizer resolves the train filter over the
-        // project zip's runs/), so the filter id read here has to be too, or the two
-        // disagree and the size fetch is silently skipped.
+        // Reset before the conditional size fetch below: a stale count from a
+        // previous TaskRun-backed split must not survive a switch to an
+        // EvalInput-backed split, where the size is unknown.
+        evals_with_configs[index].train_set_size = null
+
+        // If has train set, fetch the size. The size fetch reads tag counts over
+        // dataset runs, so it only applies to TaskRun-backed train splits. For an
+        // EvalInput-backed train split (now valid for optimization) the size stays
+        // unknown (null) and the empty-set error below does not apply.
         const train_filter_id = task_run_split_filter_id(item.eval, "train")
         if (data.has_train_set && train_filter_id) {
           const train_tag = tagFromFilterId(train_filter_id)
@@ -565,7 +574,8 @@
 
         const has_errors =
           evals_with_configs[index].judge_error !== null ||
-          evals_with_configs[index].train_error !== null
+          evals_with_configs[index].train_error !== null ||
+          evals_with_configs[index].other_error !== null
         evals_with_configs[index].validation_status = has_errors
           ? "invalid"
           : "valid"
@@ -796,6 +806,14 @@
         button_text="View Optimizer Jobs"
         link={`/prompt_optimization/${project_id}/${task_id}/prompt_optimization_job/${created_job.id}`}
       />
+    {:else if is_multiturn}
+      <div class="flex flex-col items-center justify-center min-h-[60vh]">
+        <Warning
+          warning_message="Prompt optimization is not supported for multi-turn tasks."
+          warning_color="warning"
+          warning_icon="info"
+        />
+      </div>
     {:else if current_task}
       <FormContainer
         submit_visible={true}
@@ -1179,7 +1197,7 @@
                       <Warning
                         warning_color="error"
                         warning_icon="exclaim"
-                        tight={true}
+                        inline={true}
                         warning_message="No evaluators selected. Please select at least one evaluator."
                       />
                     </div>

@@ -686,7 +686,7 @@
     // Adding data means adding TaskRuns, so only a TaskRun-backed test split has a
     // tag to add them under.
     const test_filter_id = task_run_split_filter_id(evalData, "test")
-    const eval_tag = test_filter_id
+    const test_tag = test_filter_id
       ? tagFromFilterId(test_filter_id)
       : undefined
     const golden_tag = evalData.eval_configs_filter_id
@@ -697,11 +697,10 @@
     // it, a missing tag falls through to a navigation with no `splits` param at all, and
     // the user adds rows that silently never join the eval's set. The golden half is
     // reachable in ordinary use: a non-rag eval with no golden set is the expected V2
-    // state (functional spec 6.1), and this button appears precisely when the eval's
-    // test split is empty.
-    if (!eval_tag || (evalData.template !== "rag" && !golden_tag)) {
+    // state, and this button appears precisely when the eval's test split is empty.
+    if (!test_tag || (evalData.template !== "rag" && !golden_tag)) {
       alert(
-        "No eval or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
+        "No test or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
       )
       return
     }
@@ -1112,13 +1111,23 @@
                                 {/if}
                                 <div class="text-left">
                                   {#if getEvalDatasetSize(section.eval_id) === 0}
-                                    <button
-                                      class="btn btn-xs mt-1"
-                                      on:click={() =>
-                                        navigateToAddData(section.eval_id)}
-                                    >
-                                      Add Eval Data
-                                    </button>
+                                    {#if eval_split(eval_data_cache[section.eval_id], "test")?.source === "eval_input"}
+                                      <!-- EvalInput-typed slice: data is minted by the
+                                        eval builder; the add-data flow tags TaskRuns,
+                                        which doesn't apply. -->
+                                      <div class="text-xs text-gray-500">
+                                        No eval data. This eval's data is
+                                        created by the eval builder.
+                                      </div>
+                                    {:else}
+                                      <button
+                                        class="btn btn-xs mt-1"
+                                        on:click={() =>
+                                          navigateToAddData(section.eval_id)}
+                                      >
+                                        Add Eval Data
+                                      </button>
+                                    {/if}
                                   {:else if defaultEvalConfigId && runConfigId}
                                     <RunEval
                                       eval_id={section.eval_id}

@@ -75,14 +75,16 @@ class SkillTool(KilnToolInterface):
         resource = kwargs.get("resource")
 
         if not isinstance(skill_name, str) or not skill_name:
-            return ToolCallResult(output="Error: 'name' parameter is required.")
+            msg = "Error: 'name' parameter is required."
+            return ToolCallResult(output=msg, is_error=True, error_message=msg)
 
         skill = self._skills.get(skill_name)
         if skill is None:
             available = ", ".join(self._skills.keys())
-            return ToolCallResult(
-                output=f"Error: Skill '{skill_name}' not found. Available skills: {available}"
+            msg = (
+                f"Error: Skill '{skill_name}' not found. Available skills: {available}"
             )
+            return ToolCallResult(output=msg, is_error=True, error_message=msg)
 
         if resource:
             return self._load_resource(skill, resource)
@@ -90,23 +92,20 @@ class SkillTool(KilnToolInterface):
         try:
             body = skill.body()
         except Exception as e:
-            return ToolCallResult(
-                output=f"Error: Failed to load skill '{skill_name}': {e}"
-            )
+            msg = f"Error: Failed to load skill '{skill_name}': {e}"
+            return ToolCallResult(output=msg, is_error=True, error_message=msg)
         return ToolCallResult(output=body)
 
     def _load_resource(self, skill: Skill, resource: str) -> ToolCallResult:
         """Load a resource file from an allowed subdirectory (references/ or assets/)."""
         if not any(resource.startswith(p) for p in ALLOWED_RESOURCE_PREFIXES):
-            return ToolCallResult(
-                output=f"Error: Resource path must start with one of: {', '.join(ALLOWED_RESOURCE_PREFIXES)}"
-            )
+            msg = f"Error: Resource path must start with one of: {', '.join(ALLOWED_RESOURCE_PREFIXES)}"
+            return ToolCallResult(output=msg, is_error=True, error_message=msg)
 
         parts = resource.split("/", 1)
         if len(parts) != 2 or not parts[1]:
-            return ToolCallResult(
-                output="Error: Resource path must include a filename after the directory prefix."
-            )
+            msg = "Error: Resource path must include a filename after the directory prefix."
+            return ToolCallResult(output=msg, is_error=True, error_message=msg)
 
         prefix, relative_path = parts
 
@@ -116,11 +115,12 @@ class SkillTool(KilnToolInterface):
             elif prefix == "assets":
                 content = skill.read_asset(relative_path)
             else:
-                return ToolCallResult(
-                    output=f"Error: Unknown resource directory: {prefix}"
-                )
+                msg = f"Error: Unknown resource directory: {prefix}"
+                return ToolCallResult(output=msg, is_error=True, error_message=msg)
             return ToolCallResult(output=content)
         except FileNotFoundError:
-            return ToolCallResult(output=f"Error: Resource not found: {resource}")
+            msg = f"Error: Resource not found: {resource}"
+            return ToolCallResult(output=msg, is_error=True, error_message=msg)
         except ValueError as e:
-            return ToolCallResult(output=f"Error: {e}")
+            msg = f"Error: {e}"
+            return ToolCallResult(output=msg, is_error=True, error_message=msg)

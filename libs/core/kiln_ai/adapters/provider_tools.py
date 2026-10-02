@@ -2,6 +2,7 @@ import logging
 import os
 from dataclasses import dataclass
 from typing import Any, Dict, List
+from urllib.parse import quote
 
 from pydantic import BaseModel
 
@@ -11,6 +12,7 @@ from kiln_ai.adapters.docker_model_runner_tools import (
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     KilnModelProvider,
+    ModelAdapterId,
     ModelParserID,
     ModelProviderName,
     StructuredOutputMode,
@@ -25,6 +27,10 @@ from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.project_utils import project_from_id
 
 logger = logging.getLogger(__name__)
+
+# Some providers (Ollama, LM Studio, other local servers) don't use an API key, but the
+# OpenAI client and LiteLLM both error out when constructed without one. Send this instead.
+PLACEHOLDER_API_KEY = "NA"
 
 
 async def provider_enabled(provider_name: ModelProviderName) -> bool:
@@ -78,6 +84,20 @@ def check_provider_warnings(provider_name: ModelProviderName):
     for key in warning_check.required_config_keys:
         if get_config_value(key) is None:
             raise ValueError(warning_check.message)
+
+
+def default_adapter_for_provider(provider_name: ModelProviderName) -> ModelAdapterId:
+    """The adapter to use for a model built at runtime (user registry or custom model).
+
+    Built-in model entries declare their own adapter; this is the fallback for models we
+    have no entry for, and the one place provider-to-adapter knowledge lives outside the
+    model list.
+    """
+    return (
+        ModelAdapterId.jev
+        if provider_name == ModelProviderName.typesafe
+        else ModelAdapterId.litellm
+    )
 
 
 def builtin_model_from(
@@ -237,6 +257,7 @@ def kiln_model_provider_from(
         supports_data_gen=False,
         untested_model=True,
         model_id=name,
+        adapter=default_adapter_for_provider(provider),
         # The only mode that works on all models. Newer user model registry allows you to set this.
         structured_output_mode=StructuredOutputMode.json_instructions,
     )
@@ -419,6 +440,7 @@ def user_model_to_provider(entry: UserModelEntry) -> KilnModelProvider:
     base_kwargs: dict[str, Any] = {
         "name": provider_name,
         "model_id": entry.model_id,
+        "adapter": default_adapter_for_provider(provider_name),
         "untested_model": True,  # User models are untested by default
         "supports_structured_output": False,  # Conservative defaults
         "supports_data_gen": False,
@@ -437,8 +459,10 @@ def user_model_to_provider(entry: UserModelEntry) -> KilnModelProvider:
         # This allows new fields to be added to KilnModelProvider without breaking
         # existing UserModelEntry data that may have those fields in overrides
         valid_fields = set(KilnModelProvider.model_fields.keys())
-        # Remove fields that shouldn't be overridden
-        valid_fields -= {"name", "model_id"}
+        # Remove fields that shouldn't be overridden. The adapter is determined by the
+        # provider, not the user: overriding it would route a model to a client that
+        # cannot call it.
+        valid_fields -= {"name", "model_id", "adapter"}
 
         # Only include overrides that are valid fields and actually set (not None)
         # This allows the default values to be used when override is None
@@ -528,7 +552,7 @@ def provider_name_from_id(id: str) -> str:
             case ModelProviderName.huggingface:
                 return "Hugging Face"
             case ModelProviderName.vertex:
-                return "Gemini Enterprise Agent Platform (formerly Vertex AI)"
+                return "Gemini Enterprise Agent Platform"
             case ModelProviderName.together_ai:
                 return "Together AI"
             case ModelProviderName.siliconflow_cn:
@@ -537,8 +561,12 @@ def provider_name_from_id(id: str) -> str:
                 return "Cerebras"
             case ModelProviderName.featherless_ai:
                 return "Featherless AI"
+            case ModelProviderName.cloudflare:
+                return "Cloudflare"
             case ModelProviderName.docker_model_runner:
                 return "Docker Model Runner"
+            case ModelProviderName.typesafe:
+                return "TypeSafe AI"
             case _:
                 # triggers pyright warning if I miss a case
                 raise_exhaustive_enum_error(enum_id)
@@ -609,6 +637,14 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
         required_config_keys=["featherless_ai_api_key"],
         message="Attempted to use Featherless AI without an API key set. \nGet your API key from https://featherless.ai/account/api-keys",
     ),
+    ModelProviderName.cloudflare: ModelProviderWarning(
+        required_config_keys=["cloudflare_api_key", "cloudflare_account_id"],
+        message="Attempted to use Cloudflare without an API token and account ID set. \nCreate a token and find your account ID at https://dash.cloudflare.com/?to=/:account/ai/workers-ai",
+    ),
+    ModelProviderName.typesafe: ModelProviderWarning(
+        required_config_keys=["typesafe_api_key"],
+        message="Attempted to use TypeSafe AI without an API key set. \nGet your API key from https://console.typesafe.ai/keys",
+    ),
 }
 
 
@@ -616,6 +652,29 @@ class LiteLlmCoreConfig(BaseModel):
     base_url: str | None = None
     default_headers: Dict[str, str] | None = None
     additional_body_options: Dict[str, Any] | None = None
+
+
+CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4"
+CLOUDFLARE_GATEWAY_HEADER = "cf-aig-gateway-id"
+
+
+def cloudflare_base_url(account_id: str) -> str:
+    return f"{CLOUDFLARE_API_BASE}/accounts/{quote(account_id, safe='')}/ai/v1"
+
+
+def cloudflare_headers(gateway_id: str | None) -> Dict[str, str] | None:
+    return {CLOUDFLARE_GATEWAY_HEADER: gateway_id} if gateway_id else None
+
+
+def _cloudflare_core_config() -> LiteLlmCoreConfig:
+    account_id = Config.shared().cloudflare_account_id
+    if not account_id:
+        raise ValueError(provider_warnings[ModelProviderName.cloudflare].message)
+    return LiteLlmCoreConfig(
+        base_url=cloudflare_base_url(account_id),
+        default_headers=cloudflare_headers(Config.shared().cloudflare_ai_gateway_id),
+        additional_body_options={"api_key": Config.shared().cloudflare_api_key},
+    )
 
 
 def lite_llm_core_config_for_provider(
@@ -687,7 +746,7 @@ def lite_llm_core_config_for_provider(
                 base_url=ollama_base_url + "/v1",
                 additional_body_options={
                     # LiteLLM errors without an api_key, even though Ollama doesn't support one
-                    "api_key": "NA",
+                    "api_key": PLACEHOLDER_API_KEY,
                 },
             )
         case ModelProviderName.docker_model_runner:
@@ -766,6 +825,8 @@ def lite_llm_core_config_for_provider(
                     "api_key": Config.shared().featherless_ai_api_key,
                 },
             )
+        case ModelProviderName.cloudflare:
+            return _cloudflare_core_config()
         case ModelProviderName.openai_compatible:
             # openai compatible requires a model name in the format "provider::model_name"
             if openai_compatible_provider_name is None:
@@ -789,7 +850,7 @@ def lite_llm_core_config_for_provider(
                 )
 
             # API key optional - some providers like Ollama don't use it, but LiteLLM errors without one
-            api_key = provider.get("api_key") or "NA"
+            api_key = provider.get("api_key") or PLACEHOLDER_API_KEY
             base_url = provider.get("base_url")
             if base_url is None:
                 raise ValueError(
@@ -802,6 +863,10 @@ def lite_llm_core_config_for_provider(
                     "api_key": api_key,
                 },
             )
+        case ModelProviderName.typesafe:
+            # TypeSafe's System One API has no chat-completions surface, so it is served
+            # by its own adapter instead of LiteLLM.
+            raise ValueError("TypeSafe AI models do not run through LiteLLM")
         # These are virtual providers that should have mapped to an actual provider upstream (using core_provider method)
         case ModelProviderName.kiln_fine_tune:
             return None

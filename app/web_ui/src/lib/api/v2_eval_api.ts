@@ -24,6 +24,8 @@ export type CreateEvalConfigRequest =
   components["schemas"]["CreateEvalConfigRequest"]
 export type CreateLlmJudgeConfigRequest =
   components["schemas"]["CreateLlmJudgeConfigRequest"]
+export type DefaultLlmJudgePromptResponse =
+  components["schemas"]["DefaultLlmJudgePromptResponse"]
 export type LlmJudgeBuilderInput = components["schemas"]["LlmJudgeBuilderInput"]
 export type CreateEvaluatorRequest =
   components["schemas"]["CreateEvaluatorRequest"]
@@ -205,7 +207,7 @@ export async function getDefaultLlmJudgePrompt(
   projectId: string,
   taskId: string,
   evalId: string,
-): Promise<{ judge_prompt: string; system_prompt: string }> {
+): Promise<DefaultLlmJudgePromptResponse> {
   const { data, error } = await client.GET(
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/default_llm_judge_prompt",
     {
