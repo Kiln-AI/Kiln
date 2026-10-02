@@ -62,7 +62,7 @@ All intermediate files live under `.model-sweep/` in the worktree, git-ignored, 
 - `--host cloud`: uses the checkout as is.
 - Prints key availability as booleans by importing `kiln_ai.utils.config.Config` (local) or reading the environment (cloud). Never prints a value.
 - Exports `GH_TOKEN` for `kiln-claude` from `security find-generic-password -s kiln-claude-gh -w` (local) or `KILN_CLAUDE_GH_TOKEN` (cloud). If absent, sets `SWEEP_BOT=none`; later steps then run as if `--dry-run` for anything that writes to GitHub, and the report says why.
-- Exports the Slack app token the same way (`kiln-claude-slack`); if absent, `slack_post.py` falls back to the connector with the `[model sweep]` prefix.
+- Reads `SLACK_MODELS_WEBHOOK` and `SLACK_PRS_WEBHOOK` from the environment and reports each as present or absent, booleans only.
 
 ### discover.py
 
@@ -94,10 +94,11 @@ Input: `git diff origin/main...HEAD --name-only` and the unified diff of `ml_mod
 Rules, in order; the first hit wins:
 
 1. Any path other than `libs/core/kiln_ai/adapters/ml_model_list.py` → needs-discussion (`files_touched`).
-2. Any removed line that is not whitespace or a trailing-comma move → needs-discussion (`deletion`).
-3. Any changed line containing `suggested_for_` or `featured_rank` → needs-discussion (`flag_change`), with one exception: a removed `suggested_for_*` line on a provider entry that gains `deprecated=True` in the same diff is part of a successor migration and stays easy.
-4. Any `results.json` row with `fail` after retry → needs-discussion for that enum (`test_failure`), and the enum is split out of the adds branch.
-5. Otherwise easy.
+2. Successor migration → easy for the lines it owns: a provider entry that gains `deprecated=True` in this diff may lose its `suggested_for_*` lines, and a new `KilnModel` may be added beside it. Those removed flag lines are excluded from rules 3 and 4. Any other change in the same diff is still judged by the rules below.
+3. Any removed line that is not whitespace, a trailing-comma move, or a line excluded by rule 2 → needs-discussion (`deletion`).
+4. Any changed line containing `suggested_for_` or `featured_rank`, other than lines excluded by rule 2 → needs-discussion (`flag_change`).
+5. Any `results.json` row with `fail` after retry → needs-discussion for that enum (`test_failure`), and the enum is split out of the adds branch.
+6. Otherwise easy.
 
 Unit-tested with fixture diffs for each rule, including a successor-migration diff (old provider entry deprecated with its flags removed, successor model added) that must classify as easy and land in the adds PR.
 
@@ -118,8 +119,8 @@ Unit-tested with fixture diffs for each rule, including a successor-migration di
 
 ### slack_post.py
 
-- With a Slack app token: `chat.postMessage` to the models channel, one line per PR: `<title> <url> — N added / N deprecated / needs discussion`.
-- Without: prints the same line for the skill to send through the connector with the `[model sweep]` prefix.
+- Two incoming-webhook URLs from the environment: `SLACK_MODELS_WEBHOOK` for draft PRs (needs a decision) and `SLACK_PRS_WEBHOOK` for ready PRs, the routing the functional spec §4.2 fixes. Each message carries the why: for a draft, the inconsistency and the numbered options from the PR's **Decisions required** section; for a ready PR, its TLDR; then the cc line for the Slack user id in the run settings.
+- A missing variable skips that post and is named in the run report. There is no connector fallback; the connector would post as the operator.
 
 ### staleness.py
 
@@ -130,9 +131,9 @@ Unit-tested with fixture diffs for each rule, including a successor-migration di
 
 ### pr_feedback.py
 
-- `list`: open PRs authored by `kiln-claude`; comments and review comments newer than the bot's last comment on that PR; excludes the bot's own. Writes `feedback.json` with an `in_scope` guess from §3 rules (edits to `ml_model_list.py`, re-running tests, body text changes are in scope).
-- The skill acts on in-scope items (edit, test, push) and drafts a reply for each item; out-of-scope items get a boundary reply and no push.
-- `reply --pr N --comment-id C --body-file f`: posts as `kiln-claude` in the thread (`gh api` on the review-comment or issue-comment endpoint).
+- `list`: open PRs whose head branch matches `model-sweep/*`, whatever account authored them; human comments and review comments newer than the routine's last commit on that branch (the PR's creation when there is none); bot status comments excluded. Writes `feedback.json` with an `in_scope` guess from §3 rules (edits to `ml_model_list.py`, re-running tests, body text changes are in scope).
+- The skill acts on in-scope items (edit, test, push) and records each in a dated **Updates** section of the PR body; out-of-scope items get a line in the body's **Decisions required** section and no push.
+- `update-body --pr N --section updates|decisions --body-file f`: edits the PR body only. There is no reply command; the routine never writes a comment or review under the human account it runs as.
 
 ### Run report
 
@@ -158,7 +159,7 @@ v1 runs under the operator's own GitHub account (functional spec, Decisions). Th
 
 - Provider keys: Kiln `Config` on the local host. Never in the cloud environment.
 - `kiln-claude` GitHub token: macOS keychain item `kiln-claude-gh` locally. Scopes: `public_repo` (and `repo` only if invited to the org for private pushes, which this repo does not need). In the cloud, it would have to be `KILN_CLAUDE_GH_TOKEN`; the smoke test runs without it and records the resulting author.
-- Slack app token: keychain item `kiln-claude-slack`, scopes `chat:write`, `channels:history`.
+- Slack: the two incoming-webhook URLs as environment variables on the host; on a laptop, keychain items read into the environment by the task.
 - Nothing is ever echoed. `sweep_env.sh` prints `HAS_<NAME>=true|false` only.
 
 ## Error Handling

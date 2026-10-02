@@ -1,6 +1,6 @@
 # Routine prompt: Kiln model sweep
 
-The cloud routine's message is a short run-settings block followed, verbatim, by the body of `.agents/skills/kiln-model-sweep/SKILL.md` (everything after its `---` separator). The skill is generic; the settings block is where the operator's channel id and Slack user id live. Keep the two copies of the body identical.
+Since 2026-10-02 the cloud routine's message no longer carries the skill text. It is the run settings plus an instruction to fetch `.agents/skills/kiln-model-sweep/SKILL.md` from the branch under test and follow it. A commit to that branch is therefore a change to the next run, and the open PR is the testbed. After the PR merges, the branch name in the message changes to `main`.
 
 ```
 Run settings for this routine:
@@ -8,6 +8,11 @@ Run settings for this routine:
 - Models channel: <name> (channel id <id>).
 - SLACK_CC_USER_ID: <the reviewer's Slack user id>.
 - SLACK_MODELS_WEBHOOK and SLACK_PRS_WEBHOOK are set in this environment.
-```
+- Skill source: branch <branch> of Kiln-AI/Kiln, the open PR <n>, until it merges to main.
 
-Then the skill body.
+You are the Kiln model sweep. Your instructions live in the repo, not in this message. In the Kiln-AI/Kiln checkout, run:
+
+    git fetch origin <branch> && git show origin/<branch>:.agents/skills/kiln-model-sweep/SKILL.md > /tmp/kiln-model-sweep.md
+
+Read /tmp/kiln-model-sweep.md in full and follow it exactly, with the run settings above. All work still branches from origin/main as the skill says; never commit to or push <branch>. If the fetch fails or the file is missing, stop and report that instead of improvising.
+```

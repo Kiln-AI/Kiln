@@ -6,7 +6,7 @@ status: draft
 
 ## Overview
 
-A scheduled, unattended run that turns the existing model-maintenance skills into a routine. Each weekday morning: read hints from #models, discover new models, add the easy ones, verify them with the paid tests, find confirmed deprecations, open PRs as Claude, announce each PR in #models, answer PR feedback as Claude, and refresh a staleness report for the models hard-coded across Kiln-AI repos.
+A scheduled, unattended run that turns the existing model-maintenance skills into a routine. Each weekday morning: read hints from #models, discover new models, add the easy ones, verify them with the paid tests, find confirmed deprecations, open PRs as Claude, announce each PR in Slack (drafts in the models channel, ready PRs in the PR review channel), answer PR feedback through the PR body, and refresh a staleness report for the models hard-coded across Kiln-AI repos.
 
 Success state for a quiet day is silence: no PR, no Slack post. The staleness report still refreshes.
 
@@ -44,7 +44,7 @@ Success state for a quiet day is silence: no PR, no Slack post. The staleness re
 
 ### 2.4 Open model-sweep PRs
 
-- Open PRs authored by `kiln-claude` are read for new human comments since the last run (see §5).
+- Open PRs on `model-sweep/*` branches, whatever account authored them, are read for new human comments since the routine's last commit on that branch (see §5).
 
 ## 3. Classification: Easy vs Needs Discussion
 

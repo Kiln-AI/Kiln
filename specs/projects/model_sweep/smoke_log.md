@@ -119,3 +119,7 @@
 - Slack: ready post to #prs and draft post to #models, both 07:47 EDT, both with the why. Mobile push sent.
 - Behaviour to note: after the report the session unsubscribed itself from the two PRs' GitHub activity, reasoning that staying subscribed would conflict with the no-comment rule. Follow-ups on CI or reviews therefore wait for the next run.
 - Also observed: a team Slack bot now posts PR cards with reviewer status in #prs for PRs that request reviewers. The sweep's PRs request none, so they get no card; requesting a reviewer from the sweep would make the webhook post redundant.
+
+## Routine reads the skill from the branch: 2026-10-02 14:35 UTC
+
+- The routine's message was carrying a copy of the skill text, so a commit to the PR branch changed nothing until the copy was updated by hand. Replaced with: run settings plus `git show origin/<branch>:.agents/skills/kiln-model-sweep/SKILL.md`, read it, follow it. The open PR is now the testbed: edits land on the branch, the next morning's run uses them, findings from runs go back into the branch. On merge, the branch in the message becomes `main`.
