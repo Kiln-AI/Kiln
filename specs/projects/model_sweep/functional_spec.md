@@ -57,6 +57,8 @@ A change is **easy** when all of these hold:
 
 Everything else **needs discussion**, including: any file other than `ml_model_list.py`, a new parameter or adapter change needed to make a test pass, a new provider, a new `ModelFamily` that needs code elsewhere, a test failure that persists after one serial retry, a recommendation-flag change, and any "expiring soon" deprecation.
 
+One explicit exception: a successor migration, where a provider stops serving a slug and serves a successor checkpoint. The old provider entry gets `deprecated=True` and loses its `suggested_for_*` flags, and the successor is added as a distinct model. Both edits count as one easy change and go in the adds PR for that run, not the deprecations PR, and the flag removal is not a flag change for the purpose of this rule (see §2.3 and the skill's successor-slug gate).
+
 The classification is computed from the diff paths and the test results, not from the model's opinion.
 
 ## 4. Outputs
@@ -66,7 +68,7 @@ The classification is computed from the diff paths and the test results, not fro
 All PRs: semantic-commit title, `chore: ...`; the `WIP:` prefix means draft and is used only on needs-discussion PRs (ruling 2026-10-01; this overrides open-pr's always-WIP rule). A draft that becomes ready loses the prefix. Body: the template's human header pre-populated (ruling 2026-10-01: Description written by the routine, Architecture Review "Small change", Review Style "Mixed", Agentic Code Review "addressed all AI feedback", Key decisions `ML Model Update`, Paths `ml_model_list.py`, UI "No UI"; Author Review left unchecked for the author; no CLA line), then open-pr's Agentic PR Summary with the per-test evidence table from `claude-maintain-models`. No `print(` and no TODO/FIXME in the diff. Branches: `model-sweep/adds-YYYY-MM-DD`, `model-sweep/deprecations-YYYY-MM-DD`, `model-sweep/discuss-<model>-YYYY-MM-DD`.
 
 - **Adds PR**: one per run, every easy add from that run. Body ends with a "Candidates for suggested flags" list for a human; the routine never sets those flags.
-- **Deprecations PR**: one per run, every confirmed-dead entry. Recommendation flags and deprecations stay in separate PRs (team ruling of 2026-09-16).
+- **Deprecations PR**: one per run, every confirmed-dead entry, except entries deprecated as part of a successor migration, which travel with their successor in the adds PR (§3). Recommendation flags and deprecations stay in separate PRs (team ruling of 2026-09-16).
 - **Needs-discussion PR**: one per item, opened as a draft. Its body ends with a bold **Decisions required** section between horizontal rules: what the model needs, why it is not an easy add, and the options. No further code lands on it until a human answers.
 - **Dedup**: if an open `kiln-claude` PR already covers a model, the run pushes to that branch instead of opening another.
 - **Where branches live**: on `Kiln-AI/Kiln` directly if `kiln-claude` has been invited to the org; otherwise on a fork, `kiln-claude/Kiln`, with "allow edits from maintainers" on. Labels (`model-sweep`, `needs-discussion`) are applied only when the account has triage rights; the title prefix and branch name carry the same information either way.
@@ -74,9 +76,7 @@ All PRs: semantic-commit title, `chore: ...`; the `WIP:` prefix means draft and 
 
 ### 4.2 Slack post
 
-- One message per PR opened, to `#models`: title, link, counts (models added, entries deprecated, or "needs discussion").
-- Posted by a Slack app named Claude that the operator installs (scopes `chat:write`, `channels:history`). If the workspace does not let members install apps, v1 posts through the operator's connector with the prefix `[model sweep]`, and the team Slack bot takes the post over in v2.
-- No further discussion in Slack. Replies there are read only as hints on the next run.
+Authoritative rule, matching the skill and the smoke log: one message per PR the run opened, through the operator's Slack app incoming webhooks. A draft PR (needs a decision) is announced in the models channel through `SLACK_MODELS_WEBHOOK`; a ready PR is announced in the PR review channel through `SLACK_PRS_WEBHOOK`. A draft that a later run marks ready is announced again in the PR review channel. Each message carries the why (the inconsistency and the options for a draft, the TLDR for a ready PR) and a cc line for the Slack user id in the run settings. A missing webhook variable skips that post and is named in the report. No further discussion in Slack; replies there are treated as hints on the next run, nothing more.
 
 ### 4.3 Paid tests
 
@@ -173,7 +173,7 @@ The later target, once the team-level pieces exist. The skill is unchanged; only
 
 - v1 host: Claude Code cloud routine in the operator's cloud environment, chosen on the 2026-10-01 smoke test (see `smoke_log.md`). Paid tests run there with the environment's keys, the operator's call. The local scheduled task is the fallback host. v2 remains the cloud brain plus GitHub Actions hands.
 - GitHub identity: PRs are authored as the operator for now (the cloud session acts through the Claude GitHub App as the account owner). "As Claude" waits for a bot identity: a machine-user account or an org GitHub App.
-- Slack identity: the team Slack bot posts the one-line PR announcement when it exists. Until then no Slack post; the run sends a mobile push with the PR links.
+- Slack identity: the operator's Slack app, two incoming webhooks; drafts to the models channel, ready PRs to the PR review channel (§4.2). A team bot may take this over later.
 - No cap on models or spend per run.
 - Staleness covers Kiln and kiln_server, reported in one living GitHub issue.
 - Discord announcement dropped.
