@@ -153,7 +153,7 @@ class Memory(KilnParentedModel):
     def _validate_tags(cls, v: list[str]) -> list[str]:
         return validate_tags(v)
 
-    def save_to_file(self) -> None:
+    def save_to_file(self, create_dirs: bool = True) -> None:
         """Atomically write the record (temp file + os.replace).
 
         The memory store is lock-free and multi-process by design (many sessions
@@ -164,6 +164,10 @@ class Memory(KilnParentedModel):
         the previous complete file or the new complete file — never a torn one.
         Memory has no attachments, so the plain JSON dump is sufficient. The temp
         file gets the same mode as a normal write (see _create_temp_file).
+
+        `create_dirs=False` writes only into a folder that still exists: an update
+        racing a delete in another process then fails with FileNotFoundError
+        instead of re-creating the folder and bringing the memory back.
         """
         path = self.build_path()
         if path is None:
@@ -171,7 +175,8 @@ class Memory(KilnParentedModel):
                 "Cannot save to file because 'path' is not set. "
                 f"Class: {self.__class__.__name__}, id: {getattr(self, 'id', None)}"
             )
-        path.parent.mkdir(parents=True, exist_ok=True)
+        if create_dirs:
+            path.parent.mkdir(parents=True, exist_ok=True)
 
         json_data = self.model_dump_json(indent=2, exclude={"path"})
 

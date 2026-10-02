@@ -163,11 +163,15 @@ class MemoryStore:
             memory.tags = list(tags) if tags else []
         if scope is not _UNSET:
             memory.scope = scope
-        # save_to_file creates missing folders, so an update that lands after a
-        # delete in another process would bring the memory back.
+        # An update must not bring back a memory that another process deleted.
+        # The check fails fast; create_dirs=False covers a delete that lands
+        # after it, because the write then finds no folder to write into.
         if memory.path is None or not memory.path.is_file():
             raise MemoryNotFoundError(memory_id)
-        memory.save_to_file()
+        try:
+            memory.save_to_file(create_dirs=False)
+        except FileNotFoundError:
+            raise MemoryNotFoundError(memory_id)
         return memory
 
     def delete_memory(self, memory_id: str) -> None:

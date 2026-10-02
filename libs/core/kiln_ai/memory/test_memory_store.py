@@ -265,6 +265,26 @@ def test_update_does_not_bring_back_a_concurrently_deleted_memory(
     assert not memory.path.parent.exists()
 
 
+def test_update_does_not_bring_back_a_memory_deleted_after_the_check(
+    project: Project, store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+):
+    """The delete lands after the existence check passes, just before the
+    write: the write must not re-create the folder."""
+    memory = add(project, "junk", "project", minutes=0)
+    assert memory.path is not None
+    original_save = Memory.save_to_file
+
+    def delete_then_save(self: Memory, *args, **kwargs) -> None:
+        assert self.path is not None
+        shutil.rmtree(self.path.parent)
+        original_save(self, *args, **kwargs)
+
+    monkeypatch.setattr(Memory, "save_to_file", delete_then_save)
+    with pytest.raises(MemoryNotFoundError):
+        store.update_memory(memory.id, overview="edited")
+    assert not memory.path.parent.exists()
+
+
 # --- summary ---
 
 
