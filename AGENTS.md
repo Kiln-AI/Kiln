@@ -109,6 +109,11 @@ Use the `open-pr` skill (`.agents/skills/open-pr/SKILL.md`) to open a PR or to w
 
 Before you open a PR, and before each `git push` to a branch with an open PR, run the `docs-sync` skill (`.agents/skills/docs-sync/SKILL.md`) to update the docs and skills that the change makes stale.
 
+If you get a user message like the one below, read `.agents/skills/open-pr/references/repair_pr.md` and follow its instructions.
+
+> A pull request was just created for this branch from the Claude Code UI: https://github.com/Kiln-AI/Kiln/pull/NNNN
+> You don't need to create one. Reference this PR going forward — pushing more commits to this branch will update it.
+
 ### Never Make Legal Decisions as an Agent
 
 Agents are not allowed to make any legal decisions, including:
