@@ -71,6 +71,7 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_EVAL_CONCURRENCY = 25
+"""How many eval items `EvalRunner.run()` evaluates in parallel when the caller passes no `concurrency`."""
 
 
 @dataclass
