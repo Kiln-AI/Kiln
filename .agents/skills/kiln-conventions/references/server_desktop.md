@@ -15,7 +15,7 @@
 - **No `requests` inside `async def`.** `provider_api` has many synchronous `requests.get/post` calls inside async handlers, and each one blocks the whole server (including SSE streams) for the length of the call. New outbound calls use `httpx.AsyncClient` with a timeout (rules.md G23).
 - **Config is read inside handlers today.** `Config.shared()` is called directly in handlers and helpers, and tests patch `<module>.Config`. For new code, read config in the handler (or a FastAPI dependency) and pass the values down; don't read it in helpers (rules.md D11).
 - **`libs/server` must not know about desktop features.** No git-sync, copilot, jobs or other desktop-only knowledge in `kiln_server`. The desktop extends it through `make_app(lifespan=..., extra_middleware=...)` and its own `connect_*_api(app)` calls. `kiln_server.server.tags_metadata` already lists desktop-only tags; don't add more.
-- **The env vars a process reads live in the entry points.** `KILN_DEV_MODE`, `DEBUG_EVENT_LOOP` and `KILN_SKIP_REMOTE_MODEL_LIST` are set by `app/desktop/dev_env.set_dev_env_vars` for the dev server. Read new settings in the entry point or through `Config`, not in middleware or helpers (gate: `env-access`).
+- **The env vars a process reads live in the entry points.** `KILN_DEV_MODE`, `DEBUG_EVENT_LOOP` and `KILN_SKIP_REMOTE_MODEL_LIST` are set by `app/desktop/dev_env.set_dev_env_vars` for the dev server. `make dev_desktop` runs the real app (`app/desktop/desktop.py`) with only `KILN_SKIP_REMOTE_MODEL_LIST` defaulted to `true`. Read new settings in the entry point or through `Config`, not in middleware or helpers (gate: `env-access`).
 
 ## Where things go
 
