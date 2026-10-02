@@ -164,7 +164,7 @@ class SaveMemoryTool(_MemoryTool):
                 content=kwargs.get("content"),
                 tags=kwargs.get("tags"),
             )
-        except (ValidationError, ValueError) as e:
+        except (OSError, ValidationError, ValueError) as e:
             return self._error(e)
         return self._ok({"id": memory.id, "memory": self._record(memory)})
 
@@ -214,7 +214,7 @@ class ListMemoriesTool(_MemoryTool):
                 limit=_whole_number(kwargs.get("limit", 50), "limit"),
                 offset=_whole_number(kwargs.get("offset", 0), "offset"),
             )
-        except (ValidationError, ValueError) as e:
+        except (OSError, ValidationError, ValueError) as e:
             return self._error(e)
         payload: dict[str, Any] = {
             "memories": [
@@ -307,7 +307,7 @@ class UpdateMemoryTool(_MemoryTool):
             memory = await asyncio.to_thread(
                 self._store.update_memory, memory_id, **updates
             )
-        except (ValidationError, ValueError) as e:
+        except (OSError, ValidationError, ValueError) as e:
             return self._error(e)
         return self._ok({"memory": self._record(memory)})
 
@@ -334,7 +334,7 @@ class DeleteMemoryTool(_MemoryTool):
             return self._error(ValueError("id is required"))
         try:
             await asyncio.to_thread(self._store.delete_memory, memory_id)
-        except ValueError as e:
+        except (OSError, ValueError) as e:
             return self._error(e)
         return self._ok({"deleted": memory_id})
 
