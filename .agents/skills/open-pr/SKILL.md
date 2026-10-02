@@ -31,7 +31,8 @@ human decided and what a human did. An agent that fills it in makes a false reco
 
 When you open or edit a PR:
 
-- Copy the human header from the template exactly as it is. Keep every `REPLACE:`
+- Copy the human header from the template exactly as it is. Keep the hidden
+  `<!-- ... -->` comment for agents at the top of the template. Keep every `REPLACE:`
   placeholder, every `` `NA` ``, `` `person` ``, and `` `[Reason why ...]` `` placeholder,
   and every empty `- [ ]` box.
 - Do not tick a box in the header. This includes "I have done a code review", "I have run
@@ -495,6 +496,13 @@ Everything above `----` is the template, copied with no change other than the CL
 removal. Only a human fills it in.
 
 ````markdown
+<!--
+AI agents and bots opening a PR: you MUST read and follow .agents/skills/open-pr/SKILL.md before you write anything in this description.
+The most important rules:
+1. Never agree to the Contributor License Agreement in anyone's name. Do not add a username or edit the CLA statement. Only a human can agree to it.
+2. Never fill in the human section of this template: everything above "# Agentic PR Summary". Do not tick boxes, replace placeholders, or delete options. A human completes it.
+3. Write all AI commentary below the "# Agentic PR Summary" heading, and nowhere else.
+-->
 **Description**
 `REPLACE: what this PR is, in 1 to 2 sentences max.`
 
