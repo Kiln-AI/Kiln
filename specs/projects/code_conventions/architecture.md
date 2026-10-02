@@ -212,7 +212,7 @@ How to run the tests:
 - **Body:**
   1. Read `references/rules.md`.
   2. Read the area reference(s) from the path table.
-  3. After writing code, run `uv run python .agents/skills/<skill>/scripts/conventions_gate.py --worktree` (or `--range origin/main...HEAD` for a branch). Fix every FAIL, or add an allowlist entry (with a reason line) only if the hit isn't a real violation; a FAIL that can't be fixed without an out-of-scope refactor (rule H23) is left in place and reported with the rule id, `path:line`, and the refactor it waits on. Name each WARN in the end-of-task summary with a one-line justification.
+  3. After writing code, run `uv run python .agents/skills/<skill>/scripts/conventions_gate.py --worktree` (or `--range origin/main...HEAD` for a branch). Fix every FAIL, or add an allowlist entry (with a reason line) only if the hit isn't a real violation; a FAIL that can't be fixed without an out-of-scope refactor (rule H24) is left in place and reported with the rule id, `path:line`, and the refactor it waits on. Name each WARN in the end-of-task summary with a one-line justification.
   4. Self-check the review-only rules.
 - **Path → reference table.**
 - Kiln: "UI changes also load `kiln-ui`".

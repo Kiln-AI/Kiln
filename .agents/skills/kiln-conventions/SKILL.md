@@ -28,7 +28,7 @@ UI changes (anything under `app/web_ui` that renders) also need the `kiln-ui` sk
 
 ## 3. Write the code
 
-Follow the rules even where the surrounding code doesn't (rules.md H23). Don't copy a nearby pattern that breaks a rule, and don't rewrite neighbouring code to comply unless your change already touches it.
+Follow the rules even where the surrounding code doesn't (rules.md H24). Don't copy a nearby pattern that breaks a rule, and don't rewrite neighbouring code to comply unless your change already touches it.
 
 ## 4. Run the gate on your change
 
@@ -43,7 +43,7 @@ uv run python .agents/skills/kiln-conventions/scripts/conventions_gate.py --file
 It prints one line per hit, `SEV<TAB>RULE<TAB>path:line<TAB>snippet`, then a summary. Exit 1 means at least one FAIL.
 
 - **FAIL**: fix it. If the hit is not a violation, add an entry to `scripts/gate_allow.txt` with a `#` reason line above it. Don't allowlist a real violation.
-- **FAIL you can't fix without an out-of-scope refactor** (rules.md H23): leave it, and don't allowlist it. List it in your end-of-task summary and the PR description with the rule id, `path:line`, and the refactor it waits on. The gate isn't in CI, so a FAIL reported this way blocks nothing.
+- **FAIL you can't fix without an out-of-scope refactor** (rules.md H24): leave it, and don't allowlist it. List it in your end-of-task summary and the PR description with the rule id, `path:line`, and the refactor it waits on. The gate isn't in CI, so a FAIL reported this way blocks nothing.
 - **WARN**: fix it, or name it in your end-of-task summary with a one-line justification (for example "module-level-call `app.command(...)(...)` in `cli/cli.py`: Typer command registration at the CLI's composition root").
 
 Only added lines are checked in `--worktree` and `--range` mode, so a hit is always on a line you wrote. `--files` reports existing code too; it's for audits, not for gating.
@@ -56,16 +56,16 @@ The gate catches history comments, `global`, `bool(os.getenv…)`, env reads out
 - B4/B6: startup work is in the entry point or `lifespan`, not in an app factory or a module.
 - C7: no new module-level dict, list or set that gets mutated, and no ClassVar registries (the gate only catches `global`).
 - C8–C10: no reset hooks for tests, no asyncio primitives in singletons, every cache has an owner, a bound and invalidation.
-- D11/D14: config is read at the edge; validators and `default_factory` are pure.
-- E15–E20: thin handlers and pages, no router-to-router imports, no `HTTPException` in services, no catch-all modules, no test helpers in production packages, no near-copies.
-- F21: library code doesn't touch host-process globals.
-- G22: no blocking I/O in `async def`; every outbound call has a timeout.
+- D11/D14/D15: config is read at the edge; validators and `default_factory` are pure; no branching on the environment name to pick an implementation.
+- E16–E21: thin handlers and pages, no router-to-router imports, no `HTTPException` in services, no catch-all modules, no test helpers in production packages, no near-copies.
+- F22: library code doesn't touch host-process globals.
+- G23: no blocking I/O in `async def`; every outbound call has a timeout.
 
-If a rule couldn't be followed without a refactor, say so in your summary (H23); for a gate FAIL, report it as in step 4.
+If a rule couldn't be followed without a refactor, say so in your summary (H24); for a gate FAIL, report it as in step 4.
 
 ## For reviewers
 
-Apply `references/rules.md` and the area references for the changed paths. Run the gate with `--range <base>...<head>` on the PR and report every FAIL and every WARN that the author didn't justify. Accept a FAIL the author reported with its rule id, `path:line` and the refactor it waits on (rules.md H23); an allowlist entry for a real violation is a finding. Rule violations in added code are findings, not nits.
+Apply `references/rules.md` and the area references for the changed paths. Run the gate with `--range <base>...<head>` on the PR and report every FAIL and every WARN that the author didn't justify. Accept a FAIL the author reported with its rule id, `path:line` and the refactor it waits on (rules.md H24); an allowlist entry for a real violation is a finding. Rule violations in added code are findings, not nits.
 
 ## Maintaining the gate
 

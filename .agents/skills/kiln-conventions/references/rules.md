@@ -227,9 +227,21 @@ created_by: str          # the caller passes the user id
 # migrations run in an explicit load hook or a migration command
 ```
 
+### D15. Config picks the implementation; code doesn't second-guess it by environment
+
+Which implementation runs (a storage backend, a client, a provider) is chosen by config or env vars at deploy time. Code reads the setting and builds what it names. Don't branch on the environment name (`env == "prod"`, "staging", "development") to pick, require or forbid an implementation, and don't add startup guards that override the deploy config. Environment-specific choices live in the deploy config.
+
+```python
+# ❌
+if settings.env not in ("test", "development") and settings.chat_storage == "inmemory":
+    raise ValueError(...)
+# ✅
+storage = build_chat_storage(settings.chat_storage)  # the deploy config picks "gcs" or "inmemory"
+```
+
 ## E. Modules and layering
 
-### E15. Thin edges
+### E16. Thin edges
 
 Route handlers and pages parse input, call one service or flow function, and map the result. Multi-step logic goes in a service module (Python) or a `.ts` module (web) with unit tests. As a guide, a handler over ~50 lines, or one calling several services or endpoints, should be split. That number is a prompt to stop and think, not a hard limit.
 
@@ -245,7 +257,7 @@ async def create_spec(request: CreateSpecRequest) -> SpecResponse:
     return SpecResponse.from_spec(spec)
 ```
 
-### E16. Services don't know about HTTP, and routers don't import each other
+### E17. Services don't know about HTTP, and routers don't import each other
 
 Service and util code doesn't import router modules and doesn't raise `HTTPException`. Routers don't import each other or each other's `_private` names.
 
@@ -259,7 +271,7 @@ from .services.prompts import resolve_task_runtime_prompt
 raise EvalNotFound(eval_id)            # the router maps it to 404
 ```
 
-### E17. Respect the dependency direction of the area `(gate, where a path rule exists: lib-imports-routes)`
+### E18. Respect the dependency direction of the area `(gate, where a path rule exists: lib-imports-routes)`
 
 Each area reference states its direction. Shared code never imports from code that depends on it.
 
@@ -270,7 +282,7 @@ import Rating from "../../routes/(app)/run/rating.svelte"
 import Rating from "$lib/ui/rating.svelte"
 ```
 
-### E18. No catch-all modules
+### E19. No catch-all modules
 
 Put a function in the module of the domain it belongs to, not in `utils`, `helpers`, `misc` or a "stores" file that holds display helpers.
 
@@ -279,7 +291,7 @@ Put a function in the module of the domain it belongs to, not in `utils`, `helpe
 // ✅ a model_display module for model_name() and provider_name_from_id()
 ```
 
-### E19. Test helpers live in test files or test-support modules
+### E20. Test helpers live in test files or test-support modules
 
 Never in production packages, where they ship and get imported by accident.
 
@@ -288,7 +300,7 @@ Never in production packages, where they ship and get imported by accident.
 # ✅ conftest.py, or a test-support module the build excludes
 ```
 
-### E20. Prefer one shared helper or table over near-copies
+### E21. Prefer one shared helper or table over near-copies
 
 A "keep in sync" comment means the code should be extracted.
 
@@ -301,7 +313,7 @@ async def validate_key(provider: str, key: str) -> KeyCheckResult: ...
 
 ## F. Library vs. application
 
-### F21. Library code doesn't change the global state of the process hosting it
+### F22. Library code doesn't change the global state of the process hosting it
 
 That includes litellm settings, logging handlers or levels, `csv`, `mimetypes`, `os.environ`, `sys.modules`, `atexit` and signal handlers. If host-level setup is needed, the library exposes a `setup_*()` that adds to existing state rather than replacing it, and the entry point calls it.
 
@@ -316,7 +328,7 @@ def setup_litellm_logging() -> None:
 
 ## G. Async and I/O
 
-### G22. No blocking I/O inside `async def`; every outbound call has a timeout
+### G23. No blocking I/O inside `async def`; every outbound call has a timeout
 
 Create clients once per process, not per call.
 
@@ -331,7 +343,7 @@ async def connect_openai(client: httpx.AsyncClient, key: str):
 
 ## H. Grandfathering
 
-### H23. New code follows these rules even when the code around it doesn't
+### H24. New code follows these rules even when the code around it doesn't
 
 Don't copy a pattern from nearby code that breaks a rule. Don't rewrite neighbouring code to comply either, unless the change is already touching it. If a rule can't be followed without a refactor, follow the local pattern and say so in the end-of-task summary. When that leaves a gate FAIL, don't allowlist it: list it in the summary and the PR description with the rule id, `path:line`, and the refactor it waits on. The allowlist is only for hits that aren't violations.
 

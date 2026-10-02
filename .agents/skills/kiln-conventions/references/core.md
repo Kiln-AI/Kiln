@@ -44,7 +44,7 @@
 | A tool an agent can call | `tools/` (built-ins in `tools/built_in_tools/`) |
 | A model or provider entry | `adapters/ml_model_list.py`, `ml_embedding_model_list.py`, `reranker_list.py` |
 | A CLI command | `cli/commands/`, registered in `cli/cli.py` |
-| A small, dependency-free helper | `utils/`, only if no domain module owns it (rules.md E18) |
+| A small, dependency-free helper | `utils/`, only if no domain module owns it (rules.md E19) |
 | Test support | `test_*.py` or `conftest.py`. The `pytest_*.py` modules in the package predate this rule; don't add more. |
 
 **Dependency direction.** `utils/` is the bottom layer: it must not import `adapters/`, `tools/` or `datamodel/`. `utils/litellm.py` and `utils/project_utils.py` break this today; don't add more, and put helpers that need those packages in the layer that owns them. `utils/test_import_layering.py` guards the datamodel import cycle. `tools/` and `adapters/` import each other through function-local imports; don't add new cycles.
@@ -54,7 +54,7 @@
 1. `ModelProviderName` in `datamodel/datamodel_enums.py`
 2. the key and env-var properties in `Config.__init__` (`utils/config.py`)
 3. `provider_warnings` and `provider_name_from_id` in `adapters/provider_tools.py`
-4. `lite_llm_core_config_for_provider` in `adapters/provider_tools.py`. Every case there reads `Config.shared().<key>`, so a new case FAILs `core-config-shared` (and `env-access` if it reads a base-URL env var). That is an H23 case: don't allowlist it; report it in your summary and the PR with the rule id, `path:line`, and "waits on provider config injection".
+4. `lite_llm_core_config_for_provider` in `adapters/provider_tools.py`. Every case there reads `Config.shared().<key>`, so a new case FAILs `core-config-shared` (and `env-access` if it reads a base-URL env var). That is an H24 case: don't allowlist it; report it in your summary and the PR with the rule id, `path:line`, and "waits on provider config injection".
 5. `get_litellm_provider_info` in `utils/litellm.py`
 6. any provider branches in `LiteLlmAdapter.build_extra_body`
 7. the model entries in `ml_model_list.py`

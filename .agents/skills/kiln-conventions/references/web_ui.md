@@ -22,7 +22,7 @@ A SvelteKit app (Svelte 4, TypeScript), prerendered with `ssr = false` and serve
 | A typed API wrapper used by several pages | `lib/api/` (e.g. `lib/api/v2_eval_api.ts`) |
 | A client-side service with no UI | `lib/services/` |
 | A store | `lib/stores/<domain>_store.ts`. Not `lib/stores.ts`, which already mixes stores with display helpers. |
-| A display-name or formatting helper | a domain module in `lib/utils/` (rules.md E18). `lib/utils/formatters.ts` is for domain-free formatting only. |
+| A display-name or formatting helper | a domain module in `lib/utils/` (rules.md E19). `lib/utils/formatters.ts` is for domain-free formatting only. |
 | A shared, generic component | `lib/ui/` (a shared control: see `kiln-ui` before changing one) |
 | A shared, domain-specific component | `lib/components/` |
 | Generated API types | `lib/api_schema.d.ts`, regenerated with `lib/generate_schema.sh`. Never edit it by hand. |

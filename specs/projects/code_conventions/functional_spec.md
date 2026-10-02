@@ -46,7 +46,7 @@ The skill must work for an agent with no context on the repo, and it must be che
 1. Read `rules.md`.
 2. Read the area reference(s) for the paths being changed.
 3. Write the code.
-4. Before finishing, run the conventions gate on the change (§5). Fix every FAIL, or allowlist it only if the hit isn't a real violation; a FAIL that can't be fixed without an out-of-scope refactor (rule H23) is left in place and reported with the rule id, `path:line`, and the refactor it waits on. Name each WARN in the end-of-task summary with a one-line justification, or fix it.
+4. Before finishing, run the conventions gate on the change (§5). Fix every FAIL, or allowlist it only if the hit isn't a real violation; a FAIL that can't be fixed without an out-of-scope refactor (rule H24) is left in place and reported with the rule id, `path:line`, and the refactor it waits on. Name each WARN in the end-of-task summary with a one-line justification, or fix it.
 5. Self-check the rules the gate can't catch (§4, marked *review-only*).
 
 ### 3.3 Layout
@@ -115,23 +115,24 @@ These are the rules `rules.md` must carry, in short imperative form. Each rule g
 12. Parse config values with real parsers. Never use `bool(str)`. *(gate: `bool(os.environ…)` / `bool(os.getenv…)`)*
 13. Read env vars only in the config module and the entry points. Never configure a library by writing `os.environ`. *(gate: env access outside allowed paths)*
 14. Pydantic `default_factory` and validators are pure: no config, env, filesystem or network.
+15. Config picks the implementation. Code reads the setting and builds what it names; it doesn't branch on the environment name to pick, require or forbid an implementation, and doesn't add startup guards that override the deploy config.
 
 ### E. Modules and layering
-15. Thin edges. Route handlers and pages parse input, call one service or flow function, and map the result. Multi-step logic goes in a service module (Python) or a `.ts` module (web) with unit tests. As a guide, a handler over ~50 lines or one calling several services/endpoints should be split. That number is a prompt to stop and think, not a hard limit.
-16. Service and util code doesn't import router modules and doesn't raise HTTP exceptions. Routers don't import each other or each other's `_private` names.
-17. Respect the dependency direction of the area. Each area reference states it. *(gate where it's a path rule, e.g. web `lib/` must not import `routes/`)*
-18. No catch-all modules. Put a function in the module of the domain it belongs to.
-19. Test helpers live in test files or test-support modules, never in production packages.
-20. Prefer one shared helper or table-driven spec over near-copies. A "keep in sync" comment means the code should be extracted.
+16. Thin edges. Route handlers and pages parse input, call one service or flow function, and map the result. Multi-step logic goes in a service module (Python) or a `.ts` module (web) with unit tests. As a guide, a handler over ~50 lines or one calling several services/endpoints should be split. That number is a prompt to stop and think, not a hard limit.
+17. Service and util code doesn't import router modules and doesn't raise HTTP exceptions. Routers don't import each other or each other's `_private` names.
+18. Respect the dependency direction of the area. Each area reference states it. *(gate where it's a path rule, e.g. web `lib/` must not import `routes/`)*
+19. No catch-all modules. Put a function in the module of the domain it belongs to.
+20. Test helpers live in test files or test-support modules, never in production packages.
+21. Prefer one shared helper or table-driven spec over near-copies. A "keep in sync" comment means the code should be extracted.
 
 ### F. Library vs. application
-21. Library code doesn't change the global state of the process hosting it: litellm settings, logging handlers or levels, `csv`, `mimetypes`, `os.environ`, `sys.modules`, `atexit`, signal handlers. If host-level setup is needed, the library exposes a `setup_*()` that adds to existing state rather than replacing it, and the entry point calls it.
+22. Library code doesn't change the global state of the process hosting it: litellm settings, logging handlers or levels, `csv`, `mimetypes`, `os.environ`, `sys.modules`, `atexit`, signal handlers. If host-level setup is needed, the library exposes a `setup_*()` that adds to existing state rather than replacing it, and the entry point calls it.
 
 ### G. Async and I/O
-22. No blocking I/O inside `async def`. Every outbound call has a timeout. Create clients once per process, not per call.
+23. No blocking I/O inside `async def`. Every outbound call has a timeout. Create clients once per process, not per call.
 
 ### H. Grandfathering
-23. New code follows these rules even when the code around it doesn't. Don't copy a pattern from nearby code that breaks a rule. Don't rewrite neighbouring code to comply either, unless the change is already touching it. If a rule can't be followed without a refactor, follow the local pattern and say so in the end-of-task summary.
+24. New code follows these rules even when the code around it doesn't. Don't copy a pattern from nearby code that breaks a rule. Don't rewrite neighbouring code to comply either, unless the change is already touching it. If a rule can't be followed without a refactor, follow the local pattern and say so in the end-of-task summary.
 
 ### Kiln area gotchas (public; for `references/*.md`)
 
@@ -195,7 +196,7 @@ Where a gotcha describes a bug that's being fixed in a separate PR, the referenc
 - **Skipped:** test files (`test_*.py`, `*_test.py`, `conftest.py`, `*.test.ts`, `__tests__/`), generated files (e.g. `api_schema.d.ts`, codegen output), and non-code files.
 - **Output:** one line per hit, `SEV<TAB>RULE<TAB>file:line<TAB>snippet`, then a summary count. Exit code 1 if any FAIL remains, 0 otherwise. Bad usage exits 2.
 - **Severities:**
-  - FAIL means fix it, or add an allowlist entry with a reason only if the hit isn't a real violation; a FAIL that can't be fixed without an out-of-scope refactor (rule H23) is left in place and reported with the rule id, `path:line`, and the refactor it waits on.
+  - FAIL means fix it, or add an allowlist entry with a reason only if the hit isn't a real violation; a FAIL that can't be fixed without an out-of-scope refactor (rule H24) is left in place and reported with the rule id, `path:line`, and the refactor it waits on.
   - WARN means justify it in the end-of-task summary.
 - **Allowlist:** `gate_allow.txt` holds one regex per line, matched against `file<TAB>snippet`, optionally scoped with a `RULE:` prefix. Every entry has a `#` reason comment on the line above it. There is no inline pragma, so allowances stay visible in one file.
 

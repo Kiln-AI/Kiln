@@ -1,6 +1,6 @@
 # Kiln Code Review Guidelines
 
-Apply `.agents/skills/kiln-conventions/references/rules.md` and the area references for the changed paths (`.agents/skills/kiln-conventions/references/`). Run the gate with `--range` on the PR's commits (`uv run python .agents/skills/kiln-conventions/scripts/conventions_gate.py --range <base>...<head>`) and report its FAIL and WARN hits. Rule violations in added code are findings. A FAIL the author reported under rules.md H23 (rule id, `path:line`, and the refactor it waits on) is accepted; an allowlist entry for a real violation is a finding.
+Apply `.agents/skills/kiln-conventions/references/rules.md` and the area references for the changed paths (`.agents/skills/kiln-conventions/references/`). Run the gate with `--range` on the PR's commits (`uv run python .agents/skills/kiln-conventions/scripts/conventions_gate.py --range <base>...<head>`) and report its FAIL and WARN hits. Rule violations in added code are findings. A FAIL the author reported under rules.md H24 (rule id, `path:line`, and the refactor it waits on) is accepted; an allowlist entry for a real violation is a finding.
 
 ### Issues to watch for
 
