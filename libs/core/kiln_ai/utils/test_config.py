@@ -775,3 +775,75 @@ def test_typesafe_api_key_property():
     prop = Config()._properties["typesafe_api_key"]
     assert prop.env_var == "TYPESAFE_API_KEY"
     assert prop.sensitive is True
+
+
+ENV_BACKED_BOOL_PROPERTIES = [
+    ("autosave_runs", "KILN_AUTOSAVE_RUNS"),
+    ("enable_demo_tools", "ENABLE_DEMO_TOOLS"),
+]
+
+
+@pytest.fixture
+def default_config(mock_yaml_file):
+    with patch(
+        "kiln_ai.utils.config.Config.settings_path",
+        return_value=mock_yaml_file,
+    ):
+        yield Config()
+
+
+def test_env_backed_bool_properties_list_is_complete(default_config):
+    actual = [
+        (name, prop.env_var)
+        for name, prop in default_config._properties.items()
+        if prop.type is bool and prop.env_var
+    ]
+    assert sorted(actual) == sorted(ENV_BACKED_BOOL_PROPERTIES)
+
+
+@pytest.mark.parametrize("name,env_var", ENV_BACKED_BOOL_PROPERTIES)
+@pytest.mark.parametrize("env_value", ["false", "False", "FALSE", "0", "no", "off"])
+def test_env_backed_bool_property_false_values(
+    default_config, name, env_var, env_value
+):
+    with patch.dict(os.environ, {env_var: env_value}):
+        assert getattr(default_config, name) is False
+
+
+@pytest.mark.parametrize("name,env_var", ENV_BACKED_BOOL_PROPERTIES)
+@pytest.mark.parametrize("env_value", ["true", "True", " TRUE ", "1", "yes", "on"])
+def test_env_backed_bool_property_true_values(default_config, name, env_var, env_value):
+    with patch.dict(os.environ, {env_var: env_value}):
+        assert getattr(default_config, name) is True
+
+
+@pytest.mark.parametrize("name,env_var", ENV_BACKED_BOOL_PROPERTIES)
+@pytest.mark.parametrize("env_value", ["maybe", "", "2"])
+def test_env_backed_bool_property_invalid_value_raises(
+    default_config, name, env_var, env_value
+):
+    with patch.dict(os.environ, {env_var: env_value}):
+        with pytest.raises(ValueError, match=f"config setting '{name}'"):
+            getattr(default_config, name)
+
+
+@pytest.mark.parametrize("in_memory", [True, False])
+@pytest.mark.parametrize("stored,expected", [("false", False), ("true", True)])
+def test_bool_property_parses_stored_strings(
+    mock_yaml_file, in_memory, stored, expected
+):
+    with patch(
+        "kiln_ai.utils.config.Config.settings_path",
+        return_value=mock_yaml_file,
+    ):
+        config = Config(
+            properties={
+                "bool_prop": ConfigProperty(
+                    bool, default=not expected, in_memory=in_memory
+                ),
+            }
+        )
+        config.update_settings({"bool_prop": stored})
+        assert config.bool_prop is expected
+        if not in_memory:
+            assert Config(properties=config._properties).bool_prop is expected

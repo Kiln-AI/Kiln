@@ -258,16 +258,20 @@ class Config:
         if property_config.in_memory:
             if name in self._in_memory_settings:
                 value = self._in_memory_settings[name]
-                return value if value is None else property_config.type(value)
+                return (
+                    value if value is None else _convert(name, property_config, value)
+                )
         else:
             if name in self._settings:
                 value = self._settings[name]
-                return value if value is None else property_config.type(value)
+                return (
+                    value if value is None else _convert(name, property_config, value)
+                )
 
         # Check environment variable
         if property_config.env_var and property_config.env_var in os.environ:
             value = os.environ[property_config.env_var]
-            return property_config.type(value)
+            return _convert(name, property_config, value)
 
         # Use default value or default_lambda
         if property_config.default_lambda:
@@ -275,7 +279,7 @@ class Config:
         else:
             value = property_config.default
 
-        return None if value is None else property_config.type(value)
+        return None if value is None else _convert(name, property_config, value)
 
     def __setattr__(self, name, value):
         if name in ("_properties", "_settings", "_lock", "_in_memory_settings"):
@@ -375,6 +379,30 @@ class Config:
                 with open(self.settings_path(), "w") as f:
                     yaml.dump(current_settings, f)
                 self._settings = current_settings
+
+
+_TRUE_STRINGS = {"true", "1", "yes", "on"}
+_FALSE_STRINGS = {"false", "0", "no", "off"}
+
+
+def _parse_bool(name: str, value: Any) -> bool:
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in _TRUE_STRINGS:
+            return True
+        if normalized in _FALSE_STRINGS:
+            return False
+        raise ValueError(
+            f"Invalid boolean value {value!r} for config setting '{name}'. Expected one of: "
+            f"{', '.join(sorted(_TRUE_STRINGS | _FALSE_STRINGS))}."
+        )
+    return bool(value)
+
+
+def _convert(name: str, property_config: ConfigProperty, value: Any) -> Any:
+    if property_config.type is bool:
+        return _parse_bool(name, value)
+    return property_config.type(value)
 
 
 def _get_user_id():
