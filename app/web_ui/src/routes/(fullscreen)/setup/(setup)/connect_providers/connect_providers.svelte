@@ -240,6 +240,22 @@
       api_key_fields: ["API Key"],
     },
     {
+      name: "Cloudflare",
+      id: "cloudflare",
+      description: "Open models on the edge, plus an AI gateway.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://dash.cloudflare.com/?to=/:account/ai/workers-ai and click 'Use REST API'",
+        "Click 'Create a Workers AI API Token', create the token, then copy it and paste it below",
+        "On the same page, copy your Account ID and paste it below",
+        "Optional: to send requests through Cloudflare AI Gateway (a router to other AI hosts), enter a gateway ID. Enter 'default' to have Cloudflare create one.",
+        "Click 'Connect'",
+      ],
+      api_key_warning: "Some models require Cloudflare's Workers Paid plan.",
+      api_key_fields: ["API Token", "Account ID", "AI Gateway ID - Optional"],
+      optional_fields: ["AI Gateway ID - Optional"],
+    },
+    {
       name: "TypeSafe AI",
       id: "typesafe",
       description:
@@ -390,6 +406,12 @@
       custom_description: null,
     },
     featherless_ai: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    cloudflare: {
       connected: false,
       connecting: false,
       error: null,
@@ -805,6 +827,9 @@
       }
       if (data["featherless_ai_api_key"]) {
         status.featherless_ai.connected = true
+      }
+      if (data["cloudflare_api_key"] && data["cloudflare_account_id"]) {
+        status.cloudflare.connected = true
       }
       if (data["typesafe_api_key"]) {
         status.typesafe.connected = true

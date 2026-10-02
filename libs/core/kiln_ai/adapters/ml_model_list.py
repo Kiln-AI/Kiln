@@ -74,6 +74,7 @@ class ModelName(str, Enum):
     llama_3_3_70b = "llama_3_3_70b"
     llama_4_maverick = "llama_4_maverick"
     llama_4_scout = "llama_4_scout"
+    gpt_6_1_sol = "gpt_6_1_sol"
     gpt_6_astra = "gpt_6_astra"
     gpt_6_sol = "gpt_6_sol"
     gpt_6_luna = "gpt_6_luna"
@@ -528,12 +529,24 @@ GPT_5_4_PRO_OPENAI_THINKING_LEVELS = {
 # GPT-6 Astra supports reasoning effort levels low/medium/high/xhigh/max with a
 # default of medium. Unlike the GPT-5.x models it does NOT support `none` or
 # `minimal`, and it adds a new `max` level, so it needs its own constant.
+# GPT-6.1 Sol on OpenRouter uses the same levels.
 GPT_6_ASTRA_OPENAI_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
     "High": "high",
     "Extra High": "xhigh",
     "Max": "max",
+}
+
+# GPT-6.1 Sol on OpenAI direct. The model page lists `max` as well, but
+# /v1/chat/completions (which Kiln uses) rejects it with a 400; only
+# /v1/responses accepts it. `none` and `minimal` are rejected on both.
+# https://developers.openai.com/api/docs/models/gpt-6.1-sol
+GPT_6_1_SOL_OPENAI_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
 }
 
 # GPT-6 Sol and Luna support the same levels as Astra plus `none`, and default
@@ -729,8 +742,84 @@ QWEN_3P6_GROQ_THINKING_LEVELS = {
     "On": "default",
 }
 
+QWEN_3P8_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+}
+
+# Groq caps Qwen 3.8 27B output at 2048 tokens unless max_completion_tokens is
+# set, and `high` reasoning alone exceeds that (finish_reason "length", empty
+# content), so Groq omits it.
+QWEN_3P8_GROQ_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+}
+
 
 built_in_models: List[KilnModel] = [
+    # GPT 6.1 Sol
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_1_sol,
+        friendly_name="GPT-6.1 Sol",
+        featured_rank=4,
+        editorial_notes="OpenAI's balanced GPT-6.1 model. Near-Astra quality at a mid-tier price.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="gpt-6.1-sol",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_1_SOL_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
+                # for gpt-5.4+. Disable function calling until Kiln routes these
+                # models to /v1/responses.
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="openai/gpt-6.1-sol",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # GPT 6 Astra
     KilnModel(
         family=ModelFamily.gpt,
@@ -796,13 +885,10 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_6_sol,
         friendly_name="GPT-6 Sol",
-        featured_rank=4,
-        editorial_notes="OpenAI's balanced GPT-6 model. Strong reasoning and multimodal at a mid-tier price.",
+        editorial_notes="OpenAI's previous-generation balanced GPT-6 model. Strong reasoning and multimodal at a mid-tier price.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 model_id="gpt-6-sol",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
@@ -826,8 +912,6 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 model_id="openai/gpt-6-sol",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
@@ -1343,6 +1427,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5.3-chat",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_doc_extraction=True,
                 supports_vision=True,
@@ -2706,6 +2791,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
                 model_id="claude-opus-4-1-20250805",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.function_calling,
                 temp_top_p_exclusive=True,
             ),
@@ -2720,6 +2806,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-opus-4",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.function_calling,
             ),
             KilnModelProvider(
@@ -4205,6 +4292,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
                 model_id="gemini-2.0-flash",
+                deprecated=True,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
@@ -4265,6 +4353,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
                 model_id="gemini-2.0-flash-lite",
+                deprecated=True,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
@@ -4446,6 +4535,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="nvidia/nemotron-3-nano-30b-a3b:free",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
             ),
@@ -4781,6 +4871,7 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=False,
                 supports_data_gen=False,
                 model_id="meta-llama/llama-3.2-11b-vision-instruct",
+                deprecated=True,
                 supports_function_calling=False,
                 supports_vision=True,
                 supports_doc_extraction=True,
@@ -5576,6 +5667,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="google/gemma-3n-e4b-it",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=False,
                 supports_function_calling=False,
@@ -5908,7 +6000,7 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.together_ai,
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
-                model_id="deepseek-ai/DeepSeek-V4-Pro",
+                model_id="deepseek-ai/DeepSeek-V4-Pro-0813",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
             ),
@@ -6231,6 +6323,7 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 model_id="deepseek/deepseek-r1-distill-llama-70b",
+                deprecated=True,
                 r1_openrouter_options=True,
                 require_openrouter_reasoning=True,
                 parser=ModelParserID.r1_thinking,
@@ -6782,6 +6875,26 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MD,
                 ],
                 multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.groq,
+                model_id="qwen/qwen3.8-27b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                available_thinking_levels=QWEN_3P8_GROQ_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Groq serves this model with image input, but no Groq provider in
+                # Kiln is wired for multimodal yet, so it stays text-only here.
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="qwen-3.8-27b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                available_thinking_levels=QWEN_3P8_THINKING_LEVELS,
+                default_thinking_level="medium",
             ),
             KilnModelProvider(
                 name=ModelProviderName.featherless_ai,
@@ -9187,6 +9300,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Pro/zai-org/GLM-5",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
