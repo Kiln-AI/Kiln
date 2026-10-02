@@ -4532,6 +4532,11 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                model_id="@cf/nvidia/nemotron-3-120b-a12b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
         ],
     ),
     # Nemotron 3 Nano
@@ -5640,6 +5645,21 @@ built_in_models: List[KilnModel] = [
                 ],
                 max_parallel_requests=2,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                model_id="@cf/google/gemma-4-26b-a4b-it",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
         ],
     ),
     # Gemma 4 E4B
@@ -6037,6 +6057,11 @@ built_in_models: List[KilnModel] = [
                 model_id="deepseek-ai/DeepSeek-V4-Pro",
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                model_id="@cf/deepseek-ai/deepseek-v4-pro-0813",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
         ],
     ),
     # DeepSeek V4 Flash
@@ -6069,6 +6094,12 @@ built_in_models: List[KilnModel] = [
                 model_id="deepseek-ai/DeepSeek-V4-Flash-0731",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                suggested_for_synthetic_user=True,
+                model_id="@cf/deepseek-ai/deepseek-v4-flash-0731",
+                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
@@ -7022,6 +7053,21 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Qwen/Qwen3.8-27B",
                 structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                model_id="@cf/qwen/qwen3.8-27b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
@@ -9180,6 +9226,11 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=False,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                model_id="@cf/zai-org/glm-5.3",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
         ],
     ),
     # GLM 5.3 Fast — Fireworks speed-optimized serving of GLM 5.3 (routers/ slug, ~2x throughput)
@@ -9286,6 +9337,22 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
             ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                suggested_for_synthetic_user=True,
+                model_id="@cf/zai-org/glm-5.3-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
         ],
     ),
     # GLM 5.3 FlashX
@@ -9351,6 +9418,11 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.featherless_ai,
                 model_id="zai-org/GLM-5.2",
                 structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                model_id="@cf/zai-org/glm-5.2",
+                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
@@ -9539,6 +9611,11 @@ built_in_models: List[KilnModel] = [
                 model_id="z-ai/glm-4.7-flash",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                model_id="@cf/zai-org/glm-4.7-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
@@ -9953,6 +10030,21 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                model_id="@cf/moonshotai/kimi-k2.6",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
                 ],
             ),
         ],
