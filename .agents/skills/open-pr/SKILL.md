@@ -20,8 +20,8 @@ The PR template at `.github/pull_request_template.md` has two parts:
 
 1. **The human header.** This is all the text above the `----` line and the
    `# Agentic PR Summary` heading. It holds the description, the author review, the
-   architecture review, the review style, the agentic code review, what to review, the
-   UI review, and the Contributor License Agreement (CLA).
+   architecture review, the review requested from the code reviewer, the agentic code
+   review, what to review, the UI review, and the Contributor License Agreement (CLA).
 2. **The Agentic PR Summary.** This is all the text below the `# Agentic PR Summary`
    heading. An agent writes this part.
 
@@ -506,10 +506,10 @@ removal. Only a human fills it in.
 - [ ] Small change, no architecture review needed
 - [ ] Requesting architecture review exception for other reason: `NA`
 
-**Review Style Requested (select 1)**
-- [ ] Full Agentic: only AI Review. `[Reason why if selecting this option]`
-- [ ] Mixed: AI for some areas, human sign-off on others
-- [ ] Full human
+**Review Requested from Code Reviewer (select 1)**
+- [ ] Sign off on AI-only review: `[reason - required if selected]`
+- [ ] Mixed: human review of some areas, AI on others (details below)
+- [ ] Full human: human reads everything
 
 **Agentic Code Review (must check all before requesting CR)**
 - [ ] I have run `/spec deep cr` on this PR or used `/spec` CRs throughout
