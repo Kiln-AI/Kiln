@@ -109,3 +109,13 @@
 ## Successor-slug rule: added 2026-10-01
 
 - From the #prs thread on #1852: Together dropped `deepseek-ai/DeepSeek-V4-Pro` for `-0813`; the routine swapped the slug in place. the team ruled: deprecate the old provider entry and add the successor as a distinct model, so evals pinned to the old one keep their history. Rule added to the prompt (v7); a human-requested PR applying it to DeepSeek V4 Pro was opened the same day and supersedes #1852.
+
+## Run 4: first scheduled run (2026-10-02, 07:05 America/Toronto)
+
+- Fired on the cron at 11:05 UTC. 42 minutes wall clock, of which about 15 were lost to a first paid-test invocation that produced no output and hit the run's own 25-minute timeout; the rerun with output to a file took 4 minutes. Setup script ran at provisioning; `uv` was current; web checks passed.
+- Applied the successor-slug rule unprompted: Fireworks dropped the DeepSeek V4 Pro preview slug for `-0813`, so the run added `DeepSeek V4 Pro 0813` as a distinct model on OpenRouter and Together AI (27 paid tests passed, 3 logprobs tests skipped) in a ready PR, #1871, with a plain `chore:` title and the pre-filled header. The Fireworks entry for the same checkpoint returned 404 "not deployed" on all 11 tests and on the retry, so it went to draft #1872 with a **Decisions required** section. No comments posted on either.
+- Deprecation audit: nothing newly dead. Report-only findings: OpenRouter now lists `qwen/qwen3.8-max-0902` beside the old slug, which still answers; 13 OpenRouter expiries between 2026-10-08 and 2026-12-31; Fireworks router slugs return 403 from the detail API but answer chat calls.
+- Remote config: `remote_config` matched `main` on all four files; a publish PR (#1859) had been merged the day before and #1810 was closed. Nothing opened.
+- Slack: ready post to #prs and draft post to #models, both 07:47 EDT, both with the why. Mobile push sent.
+- Behaviour to note: after the report the session unsubscribed itself from the two PRs' GitHub activity, reasoning that staying subscribed would conflict with the no-comment rule. Follow-ups on CI or reviews therefore wait for the next run.
+- Also observed: a team Slack bot now posts PR cards with reviewer status in #prs for PRs that request reviewers. The sweep's PRs request none, so they get no card; requesting a reviewer from the sweep would make the webhook post redundant.
