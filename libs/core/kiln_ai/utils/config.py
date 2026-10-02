@@ -1,5 +1,6 @@
 import copy
 import getpass
+import logging
 import os
 import threading
 from pathlib import Path
@@ -9,6 +10,8 @@ import yaml
 
 # Configuration keys
 MCP_SECRETS_KEY = "mcp_secrets"
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigProperty:
@@ -268,27 +271,41 @@ class Config:
 
         property_config = self._properties[name]
 
-        if property_config.in_memory:
-            if name in self._in_memory_settings:
-                value = self._in_memory_settings[name]
-                return value if value is None else property_config.type(value)
-        else:
-            if name in self._settings:
-                value = self._settings[name]
-                return value if value is None else property_config.type(value)
+        stored = (
+            self._in_memory_settings if property_config.in_memory else self._settings
+        )
+        if name in stored:
+            value = stored[name]
+            if value is None:
+                return None
+            if not _is_unset(property_config, value):
+                return self._convert(name, property_config, value)
 
         # Check environment variable
         if property_config.env_var and property_config.env_var in os.environ:
             value = os.environ[property_config.env_var]
+            if not _is_unset(property_config, value):
+                return self._convert(name, property_config, value)
+
+        value = _raw_default(property_config)
+        return None if value is None else self._convert(name, property_config, value)
+
+    def _convert(self, name: str, property_config: ConfigProperty, value: Any) -> Any:
+        if property_config.type is not bool:
             return property_config.type(value)
-
-        # Use default value or default_lambda
-        if property_config.default_lambda:
-            value = property_config.default_lambda()
-        else:
-            value = property_config.default
-
-        return None if value is None else property_config.type(value)
+        parsed = _parse_bool(value)
+        if parsed is not None:
+            return parsed
+        shown_value = "[hidden]" if property_config.sensitive else repr(value)
+        logger.warning(
+            "Invalid boolean value %s for config setting '%s'. Expected one of: %s. "
+            "Using the default value.",
+            shown_value,
+            name,
+            ", ".join(sorted(_TRUE_STRINGS | _FALSE_STRINGS)),
+        )
+        default = _raw_default(property_config)
+        return None if default is None else _parse_bool(default)
 
     def __setattr__(self, name, value):
         if name in ("_properties", "_settings", "_lock", "_in_memory_settings"):
@@ -388,6 +405,33 @@ class Config:
                 with open(self.settings_path(), "w") as f:
                     yaml.dump(current_settings, f)
                 self._settings = current_settings
+
+
+_TRUE_STRINGS = {"true", "1", "yes", "on"}
+_FALSE_STRINGS = {"false", "0", "no", "off"}
+
+
+def _raw_default(property_config: ConfigProperty) -> Any:
+    if property_config.default_lambda:
+        return property_config.default_lambda()
+    return property_config.default
+
+
+def _parse_bool(value: Any) -> bool | None:
+    """Parse a bool config value. Returns None for an unrecognized string."""
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in _TRUE_STRINGS:
+            return True
+        if normalized in _FALSE_STRINGS:
+            return False
+        return None
+    return bool(value)
+
+
+def _is_unset(property_config: ConfigProperty, value: Any) -> bool:
+    """An empty string for a bool setting means the setting is not set."""
+    return property_config.type is bool and isinstance(value, str) and not value.strip()
 
 
 def _get_user_id():
