@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Hashable
 from datetime import datetime, timezone
 from enum import Enum
 from typing import (
@@ -324,6 +325,16 @@ class JobWorker(Generic[TParams, TResult]):
     # False by default: a new worker is refused there until someone decides
     # otherwise.
     generic_create_allowed: ClassVar[bool] = False
+
+    def dedupe_key(self, params: TParams) -> Hashable | None:
+        """Identify the work a job of this type would do, so the registry can return
+        an unfinished job with the same key instead of starting a second one that
+        would do the same work again. None (the default) never deduplicates.
+
+        Must be pure and cheap: the registry calls it inside create(), between its
+        last await and the job's insertion.
+        """
+        return None
 
     async def describe(self, params: TParams) -> BaseModel | None:
         """Return static, worker-specific descriptive properties for the UI.

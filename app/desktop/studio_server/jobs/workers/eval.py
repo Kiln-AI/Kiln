@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Hashable
 from typing import Any, Set
 
 from kiln_ai.adapters.errors import KilnRunError
@@ -228,6 +229,21 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
     properties_model = EvalJobProperties
     supports_pause = True
     create_path = "/api/jobs/evals/run"
+
+    def dedupe_key(self, params: EvalJobParams) -> Hashable:
+        """Jobs that score the same items of the same split with the same judge and
+        run config do the same work: a second one would pay for every unscored item
+        again and store duplicate EvalRuns. Concurrency only changes how fast, so it
+        is not part of the key."""
+        return (
+            params.project_id,
+            params.task_id,
+            params.eval_id,
+            params.eval_config_id,
+            params.run_config_id,
+            params.split,
+            frozenset(params.item_ids) if params.item_ids is not None else None,
+        )
 
     async def describe(self, params: EvalJobParams) -> EvalJobProperties:
         # Loads entities off disk like _compute_state_sync; offload the blocking

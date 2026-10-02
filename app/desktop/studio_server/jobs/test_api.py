@@ -1345,3 +1345,36 @@ async def test_wait_many_endpoint_504_on_timeout(client, registry):
 async def test_wait_many_endpoint_rejects_an_unbounded_timeout(client):
     resp = await client.post("/api/jobs/wait", json={"ids": [], "timeout": 3601})
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_identical_eval_job_request_returns_the_unfinished_job(
+    client, registry, split_eval, monkeypatch
+):
+    # Two identical requests while the first job is still running get the same job,
+    # so the same items are not scored (and paid for) twice. Concurrency is not part
+    # of the identity; a different split is a different job.
+    release = asyncio.Event()
+
+    async def fake_compute_state(self, params):
+        return None
+
+    async def held_run(self, params, ctx):
+        await release.wait()
+        return EvalJobResult(total=0, success=0, error=0)
+
+    monkeypatch.setattr(EvalJobWorker, "compute_state", fake_compute_state)
+    monkeypatch.setattr(EvalJobWorker, "run", held_run)
+    try:
+        first = await client.post(_EVAL_RUN_PATH, json=_EVAL_PARAMS)
+        again = await client.post(_EVAL_RUN_PATH, json=_eval_params(concurrency=5))
+        other = await client.post(_EVAL_RUN_PATH, json=_eval_params(split="train"))
+    finally:
+        release.set()
+
+    assert first.status_code == 201, first.text
+    assert again.status_code == 201, again.text
+    assert other.status_code == 201, other.text
+    assert again.json()["job_id"] == first.json()["job_id"]
+    assert other.json()["job_id"] != first.json()["job_id"]
+    assert len(registry._jobs) == 2

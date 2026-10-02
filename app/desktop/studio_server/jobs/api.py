@@ -267,8 +267,11 @@ def connect_jobs_api(app: FastAPI) -> None:
     async def run_eval_job(params: EvalJobParams) -> CreateJobResponse:
         """Start a background job that runs one split of an eval against one run
         config, and return at once. Items that already have a score for this eval
-        config and run config are skipped. Poll `GET /api/jobs/{id}` or
-        `POST /api/jobs/wait` for progress and the result."""
+        config and run config are skipped. If an identical job (same eval, judge,
+        run config, split and items) is still pending, running or paused, returns
+        that job instead of starting a second one that would score the same items
+        again. Poll `GET /api/jobs/{id}` or `POST /api/jobs/wait` for progress and
+        the result."""
         # Entity loads are blocking IO, so run them off the event loop.
         await asyncio.to_thread(_check_eval_job_request, params)
         job = await job_registry.create(

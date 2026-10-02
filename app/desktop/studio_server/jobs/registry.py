@@ -6,6 +6,7 @@ import os
 import secrets
 import traceback
 import uuid
+from collections.abc import Hashable
 from datetime import datetime
 from typing import Any
 
@@ -96,6 +97,8 @@ class JobRegistry:
         # lifecycle as the JobRecord. Shared across all awaiters of a job so one
         # awaiter cancelling its wait() leaves the event (and the task) untouched.
         self._completion_events: dict[str, asyncio.Event] = {}
+        # Dedupe key per job (JobWorker.dedupe_key), for jobs whose worker defines one.
+        self._dedupe_keys: dict[str, Hashable] = {}
         self._running_count = 0
         self.events = JobEventBus(snapshot_provider=self._snapshot)
 
@@ -172,7 +175,14 @@ class JobRegistry:
     ) -> JobRecord:
         worker = self.worker_for(type_name)
         validated = self._validate_params(worker, params)
+        dedupe_key = worker.dedupe_key(validated)
         properties = await self._describe(worker, validated)
+        # No await from here to the insertion below, so two concurrent creates
+        # cannot both miss each other's job.
+        if dedupe_key is not None:
+            existing = self._unfinished_job_with_key(type_name, dedupe_key)
+            if existing is not None:
+                return existing
         job_id = self._fresh_job_id()
         job = JobRecord(
             id=job_id,
@@ -185,10 +195,27 @@ class JobRegistry:
             supports_pause=worker.supports_pause,
         )
         self._jobs[job_id] = job
+        if dedupe_key is not None:
+            self._dedupe_keys[job_id] = dedupe_key
         self._pending_ids.append(job_id)
         self._emit(job)
         self._dispatch_pending()
         return job
+
+    def _unfinished_job_with_key(
+        self, type_name: str, dedupe_key: Hashable
+    ) -> JobRecord | None:
+        """An unfinished (pending, running or paused) job of this type with this key."""
+        for job_id, key in self._dedupe_keys.items():
+            job = self._jobs.get(job_id)
+            if (
+                job is not None
+                and job.type == type_name
+                and key == dedupe_key
+                and not job.status.is_terminal
+            ):
+                return job
+        return None
 
     def _fresh_job_id(self) -> str:
         job_id = _new_job_id()
@@ -457,6 +484,7 @@ class JobRegistry:
         self._jobs.pop(job_id, None)
         self._remove_pending(job_id)
         self._completion_events.pop(job_id, None)
+        self._dedupe_keys.pop(job_id, None)
         if job.run_id is not None:
             error_log.delete_errors(job.run_id)
         self.events.publish_deleted(job_id, job.type, job.project_id)
