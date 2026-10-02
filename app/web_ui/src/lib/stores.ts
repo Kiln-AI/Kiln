@@ -24,6 +24,7 @@ import { createKilnError } from "$lib/utils/error_handlers"
 import type { Writable } from "svelte/store"
 import type { ProviderModel } from "./types"
 import { localStorageStore } from "./stores/local_storage_store"
+import { available_tuning_models } from "./stores/fine_tune_store"
 
 export type TaskCompositeId = string & { __brand: "TaskCompositeId" }
 
@@ -247,103 +248,106 @@ export async function load_available_tools(
   }
 }
 
-// Available models for each provider
-export const available_models = writable<AvailableModels[]>([])
-let available_models_loaded:
-  | "not_loaded"
-  | "loading"
-  | "loaded"
-  | "error_loading" = "not_loaded"
+export const MODEL_LIST_RETRY_DELAY_MS = 5000
 
-export async function load_available_models() {
-  try {
-    if (
-      available_models_loaded === "loading" ||
-      available_models_loaded === "loaded" ||
-      available_models_loaded === "error_loading"
-    ) {
-      // Block parallel requests or if already loaded or errored
+// Loads a provider-dependent list once. After a failure, a later load retries
+// once MODEL_LIST_RETRY_DELAY_MS has passed. The delay matters because
+// available_model_details() calls load_available_models() from reactive
+// statements, and the failed load updates the store those statements read.
+function create_model_list_cache<T>(
+  store: Writable<T[]>,
+  fetch_list: () => Promise<{ data?: T[]; error?: unknown }>,
+) {
+  let state: "not_loaded" | "loading" | "loaded" | "error_loading" =
+    "not_loaded"
+  let last_error_at = 0
+  let generation = 0
+
+  async function load() {
+    if (state === "loading" || state === "loaded") {
       return
     }
-    available_models_loaded = "loading"
-    const { data, error } = await client.GET("/api/available_models")
-    if (error) {
-      throw error
+    if (
+      state === "error_loading" &&
+      Date.now() - last_error_at < MODEL_LIST_RETRY_DELAY_MS
+    ) {
+      return
     }
-    available_models.set(data)
-    available_models_loaded = "loaded"
-  } catch (error: unknown) {
-    console.error(createKilnError(error).getMessage())
-    available_models.set([])
-    available_models_loaded = "error_loading"
+    const load_generation = ++generation
+    state = "loading"
+    try {
+      const { data, error } = await fetch_list()
+      if (error) {
+        throw error
+      }
+      if (load_generation !== generation) {
+        return
+      }
+      store.set(data ?? [])
+      state = "loaded"
+    } catch (error: unknown) {
+      if (load_generation !== generation) {
+        return
+      }
+      console.error(createKilnError(error).getMessage())
+      store.set([])
+      state = "error_loading"
+      last_error_at = Date.now()
+    }
   }
+
+  function reset() {
+    generation++
+    state = "not_loaded"
+    last_error_at = 0
+    store.set([])
+  }
+
+  return { load, reset }
+}
+
+// Available models for each provider
+export const available_models = writable<AvailableModels[]>([])
+const available_models_cache = create_model_list_cache(available_models, () =>
+  client.GET("/api/available_models"),
+)
+
+export function load_available_models(): Promise<void> {
+  return available_models_cache.load()
 }
 
 // Available embedding models for each provider
 export const available_embedding_models = writable<EmbeddingProvider[]>([])
-let available_embedding_models_loaded:
-  | "not_loaded"
-  | "loading"
-  | "loaded"
-  | "error_loading" = "not_loaded"
+const available_embedding_models_cache = create_model_list_cache(
+  available_embedding_models,
+  () => client.GET("/api/available_embedding_models"),
+)
 
-export async function load_available_embedding_models() {
-  try {
-    if (
-      available_embedding_models_loaded === "loading" ||
-      available_embedding_models_loaded === "loaded" ||
-      available_embedding_models_loaded === "error_loading"
-    ) {
-      return
-    }
-    available_embedding_models_loaded = "loading"
-    const { data, error } = await client.GET("/api/available_embedding_models")
-    if (error) {
-      throw error
-    }
-    available_embedding_models.set(data)
-    available_embedding_models_loaded = "loaded"
-  } catch (error: unknown) {
-    console.error(createKilnError(error).getMessage())
-    available_embedding_models.set([])
-    available_embedding_models_loaded = "error_loading"
-  }
+export function load_available_embedding_models(): Promise<void> {
+  return available_embedding_models_cache.load()
 }
 
 // Available reranker models for each provider
 export const available_reranker_models = writable<RerankerProvider[]>([])
-let available_reranker_models_loaded:
-  | "not_loaded"
-  | "loading"
-  | "loaded"
-  | "error_loading" = "not_loaded"
+const available_reranker_models_cache = create_model_list_cache(
+  available_reranker_models,
+  () => client.GET("/api/available_reranker_models"),
+)
 
-export async function load_available_reranker_models() {
-  try {
-    if (
-      available_reranker_models_loaded === "loading" ||
-      available_reranker_models_loaded === "loaded" ||
-      available_reranker_models_loaded === "error_loading"
-    ) {
-      return
-    }
-    available_reranker_models_loaded = "loading"
-    const { data, error } = await client.GET("/api/available_reranker_models")
-    if (error) {
-      throw error
-    }
-    available_reranker_models.set(data)
-    available_reranker_models_loaded = "loaded"
-  } catch (error: unknown) {
-    console.error(createKilnError(error).getMessage())
-    available_reranker_models.set([])
-    available_reranker_models_loaded = "error_loading"
-  }
+export function load_available_reranker_models(): Promise<void> {
+  return available_reranker_models_cache.load()
 }
 
+/**
+ * Clears every cached list that depends on which providers are connected
+ * (LLM, embedding, reranker and fine-tune models), so the next load fetches
+ * fresh data. Call after a provider or custom model is added or removed.
+ */
 export function clear_available_models_cache() {
-  available_models_loaded = "not_loaded"
-  available_models.set([])
+  available_models_cache.reset()
+  available_embedding_models_cache.reset()
+  available_reranker_models_cache.reset()
+  available_tuning_models.set(null)
 }
 
 // Model Info
