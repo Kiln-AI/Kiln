@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from kiln_ai.datamodel.basemodel import KilnParentModel
 from kiln_ai.datamodel.memory import Memory
+from kiln_ai.datamodel.model_cache import ModelCache
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,26 @@ class MemoryStore:
             )
         return memories
 
+    def _find(self, ids: set[str]) -> dict[str, Memory]:
+        # The base-class id lookups raise on the first sibling they cannot load, so
+        # one bad file (or one deleted by another process mid-scan) would break
+        # every lookup by id. Skip such files here, the same as _all does.
+        found: dict[str, Memory] = {}
+        cache = ModelCache.shared()
+        for path in self.memory_model.iterate_children_paths_of_parent_path(
+            self.parent.path
+        ):
+            cached_id = cache.get_model_id(path, self.memory_model)
+            if cached_id is not None and cached_id not in ids:
+                continue
+            try:
+                memory = self.memory_model.load_from_file(path, readonly=True)
+                if memory.id in ids:
+                    found[memory.id] = self.memory_model.load_from_file(path)
+            except Exception as e:
+                logger.warning("Skipping unreadable memory file %s: %s", path, e)
+        return found
+
     def save_memory(
         self,
         *,
@@ -120,8 +141,7 @@ class MemoryStore:
         return memory
 
     def get_memories(self, ids: list[str]) -> list[Memory]:
-        found = self.memory_model.from_ids_and_parent_path(set(ids), self.parent.path)
-        return list(found.values())
+        return list(self._find(set(ids)).values())
 
     def update_memory(
         self,
@@ -132,7 +152,7 @@ class MemoryStore:
         tags: Any = _UNSET,
         scope: Any = _UNSET,
     ) -> Memory:
-        memory = self.memory_model.from_id_and_parent_path(memory_id, self.parent.path)
+        memory = self._find({memory_id}).get(memory_id)
         if memory is None:
             raise MemoryNotFoundError(memory_id)
         if overview is not _UNSET:
@@ -143,14 +163,26 @@ class MemoryStore:
             memory.tags = list(tags) if tags else []
         if scope is not _UNSET:
             memory.scope = scope
-        memory.save_to_file()
+        # An update must not bring back a memory that another process deleted.
+        # The check fails fast; create_dirs=False covers a delete that lands
+        # after it, because the write then finds no folder to write into.
+        if memory.path is None or not memory.path.is_file():
+            raise MemoryNotFoundError(memory_id)
+        try:
+            memory.save_to_file(create_dirs=False)
+        except FileNotFoundError:
+            raise MemoryNotFoundError(memory_id)
         return memory
 
     def delete_memory(self, memory_id: str) -> None:
-        memory = self.memory_model.from_id_and_parent_path(memory_id, self.parent.path)
+        memory = self._find({memory_id}).get(memory_id)
         if memory is None:
             raise MemoryNotFoundError(memory_id)
-        memory.delete()
+        try:
+            memory.delete()
+        except FileNotFoundError:
+            # Another process deleted it after the lookup.
+            raise MemoryNotFoundError(memory_id)
 
     def list_memories(
         self,

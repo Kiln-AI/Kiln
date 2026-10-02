@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from kiln_ai.datamodel import Memory, Project
+from kiln_ai.datamodel import memory as memory_module
 from kiln_ai.datamodel.memory import (
     MAX_CONTENT_LENGTH,
     MAX_OVERVIEW_LENGTH,
@@ -256,3 +257,122 @@ def test_saved_file_mode_matches_a_normal_write(tmp_path: Path, umask: int):
     project_mode = stat.S_IMODE((tmp_path / "project.kiln").stat().st_mode)
     assert memory_mode == project_mode == (0o666 & ~umask)
     assert list(memory.path.parent.glob(".tmp-*")) == []
+
+
+def _replace_failing(times: int, calls: list[str]):
+    real_replace = os.replace
+
+    def replace(src, dst):
+        calls.append(src)
+        if len(calls) <= times:
+            raise PermissionError("target is open in another process")
+        real_replace(src, dst)
+
+    return replace
+
+
+def test_save_retries_a_blocked_replace_on_windows(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+):
+    memory = Memory(parent=project, overview="before", scope="project")
+    memory.save_to_file()
+    calls: list[str] = []
+    monkeypatch.setattr(memory_module, "_RETRY_REPLACE", True)
+    monkeypatch.setattr(memory_module.time, "sleep", lambda _: None)
+    monkeypatch.setattr(memory_module.os, "replace", _replace_failing(2, calls))
+
+    memory.overview = "after"
+    memory.save_to_file()
+
+    assert len(calls) == 3
+    assert json.loads(memory.path.read_text())["overview"] == "after"
+    assert list(memory.path.parent.glob(".tmp-*")) == []
+
+
+def test_save_does_not_retry_a_blocked_replace_off_windows(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+):
+    memory = Memory(parent=project, overview="before", scope="project")
+    memory.save_to_file()
+    calls: list[str] = []
+    monkeypatch.setattr(memory_module, "_RETRY_REPLACE", False)
+    monkeypatch.setattr(memory_module.os, "replace", _replace_failing(1, calls))
+
+    memory.overview = "after"
+    with pytest.raises(PermissionError):
+        memory.save_to_file()
+
+    assert len(calls) == 1
+    assert json.loads(memory.path.read_text())["overview"] == "before"
+    assert list(memory.path.parent.glob(".tmp-*")) == []
+
+
+def test_save_writes_a_temp_file_then_replaces(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+):
+    # A reader must never see a half-written file, so the record must reach its
+    # path by a rename of a complete temp file, never by a write in place.
+    memory = Memory(parent=project, overview="before", scope="project")
+    memory.save_to_file()
+    assert memory.path is not None
+    replaced: list[tuple[Path, Path]] = []
+    real_replace = os.replace
+
+    def recording_replace(src, dst):
+        replaced.append((Path(src), Path(dst)))
+        assert json.loads(Path(src).read_text())["overview"] == "after"
+        assert json.loads(Path(dst).read_text())["overview"] == "before"
+        real_replace(src, dst)
+
+    monkeypatch.setattr(memory_module.os, "replace", recording_replace)
+    memory.overview = "after"
+    memory.save_to_file()
+
+    assert len(replaced) == 1
+    src, dst = replaced[0]
+    assert dst == memory.path
+    assert src.parent == memory.path.parent
+    assert src.name.startswith(".tmp-")
+    assert json.loads(memory.path.read_text())["overview"] == "after"
+
+
+def test_temp_file_name_collision_is_retried(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    real_open = os.open
+    attempts: list[str] = []
+
+    def colliding_open(name, flags, mode=0o777):
+        attempts.append(name)
+        if len(attempts) <= 2:
+            raise FileExistsError(name)
+        return real_open(name, flags, mode)
+
+    monkeypatch.setattr(memory_module.os, "open", colliding_open)
+    fd, name = memory_module._create_temp_file(tmp_path)
+    os.close(fd)
+
+    assert len(attempts) == 3
+    assert len(set(attempts)) == 3
+    assert name == attempts[-1]
+    assert Path(name).is_file()
+
+
+def test_temp_file_creation_gives_up_after_the_attempt_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    attempts: list[str] = []
+
+    def always_colliding_open(name, flags, mode=0o777):
+        attempts.append(name)
+        raise FileExistsError(name)
+
+    monkeypatch.setattr(memory_module.os, "open", always_colliding_open)
+    with pytest.raises(FileExistsError):
+        memory_module._create_temp_file(tmp_path)
+    assert len(attempts) == memory_module._TEMP_CREATE_ATTEMPTS
+
+
+def test_save_without_a_path_raises():
+    with pytest.raises(ValueError, match="path"):
+        make_memory().save_to_file()

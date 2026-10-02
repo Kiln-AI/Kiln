@@ -119,7 +119,7 @@ class SaveMemoryTool(_MemoryTool):
         "(e.g. 'batch API 429'd at 50rps on 07-04'), never universal rules. "
         "List related memories first and update instead of duplicating. The "
         "overview must let a future reader decide whether to fetch the content; "
-        "for a very short memory the overview IS the whole memory (leave content null)."
+        "for a very short memory the overview IS the whole memory (omit content)."
     )
     _parameters_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
@@ -211,8 +211,8 @@ class ListMemoriesTool(_MemoryTool):
                 scope=kwargs.get("scope"),
                 tags=kwargs.get("tags"),
                 content_match=kwargs.get("content_match"),
-                limit=kwargs.get("limit", 50),
-                offset=kwargs.get("offset", 0),
+                limit=_whole_number(kwargs.get("limit", 50), "limit"),
+                offset=_whole_number(kwargs.get("offset", 0), "offset"),
             )
         except (ValidationError, ValueError) as e:
             return self._error(e)
@@ -250,15 +250,18 @@ class GetMemoriesTool(_MemoryTool):
         self, context: ToolCallContext | None = None, **kwargs
     ) -> ToolCallResult:
         ids = kwargs.get("ids") or []
-        records = await asyncio.to_thread(self._store.get_memories, list(ids))
+        try:
+            records = await asyncio.to_thread(self._store.get_memories, list(ids))
+        except (OSError, ValueError) as e:
+            return self._error(e)
         return self._ok({"memories": [self._record(m) for m in records]})
 
 
 class UpdateMemoryTool(_MemoryTool):
     _name: ClassVar[str] = "update_memory"
     _description: ClassVar[str] = (
-        "Replace provided fields on an existing memory (omitted or null fields "
-        "are untouched). Use this to correct or refresh a memory whose overview or "
+        "Replace provided fields on an existing memory (omitted fields are "
+        "untouched). Use this to correct or refresh a memory whose overview or "
         "content is wrong or outdated; delete instead if the memory should be "
         "removed entirely. Passing an empty content clears it. Conflicts resolve "
         "last-writer-wins."
@@ -277,7 +280,7 @@ class UpdateMemoryTool(_MemoryTool):
                 "type": "string",
                 "description": (
                     f"New body (<={MAX_CONTENT_LENGTH} chars). Empty string clears it; "
-                    "null or omitted leaves it as is."
+                    "omit it to leave it as is."
                 ),
             },
             "tags": _TAGS_SCHEMA,
@@ -357,9 +360,12 @@ class MemorySummaryTool(_MemoryTool):
     async def run(
         self, context: ToolCallContext | None = None, **kwargs
     ) -> ToolCallResult:
-        summary = await asyncio.to_thread(
-            self._store.memory_summary, scope=kwargs.get("scope")
-        )
+        try:
+            summary = await asyncio.to_thread(
+                self._store.memory_summary, scope=kwargs.get("scope")
+            )
+        except (OSError, ValueError) as e:
+            return self._error(e)
         return self._ok(summary.model_dump(mode="json", exclude_none=True))
 
 
@@ -371,6 +377,16 @@ _TOOL_CLASSES: dict[str, type[_MemoryTool]] = {
     "delete": DeleteMemoryTool,
     "summary": MemorySummaryTool,
 }
+
+
+def _whole_number(value: Any, name: str) -> int:
+    # JSON Schema's integer type accepts 50.0, and some providers send every number
+    # as a float. A float cannot be a slice index, so convert it here.
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    raise ValueError(f"{name} must be a whole number")
 
 
 def _render_truncation_note(result: MemoryListResult) -> str:

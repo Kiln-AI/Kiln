@@ -125,14 +125,40 @@ def test_save_accepts_exactly_max_lengths(client, project):
     assert len(data["content"]) == MAX_CONTENT_LENGTH
 
 
-def test_save_newline_overview_is_422(client, project):
-    # Newlines aren't expressible in JSON schema; the core validator rejects → 422.
+_CORE_VALIDATION_CASES = [
+    ({"overview": "a\nb"}, "overview"),
+    ({"scope": "   "}, "scope"),
+    ({"tags": ["a b"]}, "tags"),
+]
+
+
+@pytest.mark.parametrize("bad, field", _CORE_VALIDATION_CASES)
+def test_save_core_validation_is_422_naming_the_field(client, project, bad, field):
+    # These rules live in the Memory model, not the request model. Their 422
+    # must have the same body as a request-model 422.
     with _patch(project):
         resp = client.post(
             f"/api/projects/{project.id}/memories",
-            json={"overview": "a\nb", "scope": "project"},
+            json={"overview": "x", "scope": "project", **bad},
         )
     assert resp.status_code == 422
+    data = resp.json()
+    assert data["source_errors"][0]["loc"][0] == field
+    assert data["message"].startswith(field.capitalize())
+    assert len(project.memories()) == 0
+
+
+@pytest.mark.parametrize("bad, field", _CORE_VALIDATION_CASES)
+def test_update_core_validation_is_422_naming_the_field(client, project, bad, field):
+    m = add(project, "orig", "project", 0, tags=["t"])
+    with _patch(project):
+        resp = client.patch(f"/api/projects/{project.id}/memories/{m.id}", json=bad)
+    assert resp.status_code == 422
+    data = resp.json()
+    assert data["source_errors"][0]["loc"][0] == field
+    assert data["message"].startswith(field.capitalize())
+    stored = project.memories()[0]
+    assert (stored.overview, stored.scope, stored.tags) == ("orig", "project", ["t"])
 
 
 # --- list ---
@@ -241,6 +267,34 @@ def test_list_includes_stored_178_char_overview_row(client, project):
     assert fetched.json()[0]["overview"] == long_overview
 
 
+def test_by_id_endpoints_skip_an_unreadable_memory(client, project):
+    good = add(project, "good", "project", 0)
+    doomed = add(project, "doomed", "project", 1)
+    bad = add(project, "bad", "project", 2)
+    bad.path.write_text("{ not json", encoding="utf-8")
+
+    with _patch(project):
+        fetched = client.get(
+            f"/api/projects/{project.id}/memories/by_ids",
+            params={"ids": [good.id, bad.id]},
+        )
+        patched = client.patch(
+            f"/api/projects/{project.id}/memories/{good.id}",
+            json={"overview": "edited"},
+        )
+        deleted = client.delete(f"/api/projects/{project.id}/memories/{doomed.id}")
+        bad_patch = client.patch(
+            f"/api/projects/{project.id}/memories/{bad.id}", json={"overview": "x"}
+        )
+
+    assert fetched.status_code == 200
+    assert [r["id"] for r in fetched.json()] == [good.id]
+    assert patched.status_code == 200
+    assert patched.json()["overview"] == "edited"
+    assert deleted.status_code == 200
+    assert bad_patch.status_code == 404
+
+
 # --- summary ---
 
 
@@ -296,6 +350,31 @@ def test_update_clears_content_with_empty_string(client, project):
         )
     assert resp.status_code == 200
     assert resp.json()["content"] is None
+
+
+@pytest.mark.parametrize("field, cleared", [("content", None), ("tags", [])])
+def test_update_null_clears_content_and_tags(client, project, field, cleared):
+    m = add(project, "orig", "project", 0, content="body", tags=["t"])
+    with _patch(project):
+        resp = client.patch(
+            f"/api/projects/{project.id}/memories/{m.id}", json={field: None}
+        )
+    assert resp.status_code == 200
+    assert resp.json()[field] == cleared
+    assert getattr(project.memories()[0], field) == cleared
+
+
+@pytest.mark.parametrize("field", ["overview", "scope"])
+def test_update_null_overview_or_scope_is_422(client, project, field):
+    m = add(project, "orig", "project", 0)
+    with _patch(project):
+        resp = client.patch(
+            f"/api/projects/{project.id}/memories/{m.id}", json={field: None}
+        )
+    assert resp.status_code == 422
+    assert resp.json()["source_errors"][0]["loc"][0] == field
+    stored = project.memories()[0]
+    assert (stored.overview, stored.scope) == ("orig", "project")
 
 
 def test_update_unknown_id_is_404(client, project):

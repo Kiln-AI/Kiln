@@ -1,5 +1,7 @@
 import contextlib
 import os
+import sys
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -12,7 +14,7 @@ from kiln_ai.utils.validation import validate_tags
 
 # These caps are enforced at write time AND re-applied by pydantic when loading
 # stored rows, so any row exceeding them (e.g. from an out-of-band writer) fails
-# to load: listings skip it with a warning, and fetches by id fail on it.
+# to load: the memory store skips it with a warning, in listings and fetches by id.
 # Raising them is safe; never lower them.
 MAX_OVERVIEW_LENGTH = 280
 MAX_CONTENT_LENGTH = 4000
@@ -47,6 +49,25 @@ def _create_temp_file(directory: Path) -> tuple[int, str]:
         except FileExistsError:
             continue
     raise FileExistsError(f"No free temp file name in {directory}")
+
+
+# On Windows, os.replace fails with PermissionError while another handle has the
+# target open, because Python's open() does not share delete access. Readers hold
+# a memory file only for the time of one read, so a short retry gets through.
+_RETRY_REPLACE = sys.platform == "win32"
+_REPLACE_ATTEMPTS = 20
+_REPLACE_RETRY_DELAY_SECONDS = 0.01
+
+
+def _replace(src: str, dst: Path) -> None:
+    for attempt in range(_REPLACE_ATTEMPTS):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if not _RETRY_REPLACE or attempt == _REPLACE_ATTEMPTS - 1:
+                raise
+            time.sleep(_REPLACE_RETRY_DELAY_SECONDS)
 
 
 class Memory(KilnParentedModel):
@@ -132,7 +153,7 @@ class Memory(KilnParentedModel):
     def _validate_tags(cls, v: list[str]) -> list[str]:
         return validate_tags(v)
 
-    def save_to_file(self) -> None:
+    def save_to_file(self, create_dirs: bool = True) -> None:
         """Atomically write the record (temp file + os.replace).
 
         The memory store is lock-free and multi-process by design (many sessions
@@ -143,6 +164,10 @@ class Memory(KilnParentedModel):
         the previous complete file or the new complete file — never a torn one.
         Memory has no attachments, so the plain JSON dump is sufficient. The temp
         file gets the same mode as a normal write (see _create_temp_file).
+
+        `create_dirs=False` writes only into a folder that still exists: an update
+        racing a delete in another process then fails with FileNotFoundError
+        instead of re-creating the folder and bringing the memory back.
         """
         path = self.build_path()
         if path is None:
@@ -150,7 +175,8 @@ class Memory(KilnParentedModel):
                 "Cannot save to file because 'path' is not set. "
                 f"Class: {self.__class__.__name__}, id: {getattr(self, 'id', None)}"
             )
-        path.parent.mkdir(parents=True, exist_ok=True)
+        if create_dirs:
+            path.parent.mkdir(parents=True, exist_ok=True)
 
         json_data = self.model_dump_json(indent=2, exclude={"path"})
 
@@ -158,7 +184,7 @@ class Memory(KilnParentedModel):
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as file:
                 file.write(json_data)
-            os.replace(tmp_name, path)
+            _replace(tmp_name, path)
         except BaseException:
             with contextlib.suppress(OSError):
                 os.unlink(tmp_name)

@@ -4,13 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel import Memory, Project, Task
+from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.memory import MAX_OVERVIEW_LENGTH
 from kiln_ai.datamodel.tool_id import (
     build_memory_tool_id,
     memory_operation_from_tool_id,
 )
-from kiln_ai.memory import MemoryStore
+from kiln_ai.memory import MemoryListResult, MemoryStore, MemorySummary
 from kiln_ai.tools.memory_tools import memory_tool_from_id
 from kiln_ai.tools.tool_registry import tool_from_id
 
@@ -81,6 +82,47 @@ async def test_toolcall_definition(project, operation, name, required):
     # scope is an explicit param on every write tool (no injection).
     if operation in ("save", "update"):
         assert "scope" in definition["function"]["parameters"]["properties"]
+
+
+def _descriptions(node) -> list[str]:
+    if isinstance(node, dict):
+        found = (
+            [node["description"]] if isinstance(node.get("description"), str) else []
+        )
+        return found + [d for value in node.values() for d in _descriptions(value)]
+    if isinstance(node, list):
+        return [d for value in node for d in _descriptions(value)]
+    return []
+
+
+@pytest.mark.parametrize(
+    "operation", ["save", "list", "get", "update", "delete", "summary"]
+)
+async def test_descriptions_do_not_invite_null(project, operation):
+    # The adapter checks arguments against the schema before run(), and the
+    # schemas do not allow null, so a null the model was told to send ends the run.
+    definition = await tool(project, operation).toolcall_definition()
+    for text in _descriptions(definition["function"]):
+        assert "null" not in text.lower(), text
+
+
+@pytest.mark.parametrize(
+    "operation, args, valid",
+    [
+        ("save", {"overview": "o", "scope": "project"}, True),
+        ("save", {"overview": "o", "scope": "project", "content": None}, False),
+        ("update", {"id": "1", "content": ""}, True),
+        ("update", {"id": "1", "tags": None}, False),
+    ],
+)
+async def test_schema_check_the_adapter_runs(project, operation, args, valid):
+    definition = await tool(project, operation).toolcall_definition()
+    schema = json.dumps(definition["function"]["parameters"])
+    if valid:
+        validate_schema_with_value_error(args, schema)
+    else:
+        with pytest.raises(ValueError):
+            validate_schema_with_value_error(args, schema)
 
 
 # --- run round-trip ---
@@ -205,6 +247,89 @@ async def test_store_call_runs_in_a_worker_thread(
     assert call_threads[0] != loop_thread
 
 
+# --- every schema property reaches the store ---
+
+
+_SAVED = Memory(overview="o", scope="project")
+_FORWARDING_CASES = [
+    (
+        "save",
+        "save_memory",
+        _SAVED,
+        {"overview": "o", "scope": "task::1", "content": "c", "tags": ["t"]},
+        (),
+        {"overview": "o", "scope": "task::1", "content": "c", "tags": ["t"]},
+    ),
+    (
+        "list",
+        "list_memories",
+        MemoryListResult(listings=[], matched=0, remaining=0, remaining_tag_counts={}),
+        {
+            "scope": "task::1",
+            "tags": ["t"],
+            "content_match": "x",
+            "limit": 3,
+            "offset": 2,
+        },
+        (),
+        {
+            "scope": "task::1",
+            "tags": ["t"],
+            "content_match": "x",
+            "limit": 3,
+            "offset": 2,
+        },
+    ),
+    ("get", "get_memories", [], {"ids": ["1", "2"]}, (["1", "2"],), {}),
+    (
+        "update",
+        "update_memory",
+        _SAVED,
+        {"id": "1", "overview": "o", "content": "c", "tags": ["t"], "scope": "s"},
+        ("1",),
+        {"overview": "o", "content": "c", "tags": ["t"], "scope": "s"},
+    ),
+    ("delete", "delete_memory", None, {"id": "1"}, ("1",), {}),
+    (
+        "summary",
+        "memory_summary",
+        MemorySummary(total=0, scopes=[]),
+        {"scope": "task::1"},
+        (),
+        {"scope": "task::1"},
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "operation, store_method, returns, tool_args, want_args, want_kwargs",
+    _FORWARDING_CASES,
+)
+async def test_tool_forwards_every_parameter_to_the_store(
+    project,
+    monkeypatch,
+    operation,
+    store_method,
+    returns,
+    tool_args,
+    want_args,
+    want_kwargs,
+):
+    definition = await tool(project, operation).toolcall_definition()
+    assert set(tool_args) == set(definition["function"]["parameters"]["properties"])
+    calls: list[tuple[tuple, dict]] = []
+
+    def recording(self, *args, **kwargs):
+        calls.append((args, kwargs))
+        return returns
+
+    monkeypatch.setattr(MemoryStore, store_method, recording)
+    result = await tool(project, operation).run(**tool_args)
+
+    assert not result.is_error, result.output
+    assert calls == [(want_args, want_kwargs)]
+
+
 # --- error mapping (store errors become tool errors, not exceptions) ---
 
 
@@ -229,6 +354,28 @@ async def test_list_negative_pagination_is_tool_error(project):
     assert result.is_error
 
 
+async def test_list_accepts_whole_number_floats_for_paging(project):
+    # The adapter's schema check lets 2.0 through as an integer, and some
+    # providers send every number as a float.
+    for i in range(3):
+        await tool(project, "save").run(overview=f"m{i}", scope="project")
+    definition = await tool(project, "list").toolcall_definition()
+    args = {"limit": 2.0, "offset": 1.0}
+    validate_schema_with_value_error(
+        args, json.dumps(definition["function"]["parameters"])
+    )
+
+    result = await tool(project, "list").run(**args)
+    assert not result.is_error
+    assert [m["overview"] for m in out(result)["memories"]] == ["m1", "m0"]
+
+
+@pytest.mark.parametrize("args", [{"limit": 2.5}, {"offset": "1"}, {"limit": True}])
+async def test_list_non_whole_number_paging_is_tool_error(project, args):
+    result = await tool(project, "list").run(**args)
+    assert result.is_error
+
+
 async def test_list_invalid_regex_is_tool_error(project):
     result = await tool(project, "list").run(content_match="[unclosed")
     assert result.is_error
@@ -248,6 +395,17 @@ async def test_get_unknown_ids_omitted(project):
     saved = out(await tool(project, "save").run(overview="a", scope="project"))
     got = out(await tool(project, "get").run(ids=[saved["id"], "999999999999"]))
     assert len(got["memories"]) == 1
+
+
+async def test_get_skips_an_unreadable_memory(project):
+    good = out(await tool(project, "save").run(overview="good", scope="project"))
+    bad = out(await tool(project, "save").run(overview="bad", scope="project"))
+    bad_path = project.path.parent / "assistant_memory" / bad["id"] / "memory.kiln"
+    bad_path.write_text("{ not json", encoding="utf-8")
+
+    result = await tool(project, "get").run(ids=[good["id"], bad["id"]])
+    assert not result.is_error
+    assert [m["id"] for m in out(result)["memories"]] == [good["id"]]
 
 
 # --- registry integration ---
@@ -279,3 +437,23 @@ async def test_tool_from_id_resolves_bound_to_project(task, operation):
 def test_tool_from_id_without_project_raises():
     with pytest.raises(ValueError):
         tool_from_id(build_memory_tool_id("list"), None)
+
+
+@pytest.mark.parametrize(
+    "operation, store_method, kwargs",
+    [
+        ("get", "get_memories", {"ids": ["1"]}),
+        ("summary", "memory_summary", {}),
+    ],
+)
+@pytest.mark.parametrize("error", [ValueError("bad"), FileNotFoundError("gone")])
+async def test_read_tool_store_failure_is_tool_error(
+    project, monkeypatch, operation, store_method, kwargs, error
+):
+    def failing(self, *args, **kw):
+        raise error
+
+    monkeypatch.setattr(MemoryStore, store_method, failing)
+    result = await tool(project, operation).run(**kwargs)
+    assert result.is_error
+    assert result.error_message == str(error)

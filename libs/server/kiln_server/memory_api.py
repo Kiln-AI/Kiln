@@ -15,7 +15,7 @@ from kiln_ai.memory import (
     MemoryStore,
     MemorySummary,
 )
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 from kiln_server.project_api import project_from_id
 from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
@@ -31,11 +31,6 @@ _TAGS_DESC = "Snake_case tags (no spaces) for filtering."
 
 def _store(project_id: str) -> MemoryStore:
     return MemoryStore(project_from_id(project_id))
-
-
-def _validation_error(exc: ValidationError) -> HTTPException:
-    message = "; ".join(e.get("msg", "") for e in exc.errors()) or str(exc)
-    return HTTPException(status_code=422, detail=message)
 
 
 class SaveMemoryRequest(BaseModel):
@@ -58,8 +53,9 @@ class SaveMemoryRequest(BaseModel):
 
 
 class UpdateMemoryRequest(BaseModel):
-    """Body for updating a memory. Only provided fields are changed; an explicit
-    null clears `content`. Omitted fields are left untouched."""
+    """Body for updating a memory. Only provided fields are changed; omitted
+    fields are left untouched. An explicit null clears `content` and `tags`, and
+    is rejected for `overview` and `scope`."""
 
     overview: str | None = Field(
         default=None,
@@ -71,7 +67,9 @@ class UpdateMemoryRequest(BaseModel):
         max_length=MAX_CONTENT_LENGTH,
         description="New memory body. Empty or null clears it.",
     )
-    tags: list[str] | None = Field(default=None, description=_TAGS_DESC)
+    tags: list[str] | None = Field(
+        default=None, description=f"{_TAGS_DESC} Null clears them."
+    )
     scope: str | None = Field(
         default=None, max_length=MAX_SCOPE_LENGTH, description=_SCOPE_DESC
     )
@@ -90,17 +88,14 @@ def connect_memory_api(app: FastAPI):
         project_id: Annotated[str, Path(description=_PROJECT_ID_DESC)],
         body: SaveMemoryRequest,
     ) -> Memory:
-        try:
-            return await asyncio.to_thread(
-                lambda: _store(project_id).save_memory(
-                    overview=body.overview,
-                    scope=body.scope,
-                    content=body.content,
-                    tags=body.tags,
-                )
+        return await asyncio.to_thread(
+            lambda: _store(project_id).save_memory(
+                overview=body.overview,
+                scope=body.scope,
+                content=body.content,
+                tags=body.tags,
             )
-        except ValidationError as e:
-            raise _validation_error(e)
+        )
 
     @app.get(
         "/api/projects/{project_id}/memories",
@@ -200,8 +195,6 @@ def connect_memory_api(app: FastAPI):
             )
         except MemoryNotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e))
-        except ValidationError as e:
-            raise _validation_error(e)
 
     @app.delete(
         "/api/projects/{project_id}/memories/{memory_id}",
