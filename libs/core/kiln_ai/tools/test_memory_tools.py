@@ -457,3 +457,28 @@ async def test_read_tool_store_failure_is_tool_error(
     result = await tool(project, operation).run(**kwargs)
     assert result.is_error
     assert result.error_message == str(error)
+
+
+@pytest.mark.parametrize(
+    "operation, store_method, kwargs",
+    [
+        ("save", "save_memory", {"overview": "o", "scope": "project"}),
+        ("list", "list_memories", {}),
+        ("update", "update_memory", {"id": "1", "overview": "o"}),
+        ("delete", "delete_memory", {"id": "1"}),
+    ],
+)
+async def test_store_filesystem_failure_is_tool_error(
+    project, monkeypatch, operation, store_method, kwargs
+):
+    # A filesystem failure (permissions, full disk) must come back as a tool error,
+    # not escape run() and fail the agent's whole turn.
+    error = PermissionError("denied")
+
+    def failing(self, *args, **kw):
+        raise error
+
+    monkeypatch.setattr(MemoryStore, store_method, failing)
+    result = await tool(project, operation).run(**kwargs)
+    assert result.is_error
+    assert result.error_message == str(error)

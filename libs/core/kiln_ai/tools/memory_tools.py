@@ -109,6 +109,8 @@ class _MemoryTool(KilnToolInterface):
 
 
 class SaveMemoryTool(_MemoryTool):
+    """Agent tool that saves a new memory to the project's MemoryStore."""
+
     _name: ClassVar[str] = "save_memory"
     _description: ClassVar[str] = (
         "Record a durable memory of your work on this project so it survives "
@@ -164,12 +166,14 @@ class SaveMemoryTool(_MemoryTool):
                 content=kwargs.get("content"),
                 tags=kwargs.get("tags"),
             )
-        except (ValidationError, ValueError) as e:
+        except (OSError, ValidationError, ValueError) as e:
             return self._error(e)
         return self._ok({"id": memory.id, "memory": self._record(memory)})
 
 
 class ListMemoriesTool(_MemoryTool):
+    """Agent tool that lists memory summaries from the project's MemoryStore, filtered and paged."""
+
     _name: ClassVar[str] = "list_memories"
     _description: ClassVar[str] = (
         "List memory summaries (id, overview, tags, scope, content_length, "
@@ -214,7 +218,7 @@ class ListMemoriesTool(_MemoryTool):
                 limit=_whole_number(kwargs.get("limit", 50), "limit"),
                 offset=_whole_number(kwargs.get("offset", 0), "offset"),
             )
-        except (ValidationError, ValueError) as e:
+        except (OSError, ValidationError, ValueError) as e:
             return self._error(e)
         payload: dict[str, Any] = {
             "memories": [
@@ -228,6 +232,8 @@ class ListMemoriesTool(_MemoryTool):
 
 
 class GetMemoriesTool(_MemoryTool):
+    """Agent tool that fetches full memory records by id from the project's MemoryStore."""
+
     _name: ClassVar[str] = "get_memories"
     _description: ClassVar[str] = (
         "Fetch full memory records by id. content_length 0 in a listing means the "
@@ -258,6 +264,8 @@ class GetMemoriesTool(_MemoryTool):
 
 
 class UpdateMemoryTool(_MemoryTool):
+    """Agent tool that changes the given fields of a memory in the project's MemoryStore."""
+
     _name: ClassVar[str] = "update_memory"
     _description: ClassVar[str] = (
         "Replace provided fields on an existing memory (omitted fields are "
@@ -307,12 +315,14 @@ class UpdateMemoryTool(_MemoryTool):
             memory = await asyncio.to_thread(
                 self._store.update_memory, memory_id, **updates
             )
-        except (ValidationError, ValueError) as e:
+        except (OSError, ValidationError, ValueError) as e:
             return self._error(e)
         return self._ok({"memory": self._record(memory)})
 
 
 class DeleteMemoryTool(_MemoryTool):
+    """Agent tool that permanently deletes a memory from the project's MemoryStore."""
+
     _name: ClassVar[str] = "delete_memory"
     _description: ClassVar[str] = (
         "Hard-delete a memory by id. For junk, wrong, or obsolete memories; use "
@@ -334,12 +344,14 @@ class DeleteMemoryTool(_MemoryTool):
             return self._error(ValueError("id is required"))
         try:
             await asyncio.to_thread(self._store.delete_memory, memory_id)
-        except ValueError as e:
+        except (OSError, ValueError) as e:
             return self._error(e)
         return self._ok({"deleted": memory_id})
 
 
 class MemorySummaryTool(_MemoryTool):
+    """Agent tool that returns per-scope counts from the project's MemoryStore, with no record content."""
+
     _name: ClassVar[str] = "memory_summary"
     _description: ClassVar[str] = (
         "Cheap orientation with no record content: per-scope counts, newest "

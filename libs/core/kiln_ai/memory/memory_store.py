@@ -6,7 +6,7 @@ from collections import Counter
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from kiln_ai.datamodel.basemodel import KilnParentModel
 from kiln_ai.datamodel.memory import Memory
@@ -51,20 +51,32 @@ class MemoryListResult(BaseModel):
     """
 
     listings: list[MemoryListing]
-    matched: int
-    remaining: int
+    matched: int = Field(
+        description="How many memories matched the filters, across all pages."
+    )
+    remaining: int = Field(
+        description="How many matching memories come after this page."
+    )
     remaining_tag_counts: dict[str, int]
 
 
 class ScopeSummary(BaseModel):
+    """Counts for the memories of one scope: how many, the newest, and per-tag counts."""
+
     scope: str
     count: int
     newest: datetime
     tags: dict[str, int]
-    untagged: int | None = None
+    untagged: int | None = Field(
+        default=None,
+        description="How many memories in this scope have no tags. Null when none.",
+    )
 
 
 class MemorySummary(BaseModel):
+    """An orientation view of a memory store, with no record content: the total and
+    one ScopeSummary per scope, newest scope first."""
+
     total: int
     scopes: list[ScopeSummary]
 
