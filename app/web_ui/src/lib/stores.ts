@@ -24,7 +24,8 @@ import { createKilnError } from "$lib/utils/error_handlers"
 import type { Writable } from "svelte/store"
 import type { ProviderModel } from "./types"
 import { localStorageStore } from "./stores/local_storage_store"
-import { available_tuning_models } from "./stores/fine_tune_store"
+import { reset_available_tuning_models } from "./stores/fine_tune_store"
+import { create_retrying_loader } from "./stores/retrying_loader"
 
 export type TaskCompositeId = string & { __brand: "TaskCompositeId" }
 
@@ -248,62 +249,31 @@ export async function load_available_tools(
   }
 }
 
-export const MODEL_LIST_RETRY_DELAY_MS = 5000
-
-// Loads a provider-dependent list once. After a failure, a later load retries
-// once MODEL_LIST_RETRY_DELAY_MS has passed. The delay matters because
-// available_model_details() calls load_available_models() from reactive
-// statements, and the failed load updates the store those statements read.
 function create_model_list_cache<T>(
   store: Writable<T[]>,
   fetch_list: () => Promise<{ data?: T[]; error?: unknown }>,
 ) {
-  let state: "not_loaded" | "loading" | "loaded" | "error_loading" =
-    "not_loaded"
-  let last_error_at = 0
-  let generation = 0
-
-  async function load() {
-    if (state === "loading" || state === "loaded") {
-      return
-    }
-    if (
-      state === "error_loading" &&
-      Date.now() - last_error_at < MODEL_LIST_RETRY_DELAY_MS
-    ) {
-      return
-    }
-    const load_generation = ++generation
-    state = "loading"
-    try {
+  const loader = create_retrying_loader({
+    fetch: async () => {
       const { data, error } = await fetch_list()
       if (error) {
         throw error
       }
-      if (load_generation !== generation) {
-        return
-      }
-      store.set(data ?? [])
-      state = "loaded"
-    } catch (error: unknown) {
-      if (load_generation !== generation) {
-        return
-      }
+      return data ?? []
+    },
+    on_loaded: (data) => store.set(data),
+    on_error: (error) => {
       console.error(createKilnError(error).getMessage())
       store.set([])
-      state = "error_loading"
-      last_error_at = Date.now()
-    }
-  }
+    },
+  })
 
   function reset() {
-    generation++
-    state = "not_loaded"
-    last_error_at = 0
+    loader.reset()
     store.set([])
   }
 
-  return { load, reset }
+  return { load: loader.load, reset }
 }
 
 // Available models for each provider
@@ -347,7 +317,7 @@ export function clear_available_models_cache() {
   available_models_cache.reset()
   available_embedding_models_cache.reset()
   available_reranker_models_cache.reset()
-  available_tuning_models.set(null)
+  reset_available_tuning_models()
 }
 
 // Model Info

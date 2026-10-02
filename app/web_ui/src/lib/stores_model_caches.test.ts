@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { get } from "svelte/store"
+import { LOAD_RETRY_DELAY_MS } from "./stores/retrying_loader"
 
 const mockGET = vi.hoisted(() => vi.fn())
 
@@ -72,6 +73,20 @@ describe("provider-dependent model list caches", () => {
       expect(value(m)).toEqual([{ id: "a" }])
     })
 
+    it("shares one request between concurrent loads", async () => {
+      const m = await import_fresh()
+      const pending = deferred<{ data: { id: string }[]; error: undefined }>()
+      mockGET.mockReturnValueOnce(pending.promise)
+
+      const first = load(m)
+      const second = load(m)
+      pending.resolve({ data: [{ id: "a" }], error: undefined })
+      await Promise.all([first, second])
+
+      expect(calls_to(path)).toBe(1)
+      expect(value(m)).toEqual([{ id: "a" }])
+    })
+
     it("does not retry immediately after an error", async () => {
       const m = await import_fresh()
       mockGET.mockResolvedValue({ data: undefined, error: { detail: "boom" } })
@@ -91,7 +106,7 @@ describe("provider-dependent model list caches", () => {
       })
       await load(m)
 
-      vi.advanceTimersByTime(m.MODEL_LIST_RETRY_DELAY_MS)
+      vi.advanceTimersByTime(LOAD_RETRY_DELAY_MS)
       mockGET.mockResolvedValueOnce({ data: [{ id: "b" }], error: undefined })
       await load(m)
 
@@ -104,7 +119,7 @@ describe("provider-dependent model list caches", () => {
       mockGET.mockRejectedValueOnce(new Error("Load failed"))
       await load(m)
 
-      vi.advanceTimersByTime(m.MODEL_LIST_RETRY_DELAY_MS)
+      vi.advanceTimersByTime(LOAD_RETRY_DELAY_MS)
       mockGET.mockResolvedValueOnce({ data: [{ id: "c" }], error: undefined })
       await load(m)
 
