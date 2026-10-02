@@ -127,6 +127,7 @@ def _check_eval_job_request(params: EvalJobParams) -> None:
             run_configs=[run_config],
             eval_run_type="task_run_eval",
             split=split,
+            item_ids=set(params.item_ids) if params.item_ids is not None else None,
         ).validate_multi_turn_drive_readiness()
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

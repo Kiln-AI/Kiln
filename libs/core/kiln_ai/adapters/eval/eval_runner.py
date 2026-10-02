@@ -418,10 +418,13 @@ class EvalRunner:
         """
         if self.eval_run_type != "task_run_eval" or self.split is None:
             return
+        # Only the items this runner will work: an `item_ids` subset must not be
+        # blocked by multi-turn items it does not select.
         multi_turn_items = [
             item.data
             for item in self.split.items
-            if isinstance(item, EvalInput)
+            if (self.item_ids is None or item.id in self.item_ids)
+            and isinstance(item, EvalInput)
             and isinstance(item.data, MultiTurnSyntheticEvalInputData)
         ]
         if not multi_turn_items:

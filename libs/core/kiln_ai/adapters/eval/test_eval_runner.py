@@ -4552,6 +4552,41 @@ class TestValidateMultiTurnDriveReadiness:
         with pytest.raises(ValueError, match="synthetic user configuration"):
             runner.validate_multi_turn_drive_readiness()
 
+    def test_item_ids_limit_the_check_to_selected_items(
+        self, mock_task, mock_run_config, mock_v2_redrive_config, mock_eval_inputs
+    ):
+        """Unstamped multi-turn items outside an `item_ids` subset must not block a
+        job over selected single-turn items: the check covers what the runner
+        will actually work."""
+        for item_id in ("ei_bare_1", "ei_bare_2"):
+            EvalInput(
+                id=item_id,
+                data=MultiTurnSyntheticEvalInputData(
+                    first_message=UserMessage(text="hi"),
+                    synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+                ),
+                parent=mock_task,
+            ).save_to_file()
+        split = _test_split([mock_v2_redrive_config])
+
+        whole_split = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+            split=split,
+        )
+        with pytest.raises(ValueError, match="synthetic user configuration"):
+            whole_split.validate_multi_turn_drive_readiness()
+
+        subset = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+            split=split,
+            item_ids={"ei_1"},
+        )
+        subset.validate_multi_turn_drive_readiness()
+
     def test_partially_stamped_split_passes(
         self, mock_task, mock_run_config, mock_v2_redrive_config, multi_turn_eval_input
     ):
