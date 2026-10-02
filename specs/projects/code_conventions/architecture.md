@@ -13,15 +13,16 @@ The project is small: two skills (markdown), one shared Python script with tests
 ```
 .agents/skills/kiln-conventions/
   SKILL.md                    # entry point an agent loads
-  rules.md                    # universal rules (shared, canonical)
-  conventions_gate.py         # gate script (shared, canonical)
-  test_conventions_gate.py    # gate tests (shared, canonical)
-  gate_config.json            # Kiln-specific gate settings (not shared)
-  gate_allow.txt              # Kiln allowlist (not shared)
   references/
+    rules.md                  # universal rules (shared, canonical)
     core.md                   # libs/core
     server_desktop.md         # libs/server + app/desktop
     web_ui.md                 # app/web_ui
+  scripts/
+    conventions_gate.py       # gate script (shared, canonical)
+    test_conventions_gate.py  # gate tests (shared, canonical)
+    gate_config.json          # Kiln-specific gate settings (not shared)
+    gate_allow.txt            # Kiln allowlist (not shared)
 ```
 
 ### kiln_server
@@ -29,14 +30,15 @@ The project is small: two skills (markdown), one shared Python script with tests
 ```
 .agents/skills/kiln-server-conventions/
   SKILL.md
-  rules.md                    # synced copy (header added by sync)
-  conventions_gate.py         # synced copy (header added by sync)
-  test_conventions_gate.py    # synced copy (header added by sync)
-  gate_config.json            # kiln_server-specific
-  gate_allow.txt
   references/
+    rules.md                  # synced copy (header added by sync)
     api.md                    # the API service
     jobs_pipelines.md         # jobs, pipelines and optimizers
+  scripts/
+    conventions_gate.py       # synced copy (header added by sync)
+    test_conventions_gate.py  # synced copy (header added by sync)
+    gate_config.json          # kiln_server-specific
+    gate_allow.txt
 utils/sync_conventions.sh     # copies the shared files from a Kiln checkout
 ```
 
@@ -196,7 +198,7 @@ pytest, stdlib plus pytest only. They are synced too, so they must not depend on
   - the output format and summary line.
 
 How to run the tests:
-- **Kiln:** `uv run python -m pytest .agents/skills/kiln-conventions/test_conventions_gate.py`. pytest doesn't collect dot-directories when it runs from the repo root, so the default suite doesn't pick them up.
+- **Kiln:** `uv run python -m pytest .agents/skills/kiln-conventions/scripts/test_conventions_gate.py`. pytest doesn't collect dot-directories when it runs from the repo root, so the default suite doesn't pick them up.
 - **kiln_server:** the same command against its skill path.
 
 `SKILL.md` has a short "Maintaining the gate" section with this command.
@@ -208,9 +210,9 @@ How to run the tests:
   - `name: kiln-conventions` (or `kiln-server-conventions`);
   - a `description` that triggers before writing or changing Python/TS/Svelte code in the repo, and when reviewing code.
 - **Body:**
-  1. Read `rules.md`.
+  1. Read `references/rules.md`.
   2. Read the area reference(s) from the path table.
-  3. After writing code, run `uv run python .agents/skills/<skill>/conventions_gate.py --worktree` (or `--range origin/main...HEAD` for a branch). Fix every FAIL, or add an allowlist entry (with a reason line) only if the hit isn't a real violation; a FAIL that can't be fixed without an out-of-scope refactor (rule H23) is left in place and reported with the rule id, `path:line`, and the refactor it waits on. Name each WARN in the end-of-task summary with a one-line justification.
+  3. After writing code, run `uv run python .agents/skills/<skill>/scripts/conventions_gate.py --worktree` (or `--range origin/main...HEAD` for a branch). Fix every FAIL, or add an allowlist entry (with a reason line) only if the hit isn't a real violation; a FAIL that can't be fixed without an out-of-scope refactor (rule H23) is left in place and reported with the rule id, `path:line`, and the refactor it waits on. Name each WARN in the end-of-task summary with a one-line justification.
   4. Self-check the review-only rules.
 - **Path → reference table.**
 - Kiln: "UI changes also load `kiln-ui`".
@@ -251,9 +253,9 @@ Before finishing, the coding agent:
 utils/sync_conventions.sh [--check] [KILN_DIR]    # KILN_DIR defaults to ../Kiln
 ```
 - **Shared files:**
-  - `rules.md`
-  - `conventions_gate.py`
-  - `test_conventions_gate.py`
+  - `references/rules.md`
+  - `scripts/conventions_gate.py`
+  - `scripts/test_conventions_gate.py`
 - **Source:** `$KILN_DIR/.agents/skills/kiln-conventions/`. **Destination:** `.agents/skills/kiln-server-conventions/`.
 - **Header** (prepended on copy). It records `git -C $KILN_DIR rev-parse --short HEAD`.
   - Markdown: `<!-- Synced from Kiln-AI/Kiln .agents/skills/kiln-conventions/<file> @ <sha>. Edit it in Kiln, then run utils/sync_conventions.sh. -->`
@@ -271,7 +273,7 @@ utils/sync_conventions.sh [--check] [KILN_DIR]    # KILN_DIR defaults to ../Kiln
 - In "General Agent Guidance", replace the long comment bullet with one line pointing to `rules.md` §A. The bullet's content moves into rules.md and isn't lost.
 
 **Kiln `.agents/code_review_guidelines.md`:**
-- Add near the top: "Apply `.agents/skills/kiln-conventions/rules.md` and the area references for the changed paths. Run the gate with `--range` on the PR's commits and report its FAIL and WARN hits."
+- Add near the top: "Apply `.agents/skills/kiln-conventions/references/rules.md` and the area references for the changed paths. Run the gate with `--range` on the PR's commits and report its FAIL and WARN hits."
 - Remove the "Code Comments" sub-bullets on unnecessary and diff-dependent comments, and the "Editing globals" bullet; they are now in rules.md. Keep "Missing comments" (the why), the other guideline content, and everything SDK- or UI-specific.
 
 **Kiln `kiln-ui` `SKILL.md`:** one line: "For code structure (stores, API calls, module layout), also follow `kiln-conventions` → `references/web_ui.md`."

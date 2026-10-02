@@ -62,7 +62,7 @@ Before writing or changing code, invoke the `kiln-conventions` skill (`.agents/s
 
 ### Code Comments
 
-Comments follow §A of `.agents/skills/kiln-conventions/rules.md`: write them for someone opening the file cold, never narrate the change, never restate the code. Review-bot findings about comments, including nitpicks, are required fixes.
+Comments follow §A of `.agents/skills/kiln-conventions/references/rules.md`: write them for someone opening the file cold, never narrate the change, never restate the code. Review-bot findings about comments, including nitpicks, are required fixes.
 
 ### Reporting Back: End-of-Turn Recaps
 

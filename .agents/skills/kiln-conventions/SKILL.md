@@ -12,7 +12,7 @@ Docs-only and spec-only changes don't need this skill.
 
 ## 1. Read the rules
 
-Read `rules.md` (beside this file) in full. It is short, and every rule has a ❌/✅ example.
+Read `references/rules.md` in full. It is short, and every rule has a ❌/✅ example.
 
 ## 2. Read the reference for each area you touch
 
@@ -35,14 +35,14 @@ Follow the rules even where the surrounding code doesn't (rules.md H23). Don't c
 From the repo root:
 
 ```
-uv run python .agents/skills/kiln-conventions/conventions_gate.py --worktree               # uncommitted changes + untracked files
-uv run python .agents/skills/kiln-conventions/conventions_gate.py --range origin/main...HEAD  # a branch or PR
-uv run python .agents/skills/kiln-conventions/conventions_gate.py --files <path>...          # whole files or directories (audits)
+uv run python .agents/skills/kiln-conventions/scripts/conventions_gate.py --worktree               # uncommitted changes + untracked files
+uv run python .agents/skills/kiln-conventions/scripts/conventions_gate.py --range origin/main...HEAD  # a branch or PR
+uv run python .agents/skills/kiln-conventions/scripts/conventions_gate.py --files <path>...          # whole files or directories (audits)
 ```
 
 It prints one line per hit, `SEV<TAB>RULE<TAB>path:line<TAB>snippet`, then a summary. Exit 1 means at least one FAIL.
 
-- **FAIL**: fix it. If the hit is not a violation, add an entry to `gate_allow.txt` with a `#` reason line above it. Don't allowlist a real violation.
+- **FAIL**: fix it. If the hit is not a violation, add an entry to `scripts/gate_allow.txt` with a `#` reason line above it. Don't allowlist a real violation.
 - **FAIL you can't fix without an out-of-scope refactor** (rules.md H23): leave it, and don't allowlist it. List it in your end-of-task summary and the PR description with the rule id, `path:line`, and the refactor it waits on. The gate isn't in CI, so a FAIL reported this way blocks nothing.
 - **WARN**: fix it, or name it in your end-of-task summary with a one-line justification (for example "module-level-call `app.command(...)(...)` in `cli/cli.py`: Typer command registration at the CLI's composition root").
 
@@ -65,19 +65,19 @@ If a rule couldn't be followed without a refactor, say so in your summary (H23);
 
 ## For reviewers
 
-Apply `rules.md` and the references for the changed paths. Run the gate with `--range <base>...<head>` on the PR and report every FAIL and every WARN that the author didn't justify. Accept a FAIL the author reported with its rule id, `path:line` and the refactor it waits on (rules.md H23); an allowlist entry for a real violation is a finding. Rule violations in added code are findings, not nits.
+Apply `references/rules.md` and the area references for the changed paths. Run the gate with `--range <base>...<head>` on the PR and report every FAIL and every WARN that the author didn't justify. Accept a FAIL the author reported with its rule id, `path:line` and the refactor it waits on (rules.md H23); an allowlist entry for a real violation is a finding. Rule violations in added code are findings, not nits.
 
 ## Maintaining the gate
 
-Files beside this one:
+Files in this skill:
 
-- `rules.md`, `conventions_gate.py` and `test_conventions_gate.py` are **shared**: kiln_server carries synced copies. Edit them here, in Kiln, then sync them into kiln_server with its `utils/sync_conventions.sh`.
-- `gate_config.json` (skipped paths, which checks run where, allowed env-access paths, module-level patterns) and `gate_allow.txt` are Kiln-only.
+- `references/rules.md`, `scripts/conventions_gate.py` and `scripts/test_conventions_gate.py` are **shared**: kiln_server carries synced copies. Edit them here, in Kiln, then sync them into kiln_server with its `utils/sync_conventions.sh`.
+- `scripts/gate_config.json` (skipped paths, which checks run where, allowed env-access paths, module-level patterns) and `scripts/gate_allow.txt` are Kiln-only. The gate reads both from its own directory.
 
 Run the gate's tests (stdlib + pytest only; the default repo test run doesn't collect dot-directories):
 
 ```
-uv run python -m pytest .agents/skills/kiln-conventions/test_conventions_gate.py
+uv run python -m pytest .agents/skills/kiln-conventions/scripts/test_conventions_gate.py
 ```
 
 Config notes: a check missing from `checks` is disabled; an unknown check id or an invalid regex exits 2. Globs support `*` and `?` (within one path segment) and `**/` (zero or more directories); brackets are literal, so `routes/[project_id]/**` works. Allowlist lines are Python regexes searched in `path<TAB>stripped line`, optionally prefixed `rule-id:`.

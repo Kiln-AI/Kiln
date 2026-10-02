@@ -54,24 +54,26 @@ The skill must work for an agent with no context on the repo, and it must be che
 ```
 Kiln/.agents/skills/kiln-conventions/
   SKILL.md
-  rules.md                 # canonical universal rules (D3)
-  conventions_gate.*       # canonical gate (D4)
-  gate_config.*            # Kiln-specific path settings for the gate, not synced
-  gate_allow.txt           # Kiln allowlist, not synced
   references/
+    rules.md               # canonical universal rules (D3)
     core.md                # libs/core
     server_desktop.md      # libs/server + app/desktop
     web_ui.md              # app/web_ui
+  scripts/
+    conventions_gate.*     # canonical gate (D4)
+    gate_config.*          # Kiln-specific path settings for the gate, not synced
+    gate_allow.txt         # Kiln allowlist, not synced
 
 kiln_server/.agents/skills/kiln-server-conventions/
   SKILL.md
-  rules.md                 # synced copy, with a "do not edit here" header
-  conventions_gate.*       # synced copy
-  gate_config.*            # kiln_server-specific
-  gate_allow.txt
   references/
+    rules.md               # synced copy, with a "do not edit here" header
     api.md                 # the API service
     jobs_pipelines.md      # jobs, pipelines and optimizers
+  scripts/
+    conventions_gate.*     # synced copy
+    gate_config.*          # kiln_server-specific
+    gate_allow.txt
 ```
 
 Each reference has three sections:
@@ -222,7 +224,7 @@ The gate must stay cheap:
 
 ## 6. Sync of shared files (D3)
 
-- Canonical files: `rules.md` and the gate script in `Kiln/.agents/skills/kiln-conventions/`.
+- Canonical files: `references/rules.md` and the gate script in `scripts/`, under `Kiln/.agents/skills/kiln-conventions/`.
 - kiln_server has a sync script, `utils/sync_conventions.sh [path-to-Kiln-checkout]`, defaulting to `../Kiln`:
   - It copies both files into `.agents/skills/kiln-server-conventions/`.
   - It prepends or keeps a header saying the file is synced from Kiln and must be edited there.

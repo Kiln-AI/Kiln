@@ -53,7 +53,7 @@ All new files live in `.agents/skills/kiln-conventions/`. No runtime code change
 
 ## Tests
 
-All in `.agents/skills/kiln-conventions/test_conventions_gate.py`, run with `uv run python -m pytest .agents/skills/kiln-conventions/test_conventions_gate.py`.
+All in `.agents/skills/kiln-conventions/scripts/test_conventions_gate.py`, run with `uv run python -m pytest .agents/skills/kiln-conventions/scripts/test_conventions_gate.py`.
 
 - `test_parse_unified_diff_multi_hunk`: two hunks, correct new line numbers, context-free `-U0`.
 - `test_parse_unified_diff_new_file`, `..._rename`, `..._no_newline_marker`, `..._ignores_deletions`, `..._deleted_file`.
