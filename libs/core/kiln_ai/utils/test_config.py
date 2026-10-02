@@ -905,3 +905,18 @@ def test_bool_property_parses_stored_strings(
         assert config.bool_prop is expected
         if not in_memory:
             assert Config(properties=config._properties).bool_prop is expected
+
+
+@pytest.mark.parametrize(
+    "key,env_var,sensitive",
+    [
+        ("cloudflare_api_key", "CLOUDFLARE_API_KEY", True),
+        ("cloudflare_account_id", "CLOUDFLARE_ACCOUNT_ID", False),
+        ("cloudflare_ai_gateway_id", "CLOUDFLARE_AI_GATEWAY_ID", False),
+    ],
+)
+def test_cloudflare_properties(key, env_var, sensitive):
+    prop = Config()._properties[key]
+    assert prop.type is str
+    assert prop.env_var == env_var
+    assert prop.sensitive is sensitive
