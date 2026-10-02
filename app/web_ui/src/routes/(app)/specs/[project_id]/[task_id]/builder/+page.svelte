@@ -2184,6 +2184,8 @@
 
       // 2. Author the judge before preflight and any SU spend, so a failure
       // costs nothing and the preflight below covers the judge lane too.
+      // A user abort (Back or navigation) here cancels the whole drive; the
+      // per-spec cache makes re-drives free.
       generation_phase = "authoring_judge"
       const authored = await author_judge_prompt_for_spec(
         new_copilot_abort_signal(),

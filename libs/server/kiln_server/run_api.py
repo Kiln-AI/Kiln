@@ -1022,7 +1022,9 @@ async def update_run_util(
 ) -> TaskRun:
     # eval_source hides a run from the dataset and blocks its deletion; only the eval
     # runner sets it. Checking the key also refuses `{"eval_source": null}`, which
-    # deep_update treats as a clear and would bypass the delete guard.
+    # deep_update treats as a clear and would bypass the delete guard. A trace orphaned
+    # by deleting its eval stays on disk, invisible to the dataset and removable only
+    # from the filesystem.
     if "eval_source" in run_data:
         raise HTTPException(
             status_code=400,

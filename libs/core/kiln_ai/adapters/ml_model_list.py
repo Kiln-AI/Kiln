@@ -1,3 +1,5 @@
+"""Kiln's built-in model list: model families and names, per-provider model configs, and lookup helpers."""
+
 from enum import Enum
 from typing import List
 

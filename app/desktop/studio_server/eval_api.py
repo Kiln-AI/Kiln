@@ -2797,8 +2797,8 @@ def connect_evals_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
         eval = eval_from_id(project_id, task_id, eval_id)
 
-        # Every split size is resolved in its own store, so an EvalInput-backed eval
-        # reports its real counts too.
+        # Every split size is resolved in its own store, so EvalInput-backed and
+        # TaskRun-backed evals both report real counts.
         test_split = resolved_split_or_422(task, eval, "test")
         train_split = resolve_split(task, eval, "train")
         val_split = resolve_split(task, eval, "val")

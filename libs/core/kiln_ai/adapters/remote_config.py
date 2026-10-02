@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 
 # Loads github pages hosted JSON config.
 # You can see public config build logs here: https://github.com/Kiln-AI/remote_config/actions/workflows/publish_remote_config.yml
-# Content is hosted on Github Pages: https://kiln-ai.github.io/remote_config/kiln_config_v1.json
-# Only the v2 file is published. Kiln v0.18 clients request v1, which is absent, so they fall back to the built-in list.
+# Content is served from REMOTE_MODEL_LIST_URL below.
+# Only v2 is published: v0.18's remote-config handling was buggy, so its v1 URL stays absent and those clients fall back to the built-in list.
 REMOTE_MODEL_LIST_URL = "https://remote-config.getkiln.ai/kiln_config_v2.json"
 
 refresh_lock = threading.Lock()

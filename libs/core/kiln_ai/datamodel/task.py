@@ -96,7 +96,7 @@ class TaskRunConfig(KilnParentedModel):
             return None
         return self.parent  # type: ignore
 
-    # Older files lack structured_output_mode in run_config_properties; fill it in on load.
+    # Older files may lack run_config_properties.type and structured_output_mode; default them (kiln_agent, unknown) on load.
     @model_validator(mode="before")
     def upgrade_old_entries(cls, data: dict, info: ValidationInfo) -> dict:
         if not info.context or not info.context.get("loading_from_file", False):
