@@ -51,13 +51,18 @@ Agents have access to a number of helpful prompts, which will give you additiona
 
 These prompts can be accessed from the `get_prompt` tool, and you may request several in parallel.
 
+Before writing or changing code, invoke the `kiln-conventions` skill (`.agents/skills/kiln-conventions/SKILL.md`). It holds the code rules, the gotchas for each area, and a gate to run on your change.
+
 ### General Agent Guidance
 
 - When spawning subagents, always use the same model as the current agent
-- Don't include comments in code explaining changes, explain changes in chat instead. This covers comments that defend code which is now simply correct — e.g. explaining why a route declares no 401 response after you deleted a bogus one. If a comment only makes sense next to the diff, cut it.
 - `CLAUDE.md` is generated from `AGENTS.md` and overwritten by setup. Edit `AGENTS.md`, never `CLAUDE.md`; keep personal notes in `~/.claude/CLAUDE.md`.
 - Use `TODO` comments to mark any temporary code, placeholders, or items that must be addressed before merging to main. CI enforces that no `TODO` comments remain on main, so they are a safe way to flag work-in-progress during development. Clean up all `TODO` comments before the final PR.
 - Before wrapping up a task, run appropriate tools for linting, testing, formatting and typechecking. Fix any issues you introduced.
+
+### Code Comments
+
+Comments follow §A of `.agents/skills/kiln-conventions/references/rules.md`: write them for someone opening the file cold, never narrate the change, never restate the code. Review-bot findings about comments, including nitpicks, are required fixes.
 
 ### Reporting Back: End-of-Turn Recaps
 
@@ -96,11 +101,18 @@ Write it for a person who has not read your working notes and will not scroll up
 
 ### Code Review Guidelines
 
-If asked to perform a code review, read our [code review guidelines](.agents/code_review_guidelines.md).
+If code reviewing, always read [`.agents/code_review_guidelines.md`](.agents/code_review_guidelines.md) before starting your review.
 
 ### Pull Requests
 
 Use the `open-pr` skill (`.agents/skills/open-pr/SKILL.md`) to open a PR or to write a PR description.
+
+Before you open a PR, and before each `git push` to a branch with an open PR, run the `docs-sync` skill (`.agents/skills/docs-sync/SKILL.md`) to update the docs and skills that the change makes stale.
+
+If you get a user message like the one below, read `.agents/skills/open-pr/references/repair_pr.md` and follow its instructions.
+
+> A pull request was just created for this branch from the Claude Code UI: https://github.com/Kiln-AI/Kiln/pull/NNNN
+> You don't need to create one. Reference this PR going forward — pushing more commits to this branch will update it.
 
 ### Never Make Legal Decisions as an Agent
 

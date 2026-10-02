@@ -1,0 +1,65 @@
+{
+  "skip_globs": [
+    "**/test_*.py",
+    "**/*_test.py",
+    "**/conftest.py",
+    "**/*.test.ts",
+    "**/*.test.js",
+    "**/*.spec.ts",
+    "**/__tests__/**",
+    "app/web_ui/tests/**",
+    "**/api_schema.d.ts",
+    "app/desktop/studio_server/api_client/kiln_ai_server_client/**",
+    "app/desktop/build/**",
+    "app/web_ui/build/**",
+    "specs/**"
+  ],
+  "checks": {
+    "history-comment": {"enabled": true, "severity": "FAIL"},
+    "global-stmt": {"enabled": true, "severity": "FAIL"},
+    "bool-env": {"enabled": true, "severity": "FAIL"},
+    "env-access": {"enabled": true, "severity": "FAIL"},
+    "core-config-shared": {
+      "enabled": true,
+      "severity": "FAIL",
+      "paths": ["libs/core/kiln_ai/**"]
+    },
+    "lib-imports-routes": {
+      "enabled": true,
+      "severity": "FAIL",
+      "paths": ["app/web_ui/src/lib/**"]
+    },
+    "module-level-call": {"enabled": true, "severity": "WARN"},
+    "module-level-construct": {"enabled": true, "severity": "WARN"},
+    "module-level-subscribe": {
+      "enabled": true,
+      "severity": "WARN",
+      "paths": ["app/web_ui/src/lib/**"]
+    }
+  },
+  "env_access_allowed": [
+    "libs/core/kiln_ai/utils/config.py",
+    "app/desktop/desktop.py",
+    "app/desktop/dev_server.py",
+    "app/desktop/dev_app.py",
+    "app/desktop/dev_env.py",
+    "app/desktop/log_config.py",
+    ".agents/**"
+  ],
+  "module_level_call_ignore": ["\\.include_router\\(", "\\.add_typer\\("],
+  "module_level_construct_patterns": [
+    "\\bSettings\\(",
+    "\\bmake_app\\(",
+    "\\bcreate_app\\(",
+    "\\bFastAPI\\(",
+    "Config\\.shared\\(",
+    "\\bAsyncClient\\(",
+    "\\.Client\\(",
+    "\\bSession\\(",
+    "\\bcreate_engine\\(",
+    "Registry\\(",
+    "\\b(?:Thread|Process)PoolExecutor\\(",
+    "\\b(?:Lock|Semaphore|Event)\\(",
+    "\\bThread\\("
+  ]
+}

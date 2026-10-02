@@ -264,9 +264,8 @@
     ]}
   >
     {#if show_offer}
-      <!-- The offer, before the templates. This is also the only place eval
-           creation pitches Kiln Pro: the screen that used to carry that pitch
-           sat partway through the old flow and is gone. -->
+      <!-- The offer, before the templates. This is the only place eval
+           creation pitches Kiln Pro. -->
       <div class="flex justify-center mt-[10vh]">
         <Intro
           title="Let Kiln Pro write the eval"

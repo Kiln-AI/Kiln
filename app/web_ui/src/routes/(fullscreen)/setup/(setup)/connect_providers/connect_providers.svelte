@@ -10,7 +10,6 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { client, base_url } from "$lib/api_client"
   import Warning from "$lib/ui/warning.svelte"
-  import { available_tuning_models } from "$lib/stores/fine_tune_store"
   import { clear_available_models_cache } from "$lib/stores"
   import { get_provider_image } from "$lib/ui/provider_image"
   import posthog from "posthog-js"
@@ -240,6 +239,22 @@
       api_key_fields: ["API Key"],
     },
     {
+      name: "Cloudflare",
+      id: "cloudflare",
+      description: "Open models on the edge, plus an AI gateway.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://dash.cloudflare.com/?to=/:account/ai/workers-ai and click 'Use REST API'",
+        "Click 'Create a Workers AI API Token', create the token, then copy it and paste it below",
+        "On the same page, copy your Account ID and paste it below",
+        "Optional: to send requests through Cloudflare AI Gateway (a router to other AI hosts), enter a gateway ID. Enter 'default' to have Cloudflare create one.",
+        "Click 'Connect'",
+      ],
+      api_key_warning: "Some models require Cloudflare's Workers Paid plan.",
+      api_key_fields: ["API Token", "Account ID", "AI Gateway ID - Optional"],
+      optional_fields: ["AI Gateway ID - Optional"],
+    },
+    {
       name: "TypeSafe AI",
       id: "typesafe",
       description:
@@ -395,6 +410,12 @@
       error: null,
       custom_description: null,
     },
+    cloudflare: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
     typesafe: {
       connected: false,
       connecting: false,
@@ -476,9 +497,6 @@
         setCopilotConnected(false)
       }
 
-      // Clear the available models list
-      available_tuning_models.set(null)
-      // Clear the available models cache so it refreshes next time
       clear_available_models_cache()
     } catch (e) {
       console.error("disconnect_provider error", e)
@@ -576,7 +594,6 @@
     }
     status.ollama.error = null
     status.ollama.connected = true
-    // Clear the available models cache so it refreshes next time
     clear_available_models_cache()
     const supported_models_str =
       data.supported_models.length > 0
@@ -654,7 +671,6 @@
     }
     status.docker_model_runner.error = null
     status.docker_model_runner.connected = true
-    // Clear the available models cache so it refreshes next time
     clear_available_models_cache()
     const supported_models_str =
       data.supported_models.length > 0
@@ -729,9 +745,6 @@
       status[provider_id].connected = true
       dismiss_api_key_dialog()
 
-      // Clear the available models list
-      available_tuning_models.set(null)
-      // Clear the available models cache so it refreshes next time
       clear_available_models_cache()
     } catch (e) {
       console.error("submit_api_key error", e)
@@ -805,6 +818,9 @@
       }
       if (data["featherless_ai_api_key"]) {
         status.featherless_ai.connected = true
+      }
+      if (data["cloudflare_api_key"] && data["cloudflare_account_id"]) {
+        status.cloudflare.connected = true
       }
       if (data["typesafe_api_key"]) {
         status.typesafe.connected = true
@@ -900,7 +916,6 @@
       new_provider_error = null
 
       status.openai_compatible.connected = true
-      // Clear the available models cache so it refreshes next time
       clear_available_models_cache()
       // @ts-expect-error daisyui does not add types
       document.getElementById("openai_compatible_dialog")?.close()
@@ -940,7 +955,6 @@
       if (custom_openai_compatible_providers.length === 0) {
         status.openai_compatible.connected = false
       }
-      // Clear the available models cache so it refreshes next time
       clear_available_models_cache()
     } catch (e) {
       alert("Failed to remove provider: " + e)
