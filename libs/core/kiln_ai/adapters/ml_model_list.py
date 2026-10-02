@@ -196,6 +196,7 @@ class ModelName(str, Enum):
     qwen_2p5_vl_72b = "qwen_2p5_vl_72b"
     qwq_32b = "qwq_32b"
     deepseek_4_1_flash = "deepseek_4_1_flash"
+    deepseek_4_pro_0813 = "deepseek_4_pro_0813"
     deepseek_4_pro = "deepseek_4_pro"
     deepseek_4_flash = "deepseek_4_flash"
     deepseek_3_2 = "deepseek_3_2"
@@ -6006,6 +6007,31 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # DeepSeek V4 Pro 0813
+    KilnModel(
+        family=ModelFamily.deepseek,
+        name=ModelName.deepseek_4_pro_0813,
+        friendly_name="DeepSeek V4 Pro 0813",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="deepseek/deepseek-v4-pro-0813",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="deepseek-ai/DeepSeek-V4-Pro-0813",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
+        ],
+    ),
     # DeepSeek V4 Pro
     KilnModel(
         family=ModelFamily.deepseek,
@@ -6034,9 +6060,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
-                model_id="deepseek-ai/DeepSeek-V4-Pro-0813",
+                model_id="deepseek-ai/DeepSeek-V4-Pro",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
             ),
