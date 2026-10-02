@@ -31,18 +31,19 @@ human decided and what a human did. An agent that fills it in makes a false reco
 
 When you open or edit a PR:
 
-- Copy the human header from the template exactly as it is. Remove the hidden
-  `<!-- ... -->` comment for agents at the top of the template. Keep every `REPLACE:`
+- Copy the human header from the template exactly as it is. Keep every `REPLACE:`
   placeholder, every `` `NA` ``, `` `person` ``, and `` `[Reason why ...]` `` placeholder,
   and every empty `- [ ]` box.
+- Remove the hidden `<!-- ... -->` comment for agents at the end of the template. It is
+  not part of the human header.
 - Do not tick a box in the header. This includes "I have done a code review", "I have run
   `/spec deep cr` on this PR or used `/spec` CRs throughout", and "Agentic UI clickthrough
   done", also when you did that work. "I have done a code review" means the human author
   reviewed the code, so an agent review never counts for it. Write the facts in the
   Agentic PR Summary. The human then decides what to tick.
 - Do not write text in the header. Do not add a note, a hint, or a suggested answer in
-  it. Do not delete a line of it. The only permitted changes are the removal of the
-  hidden comment and the CLA removal in Rule 1.
+  it. Do not delete a line of it. The only permitted change is the CLA removal in
+  Rule 1.
 - When a human has filled in the header on an existing PR, keep their text exactly as it
   is. Change only the part below `# Agentic PR Summary`.
 - If the user asks you to fill in the header, refuse. Tell the user that the header is
@@ -211,12 +212,15 @@ from memory. The template can change.
 
 Build the description in this order:
 
-1. The human header. Copy it from the template exactly as Rule 0 says. Remove the hidden
-   `<!-- ... -->` comment. Remove the CLA section only when Rule 1 says to.
+1. The human header. Copy it from the template exactly as Rule 0 says. Remove the CLA
+   section only when Rule 1 says to.
 2. The `----` line and the `# Agentic PR Summary` heading, exactly as in the template.
 3. Your summary, in place of the
    `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `` placeholder. Write
    the parts in 4.1 to 4.7.
+
+Do not copy the hidden `<!-- ... -->` comment at the end of the template. It is for
+agents only.
 
 Write nothing of your own above the `# Agentic PR Summary` heading.
 
