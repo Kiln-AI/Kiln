@@ -137,7 +137,6 @@ server repo".
    touches `.agents/`. The script regenerates the copies in `.claude/`, so the current
    session uses your new version. Git ignores `.claude/`, so this step is for you, not
    for the other users.
-6. Push the branch: `git push -u origin <branch-name>`.
 
 ## Step 2 — Find the target branch
 
@@ -154,6 +153,14 @@ Kiln uses stacked branches. The base branch is not always `main`.
 
 Find the companion branches too. A companion branch is a branch that must merge before
 or after this one, in this repo or in the private server repo.
+
+When you know the base branch:
+
+1. Run the `docs-sync` skill (`.agents/skills/docs-sync/SKILL.md`) against the base
+   branch. It updates the docs and the skills that your change makes incorrect, in a
+   separate `docs:` commit.
+2. If the skill made a commit, do Step 1 items 2 to 5 again.
+3. Push the branch: `git push -u origin <branch-name>`.
 
 ---
 
@@ -317,6 +324,8 @@ Do not commit screenshots to the PR branch itself.
   "`checks.sh` green". Also name other review work that you did, for example
   "`/spec deep cr` ran; all findings fixed" or "Agentic UI clickthrough done". Write
   only work that you did.
+- Add a `**Docs and skills updated**` line with the files that the `docs-sync` skill
+  changed, or "none needed" and the reason.
 - Put these lines in the Agentic PR Summary, before the collapsible panels. They never go
   in the human header.
 
@@ -341,6 +350,9 @@ Do not approve the PR. Do not merge the PR.
 
 The description tells the reader what the PR contains now. It does not tell the history
 of the PR. Read the title and the description again each time you push a change.
+
+Before each push to an open PR, run the `docs-sync` skill again (Step 2). Then update the
+`**Docs and skills updated**` line, so that it lists every doc file that the PR changes.
 
 Before each update, read the current title and body from GitHub. A human can edit them
 at any time. Change only the part below `# Agentic PR Summary`. Keep the human header
@@ -457,9 +469,9 @@ For comments about code comments or docstrings apply the "Code Comments" rules i
 - Run `uv run ./checks.sh --agent-mode` before you push.
 - If the failure comes from the base branch and not from your change, say so on the PR.
 
-**3. Push the fixes in one commit group.** A new push starts a new bot review. The next
-scheduled check reads those new comments. Then read the title and the description again,
-as Step 6 says.
+**3. Push the fixes in one commit group.** Run the `docs-sync` skill before you push. A
+new push starts a new bot review. The next scheduled check reads those new comments. Then
+read the title and the description again, as Step 6 says.
 
 ### Rules for a reply
 
@@ -553,6 +565,8 @@ flowchart LR
 
 **Checks:** `checks.sh` green. New tests for the save-time check in `libs/server`.
 
+**Docs and skills updated:** none needed, no doc names the changed check.
+
 <details>
 <summary><b>Screenshots</b></summary>
 
@@ -570,6 +584,7 @@ team can delete it after this PR closes.
 
 ## Checklist before you open the PR
 
+- [ ] The `docs-sync` skill ran, and its result is on the `**Docs and skills updated**` line.
 - [ ] `uv run ./checks.sh --agent-mode` is green.
 - [ ] No `TODO` comment is left in the diff.
 - [ ] The title starts with `WIP: `, then a semantic prefix and a short subject.
