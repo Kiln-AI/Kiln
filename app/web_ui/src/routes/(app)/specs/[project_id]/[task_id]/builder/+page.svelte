@@ -4450,7 +4450,7 @@
         // so a fault-presuming headline would blame agents that behaved. The
         // name points at the judge because that is what this step calibrates;
         // each case's own verdict is still about the AGENT's work.
-        return "Validate the Judge"
+        return "Align the Judge"
     }
   }
 
