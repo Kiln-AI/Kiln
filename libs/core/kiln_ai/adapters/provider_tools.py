@@ -21,7 +21,7 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.adapters.ollama_tools import get_ollama_connection
 from kiln_ai.adapters.user_model_entry import UserModelEntry
 from kiln_ai.datamodel import Finetune, Task
-from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy, parse_model_provider_name
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.project_utils import project_from_id
@@ -247,9 +247,7 @@ def kiln_model_provider_from(
     # Custom/untested model. Set untested, and build a ModelProvider at runtime
     if provider_name is None:
         raise ValueError("Provider name is required for custom models")
-    if provider_name not in ModelProviderName.__members__:
-        raise ValueError(f"Invalid provider name: {provider_name}")
-    provider = ModelProviderName(provider_name)
+    provider = parse_model_provider_name(provider_name)
     check_provider_warnings(provider)
     return KilnModelProvider(
         name=provider,

@@ -4,7 +4,6 @@ from pydantic import BaseModel, Field, PositiveInt
 from typing_extensions import TypedDict
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
-from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.chunk import ChunkedDocument
@@ -25,8 +24,8 @@ class EmbeddingConfig(KilnParentedModel):
         default=None,
         description="A description for your reference, not shared with embedding models.",
     )
-    model_provider_name: ModelProviderName = Field(
-        description="The provider to use to generate embeddings.",
+    model_provider_name: str = Field(
+        description="The provider to use to generate embeddings, such as 'openai'. Providers this version of Kiln doesn't know are kept as given.",
     )
     model_name: str = Field(
         description="The model to use to generate embeddings.",

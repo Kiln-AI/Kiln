@@ -18,6 +18,7 @@ from kiln_ai.adapters.provider_tools import (
     kiln_model_provider_from,
     lite_llm_core_config_for_provider,
 )
+from kiln_ai.datamodel.datamodel_enums import parse_model_provider_name
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     McpRunConfigProperties,
@@ -106,7 +107,8 @@ def litellm_core_provider_config(
 ) -> LiteLlmConfig:
     # For things like the fine-tune provider, we want to run the underlying provider (e.g. openai)
     core_provider_name = core_provider(
-        run_config_properties.model_name, run_config_properties.model_provider_name
+        run_config_properties.model_name,
+        parse_model_provider_name(run_config_properties.model_provider_name),
     )
 
     # Resolve openai_compatible_provider_name for providers that need it.

@@ -908,7 +908,7 @@ def get_model_by_name(name: EmbeddingModelName) -> KilnEmbeddingModel:
 
 
 def built_in_embedding_models_from_provider(
-    provider_name: ModelProviderName, model_name: str
+    provider_name: str, model_name: str
 ) -> KilnEmbeddingModelProvider | None:
     for model in built_in_embedding_models:
         if model.name == model_name:

@@ -1047,7 +1047,7 @@ def runs_in_filter(
 ) -> list[TaskRun]:
     # Fetch all the dataset items IDs in a filter
     filter = dataset_filter_from_id(filter_id)
-    return [run for run in task.runs(readonly=readonly) if filter(run)]
+    return [run for run in task.readable_runs(readonly=readonly) if filter(run)]
 
 
 TaskChildT = TypeVar("TaskChildT", bound=KilnParentedModel)

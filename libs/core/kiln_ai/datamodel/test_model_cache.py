@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from unittest import mock
 
@@ -344,3 +345,27 @@ def test_cache_mutable_model_raises_error(model_cache, test_path):
         RuntimeError, match="Mutable models are not allowed to be cached"
     ):
         model_cache.set_model(test_path, model, mtime_ns)
+
+
+def test_is_new_load_failure_once_per_file_version(model_cache, test_path):
+    assert model_cache.is_new_load_failure(test_path) is True
+    assert model_cache.is_new_load_failure(test_path) is False
+
+    mtime_ns = test_path.stat().st_mtime_ns
+    os.utime(test_path, ns=(mtime_ns + 10**9, mtime_ns + 10**9))
+    assert model_cache.is_new_load_failure(test_path) is True
+    assert model_cache.is_new_load_failure(test_path) is False
+
+
+def test_is_new_load_failure_reset_by_invalidate_and_clear(model_cache, test_path):
+    assert model_cache.is_new_load_failure(test_path) is True
+    model_cache.invalidate(test_path)
+    assert model_cache.is_new_load_failure(test_path) is True
+    model_cache.clear()
+    assert model_cache.is_new_load_failure(test_path) is True
+
+
+def test_is_new_load_failure_missing_file(model_cache, tmp_path):
+    missing = tmp_path / "missing.kiln"
+    assert model_cache.is_new_load_failure(missing) is True
+    assert model_cache.is_new_load_failure(missing) is False

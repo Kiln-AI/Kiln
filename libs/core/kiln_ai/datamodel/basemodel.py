@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 import shutil
@@ -49,6 +50,8 @@ ID_FIELD = Field(
 ID_TYPE = Optional[str]
 T = TypeVar("T", bound="KilnBaseModel")
 PT = TypeVar("PT", bound="KilnParentedModel")
+
+logger = logging.getLogger(__name__)
 
 
 class ReadOnlyMutationError(RuntimeError):
@@ -531,6 +534,34 @@ class KilnBaseModel(BaseModel):
         return 1
 
 
+def _unvalidated_model_id(path: Path) -> str | None:
+    """The ``id`` field of a model file, read without validating the model.
+
+    Returns None if the file can't be read as a JSON object with a string ``id``.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            data = json.load(file)
+    except (OSError, ValueError):
+        return None
+    model_id = data.get("id") if isinstance(data, dict) else None
+    return model_id if isinstance(model_id, str) else None
+
+
+def log_child_load_failure(path: Path, message: str) -> None:
+    """Log a child file that was skipped because it failed to load.
+
+    Logs at warning level the first time for each version of a file, then at debug
+    level, since the same unreadable file is met again on every scan of its parent.
+    """
+    level = (
+        logging.WARNING
+        if ModelCache.shared().is_new_load_failure(path)
+        else logging.DEBUG
+    )
+    logger.log(level, f"Skipping child file {path} that failed to load: {message}")
+
+
 class ChildLoadError(BaseModel):
     """A child model file that could not be loaded, and why.
 
@@ -743,6 +774,25 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         )
 
     @classmethod
+    def _load_child_while_searching(
+        cls: Type[PT], child_path: Path, requested_ids: Set[str], readonly: bool
+    ) -> PT | None:
+        """Load a child file met while searching a parent for ``requested_ids``.
+
+        Project folders sync between clients running different Kiln versions, so a
+        sibling written by a newer build can be unreadable here. Such a sibling is
+        logged and skipped (returns None). A requested child that fails to load still
+        raises, so the caller sees why it can't be read rather than a "not found".
+        """
+        try:
+            return cls.load_from_file(child_path, readonly=readonly)
+        except Exception as e:
+            if _unvalidated_model_id(child_path) in requested_ids:
+                raise
+            log_child_load_failure(child_path, str(e))
+            return None
+
+    @classmethod
     def from_id_and_parent_path(
         cls: Type[PT], id: str, parent_path: Path | None
     ) -> PT | None:
@@ -760,8 +810,10 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
             if child_id == id:
                 return cls.load_from_file(child_path)
             if child_id is None:
-                child = cls.load_from_file(child_path)
-                if child.id == id:
+                child = cls._load_child_while_searching(
+                    child_path, requested_ids={id}, readonly=False
+                )
+                if child is not None and child.id == id:
                     return child
         return None
 
@@ -790,8 +842,10 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
             if child_id in ids:
                 children[child_id] = cls.load_from_file(child_path, readonly=readonly)
             if child_id is None:
-                child = cls.load_from_file(child_path, readonly=readonly)
-                if child.id in ids:
+                child = cls._load_child_while_searching(
+                    child_path, requested_ids=ids, readonly=readonly
+                )
+                if child is not None and child.id in ids:
                     children[child.id] = child
 
         return children

@@ -4,7 +4,13 @@ from typing import Annotated, Literal
 
 from kiln_ai.datamodel.claim_review import GradedClaim
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
-from pydantic import BaseModel, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 from typing_extensions import Self
 
 
@@ -51,8 +57,8 @@ class TaskMetadataApi(BaseModel):
     """Metadata about the model used for a task."""
 
     model_name: str = Field(description="The name of the AI model used.")
-    model_provider_name: ModelProviderName = Field(
-        description="The provider hosting the model (e.g. OpenAI, Anthropic)."
+    model_provider_name: str = Field(
+        description="The provider hosting the model, such as 'openai'."
     )
 
 
@@ -262,8 +268,16 @@ class ClarifySpecApiInput(TaskScopedCopilotInput):
     target_specification: str
     num_samples_per_topic: int
     num_topics: int
-    providers: list[ModelProviderName]
+    providers: list[str] = Field(
+        description="The model providers the user has connected, such as 'openai'. Names this version of Kiln doesn't know are ignored."
+    )
     num_exemplars: int = Field(default=10)
+
+    @field_validator("providers")
+    @classmethod
+    def drop_unknown_providers(cls, providers: list[str]) -> list[str]:
+        known = {provider.value for provider in ModelProviderName}
+        return [provider for provider in providers if provider in known]
 
 
 class RefineSpecApiInput(TaskScopedCopilotInput):

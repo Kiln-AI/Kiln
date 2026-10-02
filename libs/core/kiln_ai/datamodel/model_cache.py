@@ -32,6 +32,9 @@ class ModelCache:
     def __init__(self):
         # Store both the model and the modified time of the cached file contents
         self.model_cache: Dict[Path, Tuple[KilnBaseModel, int]] = {}
+        # mtime of each file whose load failure has already been reported. Holds one
+        # entry per failing file; a changed file is reported again.
+        self._reported_load_failures: Dict[Path, int] = {}
         self._enabled = self._check_timestamp_granularity()
         if not self._enabled:
             warnings.warn(
@@ -102,9 +105,25 @@ class ModelCache:
     def invalidate(self, path: Path):
         if path in self.model_cache:
             del self.model_cache[path]
+        self._reported_load_failures.pop(path, None)
 
     def clear(self):
         self.model_cache.clear()
+        self._reported_load_failures.clear()
+
+    def is_new_load_failure(self, path: Path) -> bool:
+        """True the first time this is called for the current contents of ``path``.
+
+        Lets callers report a file that fails to load once, rather than on every scan.
+        """
+        try:
+            mtime_ns = path.stat().st_mtime_ns
+        except OSError:
+            mtime_ns = -1
+        if self._reported_load_failures.get(path) == mtime_ns:
+            return False
+        self._reported_load_failures[path] = mtime_ns
+        return True
 
     def _check_timestamp_granularity(self) -> bool:
         """Check if filesystem supports fine-grained timestamps (microseconds or better)."""

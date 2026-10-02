@@ -40,6 +40,7 @@ from kiln_ai.datamodel.run_config import (
     ToolsRunConfig,
 )
 from kiln_ai.datamodel.skill import Skill
+from kiln_ai.datamodel.test_task import write_unloadable_run
 from kiln_server.custom_errors import connect_custom_errors
 from pydantic import BaseModel
 
@@ -2012,6 +2013,22 @@ def test_compute_finetune_tag_info(empty_task, tool_filter, expected_count):
         assert len(result) == 1
         assert result[0].tag == "fine_tune_tools"
         assert result[0].count == expected_count
+
+
+def test_compute_finetune_tag_info_skips_unloadable_run_files(empty_task):
+    create_synthetic_run(
+        empty_task,
+        run_id="good_run",
+        name="Good Run",
+        output_text="Test output",
+        created_by="user1",
+        tags=["fine_tune_good"],
+    )
+    write_unloadable_run(empty_task, "from_the_future")
+
+    result = compute_finetune_tag_info(empty_task, tool_filter=None)
+
+    assert [(info.tag, info.count) for info in result] == [("fine_tune_good", 1)]
 
 
 @pytest.mark.parametrize(

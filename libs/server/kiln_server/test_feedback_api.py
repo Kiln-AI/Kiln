@@ -13,6 +13,9 @@ from kiln_ai.datamodel import (
     TaskOutput,
     TaskRun,
 )
+from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.test_task import write_unloadable_run
 
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.feedback_api import connect_feedback_api
@@ -76,6 +79,22 @@ class TestListFeedback:
         assert resp.status_code == 200
         assert resp.json() == []
 
+    def test_list_skips_unloadable_sibling_runs(self, client, task_run_setup):
+        project, task, run = task_run_setup
+        Feedback(
+            feedback="Test feedback", source=FeedbackSource.run_page, parent=run
+        ).save_to_file()
+        write_unloadable_run(task, "from_the_future")
+        base_url = f"/api/projects/{project.id}/tasks/{task.id}/runs"
+
+        with patch("kiln_server.feedback_api.task_from_id", return_value=task):
+            resp = client.get(f"{base_url}/{run.id}/feedback")
+            missing_resp = client.get(f"{base_url}/missing/feedback")
+
+        assert resp.status_code == 200
+        assert [fb["feedback"] for fb in resp.json()] == ["Test feedback"]
+        assert missing_resp.status_code == 404
+
     def test_list_returns_feedback(self, client, task_run_setup):
         project, task, run = task_run_setup
         fb = Feedback(
@@ -92,6 +111,44 @@ class TestListFeedback:
         assert len(data) == 1
         assert data[0]["feedback"] == "Test feedback"
         assert data[0]["source"] == "run-page"
+
+    def test_list_for_run_made_with_provider_from_newer_kiln(self, tmp_path, client):
+        project = Project(name="Test Project", path=tmp_path / "project.kiln")
+        project.save_to_file()
+        task = Task(name="Test Task", instruction="Do something", parent=project)
+        task.save_to_file()
+        run = TaskRun(
+            parent=task,
+            input="Test input",
+            input_source=DataSource(
+                type=DataSourceType.human, properties={"created_by": "tester"}
+            ),
+            output=TaskOutput(
+                output="Test output",
+                source=DataSource(
+                    type=DataSourceType.synthetic,
+                    properties={
+                        "model_name": "some_model",
+                        "model_provider": "provider_from_newer_kiln",
+                        "adapter_name": "kiln_openai_compatible_adapter",
+                    },
+                    run_config=KilnAgentRunConfigProperties(
+                        model_name="some_model",
+                        model_provider_name="provider_from_newer_kiln",
+                        prompt_id="simple_prompt_builder",
+                        structured_output_mode=StructuredOutputMode.json_schema,
+                    ),
+                ),
+            ),
+        )
+        run.save_to_file()
+
+        with patch("kiln_server.feedback_api.task_from_id", return_value=task):
+            resp = client.get(
+                f"/api/projects/{project.id}/tasks/{task.id}/runs/{run.id}/feedback"
+            )
+        assert resp.status_code == 200
+        assert resp.json() == []
 
     def test_list_run_not_found(self, client, task_run_setup):
         _, task, _ = task_run_setup

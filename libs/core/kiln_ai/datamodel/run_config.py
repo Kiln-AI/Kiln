@@ -11,7 +11,6 @@ from pydantic import (
 from typing_extensions import Self
 
 from kiln_ai.datamodel.datamodel_enums import (
-    ModelProviderName,
     StructuredOutputMode,
 )
 from kiln_ai.datamodel.input_transform import InputTransform
@@ -54,8 +53,8 @@ class KilnAgentRunConfigProperties(BaseModel):
 
     type: Literal["kiln_agent"] = "kiln_agent"
     model_name: str = Field(description="The model to use for this run config.")
-    model_provider_name: ModelProviderName = Field(
-        description="The provider to use for this run config."
+    model_provider_name: str = Field(
+        description="The provider to use for this run config, such as 'openai'. Providers this version of Kiln doesn't know are kept as given."
     )
     prompt_id: PromptId = Field(
         description="The prompt to use for this run config. Defaults to building a simple prompt from the task if not provided.",

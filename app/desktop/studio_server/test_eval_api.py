@@ -58,6 +58,7 @@ from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import EvalItemSource, Usage
+from kiln_ai.datamodel.test_task import write_unloadable_run
 from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.tools.base_tool import ToolCallResult
 from kiln_ai.tools.sandbox_bridge import BridgeResult
@@ -77,6 +78,7 @@ from app.desktop.studio_server.eval_api import (
     resolve_eval_run_traces,
     resolved_split_or_422,
     reusable_frozen_prompt_id,
+    runs_in_filter,
     score_summary_from_values,
     scored_trace_usage,
     scored_trace_usage_for_run_config,
@@ -3758,7 +3760,7 @@ def test_runs_in_filter():
     run2 = Mock(spec=TaskRun, id="run2")
     run3 = Mock(spec=TaskRun, id="run3")
 
-    mock_task.runs.return_value = [run1, run2, run3]
+    mock_task.readable_runs.return_value = [run1, run2, run3]
 
     # Mock the dataset filter
     mock_filter = Mock()
@@ -3772,9 +3774,6 @@ def test_runs_in_filter():
     ) as mock_dataset_filter_from_id:
         mock_dataset_filter_from_id.return_value = mock_filter
 
-        # Call the function under test
-        from app.desktop.studio_server.eval_api import runs_in_filter
-
         result = runs_in_filter(mock_task, "tag::some_filter", readonly=True)
 
         # Verify the results
@@ -3785,6 +3784,21 @@ def test_runs_in_filter():
         # Verify the filter was called for each run
         assert mock_filter.call_count == 3
         mock_dataset_filter_from_id.assert_called_once_with("tag::some_filter")
+
+
+def test_runs_in_filter_skips_unloadable_run_files(mock_task):
+    good_run = TaskRun(
+        parent=mock_task,
+        input="input",
+        output=TaskOutput(output="output"),
+        tags=["golden"],
+    )
+    good_run.save_to_file()
+    write_unloadable_run(mock_task, "from_the_future")
+
+    result = runs_in_filter(mock_task, "tag::golden", readonly=True)
+
+    assert [run.id for run in result] == [good_run.id]
 
 
 def test_build_score_key_to_task_requirement_id():

@@ -240,6 +240,34 @@ def test_dump_builtin_config(tmp_path):
     ]
 
 
+def test_built_in_list_with_providers_from_newer_kiln_still_loads(tmp_path):
+    path = tmp_path / "out.json"
+    dump_builtin_config(path)
+    data = json.loads(path.read_text())
+
+    first_model = data["model_list"][0]
+    known_provider = first_model["providers"][0]
+    first_model["providers"].append(
+        {**known_provider, "name": "provider_from_newer_kiln"}
+    )
+    data["model_list"].append(
+        {
+            **first_model,
+            "name": "model_only_on_newer_provider",
+            "providers": [{**known_provider, "name": "provider_from_newer_kiln"}],
+        }
+    )
+    path.write_text(json.dumps(data))
+
+    loaded = deserialize_config_at_path(path)
+
+    assert [m.model_dump(mode="json") for m in loaded.model_list[:-1]] == [
+        m.model_dump(mode="json") for m in built_in_models
+    ]
+    assert loaded.model_list[-1].name == "model_only_on_newer_provider"
+    assert loaded.model_list[-1].providers == []
+
+
 def test_refresh_model_list_background_success(
     mock_model, mock_embedding_model, mock_reranker_model
 ):

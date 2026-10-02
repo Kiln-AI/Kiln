@@ -448,7 +448,10 @@ async def test_kiln_model_provider_from_custom_model_no_provider():
 async def test_kiln_model_provider_from_invalid_provider():
     with pytest.raises(ValueError) as exc_info:
         await kiln_model_provider_from("custom_model", "invalid_provider")
-    assert str(exc_info.value) == "Invalid provider name: invalid_provider"
+    assert (
+        str(exc_info.value)
+        == "Model provider 'invalid_provider' isn't supported by this version of Kiln. Update Kiln to use it."
+    )
 
 
 @pytest.mark.asyncio

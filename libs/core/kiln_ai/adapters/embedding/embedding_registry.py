@@ -4,20 +4,14 @@ from kiln_ai.adapters.provider_tools import (
     core_provider,
     lite_llm_core_config_for_provider,
 )
-from kiln_ai.datamodel.datamodel_enums import ModelProviderName
+from kiln_ai.datamodel.datamodel_enums import parse_model_provider_name
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 
 
 def embedding_adapter_from_type(
     embedding_config: EmbeddingConfig,
 ) -> BaseEmbeddingAdapter:
-    try:
-        provider_enum = ModelProviderName(embedding_config.model_provider_name)
-    except ValueError:
-        raise ValueError(
-            f"Unsupported model provider name: {embedding_config.model_provider_name.value}. "
-        )
-
+    provider_enum = parse_model_provider_name(embedding_config.model_provider_name)
     core_provider_name = core_provider(embedding_config.model_name, provider_enum)
 
     provider_config = lite_llm_core_config_for_provider(core_provider_name)

@@ -34,6 +34,7 @@ from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties
 from kiln_ai.datamodel.task import TaskRunConfig
+from kiln_ai.datamodel.test_task import write_unloadable_run
 from kiln_ai.utils.formatting import AGENT_TRUNCATION_SENTINEL
 from kiln_server.custom_errors import connect_custom_errors
 
@@ -191,6 +192,26 @@ class TestDatasetStats:
         for i in range(1, 6):
             assert stats.by_rating[str(i)] == 0
         assert stats.by_rating["unrated"] == 0
+
+    def test_skips_unloadable_run_files(self, task):
+        TaskRun(
+            parent=task,
+            input="input1",
+            output=TaskOutput(
+                output="out1",
+                source=DataSource(
+                    type=DataSourceType.human,
+                    properties={"created_by": "tester"},
+                ),
+            ),
+            tags=["x"],
+        ).save_to_file()
+        write_unloadable_run(task, "from_the_future")
+
+        stats = _dataset_stats(task)
+
+        assert stats.total_count == 1
+        assert stats.by_tag == {"x": 1}
 
     def test_two_tags_both_counted(self, task):
         TaskRun(

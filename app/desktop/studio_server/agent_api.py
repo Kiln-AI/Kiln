@@ -232,7 +232,7 @@ def _dataset_stats(task: Task) -> AgentOverviewDataset:
     by_rating["unrated"] = 0
     total = 0
 
-    for run in task.runs(readonly=True):
+    for run in task.readable_runs(readonly=True):
         total += 1
         for tag in run.tags:
             by_tag[tag] = by_tag.get(tag, 0) + 1
@@ -484,7 +484,7 @@ def _run_configs_block(
 
         if isinstance(props, KilnAgentRunConfigProperties):
             model_name = props.model_name
-            model_provider = props.model_provider_name.value
+            model_provider = props.model_provider_name
             prompt_id = props.prompt_id
             if props.tools_config is not None:
                 tool_ids = list(props.tools_config.tools)

@@ -1474,6 +1474,79 @@ def test_all_children_of_parent_path_still_raises_on_bad_child(tmp_path):
     assert len(errors) == 1
 
 
+def write_corrupt_child(parent: BaseParentExample, dirname: str) -> Path:
+    assert parent.path is not None
+    child_dir = parent.path.parent / "children" / dirname
+    child_dir.mkdir(parents=True)
+    child_file = child_dir / DefaultParentedModel.base_filename()
+    child_file.write_text("{not json")
+    return child_file
+
+
+def test_from_id_skips_unloadable_siblings(tmp_path, tmp_model_cache):
+    parent = BaseParentExample(path=tmp_path / "parent.kiln")
+    parent.save_to_file()
+    child = DefaultParentedModel(parent=parent, name="Child1")
+    child.save_to_file()
+    write_unloadable_child(parent, "from_the_future")
+    write_corrupt_child(parent, "corrupt")
+    assert child.id is not None
+
+    found = DefaultParentedModel.from_id_and_parent_path(child.id, parent.path)
+    assert found is not None
+    assert found.name == "Child1"
+    # A miss visits every sibling, so it must not trip over the unreadable ones.
+    assert DefaultParentedModel.from_id_and_parent_path("missing", parent.path) is None
+
+
+def test_from_id_raises_when_requested_child_is_unloadable(tmp_path, tmp_model_cache):
+    parent = BaseParentExample(path=tmp_path / "parent.kiln")
+    parent.save_to_file()
+    DefaultParentedModel(parent=parent, name="Child1").save_to_file()
+    write_unloadable_child(parent, "from_the_future")
+
+    with pytest.raises(ValueError, match="Upgrade kiln to the latest version"):
+        DefaultParentedModel.from_id_and_parent_path("from_the_future", parent.path)
+
+
+@pytest.mark.parametrize("readonly", [False, True])
+def test_from_ids_skips_unloadable_siblings(tmp_path, tmp_model_cache, readonly):
+    parent = BaseParentExample(path=tmp_path / "parent.kiln")
+    parent.save_to_file()
+    child1 = DefaultParentedModel(parent=parent, name="Child1")
+    child2 = DefaultParentedModel(parent=parent, name="Child2")
+    child1.save_to_file()
+    child2.save_to_file()
+    write_unloadable_child(parent, "from_the_future")
+    write_corrupt_child(parent, "corrupt")
+    assert child1.id is not None and child2.id is not None
+
+    found = DefaultParentedModel.from_ids_and_parent_path(
+        {child1.id, child2.id, "missing"}, parent.path, readonly=readonly
+    )
+
+    assert {child_id: c.name for child_id, c in found.items()} == {
+        child1.id: "Child1",
+        child2.id: "Child2",
+    }
+
+
+def test_from_ids_raises_when_a_requested_child_is_unloadable(
+    tmp_path, tmp_model_cache
+):
+    parent = BaseParentExample(path=tmp_path / "parent.kiln")
+    parent.save_to_file()
+    child = DefaultParentedModel(parent=parent, name="Child1")
+    child.save_to_file()
+    write_unloadable_child(parent, "from_the_future")
+    assert child.id is not None
+
+    with pytest.raises(ValueError, match="Upgrade kiln to the latest version"):
+        DefaultParentedModel.from_ids_and_parent_path(
+            {child.id, "from_the_future"}, parent.path
+        )
+
+
 def test_created_at_is_timezone_aware():
     model = KilnBaseModel()
     assert model.created_at.tzinfo is not None

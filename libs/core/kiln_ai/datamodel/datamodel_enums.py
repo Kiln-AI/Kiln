@@ -137,6 +137,22 @@ class ModelProviderName(str, Enum):
     typesafe = "typesafe"
 
 
+def parse_model_provider_name(value: str) -> ModelProviderName:
+    """Convert a stored provider name to a ModelProviderName.
+
+    Raises:
+        ValueError: If this version of Kiln doesn't know the provider, for example
+            one added in a newer version and saved in a synced project.
+    """
+    try:
+        return ModelProviderName(value)
+    except ValueError:
+        raise ValueError(
+            f"Model provider '{value}' isn't supported by this version of Kiln. "
+            "Update Kiln to use it."
+        ) from None
+
+
 class KilnMimeType(str, Enum):
     """
     Enumeration of supported mime types.

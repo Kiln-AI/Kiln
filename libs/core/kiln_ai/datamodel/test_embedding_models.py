@@ -155,14 +155,19 @@ class TestEmbeddingConfig:
         )
         assert config.model_provider_name == "openai"
 
-        with pytest.raises(ValueError):
-            EmbeddingConfig(
-                name="test-embedding",
-                model_provider_name="invalid-provider",
-                model_name="openai_text_embedding_3_small",
-                parent=mock_project,
-                properties={},
-            )
+    def test_unknown_provider_survives_save_and_load(self, mock_project):
+        config = EmbeddingConfig(
+            name="test-embedding",
+            model_provider_name="provider_from_newer_kiln",
+            model_name="some_model",
+            properties={},
+            parent=mock_project,
+        )
+        config.save_to_file()
+
+        assert config.path is not None
+        loaded = EmbeddingConfig.load_from_file(config.path)
+        assert loaded.model_provider_name == "provider_from_newer_kiln"
 
     def test_custom_dimensions_validation(self):
         """Test that custom dimensions are properly validated."""

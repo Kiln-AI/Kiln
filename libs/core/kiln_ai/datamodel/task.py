@@ -5,11 +5,13 @@ from pydantic import BaseModel, Field, ValidationInfo, model_validator
 from kiln_ai.datamodel.basemodel import (
     ID_FIELD,
     ID_TYPE,
+    ChildLoadError,
     FilenameString,
     FilenameStringShort,
     KilnParentedModel,
     KilnParentModel,
     ParentOfRelationship,
+    log_child_load_failure,
 )
 from kiln_ai.datamodel.data_guide import DataGuide
 from kiln_ai.datamodel.datamodel_enums import (
@@ -60,6 +62,20 @@ class TaskRequirement(BaseModel):
         default=TaskOutputRatingType.five_star,
         description="The rating type used to evaluate this requirement.",
     )
+
+
+def _filter_runs(
+    runs: list[TaskRun], include_intermediate_runs: bool, include_eval_generated: bool
+) -> list[TaskRun]:
+    # Eval filter first: an excluded eval-generated run must not count as a parent
+    # either, or an eval child chained onto a dataset run would hide that dataset
+    # run from the default view while itself being filtered out.
+    if not include_eval_generated:
+        runs = [r for r in runs if r.eval_source is None]
+    if not include_intermediate_runs:
+        parent_ids = {r.parent_task_run_id for r in runs if r.parent_task_run_id}
+        runs = [r for r in runs if r.id not in parent_ids]
+    return runs
 
 
 class TaskRunConfig(KilnParentedModel):
@@ -247,14 +263,49 @@ class Task(
         copy every run regardless.
         """
         runs = self._runs(readonly=readonly)  # type: ignore[attr-defined]
-        # Eval filter first: an excluded eval-generated run must not count as a parent
-        # either, or an eval child chained onto a dataset run would hide that dataset
-        # run from the default view while itself being filtered out.
-        if not include_eval_generated:
-            runs = [r for r in runs if r.eval_source is None]
-        if not include_intermediate_runs:
-            parent_ids = {r.parent_task_run_id for r in runs if r.parent_task_run_id}
-            runs = [r for r in runs if r.id not in parent_ids]
+        return _filter_runs(runs, include_intermediate_runs, include_eval_generated)
+
+    def runs_with_errors(
+        self,
+        readonly: bool = False,
+        include_intermediate_runs: bool = False,
+        include_eval_generated: bool = False,
+    ) -> tuple[list[TaskRun], list[ChildLoadError]]:
+        """Like ``runs()``, but a run file that fails to load is skipped instead of raising.
+
+        Project folders sync between clients running different Kiln versions, so a run
+        written by a newer build can be unreadable here while the rest are fine. Returns
+        the filtered runs that loaded, and a ``ChildLoadError`` for each run file that
+        didn't. The multiturn filter can't see a run that failed to load, so that run's
+        parent is returned as a leaf.
+        """
+        runs, errors = TaskRun.all_children_of_parent_path_with_errors(
+            self.path, readonly=readonly
+        )
+        return (
+            _filter_runs(runs, include_intermediate_runs, include_eval_generated),
+            errors,
+        )
+
+    def readable_runs(
+        self,
+        readonly: bool = False,
+        include_intermediate_runs: bool = False,
+        include_eval_generated: bool = False,
+    ) -> list[TaskRun]:
+        """Like ``runs_with_errors()``, but logs each run file that failed to load.
+
+        For read-only views (lists, counts, stats) that should show what they can.
+        Code that builds a dataset or deletes runs should use ``runs()``, so an
+        unreadable run fails loudly instead of being silently left out.
+        """
+        runs, errors = self.runs_with_errors(
+            readonly=readonly,
+            include_intermediate_runs=include_intermediate_runs,
+            include_eval_generated=include_eval_generated,
+        )
+        for error in errors:
+            log_child_load_failure(error.path, error.message)
         return runs
 
     # These wrappers help for typechecking. We should fix this in KilnParentModel

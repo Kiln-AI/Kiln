@@ -130,21 +130,23 @@ async def test_model_provider_loads_and_caches(adapter, mock_provider):
         mock_loader.assert_not_called()
 
 
-async def test_model_provider_invalid_provider_model_name(base_project):
-    """Test error when model or provider name is missing"""
-    # Create a task with a parent project
+async def test_model_provider_unknown_provider_name(base_project):
     task = Task(name="test_task", instruction="test_instruction", parent=base_project)
+    adapter = MockAdapter(
+        task=task,
+        run_config=KilnAgentRunConfigProperties(
+            model_name="test_model",
+            model_provider_name="provider_from_newer_kiln",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+    )
 
-    # Test with missing model name
-    with pytest.raises(ValueError, match="Input should be"):
-        MockAdapter(
-            task=task,
-            run_config=KilnAgentRunConfigProperties(
-                model_name="test_model",
-                model_provider_name="invalid",
-                prompt_id="simple_prompt_builder",
-            ),
-        )
+    with pytest.raises(
+        ValueError,
+        match="'provider_from_newer_kiln' isn't supported by this version of Kiln",
+    ):
+        await adapter.model_provider()
 
 
 async def test_model_provider_missing_model_names(base_project):

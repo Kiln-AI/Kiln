@@ -106,6 +106,13 @@ class TestTaskMetadataApi:
             )
             assert metadata.model_provider_name == provider
 
+    def test_keeps_provider_this_version_does_not_know(self):
+        metadata = TaskMetadataApi(
+            model_name="test-model",
+            model_provider_name="provider_from_newer_kiln",
+        )
+        assert metadata.model_provider_name == "provider_from_newer_kiln"
+
 
 class TestSyntheticDataGenerationStepConfigApi:
     def test_creates_with_required_fields(self):
@@ -294,6 +301,21 @@ class TestClarifySpecApiInput:
             providers=[ModelProviderName.openai],
         )
         assert input_model.num_exemplars == 10
+
+    def test_ignores_providers_this_version_does_not_know(self):
+        task_info = TaskInfoApi(
+            task_prompt="Test prompt",
+            task_input_schema="{}",
+            task_output_schema="{}",
+        )
+        input_model = ClarifySpecApiInput(
+            target_task_info=task_info,
+            target_specification="Test spec",
+            num_samples_per_topic=5,
+            num_topics=3,
+            providers=["openai", "provider_from_newer_kiln", "anthropic"],
+        )
+        assert input_model.providers == ["openai", "anthropic"]
 
 
 class TestRefineSpecApiInput:

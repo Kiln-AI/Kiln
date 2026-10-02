@@ -485,7 +485,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             detailed_response = await check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio_detailed(
                 client=server_client,
                 model_name=model_name,
-                model_provider_name=model_provider.value,
+                model_provider_name=model_provider,
             )
             response = unwrap_response(detailed_response)
 

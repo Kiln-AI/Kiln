@@ -5303,8 +5303,11 @@ export interface components {
             num_samples_per_topic: number;
             /** Num Topics */
             num_topics: number;
-            /** Providers */
-            providers: components["schemas"]["ModelProviderName"][];
+            /**
+             * Providers
+             * @description The model providers the user has connected, such as 'openai'. Names this version of Kiln doesn't know are ignored.
+             */
+            providers: string[];
             /**
              * Num Exemplars
              * @default 10
@@ -6754,8 +6757,11 @@ export interface components {
              * @description A description for your reference, not shared with embedding models.
              */
             description?: string | null;
-            /** @description The provider to use to generate embeddings. */
-            model_provider_name: components["schemas"]["ModelProviderName"];
+            /**
+             * Model Provider Name
+             * @description The provider to use to generate embeddings, such as 'openai'. Providers this version of Kiln doesn't know are kept as given.
+             */
+            model_provider_name: string;
             /**
              * Model Name
              * @description The model to use to generate embeddings.
@@ -9084,8 +9090,11 @@ export interface components {
              * @description The model to use for this run config.
              */
             model_name: string;
-            /** @description The provider to use for this run config. */
-            model_provider_name: components["schemas"]["ModelProviderName"];
+            /**
+             * Model Provider Name
+             * @description The provider to use for this run config, such as 'openai'. Providers this version of Kiln doesn't know are kept as given.
+             */
+            model_provider_name: string;
             /**
              * Prompt Id
              * @description The prompt to use for this run config. Defaults to building a simple prompt from the task if not provided.
@@ -12498,8 +12507,11 @@ export interface components {
              * @description The name of the AI model used.
              */
             model_name: string;
-            /** @description The provider hosting the model (e.g. OpenAI, Anthropic). */
-            model_provider_name: components["schemas"]["ModelProviderName"];
+            /**
+             * Model Provider Name
+             * @description The provider hosting the model, such as 'openai'.
+             */
+            model_provider_name: string;
         };
         /**
          * TaskOutput

@@ -352,6 +352,31 @@ class TestTaskRunConfigDecode:
             == StructuredOutputMode.unknown
         )
 
+    def test_provider_from_newer_kiln_loads_from_file(self):
+        from kiln_ai.datamodel.task import TaskRunConfig
+
+        raw_data = {
+            "v": 1,
+            "name": "Config From Newer Kiln",
+            "run_config_properties": {
+                "type": "kiln_agent",
+                "model_name": "@cf/meta/llama-3.1-8b-instruct",
+                "model_provider_name": "provider_from_newer_kiln",
+                "prompt_id": "simple_prompt_builder",
+                "structured_output_mode": "json_schema",
+            },
+        }
+        config = TaskRunConfig.model_validate(
+            raw_data, context={"loading_from_file": True}
+        )
+        props = config.run_config_properties
+        assert isinstance(props, KilnAgentRunConfigProperties)
+        assert props.model_provider_name == "provider_from_newer_kiln"
+        assert (
+            props.model_dump(mode="json")["model_provider_name"]
+            == "provider_from_newer_kiln"
+        )
+
 
 class TestSaveLoadBothTypes:
     def test_kiln_agent_roundtrip(self):

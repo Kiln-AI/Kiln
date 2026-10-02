@@ -1,4 +1,6 @@
 import json
+import logging
+import os
 
 import pytest
 from pydantic import ValidationError
@@ -1182,3 +1184,79 @@ def test_content_part_trace_bulk_load_after_readonly_scan(tmp_path):
     readonly_run = readonly_loaded[run.id]
     assert readonly_run.trace is not None
     assert readonly_run.trace[0]["content"] == [{"type": "text", "text": "hello"}]
+
+
+def write_unloadable_run(task: Task, run_id: str):
+    """Save an otherwise valid run with a schema version this build refuses to load."""
+    run = TaskRun(
+        parent=task, id=run_id, input="from a newer Kiln", output=TaskOutput(output="x")
+    )
+    run.save_to_file()
+    assert run.path is not None
+    data = json.loads(run.path.read_text())
+    data["v"] = 99
+    run.path.write_text(json.dumps(data))
+    return run.path
+
+
+def test_runs_with_errors_skips_unloadable_run_files(tmp_path):
+    output = TaskOutput(output="test output")
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        path=tmp_path / "task.kiln",
+        turn_mode=TurnMode.multiturn,
+    )
+    task.save_to_file()
+    root = TaskRun(input="root", output=output, parent=task)
+    root.save_to_file()
+    leaf = TaskRun(input="leaf", output=output, parent=task, parent_task_run_id=root.id)
+    leaf.save_to_file()
+    TaskRun(
+        input="eval trace",
+        output=output,
+        parent=task,
+        eval_source=EvalItemSource(source_type="task_run", source_id="item1"),
+    ).save_to_file()
+    bad_path = write_unloadable_run(task, "from_the_future")
+
+    with pytest.raises(ValueError, match="Upgrade kiln to the latest version"):
+        task.runs()
+
+    runs, errors = task.runs_with_errors(readonly=True)
+    assert [r.input for r in runs] == ["leaf"]
+    assert [e.path for e in errors] == [bad_path]
+
+    all_runs, errors = task.runs_with_errors(
+        include_intermediate_runs=True, include_eval_generated=True
+    )
+    assert {r.input for r in all_runs} == {"root", "leaf", "eval trace"}
+    assert [e.path for e in errors] == [bad_path]
+
+
+def test_readable_runs_warns_once_per_unloadable_file(tmp_path, caplog):
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+    TaskRun(
+        input="good", output=TaskOutput(output="test output"), parent=task
+    ).save_to_file()
+    bad_path = write_unloadable_run(task, "from_the_future")
+
+    def bad_file_log_levels() -> list[int]:
+        return [r.levelno for r in caplog.records if str(bad_path) in r.message]
+
+    with caplog.at_level(logging.DEBUG, logger="kiln_ai.datamodel.basemodel"):
+        assert [r.input for r in task.readable_runs(readonly=True)] == ["good"]
+        assert [r.input for r in task.readable_runs(readonly=True)] == ["good"]
+        assert bad_file_log_levels() == [logging.WARNING, logging.DEBUG]
+
+        mtime_ns = bad_path.stat().st_mtime_ns
+        os.utime(bad_path, ns=(mtime_ns + 10**9, mtime_ns + 10**9))
+        task.readable_runs()
+        assert bad_file_log_levels() == [
+            logging.WARNING,
+            logging.DEBUG,
+            logging.WARNING,
+        ]

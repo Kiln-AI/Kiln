@@ -11089,7 +11089,7 @@ def get_model_by_name(name: ModelName) -> KilnModel:
 
 
 def built_in_models_from_provider(
-    provider_name: ModelProviderName, model_name: str
+    provider_name: str, model_name: str
 ) -> KilnModelProvider | None:
     for model in built_in_models:
         if model.name == model_name:
@@ -11101,7 +11101,7 @@ def built_in_models_from_provider(
 
 def default_structured_output_mode_for_model_provider(
     model_name: str,
-    provider: ModelProviderName,
+    provider: str,
     default: StructuredOutputMode = StructuredOutputMode.default,
     disallowed_modes: List[StructuredOutputMode] = [],
 ) -> StructuredOutputMode:

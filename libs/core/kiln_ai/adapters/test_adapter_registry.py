@@ -326,7 +326,9 @@ def test_tags_passed_through(mock_config, basic_task):
 
 
 def test_invalid_provider(mock_config, basic_task):
-    with pytest.raises(ValueError, match="Input should be"):
+    with pytest.raises(
+        ValueError, match="'invalid' isn't supported by this version of Kiln"
+    ):
         adapter_for_task(
             kiln_task=basic_task,
             run_config_properties=KilnAgentRunConfigProperties(

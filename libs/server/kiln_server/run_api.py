@@ -495,10 +495,10 @@ def connect_run_api(app: FastAPI):
             )
         has_children = any(
             r.parent_task_run_id == run_id
-            for r in task.runs(
+            for r in task.readable_runs(
+                readonly=True,
                 include_intermediate_runs=True,
                 include_eval_generated=True,
-                readonly=True,
             )
         )
         chain_runs, chain_broken = _walk_run_chain(leaf, task.path)
@@ -587,8 +587,9 @@ def connect_run_api(app: FastAPI):
         ] = None,
     ) -> list[TaskRun]:
         task = task_from_id(project_id, task_id)
-        runs = list(task.runs(readonly=True))
-        runs.sort(key=lambda r: r.created_at, reverse=True)
+        runs = sorted(
+            task.readable_runs(readonly=True), key=lambda r: r.created_at, reverse=True
+        )
         if limit is not None:
             runs = runs[:limit]
         return runs
@@ -658,9 +659,8 @@ def connect_run_api(app: FastAPI):
         ],
     ) -> list[RunSummary]:
         task = task_from_id(project_id, task_id)
-        # Readonly since we are not mutating the runs. Faster as we don't need to copy them.
         # Summaries only need leaves.
-        runs = task.runs(readonly=True)
+        runs = task.readable_runs(readonly=True)
         return [RunSummary.from_run(run) for run in runs]
 
     @app.post(
@@ -1011,7 +1011,7 @@ def connect_run_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
         # Not particularly efficient, but tasks are memory cached after first load so re-compute is fairly cheap
         # We also cache the result client side
-        for run in task.runs(readonly=True):
+        for run in task.readable_runs(readonly=True):
             for tag in run.tags:
                 tags_count[tag] = tags_count.get(tag, 0) + 1
         return tags_count

@@ -61,27 +61,19 @@ def test_embedding_adapter_from_type_uses_litellm_core_config(
     mock_get_litellm_core_config.assert_called_once()
 
 
-def test_embedding_adapter_from_type_invalid_provider():
-    """Test that invalid model provider names raise a clear error."""
-    # Create a valid config first, then test the enum conversion logic
+def test_embedding_adapter_from_type_unknown_provider():
     embedding_config = EmbeddingConfig(
         name="test-embedding",
-        model_provider_name=ModelProviderName.openai,
+        model_provider_name="provider_from_newer_kiln",
         model_name="some-model",
         properties={"dimensions": 768},
     )
 
-    # Mock the ModelProviderName constructor to simulate an invalid provider
-    with patch(
-        "kiln_ai.adapters.embedding.embedding_registry.ModelProviderName"
-    ) as mock_enum:
-        mock_enum.side_effect = ValueError("Invalid provider")
-
-        with pytest.raises(
-            ValueError,
-            match="Unsupported model provider name: openai",
-        ):
-            embedding_adapter_from_type(embedding_config)
+    with pytest.raises(
+        ValueError,
+        match="'provider_from_newer_kiln' isn't supported by this version of Kiln",
+    ):
+        embedding_adapter_from_type(embedding_config)
 
 
 def test_embedding_adapter_from_type_no_config_found(mock_provider_configs):

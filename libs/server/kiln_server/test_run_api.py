@@ -27,6 +27,7 @@ from kiln_ai.datamodel import (
 from kiln_ai.datamodel.datamodel_enums import TurnMode
 from kiln_ai.datamodel.model_cache import ModelCache
 from kiln_ai.datamodel.task_run import EvalItemSource
+from kiln_ai.datamodel.test_task import write_unloadable_run
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.utils.config import Config
 
@@ -714,7 +715,7 @@ async def test_get_runs_success(client, task_run_setup):
 
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
         mock_task = MagicMock()
-        mock_task.runs.return_value = [task_run]
+        mock_task.readable_runs.return_value = [task_run]
         mock_task_from_id.return_value = mock_task
 
         response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/runs")
@@ -735,7 +736,7 @@ async def test_get_runs_empty(client, task_run_setup):
 
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
         mock_task = MagicMock()
-        mock_task.runs.return_value = []
+        mock_task.readable_runs.return_value = []
         mock_task_from_id.return_value = mock_task
 
         response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/runs")
@@ -797,7 +798,7 @@ async def test_get_runs_ordered_newest_first(client, task_run_setup):
 
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
         mock_task = MagicMock()
-        mock_task.runs.return_value = [old_run, new_run, mid_run]
+        mock_task.readable_runs.return_value = [old_run, new_run, mid_run]
         mock_task_from_id.return_value = mock_task
 
         response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/runs")
@@ -820,7 +821,7 @@ async def test_get_runs_with_limit(client, task_run_setup):
 
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
         mock_task = MagicMock()
-        mock_task.runs.return_value = runs
+        mock_task.readable_runs.return_value = runs
         mock_task_from_id.return_value = mock_task
 
         response = client.get(
@@ -847,7 +848,7 @@ async def test_get_runs_without_limit_returns_all(client, task_run_setup):
 
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
         mock_task = MagicMock()
-        mock_task.runs.return_value = runs
+        mock_task.readable_runs.return_value = runs
         mock_task_from_id.return_value = mock_task
 
         response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/runs")
@@ -1126,7 +1127,7 @@ async def test_get_runs_summaries_success(client, task_run_setup):
 
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
         mock_task = MagicMock()
-        mock_task.runs.return_value = [task_run]
+        mock_task.readable_runs.return_value = [task_run]
         mock_task_from_id.return_value = mock_task
 
         response = client.get(
@@ -2145,7 +2146,7 @@ async def test_get_tags_success(client, task_run_setup):
 
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
         mock_task = MagicMock()
-        mock_task.runs.return_value = [task_run, second_run]
+        mock_task.readable_runs.return_value = [task_run, second_run]
         mock_task_from_id.return_value = mock_task
 
         response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/tags")
@@ -3475,3 +3476,58 @@ async def test_bulk_upload_single_turn_response_has_null_conversation_count(
     body = response.json()
     assert body["imported_count"] == 1
     assert body["imported_conversation_count"] is None
+
+
+@pytest.mark.asyncio
+async def test_run_endpoints_skip_unloadable_sibling_runs(
+    client, task_run_setup_multiturn, caplog
+):
+    project = task_run_setup_multiturn["project"]
+    task = task_run_setup_multiturn["task"]
+    task_run = task_run_setup_multiturn["task_run"]
+    task_run.tags = ["good"]
+    task_run.save_to_file()
+    bad_path = write_unloadable_run(task, "from_the_future")
+    base_url = f"/api/projects/{project.id}/tasks/{task.id}"
+
+    with (
+        patch("kiln_server.run_api.task_from_id", return_value=task),
+        caplog.at_level(logging.DEBUG, logger="kiln_ai.datamodel.basemodel"),
+    ):
+        runs_response = client.get(f"{base_url}/runs")
+        summaries_response = client.get(f"{base_url}/runs_summaries")
+        tags_response = client.get(f"{base_url}/tags")
+        run_response = client.get(f"{base_url}/runs/{task_run.id}")
+        chain_response = client.get(f"{base_url}/runs/{task_run.id}/chain")
+        missing_response = client.get(f"{base_url}/runs/missing")
+
+    assert runs_response.status_code == 200
+    assert [r["id"] for r in runs_response.json()] == [task_run.id]
+    assert summaries_response.status_code == 200
+    assert [r["id"] for r in summaries_response.json()] == [task_run.id]
+    assert tags_response.status_code == 200
+    assert tags_response.json() == {"good": 1}
+    assert run_response.status_code == 200
+    assert run_response.json()["id"] == task_run.id
+    assert chain_response.status_code == 200
+    assert chain_response.json()["has_children"] is False
+    assert missing_response.status_code == 404
+    bad_file_warnings = [
+        record
+        for record in caplog.records
+        if record.levelno == logging.WARNING and str(bad_path) in record.message
+    ]
+    assert len(bad_file_warnings) == 1, "an unreadable file is warned about once"
+
+
+@pytest.mark.asyncio
+async def test_get_run_reports_why_requested_run_is_unloadable(client, task_run_setup):
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    write_unloadable_run(task, "from_the_future")
+
+    with (
+        patch("kiln_server.run_api.task_from_id", return_value=task),
+        pytest.raises(ValueError, match="Upgrade kiln to the latest version"),
+    ):
+        client.get(f"/api/projects/{project.id}/tasks/{task.id}/runs/from_the_future")
