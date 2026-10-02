@@ -37,8 +37,7 @@ logger = logging.getLogger(__name__)
 CODE_SANDBOX_MAX_CONCURRENCY = 16
 """Maximum concurrent top-level sandbox invocations (process-wide).
 
-Shared by code tools and code judges. Raises code tools' prior bound of 8 as a
-side effect of unifying the pool (arch §3.4)."""
+Shared by code tools and code judges."""
 
 _depth: contextvars.ContextVar[int] = contextvars.ContextVar(
     "_code_sandbox_depth", default=0

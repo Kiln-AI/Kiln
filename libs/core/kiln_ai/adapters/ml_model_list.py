@@ -1,3 +1,5 @@
+"""Kiln's built-in model list: model families and names, per-provider model configs, and lookup helpers."""
+
 from enum import Enum
 from typing import List
 
@@ -9,12 +11,6 @@ from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
 )
-
-"""
-Provides model configuration and management for various LLM providers and models.
-This module handles the integration with different AI model providers and their respective models,
-including configuration, validation, and instantiation of language models.
-"""
 
 
 class ModelFamily(str, Enum):
@@ -200,6 +196,7 @@ class ModelName(str, Enum):
     qwen_2p5_vl_72b = "qwen_2p5_vl_72b"
     qwq_32b = "qwq_32b"
     deepseek_4_1_flash = "deepseek_4_1_flash"
+    deepseek_4_pro_0813 = "deepseek_4_pro_0813"
     deepseek_4_pro = "deepseek_4_pro"
     deepseek_4_flash = "deepseek_4_flash"
     deepseek_3_2 = "deepseek_3_2"
@@ -4532,11 +4529,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
             ),
-            KilnModelProvider(
-                name=ModelProviderName.cloudflare,
-                model_id="@cf/nvidia/nemotron-3-120b-a12b",
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
         ],
     ),
     # Nemotron 3 Nano
@@ -5645,21 +5637,6 @@ built_in_models: List[KilnModel] = [
                 ],
                 max_parallel_requests=2,
             ),
-            KilnModelProvider(
-                name=ModelProviderName.cloudflare,
-                model_id="@cf/google/gemma-4-26b-a4b-it",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                supports_vision=True,
-                multimodal_capable=True,
-                multimodal_mime_types=[
-                    # documents
-                    KilnMimeType.TXT,
-                    KilnMimeType.MD,
-                    # images
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
-                ],
-            ),
         ],
     ),
     # Gemma 4 E4B
@@ -6010,6 +5987,31 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # DeepSeek V4 Pro 0813
+    KilnModel(
+        family=ModelFamily.deepseek,
+        name=ModelName.deepseek_4_pro_0813,
+        friendly_name="DeepSeek V4 Pro 0813",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="deepseek/deepseek-v4-pro-0813",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                model_id="deepseek-ai/DeepSeek-V4-Pro-0813",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
+        ],
+    ),
     # DeepSeek V4 Pro
     KilnModel(
         family=ModelFamily.deepseek,
@@ -6038,9 +6040,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
-                model_id="deepseek-ai/DeepSeek-V4-Pro-0813",
+                model_id="deepseek-ai/DeepSeek-V4-Pro",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
             ),
@@ -6056,11 +6057,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.siliconflow_cn,
                 model_id="deepseek-ai/DeepSeek-V4-Pro",
                 structured_output_mode=StructuredOutputMode.json_instructions,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.cloudflare,
-                model_id="@cf/deepseek-ai/deepseek-v4-pro-0813",
-                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
@@ -6094,12 +6090,6 @@ built_in_models: List[KilnModel] = [
                 model_id="deepseek-ai/DeepSeek-V4-Flash-0731",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.cloudflare,
-                suggested_for_synthetic_user=True,
-                model_id="@cf/deepseek-ai/deepseek-v4-flash-0731",
-                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
@@ -7053,21 +7043,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Qwen/Qwen3.8-27B",
                 structured_output_mode=StructuredOutputMode.json_instructions,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.cloudflare,
-                model_id="@cf/qwen/qwen3.8-27b",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                supports_vision=True,
-                multimodal_capable=True,
-                multimodal_mime_types=[
-                    # documents
-                    KilnMimeType.TXT,
-                    KilnMimeType.MD,
-                    # images
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
-                ],
             ),
         ],
     ),
@@ -9226,11 +9201,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=False,
             ),
-            KilnModelProvider(
-                name=ModelProviderName.cloudflare,
-                model_id="@cf/zai-org/glm-5.3",
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
         ],
     ),
     # GLM 5.3 Fast — Fireworks speed-optimized serving of GLM 5.3 (routers/ slug, ~2x throughput)
@@ -9337,22 +9307,6 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
             ),
-            KilnModelProvider(
-                name=ModelProviderName.cloudflare,
-                suggested_for_synthetic_user=True,
-                model_id="@cf/zai-org/glm-5.3-flash",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                supports_vision=True,
-                multimodal_capable=True,
-                multimodal_mime_types=[
-                    # documents
-                    KilnMimeType.TXT,
-                    KilnMimeType.MD,
-                    # images
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
-                ],
-            ),
         ],
     ),
     # GLM 5.3 FlashX
@@ -9418,11 +9372,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.featherless_ai,
                 model_id="zai-org/GLM-5.2",
                 structured_output_mode=StructuredOutputMode.json_instructions,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.cloudflare,
-                model_id="@cf/zai-org/glm-5.2",
-                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
@@ -9611,11 +9560,6 @@ built_in_models: List[KilnModel] = [
                 model_id="z-ai/glm-4.7-flash",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.cloudflare,
-                model_id="@cf/zai-org/glm-4.7-flash",
-                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
@@ -10030,21 +9974,6 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
-                ],
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.cloudflare,
-                model_id="@cf/moonshotai/kimi-k2.6",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                supports_vision=True,
-                multimodal_capable=True,
-                multimodal_mime_types=[
-                    # documents
-                    KilnMimeType.TXT,
-                    KilnMimeType.MD,
-                    # images
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
                 ],
             ),
         ],

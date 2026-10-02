@@ -696,7 +696,6 @@ def connect_provider_api(app: FastAPI):
     async def add_user_model(entry: UserModelEntry) -> JSONResponse:
         """Add a user-defined model to the registry."""
 
-        # Validate provider exists
         if entry.provider_type == "builtin":
             if entry.provider_id not in ModelProviderName.__members__:
                 raise HTTPException(
@@ -721,7 +720,6 @@ def connect_provider_api(app: FastAPI):
                     detail=f"Custom provider not found: {entry.provider_id}",
                 )
 
-        # Add to registry
         registry = Config.shared().user_model_registry or []
 
         # Check for exact duplicate (all identifying fields must match)
@@ -1139,7 +1137,6 @@ async def connect_openrouter(key: str):
                 status_code=200,
                 content={"message": "Connected to OpenRouter"},
             )
-            # Any non-200 status code is an error
     except Exception as e:
         # unexpected error
         return JSONResponse(
@@ -1258,16 +1255,13 @@ async def connect_openai(key: str):
                 content={"message": "Failed to connect to OpenAI. Invalid API key."},
             )
 
-        # Any non-200 status code is an error
         response.raise_for_status()
-        # If the request is successful, the function will continue
     except Exception as e:
         return JSONResponse(
             status_code=400,
             content={"message": f"Failed to connect to OpenAI. Error: {e!s}"},
         )
 
-    # It worked! Save the key and return success
     Config.shared().open_ai_api_key = key
 
     return JSONResponse(
@@ -1292,16 +1286,13 @@ async def connect_groq(key: str):
                 content={"message": "Failed to connect to Groq. Invalid API key."},
             )
 
-        # Any non-200 status code is an error
         response.raise_for_status()
-        # If the request is successful, the function will continue
     except Exception as e:
         return JSONResponse(
             status_code=400,
             content={"message": f"Failed to connect to Groq. Error: {e!s}"},
         )
 
-    # It worked! Save the key and return success
     Config.shared().groq_api_key = key
 
     return JSONResponse(

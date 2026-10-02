@@ -274,7 +274,7 @@ async def available_mcp_tools(
 async def validate_tool_server_connectivity(tool_server: ExternalToolServer):
     """
     Validate that the tool server is reachable by attempting to connect.
-    Basic field validation is now handled by Pydantic validators in CreationRequest.
+    Field validation happens in the Pydantic validators on CreationRequest.
     """
     match tool_server.type:
         case ToolServerType.remote_mcp | ToolServerType.local_mcp:
@@ -389,7 +389,6 @@ def connect_tool_servers_api(app: FastAPI):
                     )
                 )
 
-        # Add task tools
         if task_tools:
             tool_sets.append(
                 ToolSetApiDescription(
@@ -459,7 +458,6 @@ def connect_tool_servers_api(app: FastAPI):
                 )
             )
 
-        # Add code tools
         code_tools = project.code_tools(readonly=True)
         if code_tools:
             code_tool_items = [

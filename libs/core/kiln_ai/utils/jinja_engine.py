@@ -132,10 +132,7 @@ def render_input_transform(
     transform: InputTransform,
     task_input: Any,
 ) -> str:
-    """Render the transform against the task input, returning the first-user-message string.
-
-    See specs/projects/templates/functional_spec.md section 5 for the input-handling rules.
-    """
+    """Render the transform against the task input, returning the first-user-message string."""
     from kiln_ai.datamodel.input_transform import JinjaInputTransform
 
     if isinstance(transform, JinjaInputTransform):
@@ -167,7 +164,7 @@ def extract(expression: str, data: dict) -> Any:
 
 
 def _build_namespace(task_input: Any) -> dict:
-    """Build the rendering namespace per functional_spec section 5.
+    """Build the rendering namespace.
 
     The template always sees a single variable ``input``.
     For plaintext (str) inputs, try json.loads(); fall back to the raw string.

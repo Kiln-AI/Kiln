@@ -236,8 +236,8 @@
               eval_config_id: req_eval_config_id,
               run_config_id: req_run_config_id,
             },
-            // This page renders the eval's test split, which is what it has always
-            // shown. Train and val are not surfaced in the UI (functional spec 4.4).
+            // This page renders the eval's test split; train and val are not
+            // surfaced in the UI.
             query: { split: "test" },
           },
         },

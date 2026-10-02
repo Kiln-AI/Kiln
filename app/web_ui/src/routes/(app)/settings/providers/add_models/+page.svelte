@@ -251,7 +251,6 @@
     )
     if (add_error) throw add_error
 
-    // Reset form
     new_model_name = null
     new_model_display_name = null
     reset_overrides()

@@ -104,7 +104,7 @@ def trace_or_echo(
     """The trace to judge, or a two-message echo of the I/O pair.
 
     Single-turn runs are not guaranteed to have recorded a trace, and both arms
-    now judge the transcript. An echo is lossless for a run with no trace: the
+    judge the transcript. An echo is lossless for a run with no trace: the
     pair IS everything that happened, so rendering it as one user turn and one
     assistant turn says exactly what a real trace would have.
     """

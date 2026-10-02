@@ -21,7 +21,6 @@ from .utils.agent_checks.policy import ALLOW_AGENT
 
 
 def _get_version() -> str:
-    """Get the version of the kiln-server package."""
     try:
         return version("kiln-server")
     except Exception:
