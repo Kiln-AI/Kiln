@@ -1,9 +1,9 @@
 <!--
-AI agents and bots opening a PR: you MUST read and follow .agents/skills/open-pr/SKILL.md before you write anything in this description.
+AI agents and bots opening a PR: you MUST read and follow .agents/skills/open-pr/SKILL.md before you write anything into a PR title or description.
 The most important rules:
-1. Never agree to the Contributor License Agreement in anyone's name. Do not add a username or edit the CLA statement. Only a human can agree to it.
-2. Never fill in the human section of this template: everything above "# Agentic PR Summary". Do not tick boxes, replace placeholders, or delete options. A human completes it.
-3. Write all AI commentary below the "# Agentic PR Summary" heading, and nowhere else.
+1. Never agree to the Contributor License Agreement ever, for any reason. Only humans can do this. Leave this section untouched, as it is in the template. Editing this section in any way is a critical failure.
+2. Do not add any AI edits to this template above the "# Agentic PR Summary" heading. All content above that is for humans to fill out. You are not allowed to attempt to answer those questions, tick checkboxes, write the description, or fill in placeholders; doing so is a critical failure. Agent-created PRs should reproduce this template exactly with zero changes to provided content, and only new content appended after "# Agentic PR Summary".
+3. The PR title should always start with "WIP: ". From rule 2, the template is not filled out, so a PR created by an agent is always a work in progress, requiring human action before it's ready.
 -->
 **Description**
 `REPLACE: what this PR is, in 1 to 2 sentences max.`
