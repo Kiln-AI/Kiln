@@ -1393,6 +1393,8 @@ async def test_eval_job_pause_then_resume_works_each_item_once(
                 break
             await asyncio.sleep(0.01)
         assert len(eval_config.runs()) == 1
+        # All three items reached the gate, so two are provably in flight.
+        assert len(seen) == 3
 
         paused = await registry.pause(job.id)
         assert paused.status == BackgroundJobStatus.PAUSED
