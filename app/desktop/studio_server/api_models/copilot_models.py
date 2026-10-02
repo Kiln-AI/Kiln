@@ -327,9 +327,9 @@ class SpecQuestionerApiInput(TaskScopedCopilotInput):
 # The draft runs as a kiln_server background job so the heavy
 # summarize+aggregate work survives a flaky connection and the user can leave
 # the page and come back. The studio server exposes the job's start / status /
-# result lifecycle so the web UI owns polling. Preview inputs are no longer
-# bundled here — once the draft is ready the UI generates them via the existing
-# `/data_gen_guide_preview` endpoint.
+# result lifecycle so the web UI owns polling. The result carries no preview
+# inputs: once the draft is ready the UI generates them via
+# `/data_gen_guide_preview`.
 
 DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLES = 200
 # Per-example character ceiling. Each example becomes one summarize LLM call;

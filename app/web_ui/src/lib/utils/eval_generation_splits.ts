@@ -33,9 +33,8 @@ type SplitTarget = {
 }
 
 // The tag one of the eval's splits selects, whichever store backs it. Undefined when the eval
-// doesn't have the split at all (splits are legitimately absent — see
-// specs/projects/eval_splits_v1_v2/functional_spec.md §3.2 — and nothing here may invent one)
-// or its filter names no tag.
+// doesn't have the split at all (splits can legitimately be absent, and nothing here may
+// invent one) or its filter names no tag.
 function split_target(
   evaluator: Eval,
   name: "train" | "val" | "test",

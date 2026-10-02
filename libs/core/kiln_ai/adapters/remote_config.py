@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # Loads github pages hosted JSON config.
 # You can see public config build logs here: https://github.com/Kiln-AI/remote_config/actions/workflows/publish_remote_config.yml
 # Content is hosted on Github Pages: https://kiln-ai.github.io/remote_config/kiln_config_v1.json
-# V2 explained: Kiln v0.18 was the first release with remote config, but had bugs. We no longer publish v1 URL (client falls back to local) and instead use v2.
+# Only the v2 file is published. Kiln v0.18 clients request v1, which is absent, so they fall back to the built-in list.
 REMOTE_MODEL_LIST_URL = "https://remote-config.getkiln.ai/kiln_config_v2.json"
 
 refresh_lock = threading.Lock()
@@ -219,8 +219,7 @@ def dump_builtin_config(path: str | Path) -> None:
 
 
 async def refresh_model_list(url: str = REMOTE_MODEL_LIST_URL) -> None:
-    """Refresh the model list from a URL. This is not thread safe, only asyncio is safe.
-    If you call this from threads, make sure to wrap in an actual lock.
+    """Refresh the model list from a URL. The in-place swap of the lists holds `refresh_lock`.
 
     Args:
         url: The URL to fetch the model list from. Defaults to REMOTE_MODEL_LIST_URL.

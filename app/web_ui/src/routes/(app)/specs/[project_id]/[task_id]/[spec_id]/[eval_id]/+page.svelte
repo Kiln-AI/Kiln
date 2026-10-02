@@ -290,12 +290,9 @@
       value: evaluator.id || "unknown",
     })
 
-    // Every dataset row renders whether or not the eval has that dataset. A dataset is
-    // only there if something explicitly wrote one (functional spec 3.2 — unconfigured
-    // splits stay unconfigured), so most pre-existing evals are missing several. Hiding a
-    // row would make "this eval has no val set" indistinguishable from "this page doesn't
-    // show val sets". With no dataset there is no filter to show, no items to count and
-    // nothing to link to, so the row says so instead.
+    // Every dataset row renders whether or not the eval has that dataset: unconfigured
+    // splits stay unconfigured, so many evals are missing several, and hiding a row would
+    // make "this eval has no val set" look like "this page doesn't show val sets".
     const NOT_CONFIGURED = "Not configured"
 
     const test_filter_id = eval_split_filter_id(evaluator, "test")

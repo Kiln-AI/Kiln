@@ -10,12 +10,6 @@ from kiln_ai.datamodel.datamodel_enums import (
     StructuredOutputMode,
 )
 
-"""
-Provides model configuration and management for various LLM providers and models.
-This module handles the integration with different AI model providers and their respective models,
-including configuration, validation, and instantiation of language models.
-"""
-
 
 class ModelFamily(str, Enum):
     """

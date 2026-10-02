@@ -697,8 +697,7 @@
     // it, a missing tag falls through to a navigation with no `splits` param at all, and
     // the user adds rows that silently never join the eval's set. The golden half is
     // reachable in ordinary use: a non-rag eval with no golden set is the expected V2
-    // state (functional spec 6.1), and this button appears precisely when the eval's
-    // test split is empty.
+    // state, and this button appears precisely when the eval's test split is empty.
     if (!test_tag || (evalData.template !== "rag" && !golden_tag)) {
       alert(
         "No test or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",

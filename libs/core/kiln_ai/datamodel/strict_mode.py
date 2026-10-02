@@ -10,15 +10,9 @@ _strict_mode: bool = False
 
 
 def strict_mode() -> bool:
-    """
-    Get the current strict mode setting.
-    """
     return _strict_mode
 
 
 def set_strict_mode(value: bool) -> None:
-    """
-    Set the strict mode setting.
-    """
     global _strict_mode
     _strict_mode = value

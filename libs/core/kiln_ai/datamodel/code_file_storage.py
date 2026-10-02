@@ -83,11 +83,8 @@ def read_code_from_sibling_file(
             )
         code_path = Path(src) / filename
         try:
-            # Binary read + explicit decode: avoid universal-newline translation
-            # (Path.read_text would collapse CRLF/CR to LF), so the file's exact
-            # bytes round-trip and the byte-for-byte contract holds (functional
-            # spec §1.1). OSError still surfaces the missing/unreadable message
-            # below; a non-UTF-8 file still raises UnicodeDecodeError, unchanged.
+            # Binary read + explicit decode: Path.read_text would collapse CRLF/CR
+            # to LF, and the file's exact bytes must round-trip.
             code = code_path.read_bytes().decode("utf-8")
         except OSError as e:
             raise ValueError(
@@ -134,10 +131,8 @@ def write_code_to_sibling_file(
             raise ValueError(
                 f"dest_path must be an existing directory when saving code, got: {dest}"
             )
-        # Binary write of the UTF-8 bytes: avoid universal-newline translation
-        # (Path.write_text would rewrite LF to os.linesep), so the exact bytes
-        # are persisted, save is byte-idempotent, and the round-trip is
-        # byte-for-byte (functional spec §1.1 / §2.1), cross-platform.
+        # Binary write: Path.write_text would rewrite LF to os.linesep, and save
+        # must persist the exact bytes on every platform.
         (dest / filename).write_bytes(code.encode("utf-8"))
         # Copy-on-write: code lives in the sibling file, not the .kiln JSON.
         data = {key: value for key, value in data.items() if key != "code"}
