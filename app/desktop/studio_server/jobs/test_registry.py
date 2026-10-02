@@ -1093,3 +1093,87 @@ async def test_create_drops_properties_without_declared_model():
         job.id,
         {BackgroundJobStatus.SUCCEEDED, BackgroundJobStatus.RUNNING},
     )
+
+
+# -- dedupe ---------------------------------------------------------------
+
+
+class _KeyedParams(BaseModel):
+    key: str
+    finish: bool = False
+
+
+class DedupeWorker(JobWorker[_KeyedParams, _EmptyResult]):
+    """Stays running until released. Its describe() yields to the event loop, so
+    two concurrent creates interleave at the await inside create()."""
+
+    type_name = "dedupe"
+    params_model = _KeyedParams
+    result_model = _EmptyResult
+    release: asyncio.Event
+
+    def dedupe_key(self, params: _KeyedParams):
+        return params.key
+
+    async def describe(self, params: _KeyedParams):
+        await asyncio.sleep(0)
+        return None
+
+    async def run(self, params, ctx):
+        if not params.finish:
+            await DedupeWorker.release.wait()
+        return _EmptyResult()
+
+
+@pytest.fixture
+def dedupe_registry():
+    DedupeWorker.release = asyncio.Event()
+    reg = JobRegistry(max_concurrent=10)
+    reg.register_type(DedupeWorker)
+    yield reg
+    DedupeWorker.release.set()
+
+
+async def test_identical_unfinished_job_is_returned(dedupe_registry):
+    first = await dedupe_registry.create("dedupe", {"key": "a"})
+    second = await dedupe_registry.create("dedupe", {"key": "a"})
+    assert second.id == first.id
+    assert len(dedupe_registry._jobs) == 1
+
+
+async def test_different_key_creates_a_new_job(dedupe_registry):
+    first = await dedupe_registry.create("dedupe", {"key": "a"})
+    second = await dedupe_registry.create("dedupe", {"key": "b"})
+    assert second.id != first.id
+
+
+async def test_concurrent_identical_creates_make_one_job(dedupe_registry):
+    # Both creates await describe() before inserting; the check after that await
+    # must still see the other's job.
+    first, second = await asyncio.gather(
+        dedupe_registry.create("dedupe", {"key": "a"}),
+        dedupe_registry.create("dedupe", {"key": "a"}),
+    )
+    assert first.id == second.id
+    assert len(dedupe_registry._jobs) == 1
+
+
+async def test_finished_job_is_not_reused(dedupe_registry):
+    first = await dedupe_registry.create("dedupe", {"key": "a", "finish": True})
+    await wait_for_status(dedupe_registry, first.id, BackgroundJobStatus.SUCCEEDED)
+    second = await dedupe_registry.create("dedupe", {"key": "a", "finish": True})
+    assert second.id != first.id
+
+
+async def test_deleted_job_key_is_dropped(dedupe_registry):
+    first = await dedupe_registry.create("dedupe", {"key": "a", "finish": True})
+    await wait_for_status(dedupe_registry, first.id, BackgroundJobStatus.SUCCEEDED)
+    await dedupe_registry.delete(first.id)
+    assert first.id not in dedupe_registry._dedupe_keys
+
+
+async def test_worker_without_key_never_dedupes(registry):
+    params = {"steps": 50, "sleep_per_step_seconds": 0.05}
+    first = await registry.create("noop", params)
+    second = await registry.create("noop", params)
+    assert second.id != first.id
