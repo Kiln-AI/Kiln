@@ -3,7 +3,7 @@
 
 Fetches each provider's model list via its API and cross-references against
 the extracted JSON from extract_models.py. Reports missing models and
-(for OpenRouter and Cloudflare) upcoming expirations.
+(for OpenRouter) upcoming expirations.
 
 Usage:
     # Check a single provider
@@ -34,12 +34,6 @@ API format quirks handled by the shared provider_api module:
     - Fireworks /v1/models only lists serverless models; this script uses the model
       detail API (GET /v1/{model_id}) to check each model individually, since models
       may still be available via on-demand deployments even when off the serverless tier
-    - Cloudflare uses the authenticated models-search API when CLOUDFLARE_API_KEY and
-      CLOUDFLARE_ACCOUNT_ID are both set, and otherwise the public catalog JSON, so it
-      is never skipped for a missing key. Any model with a planned_deprecation_date is
-      reported under "expiring"; once that date has passed the model also counts as
-      missing, even if the listing still shows it, because Cloudflare may alias a
-      retired ID to a different model.
 """
 
 import argparse
@@ -58,12 +52,10 @@ sys.path.insert(
 
 from provider_utils import (  # type: ignore[import-not-found]
     CASE_INSENSITIVE_PROVIDERS,
-    KEY_OPTIONAL_PROVIDERS,
     OPENROUTER_VIRTUAL_SUFFIXES,
     PROVIDER_CONFIG,
     SKIP_PROVIDERS,
     fetch_anthropic,
-    fetch_cloudflare,
     fetch_fireworks_individual,
     fetch_gemini,
     fetch_openai_compat,
@@ -86,7 +78,7 @@ def check_provider(provider_name: str, extracted: dict) -> dict:
     api_key = ""
     if env_var:
         api_key = os.environ.get(env_var, "")
-        if not api_key and provider_name not in KEY_OPTIONAL_PROVIDERS:
+        if not api_key:
             return {
                 "provider": provider_name,
                 "skipped": True,
@@ -106,9 +98,6 @@ def check_provider(provider_name: str, extracted: dict) -> dict:
         available = fetch_fireworks_individual(api_key, kiln_models)
     elif ptype == "vertex":
         available = fetch_vertex_with_aliases(api_key)
-    elif ptype == "cloudflare":
-        account_id = os.environ.get(config["account_env"], "")
-        available, expiring = fetch_cloudflare(api_key, account_id)
     elif ptype == "openai_compat":
         available = fetch_openai_compat(config["url"], api_key)
     else:

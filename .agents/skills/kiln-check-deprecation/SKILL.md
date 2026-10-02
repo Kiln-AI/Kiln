@@ -67,14 +67,13 @@ The script handles all provider API quirks automatically:
 - **OpenRouter** is public (no auth) and includes `expiration_date` fields
 - **Fireworks AI** `/v1/models` only lists serverless models; the script instead checks each model individually via the model detail API (`GET /v1/{model_id}`), which covers all tiers (serverless, on-demand, fine-tune). A model is only flagged as missing if it returns HTTP 404 from the detail API.
 - **OpenRouter** `:exacto` is a virtual routing suffix (quality-first provider sorting) that never appears in model listings. The script strips it before checking. `:free` and `:thinking` are real model entries that appear in the listing when available — if they're missing, it's a genuine removal.
-- **Cloudflare** uses the authenticated models-search API (`task=Text Generation`, `include_deprecated=true`) when `CLOUDFLARE_API_KEY` and `CLOUDFLARE_ACCOUNT_ID` are both set, and otherwise Cloudflare's public catalog JSON (`https://ai-cloudflare-com.pages.dev/api/models`), so it is never skipped for a missing key. Every model with a `planned_deprecation_date` is reported under `expiring`. Once that date has passed, the model also counts as `missing` even if the listing still shows it. Never use LiteLLM's catalog or models.dev to decide a Cloudflare model still exists: LiteLLM's is stale and models.dev no longer deletes retired models.
 - **Vertex AI** uses the v1beta1 publisher models endpoint with `x-goog-user-project` header. Requires `gcloud` CLI auth. Kiln entries may use `meta/` prefix for LiteLLM routing — stripped automatically. Versioned aliases (e.g. `gemini-2.0-flash-001` → `gemini-2.0-flash`) are handled by stripping 3-digit version suffixes.
 
 **Output:** JSON to stdout with per-provider results, human summary to stderr.
 
 Each provider result contains:
 - `missing`: model_ids not found in the provider's listing
-- `expiring`: model_ids with upcoming expiration dates (OpenRouter and Cloudflare)
+- `expiring`: model_ids with upcoming expiration dates (OpenRouter only)
 - `entries_to_deprecate`: full enum/provider/model_id entries for each missing model
 - `skipped` / `error`: if credentials missing or API call failed
 
@@ -92,7 +91,6 @@ Each provider result contains:
 | Cerebras | `CEREBRAS_API_KEY` | Bearer |
 | Groq | `GROQ_API_KEY` | Bearer |
 | Vertex AI | `VERTEX_PROJECT_ID` + `gcloud` CLI auth | OAuth (gcloud) |
-| Cloudflare | `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID` (optional — falls back to the public catalog) | Bearer |
 
 ### Providers NOT covered by the script (check manually if needed)
 
@@ -176,7 +174,7 @@ Then add `deprecated=True,` after the `model_id=` line in the matching `KilnMode
 **Rules:**
 - Only mark a provider deprecated if its model_id is confirmed missing from that provider's model list
 - If ALL providers for a `KilnModel` are deprecated, note this to the user — they may want to consider removing the model entirely
-- For "expiring soon" models, inform the user but don't mark deprecated yet — let them decide. **Exception: Cloudflare.** When Cloudflare retires a model it may silently alias the old ID to a different model, and the response still echoes the requested ID, so a stale entry keeps "working" while running something else. Propose marking every Cloudflare entry with a `planned_deprecation_date` deprecated now, before that date, and flag it as urgent in the report
+- For "expiring soon" models, inform the user but don't mark deprecated yet — let them decide
 - For Bedrock `LEGACY` status, mark deprecated (the model still works but is on its way out)
 
 **Ask the user to confirm** before making changes. Present the list of changes and wait for approval.
