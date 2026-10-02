@@ -219,6 +219,7 @@ class ModelName(str, Enum):
     grok_2 = "grok_2"
     grok_3 = "grok_3"
     grok_3_mini = "grok_3_mini"
+    grok_4_7 = "grok_4_7"
     grok_4_5 = "grok_4_5"
     grok_4_3 = "grok_4_3"
     grok_4_20 = "grok_4_20"
@@ -230,8 +231,10 @@ class ModelName(str, Enum):
     qwen_3p5_27b = "qwen_3p5_27b"
     qwen_3p5_35b_a3b = "qwen_3p5_35b_a3b"
     qwen_3p8_max = "qwen_3p8_max"
+    qwen_3p8_max_prime = "qwen_3p8_max_prime"
     qwen_3p8_2p4t_a95b = "qwen_3p8_2p4t_a95b"
     qwen_3p8_flash = "qwen_3p8_flash"
+    qwen_3p8_omni_flash = "qwen_3p8_omni_flash"
     qwen_3p8_27b = "qwen_3p8_27b"
     qwen_3p7_flash = "qwen_3p7_flash"
     qwen_3p7_plus = "qwen_3p7_plus"
@@ -287,7 +290,9 @@ class ModelName(str, Enum):
     kimi_dev_72b = "kimi_dev_72b"
     glm_5_3 = "glm_5_3"
     glm_5_3_fast = "glm_5_3_fast"
+    glm_5_3_prime = "glm_5_3_prime"
     glm_5_3_flash = "glm_5_3_flash"
+    glm_5_3_flashx = "glm_5_3_flashx"
     glm_5_2 = "glm_5_2"
     glm_5_2_fast = "glm_5_2_fast"
     glm_5_1 = "glm_5_1"
@@ -326,6 +331,9 @@ class ModelName(str, Enum):
     mimo_v2_omni = "mimo_v2_omni"
     mimo_v2_5 = "mimo_v2_5"
     mimo_v2_5_pro = "mimo_v2_5_pro"
+    mimo_v2_6_pro = "mimo_v2_6_pro"
+    mimo_v2_6_pro_ultraspeed = "mimo_v2_6_pro_ultraspeed"
+    mimo_v2_6_flash = "mimo_v2_6_flash"
     inkling = "inkling"
     jev_1_13 = "jev_1_13"
 
@@ -5218,6 +5226,12 @@ built_in_models: List[KilnModel] = [
                 model_id="meta-models/Muse-Glimmer-30B",
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="meta-models/Muse-Glimmer-30B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_function_calling=False,
+            ),
         ],
     ),
     # Mistral Large 2512
@@ -5968,6 +5982,12 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="deepseek-ai/DeepSeek-V4.1-Flash",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_function_calling=False,
+            ),
         ],
     ),
     # DeepSeek V4 Pro
@@ -6011,6 +6031,11 @@ built_in_models: List[KilnModel] = [
                 model_id="deepseek-ai/DeepSeek-V4-Pro",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="deepseek-ai/DeepSeek-V4-Pro",
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
@@ -6563,6 +6588,36 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Grok 4.7
+    KilnModel(
+        family=ModelFamily.grok,
+        name=ModelName.grok_4_7,
+        friendly_name="Grok 4.7",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="x-ai/grok-4.7",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GROK_4_5_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="low",
+                openrouter_reasoning_object=True,
+                uncensored=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # Grok 4.5
     KilnModel(
         family=ModelFamily.grok,
@@ -6782,6 +6837,30 @@ built_in_models: List[KilnModel] = [
             # streaming-only). Omitted until Together adds it.
         ],
     ),
+    # Qwen 3.8 Max Prime
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p8_max_prime,
+        friendly_name="Qwen 3.8 Max Prime",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.8-max-prime",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+            ),
+        ],
+    ),
     # Qwen 3.8 2.4T A95B
     KilnModel(
         family=ModelFamily.qwen,
@@ -6814,6 +6893,11 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
                 supports_function_calling=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="Qwen/Qwen3.8-2.4T-A95B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
@@ -6850,6 +6934,39 @@ built_in_models: List[KilnModel] = [
             # (returns HTTP 400 "This model only supports streaming", code
             # streaming_required), which Kiln's non-streaming adapter can't use.
             # Omitted until Together supports non-streaming.
+        ],
+    ),
+    # Qwen 3.8 Omni Flash
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p8_omni_flash,
+        friendly_name="Qwen 3.8 Omni Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.8-omni-flash",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
         ],
     ),
     # Qwen 3.8 27B
@@ -6898,6 +7015,11 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.featherless_ai,
+                model_id="Qwen/Qwen3.8-27B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
                 model_id="Qwen/Qwen3.8-27B",
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
@@ -9046,6 +9168,18 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=False,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="zai-org/GLM-5.3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="zai-org/GLM-5.3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=False,
+            ),
         ],
     ),
     # GLM 5.3 Fast — Fireworks speed-optimized serving of GLM 5.3 (routers/ slug, ~2x throughput)
@@ -9059,6 +9193,20 @@ built_in_models: List[KilnModel] = [
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 model_id="accounts/fireworks/routers/glm-5p3-fast",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=False,
+            ),
+        ],
+    ),
+    # GLM 5.3 Prime
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5_3_prime,
+        friendly_name="GLM 5.3 Prime",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-5.3-prime",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=False,
             ),
@@ -9137,6 +9285,39 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
+            ),
+        ],
+    ),
+    # GLM 5.3 FlashX
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5_3_flashx,
+        friendly_name="GLM 5.3 FlashX",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-5.3-flashx",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                available_thinking_levels=KIMI_K3_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                reasoning_capable=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
             ),
         ],
     ),
@@ -10021,6 +10202,12 @@ built_in_models: List[KilnModel] = [
                 model_id="tencent/hy3",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="tencent/Hy3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_function_calling=False,
+            ),
         ],
     ),
     # Hunyuan A13B Instruct
@@ -10466,6 +10653,87 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 multimodal_requires_pdf_as_image=True,
                 supports_vision=True,
+            ),
+        ],
+    ),
+    # MiMo-V2.6-Pro
+    KilnModel(
+        family=ModelFamily.mimo,
+        name=ModelName.mimo_v2_6_pro,
+        friendly_name="MiMo-V2.6-Pro",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="xiaomi/mimo-v2.6-pro",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # MiMo-V2.6-Pro-UltraSpeed
+    KilnModel(
+        family=ModelFamily.mimo,
+        name=ModelName.mimo_v2_6_pro_ultraspeed,
+        friendly_name="MiMo-V2.6-Pro-UltraSpeed",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="xiaomi/mimo-v2.6-pro-ultraspeed",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # MiMo-V2.6-Flash
+    KilnModel(
+        family=ModelFamily.mimo,
+        name=ModelName.mimo_v2_6_flash,
+        friendly_name="MiMo-V2.6-Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="xiaomi/mimo-v2.6-flash",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
