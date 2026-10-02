@@ -6,7 +6,7 @@ status: complete
 
 ## Overview
 
-Add the `kiln-conventions` skill to Kiln: the canonical universal rules (`rules.md`), the canonical diff-based conventions gate (`conventions_gate.py` + tests), Kiln's gate config and allowlist, three area references, and the wiring that makes agents and reviewers use it. Calibrate the gate on the Kiln source roots and save the `history-comment` hit list as the work list for the phase 3 comment sweep.
+Add the `kiln-conventions` skill to Kiln: the universal rules (`rules.md`), the diff-based conventions gate (`conventions_gate.py` + tests), Kiln's gate config and allowlist, three area references, and the wiring that makes agents and reviewers use it. Calibrate the gate on the Kiln source roots and save the `history-comment` hit list as the work list for the phase 3 comment sweep.
 
 All new files live in `.agents/skills/kiln-conventions/`. No runtime code changes.
 
@@ -41,7 +41,7 @@ All new files live in `.agents/skills/kiln-conventions/`. No runtime code change
 
 6. **`rules.md`**: rules A–H from functional spec §4 (23 rules), each a one-line imperative, ≤ 1 line of why, one ❌/✅ example; gate-enforced rules tagged `(gate: <id>)`. Carries the content of the AGENTS.md "Code Comments" section (what to comment, what never to write, docstrings describe the contract). No repo-specific paths.
 
-7. **`SKILL.md`** (≤ ~120 lines): frontmatter (`name: kiln-conventions`, triggering `description`), flow (read rules → area refs → write → gate → self-check review-only rules), path → reference table, "UI changes also load `kiln-ui`", end-of-task WARN reporting, "Maintaining the gate" (test command, shared files, known limitations).
+7. **`SKILL.md`** (≤ ~120 lines): frontmatter (`name: kiln-conventions`, triggering `description`), flow (read rules → area refs → write → gate → self-check review-only rules), path → reference table, "UI changes also load `kiln-ui`", end-of-task WARN reporting, "Maintaining the gate" (test command, repo-specific files, known limitations).
 
 8. **References** `references/core.md`, `server_desktop.md`, `web_ui.md`: Gotchas / Where things go / Startup sections covering the topics listed in functional spec §4. Every symbol verified with `git grep` against the current branch; no line numbers; nothing about bugs with open fix PRs (check `gh pr list` for Config bool parsing etc.).
 

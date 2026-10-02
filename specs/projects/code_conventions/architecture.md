@@ -4,25 +4,25 @@ status: complete
 
 # Architecture: Code Conventions Skills
 
-The project is small: two skills (markdown), one shared Python script with tests, a sync script, and doc wiring. Everything fits in this doc, so there are no component designs.
+The project is small: two skills (markdown), one Python script with tests (each repo keeps its own copy, and kiln_server's started from Kiln's), and doc wiring. Everything fits in this doc, so there are no component designs.
 
 ## 1. File layout
 
-### Kiln (canonical)
+### Kiln
 
 ```
 .agents/skills/kiln-conventions/
   SKILL.md                    # entry point an agent loads
   references/
-    rules.md                  # universal rules (shared, canonical)
+    rules.md                  # universal rules
     core.md                   # libs/core
     server_desktop.md         # libs/server + app/desktop
     web_ui.md                 # app/web_ui
   scripts/
-    conventions_gate.py       # gate script (shared, canonical)
-    test_conventions_gate.py  # gate tests (shared, canonical)
-    gate_config.json          # Kiln-specific gate settings (not shared)
-    gate_allow.txt            # Kiln allowlist (not shared)
+    conventions_gate.py       # gate script
+    test_conventions_gate.py  # gate tests
+    gate_config.json          # Kiln-specific gate settings
+    gate_allow.txt            # Kiln allowlist
 ```
 
 ### kiln_server
@@ -31,15 +31,14 @@ The project is small: two skills (markdown), one shared Python script with tests
 .agents/skills/kiln-server-conventions/
   SKILL.md
   references/
-    rules.md                  # synced copy (header added by sync)
+    rules.md                  # own copy, started from Kiln's
     api.md                    # the API service
     jobs_pipelines.md         # jobs, pipelines and optimizers
   scripts/
-    conventions_gate.py       # synced copy (header added by sync)
-    test_conventions_gate.py  # synced copy (header added by sync)
+    conventions_gate.py       # own copy, started from Kiln's
+    test_conventions_gate.py  # own copy, started from Kiln's
     gate_config.json          # kiln_server-specific
     gate_allow.txt
-utils/sync_conventions.sh     # copies the shared files from a Kiln checkout
 ```
 
 ## 2. `conventions_gate.py`
@@ -47,7 +46,7 @@ utils/sync_conventions.sh     # copies the shared files from a Kiln checkout
 ### Constraints
 - Python ≥ 3.10, stdlib only. It must run with `uv run python …` in both repos and with plain `python3`.
 - One file. No imports from either repo.
-- Byte-identical in both repos. The sync header is a leading comment block that `--check` strips.
+- Each repo keeps its own copy, and kiln_server's started from Kiln's.
 - Fast: a typical PR diff in under 2 s. Shell out to `git` at most a few times per run.
 
 ### CLI
@@ -91,7 +90,7 @@ This is a per-line heuristic: the gate sees single added lines, not parse trees.
 ### Checks
 Every check is a small function `check_x(line: Line, cfg: Config) -> Hit | None`, registered in one list.
 
-**Path scoping.** Each check has an id. `cfg.checks[id]` holds `{"enabled": bool, "severity": "FAIL"|"WARN", "paths": [globs], "exclude": [globs]}`, where empty `paths` means all paths. The per-rule data (phrase list, allowed paths, ignore regexes) lives in the config too, except the phrase list, which is a module constant so it stays shared.
+**Path scoping.** Each check has an id. `cfg.checks[id]` holds `{"enabled": bool, "severity": "FAIL"|"WARN", "paths": [globs], "exclude": [globs]}`, where empty `paths` means all paths. The per-rule data (phrase list, allowed paths, ignore regexes) lives in the config too, except the phrase list, which is a module constant.
 
 | Rule id | Default sev | Match |
 |---|---|---|
@@ -172,7 +171,7 @@ kiln_server `env_access_allowed` lists its config module and its entry points (A
 
 ## 3. Gate tests (`test_conventions_gate.py`)
 
-pytest, stdlib plus pytest only. They are synced too, so they must not depend on either repo's files: they use a fixture config written to `tmp_path` and import the script by path (`importlib.util.spec_from_file_location`, relative to `__file__`).
+pytest, stdlib plus pytest only. kiln_server's copy started from them, so they must not depend on either repo's files: they use a fixture config written to `tmp_path` and import the script by path (`importlib.util.spec_from_file_location`, relative to `__file__`).
 
 - **Diff parsing:**
   - multi-hunk diffs with line numbers;
@@ -216,14 +215,14 @@ How to run the tests:
   4. Self-check the review-only rules.
 - **Path → reference table.**
 - Kiln: "UI changes also load `kiln-ui`".
-- "Maintaining the gate": the test command, plus where the shared files live.
-- kiln_server: "shared files are synced from Kiln, so edit them there and run `utils/sync_conventions.sh`".
+- "Maintaining the gate": the test command, plus which files are repo-specific.
+- kiln_server: "rules.md and the gate started from Kiln's and are maintained here".
 
 ### `rules.md`
 - The rules from functional spec §4 A–H.
 - Each rule: a one-line imperative, at most one line of why, and one ❌/✅ example (2–6 lines each) taken from or modelled on real code.
 - Rules the gate enforces are tagged with their rule id, e.g. `(gate: history-comment)`.
-- It contains no repo-specific paths, because it's shared. Where a rule needs specifics ("dependency direction of the area"), it points to the area reference.
+- It contains no repo-specific paths, because kiln_server's copy started from it. Where a rule needs specifics ("dependency direction of the area"), it points to the area reference.
 
 ### References
 Each reference has three sections: Gotchas, Where things go, and Startup (runtime areas only).
@@ -248,23 +247,9 @@ Before finishing, the coding agent:
 - `module-level-*` checks are heuristics, so they're WARN.
 - Module-level calls written as assignments are only caught when the RHS matches the construct patterns.
 
-## 7. Sync (`kiln_server/utils/sync_conventions.sh`)
-```
-utils/sync_conventions.sh [--check] [KILN_DIR]    # KILN_DIR defaults to ../Kiln
-```
-- **Shared files:**
-  - `references/rules.md`
-  - `scripts/conventions_gate.py`
-  - `scripts/test_conventions_gate.py`
-- **Source:** `$KILN_DIR/.agents/skills/kiln-conventions/`. **Destination:** `.agents/skills/kiln-server-conventions/`.
-- **Header** (prepended on copy). It records `git -C $KILN_DIR rev-parse --short HEAD`.
-  - Markdown: `<!-- Synced from Kiln-AI/Kiln .agents/skills/kiln-conventions/<file> @ <sha>. Edit it in Kiln, then run utils/sync_conventions.sh. -->`
-  - Python: the same text as `# ` comment lines.
-- **`--check`:**
-  - Strips the header (the first line for md; the leading `# Synced from` comment lines for py) and diffs against the source.
-  - Exits 1 and lists the files that differ.
-  - Doesn't write anything.
-- **Behaviour:** bash, `set -euo pipefail`. It fails clearly if `KILN_DIR` doesn't contain the source dir.
+## 7. Each repo's copy
+
+`references/rules.md`, `scripts/conventions_gate.py` and `scripts/test_conventions_gate.py`: each repo keeps its own copy, and kiln_server's started from Kiln's.
 
 ## 8. Wiring
 
@@ -294,9 +279,7 @@ utils/sync_conventions.sh [--check] [KILN_DIR]    # KILN_DIR defaults to ../Kiln
   - git failures (bad range, not a repo) print git's stderr and exit 2;
   - unreadable files are skipped;
   - config errors exit 2 with the key or line.
-- **Sync script:** fail fast with a message. It never half-writes a file: it writes to a temp file, then moves it into place.
 
 ## 10. Testing strategy
 - The gate gets unit and end-to-end tests (§3). They run in both repos with the command in `SKILL.md`.
 - The skills and references are prose. The coding agent checks every symbol a reference names with `git grep` (it must exist on the current branch) and every relative link.
-- The sync script gets a manual run in phase 2: sync, then `--check` → 0; edit a copy, then `--check` → 1. These are recorded in the return summary. No automated test, because bash plus two checkouts isn't worth a harness.

@@ -22,8 +22,8 @@ Existing code is grandfathered. The rules apply to code that a change adds or mo
 |---|---|---|
 | D1 | `kiln-conventions` skill | Kiln |
 | D2 | `kiln-server-conventions` skill | kiln_server |
-| D3 | Shared universal rules, with one canonical copy in Kiln and a synced copy in kiln_server | both |
-| D4 | Conventions gate: a diff-based checker script, shared between the repos | both |
+| D3 | Universal rules: each repo keeps its own copy, and kiln_server's started from Kiln's | both |
+| D4 | Conventions gate: a diff-based checker script; each repo keeps its own copy, and kiln_server's started from Kiln's | both |
 | D5 | Wiring: `AGENTS.md`, code review guidelines, setup scripts, and a pointer from `kiln-ui` | both |
 | D6 | Comment sweep: fix the comment violations found in the audit | both |
 
@@ -55,23 +55,23 @@ The skill must work for an agent with no context on the repo, and it must be che
 Kiln/.agents/skills/kiln-conventions/
   SKILL.md
   references/
-    rules.md               # canonical universal rules (D3)
+    rules.md               # universal rules (D3)
     core.md                # libs/core
     server_desktop.md      # libs/server + app/desktop
     web_ui.md              # app/web_ui
   scripts/
-    conventions_gate.*     # canonical gate (D4)
-    gate_config.*          # Kiln-specific path settings for the gate, not synced
-    gate_allow.txt         # Kiln allowlist, not synced
+    conventions_gate.*     # gate (D4)
+    gate_config.*          # Kiln-specific path settings for the gate
+    gate_allow.txt         # Kiln allowlist
 
 kiln_server/.agents/skills/kiln-server-conventions/
   SKILL.md
   references/
-    rules.md               # synced copy, with a "do not edit here" header
+    rules.md               # own copy, started from Kiln's
     api.md                 # the API service
     jobs_pipelines.md      # jobs, pipelines and optimizers
   scripts/
-    conventions_gate.*     # synced copy
+    conventions_gate.*     # own copy, started from Kiln's
     gate_config.*          # kiln_server-specific
     gate_allow.txt
 ```
@@ -213,7 +213,7 @@ Where a gotcha describes a bug that's being fixed in a separate PR, the referenc
 | `module-level-call` | WARN | py | A bare call statement at column 0 (e.g. `setup_x()`, `mimetypes.add_type(...)`), excluding `if __name__ == "__main__":` blocks |
 | `module-level-subscribe` | WARN | Kiln web `.ts` | `.subscribe(` at column 0 in a `lib/` module |
 
-Repo-specific path settings (which checks apply where, allowed env-access paths) live in `gate_config`, which is not synced. The gate script itself is identical in both repos.
+Repo-specific path settings (which checks apply where, allowed env-access paths) live in `gate_config`. Each repo keeps its own copy of the gate script, and kiln_server's started from Kiln's.
 
 ### 5.3 Cost bound
 
@@ -223,15 +223,9 @@ The gate must stay cheap:
 - It runs on a typical PR diff in under 2 seconds.
 - It is *not* added to CI or `checks.sh` in this project (see §8, Q1).
 
-## 6. Sync of shared files (D3)
+## 6. Each repo's copy of the rules and gate (D3)
 
-- Canonical files: `references/rules.md` and the gate script in `scripts/`, under `Kiln/.agents/skills/kiln-conventions/`.
-- kiln_server has a sync script, `utils/sync_conventions.sh [path-to-Kiln-checkout]`, defaulting to `../Kiln`:
-  - It copies both files into `.agents/skills/kiln-server-conventions/`.
-  - It prepends or keeps a header saying the file is synced from Kiln and must be edited there.
-  - It records the Kiln commit it synced from.
-  - `--check` exits 1 if the copies differ from the given Kiln checkout. It is manual, not CI.
-- Edits to the shared rules happen in Kiln first, then get synced in a kiln_server PR.
+- `references/rules.md` and the gate script and tests in `scripts/`: each repo keeps its own copy, and kiln_server's started from Kiln's (`Kiln/.agents/skills/kiln-conventions/`).
 
 ## 7. Wiring (D5) and comment sweep (D6)
 

@@ -20,7 +20,7 @@ We started with an audit of red flags in both repos ([research/audit](research/a
 
 - Scope of this project: the two skills, cheap mechanical checks to back them, and a sweep of the bad comments found in the audit. Refactors become their own spec projects later. The small bugs found in the audit are fixed separately, one PR each.
 - Existing code is grandfathered: rules apply to new and changed code. Refactors fix the old code over time.
-- One canonical copy of the universal rules lives in Kiln. kiln_server carries a synced copy plus its own repo-specific gotchas.
+- Each repo keeps its own copy of the universal rules, and kiln_server's started from Kiln's. kiln_server adds its own repo-specific gotchas.
 - Web UI conventions go wherever fits best (together with `kiln-ui` or separate).
 - Mechanical checks are in, as long as they're cheap.
 - kiln_ai `Config` precedence stays as it is (settings.yaml wins over env vars). We document it as a gotcha and don't change the behaviour now.

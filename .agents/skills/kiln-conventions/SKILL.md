@@ -71,7 +71,7 @@ Apply `references/rules.md` and the area references for the changed paths. Run t
 
 Files in this skill:
 
-- `references/rules.md`, `scripts/conventions_gate.py` and `scripts/test_conventions_gate.py` are **shared**: kiln_server carries synced copies. Edit them here, in Kiln, then sync them into kiln_server with its `utils/sync_conventions.sh`.
+- `references/rules.md`, `scripts/conventions_gate.py` and `scripts/test_conventions_gate.py`: each repo keeps its own copy, and kiln_server's started from Kiln's.
 - `scripts/gate_config.json` (skipped paths, which checks run where, allowed env-access paths, module-level patterns) and `scripts/gate_allow.txt` are Kiln-only. The gate reads both from its own directory.
 
 Run the gate's tests (stdlib + pytest only; the default repo test run doesn't collect dot-directories):
