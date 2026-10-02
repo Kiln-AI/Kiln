@@ -203,20 +203,3 @@ class ThreadedServer(uvicorn.Server):
 
     def running(self):
         return self.started and not self.stopped
-
-
-def run_studio():
-    from kiln_ai.utils.config import Config
-
-    uvicorn.run(
-        kiln_server.app,
-        host=Config.shared().kiln_local_api_host,
-        port=Config.shared().kiln_local_api_port,
-        log_level="warning",
-    )
-
-
-def run_studio_thread():
-    thread = threading.Thread(target=run_studio)
-    thread.start()
-    return thread
