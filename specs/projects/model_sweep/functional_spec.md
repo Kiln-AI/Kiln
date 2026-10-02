@@ -93,7 +93,7 @@ Authoritative rule, matching the skill and the smoke log: one message per PR the
 ### 4.5 Remote config publish check
 
 - Added 2026-10-01 at the operator's request. Kiln clients read the model list from the published remote config, built by `publish_remote_config.yml` on a push to the `remote_config` branch. The team's flow is a PR with head `main` and base `remote_config`, merged by a human.
-- Every run diffs `origin/remote_config..origin/main` on the files the config is built from: `ml_model_list.py`, `ml_embedding_model_list.py`, `reranker_list.py`, `remote_config.py`. No diff: nothing to do.
+- Every run diffs `origin/remote_config..origin/main` on the files the config is built from: `ml_model_list.py`, `ml_embedding_model_list.py`, `reranker_list.py`, `remote_config.py`. No diff: nothing to do. A diff is a candidate only: the run generates the config JSON from both refs and compares them, so a comment-only change to those files (as on 2026-10-02) publishes nothing.
 - A diff with an open PR into `remote_config` already present: no new PR. The routine refreshes its own PR's body with an **Updates** section; a human's PR is left alone and reported with its age.
 - A diff with no such PR: run the backwards-compatibility test the publish workflow runs, check `merge-tree` for conflicts, and open head `main` into base `remote_config`. Clean and passing: ready PR announced in #prs. Conflicts or failure: draft PR with **Decisions required**, announced in #models.
 - The routine never merges it. The merge is the publish decision and stays human.

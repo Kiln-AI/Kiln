@@ -123,3 +123,11 @@
 ## Routine reads the skill from the branch: 2026-10-02 14:35 UTC
 
 - The routine's message was carrying a copy of the skill text, so a commit to the PR branch changed nothing until the copy was updated by hand. Replaced with: run settings plus `git show origin/<branch>:.agents/skills/kiln-model-sweep/SKILL.md`, read it, follow it. The open PR is now the testbed: edits land on the branch, the next morning's run uses them, findings from runs go back into the branch. On merge, the branch in the message becomes `main`.
+
+## Run 5: validation of the branch-fed routine (2026-10-02, 14:38 UTC)
+
+- First run whose message fetched the skill from `mike/model-sweep` instead of carrying a copy. Fetch and read succeeded (115 lines), then it followed the skill: 6 minutes, 44 turns.
+- Nothing new on any catalog since the morning run; four candidates failed a live call and were skipped (Together Kimi K2.6 "no deployments", Together Qwen 3.8 Flash "third-party data sharing", SiliconFlow diffusiongemma, Featherless MiMo distill "at capacity"). No backfills.
+- Deprecation audit: OpenRouter no longer lists `qwen/qwen3.8-max` and Fireworks' detail API returns 403 for two router slugs; all three passed Kiln's smoke test, so nothing was marked. Report-only: six OpenRouter expiries on 2026-10-08 and 10-09, Gemini 2.5 trio on 10-20, Seed 1.6 on 11-11, GLM 4.5/4.7 on 12-31.
+- Remote config: a maintainer had merged #1873 into `remote_config` at 14:18 UTC. The four source files still differed from `main` by a comment sweep, so the run generated the config from both refs, found the JSON identical, and opened nothing. That check is now in the skill.
+- State it noted: #1854 merged, #1872 closed by a human, #1871 with its review thread resolved and Author Review ticked. No PR, no Slack post, one mobile push about the 10-08/10-09 expiries. Work branch deleted at the end.
