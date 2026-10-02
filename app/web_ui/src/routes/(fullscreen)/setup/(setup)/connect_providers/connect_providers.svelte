@@ -498,9 +498,7 @@
         setCopilotConnected(false)
       }
 
-      // Clear the available models list
       available_tuning_models.set(null)
-      // Clear the available models cache so it refreshes next time
       clear_available_models_cache()
     } catch (e) {
       console.error("disconnect_provider error", e)
@@ -598,7 +596,6 @@
     }
     status.ollama.error = null
     status.ollama.connected = true
-    // Clear the available models cache so it refreshes next time
     clear_available_models_cache()
     const supported_models_str =
       data.supported_models.length > 0
@@ -676,7 +673,6 @@
     }
     status.docker_model_runner.error = null
     status.docker_model_runner.connected = true
-    // Clear the available models cache so it refreshes next time
     clear_available_models_cache()
     const supported_models_str =
       data.supported_models.length > 0
@@ -751,9 +747,7 @@
       status[provider_id].connected = true
       dismiss_api_key_dialog()
 
-      // Clear the available models list
       available_tuning_models.set(null)
-      // Clear the available models cache so it refreshes next time
       clear_available_models_cache()
     } catch (e) {
       console.error("submit_api_key error", e)
@@ -925,7 +919,6 @@
       new_provider_error = null
 
       status.openai_compatible.connected = true
-      // Clear the available models cache so it refreshes next time
       clear_available_models_cache()
       // @ts-expect-error daisyui does not add types
       document.getElementById("openai_compatible_dialog")?.close()
@@ -965,7 +958,6 @@
       if (custom_openai_compatible_providers.length === 0) {
         status.openai_compatible.connected = false
       }
-      // Clear the available models cache so it refreshes next time
       clear_available_models_cache()
     } catch (e) {
       alert("Failed to remove provider: " + e)

@@ -1,3 +1,5 @@
+"""Kiln's built-in model list: model families and names, per-provider model configs, and lookup helpers."""
+
 from enum import Enum
 from typing import List
 
@@ -9,12 +11,6 @@ from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
 )
-
-"""
-Provides model configuration and management for various LLM providers and models.
-This module handles the integration with different AI model providers and their respective models,
-including configuration, validation, and instantiation of language models.
-"""
 
 
 class ModelFamily(str, Enum):

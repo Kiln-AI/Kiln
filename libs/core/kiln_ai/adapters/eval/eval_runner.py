@@ -75,8 +75,8 @@ class EvalJob:
 def _calibration_item(job: EvalJob) -> TaskRun | None:
     """The golden TaskRun a calibration job scores, or None if this isn't calibration.
 
-    Calibration generates nothing: the human-rated dataset item *is* what gets scored
-    (functional spec 4.5). So the trace is known before the job starts, and stays known
+    Calibration generates nothing: the human-rated dataset item *is* what gets scored.
+    So the trace is known before the job starts, and stays known
     even for a job that is skipped before it reaches the judge — which is why both the
     scoring path and the skip path ask here rather than each deciding for themselves.
     """
@@ -184,7 +184,7 @@ def no_golden_set_message(eval: Eval) -> str:
     """Why judge comparison can't run without a golden set. One wording, two raisers.
 
     Shared with the API layer so the 4xx a user sees and the ValueError a library caller
-    sees say the same thing (functional spec 9, architecture 4.3).
+    sees say the same thing.
     """
     return (
         f"Eval '{eval.id}' has no golden set configured. Comparing judges scores them "
@@ -278,7 +278,7 @@ class EvalRunner:
         self._save_context: SaveContext = save_context or default_save_context
         # Live, not precomputed like `already_run`: a trace persisted by one job has to be
         # visible to the next, whether that next job is running concurrently under a
-        # different eval config or is this job's own retry (functional spec 4.2, 4.3).
+        # different eval config or is this job's own retry.
         self._trace_index = TraceIndex(self.task)
 
     def collect_tasks(self) -> List[EvalJob]:
@@ -691,7 +691,7 @@ class EvalRunner:
         The single place the item-identity fields are filled in, because `collect_tasks`
         dedupes on exactly those: a skip record and a score record that disagreed would
         be two identities for one job. No inline trace field is ever set — they are
-        deprecated, and the trace lives on the TaskRun (functional spec 3.2).
+        deprecated, and the trace lives on the TaskRun.
         """
         async with self._save_context():
             EvalRun(
@@ -718,9 +718,9 @@ class EvalRunner:
 
         Calibration still names its trace: the golden item *is* what would have been
         scored, it is already on disk, and a skip that happens one step later — inside
-        `evaluate()` — records it (functional spec 4.6, row 2). Where the failure
-        happened shouldn't change the record's shape, and Phase 5 migrates old
-        calibration skips to exactly this.
+        `evaluate()` — records it. Where the failure happened shouldn't change the
+        record's shape, and the `migrate-eval-runs` command converts old calibration skips
+        to exactly this.
 
         A scoring job genuinely has nothing to point at. Generating a trace for a job
         that can never be scored is the spend these early skips exist to avoid.
@@ -742,8 +742,7 @@ class EvalRunner:
         """The score for one item, pointing at the trace it was computed over.
 
         Also the home of a scoring-time skip: the trace exists and this judge could not
-        score it, so the record carries both `scored_run_id` and `skipped_reason`
-        (functional spec 4.6, row 2).
+        score it, so the record carries both `scored_run_id` and `skipped_reason`.
         """
         return await self._persist_score(
             job,

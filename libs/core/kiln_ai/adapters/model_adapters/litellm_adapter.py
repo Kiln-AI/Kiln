@@ -169,7 +169,6 @@ class LiteLlmAdapter(BaseAdapter):
         message_usage: dict[int, MessageUsage] = {}
 
         while tool_calls_count < MAX_TOOL_CALLS_PER_TURN:
-            # Build completion kwargs for tool calls
             completion_kwargs = await self.build_completion_kwargs(
                 provider,
                 # Pass a copy, as acompletion mutates objects and breaks types.

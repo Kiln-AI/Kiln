@@ -2,15 +2,14 @@
 
 Reuse is keyed on `(source_type, source_id, run_config_id)` — the dataset item plus the
 run config, and deliberately not the eval config. That is what lets a second judge score
-generations the first judge already paid for (functional spec §2.1).
+generations the first judge already paid for.
 
 The lookup has to be live, not precomputed like the `already_run` set in
 `EvalRunner.collect_tasks`. A set built before the first job runs cannot see a trace
 persisted by another job in the same run, and `AsyncJobRunner` runs 25 of them at once:
 two jobs sharing an item and a run config but differing in eval config would both miss
 and both generate, spending exactly the money this exists to save. The same liveness is
-what makes a retry after a scoring failure re-score rather than regenerate
-(functional spec §4.2, §4.3).
+what makes a retry after a scoring failure re-score rather than regenerate.
 """
 
 import json
@@ -118,7 +117,7 @@ class TraceIndex:
 
         Returns `(trace, was_generated)`. `generate` must persist the TaskRun before
         returning, stamped so the run files itself under `key`: the trace has to be
-        durable before scoring is attempted (functional spec §4.1), and durable is only
+        durable before scoring is attempted, and durable is only
         useful if the next run can find it.
 
         Callers racing on one key are serialized, and all but the first reuse the
@@ -144,9 +143,8 @@ class TraceIndex:
             trace = TaskRun.load_from_file(path)
         except FileNotFoundError:
             # The trace was deleted out from under us — sync, or an external delete that
-            # never went through the API's 409 guard. Architecture §8's posture for a
-            # missing trace is to degrade, not to cascade: drop the entry and regenerate,
-            # rather than failing every job that wanted it.
+            # never went through the API's 409 guard. Degrade rather than cascade: drop
+            # the entry and regenerate, rather than failing every job that wanted it.
             logger.warning(
                 "Indexed eval trace for %s is gone from %s; regenerating", key, path
             )

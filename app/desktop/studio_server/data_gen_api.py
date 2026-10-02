@@ -387,13 +387,8 @@ async def _generate_one_input(
     The data guide and the prompt go to the model as separate blocks: the guide
     constrains every input, the prompt only this one.
     """
-    # The batch flow decides up front whether to use the data guide (the "Use
-    # Data Guide" toggle) and sends the guide text when on, None when off. So
-    # honour that literally — do NOT fall back to the task's saved guide the way
-    # `_resolve_data_guide` does for the legacy flow, where None means "no
-    # override given". Falling back here would silently ignore the toggle, and
-    # would disagree with the batch planner, which already passes the client's
-    # choice straight through.
+    # None means the "Use Data Guide" toggle is off, so unlike `_resolve_data_guide`
+    # this must not fall back to the task's saved guide.
     data_guide_section = (
         _data_guide_guidance(task, "inputs", data_guide) if data_guide else None
     )
