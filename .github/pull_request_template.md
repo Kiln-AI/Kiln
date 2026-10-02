@@ -9,10 +9,10 @@
 - [ ] Small change, no architecture review needed
 - [ ] Requesting architecture review exception for other reason: `NA`
 
-**Review Style Requested (select 1)**
-- [ ] Full Agentic: only AI Review. `[Reason why if selecting this option]`
-- [ ] Mixed: AI for some areas, human sign-off on others
-- [ ] Full human
+**Review Requested from Code Reviewer (select 1)**
+- [ ] Sign off on AI-only review: `[reason - required if selected]`
+- [ ] Mixed: human review of some areas, AI on others (details below)
+- [ ] Full human: human reads everything
 
 **Agentic Code Review (must check all before requesting CR)**
 - [ ] I have run `/spec deep cr` on this PR or used `/spec` CRs throughout
