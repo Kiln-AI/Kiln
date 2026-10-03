@@ -669,14 +669,15 @@ class EvalRunner:
             logger.warning(f"Retrying eval job for dataset item {job.item.id}: {e}")
             raise
         except Exception as e:
-            if is_retryable_error(e):
+            root = unwrap_kiln_run_error(e)
+            if isinstance(root, OpenEnvTransientError) or is_retryable_error(e):
                 logger.error(
                     f"Transient error running eval job for dataset item {job.item.id}: {e}",
                     exc_info=True,
                 )
                 # KilnRunError's own message is genericized user-facing text; keep
                 # the underlying provider detail for the developer-facing error log.
-                raise RetryableError(str(unwrap_kiln_run_error(e))) from e
+                raise RetryableError(str(root)) from e
             logger.error(
                 f"Error running eval job for dataset item {job.item.id}: {e}",
                 exc_info=True,

@@ -194,7 +194,7 @@ def connect_world_api(app: FastAPI):
         tags=["Worlds"],
         openapi_extra=agent_policy_require_approval("Allow agent to delete a world?"),
     )
-    async def delete_world(
+    def delete_world(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -202,7 +202,20 @@ def connect_world_api(app: FastAPI):
             str, Path(description="The unique identifier of the world.")
         ],
     ) -> None:
-        _world_from_id(project_id, world_id).delete()
+        world = _world_from_id(project_id, world_id)
+        project = project_from_id(project_id)
+        for task in project.tasks(readonly=True):
+            for eval_input in task.eval_inputs(readonly=True):
+                if (
+                    eval_input.world_reset is not None
+                    and eval_input.world_reset.world_id == world_id
+                ):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Cannot delete world: it is referenced by a saved eval input. "
+                        "Remove the referencing eval inputs first.",
+                    )
+        world.delete()
 
     @app.get(
         "/api/projects/{project_id}/worlds/{world_id}/tools",

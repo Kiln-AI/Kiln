@@ -46,6 +46,7 @@ tool-call checks read the same.
 
 from __future__ import annotations
 
+from ipaddress import ip_address
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
@@ -150,8 +151,7 @@ class World(KilnParentedModel):
     @field_validator("env_url")
     @classmethod
     def validate_env_url(cls, value: str | None) -> str | None:
-        """Require an http(s) URL with a host, so a typo fails when the world is saved
-        rather than when an eval first connects."""
+        """Require HTTPS, or HTTP for localhost and loopback IP addresses."""
         if value is None:
             return None
         parts = urlsplit(value)
@@ -159,4 +159,14 @@ class World(KilnParentedModel):
             raise ValueError(
                 f"env_url must be an http:// or https:// URL with a host, got {value!r}"
             )
+        if parts.scheme == "http" and parts.hostname != "localhost":
+            try:
+                is_loopback = ip_address(parts.hostname).is_loopback
+            except ValueError:
+                is_loopback = False
+            if not is_loopback:
+                raise ValueError(
+                    "env_url must use HTTPS; HTTP is only allowed for loopback hosts "
+                    "(localhost or a loopback IP address)"
+                )
         return value

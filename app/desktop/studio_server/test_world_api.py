@@ -3,9 +3,11 @@ from unittest.mock import patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from kiln_ai.datamodel.eval import EvalInput, SingleTurnEvalInputData, UserMessage
 from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import build_world_tool_id
-from kiln_ai.datamodel.world import World
+from kiln_ai.datamodel.world import World, WorldReset
 from kiln_ai.worlds.session_manager import OpenEnvSessionManager
 from kiln_ai.worlds.testing import (
     ENV_NAME,
@@ -118,6 +120,81 @@ class TestWorlds:
         assert client.delete(f"/api/projects/p1/worlds/{world_id}").status_code == 200
         assert client.get(f"/api/projects/p1/worlds/{world_id}").status_code == 404
         assert client.get("/api/projects/p1/worlds").json() == []
+
+    @pytest.mark.parametrize("referenced", [True, False])
+    def test_delete_checks_saved_eval_inputs(
+        self, client, project, world_id, referenced
+    ):
+        for index in range(2):
+            task = Task(name=f"Task {index}", instruction="test", parent=project)
+            task.save_to_file()
+            eval_input = EvalInput(
+                parent=task,
+                data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
+                world_reset=WorldReset(
+                    world_id=world_id if referenced else "another_world"
+                )
+                if index == 1
+                else None,
+            )
+            eval_input.save_to_file()
+        world_path = _world(project, world_id).path
+        original = world_path.read_bytes()
+
+        response = client.delete(f"/api/projects/p1/worlds/{world_id}")
+
+        if referenced:
+            assert response.status_code == 409
+            assert "eval input" in response.json()["message"]
+            assert world_path.read_bytes() == original
+            eval_input.delete()
+            assert (
+                client.delete(f"/api/projects/p1/worlds/{world_id}").status_code == 200
+            )
+        else:
+            assert response.status_code == 200
+        assert not world_path.exists()
+
+    @pytest.mark.parametrize(
+        "env_url, allowed",
+        [
+            ("http://localhost:8123", True),
+            ("http://LOCALHOST:8123", True),
+            ("http://127.0.0.1:8123", True),
+            ("http://127.12.34.56:8123", True),
+            ("http://[::1]:8123", True),
+            ("https://example.com/env", True),
+            ("https://192.168.1.2:8123", True),
+            ("http://example.com/env", False),
+            ("http://localhost.example.com", False),
+            ("http://localhost@example.com", False),
+            ("http://192.168.1.2:8123", False),
+            ("http://0.0.0.0:8123", False),
+            ("http://[::]:8123", False),
+            ("http://[2001:db8::1]:8123", False),
+        ],
+    )
+    @pytest.mark.parametrize("method", ["post", "patch"])
+    def test_env_url_transport(
+        self, client, project, world_id, env_url, allowed, method
+    ):
+        url = "/api/projects/p1/worlds"
+        body = {"env_url": env_url}
+        if method == "post":
+            body["name"] = "New world"
+        else:
+            url += f"/{world_id}"
+        response = client.request(method, url, json=body)
+        if allowed:
+            assert response.status_code == 200, response.text
+            assert response.json()["env_url"] == env_url
+        else:
+            assert response.status_code == 400
+            assert (
+                "HTTP is only allowed for loopback hosts" in response.json()["message"]
+            )
+            assert _world(project, world_id).env_url == "http://localhost:8123"
+            assert len(project.worlds()) == 1
 
     def test_invalid_name(self, client):
         r = client.post("/api/projects/p1/worlds", json={"name": "   "})
