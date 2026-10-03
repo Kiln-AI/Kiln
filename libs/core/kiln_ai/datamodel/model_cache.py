@@ -53,9 +53,12 @@ class ModelCache:
         return cached_mtime_ns == current_mtime_ns
 
     def _get_model(self, path: Path, model_type: Type[T]) -> Optional[T]:
-        if path not in self.model_cache:
+        # One dict call, not a membership test and then an index: another thread
+        # can remove the entry between the two, and the index raises KeyError.
+        entry = self.model_cache.get(path)
+        if entry is None:
             return None
-        model, cached_mtime_ns = self.model_cache[path]
+        model, cached_mtime_ns = entry
         if not self._is_cache_valid(path, cached_mtime_ns):
             self.invalidate(path)
             return None
@@ -100,8 +103,9 @@ class ModelCache:
         self.model_cache[path] = (model, mtime_ns)
 
     def invalidate(self, path: Path):
-        if path in self.model_cache:
-            del self.model_cache[path]
+        # pop() with a default is one dict call, so two threads that invalidate the
+        # same path at once cannot both pass a membership test and then both delete.
+        self.model_cache.pop(path, None)
 
     def clear(self):
         self.model_cache.clear()
