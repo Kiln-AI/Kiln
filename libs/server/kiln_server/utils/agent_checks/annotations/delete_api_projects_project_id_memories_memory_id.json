@@ -1,0 +1,8 @@
+{
+  "method": "delete",
+  "path": "/api/projects/{project_id}/memories/{memory_id}",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}
