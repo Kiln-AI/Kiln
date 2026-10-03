@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Dict, List, Literal, Set
@@ -56,12 +57,21 @@ from kiln_ai.synthetic_user.models import (
     TAG_SU_ENDED_CONVERSATION,
     SyntheticUserDriverConfig,
 )
-from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
+from kiln_ai.utils.async_job_runner import (
+    AsyncJobRunner,
+    AsyncJobRunnerObserver,
+    Progress,
+    RetryableError,
+)
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam, serialize_trace
 from kiln_ai.utils.slow_operation import log_if_slow
 
 logger = logging.getLogger(__name__)
+
+
+DEFAULT_EVAL_CONCURRENCY = 25
+"""How many eval items `EvalRunner.run()` evaluates in parallel when the caller passes no `concurrency`."""
 
 
 @dataclass
@@ -214,7 +224,10 @@ class EvalRunner:
         eval_run_type: Literal["eval_config_eval", "task_run_eval"],
         split: ResolvedSplit | None = None,
         save_context: SaveContext | None = None,
+        item_ids: Set[ID_TYPE] | None = None,
     ):
+        """`item_ids` runs only these items of the split (task_run_eval mode only).
+        Ids outside the split are ignored. None runs the whole split."""
         if len(eval_configs) == 0:
             raise ValueError("Eval runner requires at least one eval config")
         target_eval = eval_configs[0].parent_eval()
@@ -268,6 +281,9 @@ class EvalRunner:
                 raise ValueError(no_golden_set_message(target_eval))
             self.golden_filter_id = target_eval.eval_configs_filter_id
 
+        if item_ids is not None and eval_run_type != "task_run_eval":
+            raise ValueError("item_ids narrows a task_run_eval split only")
+        self.item_ids = item_ids
         self.eval_run_type = eval_run_type
         self.eval_configs = eval_configs
         self.run_configs = run_configs
@@ -367,6 +383,7 @@ class EvalRunner:
                 eval_config=eval_config,
             )
             for item in self.split.items
+            if self.item_ids is None or item.id in self.item_ids
             for eval_config in self.eval_configs
             for run_config in self.run_configs or []
             if (self.split.source, item.id)
@@ -402,10 +419,13 @@ class EvalRunner:
         """
         if self.eval_run_type != "task_run_eval" or self.split is None:
             return
+        # Only the items this runner will work: an `item_ids` subset must not be
+        # blocked by multi-turn items it does not select.
         multi_turn_items = [
             item.data
             for item in self.split.items
-            if isinstance(item, EvalInput)
+            if (self.item_ids is None or item.id in self.item_ids)
+            and isinstance(item, EvalInput)
             and isinstance(item.data, MultiTurnSyntheticEvalInputData)
         ]
         if not multi_turn_items:
@@ -466,17 +486,34 @@ class EvalRunner:
             merged.update(skills)
         return merged
 
-    async def run(self, concurrency: int = 25) -> AsyncGenerator[Progress, None]:
+    async def run(
+        self,
+        concurrency: int | None = None,
+        observers: list[AsyncJobRunnerObserver[EvalJob]] | None = None,
+        max_retries: int = 2,
+        retry_delay: float = 1.0,
+    ) -> AsyncGenerator[Progress, None]:
         """
         Runs the configured eval run with parallel workers and yields progress updates.
+
+        `observers` are notified per item, for example to record the exception of a
+        failed item: `Progress.errors` is only a count. `concurrency` bounds how many
+        items run in parallel; None uses DEFAULT_EVAL_CONCURRENCY. `max_retries` and
+        `retry_delay` set how often, and after what backoff, an item that fails with a
+        transient error runs again before its error is reported.
         """
-        jobs = self.collect_tasks()
+        if concurrency is None:
+            concurrency = DEFAULT_EVAL_CONCURRENCY
+        # Collecting reads every existing EvalRun of each eval config off disk.
+        jobs = await asyncio.to_thread(self.collect_tasks)
 
         runner = AsyncJobRunner(
             concurrency=concurrency,
             jobs=jobs,
             run_job_fn=self.run_job,
-            max_retries=2,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            observers=observers,
         )
         async for progress in runner.run():
             yield progress
