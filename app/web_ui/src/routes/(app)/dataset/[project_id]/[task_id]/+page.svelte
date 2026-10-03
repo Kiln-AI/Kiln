@@ -511,6 +511,52 @@
       await get_runs(project_id, task_id)
     }
   }
+
+  // Reactive stats based on filtered runs
+  let stats = {
+    total: 0,
+    filtered_total: 0,
+    is_filtered: false,
+    rated: 0,
+    unrated: 0,
+    average_rating: null as number | null,
+    rating_type: "" as string,
+  }
+
+  $: if (runs && filtered_runs) {
+    const is_filt = filter_tags.length > 0
+    const active_runs = filtered_runs
+    const rated = active_runs.filter(
+      (r) => r.rating?.value !== undefined && r.rating?.value !== null,
+    )
+    const rated_count = rated.length
+
+    let avg: number | null = null
+    let r_type = ""
+    if (rated_count > 0) {
+      const sum = rated.reduce((acc, r) => acc + (r.rating?.value ?? 0), 0)
+      avg = Math.round((sum / rated_count) * 10) / 10
+      const first_type = rated[0].rating?.type
+      if (first_type === "five_star") {
+        r_type = "★"
+      } else if (
+        first_type === "pass_fail" ||
+        first_type === "pass_fail_critical"
+      ) {
+        r_type = "(score)"
+      }
+    }
+
+    stats = {
+      total: runs.length,
+      filtered_total: filtered_runs.length,
+      is_filtered: is_filt,
+      rated: rated_count,
+      unrated: filtered_runs.length - rated_count,
+      average_rating: avg,
+      rating_type: r_type,
+    }
+  }
 </script>
 
 <AppPage
@@ -536,6 +582,79 @@
       <EmptyIntro {project_id} {task_id} />
     </div>
   {:else if runs}
+    <!-- Stats Section -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 mt-4">
+      <div class="stats shadow bg-base-100 border border-base-200">
+        <div class="stat">
+          <div class="stat-title text-xs uppercase font-semibold text-gray-500">
+            Total Runs
+          </div>
+          <div class="stat-value text-2xl mt-1 font-bold">
+            {#if stats.is_filtered}
+              {stats.filtered_total}
+              <span class="text-sm font-normal text-gray-400"
+                >of {stats.total}</span
+              >
+            {:else}
+              {stats.total}
+            {/if}
+          </div>
+          <div class="stat-desc mt-1 text-xs text-gray-400">
+            {#if stats.is_filtered}
+              Filtered by active tags
+            {:else}
+              All runs in dataset
+            {/if}
+          </div>
+        </div>
+      </div>
+
+      <div class="stats shadow bg-base-100 border border-base-200">
+        <div class="stat">
+          <div class="stat-title text-xs uppercase font-semibold text-gray-500">
+            Rating Progress
+          </div>
+          <div class="stat-value text-2xl mt-1 font-bold">
+            {stats.rated}
+            <span class="text-sm font-normal text-gray-400"
+              >/ {stats.filtered_total}</span
+            >
+          </div>
+          <div class="stat-desc mt-1 text-xs text-gray-400">
+            {#if stats.filtered_total > 0}
+              {Math.round((stats.rated / stats.filtered_total) * 100)}% rated ({stats.unrated}
+              remaining)
+            {:else}
+              0% rated
+            {/if}
+          </div>
+        </div>
+      </div>
+
+      <div class="stats shadow bg-base-100 border border-base-200">
+        <div class="stat">
+          <div class="stat-title text-xs uppercase font-semibold text-gray-500">
+            Average Rating
+          </div>
+          <div class="stat-value text-2xl mt-1 font-bold">
+            {#if stats.average_rating !== null}
+              {stats.average_rating}
+              <span class="text-base text-warning">{stats.rating_type}</span>
+            {:else}
+              <span class="text-gray-400 text-lg font-normal">No ratings</span>
+            {/if}
+          </div>
+          <div class="stat-desc mt-1 text-xs text-gray-400">
+            {#if stats.rated > 0}
+              Based on {stats.rated} rated runs
+            {:else}
+              Rate runs to see average
+            {/if}
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="mb-4">
       <div
         class="flex flex-row items-center justify-end py-2 gap-3 {select_mode
