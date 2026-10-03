@@ -4,5 +4,28 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      }
+    },
+    "query": {
+      "update_status": {
+        "type": "boolean",
+        "description": "Whether to update the status of each finetune.",
+        "default": false,
+        "title": "Update Status"
+      }
+    }
   }
 }

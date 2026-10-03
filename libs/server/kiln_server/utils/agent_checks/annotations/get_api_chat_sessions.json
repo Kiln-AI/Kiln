@@ -4,5 +4,23 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {},
+    "query": {
+      "limit": {
+        "type": "integer",
+        "description": "Maximum number of sessions to return",
+        "default": 50,
+        "title": "Limit"
+      },
+      "offset": {
+        "type": "integer",
+        "description": "Number of sessions to skip",
+        "default": 0,
+        "title": "Offset"
+      }
+    }
   }
 }

@@ -5,5 +5,58 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Plan a synthetic batch with Copilot?"
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "guidance": {
+          "type": "string",
+          "title": "Guidance",
+          "description": "User guidance describing this batch (distribution, focus, edge cases).",
+          "default": ""
+        },
+        "count": {
+          "type": "integer",
+          "maximum": 200.0,
+          "minimum": 1.0,
+          "title": "Count",
+          "description": "Number of inputs to plan \u2014 the planner returns one prompt per input."
+        },
+        "data_guide": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Data Guide",
+          "description": "The task's input data guide (input profile) to include, or null to omit."
+        }
+      },
+      "type": "object",
+      "required": [
+        "count"
+      ],
+      "title": "BatchPlanApiInput"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      }
+    },
+    "query": {}
   }
 }

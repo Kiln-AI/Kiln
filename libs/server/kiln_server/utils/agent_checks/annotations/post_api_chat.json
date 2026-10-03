@@ -4,5 +4,70 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "messages": {
+          "items": {
+            "properties": {
+              "role": {
+                "type": "string",
+                "title": "Role"
+              },
+              "content": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Content"
+              }
+            },
+            "additionalProperties": true,
+            "type": "object",
+            "required": [
+              "role"
+            ],
+            "title": "ChatRequestMessage"
+          },
+          "type": "array",
+          "title": "Messages"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Trace Id"
+        }
+      },
+      "additionalProperties": true,
+      "type": "object",
+      "required": [
+        "messages"
+      ],
+      "title": "ChatRequest"
+    }
+  },
+  "parameters": {
+    "path": {},
+    "query": {}
   }
 }

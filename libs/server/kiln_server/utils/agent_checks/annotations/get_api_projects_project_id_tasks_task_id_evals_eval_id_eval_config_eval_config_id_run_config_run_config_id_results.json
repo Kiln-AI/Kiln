@@ -4,5 +4,47 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      },
+      "eval_id": {
+        "type": "string",
+        "description": "The unique identifier of the eval.",
+        "title": "Eval Id"
+      },
+      "eval_config_id": {
+        "type": "string",
+        "description": "The unique identifier of the eval configuration.",
+        "title": "Eval Config Id"
+      },
+      "run_config_id": {
+        "type": "string",
+        "description": "The unique identifier of the run configuration.",
+        "title": "Run Config Id"
+      }
+    },
+    "query": {
+      "split": {
+        "enum": [
+          "train",
+          "val",
+          "test"
+        ],
+        "type": "string",
+        "description": "Which of the eval's dataset splits to return results for. Required: every response about eval results is scoped to exactly one split, and reading has no obvious default the way running does.",
+        "title": "Split"
+      }
+    }
   }
 }

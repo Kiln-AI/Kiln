@@ -5,5 +5,67 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Allow agent to run Python code on your machine? It may call your tools, with side effects."
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "tool_function_name": {
+          "type": "string",
+          "title": "Tool Function Name"
+        },
+        "tool_description": {
+          "type": "string",
+          "title": "Tool Description",
+          "default": "test"
+        },
+        "parameters_schema": {
+          "additionalProperties": true,
+          "type": "object",
+          "title": "Parameters Schema"
+        },
+        "code": {
+          "type": "string",
+          "title": "Code"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "title": "Timeout Seconds",
+          "default": 60
+        },
+        "tool_allowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Tool Allowlist"
+        },
+        "params": {
+          "additionalProperties": true,
+          "type": "object",
+          "title": "Params",
+          "description": "Invocation arguments for the test."
+        }
+      },
+      "type": "object",
+      "required": [
+        "tool_function_name",
+        "parameters_schema",
+        "code",
+        "params"
+      ],
+      "title": "TestCodeToolRequest"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      }
+    },
+    "query": {}
   }
 }

@@ -4,5 +4,16 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {},
+    "query": {
+      "name": {
+        "type": "string",
+        "description": "Name of the OpenAI compatible provider to delete.",
+        "title": "Name"
+      }
+    }
   }
 }

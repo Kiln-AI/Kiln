@@ -67,8 +67,9 @@ jobs:
           TEMP_DIR=$(mktemp -d)
 
           echo "Checking for unannotated endpoints..."
+          APP_VERSION=$(uv run python -c 'from app.desktop.studio_server._version import __version__; print(__version__)')
           uv run python -m kiln_server.utils.agent_checks.dump_annotations \
-            http://localhost:8757/openapi.json "$TEMP_DIR"
+            http://localhost:8757/openapi.json "$TEMP_DIR" --api-version "$APP_VERSION"
 
           echo "Checking annotation files are up to date..."
           DIFF_FAILED=false
@@ -88,7 +89,8 @@ jobs:
             echo ""
             echo -e "\033[31mAgent policy annotations are not up to date.\033[0m"
             echo "Run the dump CLI to regenerate:"
-            echo "  uv run python -m kiln_server.utils.agent_checks.dump_annotations http://localhost:8757/openapi.json $ANNOTATIONS_DIR"
+            echo "  make annotations"
+            echo "(A version bump alone changes _manifest.json, so re-run it after bumping the app version.)"
             rm -rf "$TEMP_DIR"
             kill $DEV_SERVER_PID || true
             exit 1

@@ -4,5 +4,47 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "tool_id": {
+          "type": "string",
+          "title": "Tool Id",
+          "description": "The tool ID to create the task from."
+        },
+        "task_name": {
+          "type": "string",
+          "title": "Task Name",
+          "description": "The name for the new task."
+        },
+        "instruction": {
+          "type": "string",
+          "minLength": 1,
+          "title": "Instruction",
+          "description": "The instruction for the new task."
+        }
+      },
+      "type": "object",
+      "required": [
+        "tool_id",
+        "task_name",
+        "instruction"
+      ],
+      "title": "CreateTaskFromToolRequest",
+      "description": "Request to create a new task from an MCP tool."
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      }
+    },
+    "query": {}
   }
 }

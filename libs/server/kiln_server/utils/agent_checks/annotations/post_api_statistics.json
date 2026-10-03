@@ -4,5 +4,197 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "proportion_ci",
+            "compare_proportions",
+            "mcnemar_paired",
+            "compare_paired"
+          ],
+          "title": "Operation",
+          "description": "Which test to run (see the per-field [operation] tags for the params each one takes)."
+        },
+        "confidence": {
+          "type": "number",
+          "exclusiveMaximum": 1.0,
+          "exclusiveMinimum": 0.0,
+          "title": "Confidence",
+          "description": "Confidence level in (0,1). Default 0.95.",
+          "default": 0.95
+        },
+        "proportion": {
+          "anyOf": [
+            {
+              "type": "number",
+              "maximum": 1.0,
+              "minimum": 0.0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Proportion",
+          "description": "[proportion_ci] the proportion as a fraction in [0,1] (e.g. 0.85)."
+        },
+        "n": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1.0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "N",
+          "description": "[proportion_ci] sample size (> 0)."
+        },
+        "proportion_a": {
+          "anyOf": [
+            {
+              "type": "number",
+              "maximum": 1.0,
+              "minimum": 0.0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Proportion A",
+          "description": "[compare_proportions] baseline proportion in [0,1]."
+        },
+        "n_a": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1.0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "N A",
+          "description": "[compare_proportions] baseline sample size (> 0)."
+        },
+        "proportion_b": {
+          "anyOf": [
+            {
+              "type": "number",
+              "maximum": 1.0,
+              "minimum": 0.0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Proportion B",
+          "description": "[compare_proportions] treatment proportion in [0,1]."
+        },
+        "n_b": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1.0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "N B",
+          "description": "[compare_proportions] treatment sample size (> 0)."
+        },
+        "outcomes_a": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Outcomes A",
+          "description": "[mcnemar_paired] per-item baseline outcomes (0=fail, 1=pass). outcomes_a[i] and outcomes_b[i] must be the SAME item."
+        },
+        "outcomes_b": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Outcomes B",
+          "description": "[mcnemar_paired] per-item treatment outcomes (0/1), positionally paired with outcomes_a."
+        },
+        "values_a": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Values A",
+          "description": "[compare_paired] per-case baseline values (null allowed \u2014 that pair is skipped). values_a[i] and values_b[i] must be the same case."
+        },
+        "values_b": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Values B",
+          "description": "[compare_paired] per-case treatment values (null allowed), positionally paired with values_a."
+        }
+      },
+      "type": "object",
+      "required": [
+        "operation"
+      ],
+      "title": "StatisticsRequest",
+      "description": "Input for ``POST /api/statistics``. Set ``operation`` and the params it needs."
+    }
+  },
+  "parameters": {
+    "path": {},
+    "query": {}
   }
 }

@@ -5,5 +5,45 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Running prompt optimizer uses many credits"
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "target_run_config_id": {
+          "type": "string",
+          "title": "Target Run Config Id"
+        },
+        "eval_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Eval Ids"
+        }
+      },
+      "type": "object",
+      "required": [
+        "target_run_config_id",
+        "eval_ids"
+      ],
+      "title": "StartPromptOptimizationJobRequest"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      }
+    },
+    "query": {}
   }
 }

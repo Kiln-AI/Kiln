@@ -5,5 +5,121 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Run Copilot spec refinement?"
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "target_task_info": {
+          "properties": {
+            "task_prompt": {
+              "type": "string",
+              "title": "Task Prompt",
+              "description": "The task's prompt."
+            },
+            "task_input_schema": {
+              "type": "string",
+              "title": "Task Input Schema",
+              "description": "The task's input JSON schema."
+            },
+            "task_output_schema": {
+              "type": "string",
+              "title": "Task Output Schema",
+              "description": "The task's output JSON schema."
+            }
+          },
+          "type": "object",
+          "required": [
+            "task_prompt",
+            "task_input_schema",
+            "task_output_schema"
+          ],
+          "title": "TaskInfoApi",
+          "description": "Task information for copilot API calls."
+        },
+        "target_specification": {
+          "properties": {
+            "spec_fields": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object",
+              "title": "Spec Fields"
+            },
+            "spec_field_current_values": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object",
+              "title": "Spec Field Current Values"
+            }
+          },
+          "type": "object",
+          "required": [
+            "spec_fields",
+            "spec_field_current_values"
+          ],
+          "title": "SpecApi",
+          "description": "Spec field information for refinement."
+        },
+        "examples_with_feedback": {
+          "items": {
+            "properties": {
+              "user_agrees_with_judge": {
+                "type": "boolean",
+                "title": "User Agrees With Judge"
+              },
+              "input": {
+                "type": "string",
+                "title": "Input"
+              },
+              "output": {
+                "type": "string",
+                "title": "Output"
+              },
+              "fails_specification": {
+                "type": "boolean",
+                "title": "Fails Specification"
+              },
+              "user_feedback": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Feedback"
+              }
+            },
+            "type": "object",
+            "required": [
+              "user_agrees_with_judge",
+              "input",
+              "output",
+              "fails_specification"
+            ],
+            "title": "ExampleWithFeedbackApi",
+            "description": "An example with user feedback for spec refinement."
+          },
+          "type": "array",
+          "title": "Examples With Feedback"
+        }
+      },
+      "type": "object",
+      "required": [
+        "target_task_info",
+        "target_specification",
+        "examples_with_feedback"
+      ],
+      "title": "RefineSpecApiInput",
+      "description": "Input for refining a spec based on feedback."
+    }
+  },
+  "parameters": {
+    "path": {},
+    "query": {}
   }
 }

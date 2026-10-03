@@ -4,5 +4,58 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "examples": {
+          "items": {
+            "properties": {
+              "input": {
+                "type": "string",
+                "title": "Input",
+                "description": "The example input."
+              },
+              "output": {
+                "type": "string",
+                "title": "Output",
+                "description": "The example output."
+              }
+            },
+            "type": "object",
+            "required": [
+              "input",
+              "output"
+            ],
+            "title": "FewShotExample",
+            "description": "An input/output example for few-shot prompting."
+          },
+          "type": "array",
+          "title": "Examples",
+          "description": "Few-shot examples to include in the prompt.",
+          "default": []
+        }
+      },
+      "type": "object",
+      "title": "BuildPromptRequest",
+      "description": "Request to build a prompt from examples."
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      }
+    },
+    "query": {}
   }
 }
