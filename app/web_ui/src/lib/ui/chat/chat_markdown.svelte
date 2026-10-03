@@ -2,6 +2,7 @@
   import { Marked, type Token } from "marked"
   import DOMPurify from "dompurify"
   import hljs from "highlight.js/lib/core"
+  import { escapeHtml } from "$lib/utils/escape_html"
   import json from "highlight.js/lib/languages/json"
   import javascript from "highlight.js/lib/languages/javascript"
   import typescript from "highlight.js/lib/languages/typescript"
@@ -18,14 +19,6 @@
   hljs.registerLanguage("bash", bash)
   hljs.registerLanguage("shell", bash)
   hljs.registerLanguage("sh", bash)
-
-  function escapeHtml(s: string): string {
-    return s
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-  }
 
   const md = new Marked({
     gfm: true,
