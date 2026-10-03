@@ -67,6 +67,7 @@ from kiln_ai.synthetic_user.models import TAG_SU_ENDED_CONVERSATION
 from kiln_ai.utils.async_job_runner import RetryableError
 from kiln_ai.utils.git_sync_protocols import default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+from kiln_ai.worlds.session_manager import OpenEnvError, OpenEnvTransientError
 
 
 def build_task_run_eval_runner(
@@ -1271,6 +1272,53 @@ async def test_run_job_wrapped_rate_limit_raises_retryable_with_detail(
     assert "rate limit exceeded, please try again later" in str(exc_info.value)
     assert "An unexpected error occurred" not in str(exc_info.value)
     assert len(mock_eval_config.runs()) == 0
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+@pytest.mark.parametrize("transient", [False, True])
+@pytest.mark.parametrize("config_type", [EvalConfigType.v2, EvalConfigType.g_eval])
+async def test_run_job_openenv_error_classification(
+    mock_eval_runner,
+    mock_task,
+    mock_run_config,
+    mock_eval,
+    wrapped,
+    transient,
+    config_type,
+):
+    error = (OpenEnvTransientError if transient else OpenEnvError)("Environment failed")
+    failure = (
+        KilnRunError(message="Run failed", partial_trace=None, original=error)
+        if wrapped
+        else error
+    )
+    eval_config = EvalConfig(
+        name="test",
+        parent=mock_eval,
+        config_type=config_type,
+        model_name=None if config_type == EvalConfigType.v2 else "gpt-4",
+        model_provider=None if config_type == EvalConfigType.v2 else "openai",
+        properties=ExactMatchProperties(expected_value="out")
+        if config_type == EvalConfigType.v2
+        else {"eval_steps": ["score"]},
+    )
+    eval_config.save_to_file()
+    job = EvalJob(
+        item=TaskRun(parent=mock_task, input="hi", output=TaskOutput(output="out")),
+        task_run_config=mock_run_config,
+        type="task_run_eval",
+        eval_config=eval_config,
+    )
+    method = "_run_v2_job" if config_type == EvalConfigType.v2 else "_run_legacy_job"
+    with patch.object(mock_eval_runner, method, side_effect=failure):
+        with pytest.raises(RetryableError if transient else type(failure)) as exc_info:
+            await mock_eval_runner.run_job(job)
+    if transient:
+        assert str(exc_info.value) == "Environment failed"
+        assert exc_info.value.__cause__ is failure
+    else:
+        assert exc_info.value is failure
+    assert eval_config.runs() == []
 
 
 def test_is_retryable_error_unwraps_nested_kiln_run_error():
