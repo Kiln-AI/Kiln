@@ -2889,7 +2889,14 @@ export interface paths {
         get: operations["get_world_api_projects__project_id__worlds__world_id__get"];
         put?: never;
         post?: never;
-        /** Delete World */
+        /**
+         * Delete World
+         * @description Delete a world, if no saved eval input still resets into it.
+         *
+         *     409 when one does. An eval input names its world by id, so a delete that went
+         *     through would leave every eval run on it failing to resolve the world.
+         *     Traces made in the world keep their own copy of the episode, and stay readable.
+         */
         delete: operations["delete_world_api_projects__project_id__worlds__world_id__delete"];
         options?: never;
         head?: never;

@@ -18,6 +18,7 @@ from unittest.mock import patch
 
 import pytest
 
+from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
 from kiln_ai.adapters.eval.eval_runner import EvalJob, EvalRunner
 from kiln_ai.datamodel.code_tool import CodeTool
@@ -650,6 +651,27 @@ async def test_transient_environment_error_is_retried(
         runner = _runner([cfg], run_config, session_manager)
         with pytest.raises(RetryableError, match="Server at capacity"):
             await runner.run_job(runner.collect_tasks()[0])
+
+
+async def test_transient_error_in_a_tool_call_is_retried(
+    project, task, world, run_config, eval_, session_manager
+):
+    """A dropped connection during a tool call reaches the runner wrapped in the
+    model adapter's KilnRunError; it is still recognized and retried."""
+    _input(task, "note", _reset(world, "a"), id="ei_a")
+    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
+
+    async def dropped_tool_call(*args, **kwargs):
+        try:
+            raise OpenEnvTransientError("connection dropped")
+        except OpenEnvTransientError as e:
+            raise KilnRunError("The run failed.", partial_trace=None, original=e) from e
+
+    with patch.object(BaseV2EvalBridge, "run_task", new=dropped_tool_call):
+        runner = _runner([cfg], run_config, session_manager)
+        with pytest.raises(RetryableError, match="connection dropped"):
+            await runner.run_job(runner.collect_tasks()[0])
+    assert session_manager._sessions == {}
 
 
 async def test_failed_world_resolution_is_remembered_for_the_run(

@@ -919,8 +919,13 @@ class EvalRunner:
 
         try:
             trace, _ = await self._trace_index.get_or_create(generation.key, generate)
-        except OpenEnvTransientError as e:
-            raise RetryableError(str(e)) from e
+        except Exception as e:
+            # A tool call's environment failure reaches here wrapped by the model
+            # adapter, so classify the underlying error.
+            cause = unwrap_kiln_run_error(e)
+            if isinstance(cause, OpenEnvTransientError):
+                raise RetryableError(str(cause)) from e
+            raise
         eval_task_input = EvalTaskInput.from_trace(trace, job.item)
         result = await evaluator.evaluate(eval_task_input)
         return await self._persist_judgment(job, trace, result)

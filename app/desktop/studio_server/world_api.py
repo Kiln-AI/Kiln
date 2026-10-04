@@ -202,7 +202,31 @@ def connect_world_api(app: FastAPI):
             str, Path(description="The unique identifier of the world.")
         ],
     ) -> None:
-        _world_from_id(project_id, world_id).delete()
+        """Delete a world, if no saved eval input still resets into it.
+
+        409 when one does. An eval input names its world by id, so a delete that went
+        through would leave every eval run on it failing to resolve the world.
+        Traces made in the world keep their own copy of the episode, and stay readable.
+        """
+        project = project_from_id(project_id)
+        world = _world_from_id(project_id, world_id)
+        referencing = sum(
+            1
+            for task in project.tasks(readonly=True)
+            for eval_input in task.eval_inputs(readonly=True)
+            if eval_input.world_reset is not None
+            and eval_input.world_reset.world_id == world.id
+        )
+        if referencing:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"World is still used by {referencing} eval input(s), which reset "
+                    "into it by id. Deleting it would leave evals on those inputs "
+                    "unable to run. Remove or change those inputs first."
+                ),
+            )
+        world.delete()
 
     @app.get(
         "/api/projects/{project_id}/worlds/{world_id}/tools",

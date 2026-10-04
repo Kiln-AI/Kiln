@@ -3,9 +3,11 @@ from unittest.mock import patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from kiln_ai.datamodel.eval import EvalInput, SingleTurnEvalInputData, UserMessage
 from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import build_world_tool_id
-from kiln_ai.datamodel.world import World
+from kiln_ai.datamodel.world import World, WorldReset
 from kiln_ai.worlds.session_manager import OpenEnvSessionManager
 from kiln_ai.worlds.testing import (
     ENV_NAME,
@@ -118,6 +120,30 @@ class TestWorlds:
         assert client.delete(f"/api/projects/p1/worlds/{world_id}").status_code == 200
         assert client.get(f"/api/projects/p1/worlds/{world_id}").status_code == 404
         assert client.get("/api/projects/p1/worlds").json() == []
+
+    def test_delete_refused_while_an_eval_input_resets_into_the_world(
+        self, client, project, world_id
+    ):
+        task = Task(name="t", instruction="i", parent=project)
+        task.save_to_file()
+        eval_input = EvalInput(
+            parent=task,
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
+            world_reset=WorldReset(world_id=world_id),
+        )
+        eval_input.save_to_file()
+        EvalInput(
+            parent=task,
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="no world")),
+        ).save_to_file()
+
+        r = client.delete(f"/api/projects/p1/worlds/{world_id}")
+        assert r.status_code == 409
+        assert "1 eval input(s)" in r.json()["message"]
+        assert client.get(f"/api/projects/p1/worlds/{world_id}").status_code == 200
+
+        eval_input.delete()
+        assert client.delete(f"/api/projects/p1/worlds/{world_id}").status_code == 200
 
     def test_invalid_name(self, client):
         r = client.post("/api/projects/p1/worlds", json={"name": "   "})
