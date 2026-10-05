@@ -1,5 +1,7 @@
 import asyncio
 import json
+import re
+import time
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -221,6 +223,40 @@ def test_list_invalid_regex_is_422(client, project):
             params={"content_match": "[unclosed"},
         )
     assert resp.status_code == 422
+
+
+def test_list_catastrophic_regex_is_422(client, project):
+    # Nested quantifiers backtrack for an exponential time on this content.
+    add(
+        project,
+        "slow note.",
+        "project",
+        0,
+        content="a" * (MAX_CONTENT_LENGTH - 1) + "!",
+    )
+    # The regex timeout counts CPU time, so this test does too. Wall time on a
+    # loaded test machine is not stable.
+    start = time.process_time()
+    with _patch(project):
+        resp = client.get(
+            f"/api/projects/{project.id}/memories",
+            params={"content_match": r"(\w+\s?)+$"},
+        )
+    assert time.process_time() - start < 2
+    assert resp.status_code == 422
+    assert "too expensive" in resp.json()["message"]
+
+
+def test_list_escaped_text_content_match(client, project):
+    add(project, "cost", "project", 1, content="Total: $5.00 (approx) [est]?")
+    add(project, "other", "project", 0, content="Total: 5 dollars")
+    with _patch(project):
+        resp = client.get(
+            f"/api/projects/{project.id}/memories",
+            params={"content_match": re.escape("$5.00 (approx) [est]?")},
+        )
+    assert resp.status_code == 200
+    assert [r["overview"] for r in resp.json()["listings"]] == ["cost"]
 
 
 @pytest.mark.parametrize("params", [{"limit": -1}, {"limit": 0}, {"offset": -1}])

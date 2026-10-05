@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import logging
-import re
+import time
 from collections import Counter
 from datetime import datetime
 from typing import Any
 
+import regex
 from pydantic import BaseModel, Field
 
 from kiln_ai.datamodel.basemodel import KilnParentModel
@@ -13,6 +14,11 @@ from kiln_ai.datamodel.memory import Memory
 from kiln_ai.datamodel.model_cache import ModelCache
 
 logger = logging.getLogger(__name__)
+
+# The CPU time that the content_match regex can use in one list_memories call,
+# over all records together. The regex module counts its timeout in process CPU
+# time, so the deadline uses the same clock (time.process_time).
+CONTENT_MATCH_TIME_BUDGET_SECONDS = 0.25
 
 
 class MemoryNotFoundError(ValueError):
@@ -28,6 +34,20 @@ class InvalidContentMatchError(ValueError):
 
     def __init__(self, message: str):
         super().__init__(f"Invalid content_match regex: {message}")
+
+
+class ContentMatchTooExpensiveError(ValueError):
+    """Raised when the content_match regex does not finish inside the time budget.
+
+    A pattern with nested quantifiers can backtrack for an exponential time. The
+    regex engine holds the GIL while it runs, so without a limit one request
+    stops every other request of the server.
+    """
+
+    def __init__(self):
+        super().__init__(
+            "content_match is too expensive to evaluate; simplify the pattern."
+        )
 
 
 class MemoryListing(BaseModel):
@@ -220,16 +240,7 @@ class MemoryStore:
             wanted = set(tags)
             memories = [m for m in memories if wanted.issubset(set(m.tags))]
         if content_match is not None:
-            try:
-                pattern = re.compile(content_match, re.IGNORECASE)
-            except re.error as e:
-                raise InvalidContentMatchError(str(e))
-            memories = [
-                m
-                for m in memories
-                if pattern.search(m.overview)
-                or (m.content is not None and pattern.search(m.content))
-            ]
+            memories = self._filter_by_content_match(memories, content_match)
 
         # Newest-first, with a stable tiebreak on id so paging is deterministic.
         memories.sort(key=lambda m: (m.created_at, m.id or ""), reverse=True)
@@ -248,6 +259,37 @@ class MemoryStore:
             remaining=len(remainder),
             remaining_tag_counts=dict(remaining_counts.most_common()),
         )
+
+    @staticmethod
+    def _filter_by_content_match(
+        memories: list[Memory], content_match: str
+    ) -> list[Memory]:
+        try:
+            # The regex package exports its flags through star imports that ty
+            # cannot follow.
+            flags = regex.IGNORECASE  # type: ignore[unresolved-attribute]
+            pattern = regex.compile(content_match, flags)
+        except regex.error as e:
+            raise InvalidContentMatchError(str(e))
+
+        # One deadline for the full call, not one for each record. Many records
+        # that are each slow must not add up to a long stop of the server.
+        deadline = time.process_time() + CONTENT_MATCH_TIME_BUDGET_SECONDS
+
+        def matches(text: str) -> bool:
+            remaining = deadline - time.process_time()
+            if remaining <= 0:
+                raise ContentMatchTooExpensiveError()
+            try:
+                return pattern.search(text, timeout=remaining) is not None
+            except TimeoutError:
+                raise ContentMatchTooExpensiveError()
+
+        return [
+            m
+            for m in memories
+            if matches(m.overview) or (m.content is not None and matches(m.content))
+        ]
 
     def memory_summary(self, scope: str | None = None) -> MemorySummary:
         memories = self._all()
