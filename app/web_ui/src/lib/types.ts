@@ -155,7 +155,7 @@ export type Skill = components["schemas"]["SkillResponse"]
 export type DocumentLibraryState = components["schemas"]["DocumentLibraryState"]
 export type Spec = components["schemas"]["Spec"]
 export type EvalStatus = components["schemas"]["EvalStatus"]
-// Status moved from specs to evals; the old name is kept for existing call sites.
+// Status lives on the eval; spec call sites use this alias.
 export type SpecStatus = EvalStatus
 export type Priority = components["schemas"]["Priority"]
 export type Feedback = components["schemas"]["Feedback"]

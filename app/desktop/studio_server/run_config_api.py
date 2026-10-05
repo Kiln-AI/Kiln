@@ -377,7 +377,6 @@ def connect_run_config_api(app: FastAPI):
 
         task_run_config: TaskRunConfig | None = None
         try:
-            # Save task first
             task.save_to_file()
 
             # Create and save run config

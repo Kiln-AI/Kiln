@@ -1,0 +1,40 @@
+# history-comment hits from conventions_gate.py --files over libs/core/kiln_ai libs/server/kiln_server app/desktop app/web_ui/src
+# at 9d9a6c5d8. Work list for the comment sweep (phase 3). Format: SEV<TAB>RULE<TAB>path:line<TAB>snippet
+FAIL	history-comment	app/desktop/studio_server/api_models/copilot_models.py:330	# result lifecycle so the web UI owns polling. Preview inputs are no longer
+FAIL	history-comment	app/desktop/studio_server/eval_api.py:699	# what the score was computed over (functional spec 5.2).
+FAIL	history-comment	app/desktop/studio_server/eval_api.py:2553	# The web client is no longer an EventSource — run_eval.svelte reads this with fetch
+FAIL	history-comment	app/desktop/studio_server/eval_api.py:2682	# The web client is no longer an EventSource — run_eval.svelte reads this with fetch
+FAIL	history-comment	app/desktop/studio_server/eval_api.py:2805	# reports its real counts rather than the 400 that used to stand here. That 400
+FAIL	history-comment	app/desktop/studio_server/eval_api.py:2807	# count TaskRuns (functional spec 6.1).
+FAIL	history-comment	app/desktop/studio_server/eval_api.py:2908	# sets behind the same string (functional spec 5.3).
+FAIL	history-comment	app/desktop/studio_server/eval_api.py:3030	# A dataset_id can be removed from the dataset filter (ran previously, then removed the tag to remove it from the eval config set filter)
+FAIL	history-comment	app/desktop/studio_server/jobs/api.py:283	# Always 200, never errors (functional_spec §5). A plain non-reconciling
+FAIL	history-comment	app/desktop/studio_server/jobs/registry.py:232	# The cancellation transition is unconditional (functional_spec
+FAIL	history-comment	app/desktop/studio_server/jobs/registry.py:233	# §2): a worker that catches CancelledError for cleanup and then
+FAIL	history-comment	app/desktop/studio_server/utils/copilot_utils.py:159	# network calls they never used to. Logged rather than capped: the cost
+FAIL	history-comment	app/web_ui/src/lib/stores/job_status.ts:90	// its worker supports pause. Mirrors the state machine (functional_spec §3) and
+FAIL	history-comment	app/web_ui/src/lib/utils/eval_generation_splits.ts:37	// specs/projects/eval_splits_v1_v2/functional_spec.md §3.2 — and nothing here may invent one)
+FAIL	history-comment	app/web_ui/src/lib/utils/eval_types/reference_data_gate.ts:15	* instead (`DefaultLlmJudgePromptResponse.reference_keys`), so this test no longer has
+FAIL	history-comment	app/web_ui/src/lib/utils/splits_util.ts:39	* those splits exist on a given eval. Dropping the absent ones leaves weights that no longer
+FAIL	history-comment	app/web_ui/src/routes/(app)/+layout.svelte:40	// and chat bar expanded. See functional_spec.md "Trigger".
+FAIL	history-comment	app/web_ui/src/routes/(app)/dataset/[project_id]/[task_id]/[run_id]/run/+page.svelte:151	// Prompt ID previously was stored in the prompt_builder_name field
+FAIL	history-comment	app/web_ui/src/routes/(app)/generate/[project_id]/[task_id]/kiln_pro_inputs.svelte:189	// Once there's something to save, regenerating is no longer the job.
+FAIL	history-comment	app/web_ui/src/routes/(app)/generate/[project_id]/[task_id]/kiln_pro_inputs.svelte:344	// Still reported in analytics, but no longer sent to the API.
+FAIL	history-comment	app/web_ui/src/routes/(app)/generate/[project_id]/[task_id]/synth_data_guidance_datamodel.ts:62	* Clean up subscriptions when the instance is no longer needed
+FAIL	history-comment	app/web_ui/src/routes/(app)/specs/[project_id]/[task_id]/[spec_id]/[eval_id]/+page.svelte:294	// only there if something explicitly wrote one (functional spec 3.2 — unconfigured
+FAIL	history-comment	app/web_ui/src/routes/(app)/specs/[project_id]/[task_id]/[spec_id]/[eval_id]/[eval_config_id]/[run_config_id]/run_result/+page.svelte:240	// shown. Train and val are not surfaced in the UI (functional spec 4.4).
+FAIL	history-comment	app/web_ui/src/routes/(app)/specs/[project_id]/[task_id]/builder/claim_evidence_review.svelte:98	// since the step no longer has a header of its own to carry it: answering
+FAIL	history-comment	app/web_ui/src/routes/(app)/specs/[project_id]/[task_id]/compare/+page.svelte:700	// state (functional spec 6.1), and this button appears precisely when the eval's
+FAIL	history-comment	libs/core/kiln_ai/adapters/eval/eval_runner.py:281	# different eval config or is this job's own retry (functional spec 4.2, 4.3).
+FAIL	history-comment	libs/core/kiln_ai/adapters/eval/trace_index.py:147	# never went through the API's 409 guard. Architecture §8's posture for a
+FAIL	history-comment	libs/core/kiln_ai/adapters/parsers/r1_parser.py:28	# The upstream providers (litellm, openrouter, fireworks) all keep changing their response formats, sometimes adding reasoning parsing where it didn't previousl
+FAIL	history-comment	libs/core/kiln_ai/adapters/remote_config.py:33	# V2 explained: Kiln v0.18 was the first release with remote config, but had bugs. We no longer publish v1 URL (client falls back to local) and instead use v2.
+FAIL	history-comment	libs/core/kiln_ai/adapters/repair/repair_task.py:48	# Get the prompt builder id. Need the second check because we used to store this in a prompt_builder_name field, so loading legacy runs will need this.
+FAIL	history-comment	libs/core/kiln_ai/cli/commands/migrate_eval_runs.py:434	# Architecture §7: the synthesized run names the run config it was produced by, on
+FAIL	history-comment	libs/core/kiln_ai/cli/commands/migrate_eval_runs.py:542	# (functional spec §4.6). Either way there is no trace here to reconstruct.
+FAIL	history-comment	libs/core/kiln_ai/cli/commands/migrate_eval_runs.py:570	# first orphaned — and since Phase 4, an eval-generated run can't be deleted
+FAIL	history-comment	libs/core/kiln_ai/datamodel/code_file_storage.py:89	# spec §1.1). OSError still surfaces the missing/unreadable message
+FAIL	history-comment	libs/core/kiln_ai/datamodel/code_file_storage.py:140	# byte-for-byte (functional spec §1.1 / §2.1), cross-platform.
+FAIL	history-comment	libs/core/kiln_ai/datamodel/external_tool_server.py:446	# Always call update_settings to maintain consistency with the old behavior
+FAIL	history-comment	libs/core/kiln_ai/datamodel/task.py:99	# Previously we didn't store structured_output_mode in the run_config_properties. Upgrade old models when loading from file.
+FAIL	history-comment	libs/core/kiln_ai/datamodel/task_output.py:81	# Previously we stored rating values as a dict of floats, but now we store them as RequirementRating objects.
