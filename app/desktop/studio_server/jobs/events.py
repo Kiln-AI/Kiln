@@ -61,7 +61,7 @@ SnapshotProvider = Callable[[], list[JobRecord]]
 
 
 class JobEventBus:
-    """In-process async pub/sub bus feeding the SSE endpoint (Phase 2).
+    """In-process async pub/sub bus feeding the SSE endpoint.
 
     Subscribers receive an initial `snapshot` event, then per-job `job` events
     and `deleted` tombstones, filtered by job_id / type / project_id.

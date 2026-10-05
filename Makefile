@@ -1,4 +1,4 @@
-.PHONY: dev ui schema annotations check package
+.PHONY: dev dev_desktop ui schema annotations check package
 
 SHELL := /bin/bash
 
@@ -9,6 +9,15 @@ NVM_USE = export NVM_DIR="$${NVM_DIR:-$$HOME/.nvm}" && . "$$NVM_DIR/nvm.sh" && n
 # Run the development API server (desktop dev server with hot reload on port 8757).
 dev:
 	uv run python -m app.desktop.dev_server
+
+# Run the real desktop app (Tk, tray icon, native dialogs) on port 8757, serving the prebuilt web UI from app/web_ui/build. Stop `make dev` first.
+dev_desktop:
+	@if [ ! -f app/web_ui/build/index.html ]; then \
+		echo "Web UI not built (app/web_ui/build/index.html is missing). Build it first:" >&2; \
+		echo "    cd app/web_ui && nvm use && npm run build" >&2; \
+		exit 1; \
+	fi
+	KILN_SKIP_REMOTE_MODEL_LIST="$${KILN_SKIP_REMOTE_MODEL_LIST-true}" uv run python -m app.desktop.desktop
 
 # Run the Vite dev server for the web UI (http://localhost:5173 by default). Uses Node version from app/web_ui/.nvmrc via nvm.
 ui:

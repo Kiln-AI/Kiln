@@ -319,8 +319,7 @@
     if (!step || step === current_step) return
     // Finished: every earlier step is behind a history entry, and all of them
     // are about making the eval that now exists. Back leaves the wizard
-    // instead of re-entering it. This is what the save's redirect used to do
-    // by unmounting the page.
+    // instead of re-entering it.
     if (saved_eval_created) {
       goto(finished_destination)
       return
@@ -508,22 +507,22 @@
     const saved = get(store)
     if (draft_has_content(saved)) {
       description = saved.description
-      // Pre-pairing drafts have no such key: null restores the "no Continue on
-      // record" state, which the gate's fallback already covers.
+      // Older drafts lack this key: null restores the "no Continue on record"
+      // state, which the gate's fallback already covers.
       continued_description = saved.continued_description ?? null
       name = saved.name
-      // Pre-prefill-tracking drafts have no such key: null restores the "no
-      // machine claim on record" state, so the saved name is left as the
-      // user's and never clobbered by a later suggestion.
+      // Older drafts lack this key: null restores the "no machine claim on
+      // record" state, so the saved name is left as the user's and never
+      // clobbered by a later suggestion.
       prefilled_name = saved.prefilled_name ?? null
       // An empty stored record keeps the var's seeded default (e.g.
       // property_values starts with the issue keys) instead of erasing it.
       if (Object.keys(saved.property_values).length > 0) {
         property_values = saved.property_values
       }
-      // Filter to the rendered fields: a draft written when the refine form
-      // still had example fields can carry values with no surface today, and
-      // restoring them would silently reach the saved spec.
+      // Filter to the rendered fields: a draft can carry refine values for
+      // fields this form doesn't render, and restoring them would silently
+      // reach the saved spec.
       refined_property_values = keep_rendered_fields(
         saved.refined_property_values,
         RENDERED_REFINE_FIELDS,
@@ -538,38 +537,37 @@
       cached_su_cases = saved.cached_su_cases ?? null
       cached_minted_inputs = saved.cached_minted_inputs ?? null
       grounding_sample = saved.grounding_sample ?? null
-      // Drafts from before guides were read here restore as no guide, off.
+      // Older drafts lack the guide keys and restore as no guide, off.
       data_guide_text = saved.data_guide_text ?? null
       use_data_guide = saved.use_data_guide ?? false
       data_guide_skipped = saved.data_guide_skipped ?? false
       multi_turn_batch_tag = saved.multi_turn_batch_tag
       single_turn_batch_tag = saved.single_turn_batch_tag ?? null
       undeleted_batch_tags = saved.undeleted_batch_tags
-      // Model lanes: pre-Drive-Settings drafts have no such keys.
+      // Model lanes: older drafts lack these keys.
       su_driver = saved.su_driver ?? null
       input_generator = saved.input_generator ?? null
-      // Drafts written before the input lane carried a config restore null,
-      // which reads as nothing chosen: the dialog then falls back to
-      // pre-population, exactly like a lane with no model on record.
+      // A missing config reads as nothing chosen: the dialog then falls back
+      // to pre-population, exactly like a lane with no model on record.
       input_gen_run_config = saved.input_gen_run_config ?? null
       judge_model = saved.judge_model ?? null
       // Conversation length: no key, no choice on record, or a stored value
-      // that isn't a number restores the default; a real number is clamped in
-      // case it predates today's range.
+      // that isn't a number restores the default; a real number is clamped to
+      // the current range.
       turns_per_case = restore_turns_per_case(
         saved.turns_per_case,
         TURNS_PER_CASE,
       )
-      // Drafts written before the entry page asked for a config restore null,
-      // which reads as nothing chosen and keeps the task-default behaviour.
+      // A missing config reads as nothing chosen and keeps the task-default
+      // behaviour.
       target_run_config_id = saved.target_run_config_id ?? null
       // Rebuild the shallow-routing chain up to the restored step (the
       // mount already seeded "describe") so the browser's Back walks the
       // wizard steps exactly as in the original session instead of
       // immediately leaving the builder.
-      // Computed from the FILTERED refine records: a legacy draft whose
-      // refine content was example fields only must not restore into an
-      // empty refine form.
+      // Computed from the FILTERED refine records: a draft whose refine
+      // content was only unrendered fields must not restore into an empty
+      // refine form.
       const step = restore_step({
         ...saved,
         refined_property_values,
@@ -2184,14 +2182,10 @@
       if (!drive_config) return
       const target_run_config_id = drive_config.id
 
-      // 2. The judge, resolved BEFORE the pipeline (not just before the
-      // stream) so the preflight below covers the judge lane too — the
-      // judge-dies-after-drives case is the expensive one. Runs on the
-      // user's picked judge model. Authoring is REQUIRED — a failure throws
-      // to the drive's error surface (retryable, nothing spent yet:
-      // authoring deliberately precedes preflight and SU spend) — and the
-      // per-spec cache makes re-drives free. A user abort (Back/navigation)
-      // during it cancels the whole drive.
+      // 2. Author the judge before preflight and any SU spend, so a failure
+      // costs nothing and the preflight below covers the judge lane too.
+      // A user abort (Back or navigation) here cancels the whole drive; the
+      // per-spec cache makes re-drives free.
       generation_phase = "authoring_judge"
       const authored = await author_judge_prompt_for_spec(
         new_copilot_abort_signal(),
@@ -4456,7 +4450,7 @@
         // so a fault-presuming headline would blame agents that behaved. The
         // name points at the judge because that is what this step calibrates;
         // each case's own verdict is still about the AGENT's work.
-        return "Validate the Judge"
+        return "Align the Judge"
     }
   }
 

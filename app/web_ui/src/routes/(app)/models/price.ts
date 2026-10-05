@@ -28,7 +28,7 @@ export async function fetchPricingData(): Promise<PricingData | null> {
     return pricingLoadPromise
   }
 
-  pricingLoadPromise = (async () => {
+  const loadPromise = (async () => {
     try {
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 5000)
@@ -56,8 +56,13 @@ export async function fetchPricingData(): Promise<PricingData | null> {
       return null
     }
   })()
+  pricingLoadPromise = loadPromise
 
-  return pricingLoadPromise
+  const result = await loadPromise
+  if (result === null) {
+    pricingLoadPromise = null
+  }
+  return result
 }
 
 export function getModelPrice(

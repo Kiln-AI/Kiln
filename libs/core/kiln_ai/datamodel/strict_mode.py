@@ -10,15 +10,11 @@ _strict_mode: bool = False
 
 
 def strict_mode() -> bool:
-    """
-    Get the current strict mode setting.
-    """
+    """Whether the Kiln app's extra validations are enforced (off by default in the library)."""
     return _strict_mode
 
 
 def set_strict_mode(value: bool) -> None:
-    """
-    Set the strict mode setting.
-    """
+    """Enable or disable strict validation process-wide."""
     global _strict_mode
     _strict_mode = value

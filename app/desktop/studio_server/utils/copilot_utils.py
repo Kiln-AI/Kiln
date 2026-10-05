@@ -155,9 +155,8 @@ async def task_capabilities_for_task(
             detail=f"Couldn't read the run config's tools and skills: {e}",
         ) from e
 
-    # Resolving a tool can dial its MCP server, so these callers now make
-    # network calls they never used to. Logged rather than capped: the cost
-    # should be visible before anyone decides what to do about it.
+    # Resolving a tool can dial its MCP server, so this can be slow; the timing
+    # is logged to make that cost visible.
     logger.info(
         "Collected capabilities for task %s in %.0f ms: %s tools, %s skills",
         task.id,
