@@ -12,7 +12,7 @@ Decide what it would take for Kiln to call OpenAI's Responses API for select pro
 ## Subtopics
 
 - [x] Responses API vs Chat Completions — what Responses offers that Chat Completions doesn't, with emphasis on reasoning/thinking control
-- [ ] LiteLLM Responses support — `litellm.responses()`, provider coverage, bridges, and gaps at the pinned version
+- [x] LiteLLM Responses support — `litellm.responses()`, provider coverage, bridges, and gaps at the pinned version
 - [ ] Kiln adapter integration — where a Responses path fits in `LiteLlmAdapter`, what must be mapped, and the effort
 - [x] Justification check — does "can't set thinking level via Completions" hold, for which models/providers
 

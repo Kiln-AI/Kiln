@@ -1,9 +1,0 @@
-import sys; sys.argv=["x"]
-from probe import run, TOOLS, MSGS
-import litellm
-run("Q openai/responses/gpt-5.5 + verbosity=low", model="openai/responses/gpt-5.5", reasoning_effort="low", verbosity="low")
-run("R openai/responses/gpt-5.5 + temperature=0.2 + effort=high (drop_params)", model="openai/responses/gpt-5.5", reasoning_effort="high", temperature=0.2)
-run("S openai/responses/gpt-5.5 + max_tokens=500 + parallel_tool_calls False + tool_choice required", model="openai/responses/gpt-5.5", reasoning_effort="low", max_tokens=500, tools=TOOLS, parallel_tool_calls=False, tool_choice="required")
-run("T openai/responses/gpt-5.5 + tool_choice specific function", model="openai/responses/gpt-5.5", reasoning_effort="low", tools=TOOLS, tool_choice={"type":"function","function":{"name":"add"}})
-litellm.route_all_chat_openai_to_responses = True
-run("U route_all flag: openai/gpt-4.1 plain", model="openai/gpt-4.1")
