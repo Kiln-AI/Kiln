@@ -9,6 +9,7 @@ from kiln_ai.datamodel.memory import (
     MAX_SCOPE_LENGTH,
 )
 from kiln_ai.memory import (
+    ContentMatchTooExpensiveError,
     InvalidContentMatchError,
     MemoryListResult,
     MemoryNotFoundError,
@@ -118,7 +119,10 @@ def connect_memory_api(app: FastAPI):
         ] = None,
         content_match: Annotated[
             str | None,
-            Query(description="Case-insensitive regex over overview + content."),
+            Query(
+                description="Case-insensitive regex over overview + content. A "
+                "pattern that takes too long to evaluate returns 422."
+            ),
         ] = None,
         limit: Annotated[int, Query(ge=1, description="Max rows to return.")] = 50,
         offset: Annotated[int, Query(ge=0, description="Rows to skip.")] = 0,
@@ -135,7 +139,7 @@ def connect_memory_api(app: FastAPI):
                     offset=offset,
                 )
             )
-        except InvalidContentMatchError as e:
+        except (InvalidContentMatchError, ContentMatchTooExpensiveError) as e:
             raise HTTPException(status_code=422, detail=str(e))
 
     @app.get(

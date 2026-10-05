@@ -1,6 +1,8 @@
 import json
 import logging
+import re
 import shutil
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -8,9 +10,10 @@ import pytest
 from pydantic import ValidationError
 
 from kiln_ai.datamodel import Memory, Project
-from kiln_ai.datamodel.memory import MAX_OVERVIEW_LENGTH
+from kiln_ai.datamodel.memory import MAX_CONTENT_LENGTH, MAX_OVERVIEW_LENGTH
 from kiln_ai.datamodel.model_cache import ModelCache
 from kiln_ai.memory import (
+    ContentMatchTooExpensiveError,
     InvalidContentMatchError,
     MemoryNotFoundError,
     MemoryStore,
@@ -159,6 +162,50 @@ def test_list_no_truncation_when_page_covers_matched(
 def test_list_invalid_regex_raises(store: MemoryStore):
     with pytest.raises(InvalidContentMatchError):
         store.list_memories(content_match="[unclosed")
+
+
+# Nested quantifiers backtrack for an exponential time on a long run of word
+# characters that does not end the string. The regex engine holds the GIL for
+# all of that time, so the store must stop the search early.
+CATASTROPHIC_PATTERN = r"(\w+\s?)+$"
+CATASTROPHIC_CONTENT = "a" * (MAX_CONTENT_LENGTH - 1) + "!"
+
+
+def test_list_catastrophic_regex_is_stopped(project: Project, store: MemoryStore):
+    add(project, "slow note.", "project", minutes=0, content=CATASTROPHIC_CONTENT)
+    # The regex timeout counts CPU time, so this test does too. Wall time on a
+    # loaded test machine is not stable.
+    start = time.process_time()
+    with pytest.raises(ContentMatchTooExpensiveError):
+        store.list_memories(content_match=CATASTROPHIC_PATTERN)
+    assert time.process_time() - start < 2
+
+
+def test_list_content_match_budget_covers_the_whole_call(
+    project: Project, store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+):
+    # The budget is for one list call, not for one record. Records that each
+    # finish in time still stop the call when their total passes the budget.
+    for i in range(5):
+        add(project, f"m{i}", "project", minutes=i)
+    ticks = iter(range(100))
+    monkeypatch.setattr(
+        "kiln_ai.memory.memory_store.time.process_time",
+        lambda: next(ticks) * 0.1,
+    )
+    with pytest.raises(ContentMatchTooExpensiveError):
+        store.list_memories(content_match="no_such_text")
+
+
+def test_list_content_match_keeps_regex_and_escaped_text(
+    project: Project, store: MemoryStore
+):
+    add(project, "cost", "project", minutes=1, content="Total: $5.00 (approx) [est]?")
+    add(project, "failure", "project", minutes=0, content="The run raised Error 42.")
+    escaped = store.list_memories(content_match=re.escape("$5.00 (approx) [est]?"))
+    assert [row.overview for row in escaped.listings] == ["cost"]
+    pattern = store.list_memories(content_match=r"error \d+\.$")
+    assert [row.overview for row in pattern.listings] == ["failure"]
 
 
 # --- get ---

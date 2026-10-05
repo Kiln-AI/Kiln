@@ -1,4 +1,5 @@
 from kiln_ai.memory.memory_store import (
+    ContentMatchTooExpensiveError,
     InvalidContentMatchError,
     MemoryListing,
     MemoryListResult,
@@ -9,6 +10,7 @@ from kiln_ai.memory.memory_store import (
 )
 
 __all__ = [
+    "ContentMatchTooExpensiveError",
     "InvalidContentMatchError",
     "MemoryListResult",
     "MemoryListing",

@@ -6,7 +6,7 @@ import pytest
 
 from kiln_ai.datamodel import Memory, Project, Task
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
-from kiln_ai.datamodel.memory import MAX_OVERVIEW_LENGTH
+from kiln_ai.datamodel.memory import MAX_CONTENT_LENGTH, MAX_OVERVIEW_LENGTH
 from kiln_ai.datamodel.tool_id import (
     build_memory_tool_id,
     memory_operation_from_tool_id,
@@ -379,6 +379,19 @@ async def test_list_non_whole_number_paging_is_tool_error(project, args):
 async def test_list_invalid_regex_is_tool_error(project):
     result = await tool(project, "list").run(content_match="[unclosed")
     assert result.is_error
+
+
+async def test_list_catastrophic_regex_is_tool_error(project):
+    # Nested quantifiers backtrack for an exponential time on this content.
+    Memory(
+        parent=project,
+        overview="slow note.",
+        scope="project",
+        content="a" * (MAX_CONTENT_LENGTH - 1) + "!",
+    ).save_to_file()
+    result = await tool(project, "list").run(content_match=r"(\w+\s?)+$")
+    assert result.is_error
+    assert "too expensive" in result.output
 
 
 async def test_update_unknown_id_is_tool_error(project):

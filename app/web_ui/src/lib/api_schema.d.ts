@@ -15558,7 +15558,7 @@ export interface operations {
                 scope?: string | null;
                 /** @description Memory must have ALL of these tags (AND). Repeat the param for multiple tags; omit for no tag filter. */
                 tags?: string[] | null;
-                /** @description Case-insensitive regex over overview + content. */
+                /** @description Case-insensitive regex over overview + content. A pattern that takes too long to evaluate returns 422. */
                 content_match?: string | null;
                 /** @description Max rows to return. */
                 limit?: number;

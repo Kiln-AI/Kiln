@@ -198,7 +198,10 @@ class ListMemoriesTool(_MemoryTool):
             },
             "content_match": {
                 "type": "string",
-                "description": "Case-insensitive regex over overview + content.",
+                "description": (
+                    "Case-insensitive regex over overview + content. A pattern "
+                    "that takes too long to evaluate returns an error."
+                ),
             },
             "limit": {"type": "integer", "description": "Max rows (default 50)."},
             "offset": {"type": "integer", "description": "Rows to skip (default 0)."},
