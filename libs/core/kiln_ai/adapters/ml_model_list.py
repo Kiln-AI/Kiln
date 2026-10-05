@@ -227,6 +227,7 @@ class ModelName(str, Enum):
     qwen_3p5_122b_a10b = "qwen_3p5_122b_a10b"
     qwen_3p5_27b = "qwen_3p5_27b"
     qwen_3p5_35b_a3b = "qwen_3p5_35b_a3b"
+    qwen_3p8_max_0902 = "qwen_3p8_max_0902"
     qwen_3p8_max = "qwen_3p8_max"
     qwen_3p8_max_prime = "qwen_3p8_max_prime"
     qwen_3p8_2p4t_a95b = "qwen_3p8_2p4t_a95b"
@@ -6854,6 +6855,30 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Qwen 3.8 Max 0902
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p8_max_0902,
+        friendly_name="Qwen 3.8 Max 0902",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.8-max-0902",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+            ),
+        ],
+    ),
     # Qwen 3.8 Max
     KilnModel(
         family=ModelFamily.qwen,
@@ -6861,11 +6886,13 @@ built_in_models: List[KilnModel] = [
         friendly_name="Qwen 3.8 Max",
         featured_rank=6,
         providers=[
+            # OpenRouter no longer lists qwen/qwen3.8-max and answers requests
+            # for it with the qwen/qwen3.8-max-0902 checkpoint, which is
+            # registered as its own model above.
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 model_id="qwen/qwen3.8-max",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
                 supports_function_calling=True,
