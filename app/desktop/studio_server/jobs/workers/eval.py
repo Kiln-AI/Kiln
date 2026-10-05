@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Hashable
+from functools import partial
 from typing import Any, Set
 
 from kiln_ai.adapters.errors import KilnRunError
@@ -31,6 +32,7 @@ from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX
 from kiln_ai.utils.async_job_runner import AsyncJobRunnerObserver
 from kiln_ai.utils.git_sync_protocols import SaveContext
+from kiln_ai.utils.torn_read import to_thread_retrying_torn_read
 from pydantic import BaseModel, Field
 
 from app.desktop.git_sync.save_context import save_context_for_project
@@ -383,8 +385,11 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
         # _compute_state_sync loads entities and enumerates runs/ directories
         # (os.scandir + open/read/json.loads per child) synchronously. The
         # registry awaits this on the event loop, so offload the blocking IO to
-        # a thread to keep progress/SSE updates flowing for large eval sets.
-        return await asyncio.to_thread(self._compute_state_sync, params)
+        # a thread to keep progress/SSE updates flowing for large eval sets. In the
+        # thread, it can read a file that a running job is saving: read it again.
+        return await to_thread_retrying_torn_read(
+            partial(self._compute_state_sync, params)
+        )
 
     def _compute_state_sync(self, params: EvalJobParams) -> JobDerivedState:
         eval_config = eval_config_from_id(
@@ -466,8 +471,8 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
             params.project_id,
             context=f"eval job {params.eval_id}/{params.run_config_id}",
         )
-        eval_runner = await asyncio.to_thread(
-            self._build_eval_runner, params, save_context
+        eval_runner = await to_thread_retrying_torn_read(
+            partial(self._build_eval_runner, params, save_context)
         )
 
         success = baseline_success

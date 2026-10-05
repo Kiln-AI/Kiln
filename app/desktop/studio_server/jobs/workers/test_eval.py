@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 from contextlib import contextmanager
 from typing import AsyncIterator
@@ -902,6 +903,89 @@ async def test_run_no_items_returns_zero_summary(
     # Real EvalRunner with an empty dataset yields only the initial Progress(0,0,0).
     result = await EvalJobWorker().run(params, _RecordingCtx())
 
+    assert result == EvalJobResult(total=0, success=0, error=0)
+
+
+@pytest.fixture
+def torn_eval_run_reads(monkeypatch):
+    """Make the next N EvalRun file loads raise what a load raises on a file that
+    another writer has truncated and not yet written: JSONDecodeError. Set the
+    count on the returned list; it holds the number of torn reads left."""
+    monkeypatch.setattr("kiln_ai.utils.torn_read.TORN_READ_RETRY_DELAY_SECONDS", 0)
+    remaining = [0]
+    original = EvalRun.load_from_file
+
+    def load_from_file(cls, path, readonly=False):
+        if remaining[0] > 0:
+            remaining[0] -= 1
+            raise json.JSONDecodeError("Expecting value", "", 0)
+        return original(path, readonly=readonly)
+
+    monkeypatch.setattr(EvalRun, "load_from_file", classmethod(load_from_file))
+    return remaining
+
+
+async def test_compute_state_reads_again_after_a_torn_read(
+    resolve_project,
+    task,
+    eval_config,
+    run_config,
+    data_source,
+    params,
+    torn_eval_run_reads,
+):
+    task_runs = [_make_task_run(task, data_source, "eval_set") for _ in range(3)]
+    _make_eval_run(eval_config, task_runs[0].id, run_config.id)
+    torn_eval_run_reads[0] = 1
+
+    state = await EvalJobWorker().compute_state(params)
+
+    assert torn_eval_run_reads[0] == 0
+    assert state.total == 3
+    assert state.success == 1
+
+
+async def test_run_fails_when_the_read_is_still_torn_after_the_retry(
+    resolve_project,
+    task,
+    eval_config,
+    run_config,
+    data_source,
+    params,
+    torn_eval_run_reads,
+):
+    # A file that stays unreadable is not a write in progress. The job fails, as
+    # it did before the retry.
+    task_runs = [_make_task_run(task, data_source, "eval_set") for _ in range(3)]
+    _make_eval_run(eval_config, task_runs[0].id, run_config.id)
+    torn_eval_run_reads[0] = 2
+
+    with pytest.raises(json.JSONDecodeError):
+        await EvalJobWorker().run(params, _RecordingCtx())
+
+
+async def test_run_builds_the_runner_again_after_a_torn_read(
+    resolve_project, task, eval_config, run_config, data_source, params, monkeypatch
+):
+    # The runner build seeds its TraceIndex from every TaskRun of the task, in a
+    # worker thread, while another job can be saving a trace.
+    monkeypatch.setattr("kiln_ai.utils.torn_read.TORN_READ_RETRY_DELAY_SECONDS", 0)
+    from kiln_ai.adapters.eval import eval_runner
+
+    original = eval_runner.TraceIndex
+    builds: list[int] = []
+
+    def trace_index(task):
+        builds.append(1)
+        if len(builds) == 1:
+            raise json.JSONDecodeError("Expecting value", "", 0)
+        return original(task)
+
+    monkeypatch.setattr(eval_runner, "TraceIndex", trace_index)
+
+    result = await EvalJobWorker().run(params, _RecordingCtx())
+
+    assert len(builds) == 2
     assert result == EvalJobResult(total=0, success=0, error=0)
 
 

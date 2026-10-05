@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import datetime
+from functools import partial
 from typing import Annotated, Any, AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Path, Query, Response
 from kiln_ai.adapters.eval.eval_runner import EvalRunner
+from kiln_ai.utils.torn_read import to_thread_retrying_torn_read
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
@@ -133,6 +135,9 @@ def _check_eval_job_request(params: EvalJobParams) -> None:
             split=split,
             item_ids=set(params.item_ids) if params.item_ids is not None else None,
         ).validate_multi_turn_drive_readiness()
+    except json.JSONDecodeError:
+        # A ValueError too, but a torn read of a file, not a bad request.
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -279,9 +284,19 @@ def connect_jobs_api(app: FastAPI) -> None:
         someone resumes it, so check `status` and call
         `POST /api/jobs/{id}/resume` if the job must run. Poll
         `GET /api/jobs/{id}` or `POST /api/jobs/wait` for progress and the
-        result."""
-        # Entity loads are blocking IO, so run them off the event loop.
-        await asyncio.to_thread(_check_eval_job_request, params)
+        result. A 503 means that a project file was not readable, for example
+        while another job wrote it. Send the request again."""
+        # Entity loads are blocking IO, so run them off the event loop. In the thread,
+        # they can read a file that a running job is saving: read it again once.
+        try:
+            await to_thread_retrying_torn_read(partial(_check_eval_job_request, params))
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=503,
+                detail="A project file was not readable. Another process can be "
+                "writing it. Please try again.",
+                headers={"Retry-After": "1"},
+            )
         job = await job_registry.create(
             type_name=EvalJobWorker.type_name,
             params=params,

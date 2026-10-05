@@ -4033,7 +4033,8 @@ export interface paths {
          *     someone resumes it, so check `status` and call
          *     `POST /api/jobs/{id}/resume` if the job must run. Poll
          *     `GET /api/jobs/{id}` or `POST /api/jobs/wait` for progress and the
-         *     result.
+         *     result. A 503 means that a project file was not readable, for example
+         *     while another job wrote it. Send the request again.
          */
         post: operations["run_eval_job_api_jobs_evals_run_post"];
         delete?: never;

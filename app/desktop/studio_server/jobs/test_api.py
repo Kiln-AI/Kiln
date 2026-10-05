@@ -1075,6 +1075,71 @@ async def test_run_eval_job_with_undrivable_multi_turn_items_400(
     assert registry._jobs == {}
 
 
+def _torn_read() -> json.JSONDecodeError:
+    # What a load raises on a file that another writer has truncated and not yet
+    # written.
+    return json.JSONDecodeError("Expecting value", "", 0)
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_reads_again_after_a_torn_read(
+    client, registry, stub_eval_worker, split_eval, monkeypatch
+):
+    monkeypatch.setattr("kiln_ai.utils.torn_read.TORN_READ_RETRY_DELAY_SECONDS", 0)
+    original = jobs_api.task_run_config_from_id
+    calls: list[int] = []
+
+    def task_run_config_from_id(*args):
+        calls.append(1)
+        if len(calls) == 1:
+            raise _torn_read()
+        return original(*args)
+
+    monkeypatch.setattr(jobs_api, "task_run_config_from_id", task_run_config_from_id)
+
+    resp = await client.post(_EVAL_RUN_PATH, json=_EVAL_PARAMS)
+
+    assert resp.status_code == 201, resp.text
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_is_503_when_the_read_stays_torn(
+    client, registry, stub_eval_worker, split_eval, monkeypatch
+):
+    # A file that is still unreadable after the retry is a server state, not a bad
+    # request: the client can try again.
+    monkeypatch.setattr("kiln_ai.utils.torn_read.TORN_READ_RETRY_DELAY_SECONDS", 0)
+
+    def task_run_config_from_id(*args):
+        raise _torn_read()
+
+    monkeypatch.setattr(jobs_api, "task_run_config_from_id", task_run_config_from_id)
+
+    resp = await client.post(_EVAL_RUN_PATH, json=_EVAL_PARAMS)
+
+    assert resp.status_code == 503, resp.text
+    assert "try again" in resp.json()["detail"]
+    assert resp.headers["retry-after"] == "1"
+    assert registry._jobs == {}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_torn_read_in_the_runner_check_is_503_not_400(
+    client, registry, stub_eval_worker, split_eval, monkeypatch
+):
+    # JSONDecodeError is a ValueError. The runner check maps a ValueError to 400,
+    # so a torn read there must not be taken for a bad request.
+    monkeypatch.setattr("kiln_ai.utils.torn_read.TORN_READ_RETRY_DELAY_SECONDS", 0)
+    with patch.object(
+        EvalRunner, "validate_multi_turn_drive_readiness", side_effect=_torn_read()
+    ):
+        resp = await client.post(_EVAL_RUN_PATH, json=_EVAL_PARAMS)
+
+    assert resp.status_code == 503, resp.text
+    assert registry._jobs == {}
+
+
 @pytest.mark.asyncio
 async def test_run_eval_job_with_an_invalid_split_value_422(
     client, registry, stub_eval_worker, split_eval

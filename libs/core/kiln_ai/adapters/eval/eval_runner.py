@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Dict, List, Literal, Set
@@ -66,6 +65,7 @@ from kiln_ai.utils.async_job_runner import (
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam, serialize_trace
 from kiln_ai.utils.slow_operation import log_if_slow
+from kiln_ai.utils.torn_read import to_thread_retrying_torn_read
 
 logger = logging.getLogger(__name__)
 
@@ -504,8 +504,9 @@ class EvalRunner:
         """
         if concurrency is None:
             concurrency = DEFAULT_EVAL_CONCURRENCY
-        # Collecting reads every existing EvalRun of each eval config off disk.
-        jobs = await asyncio.to_thread(self.collect_tasks)
+        # Collecting reads every existing EvalRun of each eval config off disk, in a
+        # thread, while another runner can be saving one.
+        jobs = await to_thread_retrying_torn_read(self.collect_tasks)
 
         runner = AsyncJobRunner(
             concurrency=concurrency,
