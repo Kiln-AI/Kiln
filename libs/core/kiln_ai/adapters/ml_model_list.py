@@ -6860,6 +6860,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p8_max_0902,
         friendly_name="Qwen 3.8 Max 0902",
+        featured_rank=6,
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -6886,7 +6887,6 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p8_max,
         friendly_name="Qwen 3.8 Max",
-        featured_rank=6,
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
