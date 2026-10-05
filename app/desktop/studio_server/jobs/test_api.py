@@ -1390,3 +1390,48 @@ async def test_identical_eval_job_request_returns_the_unfinished_job(
     assert again.json()["job_id"] == first.json()["job_id"]
     assert other.json()["job_id"] != first.json()["job_id"]
     assert len(registry._jobs) == 2
+
+
+@pytest.mark.asyncio
+async def test_identical_eval_job_request_returns_a_paused_job_as_is(
+    client, registry, split_eval, monkeypatch
+):
+    # A pause that the user set stays in place: an identical request gets the paused
+    # job back with status paused, and does not resume it. A wait on it times out
+    # until someone resumes it, so the client reads `status` and resumes it itself.
+    release = asyncio.Event()
+
+    async def fake_compute_state(self, params):
+        return None
+
+    async def held_run(self, params, ctx):
+        await release.wait()
+        return EvalJobResult(total=0, success=0, error=0)
+
+    monkeypatch.setattr(EvalJobWorker, "compute_state", fake_compute_state)
+    monkeypatch.setattr(EvalJobWorker, "run", held_run)
+    try:
+        first = await client.post(_EVAL_RUN_PATH, json=_EVAL_PARAMS)
+        assert first.status_code == 201, first.text
+        job_id = first.json()["job_id"]
+        await _wait_for_status(registry, job_id, BackgroundJobStatus.RUNNING)
+        paused = await client.post(f"/api/jobs/{job_id}/pause")
+        assert paused.status_code == 202, paused.text
+
+        again = await client.post(_EVAL_RUN_PATH, json=_EVAL_PARAMS)
+        assert again.status_code == 201, again.text
+        assert again.json() == {"job_id": job_id, "status": "paused"}
+        assert registry._jobs[job_id].status == BackgroundJobStatus.PAUSED
+        assert len(registry._jobs) == 1
+
+        waited = await client.post(
+            "/api/jobs/wait", json={"ids": [job_id], "timeout": 0.1}
+        )
+        assert waited.status_code == 504
+
+        resumed = await client.post(f"/api/jobs/{job_id}/resume")
+        assert resumed.status_code == 202, resumed.text
+        await _wait_for_status(registry, job_id, BackgroundJobStatus.RUNNING)
+    finally:
+        release.set()
+    await _wait_for_status(registry, job_id, BackgroundJobStatus.SUCCEEDED)

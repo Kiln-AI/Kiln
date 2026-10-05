@@ -62,9 +62,13 @@ class CreateJobRequest(BaseModel):
 class CreateJobResponse(BaseModel):
     """Response returned when a job is created."""
 
-    job_id: str = Field(description="The id of the newly created job.")
+    job_id: str = Field(
+        description="The id of the job: a new job, or an existing identical job."
+    )
     status: BackgroundJobStatus = Field(
-        description="The job's status immediately after creation."
+        description="The job's status immediately after creation. When the request "
+        "returns an existing identical job, this is that job's status, which can be "
+        "'paused'."
     )
 
 
@@ -270,8 +274,12 @@ def connect_jobs_api(app: FastAPI) -> None:
         config and run config are skipped. If an identical job (same eval, judge,
         run config, split and items) is still pending, running or paused, returns
         that job instead of starting a second one that would score the same items
-        again. Poll `GET /api/jobs/{id}` or `POST /api/jobs/wait` for progress and
-        the result."""
+        again. A paused job is returned as it is, with `status` `paused`: the
+        request does not resume it. A wait on a paused job times out (504) until
+        someone resumes it, so check `status` and call
+        `POST /api/jobs/{id}/resume` if the job must run. Poll
+        `GET /api/jobs/{id}` or `POST /api/jobs/wait` for progress and the
+        result."""
         # Entity loads are blocking IO, so run them off the event loop.
         await asyncio.to_thread(_check_eval_job_request, params)
         job = await job_registry.create(
