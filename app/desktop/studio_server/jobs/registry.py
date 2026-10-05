@@ -300,7 +300,7 @@ class JobRegistry:
         ctx = self._build_context(job_id, run_id, worker)
         try:
             try:
-                await self._reconcile(job, emit_on_change=True)
+                await self._reconcile(job, emit_on_change=True, from_supervisor=True)
                 if job.status == BackgroundJobStatus.SUCCEEDED:
                     return
                 result = await worker.run(params, ctx)
@@ -530,7 +530,18 @@ class JobRegistry:
 
     # -- reconciliation ------------------------------------------------------
 
-    async def _reconcile(self, job: JobRecord, emit_on_change: bool) -> bool:
+    async def _reconcile(
+        self, job: JobRecord, emit_on_change: bool, from_supervisor: bool = False
+    ) -> bool:
+        """Apply the worker's derived state to the job.
+
+        Progress always follows the derived state. The status moves to succeeded
+        only when no live supervising task owns the job, or when that task asks
+        (its check before run()). A task that runs owns its own transition: only
+        it has the worker's result, and cancel and pause need it to stop the
+        worker. The derived state says complete before run() returns, for example
+        after the last item is on disk, or when another job scored the items.
+        """
         worker = self._workers.get(job.type)
         if worker is None:
             return False
@@ -547,7 +558,8 @@ class JobRegistry:
         if derived is None:
             return False
         changed = self._apply_derived(job, derived)
-        if derived.is_complete and not job.status.is_terminal:
+        owns_status = from_supervisor or job.id not in self._tasks
+        if derived.is_complete and not job.status.is_terminal and owns_status:
             job.status = BackgroundJobStatus.SUCCEEDED
             job.ended_at = _utc_now()
             self._touch(job)
@@ -581,6 +593,10 @@ class JobRegistry:
         job.updated_at = _utc_now()
 
     def _emit(self, job: JobRecord) -> None:
+        # A deleted job already sent its `deleted` event. A late transition of its
+        # record must not bring it back for subscribers.
+        if self._jobs.get(job.id) is not job:
+            return
         self.events.publish_job(job)
         if job.status.is_terminal:
             ev = self._completion_events.get(job.id)

@@ -94,7 +94,7 @@ class _EmptyParams(BaseModel):
 
 class ReconcileCompleteWorker(JobWorker[_EmptyParams, _EmptyResult]):
     """compute_state flips to complete once `done` is set, so a GET reconciles
-    the running job straight to succeeded."""
+    the job to succeeded once no live task supervises it."""
 
     type_name = "reconcile_complete"
     params_model = _EmptyParams
@@ -354,11 +354,23 @@ async def test_get_unknown_404(client):
 
 @pytest.mark.asyncio
 async def test_get_reconciles_to_succeeded(client, registry):
+    # A running job keeps its status on a GET and takes only the new progress:
+    # its worker finishes it. A paused job has no worker, so a GET finishes it.
     ReconcileCompleteWorker.done = False
     resp = await client.post("/api/jobs/reconcile_complete", json={"params": {}})
     job_id = resp.json()["job_id"]
     await _wait_for_status(registry, job_id, BackgroundJobStatus.RUNNING)
+    # The supervisor's check before run() sets the total; after it, run() owns the job.
+    while registry._jobs[job_id].progress.total != 3:
+        await asyncio.sleep(0.01)
     ReconcileCompleteWorker.done = True
+    got = await client.get(f"/api/jobs/{job_id}")
+    assert got.status_code == 200
+    assert got.json()["status"] == "running"
+    assert got.json()["progress"]["success"] == 3
+
+    paused = await client.post(f"/api/jobs/{job_id}/pause")
+    assert paused.status_code == 202, paused.text
     got = await client.get(f"/api/jobs/{job_id}")
     assert got.status_code == 200
     assert got.json()["status"] == "succeeded"
