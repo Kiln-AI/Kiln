@@ -4028,8 +4028,13 @@ export interface paths {
          *     config and run config are skipped. If an identical job (same eval, judge,
          *     run config, split and items) is still pending, running or paused, returns
          *     that job instead of starting a second one that would score the same items
-         *     again. Poll `GET /api/jobs/{id}` or `POST /api/jobs/wait` for progress and
-         *     the result.
+         *     again. A paused job is returned as it is, with `status` `paused`: the
+         *     request does not resume it. A wait on a paused job times out (504) until
+         *     someone resumes it, so check `status` and call
+         *     `POST /api/jobs/{id}/resume` if the job must run. Poll
+         *     `GET /api/jobs/{id}` or `POST /api/jobs/wait` for progress and the
+         *     result. A 503 means that a project file was not readable, for example
+         *     while another job wrote it. Send the request again.
          */
         post: operations["run_eval_job_api_jobs_evals_run_post"];
         delete?: never;
@@ -5938,10 +5943,10 @@ export interface components {
         CreateJobResponse: {
             /**
              * Job Id
-             * @description The id of the newly created job.
+             * @description The id of the job: a new job, or an existing identical job.
              */
             job_id: string;
-            /** @description The job's status immediately after creation. */
+            /** @description The job's status immediately after creation. When the request returns an existing identical job, this is that job's status, which can be 'paused'. */
             status: components["schemas"]["BackgroundJobStatus"];
         };
         /** CreateKilnCopilotApiKeyRequest */

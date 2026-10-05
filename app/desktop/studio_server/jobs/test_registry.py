@@ -219,17 +219,24 @@ class ErrorThenNoneWorker(JobWorker[_EmptyParams, _EmptyResult]):
         return _EmptyResult()
 
 
-class ReconcileCompleteWorker(JobWorker[_EmptyParams, _EmptyResult]):
-    """compute_state reports complete only once the test flips `done`, so a
-    get() issued while the job is still running (run() is a long sleep)
-    reconciles it straight to succeeded mid-flight.
+class _CountResult(BaseModel):
+    count: int
+
+
+class ReconcileCompleteWorker(JobWorker[_EmptyParams, _CountResult]):
+    """compute_state reports complete only once the test flips `done`. run()
+    blocks on `gate`, so a get() can land while the source of truth already says
+    complete and the worker has not yet returned its result: the window between
+    the last item written to disk and run() returning.
     """
 
     type_name = "reconcile_complete"
     params_model = _EmptyParams
-    result_model = _EmptyResult
+    result_model = _CountResult
     supports_pause = True
     done = False
+    started: asyncio.Event
+    gate: asyncio.Event
 
     async def compute_state(self, params):
         complete = type(self).done
@@ -238,8 +245,15 @@ class ReconcileCompleteWorker(JobWorker[_EmptyParams, _EmptyResult]):
         )
 
     async def run(self, params, ctx):
-        await asyncio.sleep(5)
-        return _EmptyResult()
+        type(self).started.set()
+        await type(self).gate.wait()
+        return _CountResult(count=3)
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.done = False
+        cls.started = asyncio.Event()
+        cls.gate = asyncio.Event()
 
 
 # -- job id ------------------------------------------------------------------
@@ -691,17 +705,75 @@ async def test_succeeded_job_with_failed_items_keeps_its_error_count_on_get():
 
 
 @pytest.mark.asyncio
-async def test_get_reconciles_running_job_to_succeeded_mid_flight():
-    # A long-running job whose source-of-truth state flips to complete should be
-    # reconciled straight to succeeded by get() (the running/get() reconcile
-    # path), not only at launch time.
+async def test_get_keeps_a_job_with_a_live_task_running():
+    # The source of truth says complete while run() has not returned yet. get()
+    # takes the new progress, but the status stays running: the supervising task
+    # owns the transition, because only it has the worker's result, and cancel
+    # and pause still have a live worker to stop.
     reg = JobRegistry(max_concurrent=2)
     reg.register_type(ReconcileCompleteWorker)
-    ReconcileCompleteWorker.done = False
+    ReconcileCompleteWorker.reset()
     job = await reg.create("reconcile_complete", {})
-    await wait_for_status(reg, job.id, BackgroundJobStatus.RUNNING)
-    # Still running here (run() is a 5s sleep); now flip the source of truth.
-    assert reg._jobs[job.id].status == BackgroundJobStatus.RUNNING
+    await asyncio.wait_for(ReconcileCompleteWorker.started.wait(), timeout=3.0)
+    waiter = asyncio.create_task(reg.wait(job.id, timeout=3.0))
+    ReconcileCompleteWorker.done = True
+
+    got = await reg.get(job.id)
+    assert got is not None
+    assert got.status == BackgroundJobStatus.RUNNING
+    assert got.progress.success == 3
+    assert got.ended_at is None
+    await asyncio.sleep(0.05)
+    assert not waiter.done()
+
+    ReconcileCompleteWorker.gate.set()
+    finished = await waiter
+    assert finished.status == BackgroundJobStatus.SUCCEEDED
+    assert finished.result == {"count": 3}
+    assert finished.ended_at is not None
+
+
+@pytest.mark.asyncio
+async def test_job_with_a_live_task_can_be_cancelled_after_its_items_are_done():
+    # Before this, a get() in the window flipped the job to succeeded, so cancel
+    # was a 409 while the worker kept running, and delete then let the worker
+    # publish a job event for an id that no longer existed.
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(ReconcileCompleteWorker)
+    ReconcileCompleteWorker.reset()
+    published: list[tuple[str, BackgroundJobStatus]] = []
+    publish_job = reg.events.publish_job
+
+    def record(job):
+        published.append((job.id, job.status))
+        publish_job(job)
+
+    reg.events.publish_job = record  # type: ignore[method-assign]
+    job = await reg.create("reconcile_complete", {})
+    await asyncio.wait_for(ReconcileCompleteWorker.started.wait(), timeout=3.0)
+    ReconcileCompleteWorker.done = True
+    await reg.get(job.id)
+
+    with pytest.raises(JobOperationError):
+        await reg.delete(job.id)
+    cancelled = await reg.cancel(job.id)
+    assert cancelled.status == BackgroundJobStatus.CANCELLED
+    assert job.id not in reg._tasks
+    assert (job.id, BackgroundJobStatus.SUCCEEDED) not in published
+
+
+@pytest.mark.asyncio
+async def test_get_reconciles_a_paused_job_to_succeeded():
+    # A job with no live task (here paused) has no worker to finish it, so get()
+    # still moves it to succeeded when the source of truth says complete, for
+    # example when another job scored its items.
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(ReconcileCompleteWorker)
+    ReconcileCompleteWorker.reset()
+    job = await reg.create("reconcile_complete", {})
+    await asyncio.wait_for(ReconcileCompleteWorker.started.wait(), timeout=3.0)
+    await reg.pause(job.id)
+    assert job.id not in reg._tasks
     ReconcileCompleteWorker.done = True
 
     got = await reg.get(job.id)
@@ -709,6 +781,24 @@ async def test_get_reconciles_running_job_to_succeeded_mid_flight():
     assert got.status == BackgroundJobStatus.SUCCEEDED
     assert got.progress.success == 3
     assert got.ended_at is not None
+
+
+@pytest.mark.asyncio
+async def test_no_job_event_for_a_job_that_is_no_longer_in_the_registry():
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(ReconcileCompleteWorker)
+    published: list[str] = []
+    reg.events.publish_job = lambda job: published.append(job.id)  # type: ignore[method-assign]
+    ReconcileCompleteWorker.reset()
+    job = await reg.create("reconcile_complete", {})
+    await asyncio.wait_for(ReconcileCompleteWorker.started.wait(), timeout=3.0)
+    published.clear()
+
+    # A record that is gone from the index (deleted) must not reach subscribers.
+    reg._jobs.pop(job.id)
+    ReconcileCompleteWorker.gate.set()
+    await asyncio.sleep(0.05)
+    assert published == []
 
 
 # -- concurrency -------------------------------------------------------------

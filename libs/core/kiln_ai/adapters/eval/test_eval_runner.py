@@ -321,6 +321,33 @@ async def test_async_eval_runner_status_updates(mock_eval_runner, concurrency):
     assert mock_eval_runner.run_job.call_count == job_count
 
 
+@pytest.mark.asyncio
+async def test_run_collects_tasks_again_after_a_torn_read(
+    mock_eval_runner, monkeypatch
+):
+    # collect_tasks reads every EvalRun in a worker thread, while another job can be
+    # saving one. A file read between the truncate and the write raises
+    # JSONDecodeError; run() collects again once instead of failing.
+    monkeypatch.setattr("kiln_ai.utils.torn_read.TORN_READ_RETRY_DELAY_SECONDS", 0)
+    jobs = [{} for _ in range(3)]
+    calls: list[int] = []
+
+    def collect_tasks():
+        calls.append(1)
+        if len(calls) == 1:
+            raise json.JSONDecodeError("Expecting value", "", 0)
+        return jobs
+
+    mock_eval_runner.collect_tasks = collect_tasks
+    mock_eval_runner.run_job = AsyncMock(return_value=True)
+
+    progresses = [progress async for progress in mock_eval_runner.run()]
+
+    assert len(calls) == 2
+    assert progresses[-1].complete == 3
+    assert mock_eval_runner.run_job.call_count == 3
+
+
 def test_collect_tasks_filtering(
     mock_eval,
     mock_task,
