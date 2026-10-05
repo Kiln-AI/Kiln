@@ -71,9 +71,12 @@ class ModelName(str, Enum):
     llama_4_maverick = "llama_4_maverick"
     llama_4_scout = "llama_4_scout"
     gpt_6_1_sol = "gpt_6_1_sol"
+    gpt_6_1_sol_pro = "gpt_6_1_sol_pro"
     gpt_6_astra = "gpt_6_astra"
     gpt_6_sol = "gpt_6_sol"
+    gpt_6_sol_pro = "gpt_6_sol_pro"
     gpt_6_luna = "gpt_6_luna"
+    gpt_6_luna_pro = "gpt_6_luna_pro"
     gpt_5_6_sol = "gpt_5_6_sol"
     gpt_5_6_terra = "gpt_5_6_terra"
     gpt_5_6_luna = "gpt_5_6_luna"
@@ -825,6 +828,37 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # GPT 6.1 Sol Pro
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_1_sol_pro,
+        friendly_name="GPT-6.1 Sol Pro",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-6.1-sol-pro",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # GPT 6 Astra
     KilnModel(
         family=ModelFamily.gpt,
@@ -940,6 +974,37 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # GPT 6 Sol Pro
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_sol_pro,
+        friendly_name="GPT-6 Sol Pro",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-6-sol-pro",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # GPT 6 Luna
     KilnModel(
         family=ModelFamily.gpt,
@@ -978,6 +1043,37 @@ built_in_models: List[KilnModel] = [
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 model_id="openai/gpt-6-luna",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 6 Luna Pro
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_luna_pro,
+        friendly_name="GPT-6 Luna Pro",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-6-luna-pro",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
