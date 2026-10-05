@@ -258,7 +258,6 @@ class TaskRun(
         if task is None:
             # Not yet attached - defer; revalidates when attached/saved.
             return self
-        # Avoid circular import at module load.
         from kiln_ai.datamodel.datamodel_enums import TurnMode
 
         if task.turn_mode != TurnMode.multiturn:

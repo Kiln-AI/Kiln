@@ -54,9 +54,7 @@ export async function load_task_run_configs(
     }
   }
 
-  // Create and store the promise
   const promise = (async () => {
-    // Set loading state to true
     run_configs_loading_by_task_composite_id.update((loading) => ({
       ...loading,
       [composite_key]: true,
@@ -108,13 +106,11 @@ export async function load_task_run_configs(
 
       throw error
     } finally {
-      // Set loading state to false
       run_configs_loading_by_task_composite_id.update((loading) => ({
         ...loading,
         [composite_key]: false,
       }))
 
-      // Clean up the promise from the map
       delete loading_task_run_configs[composite_key]
     }
   })()

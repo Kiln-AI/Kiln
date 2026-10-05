@@ -46,7 +46,7 @@ class JobNotFoundError(Exception):
 class JobOperationError(Exception):
     """Raised for invalid lifecycle operations (e.g. pause a non-running job).
 
-    Phase 2 maps these to 409 Conflict.
+    The jobs API maps these to 409 Conflict.
     """
 
 
@@ -304,14 +304,12 @@ class JobRegistry:
                 if job.status == BackgroundJobStatus.SUCCEEDED:
                     return
                 result = await worker.run(params, ctx)
-                # The cancellation transition is unconditional (functional_spec
-                # §2): a worker that catches CancelledError for cleanup and then
-                # returns normally — even one that calls task.uncancel() so it is
-                # never re-raised — must still land in paused/cancelled, not
-                # succeeded. The registry enforces this off its own delivery
-                # record rather than trusting the worker to re-raise. A worker
-                # that finished naturally before any cancel landed has no
-                # delivery recorded, so its result stands.
+                # The cancellation transition is unconditional: a worker that
+                # catches CancelledError and returns normally (even after
+                # task.uncancel()) must still land in paused/cancelled. The
+                # registry checks its own delivery record rather than trusting
+                # the worker to re-raise; a worker that finished before any
+                # cancel landed has no delivery recorded, so its result stands.
                 if job_id in self._cancel_delivered:
                     self._finish_cancelled_or_paused(job)
                 else:

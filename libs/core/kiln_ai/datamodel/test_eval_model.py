@@ -29,6 +29,7 @@ from kiln_ai.datamodel.eval import (
     MultiTurnDriveConfig,
     MultiTurnSyntheticEvalInputData,
     PatternMatchProperties,
+    ScoreDirection,
     SetCheckProperties,
     SingleTurnEvalInputData,
     SkippedReason,
@@ -580,6 +581,105 @@ def test_eval_output_score_name_validation():
         type=TaskOutputRatingType.five_star,
     )
     assert max_length_score.name == "a" * 32
+
+
+def test_eval_output_score_direction_default():
+    score = EvalOutputScore(
+        name="accuracy",
+        type=TaskOutputRatingType.five_star,
+    )
+    assert score.direction == ScoreDirection.higher_is_better
+
+
+def test_eval_output_score_direction_legacy_dict():
+    """Serialized scores that predate the direction field must still parse."""
+    score = EvalOutputScore.model_validate(
+        {
+            "name": "accuracy",
+            "type": "five_star",
+        }
+    )
+    assert score.direction == ScoreDirection.higher_is_better
+
+
+@pytest.mark.parametrize(
+    "score_type",
+    [
+        TaskOutputRatingType.five_star,
+        TaskOutputRatingType.pass_fail,
+        TaskOutputRatingType.pass_fail_critical,
+    ],
+)
+@pytest.mark.parametrize(
+    "direction",
+    [ScoreDirection.higher_is_better, ScoreDirection.informational],
+)
+def test_eval_output_score_direction_valid(score_type, direction):
+    score = EvalOutputScore(
+        name="my score",
+        type=score_type,
+        direction=direction,
+    )
+    assert score.direction == direction
+
+    round_tripped = EvalOutputScore.model_validate(score.model_dump())
+    assert round_tripped.direction == direction
+
+
+@pytest.mark.parametrize(
+    "score_type",
+    [
+        TaskOutputRatingType.five_star,
+        TaskOutputRatingType.pass_fail,
+        TaskOutputRatingType.pass_fail_critical,
+    ],
+)
+def test_eval_output_score_direction_lower_rejected(score_type):
+    with pytest.raises(
+        ValidationError,
+        match=r"'my score'.*higher-is-better by definition.*reserved for custom scores",
+    ):
+        EvalOutputScore(
+            name="my score",
+            type=score_type,
+            direction=ScoreDirection.lower_is_better,
+        )
+
+
+def test_eval_direction_legacy_file_load(mock_task, tmp_path):
+    """Eval files saved before the direction field existed must load with the default."""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="Legacy Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    # Rewrite the file without the direction key, simulating a pre-direction file
+    eval_path = eval.path
+    file_data = json.loads(eval_path.read_text())
+    for score in file_data["output_scores"]:
+        del score["direction"]
+    eval_path.write_text(json.dumps(file_data, ensure_ascii=False))
+
+    loaded_eval = Eval.load_from_file(str(eval_path))
+    assert loaded_eval.output_scores[0].direction == ScoreDirection.higher_is_better
+
+    # Re-saving persists the field explicitly
+    loaded_eval.save_to_file()
+    saved_data = json.loads(eval_path.read_text())
+    assert saved_data["output_scores"][0]["direction"] == "higher_is_better"
 
 
 @pytest.fixture
@@ -3021,6 +3121,16 @@ def _make_v2_eval_config(**kwargs) -> EvalConfig:
     return EvalConfig(name="V2 Test", config_type=EvalConfigType.v2, **kwargs)
 
 
+# One value_expression per EvalTaskInput field, keyed by the root variable it
+# reads. Checked against EvalTaskInput.model_fields so the coverage claim holds.
+_EVAL_INPUT_FIELD_EXPRESSIONS = {
+    "final_message": "final_message",
+    "trace": "trace[-1].content",
+    "task_input": "task_input | upper",
+    "reference_data": "reference_data",
+}
+
+
 class TestV2TemplateValidation:
     def test_valid_prompt_template(self):
         """A prompt_template with a Jinja expression passes validation."""
@@ -3129,6 +3239,69 @@ class TestV2TemplateValidation:
                     value_expression="final_message[",
                 ),
             )
+
+    @pytest.mark.parametrize(
+        "root,expression",
+        list(_EVAL_INPUT_FIELD_EXPRESSIONS.items()),
+    )
+    def test_value_expression_accepts_every_eval_input_field(self, root, expression):
+        # Tied to the model so a new EvalTaskInput field can't leave this test
+        # named "every field" while silently skipping one.
+        assert set(_EVAL_INPUT_FIELD_EXPRESSIONS) == set(EvalTaskInput.model_fields)
+        cfg = _make_v2_eval_config(
+            properties=ExactMatchProperties(
+                expected_value="yes",
+                value_expression=expression,
+            ),
+        )
+        assert cfg.properties.value_expression == expression
+
+    @pytest.mark.parametrize(
+        "expression,unknown",
+        [
+            ("outpt.status", "outpt"),
+            ("messages[-1].content", "messages"),
+            ("final_message ~ typo", "typo"),
+        ],
+    )
+    def test_value_expression_rejects_unknown_variable(self, expression, unknown):
+        """A typo'd root fails silently at runtime, so it has to fail loudly here.
+
+        Depending on what the expression does with it, the typo either resolves
+        to Undefined and scores every row 0.0, or -- as with `~`, which
+        stringifies Undefined to '' -- produces a plausible-looking wrong value
+        ('hi' for `final_message ~ typo`) that no one notices.
+        """
+        with pytest.raises(
+            ValidationError, match=f"unknown variable '{unknown}'"
+        ) as exc:
+            _make_v2_eval_config(
+                properties=ExactMatchProperties(
+                    expected_value="yes",
+                    value_expression=expression,
+                ),
+            )
+        assert "final_message, reference_data, task_input, trace" in str(exc.value)
+
+    def test_value_expression_unknown_variable_still_loads_from_file(self):
+        """Already-saved configs keep loading; the check gates writes, not reads."""
+        cfg = EvalConfig.model_validate(
+            {
+                "v": 1,
+                "id": "123",
+                "name": "Saved before the check existed",
+                "config_type": "v2",
+                "model_type": "eval_config",
+                "properties": {
+                    "type": "exact_match",
+                    "expected_value": "yes",
+                    "value_expression": "outpt.status",
+                },
+            },
+            context={"loading_from_file": True},
+        )
+        assert isinstance(cfg.properties, ExactMatchProperties)
+        assert cfg.properties.value_expression == "outpt.status"
 
     def test_none_value_expression_skipped(self):
         """value_expression=None (default) should not be validated."""
