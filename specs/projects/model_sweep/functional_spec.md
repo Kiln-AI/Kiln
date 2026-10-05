@@ -6,7 +6,7 @@ status: draft
 
 ## Overview
 
-A scheduled, unattended run that turns the existing model-maintenance skills into a routine. Each weekday morning: read hints from #models, discover new models, add the easy ones, verify them with the paid tests, find confirmed deprecations, open PRs as Claude, announce each PR in Slack (drafts in the models channel, ready PRs in the PR review channel), answer PR feedback through the PR body, and refresh a staleness report for the models hard-coded across Kiln-AI repos.
+A scheduled, unattended run that turns the existing model-maintenance skills into a routine. Each weekday morning: read hints from #models, discover new models, add the easy ones, verify them with the paid tests, find confirmed deprecations, open PRs as Claude, announce drafts in the models channel and request reviewers on ready PRs so the team's PR bot posts the review card, answer PR feedback through the PR body, and refresh a staleness report for the models hard-coded across Kiln-AI repos.
 
 Success state for a quiet day is silence: no PR, no Slack post. The staleness report still refreshes.
 
@@ -74,9 +74,14 @@ All PRs: semantic-commit title, `chore: ...`; the `WIP:` prefix means draft and 
 - **Where branches live**: on `Kiln-AI/Kiln` directly if `kiln-claude` has been invited to the org; otherwise on a fork, `kiln-claude/Kiln`, with "allow edits from maintainers" on. Labels (`model-sweep`, `needs-discussion`) are applied only when the account has triage rights; the title prefix and branch name carry the same information either way.
 - The routine never merges, approves, or force-pushes.
 
-### 4.2 Slack post
+### 4.2 Announcements
 
-Authoritative rule, matching the skill and the smoke log: one message per PR the run opened, through the operator's Slack app incoming webhooks. A draft PR (needs a decision) is announced in the models channel through `SLACK_MODELS_WEBHOOK`; a ready PR is announced in the PR review channel through `SLACK_PRS_WEBHOOK`. A draft that a later run marks ready is announced again in the PR review channel. Each message carries the why (the inconsistency and the options for a draft, the TLDR for a ready PR) and a cc line for the Slack user id in the run settings. A missing webhook variable skips that post and is named in the report. No further discussion in Slack; replies there are treated as hints on the next run, nothing more.
+Decided 2026-10-05, deferring to the team's PR bot (the `nathan` repo), which predates this project. The bot posts a review card in the PR channel for any open, non-draft tracked PR that has reviewers requested on GitHub, attributed to the PR author, and keeps it current (status, reminders, reports). It ignores drafts, which only earn their author a DM nudge after some days.
+
+- **Ready PR**: the sweep requests the reviewers named in the run settings when it opens the PR, and announces nothing itself. The bot's card is the announcement. A ready PR with no reviewer requested gets no card, so an empty reviewer setting is reported as a gap.
+- **Draft PR** (needs a decision): the sweep posts one message to the models channel through its webhook, with the why and the numbered options, and a cc line for the Slack user id in the run settings. The bot does not cover this case.
+- **Draft becomes ready**: the sweep marks it ready, drops the `WIP:` prefix and requests the reviewers; the bot posts the card then. No Slack post from the sweep.
+- No further discussion in Slack; replies there are treated as hints on the next run, nothing more.
 
 ### 4.3 Paid tests
 
@@ -95,7 +100,7 @@ Authoritative rule, matching the skill and the smoke log: one message per PR the
 - Added 2026-10-01 at the operator's request. Kiln clients read the model list from the published remote config, built by `publish_remote_config.yml` on a push to the `remote_config` branch. The team's flow is a PR with head `main` and base `remote_config`, merged by a human.
 - Every run diffs `origin/remote_config..origin/main` on the files the config is built from: `ml_model_list.py`, `ml_embedding_model_list.py`, `reranker_list.py`, `remote_config.py`. No diff: nothing to do. A diff is a candidate only: the run generates the config JSON from both refs and compares them, so a comment-only change to those files (as on 2026-10-02) publishes nothing.
 - A diff with an open PR into `remote_config` already present: no new PR. The routine refreshes its own PR's body with an **Updates** section; a human's PR is left alone and reported with its age.
-- A diff with no such PR: run the backwards-compatibility test the publish workflow runs, check `merge-tree` for conflicts, and open head `main` into base `remote_config`. Clean and passing: ready PR announced in #prs. Conflicts or failure: draft PR with **Decisions required**, announced in #models.
+- A diff with no such PR: run the backwards-compatibility test the publish workflow runs, check `merge-tree` for conflicts, and open head `main` into base `remote_config`. Clean and passing: ready PR with reviewers requested, so the PR bot posts its card. Conflicts or failure: draft PR with **Decisions required**, announced in the models channel.
 - The routine never merges it. The merge is the publish decision and stays human.
 
 ## 5. PR Feedback Loop
@@ -173,7 +178,7 @@ The later target, once the team-level pieces exist. The skill is unchanged; only
 
 - v1 host: Claude Code cloud routine in the operator's cloud environment, chosen on the 2026-10-01 smoke test (see `smoke_log.md`). Paid tests run there with the environment's keys, the operator's call. The local scheduled task is the fallback host. v2 remains the cloud brain plus GitHub Actions hands.
 - GitHub identity: PRs are authored as the operator for now (the cloud session acts through the Claude GitHub App as the account owner). "As Claude" waits for a bot identity: a machine-user account or an org GitHub App.
-- Slack identity: the operator's Slack app, two incoming webhooks; drafts to the models channel, ready PRs to the PR review channel (§4.2). A team bot may take this over later.
+- Announcements: ready PRs get reviewers requested and the team's PR bot posts the card (§4.2); drafts are announced in the models channel through the operator's Slack app webhook. Decided 2026-10-05; the earlier PR-channel webhook post is retired.
 - No cap on models or spend per run.
 - Staleness covers Kiln and kiln_server, reported in one living GitHub issue.
 - Discord announcement dropped.

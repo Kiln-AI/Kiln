@@ -14,3 +14,4 @@ status: draft
 - [ ] Phase 6: Move the prompt into a repo skill, `.agents/skills/kiln-model-sweep/`, with the deterministic scripts from the architecture doc, so the local host and the v2 Actions host run the same code. Local scheduled task as the fallback host.
 - [x] Added 2026-10-01: remote-config publish check in every run (head `main` into base `remote_config`, human merges, routine never merges). Pending first real exercise once #1810 is merged.
 - [x] 2026-10-02: the routine fetches the skill from the PR branch at run time; the inline copy is gone. On merge, point it at `main`.
+- [x] 2026-10-05: ready PRs defer to the team's PR bot (reviewers requested, no sweep post in the PR channel); drafts still announced in the models channel. The GitHub Action draft is dropped as redundant.

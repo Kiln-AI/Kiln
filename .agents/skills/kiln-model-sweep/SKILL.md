@@ -12,8 +12,9 @@ The prompt a scheduled cloud routine runs each weekday morning. It is a thin wra
 The routine's message, or the person running the sweep by hand, supplies these. Nothing personal is hard-coded here.
 
 - The models channel to read for hints: default `#models`.
-- `SLACK_MODELS_WEBHOOK` and `SLACK_PRS_WEBHOOK`: incoming-webhook URLs for the draft and ready announcements, as environment variables. When one is missing, that post is skipped and the report says so.
-- `SLACK_CC_USER_ID`: the Slack user id of the person who reviews the sweep's PRs, used in the cc line of each announcement. When unset, the cc line is omitted.
+- `SLACK_MODELS_WEBHOOK`: incoming-webhook URL for draft announcements, as an environment variable. When missing, the post is skipped and the report says so.
+- `REVIEWERS`: GitHub logins (or `org/team` slugs) to request on every ready PR. The team's PR bot posts the review card in the PR channel for any open, non-draft PR with reviewers requested, so the sweep never posts there itself. Never includes the account the sweep runs as; GitHub refuses a PR's author as reviewer. When unset, no reviewer is requested and the report says so.
+- `SLACK_CC_USER_ID`: the Slack user id to cc in draft announcements. When unset, the cc line is omitted.
 - Provider API keys as environment variables, with the names Kiln's `Config` uses.
 
 The text below is what the routine runs.
@@ -69,10 +70,10 @@ PR body:
   **UI Review (select all that apply)**
   - [X] No UI
 
-Slack announcements:
+Announcements:
 
-- After you open a PR, post one message to Slack with curl. A draft PR goes to the webhook in `$SLACK_MODELS_WEBHOOK`; a ready PR goes to `$SLACK_PRS_WEBHOOK`. Check each variable with a boolean only and never print it; if it is missing, skip that post and say so in the report.
-- The message says why, not only what. Send `{"text": "..."}` with `\n` between lines. The last line is `cc: <@SLACK_CC_USER_ID>. Discussion on the PR, not here.` with the id from the run settings; omit the cc when no id is set. Format for a draft:
+- Ready PRs are not announced by the sweep. Request the reviewers from the run settings when you open the PR (`create_pull_request` takes `reviewers`; `update_pull_request` adds them to an existing PR). The team's PR bot watches the repo and posts the review card in the PR channel for any open, non-draft PR with reviewers requested, attributed to the PR author, and keeps it current from there. Posting a second announcement would duplicate it.
+- Draft PRs are announced by the sweep, because the PR bot ignores drafts: post one message to the webhook in `$SLACK_MODELS_WEBHOOK` with curl. Check the variable with a boolean only and never print it; if it is missing, skip the post and say so in the report. The message says why, not only what. Send `{"text": "..."}` with `\n` between lines. The last line is `cc: <@SLACK_CC_USER_ID>. Discussion on the PR, not here.` with the id from the run settings; omit the cc when no id is set. Format:
 
   The model sweep needs a decision on the following draft pull request:
   *<PR title>*
@@ -81,15 +82,7 @@ Slack announcements:
   *Options:* 1) <short> 2) <short> 3) <short>
   cc: <@SLACK_CC_USER_ID>. Discussion on the PR, not here.
 
-  Format for a ready PR:
-
-  The model sweep is requesting reviews on the following pull request:
-  *<PR title>*
-  <<PR url>>
-  *Summary:* <the PR's TLDR: what was added or deprecated, on which providers, and the paid-test result, in one sentence.>
-  cc: <@SLACK_CC_USER_ID>. Discussion on the PR, not here.
-
-- Post once per PR you opened in this run, never for a PR that already existed. When a run resolves a draft's blocker (for example the provider now serves the model and the paid test passes), mark the PR ready for review if your tools allow it, drop the `WIP: ` prefix from its title, and post the ready format to `$SLACK_PRS_WEBHOOK`; otherwise say in the report that a human must mark it ready.
+- Post once per draft you opened in this run, never for a PR that already existed. When a run resolves a draft's blocker (for example the provider now serves the model and the paid test passes), mark the PR ready with `update_pull_request` (`draft: false`), drop the `WIP: ` prefix from its title, and request the reviewers from the run settings; the PR bot posts the card at that point. Otherwise say in the report that a human must mark it ready.
 
 Pre-answered gates:
 
@@ -110,6 +103,6 @@ Remote config publish check, every run, after the PRs above:
 
 - Kiln clients read the model list from the published remote config, which is built from the `remote_config` branch, not from `main`. Run `git fetch origin remote_config`, then diff `origin/remote_config..origin/main` for `libs/core/kiln_ai/adapters/ml_model_list.py`, `ml_embedding_model_list.py`, `reranker_list.py` and `remote_config.py`. No difference: nothing to do, say so in the report. A difference in those files is a candidate, not a verdict: generate the config from both refs (`uv run python -c "from kiln_ai.adapters.remote_config import dump_builtin_config; dump_builtin_config('<out.json>')"` on `main`, and the same in a worktree of `origin/remote_config`) and compare the two JSON files. Identical JSON, as after a comment-only change to those files, is nothing to publish.
 - If there is a difference, list open PRs with base `remote_config`. If one exists, do not open another. If its title contains `update remote config` and you opened it, it is yours: refresh its body with a dated **Updates** section listing the commits now waiting. If a human opened it, leave it alone. Either way the report names it, its age, and the waiting commits.
-- If none exists: on `main`, run `KILN_TEST_COMPATIBILITY=1 uv run pytest -q libs/core/kiln_ai/adapters/test_remote_config.py::test_backwards_compatibility_with_v0_19`, and check `git merge-tree --write-tree origin/remote_config origin/main` for conflicts. Then open a PR with head `main` and base `remote_config`, title `chore: update remote config (<the models added or deprecated, short>)`, or `WIP: chore: ...` if it has to be a draft, body per the PR body rule above: a TLDR that merging publishes the model list to every Kiln client, the models added and the entries deprecated since the last publish (from the diff), the waiting commits, and the compatibility-test result. Clean merge and passing test: a ready PR, announced to `$SLACK_PRS_WEBHOOK`. Conflicts or a failing test: a draft PR with the conflicting files or the failure under **Decisions required**, announced to `$SLACK_MODELS_WEBHOOK`. Never merge it; a human's merge triggers the publish.
+- If none exists: on `main`, run `KILN_TEST_COMPATIBILITY=1 uv run pytest -q libs/core/kiln_ai/adapters/test_remote_config.py::test_backwards_compatibility_with_v0_19`, and check `git merge-tree --write-tree origin/remote_config origin/main` for conflicts. Then open a PR with head `main` and base `remote_config`, title `chore: update remote config (<the models added or deprecated, short>)`, or `WIP: chore: ...` if it has to be a draft, body per the PR body rule above: a TLDR that merging publishes the model list to every Kiln client, the models added and the entries deprecated since the last publish (from the diff), the waiting commits, and the compatibility-test result. Clean merge and passing test: a ready PR with the reviewers from the run settings requested, so the PR bot posts its card. Conflicts or a failing test: a draft PR with the conflicting files or the failure under **Decisions required**, announced to `$SLACK_MODELS_WEBHOOK`. Never merge it; a human's merge triggers the publish.
 
-End with a short report: models added with providers, entries deprecated, needs-discussion items and why, PR links, Slack posts made or skipped, feedback handled, remote-config status (nothing to publish, PR opened, or PR already waiting and since when), skipped sources or providers and why, unverifiable candidates, whether Slack hints were used, and anything a human must do. If nothing was new and nothing was dead, open no PR and say so.
+End with a short report: models added with providers, entries deprecated, needs-discussion items and why, PR links, reviewers requested or why not, draft posts made or skipped, feedback handled, remote-config status (nothing to publish, PR opened, or PR already waiting and since when), skipped sources or providers and why, unverifiable candidates, whether Slack hints were used, and anything a human must do. If nothing was new and nothing was dead, open no PR and say so.

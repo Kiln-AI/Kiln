@@ -131,3 +131,16 @@
 - Deprecation audit: OpenRouter no longer lists `qwen/qwen3.8-max` and Fireworks' detail API returns 403 for two router slugs; all three passed Kiln's smoke test, so nothing was marked. Report-only: six OpenRouter expiries on 2026-10-08 and 10-09, Gemini 2.5 trio on 10-20, Seed 1.6 on 11-11, GLM 4.5/4.7 on 12-31.
 - Remote config: a maintainer had merged #1873 into `remote_config` at 14:18 UTC. The four source files still differed from `main` by a comment sweep, so the run generated the config from both refs, found the JSON identical, and opened nothing. That check is now in the skill.
 - State it noted: #1854 merged, #1872 closed by a human, #1871 with its review thread resolved and Author Review ticked. No PR, no Slack post, one mobile push about the 10-08/10-09 expiries. Work branch deleted at the end.
+
+## Run 6: second scheduled run (2026-10-05, 07:10 America/Toronto)
+
+- Opened two drafts with **Decisions required**: the GPT-6 Pro trio on OpenRouter (four thinking-level tests return no reasoning text, as the shipped GPT-6 entries do) and a successor migration for Qwen 3.8 Max 0902 (the old slug carried suggested flags and a featured rank). The operator answered inside the running session: merge the GPT-6 Pro PR as is, suggest the three for evals and data gen, place each Pro above its base, check OpenAI direct (it does not serve them); on the Qwen PR, migrate the flags and the featured rank. The run applied each answer as a commit with a dated **Updates** line, marked both ready, dropped `WIP:`, and posted both to the PR channel. Now #1894 and #1895.
+- A CI job failed on #1895 in an unrelated Linux tray test; the run read the log, re-ran the job once, it passed; no comment was posted.
+- The session stayed subscribed to its PRs and kept waking on CI and review events, which is why it still showed as running at midday. Not a hang.
+- Remote config: nothing to publish.
+
+## Announcements: deferring to the team's PR bot (2026-10-05)
+
+- The team's Slack bot (`Kiln-AI/nathan`, `pr_management`) posts a review card in the PR channel for any open, non-draft PR in its repos that has reviewers requested on GitHub, attributed to the author, and maintains it (status, reminders, Monday report). Source: `src/features/pr_management/refresh.ts` `wantsCard`, functional spec §4.3B. Drafts get no card, only a DM nudge to the author.
+- Today #1895 had a card because a reviewer was requested; #1894 had none. The sweep's own PR-channel post duplicated the card.
+- Change: the sweep requests the reviewers from its run settings on every ready PR and posts nothing in the PR channel. Drafts keep the models-channel post. The ready-for-review transition requests reviewers instead of posting. `SLACK_PRS_WEBHOOK` is no longer read. The uncommitted GitHub Action draft that labelled and announced PRs is deleted.

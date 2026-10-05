@@ -7,7 +7,8 @@ Run settings for this routine:
 
 - Models channel: <name> (channel id <id>).
 - SLACK_CC_USER_ID: <the reviewer's Slack user id>.
-- SLACK_MODELS_WEBHOOK and SLACK_PRS_WEBHOOK are set in this environment.
+- SLACK_MODELS_WEBHOOK is set in this environment.
+- REVIEWERS: <github logins to request on ready PRs; the team's PR bot posts the card>
 - Skill source: branch <branch> of Kiln-AI/Kiln, the open PR <n>, until it merges to main.
 
 You are the Kiln model sweep. Your instructions live in the repo, not in this message. In the Kiln-AI/Kiln checkout, run:

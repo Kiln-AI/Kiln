@@ -19,7 +19,7 @@ host (scheduled task | cloud routine)
        ├─ scripts/classify_diff.py    easy | needs-discussion, with reasons
        ├─ scripts/deprecations.py     check_provider + adapter smoke on dead entries  →  deprecations.json
        ├─ scripts/open_prs.py         branches, PR create/update under the active identity, body sections
-       ├─ scripts/slack_post.py       one message per PR: drafts → models webhook, ready → PR-review webhook
+       ├─ scripts/slack_post.py       drafts only → models webhook; ready PRs get reviewers requested, the team's PR bot posts the card
        ├─ scripts/staleness.py        scan repos  →  table  →  edit the living issue
        ├─ scripts/pr_feedback.py      new comments on model-sweep/* PRs  →  feedback.json ; update-body
        └─ run report (markdown) printed at the end, always
@@ -62,7 +62,7 @@ All intermediate files live under `.model-sweep/` in the worktree, git-ignored, 
 - `--host cloud`: uses the checkout as is.
 - Prints key availability as booleans by importing `kiln_ai.utils.config.Config` (local) or reading the environment (cloud). Never prints a value.
 - Resolves the GitHub identity: in v1 the operator's own credentials (the cloud session's GitHub App grant, or `gh` on a laptop); when a bot identity exists later, its token from the keychain (local) or an environment variable (cloud). If no identity can write, later steps run as if `--dry-run` for anything that writes to GitHub, and the report says why.
-- Reads `SLACK_MODELS_WEBHOOK` and `SLACK_PRS_WEBHOOK` from the environment and reports each as present or absent, booleans only.
+- Reads `SLACK_MODELS_WEBHOOK` and the reviewer list from the environment and reports each as present or absent, booleans only.
 
 ### discover.py
 
@@ -119,8 +119,8 @@ Unit-tested with fixture diffs for each rule, including a successor-migration di
 
 ### slack_post.py
 
-- Two incoming-webhook URLs from the environment: `SLACK_MODELS_WEBHOOK` for draft PRs (needs a decision) and `SLACK_PRS_WEBHOOK` for ready PRs, the routing the functional spec §4.2 fixes. Each message carries the why: for a draft, the inconsistency and the numbered options from the PR's **Decisions required** section; for a ready PR, its TLDR; then the cc line for the Slack user id in the run settings.
-- A missing variable skips that post and is named in the run report. There is no connector fallback; the connector would post as the operator.
+- Drafts only. One incoming-webhook URL from the environment, `SLACK_MODELS_WEBHOOK`, for draft PRs that need a decision; the message carries the inconsistency and the numbered options from the PR's **Decisions required** section, then the cc line for the Slack user id in the run settings. A missing variable skips the post and is named in the run report. No connector fallback; the connector would post as the operator.
+- Ready PRs are not posted. `open_prs.py` requests the reviewers from config on creation (and when a draft is marked ready); the team's PR bot posts and maintains the card in the PR channel for any open, non-draft PR with reviewers requested. Decided 2026-10-05.
 
 ### staleness.py
 
@@ -159,7 +159,7 @@ v1 runs under the operator's own GitHub account (functional spec, Decisions). Th
 
 - Provider keys: Kiln `Config` on the local host. Never in the cloud environment.
 - GitHub identity: v1 uses the operator's own credentials, so nothing extra is stored. A later bot identity would be a token in the keychain (local) or an environment variable (cloud), scoped to public-repo writes.
-- Slack: the two incoming-webhook URLs as environment variables on the host; on a laptop, keychain items read into the environment by the task.
+- Slack: one incoming-webhook URL (models channel) as an environment variable on the host; on a laptop, a keychain item read into the environment by the task. The PR channel is the PR bot's.
 - Nothing is ever echoed. `sweep_env.sh` prints `HAS_<NAME>=true|false` only.
 
 ## Error Handling
