@@ -6863,6 +6863,8 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="qwen/qwen3.8-max-0902",
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
@@ -6886,9 +6888,6 @@ built_in_models: List[KilnModel] = [
         friendly_name="Qwen 3.8 Max",
         featured_rank=6,
         providers=[
-            # OpenRouter no longer lists qwen/qwen3.8-max and answers requests
-            # for it with the qwen/qwen3.8-max-0902 checkpoint, which is
-            # registered as its own model above.
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwen3.8-max",
