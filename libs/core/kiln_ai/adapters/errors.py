@@ -120,9 +120,9 @@ def format_error_message(exc: Exception) -> str:
                 return "The run exceeded the maximum number of turns."
             if msg.startswith("Too many tool calls"):
                 return "The run exceeded the maximum number of tool calls in one turn."
-            # Other RuntimeErrors (tool not found, arg parse/validate failures,
-            # reasoning required) already have user-friendly messages with
-            # useful context (e.g., tool names), so pass them through.
+            # Other RuntimeErrors from the adapter (reasoning required, a
+            # task_response mixed with other tool calls) already have
+            # user-friendly messages, so pass them through.
             return msg
 
         if isinstance(exc, ValueError):
