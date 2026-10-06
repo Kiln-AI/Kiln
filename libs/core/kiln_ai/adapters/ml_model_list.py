@@ -45,6 +45,7 @@ class ModelFamily(str, Enum):
     sakana = "sakana"
     thinking_machines = "thinking_machines"
     jev = "jev"
+    fireworks = "fireworks"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -337,6 +338,7 @@ class ModelName(str, Enum):
     mimo_v2_6_flash = "mimo_v2_6_flash"
     inkling = "inkling"
     jev_1_13 = "jev_1_13"
+    ember_1 = "ember_1"
 
 
 class ModelParserID(str, Enum):
@@ -11203,6 +11205,52 @@ built_in_models: List[KilnModel] = [
                 supports_logprobs=False,
                 supports_function_calling=False,
                 structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # Ember-1
+    KilnModel(
+        family=ModelFamily.fireworks,
+        name=ModelName.ember_1,
+        friendly_name="Ember-1",
+        editorial_notes="Fireworks' post-trained Kimi K3. Keeps Kimi K3's quality while spending about 40% fewer reasoning tokens. 1M context, with vision.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/ember-1",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="fireworks/ember-1",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=KIMI_K3_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
