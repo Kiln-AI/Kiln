@@ -4098,10 +4098,18 @@ export interface paths {
          *     `POST /api/jobs/{id}/resume` if the job must run. Poll
          *     `GET /api/jobs/{id}` or `POST /api/jobs/wait` for progress and the
          *     result. An item with a `world_reset` runs in a fresh episode of its world
-         *     when the run config lists that world's tools. A 400 names a run config
-         *     whose world tools do not match an item's world, and a world that the
-         *     project does not have. A 503 means that a project file was not readable,
-         *     for example while another job wrote it. Send the request again.
+         *     when the run config lists that world's tools. A 404 means that the eval,
+         *     the eval config or the run config does not exist. A 422 means that the
+         *     eval has no such split, or that `item_ids` names an item outside it. A 400
+         *     means that the job cannot run as requested: a V1 judge on items it cannot
+         *     score, multi-turn items that cannot be driven, or, with a V2 judge, items
+         *     that the run config's world tools cannot run, or a world that the project
+         *     does not have while the run config lists tools. World problems that need
+         *     the world's environment fail item by item, in `GET /api/jobs/{id}/errors`:
+         *     an environment that cannot be reached or refuses a reset, and a run config
+         *     that lists the project's own version of a tool that the world serves. A
+         *     503 means that a project file was not readable, for example while another
+         *     job wrote it. Send the request again.
          */
         post: operations["run_eval_job_api_jobs_evals_run_post"];
         delete?: never;

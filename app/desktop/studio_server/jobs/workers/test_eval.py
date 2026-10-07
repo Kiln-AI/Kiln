@@ -28,13 +28,11 @@ from kiln_ai.datamodel.eval import (
     EvalInputSplit,
     EvalOutputScore,
     EvalRun,
-    EvalTaskInput,
     ExactMatchProperties,
     LlmJudgeProperties,
     SingleTurnEvalInputData,
     TaskRunSplit,
     UserMessage,
-    V2EvalResult,
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
@@ -1551,8 +1549,11 @@ def world(project):
 
 
 @pytest.fixture
-async def shared_world_sessions():
-    """The worker runs on the process-wide session manager, as the server does."""
+async def shared_world_sessions(world):
+    """The worker runs on the process-wide session manager, as the server does. It
+    starts empty, and its sessions close before the test server stops (this fixture
+    depends on `world`, so it tears down first)."""
+    await shutdown_shared_session_manager()
     yield
     await shutdown_shared_session_manager()
 
@@ -1621,11 +1622,6 @@ class _WorldToolGenerator:
         return run
 
 
-class _PassingJudge(BaseV2EvalBridge):
-    async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
-        return V2EvalResult(scores={"accuracy": 1.0})
-
-
 async def test_run_works_an_item_in_its_world_and_logs_a_refused_reset(
     resolve_project,
     task,
@@ -1651,20 +1647,13 @@ async def test_run_works_an_item_in_its_world_and_logs_a_refused_reset(
     generator = _WorldToolGenerator(task, build_world_tool_id(world.id, "append_note"))
     ctx = _RecordingCtx()
 
-    with (
-        patch.object(BaseV2EvalBridge, "run_task", new=generator),
-        patch(
-            "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
-            side_effect=lambda config, *args, **kwargs: _PassingJudge(config),
-        ),
-        patch(
-            "app.desktop.studio_server.jobs.workers.eval.JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS",
-            0,
-        ),
-    ):
+    # The real exact-match judge scores the trace: it passes only if the world tool's
+    # answer ("noted:1") became the run's output.
+    with patch.object(BaseV2EvalBridge, "run_task", new=generator):
         result = await EvalJobWorker().run(
-            _input_backed_params().model_copy(
-                update={
+            EvalJobParams(
+                **{
+                    **_input_backed_params().model_dump(),
                     "eval_config_id": world_eval_config.id,
                     "run_config_id": world_run_config.id,
                 }
@@ -1674,8 +1663,9 @@ async def test_run_works_an_item_in_its_world_and_logs_a_refused_reset(
 
     assert result == EvalJobResult(total=2, success=1, error=1)
 
-    scored = [run.eval_input_id for run in world_eval_config.runs(readonly=True)]
-    assert scored == [ok.id]
+    (score,) = world_eval_config.runs(readonly=True)
+    assert score.eval_input_id == ok.id
+    assert score.scores == {"accuracy": 1.0}
     (trace,) = [
         run
         for run in task.runs(readonly=True, include_eval_generated=True)
@@ -1683,6 +1673,8 @@ async def test_run_works_an_item_in_its_world_and_logs_a_refused_reset(
     ]
     assert trace.world_episode is not None
     assert trace.world_episode.reset.world_id == world.id
+    # The item's reset kwargs reached the environment.
+    assert trace.world_episode.final_state["fixture_id"] == "a"
     assert trace.world_episode.final_state["notes"] == ["hi"]
 
     (error,) = ctx.errors

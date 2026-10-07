@@ -111,8 +111,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_EVAL_CONCURRENCY = 25
 """How many eval items `EvalRunner.run()` evaluates in parallel when the caller passes no `concurrency`."""
 
-_MAX_LISTED_PROBLEMS = 5
-"""How many problems `validate_world_readiness` names before it counts the rest."""
+_MAX_LISTED_ITEMS = 10
+"""How many item ids one problem of `validate_world_readiness` names before it counts the rest."""
 
 
 @dataclass
@@ -273,6 +273,38 @@ def _run_config_tool_ids(run_config: TaskRunConfig) -> list[str]:
     return list(tools_config.tools) if tools_config is not None else []
 
 
+_WorldToolMismatch = Literal["no_world_reset", "stored_task_run", "other_world"]
+"""Why a run config's world tools cannot run an item (see `_world_tool_mismatch`)."""
+
+
+def _world_tool_ids(run_config: TaskRunConfig) -> list[str]:
+    return [
+        t
+        for t in _run_config_tool_ids(run_config)
+        if t.startswith(WORLD_TOOL_ID_PREFIX)
+    ]
+
+
+def _world_tool_mismatch(
+    run_config: TaskRunConfig,
+    item: EvalInput | TaskRun,
+    world_reset: WorldReset | None,
+) -> _WorldToolMismatch | None:
+    """Why the run config's world tools cannot run this item, or None when they can or
+    the run config lists no world tools. The one rule behind the per-job refusal
+    (`_uses_world`) and the request-time check (`validate_world_readiness`)."""
+    world_tool_ids = _world_tool_ids(run_config)
+    if not world_tool_ids:
+        return None
+    if world_reset is None:
+        # A stored TaskRun never carries a world_reset; only an EvalInput can.
+        return "stored_task_run" if isinstance(item, TaskRun) else "no_world_reset"
+    worlds = {world_and_tool_name_from_id(t)[0] for t in world_tool_ids}
+    if worlds != {world_reset.world_id}:
+        return "other_world"
+    return None
+
+
 def _uses_world(
     run_config: TaskRunConfig,
     item: EvalInput | TaskRun,
@@ -284,29 +316,58 @@ def _uses_world(
     tools without a world_reset, or from a different world, are an error rather than
     a silent run against the wrong tools. (Real versions of the world's own tools are
     refused separately, once the world's tools are known.)"""
-    world_tool_ids = [
-        t
-        for t in _run_config_tool_ids(run_config)
-        if t.startswith(WORLD_TOOL_ID_PREFIX)
-    ]
-    if not world_tool_ids:
-        return False
-    item_label = f"eval input {item.id}"
-    if world_reset is None:
+    world_tool_ids = _world_tool_ids(run_config)
+    mismatch = _world_tool_mismatch(run_config, item, world_reset)
+    if mismatch == "no_world_reset":
         raise ValueError(
             f"Run config '{run_config.name}' lists world tools "
-            f"({', '.join(world_tool_ids)}) but {item_label} has no "
+            f"({', '.join(world_tool_ids)}) but eval input {item.id} has no "
             "world_reset. Use a run config with project tools for this "
             "input, or give the input a world_reset."
         )
-    worlds = {world_and_tool_name_from_id(t)[0] for t in world_tool_ids}
-    if worlds != {world_reset.world_id}:
+    if mismatch == "stored_task_run":
         raise ValueError(
-            f"{item_label} runs in world {world_reset.world_id}, but run "
+            f"Run config '{run_config.name}' lists world tools "
+            f"({', '.join(world_tool_ids)}) but task run {item.id} is a stored task "
+            "run, which can't run in a world. Use a run config without world tools."
+        )
+    if mismatch == "other_world":
+        assert world_reset is not None
+        worlds = {world_and_tool_name_from_id(t)[0] for t in world_tool_ids}
+        raise ValueError(
+            f"eval input {item.id} runs in world {world_reset.world_id}, but run "
             f"config '{run_config.name}' lists tools from world(s) "
             f"{sorted(worlds - {world_reset.world_id})}. A job runs in one world."
         )
-    return True
+    return bool(world_tool_ids)
+
+
+def _resolves_world(
+    run_config: TaskRunConfig, world_reset: WorldReset | None, uses_world: bool
+) -> bool:
+    """Whether a job loads its item's world and lists the environment's tools: when it
+    runs in the world, and also when the run config lists project tools, to refuse the
+    project's own version of a tool the world serves. A run config with no tools never
+    needs the world."""
+    if world_reset is None:
+        return False
+    return uses_world or any(
+        not tool_id.startswith(WORLD_TOOL_ID_PREFIX)
+        for tool_id in _run_config_tool_ids(run_config)
+    )
+
+
+def _world_not_found_message(world_id: str, project_id: ID_TYPE) -> str:
+    return f"World {world_id} not found in project {project_id}"
+
+
+_NO_PROJECT_FOR_WORLD_MESSAGE = "World resets require the task to belong to a project"
+
+
+def _listed_ids(ids: list[str]) -> str:
+    shown = ids[:_MAX_LISTED_ITEMS]
+    more = len(ids) - len(shown)
+    return ", ".join(shown) + (f" (and {more} more)" if more else "")
 
 
 def _multi_turn_skip(data: MultiTurnSyntheticEvalInputData) -> _Skip | None:
@@ -323,6 +384,26 @@ def _multi_turn_skip(data: MultiTurnSyntheticEvalInputData) -> _Skip | None:
         return _Skip(
             SkippedReason.incompatible_input_shape,
             "Multi-turn synthetic input has no first_message to open the conversation",
+        )
+    return None
+
+
+def _skip_before_world_lane(
+    item: EvalInput | TaskRun, job_type: Literal["task_run_eval", "eval_config_eval"]
+) -> _Skip | None:
+    """Why a V2 job is skipped before its world is resolved, or None. The one rule
+    behind `_run_v2_job` and `validate_world_readiness`: a skipped item never needs
+    its world's environment."""
+    if job_type != "task_run_eval":
+        return None
+    if isinstance(item, EvalInput) and isinstance(
+        item.data, MultiTurnSyntheticEvalInputData
+    ):
+        return _multi_turn_skip(item.data)
+    if isinstance(item, TaskRun) and item.parent_task_run_id is not None:
+        return _Skip(
+            SkippedReason.incompatible_input_shape,
+            "Stored multi-turn conversations can't be re-run for a run config",
         )
     return None
 
@@ -655,74 +736,96 @@ class EvalRunner:
 
     def validate_world_readiness(self) -> None:
         """Fail fast on the world problems that every affected job would hit: a run
-        config that lists world tools for an item with no world_reset or with a
-        different world, and a world_reset that names a world the project does not
-        have. Callers can invoke this before starting a batch, so the user gets one
-        clear error instead of one failed item per job. The per-job checks stay as
-        the backstop for standalone runner use.
+        config whose world tools cannot run an item (the item has no world_reset, is a
+        stored TaskRun, or runs in another world), and a world_reset that names a world
+        the project does not have. Callers can invoke this before starting a batch, so
+        the user gets one clear error instead of one failed item per job. The per-job
+        checks stay as the backstop for standalone runner use.
 
-        It needs no environment, so it does not check the one world problem that
-        does: a run config that lists the project's own version of a tool the world
-        serves. That check needs the environment's tool list, and stays per job.
+        It shares its rules with `_run_v2_job` (`_skip_before_world_lane`,
+        `_world_tool_mismatch`, `_resolves_world`), and it applies them only where the
+        runner does: V2 judges that have an adapter. A legacy judge never reaches the
+        world lane.
+
+        It needs no environment, so it does not check the world problems that do: an
+        environment that cannot be reached or refuses a reset, and a run config that
+        lists the project's own version of a tool the world serves. Those stay per job.
 
         Like `validate_multi_turn_drive_readiness`, it checks every item the runner
-        selects, scored or not. It leaves out the items the runner skips before it
-        resolves a world: stored multi-turn TaskRun chains, and multi-turn inputs
-        that cannot be driven.
+        selects, scored or not, so it reads no EvalRun.
 
-        Raises ValueError listing the problems; no-op outside task_run_eval.
+        Raises one ValueError with one sentence per problem: project-level problems
+        first, then one per run config and kind, each naming its items.
         """
         if self.eval_run_type != "task_run_eval" or self.split is None:
             return
-        problems: list[str] = []
-        worlds_to_resolve: set[str] = set()
+        from kiln_ai.adapters.eval.registry import has_v2_eval_adapter
+
+        if not any(has_v2_eval_adapter(config) for config in self.eval_configs):
+            return
+
+        run_configs = self.run_configs or []
+        mismatched: dict[tuple[int, _WorldToolMismatch], list[str]] = {}
+        # An ordered set per world: several run configs can name one item.
+        items_by_world: dict[str, dict[str, None]] = {}
         for item in self.split.items:
             if self.item_ids is not None and item.id not in self.item_ids:
                 continue
-            if isinstance(item, TaskRun) and item.parent_task_run_id is not None:
-                continue
-            if (
-                isinstance(item, EvalInput)
-                and isinstance(item.data, MultiTurnSyntheticEvalInputData)
-                and _multi_turn_skip(item.data) is not None
-            ):
+            if _skip_before_world_lane(item, "task_run_eval") is not None:
                 continue
             world_reset = item.world_reset if isinstance(item, EvalInput) else None
-            for run_config in self.run_configs or []:
-                try:
-                    uses_world = _uses_world(run_config, item, world_reset)
-                except ValueError as e:
-                    # One sentence each: the list is joined into one sentence.
-                    problems.append(str(e).rstrip("."))
+            for index, run_config in enumerate(run_configs):
+                mismatch = _world_tool_mismatch(run_config, item, world_reset)
+                if mismatch is not None:
+                    mismatched.setdefault((index, mismatch), []).append(str(item.id))
                     continue
-                # The runner resolves the world in the same cases (see _run_v2_job):
-                # when the job runs in it, or when the run config lists project tools.
-                lists_project_tools = any(
-                    not tool_id.startswith(WORLD_TOOL_ID_PREFIX)
-                    for tool_id in _run_config_tool_ids(run_config)
-                )
-                if world_reset is not None and (uses_world or lists_project_tools):
-                    worlds_to_resolve.add(world_reset.world_id)
+                uses_world = bool(_world_tool_ids(run_config))
+                if _resolves_world(run_config, world_reset, uses_world):
+                    assert world_reset is not None
+                    items_by_world.setdefault(world_reset.world_id, {})[
+                        str(item.id)
+                    ] = None
 
-        if worlds_to_resolve:
+        problems: list[str] = []
+        if items_by_world:
             project = self.task.parent_project()
             if project is None:
-                problems.append("world resets require the task to belong to a project")
+                problems.append(_NO_PROJECT_FOR_WORLD_MESSAGE)
             else:
-                for world_id in sorted(worlds_to_resolve):
+                for world_id, ids in sorted(items_by_world.items()):
                     if World.from_id_and_parent_path(world_id, project.path) is None:
                         problems.append(
-                            f"world {world_id} is not in project {project.id}"
+                            f"{_world_not_found_message(world_id, project.id)}, and "
+                            f"these items run in it: {_listed_ids(list(ids))}"
                         )
-
+        for (index, mismatch), ids in mismatched.items():
+            run_config = run_configs[index]
+            tools = ", ".join(_world_tool_ids(run_config))
+            listed = _listed_ids(ids)
+            if mismatch == "no_world_reset":
+                problems.append(
+                    f"Run config '{run_config.name}' lists world tools ({tools}), but "
+                    f"these eval inputs have no world_reset: {listed}. Use a run "
+                    "config with project tools for them, give them a world_reset, "
+                    "or leave them out with item_ids"
+                )
+            elif mismatch == "stored_task_run":
+                problems.append(
+                    f"Run config '{run_config.name}' lists world tools ({tools}), but "
+                    "these items are stored task runs, which can't run in a world: "
+                    f"{listed}. Use a run config without world tools"
+                )
+            else:
+                problems.append(
+                    f"Run config '{run_config.name}' lists world tools ({tools}), but "
+                    f"these eval inputs run in another world: {listed}. A job runs in "
+                    "one world: use a run config with that world's tools, or leave "
+                    "them out with item_ids"
+                )
         if problems:
-            shown = problems[:_MAX_LISTED_PROBLEMS]
-            more = len(problems) - len(shown)
             raise ValueError(
-                "Cannot run this eval's items in their worlds: "
-                + "; ".join(shown)
-                + (f"; and {more} more" if more else "")
-                + "."
+                "Cannot run this eval's items in their worlds. "
+                + " ".join(f"{problem}." for problem in problems)
             )
 
     def _preload_skills(self) -> SkillsDict:
@@ -888,22 +991,9 @@ class EvalRunner:
 
         # Every skip comes before generation, so a job that can never be scored never
         # pays for one, and before the world lane, so it never needs the environment.
-        if is_multi_turn_input:
-            assert isinstance(job.item, EvalInput)
-            assert isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
-            skip = _multi_turn_skip(job.item.data)
-            if skip is not None:
-                return await self._persist_skip(job, skip.reason, skip.detail)
-        if (
-            isinstance(job.item, TaskRun)
-            and job.item.parent_task_run_id is not None
-            and job.type == "task_run_eval"
-        ):
-            return await self._persist_skip(
-                job,
-                SkippedReason.incompatible_input_shape,
-                "Stored multi-turn conversations can't be re-run for a run config",
-            )
+        skip = _skip_before_world_lane(job.item, job.type)
+        if skip is not None:
+            return await self._persist_skip(job, skip.reason, skip.detail)
 
         # World lane. After every skip (a skipped item must never need the environment
         # or create an episode) and before either generation lane, so single-turn and
@@ -913,15 +1003,10 @@ class EvalRunner:
         uses_world = job.task_run_config is not None and _uses_world(
             job.task_run_config, job.item, world_reset
         )
-        lists_project_tools = job.task_run_config is not None and any(
-            not tool_id.startswith(WORLD_TOOL_ID_PREFIX)
-            for tool_id in _run_config_tool_ids(job.task_run_config)
-        )
-        if (
-            world_reset is not None
-            and job.task_run_config is not None
-            and (uses_world or lists_project_tools)
+        if job.task_run_config is not None and _resolves_world(
+            job.task_run_config, world_reset, uses_world
         ):
+            assert world_reset is not None
             # Checked whether or not the job uses the world: a project-tools run config is
             # exactly what an input's world reset must keep it away from. A run config
             # with no tools at all has nothing to check, and never needs the environment.
@@ -1074,10 +1159,10 @@ class EvalRunner:
     async def _load_world_target(self, world_id: str) -> _WorldTarget:
         project = self.task.parent_project()
         if project is None:
-            raise ValueError("World resets require the task to belong to a project")
+            raise ValueError(_NO_PROJECT_FOR_WORLD_MESSAGE)
         world = World.from_id_and_parent_path(world_id, project.path)
         if world is None:
-            raise ValueError(f"World {world_id} not found in project {project.id}")
+            raise ValueError(_world_not_found_message(world_id, project.id))
         session_manager = (
             self._world_session_manager_override or shared_session_manager()
         )
