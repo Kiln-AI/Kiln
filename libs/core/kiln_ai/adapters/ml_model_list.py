@@ -6225,6 +6225,13 @@ built_in_models: List[KilnModel] = [
                 model_id="@cf/deepseek-ai/deepseek-v4-flash-0731",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                suggested_for_synthetic_user=True,
+                model_id="deepseek-ai/DeepSeek-V4-Flash-0731",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_function_calling=False,
+            ),
         ],
     ),
     # DeepSeek 3.2
@@ -9475,6 +9482,23 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=False,
                 supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                suggested_for_synthetic_user=True,
+                model_id="zai-org/GLM-5.3-Flash",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=False,
                 supports_vision=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
