@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import pytest
 from kiln_ai.adapters.errors import KilnRunError
+from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel import (
     DataSource,
@@ -27,15 +28,23 @@ from kiln_ai.datamodel.eval import (
     EvalInputSplit,
     EvalOutputScore,
     EvalRun,
+    EvalTaskInput,
     ExactMatchProperties,
     LlmJudgeProperties,
     SingleTurnEvalInputData,
     TaskRunSplit,
     UserMessage,
+    V2EvalResult,
 )
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
+from kiln_ai.datamodel.tool_id import build_world_tool_id
+from kiln_ai.datamodel.world import World, WorldReset
+from kiln_ai.tools.base_tool import ToolCallContext
+from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.async_job_runner import Progress, RetryableError
+from kiln_ai.worlds.session_manager import shutdown_shared_session_manager
+from kiln_ai.worlds.testing import serve_in_thread
 from pydantic import ValidationError
 
 from app.desktop.studio_server.jobs.models import (
@@ -1528,3 +1537,157 @@ async def test_compute_state_measures_only_the_named_items(
         _input_backed_params(item_ids=[inputs[0].id])
     )
     assert done.total == 1 and done.success == 1 and done.is_complete is True
+
+
+# -- worlds ------------------------------------------------------------------
+
+
+@pytest.fixture
+def world(project):
+    with serve_in_thread() as base_url:
+        world = World(id="world1", name="World", parent=project, env_url=base_url)
+        world.save_to_file()
+        yield world
+
+
+@pytest.fixture
+async def shared_world_sessions():
+    """The worker runs on the process-wide session manager, as the server does."""
+    yield
+    await shutdown_shared_session_manager()
+
+
+@pytest.fixture
+def world_run_config(task, world):
+    run_config = TaskRunConfig(
+        id="rc_world",
+        name="World Run Config",
+        parent=task,
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+            tools_config=ToolsRunConfig(
+                tools=[build_world_tool_id(world.id, "append_note")]
+            ),
+        ),
+    )
+    run_config.save_to_file()
+    return run_config
+
+
+@pytest.fixture
+def world_eval_config(input_backed_eval):
+    eval_config = EvalConfig(
+        id="eval_config_world",
+        name="Exact Match",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="noted:1"),
+        parent=input_backed_eval,
+    )
+    eval_config.save_to_file()
+    return eval_config
+
+
+class _WorldToolGenerator:
+    """Stands in for the model: calls the run config's world tool once, through the
+    tool registry, so the call reaches the episode the job started."""
+
+    def __init__(self, task: Task, tool_id: str) -> None:
+        self.task = task
+        self.tool_id = tool_id
+
+    async def __call__(self, item, run_config_id=None) -> TaskRun:
+        tool = tool_from_id(self.tool_id, self.task)
+        result = await tool.run(ToolCallContext(), note=item.data.user_message.text)
+        run = TaskRun(
+            parent=self.task,
+            input=item.data.user_message.text,
+            output=TaskOutput(
+                output=result.output,
+                source=DataSource(
+                    type=DataSourceType.synthetic,
+                    properties={
+                        "model_name": "gpt-4",
+                        "model_provider": "openai",
+                        "adapter_name": "test_adapter",
+                    },
+                    run_config_id=run_config_id,
+                ),
+            ),
+        )
+        run.id = None
+        return run
+
+
+class _PassingJudge(BaseV2EvalBridge):
+    async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
+        return V2EvalResult(scores={"accuracy": 1.0})
+
+
+async def test_run_works_an_item_in_its_world_and_logs_a_refused_reset(
+    resolve_project,
+    task,
+    world,
+    world_run_config,
+    world_eval_config,
+    shared_world_sessions,
+):
+    # End to end on the job path: the worker builds a real EvalRunner, which starts
+    # an episode per item on the world's environment. One item runs and is scored
+    # with its episode on the trace; the environment refuses the other's reset,
+    # which must reach the job's error log and leave no score.
+    ok = _make_eval_input(
+        task,
+        "inputs",
+        world_reset=WorldReset(world_id=world.id, reset_kwargs={"fixture_id": "a"}),
+    )
+    refused = _make_eval_input(
+        task,
+        "inputs",
+        world_reset=WorldReset(world_id=world.id, reset_kwargs={"fail_reset": True}),
+    )
+    generator = _WorldToolGenerator(task, build_world_tool_id(world.id, "append_note"))
+    ctx = _RecordingCtx()
+
+    with (
+        patch.object(BaseV2EvalBridge, "run_task", new=generator),
+        patch(
+            "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+            side_effect=lambda config, *args, **kwargs: _PassingJudge(config),
+        ),
+        patch(
+            "app.desktop.studio_server.jobs.workers.eval.JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS",
+            0,
+        ),
+    ):
+        result = await EvalJobWorker().run(
+            _input_backed_params().model_copy(
+                update={
+                    "eval_config_id": world_eval_config.id,
+                    "run_config_id": world_run_config.id,
+                }
+            ),
+            ctx,
+        )
+
+    assert result == EvalJobResult(total=2, success=1, error=1)
+
+    scored = [run.eval_input_id for run in world_eval_config.runs(readonly=True)]
+    assert scored == [ok.id]
+    (trace,) = [
+        run
+        for run in task.runs(readonly=True, include_eval_generated=True)
+        if run.eval_source is not None
+    ]
+    assert trace.world_episode is not None
+    assert trace.world_episode.reset.world_id == world.id
+    assert trace.world_episode.final_state["notes"] == ["hi"]
+
+    (error,) = ctx.errors
+    message, extra = error
+    assert "reset refused" in message
+    assert extra["dataset_id"] == refused.id
+    assert extra["item_source"] == "eval_input"
+    assert extra["run_config_id"] == world_run_config.id

@@ -1221,3 +1221,90 @@ async def test_tool_error_reaches_the_model_and_ends_the_episode(
     (trace,) = _traces(task)
     assert trace.world_episode.final_state["notes"] == []
     assert trace.world_episode.final_state["step_count"] == 1
+
+
+# -- validate_world_readiness -------------------------------------------------
+
+
+def _readiness_runner(eval_, run_config, item_ids=None):
+    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
+    task = eval_.parent_task()
+    return EvalRunner(
+        eval_configs=[cfg],
+        run_configs=[run_config],
+        eval_run_type="task_run_eval",
+        split=resolve_split(task, eval_, "test"),
+        item_ids=item_ids,
+    )
+
+
+def test_world_readiness_passes_for_items_in_the_run_configs_world(
+    task, world, run_config, eval_
+):
+    _input(task, "a", _reset(world, "a"), id="ei_a")
+    _input(task, "b", _reset(world, "b"), id="ei_b")
+
+    _readiness_runner(eval_, run_config).validate_world_readiness()
+
+
+def test_world_readiness_refuses_world_tools_for_an_item_without_a_world(
+    task, world, run_config, eval_
+):
+    item = _input(task, "plain", id="ei_plain")
+
+    with pytest.raises(ValueError, match="has no world_reset") as error:
+        _readiness_runner(eval_, run_config).validate_world_readiness()
+
+    assert item.id in str(error.value)
+    assert str(error.value).startswith("Cannot run this eval's items in their worlds")
+    assert ".." not in str(error.value)
+
+
+def test_world_readiness_refuses_world_tools_from_another_world(
+    project, task, world, env_server, run_config, eval_
+):
+    other = World(name="Other", parent=project, env_url=env_server)
+    other.save_to_file()
+    _input(task, "a", _reset(other, "a"), id="ei_a")
+
+    with pytest.raises(ValueError, match="A job runs in one world"):
+        _readiness_runner(eval_, run_config).validate_world_readiness()
+
+
+def test_world_readiness_refuses_a_world_the_project_does_not_have(
+    project, task, project_run_config, eval_
+):
+    # A project-tools run config still resolves the item's world, to refuse the
+    # project's own version of a served tool. A missing world fails every such job.
+    _input(task, "a", WorldReset(world_id="w_missing", reset_kwargs={}), id="ei_a")
+
+    with pytest.raises(ValueError, match="world w_missing is not in project"):
+        _readiness_runner(eval_, project_run_config).validate_world_readiness()
+
+
+def test_world_readiness_ignores_a_world_no_job_resolves(task, eval_):
+    # A run config with no tools never needs the item's world, so the runner never
+    # looks it up, and neither does the check.
+    _input(task, "a", WorldReset(world_id="w_missing", reset_kwargs={}), id="ei_a")
+
+    bare = _run_config(task, [], name="bare rc")
+    _readiness_runner(eval_, bare).validate_world_readiness()
+
+
+def test_world_readiness_checks_only_the_selected_items(task, world, run_config, eval_):
+    good = _input(task, "a", _reset(world, "a"), id="ei_a")
+    _input(task, "plain", id="ei_plain")
+
+    _readiness_runner(eval_, run_config, item_ids={good.id}).validate_world_readiness()
+
+
+def test_world_readiness_names_five_problems_and_counts_the_rest(
+    task, world, run_config, eval_
+):
+    for i in range(7):
+        _input(task, f"plain {i}", id=f"ei_plain_{i}")
+
+    with pytest.raises(ValueError, match=r"; and 2 more\.$") as error:
+        _readiness_runner(eval_, run_config).validate_world_readiness()
+
+    assert str(error.value).count("has no world_reset") == 5

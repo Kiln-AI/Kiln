@@ -1075,6 +1075,36 @@ async def test_run_eval_job_with_undrivable_multi_turn_items_400(
     assert registry._jobs == {}
 
 
+@pytest.mark.asyncio
+async def test_run_eval_job_with_items_outside_their_world_400(
+    client, registry, stub_eval_worker, split_eval
+):
+    with patch.object(
+        EvalRunner,
+        "validate_world_readiness",
+        side_effect=ValueError(
+            "Cannot run this eval's items in their worlds: eval input ei_1 has no "
+            "world_reset."
+        ),
+    ):
+        resp = await client.post(_EVAL_RUN_PATH, json=_EVAL_PARAMS)
+
+    assert resp.status_code == 400, resp.text
+    assert "ei_1" in resp.text
+    assert registry._jobs == {}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_checks_the_worlds_of_the_requested_items(
+    client, registry, stub_eval_worker, split_eval
+):
+    with patch.object(EvalRunner, "validate_world_readiness") as check:
+        resp = await client.post(_EVAL_RUN_PATH, json=_EVAL_PARAMS)
+
+    assert resp.status_code == 201, resp.text
+    check.assert_called_once_with()
+
+
 def _torn_read() -> json.JSONDecodeError:
     # What a load raises on a file that another writer has truncated and not yet
     # written.

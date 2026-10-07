@@ -4097,8 +4097,11 @@ export interface paths {
          *     someone resumes it, so check `status` and call
          *     `POST /api/jobs/{id}/resume` if the job must run. Poll
          *     `GET /api/jobs/{id}` or `POST /api/jobs/wait` for progress and the
-         *     result. A 503 means that a project file was not readable, for example
-         *     while another job wrote it. Send the request again.
+         *     result. An item with a `world_reset` runs in a fresh episode of its world
+         *     when the run config lists that world's tools. A 400 names a run config
+         *     whose world tools do not match an item's world, and a world that the
+         *     project does not have. A 503 means that a project file was not readable,
+         *     for example while another job wrote it. Send the request again.
          */
         post: operations["run_eval_job_api_jobs_evals_run_post"];
         delete?: never;

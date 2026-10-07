@@ -111,6 +111,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_EVAL_CONCURRENCY = 25
 """How many eval items `EvalRunner.run()` evaluates in parallel when the caller passes no `concurrency`."""
 
+_MAX_LISTED_PROBLEMS = 5
+"""How many problems `validate_world_readiness` names before it counts the rest."""
+
 
 @dataclass
 class EvalJob:
@@ -647,6 +650,78 @@ class EvalRunner:
             raise ValueError(
                 "Cannot re-drive this eval's multi-turn conversations: "
                 + "; ".join(problems)
+                + "."
+            )
+
+    def validate_world_readiness(self) -> None:
+        """Fail fast on the world problems that every affected job would hit: a run
+        config that lists world tools for an item with no world_reset or with a
+        different world, and a world_reset that names a world the project does not
+        have. Callers can invoke this before starting a batch, so the user gets one
+        clear error instead of one failed item per job. The per-job checks stay as
+        the backstop for standalone runner use.
+
+        It needs no environment, so it does not check the one world problem that
+        does: a run config that lists the project's own version of a tool the world
+        serves. That check needs the environment's tool list, and stays per job.
+
+        Like `validate_multi_turn_drive_readiness`, it checks every item the runner
+        selects, scored or not. It leaves out the items the runner skips before it
+        resolves a world: stored multi-turn TaskRun chains, and multi-turn inputs
+        that cannot be driven.
+
+        Raises ValueError listing the problems; no-op outside task_run_eval.
+        """
+        if self.eval_run_type != "task_run_eval" or self.split is None:
+            return
+        problems: list[str] = []
+        worlds_to_resolve: set[str] = set()
+        for item in self.split.items:
+            if self.item_ids is not None and item.id not in self.item_ids:
+                continue
+            if isinstance(item, TaskRun) and item.parent_task_run_id is not None:
+                continue
+            if (
+                isinstance(item, EvalInput)
+                and isinstance(item.data, MultiTurnSyntheticEvalInputData)
+                and _multi_turn_skip(item.data) is not None
+            ):
+                continue
+            world_reset = item.world_reset if isinstance(item, EvalInput) else None
+            for run_config in self.run_configs or []:
+                try:
+                    uses_world = _uses_world(run_config, item, world_reset)
+                except ValueError as e:
+                    # One sentence each: the list is joined into one sentence.
+                    problems.append(str(e).rstrip("."))
+                    continue
+                # The runner resolves the world in the same cases (see _run_v2_job):
+                # when the job runs in it, or when the run config lists project tools.
+                lists_project_tools = any(
+                    not tool_id.startswith(WORLD_TOOL_ID_PREFIX)
+                    for tool_id in _run_config_tool_ids(run_config)
+                )
+                if world_reset is not None and (uses_world or lists_project_tools):
+                    worlds_to_resolve.add(world_reset.world_id)
+
+        if worlds_to_resolve:
+            project = self.task.parent_project()
+            if project is None:
+                problems.append("world resets require the task to belong to a project")
+            else:
+                for world_id in sorted(worlds_to_resolve):
+                    if World.from_id_and_parent_path(world_id, project.path) is None:
+                        problems.append(
+                            f"world {world_id} is not in project {project.id}"
+                        )
+
+        if problems:
+            shown = problems[:_MAX_LISTED_PROBLEMS]
+            more = len(problems) - len(shown)
+            raise ValueError(
+                "Cannot run this eval's items in their worlds: "
+                + "; ".join(shown)
+                + (f"; and {more} more" if more else "")
                 + "."
             )
 
