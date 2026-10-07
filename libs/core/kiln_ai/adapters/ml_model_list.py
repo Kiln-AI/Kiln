@@ -117,6 +117,7 @@ class ModelName(str, Enum):
     phi_4 = "phi_4"
     phi_4_5p6b = "phi_4_5p6b"
     phi_4_mini = "phi_4_mini"
+    mistral_large_4 = "mistral_large_4"
     mistral_large = "mistral_large"
     mistral_3_large_2512 = "mistral_3_large_2512"
     mistral_nemo = "mistral_nemo"
@@ -5339,6 +5340,32 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Mistral Large 4
+    KilnModel(
+        family=ModelFamily.mistral,
+        name=ModelName.mistral_large_4,
+        friendly_name="Mistral Large 4",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="mistralai/mistral-large-4-0",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
     # Mistral Large 2512
     KilnModel(
         family=ModelFamily.mistral,
@@ -10107,7 +10134,7 @@ built_in_models: List[KilnModel] = [
         ],
     ),
     # Kimi K2.6
-    # Not available on Together AI or SiliconFlow CN yet
+    # Not available on Together AI serverless yet
     KilnModel(
         family=ModelFamily.kimi,
         name=ModelName.kimi_k2_6,
@@ -10167,6 +10194,12 @@ built_in_models: List[KilnModel] = [
             #     ],
             #     multimodal_requires_pdf_as_image=True,
             # ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Pro/moonshotai/Kimi-K2.6",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
             KilnModelProvider(
                 name=ModelProviderName.featherless_ai,
                 model_id="moonshotai/Kimi-K2.6",
