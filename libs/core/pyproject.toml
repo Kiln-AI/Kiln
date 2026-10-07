@@ -47,6 +47,7 @@ dependencies = [
     "mcp[cli]>=1.10.1",
     "typer>=0.9.0",
     "litellm>=1.102.0,<1.103",
+    "websockets>=15.0.1",
 ]
 
 [project.scripts]

@@ -16,6 +16,7 @@ from kiln_ai.datamodel.reranker import RerankerConfig
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.vector_store import VectorStoreConfig
+from kiln_ai.datamodel.world import World
 
 
 class Project(
@@ -35,6 +36,7 @@ class Project(
         "memories": ParentOfRelationship(
             model=Memory, filesystem_name="assistant_memory"
         ),
+        "worlds": World,
     },
 ):
     """
@@ -86,3 +88,6 @@ class Project(
 
     def memories(self, readonly: bool = False) -> list[Memory]:
         return super().memories(readonly=readonly)  # type: ignore
+
+    def worlds(self, readonly: bool = False) -> list[World]:
+        return super().worlds(readonly=readonly)  # type: ignore  # pragma: no cover
