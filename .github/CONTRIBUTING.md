@@ -6,7 +6,7 @@ We use [GitHub issues](https://github.com/Kiln-AI/Kiln/issues) for tracking issu
 
 ## Contributing
 
-New contributors must agree to the [contributor license agreement](.config/CLA.md).
+New contributors must agree to the [contributor license agreement](../.config/CLA.md).
 
 ## Development Environment Setup
 
@@ -21,7 +21,7 @@ bash .config/utils/setup_env.sh --human
 Run `bash .config/utils/setup_env.sh --help` for the flags.
 
 To develop in a Claude Code cloud sandbox instead, see
-[Claude Cloud Setup for Kiln](.config/utils/claude_cloud_setup.md).
+[Claude Cloud Setup for Kiln](../.config/utils/claude_cloud_setup.md).
 
 Or by hand:
 
@@ -35,7 +35,7 @@ npm install
 
 ### Environment Variables
 
-The web UI has optional dev-only environment variables. See [`app/web_ui/.env.example`](app/web_ui/.env.example) for details.
+The web UI has optional dev-only environment variables. See [`app/web_ui/.env.example`](../app/web_ui/.env.example) for details.
 
 ### Running Development Servers
 
@@ -63,7 +63,7 @@ The root `Makefile` provides convenient shortcuts for commonly used scripts (`ma
 
 ### Running and Building the Desktop App
 
-See the [desktop README](app/desktop/README.md) instructions for running the desktop app locally.
+See the [desktop README](../app/desktop/README.md) instructions for running the desktop app locally.
 
 ## Tests, Formatting, and Linting
 
@@ -122,7 +122,7 @@ We suggest the following extensions for VSCode/Cursor. With them, you'll get com
 
 ### HooksMCP
 
-We have a [hooks_mcp.yaml](./.config/hooks_mcp.yaml) file, which defines how coding agents can interact with our developer tools (formatting, linting, etc).
+We have a [hooks_mcp.yaml](../.config/hooks_mcp.yaml) file, which defines how coding agents can interact with our developer tools (formatting, linting, etc).
 
 To use it, [setup HooksMCP](https://github.com/scosman/hooks_mcp?tab=readme-ov-file#running-hooksmcp) for your agents.
 
