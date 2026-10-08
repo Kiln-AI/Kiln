@@ -1519,6 +1519,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="gpt-5.3-chat-latest",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_doc_extraction=True,
                 supports_vision=True,
@@ -1654,6 +1655,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="gpt-5.2-chat-latest",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_doc_extraction=True,
                 supports_vision=True,
@@ -1884,6 +1886,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="gpt-5-chat-latest",
+                deprecated=True,
                 # Oddly no json_schema support for this model.
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 available_thinking_levels=GPT_5_OPENAI_THINKING_LEVELS,
@@ -4610,6 +4613,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="nvidia/nemotron-3-ultra-550b-a55b",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
             ),
         ],
@@ -9602,6 +9606,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/glm-5p2",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
             KilnModelProvider(
