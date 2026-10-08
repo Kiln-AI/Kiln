@@ -4137,6 +4137,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/wait": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wait For Jobs
+         * @description Block until ALL the given jobs reach a terminal state, then return
+         *     their records in the order given. A pure observer: disconnecting never
+         *     stops a job. The timeout covers the whole set. Empty `ids` returns an
+         *     empty list. A paused job is not terminal, so a wait on one runs out
+         *     the timeout (504).
+         */
+        post: operations["wait_for_jobs_api_jobs_wait_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/evals/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Eval Job
+         * @description Start a background job that runs one split of an eval against one run
+         *     config, and return at once. Items that already have a score for this eval
+         *     config and run config are skipped. If an identical job (same eval, judge,
+         *     run config, split and items) is still pending, running or paused, returns
+         *     that job instead of starting a second one that would score the same items
+         *     again. A paused job is returned as it is, with `status` `paused`: the
+         *     request does not resume it. A wait on a paused job times out (504) until
+         *     someone resumes it, so check `status` and call
+         *     `POST /api/jobs/{id}/resume` if the job must run. Poll
+         *     `GET /api/jobs/{id}` or `POST /api/jobs/wait` for progress and the
+         *     result. An item with a `world_reset` runs in a fresh episode of its world
+         *     when the run config lists that world's tools. A 404 means that the eval,
+         *     the eval config or the run config does not exist. A 422 means that the
+         *     eval has no such split, or that `item_ids` names an item outside it. A 400
+         *     means that the job cannot run as requested: a V1 judge on items it cannot
+         *     score, multi-turn items that cannot be driven, or, with a V2 judge, items
+         *     that the run config's world tools cannot run, or a world that the project
+         *     does not have while the run config lists tools. World problems that need
+         *     the world's environment fail item by item, in `GET /api/jobs/{id}/errors`:
+         *     an environment that cannot be reached or refuses a reset, and a run config
+         *     that lists the project's own version of a tool that the world serves. A
+         *     503 means that a project file was not readable, for example while another
+         *     job wrote it. Send the request again.
+         */
+        post: operations["run_eval_job_api_jobs_evals_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{type}": {
         parameters: {
             query?: never;
@@ -4200,9 +4266,9 @@ export interface paths {
          * Wait For Job
          * @description Block until the job reaches a terminal state, then return its record.
          *
-         *     A pure observer, like the SSE stream: if the client disconnects, uvicorn
-         *     cancels this handler coroutine, which cancels the wait() await and tears
-         *     down only the awaiter — the job's supervising task keeps running.
+         *     A pure observer: waiting never stops the job. A client that disconnects
+         *     does not cancel this handler, so a wait without a timeout on a job that
+         *     never ends (for example a paused one) lasts until that job ends.
          */
         get: operations["wait_for_job_api_jobs__id__wait_get"];
         put?: never;
@@ -6057,10 +6123,10 @@ export interface components {
         CreateJobResponse: {
             /**
              * Job Id
-             * @description The id of the newly created job.
+             * @description The id of the job: a new job, or an existing identical job.
              */
             job_id: string;
-            /** @description The job's status immediately after creation. */
+            /** @description The job's status immediately after creation. When the request returns an existing identical job, this is that job's status, which can be 'paused'. */
             status: components["schemas"]["BackgroundJobStatus"];
         };
         /** CreateKilnCopilotApiKeyRequest */
@@ -7408,6 +7474,53 @@ export interface components {
              * @description The id of the dataset item this run was generated for. Interpreted within the store named by source_type — ids are only unique within a store.
              */
             source_id: string;
+        };
+        /**
+         * EvalJobParams
+         * @description Which split of an eval to run, against which run config, with which judge.
+         */
+        EvalJobParams: {
+            /**
+             * Project Id
+             * @description Id of the project the eval belongs to.
+             */
+            project_id: string;
+            /**
+             * Task Id
+             * @description Id of the task the eval belongs to.
+             */
+            task_id: string;
+            /**
+             * Eval Id
+             * @description Id of the eval to run.
+             */
+            eval_id: string;
+            /**
+             * Eval Config Id
+             * @description Id of the eval config (judge) to evaluate the run's output with.
+             */
+            eval_config_id: string;
+            /**
+             * Run Config Id
+             * @description Id of the task run config whose outputs are being evaluated.
+             */
+            run_config_id: string;
+            /**
+             * Concurrency
+             * @description Max dataset items evaluated in parallel by the runner, from 1 to 100. Leave null to use the runner's default (25).
+             */
+            concurrency?: number | null;
+            /**
+             * Split
+             * @description Which of the eval's dataset splits to run: train, val, or test. Required, so a caller never runs the test split by omission. Fails with 422 if the eval has no such split.
+             * @enum {string}
+             */
+            split: "train" | "val" | "test";
+            /**
+             * Item Ids
+             * @description Restrict the job to these items of the split (EvalInput ids for an EvalInput-backed split, TaskRun ids for a TaskRun-backed one). Fails with 422 if an id is not in the split when the job is created. Progress and completion are measured over the subset. Leave null to run the whole split. Lets a caller trial a run config on a few named items before paying for the full split: the rows it stores are reused by a later full run, which skips scored items.
+             */
+            item_ids?: string[] | null;
         };
         /**
          * EvalOutputScore
@@ -9166,6 +9279,13 @@ export interface components {
              * @description Optional typed, worker-specific progress detail (validated against the worker's progress_model). Null for workers whose generic count progress is enough.
              */
             progress_detail?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Properties
+             * @description Optional static, worker-published descriptive properties for this job (validated against the worker's properties_model). Derived once from params at create time and unchanged over the run.
+             */
+            properties?: {
                 [key: string]: unknown;
             } | null;
             /**
@@ -14313,6 +14433,23 @@ export interface components {
          * @enum {string}
          */
         VectorStoreType: "lancedb_fts" | "lancedb_hybrid" | "lancedb_vector";
+        /**
+         * WaitForJobsRequest
+         * @description Request body for waiting on a set of jobs.
+         */
+        WaitForJobsRequest: {
+            /**
+             * Ids
+             * @description Job ids to wait for. All must reach a terminal state.
+             */
+            ids?: string[];
+            /**
+             * Timeout
+             * @description Seconds to wait before giving up (504 on timeout; jobs keep running — re-issue the wait to keep waiting). Defaults to 600s, capped at 3600s: the wait is always bounded, since a job that never terminates (e.g. paused by the user) would otherwise hang the caller indefinitely.
+             * @default 600
+             */
+            timeout: number;
+        };
         /**
          * WorldCreateRequest
          * @description A new world: a pointer to a running OpenEnv environment.
@@ -23641,6 +23778,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    wait_for_jobs_api_jobs_wait_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WaitForJobsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_eval_job_api_jobs_evals_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvalJobParams"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateJobResponse"];
                 };
             };
             /** @description Validation Error */
