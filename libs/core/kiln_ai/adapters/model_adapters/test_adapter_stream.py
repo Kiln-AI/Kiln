@@ -19,11 +19,15 @@ from kiln_ai.adapters.model_adapters.adapter_stream import (
     AdapterStream,
     raise_for_empty_model_response,
 )
+from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
+from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.adapters.model_adapters.stream_events import (
     ToolCallEvent,
     ToolCallEventType,
 )
-from kiln_ai.datamodel import MessageUsage, Usage
+from kiln_ai.datamodel import MessageUsage, Task, Usage
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
 
 def _make_streaming_chunk(
@@ -374,6 +378,64 @@ class TestAdapterStreamToolCalls:
         assert len(input_events) == 1
         assert input_events[0].arguments is None
         assert "Failed to parse" in (input_events[0].error or "")
+
+    @pytest.mark.asyncio
+    async def test_stream_tool_call_error_continues(self, mock_adapter, mock_provider):
+        """A call naming no available tool is answered with an error tool message and
+        the stream goes on to the model's next response."""
+        litellm_adapter = LiteLlmAdapter(
+            config=LiteLlmConfig(
+                run_config_properties=KilnAgentRunConfigProperties(
+                    structured_output_mode=StructuredOutputMode.json_schema,
+                    model_name="gpt_4_1_mini",
+                    model_provider_name=ModelProviderName.openai,
+                    prompt_id="simple_prompt_builder",
+                )
+            ),
+            kiln_task=Task(name="t", instruction="i"),
+        )
+        mock_adapter.process_tool_calls = litellm_adapter.process_tool_calls
+        unknown_call = _make_tool_call(call_id="call_1", name="nonexistent_tool")
+        error_text = "A tool named 'nonexistent_tool' was invoked by a model, but was not available."
+        streams_iter = iter(
+            [
+                FakeStreamingCompletion(
+                    _make_model_response(content=None, tool_calls=[unknown_call]),
+                    [_make_streaming_chunk(finish_reason="tool_calls")],
+                ),
+                FakeStreamingCompletion(_make_model_response(content="Recovered")),
+            ]
+        )
+
+        with (
+            patch.object(litellm_adapter, "_tools_for_execution", return_value=[]),
+            patch(
+                "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+                side_effect=lambda **kw: next(streams_iter),
+            ),
+        ):
+            stream = AdapterStream(
+                adapter=mock_adapter,
+                provider=mock_provider,
+                chat_formatter=FakeChatFormatter(),
+                initial_messages=[],
+                top_logprobs=None,
+            )
+            events = [event async for event in stream]
+
+        tool_events = [e for e in events if isinstance(e, ToolCallEvent)]
+        assert [(e.event_type, e.tool_name) for e in tool_events] == [
+            (ToolCallEventType.INPUT_AVAILABLE, "nonexistent_tool"),
+            (ToolCallEventType.OUTPUT_AVAILABLE, "nonexistent_tool"),
+        ]
+        assert tool_events[1].result == error_text
+        assert stream.result.run_output.output == "Recovered"
+        error_message = next(
+            m for m in stream._messages if isinstance(m, dict) and m["role"] == "tool"
+        )
+        assert error_message["tool_call_id"] == "call_1"
+        assert error_message.get("is_error") is True
+        assert error_message.get("error_message") == error_text
 
 
 class TestAdapterStreamReturnOnToolCall:
