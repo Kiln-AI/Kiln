@@ -149,6 +149,7 @@ class ModelName(str, Enum):
     gemma_3n_4b = "gemma_3n_4b"
     claude_fable_5_1 = "claude_fable_5_1"
     claude_fable_5 = "claude_fable_5"
+    claude_haiku_5_5 = "claude_haiku_5_5"
     claude_3_5_haiku = "claude_3_5_haiku"
     claude_4_5_haiku = "claude_4_5_haiku"
     claude_3_5_sonnet = "claude_3_5_sonnet"
@@ -3183,6 +3184,53 @@ built_in_models: List[KilnModel] = [
                 model_id="claude-3-5-sonnet",
                 deprecated=True,
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
+            ),
+        ],
+    ),
+    # Claude 5.5 Haiku
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_haiku_5_5,
+        friendly_name="Claude 5.5 Haiku",
+        editorial_notes="Anthropic's fastest and lowest-cost Claude model. Good for chat, classification, and lightweight agents.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-haiku-5.5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                openrouter_reasoning_object=True,
+                available_thinking_levels=CLAUDE_5_5_THINKING_LEVELS,
+                default_thinking_level="medium",
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-haiku-5-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                available_thinking_levels=CLAUDE_5_5_THINKING_LEVELS,
+                default_thinking_level="medium",
+                anthropic_summarized_thinking=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
