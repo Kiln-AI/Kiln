@@ -23,12 +23,19 @@ from kiln_ai.datamodel import (
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
+    EvalConfigType,
+    EvalInput,
     EvalInputSplit,
     EvalOutputScore,
     EvalRun,
+    ExactMatchProperties,
+    SingleTurnEvalInputData,
+    UserMessage,
 )
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
+from kiln_ai.datamodel.tool_id import build_world_tool_id
+from kiln_ai.datamodel.world import World, WorldReset
 from pydantic import BaseModel
 
 from app.desktop.studio_server.jobs import api as jobs_api
@@ -1073,6 +1080,91 @@ async def test_run_eval_job_with_undrivable_multi_turn_items_400(
     assert resp.status_code == 400, resp.text
     assert "MCP one" in resp.text
     assert registry._jobs == {}
+
+
+@pytest.fixture
+def world_eval(split_eval):
+    """An EvalInput-backed eval with a V2 judge, a run config that lists the tools of
+    a world in the project, and two items: one in that world, one with no world. The
+    world's environment is never reached: the check needs none."""
+    task = split_eval.parent_task()
+    assert task is not None
+    project = task.parent_project()
+    assert project is not None
+    world = World(
+        id="w_offline", name="Offline", env_url="http://127.0.0.1:1", parent=project
+    )
+    world.save_to_file()
+    eval = Eval(
+        id="e_world",
+        name="World Eval",
+        description="test",
+        splits={"test": EvalInputSplit(filter_id="tag::world_items")},
+        output_scores=split_eval.output_scores,
+        parent=task,
+    )
+    eval.save_to_file()
+    EvalConfig(
+        id="ec_world",
+        name="Exact Match",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="x"),
+        parent=eval,
+    ).save_to_file()
+    TaskRunConfig(
+        id="rc_world",
+        name="World Run Config",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+            tools_config=ToolsRunConfig(
+                tools=[build_world_tool_id(world.id, "append_note")]
+            ),
+        ),
+        parent=task,
+    ).save_to_file()
+    for item_id, world_reset in [
+        ("ei_in_world", WorldReset(world_id=world.id, reset_kwargs={})),
+        ("ei_no_world", None),
+    ]:
+        EvalInput(
+            id=item_id,
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
+            tags=["world_items"],
+            world_reset=world_reset,
+            parent=task,
+        ).save_to_file()
+    return eval
+
+
+_WORLD_EVAL_PARAMS = _eval_params(
+    eval_id="e_world", eval_config_id="ec_world", run_config_id="rc_world"
+)
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_with_an_item_outside_its_world_400(
+    client, registry, stub_eval_worker, world_eval
+):
+    resp = await client.post(_EVAL_RUN_PATH, json=_WORLD_EVAL_PARAMS)
+
+    assert resp.status_code == 400, resp.text
+    assert "have no world_reset: ei_no_world" in resp.text
+    assert "ei_in_world" not in resp.text
+    assert registry._jobs == {}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_checks_only_the_requested_items_in_their_worlds(
+    client, registry, stub_eval_worker, world_eval
+):
+    resp = await client.post(
+        _EVAL_RUN_PATH, json={**_WORLD_EVAL_PARAMS, "item_ids": ["ei_in_world"]}
+    )
+
+    assert resp.status_code == 201, resp.text
 
 
 def _torn_read() -> json.JSONDecodeError:

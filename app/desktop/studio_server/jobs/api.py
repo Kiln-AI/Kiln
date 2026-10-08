@@ -102,7 +102,9 @@ def _check_eval_job_request(params: EvalJobParams) -> None:
     is missing, 422 if the eval has no such split or if `item_ids` names an item that is
     not in the split, and 400 for the checks the run_comparison endpoint also makes
     before it runs (a V1 judge on items it can't score, multi-turn items that can't be
-    driven). Without those, the job would start and fail every item one by one.
+    driven), and for the world checks that need no environment (see
+    `EvalRunner.validate_world_readiness`). Without those, the job would start and fail
+    every item one by one.
 
     Deliberately discards what it resolved. The worker resolves the split again when the
     job actually runs, because a job runs the items as they are then, not as they were
@@ -128,13 +130,15 @@ def _check_eval_job_request(params: EvalJobParams) -> None:
             )
     require_dataset_run_items_or_400(eval, eval_config.config_type, split)
     try:
-        EvalRunner(
+        runner = EvalRunner(
             eval_configs=[eval_config],
             run_configs=[run_config],
             eval_run_type="task_run_eval",
             split=split,
             item_ids=set(params.item_ids) if params.item_ids is not None else None,
-        ).validate_multi_turn_drive_readiness()
+        )
+        runner.validate_multi_turn_drive_readiness()
+        runner.validate_world_readiness()
     except json.JSONDecodeError:
         # A ValueError too, but a torn read of a file, not a bad request.
         raise
@@ -284,8 +288,19 @@ def connect_jobs_api(app: FastAPI) -> None:
         someone resumes it, so check `status` and call
         `POST /api/jobs/{id}/resume` if the job must run. Poll
         `GET /api/jobs/{id}` or `POST /api/jobs/wait` for progress and the
-        result. A 503 means that a project file was not readable, for example
-        while another job wrote it. Send the request again."""
+        result. An item with a `world_reset` runs in a fresh episode of its world
+        when the run config lists that world's tools. A 404 means that the eval,
+        the eval config or the run config does not exist. A 422 means that the
+        eval has no such split, or that `item_ids` names an item outside it. A 400
+        means that the job cannot run as requested: a V1 judge on items it cannot
+        score, multi-turn items that cannot be driven, or, with a V2 judge, items
+        that the run config's world tools cannot run, or a world that the project
+        does not have while the run config lists tools. World problems that need
+        the world's environment fail item by item, in `GET /api/jobs/{id}/errors`:
+        an environment that cannot be reached or refuses a reset, and a run config
+        that lists the project's own version of a tool that the world serves. A
+        503 means that a project file was not readable, for example while another
+        job wrote it. Send the request again."""
         # Entity loads are blocking IO, so run them off the event loop. In the thread,
         # they can read a file that a running job is saving: read it again once.
         try:
