@@ -6993,6 +6993,7 @@ class TestTestV2Eval:
             judge_prompt=None,
             system_prompt=None,
             judge_instructions=None,
+            thinking_level=None,
         )
         body = response.json()
         assert "accuracy" in body["scores"]
