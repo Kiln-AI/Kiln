@@ -490,6 +490,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/memories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Memories
+         * @description List memory summaries newest-first. content_length 0 means the overview
+         *     is the whole memory. Truncation fields nudge how to narrow the results.
+         */
+        get: operations["list_memories_api_projects__project_id__memories_get"];
+        put?: never;
+        /** Save Memory */
+        post: operations["save_memory_api_projects__project_id__memories_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/memories/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Memory Summary
+         * @description Cheap per-scope orientation (counts, newest timestamp, tag cardinalities)
+         *     with no record content. Call before targeted list queries.
+         */
+        get: operations["memory_summary_api_projects__project_id__memories_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/memories/by_ids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Memories
+         * @description Fetch full memory records by id. Unknown ids are omitted from the result.
+         */
+        get: operations["get_memories_api_projects__project_id__memories_by_ids_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/memories/{memory_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Memory
+         * @description Hard-delete a memory. For junk, wrong, or obsolete memories; use update
+         *     instead if the memory should be corrected rather than removed.
+         */
+        delete: operations["delete_memory_api_projects__project_id__memories__memory_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Memory */
+        patch: operations["update_memory_api_projects__project_id__memories__memory_id__patch"];
+        trace?: never;
+    };
     "/api/projects/{project_id}/documents/bulk": {
         parameters: {
             query?: never;
@@ -2854,6 +2939,70 @@ export interface paths {
         put?: never;
         /** Archive/Unarchive Code Tool */
         post: operations["archive_code_tool_api_projects__project_id__code_tools__code_tool_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/worlds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Worlds */
+        get: operations["list_worlds_api_projects__project_id__worlds_get"];
+        put?: never;
+        /** Create World */
+        post: operations["create_world_api_projects__project_id__worlds_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/worlds/{world_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get World */
+        get: operations["get_world_api_projects__project_id__worlds__world_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete World
+         * @description Delete a world, if no saved eval input still resets into it.
+         *
+         *     409 when one does. An eval input names its world by id, so a delete that went
+         *     through would leave every eval run on it failing to resolve the world.
+         *     Traces made in the world keep their own copy of the episode, and stay readable.
+         */
+        delete: operations["delete_world_api_projects__project_id__worlds__world_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update World */
+        patch: operations["update_world_api_projects__project_id__worlds__world_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/worlds/{world_id}/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List World Tools
+         * @description The tools the world's OpenEnv environment serves, read fresh from the running server at env_url.
+         */
+        get: operations["list_world_tools_api_projects__project_id__worlds__world_id__tools_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5743,6 +5892,8 @@ export interface components {
              * @description Tags for filtering eval inputs (matched by tag:: eval_input_filter_ids).
              */
             tags?: string[];
+            /** @description Optional world to run this item in: a world in this project, plus the keyword arguments its environment's reset() is called with. A run config that lists that world's tools runs the item in the episode the reset starts; omit it and the item runs against the project's own tools. Like the scenario, it cannot be changed afterwards — send a new item instead. */
+            world_reset?: components["schemas"]["WorldReset"] | null;
         };
         /**
          * CreateEvaluatorRequest
@@ -7202,6 +7353,8 @@ export interface components {
              * @description Tags for filtering eval inputs.
              */
             tags?: string[];
+            /** @description Reset this world with these keyword arguments before the run; the reset starts the episode the trace records. A run config that lists the world's tools runs the input in that episode; a run config listing the project's own version of a tool the world serves is refused. None runs against the project tools. */
+            world_reset?: components["schemas"]["WorldReset"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -7662,6 +7815,8 @@ export interface components {
              * @description The original task input text.
              */
             task_input?: string | null;
+            /** @description The world episode the trace's world tools ran in, when the run used a world: the reset it started from, what the environment reported at reset, and the environment's final state. Judges reference it in their prompt template (e.g. {{ world_episode.final_state }}); code scorers receive it as the `world_episode` argument. */
+            world_episode?: components["schemas"]["WorldEpisode"] | null;
         };
         /**
          * EvalTemplateId
@@ -9706,6 +9861,124 @@ export interface components {
             mean_total_llm_latency_ms?: number | null;
         };
         /**
+         * Memory
+         * @description One memory record of the assistant working on this project.
+         *
+         *     Stored at assistant_memory/{id}/memory.kiln. Concurrent-append safe
+         *     (file per memory); updates are last-writer-wins.
+         */
+        Memory: {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /**
+             * Overview
+             * @description One-line summary written so a future reader can decide whether to fetch the full content. For very short memories this IS the whole memory (leave content null). No newlines.
+             */
+            overview: string;
+            /**
+             * Content
+             * @description The memory body: the finding/fact/decision with its conditions and evidence level, citing related Kiln records as prose IDs (e.g. 'run_config 184623901234', 'eval 5678'). Null when the overview says everything. Record observations with conditions ('batch API 429'd at 50rps on 07-04'), never universal rules.
+             */
+            content?: string | null;
+            /**
+             * Tags
+             * @description Snake_case tags for filtering (existing Kiln tag rules). Free-form; skills define the working vocabulary (e.g. experiment, dead_end, constraint, api_quirk, session_state; faceted tags like lever_prompt, verdict_accept, evidence_weak).
+             */
+            tags?: string[];
+            /**
+             * Scope
+             * @description Opaque scope string, exact-match filterable. Conventions: 'project' for project-wide knowledge (constraints, environment facts); 'task::<task_id>' for task-scoped work. Not validated against existing records — a convention, not a reference.
+             */
+            scope: string;
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * MemoryListResult
+         * @description A page of list_memories results plus the truncation nudge data.
+         *
+         *     remaining_tag_counts is computed over the records beyond this page (the
+         *     not-returned remainder), sorted by count descending. Adapters render it into
+         *     a prompt-facing nudge string like "62 more — filter by tag: probe(18), ...".
+         */
+        MemoryListResult: {
+            /** Listings */
+            listings: components["schemas"]["MemoryListing"][];
+            /**
+             * Matched
+             * @description How many memories matched the filters, across all pages.
+             */
+            matched: number;
+            /**
+             * Remaining
+             * @description How many matching memories come after this page.
+             */
+            remaining: number;
+            /** Remaining Tag Counts */
+            remaining_tag_counts: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * MemoryListing
+         * @description A single row in a list_memories result. Carries content_length, not content.
+         */
+        MemoryListing: {
+            /** Id */
+            id: string;
+            /** Overview */
+            overview: string;
+            /** Tags */
+            tags: string[];
+            /** Scope */
+            scope: string;
+            /** Content Length */
+            content_length: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string;
+        };
+        /**
+         * MemorySummary
+         * @description An orientation view of a memory store, with no record content: the total and
+         *     one ScopeSummary per scope, newest scope first.
+         */
+        MemorySummary: {
+            /** Total */
+            total: number;
+            /** Scopes */
+            scopes: components["schemas"]["ScopeSummary"][];
+        };
+        /**
          * MessageUsage
          * @description Token usage and cost for a single LLM call or a multi-message sum.
          *
@@ -11583,6 +11856,32 @@ export interface components {
              */
             trusted: boolean;
         };
+        /**
+         * SaveMemoryRequest
+         * @description Body for creating a memory. `scope` is required — there is no default.
+         */
+        SaveMemoryRequest: {
+            /**
+             * Overview
+             * @description One-line summary written so a future reader can decide whether to fetch the content. For very short memories this IS the whole memory (leave content null). No newlines.
+             */
+            overview: string;
+            /**
+             * Scope
+             * @description Opaque scope string. Conventions: 'project' for project-wide knowledge; 'task::<task_id>' for task-scoped work. Not validated against existing records.
+             */
+            scope: string;
+            /**
+             * Content
+             * @description The memory body: the finding/fact/decision with its conditions and evidence level. Null when the overview says everything.
+             */
+            content?: string | null;
+            /**
+             * Tags
+             * @description Snake_case tags (no spaces) for filtering.
+             */
+            tags?: string[];
+        };
         /** SaveQnaPairInput */
         SaveQnaPairInput: {
             /**
@@ -11646,6 +11945,30 @@ export interface components {
              * @description List of discovered projects.
              */
             projects: components["schemas"]["ProjectInfo"][];
+        };
+        /**
+         * ScopeSummary
+         * @description Counts for the memories of one scope: how many, the newest, and per-tag counts.
+         */
+        ScopeSummary: {
+            /** Scope */
+            scope: string;
+            /** Count */
+            count: number;
+            /**
+             * Newest
+             * Format: date-time
+             */
+            newest: string;
+            /** Tags */
+            tags: {
+                [key: string]: number;
+            };
+            /**
+             * Untagged
+             * @description How many memories in this scope have no tags. Null when none.
+             */
+            untagged?: number | null;
         };
         /**
          * ScoreDirection
@@ -12922,6 +13245,8 @@ export interface components {
             parent_task_run_id?: string | null;
             /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
             eval_source?: components["schemas"]["EvalItemSource"] | null;
+            /** @description Set when this run used a world: the episode its world tools ran in, ending with the environment's final state so graders can inspect what the run did there. Project tools in the run config ran as themselves, outside the world. */
+            world_episode?: components["schemas"]["WorldEpisode"] | null;
         };
         /**
          * TaskRun
@@ -13005,6 +13330,8 @@ export interface components {
             parent_task_run_id?: string | null;
             /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
             eval_source?: components["schemas"]["EvalItemSource"] | null;
+            /** @description Set when this run used a world: the episode its world tools ran in, ending with the environment's final state so graders can inspect what the run did there. Project tools in the run config ran as themselves, outside the world. */
+            world_episode?: components["schemas"]["WorldEpisode"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -13634,12 +13961,14 @@ export interface components {
          * UpdateEvalInputRequest
          * @description Partial update of an eval input item. Omitted fields are left unchanged.
          *
-         *     `data` is deliberately absent, and `extra="forbid"` turns an attempt to send it into
-         *     a 422 rather than a silent no-op the caller reads as success. The scenario is the one
-         *     thing that genuinely cannot be edited in place: trace reuse (`TraceIndex`) keys on
-         *     `(source_type, item_id, run_config_id)`, so a later eval would hand a judge a
-         *     conversation generated from the scenario this item *used to* have. Changing a
-         *     scenario means POSTing a new item.
+         *     `data` and `world_reset` are deliberately absent, and `extra="forbid"` turns an
+         *     attempt to send either into a 422 rather than a silent no-op the caller reads as
+         *     success. They are what genuinely cannot be edited in place: trace reuse
+         *     (`TraceIndex`) keys on `(source_type, item_id, run_config_id, world_version)`, and
+         *     the item id stands for the item's whole content, so a later eval would hand a judge
+         *     a conversation generated from the scenario this item *used to* have — or, for a
+         *     world item, one recorded in an episode the environment was reset into differently.
+         *     Changing either means POSTing a new item.
          *
          *     `reference` does not have that problem and is editable. It keys nothing: stored
          *     scores snapshot the `reference_data` the judge actually saw (`_persist_judgment`)
@@ -13708,6 +14037,34 @@ export interface components {
              * @description The updated description.
              */
             description?: string | null;
+        };
+        /**
+         * UpdateMemoryRequest
+         * @description Body for updating a memory. Only provided fields are changed; omitted
+         *     fields are left untouched. An explicit null clears `content` and `tags`, and
+         *     is rejected for `overview` and `scope`.
+         */
+        UpdateMemoryRequest: {
+            /**
+             * Overview
+             * @description New one-line summary. No newlines.
+             */
+            overview?: string | null;
+            /**
+             * Content
+             * @description New memory body. Empty or null clears it.
+             */
+            content?: string | null;
+            /**
+             * Tags
+             * @description Snake_case tags (no spaces) for filtering. Null clears them.
+             */
+            tags?: string[] | null;
+            /**
+             * Scope
+             * @description Opaque scope string. Conventions: 'project' for project-wide knowledge; 'task::<task_id>' for task-scoped work. Not validated against existing records.
+             */
+            scope?: string | null;
         };
         /**
          * UpdateRagConfigRequest
@@ -13956,6 +14313,175 @@ export interface components {
          * @enum {string}
          */
         VectorStoreType: "lancedb_fts" | "lancedb_hybrid" | "lancedb_vector";
+        /**
+         * WorldCreateRequest
+         * @description A new world: a pointer to a running OpenEnv environment.
+         */
+        WorldCreateRequest: {
+            /**
+             * Name
+             * @description User-facing display name.
+             */
+            name: string;
+            /**
+             * Description
+             * @description User-facing notes about the world.
+             */
+            description?: string | null;
+            /**
+             * Env Url
+             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this world send their tool calls to it.
+             */
+            env_url?: string | null;
+        };
+        /**
+         * WorldEpisode
+         * @description One reset-to-close run on a world's environment, recorded on the trace of the
+         *     task run that used it. The world's tools ran inside the episode; any other tools
+         *     in the run config ran as themselves, outside the world.
+         *
+         *     Persisted on `TaskRun.world_episode` so graders (including judges added later,
+         *     which reuse the same trace) can read what the run left behind. The live session is
+         *     closed when the episode ends; `final_state` is the durable record.
+         */
+        WorldEpisode: {
+            /** @description The world and reset() keyword arguments this episode was started from: the input's world_reset. */
+            reset: components["schemas"]["WorldReset"];
+            /**
+             * Episode Id
+             * @description Kiln's id for this episode, passed to the environment's reset() as `episode_id`.
+             */
+            episode_id: string;
+            /**
+             * World Version
+             * @description The environment's name@version as its server reported it when the episode started: what produced this state. Kiln trusts a version to be immutable.
+             */
+            world_version: string;
+            /**
+             * Reset Metadata
+             * @description What the environment reported in the observation metadata when the episode was reset: facts about the starting state that judges may want, such as the scenario it started from or the clock it runs on.
+             */
+            reset_metadata?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Final State
+             * @description The environment's state() after generation, read when the episode ends. Whatever the environment chooses to report: a diff against its starting state, counters, an episode summary.
+             */
+            final_state?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+        };
+        /**
+         * WorldReset
+         * @description Reset this world with these keyword arguments before the run; the reset starts
+         *     the episode the trace records.
+         *
+         *     `reset_kwargs` is opaque to Kiln: it is passed as the keyword arguments of the
+         *     environment's `reset` (a dataset or scenario identifier, a seed, a clock override). The
+         *     trace key carries a digest of the whole reset, so an input whose reset is edited
+         *     after its trace was made generates a new one rather than reusing it.
+         */
+        WorldReset: {
+            /**
+             * World Id
+             * @description The World to run in.
+             */
+            world_id: string;
+            /**
+             * Reset Kwargs
+             * @description Keyword arguments for the environment's reset(), passed verbatim. Which keywords exist is the environment's business, e.g. which dataset or scenario to start from, a seed, a clock override.
+             */
+            reset_kwargs?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
+        /**
+         * WorldResponse
+         * @description A world: a pointer to a running OpenEnv environment.
+         */
+        WorldResponse: {
+            /**
+             * Id
+             * @description The world's id.
+             */
+            id?: string | null;
+            /**
+             * Name
+             * @description User-facing display name.
+             */
+            name: string;
+            /**
+             * Description
+             * @description User-facing notes about the world.
+             */
+            description?: string | null;
+            /**
+             * Env Url
+             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this world send their tool calls to it.
+             */
+            env_url?: string | null;
+            /**
+             * Created At
+             * @description When the world was created.
+             */
+            created_at?: string | null;
+            /**
+             * Created By
+             * @description Who created the world.
+             */
+            created_by?: string | null;
+        };
+        /**
+         * WorldToolResponse
+         * @description One tool the world's environment serves.
+         */
+        WorldToolResponse: {
+            /**
+             * Tool Id
+             * @description The id a run config uses to list this tool directly: kiln_tool::world::<world_id>::<tool_name>.
+             */
+            tool_id: string;
+            /**
+             * Name
+             * @description The tool's function name, as the model sees it.
+             */
+            name: string;
+            /**
+             * Description
+             * @description The tool's description, as the model sees it.
+             * @default
+             */
+            description: string;
+            /**
+             * Input Schema
+             * @description JSON schema of the tool's arguments.
+             */
+            input_schema?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * WorldUpdateRequest
+         * @description Changes to a world. Only the fields sent are changed.
+         */
+        WorldUpdateRequest: {
+            /**
+             * Name
+             * @description User-facing display name.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description User-facing notes about the world.
+             */
+            description?: string | null;
+            /**
+             * Env Url
+             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this world send their tool calls to it.
+             */
+            env_url?: string | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -15340,6 +15866,227 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_memories_api_projects__project_id__memories_get: {
+        parameters: {
+            query?: {
+                /** @description Exact-match scope filter. Omit for all scopes. */
+                scope?: string | null;
+                /** @description Memory must have ALL of these tags (AND). Repeat the param for multiple tags; omit for no tag filter. */
+                tags?: string[] | null;
+                /** @description Case-insensitive regex over overview + content. A pattern that takes too long to evaluate returns 422. */
+                content_match?: string | null;
+                /** @description Max rows to return. */
+                limit?: number;
+                /** @description Rows to skip. */
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryListResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_memory_api_projects__project_id__memories_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveMemoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Memory"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    memory_summary_api_projects__project_id__memories_summary_get: {
+        parameters: {
+            query?: {
+                /** @description Limit to one scope. Omit for all scopes. */
+                scope?: string | null;
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemorySummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_memories_api_projects__project_id__memories_by_ids_get: {
+        parameters: {
+            query: {
+                /** @description The memory ids to fetch. */
+                ids: string[];
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Memory"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_memory_api_projects__project_id__memories__memory_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the memory. */
+                memory_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_memory_api_projects__project_id__memories__memory_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the memory. */
+                memory_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMemoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Memory"];
                 };
             };
             /** @description Validation Error */
@@ -20718,6 +21465,214 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CodeToolResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_worlds_api_projects__project_id__worlds_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorldResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_world_api_projects__project_id__worlds_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorldCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorldResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_world_api_projects__project_id__worlds__world_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the world. */
+                world_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorldResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_world_api_projects__project_id__worlds__world_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the world. */
+                world_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_world_api_projects__project_id__worlds__world_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the world. */
+                world_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorldUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorldResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_world_tools_api_projects__project_id__worlds__world_id__tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the world. */
+                world_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorldToolResponse"][];
                 };
             };
             /** @description Validation Error */

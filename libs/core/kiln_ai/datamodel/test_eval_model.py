@@ -3128,6 +3128,7 @@ _EVAL_INPUT_FIELD_EXPRESSIONS = {
     "trace": "trace[-1].content",
     "task_input": "task_input | upper",
     "reference_data": "reference_data",
+    "world_episode": "world_episode.final_state",
 }
 
 

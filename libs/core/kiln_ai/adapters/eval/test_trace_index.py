@@ -5,7 +5,12 @@ from typing import Awaitable, Callable
 
 import pytest
 
-from kiln_ai.adapters.eval.trace_index import TraceIndex, TraceKey, trace_key
+from kiln_ai.adapters.eval.trace_index import (
+    TraceIndex,
+    TraceKey,
+    trace_key,
+    world_trace_tag,
+)
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -15,8 +20,9 @@ from kiln_ai.datamodel import (
 )
 from kiln_ai.datamodel.eval_splits import ItemSource
 from kiln_ai.datamodel.task_run import EvalItemSource, eval_item_key
+from kiln_ai.datamodel.world import WorldEpisode, WorldReset
 
-KEY: TraceKey = ("eval_input", "item1", "rc1")
+KEY: TraceKey = ("eval_input", "item1", "rc1", "")
 
 
 @pytest.fixture
@@ -49,12 +55,14 @@ def save_run(
     run_config_id: str | None = "rc1",
     eval_source: EvalItemSource | None = None,
     output: str = "generated",
+    world_episode: WorldEpisode | None = None,
 ) -> TaskRun:
     run = TaskRun(
         parent=task,
         input="the input",
         output=TaskOutput(output=output, source=output_source(run_config_id)),
         eval_source=eval_source,
+        world_episode=world_episode,
     )
     run.save_to_file()
     return run
@@ -67,12 +75,27 @@ def save_trace(
     source_id: str = "item1",
     run_config_id: str | None = "rc1",
     output: str = "generated",
+    world_version: str | None = None,
 ) -> TaskRun:
     return save_run(
         task,
         run_config_id=run_config_id,
         eval_source=EvalItemSource(source_type=source_type, source_id=source_id),
         output=output,
+        world_episode=episode_for(source_id, world_version),
+    )
+
+
+def episode_for(source_id: str, world_version: str | None) -> WorldEpisode | None:
+    """A world run's settled episode record, carrying the version the trace key is read
+    from."""
+    if not world_version:
+        return None
+    return WorldEpisode(
+        reset=WorldReset(world_id="w1"),
+        episode_id=f"ep_{source_id}",
+        world_version=world_version,
+        final_state={"notes": []},
     )
 
 
@@ -92,7 +115,7 @@ class Generator:
         self.rendezvous: "Rendezvous | None" = None
 
     def for_key(self, key: TraceKey) -> Callable[[], Awaitable[TaskRun]]:
-        source_type, source_id, run_config_id = key
+        source_type, source_id, run_config_id, world_version = key
 
         async def generate() -> TaskRun:
             self.calls += 1
@@ -112,8 +135,10 @@ class Generator:
                         output="unsaved", source=output_source(run_config_id)
                     ),
                     eval_source=EvalItemSource(
-                        source_type=source_type, source_id=source_id
+                        source_type=source_type,
+                        source_id=source_id,
                     ),
+                    world_episode=episode_for(source_id, world_version),
                 )
             return save_trace(
                 self.task,
@@ -121,6 +146,7 @@ class Generator:
                 source_id=source_id,
                 run_config_id=run_config_id,
                 output=f"generated {self.calls}",
+                world_version=world_version or None,
             )
 
         return generate
@@ -166,7 +192,12 @@ def test_trace_key_rejects_missing_ids(item, run_config_id):
 @pytest.mark.parametrize("source_type", ["eval_input", "task_run"])
 def test_trace_key_from_eval_item_source(source_type: ItemSource):
     source = EvalItemSource(source_type=source_type, source_id="item1")
-    assert trace_key(eval_item_key(source), "rc1") == (source_type, "item1", "rc1")
+    assert trace_key(eval_item_key(source), "rc1") == (
+        source_type,
+        "item1",
+        "rc1",
+        "",
+    )
 
 
 @pytest.mark.asyncio
@@ -174,7 +205,7 @@ def test_trace_key_from_eval_item_source(source_type: ItemSource):
 async def test_seed_reuses_existing_trace(task, source_type: ItemSource):
     existing = save_trace(task, source_type=source_type, source_id="item1")
     generate = Generator(task)
-    key: TraceKey = (source_type, "item1", "rc1")
+    key: TraceKey = (source_type, "item1", "rc1", "")
 
     index = TraceIndex(task)
     trace, was_generated = await index.get_or_create(key, generate.for_key(key))
@@ -189,7 +220,7 @@ async def test_seed_reuses_existing_trace(task, source_type: ItemSource):
 async def test_seed_ignores_ordinary_dataset_runs(task):
     dataset_run = save_run(task)
     generate = Generator(task)
-    key: TraceKey = ("task_run", str(dataset_run.id), "rc1")
+    key: TraceKey = ("task_run", str(dataset_run.id), "rc1", "")
 
     index = TraceIndex(task)
     trace, was_generated = await index.get_or_create(key, generate.for_key(key))
@@ -277,9 +308,9 @@ async def test_generated_trace_is_found_by_a_fresh_index(task):
 @pytest.mark.parametrize(
     "stamped_key",
     [
-        ("eval_input", "item1", "rc_other"),
-        ("eval_input", "item_other", "rc1"),
-        ("task_run", "item1", "rc1"),
+        ("eval_input", "item1", "rc_other", ""),
+        ("eval_input", "item_other", "rc1", ""),
+        ("task_run", "item1", "rc1", ""),
     ],
 )
 async def test_generated_run_stamped_with_another_key_raises(
@@ -317,9 +348,9 @@ async def test_distinct_keys_do_not_share_a_trace(task):
     generate = Generator(task)
     index = TraceIndex(task)
     keys: list[TraceKey] = [
-        ("eval_input", "item1", "rc1"),
-        ("eval_input", "item1", "rc2"),
-        ("task_run", "item1", "rc1"),
+        ("eval_input", "item1", "rc1", ""),
+        ("eval_input", "item1", "rc2", ""),
+        ("task_run", "item1", "rc1", ""),
     ]
 
     traces = [
@@ -363,7 +394,7 @@ async def test_distinct_keys_generate_concurrently(task):
     generate = Generator(task)
     generate.rendezvous = Rendezvous(count=5)
     index = TraceIndex(task)
-    keys: list[TraceKey] = [("eval_input", f"item{i}", "rc1") for i in range(5)]
+    keys: list[TraceKey] = [("eval_input", f"item{i}", "rc1", "") for i in range(5)]
 
     results = await asyncio.gather(
         *(index.get_or_create(key, generate.for_key(key)) for key in keys)
@@ -482,3 +513,81 @@ async def test_corrupt_trace_file_regenerates(task, caplog, corrupt_content):
     again, was_generated_again = await index.get_or_create(KEY, generate.for_key(KEY))
     assert was_generated_again is False
     assert again.id == trace.id
+
+
+# ---------------------------------------------------------------------------
+# Variant slot
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("world_version", [None, ""])
+def test_trace_key_without_variant_is_empty_string(world_version):
+    assert trace_key(("eval_input", "item1"), "rc1", world_version) == (
+        "eval_input",
+        "item1",
+        "rc1",
+        "",
+    )
+
+
+def test_trace_key_carries_variant():
+    assert trace_key(("eval_input", "item1"), "rc1", "syn1:abc") == (
+        "eval_input",
+        "item1",
+        "rc1",
+        "syn1:abc",
+    )
+
+
+def test_stored_world_version_separates_traces(task):
+    """Two generations of one item under one run config, in different world versions, are
+    two entries, keyed by the version on each run's episode; a job without a world never
+    matches a world trace."""
+    plain = save_run(
+        task, eval_source=EvalItemSource(source_type="eval_input", source_id="item1")
+    )
+    fixture_a = save_run(
+        task,
+        eval_source=EvalItemSource(source_type="eval_input", source_id="item1"),
+        world_episode=episode_for("item1", "syn1:a"),
+        output="from fixture a",
+    )
+    index = TraceIndex(task)
+    reset = WorldReset(world_id="w1")
+    assert index._paths[("eval_input", "item1", "rc1", "")] == plain.path
+    assert (
+        index._paths[("eval_input", "item1", "rc1", world_trace_tag("syn1:a", reset))]
+        == fixture_a.path
+    )
+    assert (
+        "eval_input",
+        "item1",
+        "rc1",
+        world_trace_tag("syn1:b", reset),
+    ) not in index._paths
+
+
+def test_world_trace_tag_separates_resets():
+    """The world half of the key covers the reset as well as the version, so an input
+    whose world_reset was edited no longer matches the trace made from the old one."""
+    a = WorldReset(world_id="w1", reset_kwargs={"fixture_id": "a", "seed": 1})
+    same_a = WorldReset(world_id="w1", reset_kwargs={"seed": 1, "fixture_id": "a"})
+    b = WorldReset(world_id="w1", reset_kwargs={"fixture_id": "b", "seed": 1})
+    assert world_trace_tag("env@1", a) == world_trace_tag("env@1", same_a)
+    assert world_trace_tag("env@1", a) != world_trace_tag("env@1", b)
+    assert world_trace_tag("env@1", a) != world_trace_tag("env@2", a)
+    assert world_trace_tag("env@1", a).startswith("env@1#")
+
+
+def test_unsettled_world_trace_is_never_indexed(task):
+    """A world trace saved before its episode ended records no final state, which is
+    what graders read: it files under no key, so its job regenerates rather than
+    reusing it."""
+    unsettled = episode_for("item1", "syn1:a")
+    assert unsettled is not None
+    save_run(
+        task,
+        eval_source=EvalItemSource(source_type="eval_input", source_id="item1"),
+        world_episode=unsettled.model_copy(update={"final_state": None}),
+    )
+    assert TraceIndex(task)._paths == {}
