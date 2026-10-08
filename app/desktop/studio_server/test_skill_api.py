@@ -4,11 +4,18 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.skill import Skill
 from kiln_server.custom_errors import connect_custom_errors
 
 from app.desktop.studio_server.skill_api import connect_skill_api
 from app.desktop.studio_server.tool_api import connect_tool_servers_api
+
+STORED_PROVENANCES = [
+    {"origin": "tool", "notes": "x" * 2500},
+    {"notes": "written before origin existed"},
+    {"origin": "agent", "derived_from_ids": ["dup", "dup", ""]},
+]
 
 
 @pytest.fixture
@@ -112,6 +119,190 @@ class TestCreateSkill:
             },
         )
         assert response.status_code == 422
+
+
+class TestCreateSkillProvenance:
+    def test_create_with_valid_provenance(
+        self, client, test_project, mock_project_from_id, sample_skill_data, saved_skill
+    ):
+        sample_skill_data["provenance"] = {
+            "origin": "human",
+            "derived_from_ids": [saved_skill.id],
+            "notes": "Cloned from the test skill.",
+        }
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 200
+        result = response.json()
+        assert result["provenance"]["origin"] == "human"
+        assert result["provenance"]["derived_from_ids"] == [saved_skill.id]
+        assert result["provenance"]["notes"] == "Cloned from the test skill."
+
+        # Persisted and returned on read.
+        loaded = Skill.from_id_and_parent_path(result["id"], test_project.path)
+        assert loaded is not None
+        assert loaded.provenance is not None
+        assert loaded.provenance.derived_from_ids == [saved_skill.id]
+
+        read = client.get(f"/api/projects/{test_project.id}/skills/{result['id']}")
+        assert read.json()["provenance"]["origin"] == "human"
+
+    def test_create_without_provenance_is_none(
+        self, client, test_project, mock_project_from_id, sample_skill_data
+    ):
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 200
+        assert response.json()["provenance"] is None
+
+    def test_create_derived_from_unknown_sibling_400(
+        self, client, test_project, mock_project_from_id, sample_skill_data
+    ):
+        sample_skill_data["provenance"] = {
+            "origin": "human",
+            "derived_from_ids": ["does-not-exist"],
+        }
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 400
+        assert "unknown sibling" in response.json()["message"]
+        assert test_project.skills() == []
+
+    def test_create_derived_from_archived_sibling_allowed(
+        self, client, test_project, mock_project_from_id, sample_skill_data
+    ):
+        archived = Skill(
+            name="archived-parent",
+            description="Archived lineage parent.",
+            is_archived=True,
+            parent=test_project,
+        )
+        archived.save_to_file()
+        archived.save_skill_md("Archived body")
+
+        sample_skill_data["provenance"] = {
+            "origin": "human",
+            "derived_from_ids": [archived.id],
+        }
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 200
+        assert response.json()["provenance"]["derived_from_ids"] == [archived.id]
+
+    @pytest.mark.parametrize(
+        "provenance",
+        [
+            {"origin": "banana"},
+            {"origin": None},
+            {"derived_from_ids": ["a"]},  # origin missing
+            {"origin": "human", "derived_from_ids": ["a", "a"]},  # duplicate
+            {"origin": "human", "notes": "x" * 2001},  # over-length
+        ],
+    )
+    def test_create_invalid_provenance_422(
+        self,
+        client,
+        test_project,
+        mock_project_from_id,
+        sample_skill_data,
+        provenance,
+    ):
+        sample_skill_data["provenance"] = provenance
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.parametrize("stored", STORED_PROVENANCES)
+    def test_read_forward_compat_provenance_does_not_500(
+        self, client, test_project, mock_project_from_id, stored
+    ):
+        # A skill whose stored provenance is valid only on load (unknown or
+        # missing origin, over-length notes, dirty ids) must be readable via the
+        # list and get endpoints, returned as-is, never 500.
+        skill = Skill(
+            name="future-skill",
+            description="From a newer client.",
+            provenance=KilnArtifactProvenance.model_validate(
+                stored, context={"loading_from_file": True}
+            ),
+            parent=test_project,
+        )
+        skill.save_to_file()
+
+        listed = client.get(f"/api/projects/{test_project.id}/skills")
+        fetched = client.get(f"/api/projects/{test_project.id}/skills/{skill.id}")
+
+        assert listed.status_code == 200, listed.text
+        assert fetched.status_code == 200, fetched.text
+        for returned in (listed.json()[0]["provenance"], fetched.json()["provenance"]):
+            assert returned["origin"] == stored.get("origin")
+            assert returned["notes"] == stored.get("notes")
+            assert returned["derived_from_ids"] == stored.get("derived_from_ids", [])
+
+    def test_patch_forward_compat_provenance_does_not_500(
+        self, client, test_project, mock_project_from_id
+    ):
+        # Archiving/renaming a skill whose stored provenance was lenient-loaded
+        # (unknown origin, over-length notes, dirty ids) must not re-validate it
+        # in create mode: the update path returns 200 and preserves provenance.
+        skill = Skill.model_validate(
+            {
+                "name": "future-skill",
+                "description": "From a newer client.",
+                "provenance": {
+                    "origin": "future_origin",
+                    "derived_from_ids": ["dup", "dup"],
+                    "notes": "y" * 3000,
+                },
+            },
+            context={"loading_from_file": True},
+        )
+        skill.parent = test_project
+        skill.save_to_file()
+        skill_id = skill.id
+        assert skill_id is not None
+
+        response = client.patch(
+            f"/api/projects/{test_project.id}/skills/{skill_id}",
+            json={"is_archived": True},
+        )
+        assert response.status_code == 200
+        assert response.json()["is_archived"] is True
+        assert response.json()["provenance"]["origin"] == "future_origin"
+
+        reloaded = Skill.from_id_and_parent_path(skill_id, test_project.path)
+        assert reloaded is not None
+        assert reloaded.provenance is not None
+        assert reloaded.provenance.origin == "future_origin"
+        assert reloaded.provenance.notes == "y" * 3000
+
+    def test_patch_cannot_set_provenance(
+        self, client, test_project, mock_project_from_id, saved_skill
+    ):
+        # provenance is not a field on the update model (structural omission):
+        # a PATCH carrying it leaves stored provenance unchanged.
+        from app.desktop.studio_server.skill_api import SkillUpdateRequest
+
+        assert "provenance" not in SkillUpdateRequest.model_fields
+
+        response = client.patch(
+            f"/api/projects/{test_project.id}/skills/{saved_skill.id}",
+            json={"is_archived": True, "provenance": {"origin": "agent"}},
+        )
+        assert response.status_code == 200
+        reloaded = Skill.from_id_and_parent_path(saved_skill.id, test_project.path)
+        assert reloaded is not None
+        assert reloaded.provenance is None
 
 
 class TestGetSkills:

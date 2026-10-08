@@ -76,6 +76,7 @@ from kiln_ai.datamodel.eval_splits import (
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
 from kiln_ai.datamodel.prompt_type import generator_label
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
@@ -89,6 +90,7 @@ from kiln_ai.utils.open_ai_types import serialize_trace
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
+from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.statistics_lib import percentile
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
@@ -395,6 +397,10 @@ class CreateEvalConfigRequest(BaseModel):
         default=None,
         description="The provider of the evaluation model. Required for LLM-based eval types.",
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this eval config exists and what it was derived from.",
+    )
 
 
 class LlmJudgeBuilderInput(BaseModel):
@@ -437,6 +443,10 @@ class CreateLlmJudgeConfigRequest(LlmJudgeBuilderInput):
     """Request to create a V2 llm_judge eval config with server-baked template."""
 
     name: str | None = Field(default=None, description="The name of the eval config.")
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this eval config exists and what it was derived from.",
+    )
 
 
 class TestV2EvalRequest(BaseModel):
@@ -552,6 +562,10 @@ class CreateTaskRunConfigRequest(BaseModel):
     )
     run_config_properties: RunConfigProperties = Field(
         description="The run configuration properties."
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this run config exists and what it was derived from.",
     )
 
 
@@ -2304,6 +2318,13 @@ def connect_evals_api(app: FastAPI):
             run_config_properties=run_config_properties,
             description=request.description,
             prompt=frozen_prompt,
+            provenance=request.provenance,
+        )
+        validate_provenance_or_400(
+            task_run_config.provenance,
+            task_run_config.id,
+            TaskRunConfig,
+            task.path,
         )
         if isinstance(
             task_run_config.run_config_properties, KilnAgentRunConfigProperties
@@ -2397,6 +2418,7 @@ def connect_evals_api(app: FastAPI):
                 properties=request.properties,
                 model_name=request.model_name,
                 model_provider=request.provider,
+                provenance=request.provenance,
                 parent=eval,
             )
         except ValidationError:
@@ -2421,6 +2443,12 @@ def connect_evals_api(app: FastAPI):
                     detail="Project not trusted to add code evals. Grant code trust and retry.",
                 )
 
+        validate_provenance_or_400(
+            eval_config.provenance,
+            eval_config.id,
+            EvalConfig,
+            eval.path,
+        )
         eval_config.save_to_file()
         return eval_config
 
@@ -2458,6 +2486,7 @@ def connect_evals_api(app: FastAPI):
                 name=name,
                 config_type=EvalConfigType.v2,
                 properties=properties,
+                provenance=request.provenance,
                 parent=eval,
             )
         except (ValidationError, ValueError) as e:
@@ -2465,6 +2494,12 @@ def connect_evals_api(app: FastAPI):
                 status_code=400,
                 detail=str(e),
             )
+        validate_provenance_or_400(
+            eval_config.provenance,
+            eval_config.id,
+            EvalConfig,
+            eval.path,
+        )
         eval_config.save_to_file()
         return eval_config
 

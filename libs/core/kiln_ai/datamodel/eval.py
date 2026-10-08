@@ -40,6 +40,7 @@ from kiln_ai.datamodel.datamodel_enums import (
 )
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, EvalInputFilterId
 from kiln_ai.datamodel.json_schema import string_to_json_key
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance, provenance_field
 from kiln_ai.datamodel.task_run import Usage
 from kiln_ai.datamodel.tool_id import ToolId, validate_tool_allowlist
 from kiln_ai.datamodel.world import (
@@ -1168,6 +1169,7 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
         default=None,
         description="Properties to be used to execute the eval config. Legacy configs use a dict; V2 configs use typed properties.",
     )
+    provenance: KilnArtifactProvenance | None = provenance_field()
 
     @model_validator(mode="before")
     @classmethod

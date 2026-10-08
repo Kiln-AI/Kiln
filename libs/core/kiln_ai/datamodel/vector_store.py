@@ -5,6 +5,7 @@ from pydantic import Field, PositiveInt, ValidationInfo, model_validator
 from typing_extensions import TypedDict
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance, provenance_field
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.project import Project
@@ -65,6 +66,7 @@ class VectorStoreConfig(KilnParentedModel):
         # the discriminator refers to the properties->store_type key (not the store_type field on the parent model)
         discriminator="store_type",
     )
+    provenance: KilnArtifactProvenance | None = provenance_field()
 
     @model_validator(mode="before")
     def upgrade_missing_discriminator_properties(

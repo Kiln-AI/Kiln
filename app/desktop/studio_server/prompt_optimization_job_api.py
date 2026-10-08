@@ -19,6 +19,7 @@ from kiln_ai.datamodel.eval import (
     LlmJudgeProperties,
     V2EvalType,
 )
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.utils.config import Config
@@ -219,6 +220,76 @@ def prompt_optimization_job_from_id(
     return prompt_optimization_job
 
 
+def optimization_parent_prompt_id(
+    prompt_optimization_job: PromptOptimizationJob, task: Task
+) -> str | None:
+    """The id of the saved prompt the optimization started from, if there is one.
+
+    That is the prompt the target run config points to with `id::`. A frozen
+    prompt, a generator prompt, a fine-tune run config, or a deleted run config
+    or prompt has no saved sibling prompt, so it returns None.
+    """
+    target_run_config = TaskRunConfig.from_id_and_parent_path(
+        prompt_optimization_job.target_run_config_id, task.path
+    )
+    if target_run_config is None:
+        return None
+    properties = target_run_config.run_config_properties
+    if not isinstance(properties, KilnAgentRunConfigProperties):
+        return None
+    if not properties.prompt_id.startswith("id::"):
+        return None
+    parent_prompt_id = properties.prompt_id.removeprefix("id::")
+    if Prompt.from_id_and_parent_path(parent_prompt_id, task.path) is None:
+        return None
+    return parent_prompt_id
+
+
+def optimized_prompt_provenance(
+    prompt_optimization_job: PromptOptimizationJob, task: Task
+) -> KilnArtifactProvenance:
+    """Provenance for the prompt a prompt optimization job creates.
+
+    A person starts the job from the UI, or approves an agent's request to
+    start it, so the origin is human.
+    """
+    parent_prompt_id = optimization_parent_prompt_id(prompt_optimization_job, task)
+    return KilnArtifactProvenance(
+        origin="human",
+        derived_from_ids=[parent_prompt_id] if parent_prompt_id else [],
+        notes=(
+            f"Created by prompt optimization job {prompt_optimization_job.id} "
+            "from the prompt of run config "
+            f"{prompt_optimization_job.target_run_config_id}."
+        ),
+    )
+
+
+def optimized_run_config_provenance(
+    prompt_optimization_job: PromptOptimizationJob,
+    target_run_config: TaskRunConfig,
+    prompt: Prompt,
+) -> KilnArtifactProvenance:
+    """Provenance for the run config a prompt optimization job creates.
+
+    The parent is the target run config when it is a saved sibling. A
+    fine-tune run config is not saved as a run config, so it is not a parent.
+    """
+    is_saved_sibling = (
+        target_run_config.path is not None
+        and target_run_config.id == prompt_optimization_job.target_run_config_id
+    )
+    return KilnArtifactProvenance(
+        origin="human",
+        derived_from_ids=[target_run_config.id] if is_saved_sibling else [],
+        notes=(
+            f"Created by prompt optimization job {prompt_optimization_job.id}. "
+            f"Copy of run config {prompt_optimization_job.target_run_config_id} "
+            f"with its prompt set to the optimized prompt {prompt.id}."
+        ),
+    )
+
+
 def create_prompt_from_optimization(
     prompt_optimization_job: PromptOptimizationJob, task, optimized_prompt_text: str
 ) -> Prompt:
@@ -230,6 +301,7 @@ def create_prompt_from_optimization(
         name=prompt_optimization_job.name,
         generator_id="kiln_prompt_optimizer",
         prompt=optimized_prompt_text,
+        provenance=optimized_prompt_provenance(prompt_optimization_job, task),
         parent=task,
     )
     prompt.save_to_file()
@@ -279,6 +351,9 @@ def create_run_config_from_optimization(
         parent=task,
         name=generate_memorable_name(),
         run_config_properties=new_run_config_properties,
+        provenance=optimized_run_config_provenance(
+            prompt_optimization_job, target_run_config, prompt
+        ),
     )
 
     new_run_config.save_to_file()

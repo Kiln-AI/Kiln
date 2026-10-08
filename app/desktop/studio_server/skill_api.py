@@ -3,11 +3,13 @@ from datetime import datetime
 from typing import Annotated, List
 
 from fastapi import FastAPI, HTTPException, Path
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.validation import SkillNameString
 from kiln_server.document_api import OpenFileResponse
 from kiln_server.project_api import project_from_id
+from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     DENY_AGENT,
@@ -28,6 +30,10 @@ class SkillCreationRequest(BaseModel):
         description="What the skill does and when to use it.",
     )
     body: str = Field(min_length=1, description="The markdown body of the skill.")
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this skill exists and what it was derived from.",
+    )
 
 
 class SkillUpdateRequest(BaseModel):
@@ -55,6 +61,10 @@ class SkillResponse(BaseModel):
     created_at: datetime | None = Field(
         default=None, description="When the skill was created."
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Why this skill exists and what it was derived from, if recorded.",
+    )
 
 
 class SkillContentResponse(BaseModel):
@@ -67,7 +77,13 @@ class SkillContentResponse(BaseModel):
 
 
 def skill_to_response(skill: Skill) -> SkillResponse:
-    return SkillResponse.model_validate(skill.model_dump())
+    # Validate under the loading_from_file context so a forward/back-compat
+    # provenance already on disk (unknown origin, over-length notes) is returned
+    # as-is instead of 500-ing on read. Create-time strictness still applies at
+    # the create endpoint (request parsing + validate_provenance_or_400).
+    return SkillResponse.model_validate(
+        skill.model_dump(), context={"loading_from_file": True}
+    )
 
 
 def _get_skill(project_id: str, skill_id: str) -> Skill:
@@ -147,7 +163,14 @@ def connect_skill_api(app: FastAPI):
         skill = Skill(
             name=skill_data.name,
             description=skill_data.description,
+            provenance=skill_data.provenance,
             parent=project,
+        )
+        validate_provenance_or_400(
+            skill.provenance,
+            skill.id,
+            Skill,
+            project.path,
         )
         skill.save_to_file()
         skill.save_skill_md(skill_data.body)
@@ -174,7 +197,12 @@ def connect_skill_api(app: FastAPI):
         update_fields = updates.model_dump(exclude_none=True)
         merged = skill.model_dump()
         merged.update(update_fields)
-        updated = Skill.model_validate(merged)
+        # loading_from_file context keeps the stored provenance validation lenient:
+        # merged carries provenance as a dict, so a plain model_validate would re-run
+        # the create-strict provenance validators and 500 on a forward-compat file.
+        # provenance stays immutable (it's not in update_fields); this only edits
+        # name/is_archived.
+        updated = Skill.model_validate(merged, context={"loading_from_file": True})
         updated.path = skill.path
         updated.save_to_file()
 

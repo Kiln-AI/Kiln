@@ -108,6 +108,7 @@
         {project_id}
         {task_id}
         clone_mode={true}
+        clone_source_prompt_id={prompt_id}
         {initial_prompt_name}
         {initial_prompt}
         {initial_chain_of_thought_instructions}
