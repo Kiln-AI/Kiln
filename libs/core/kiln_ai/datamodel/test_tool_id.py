@@ -5,6 +5,7 @@ from kiln_ai.datamodel.tool_id import (
     CODE_TOOL_ID_PREFIX,
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
+    MEMORY_TOOL_OPERATIONS,
     RAG_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     ToolId,
@@ -166,6 +167,23 @@ class TestCheckToolId:
         # which should trigger line 66 in the source
         with pytest.raises(ValueError, match="Invalid RAG tool ID"):
             _check_tool_id("kiln_tool::rag::")
+
+    @pytest.mark.parametrize("operation", MEMORY_TOOL_OPERATIONS)
+    def test_valid_memory_tools(self, operation):
+        tool_id = f"kiln_tool::memory::{operation}"
+        assert _check_tool_id(tool_id) == tool_id
+
+    @pytest.mark.parametrize(
+        "invalid_id",
+        [
+            "kiln_tool::memory::",
+            "kiln_tool::memory::nope",
+            "kiln_tool::memory::save::extra",
+        ],
+    )
+    def test_invalid_memory_format(self, invalid_id):
+        with pytest.raises(ValueError, match="Invalid memory tool ID"):
+            _check_tool_id(invalid_id)
 
     def test_valid_kiln_task_tools(self):
         """Test validation of valid Kiln task tools."""
@@ -332,6 +350,9 @@ class TestToolIdPydanticType:
             "kiln_unmanaged::model_info",
             "kiln_unmanaged::lookup_weather",
             "kiln_task::my_server",
+            # Assistant-memory tools
+            "kiln_tool::memory::save",
+            "kiln_tool::memory::summary",
         ]
 
         for tool_id in valid_ids:
@@ -351,6 +372,9 @@ class TestToolIdPydanticType:
             "kiln_tool::rag::config::extra",
             "kiln_task::",
             "kiln_task::server::extra",
+            "kiln_tool::memory::",
+            "kiln_tool::memory::nope",
+            "kiln_tool::memory::save::extra",
         ]
 
         for invalid_id in invalid_ids:

@@ -1,11 +1,16 @@
 from pydantic import Field
 
-from kiln_ai.datamodel.basemodel import FilenameString, KilnParentModel
+from kiln_ai.datamodel.basemodel import (
+    FilenameString,
+    KilnParentModel,
+    ParentOfRelationship,
+)
 from kiln_ai.datamodel.chunk import ChunkerConfig
 from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.extraction import Document, ExtractorConfig
+from kiln_ai.datamodel.memory import Memory
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.reranker import RerankerConfig
 from kiln_ai.datamodel.skill import Skill
@@ -28,6 +33,9 @@ class Project(
         "reranker_configs": RerankerConfig,
         "skills": Skill,
         "code_tools": CodeTool,
+        "memories": ParentOfRelationship(
+            model=Memory, filesystem_name="assistant_memory"
+        ),
         "worlds": World,
     },
 ):
@@ -77,6 +85,9 @@ class Project(
 
     def code_tools(self, readonly: bool = False) -> list[CodeTool]:
         return super().code_tools(readonly=readonly)  # type: ignore
+
+    def memories(self, readonly: bool = False) -> list[Memory]:
+        return super().memories(readonly=readonly)  # type: ignore
 
     def worlds(self, readonly: bool = False) -> list[World]:
         return super().worlds(readonly=readonly)  # type: ignore  # pragma: no cover
