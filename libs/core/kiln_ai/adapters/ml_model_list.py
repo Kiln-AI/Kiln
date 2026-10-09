@@ -9574,7 +9574,6 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
-                suggested_for_synthetic_user=True,
                 model_id="zai-org/GLM-5.3-Flash",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=False,
