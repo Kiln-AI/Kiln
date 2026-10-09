@@ -327,6 +327,7 @@ class ModelName(str, Enum):
     bytedance_seed_1_6 = "bytedance_seed_1_6"
     bytedance_seed_1_6_flash = "bytedance_seed_1_6_flash"
     arcee_trinity_large_thinking = "arcee_trinity_large_thinking"
+    stepfun_step5_preview = "stepfun_step5_preview"
     stepfun_step3_7_flash = "stepfun_step3_7_flash"
     stepfun_step3 = "stepfun_step3"
     mimo_v2_pro = "mimo_v2_pro"
@@ -10927,6 +10928,35 @@ built_in_models: List[KilnModel] = [
                 supports_function_calling=True,
                 reasoning_capable=True,
                 require_openrouter_reasoning=True,
+            ),
+        ],
+    ),
+    # StepFun Step 5 Preview
+    KilnModel(
+        family=ModelFamily.stepfun,
+        name=ModelName.stepfun_step5_preview,
+        friendly_name="StepFun Step 5 Preview",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="stepfun/step-5-preview",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=False,
+                supports_data_gen=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                supports_vision=True,
             ),
         ],
     ),
