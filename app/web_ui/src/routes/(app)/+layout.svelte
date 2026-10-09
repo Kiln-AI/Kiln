@@ -166,7 +166,9 @@
       <ChatBar {section} />
     </div>
   </div>
-  <div class="drawer-side" role="navigation">
+  <!-- daisyUI gives .drawer-side no z-index, so positioned content (step
+       markers, the floating chat button) painted over the open mobile drawer -->
+  <div class="drawer-side max-lg:z-[60]" role="navigation">
     <label for="main-drawer" aria-label="close sidebar" class="drawer-overlay"
     ></label>
 
