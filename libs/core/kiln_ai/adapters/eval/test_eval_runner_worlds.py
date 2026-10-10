@@ -25,6 +25,7 @@ from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.datamodel_enums import (
     StructuredOutputMode,
     TaskOutputRatingType,
+    TurnMode,
 )
 from kiln_ai.datamodel.eval import (
     CodeEvalProperties,
@@ -40,6 +41,7 @@ from kiln_ai.datamodel.eval import (
     MultiTurnSyntheticEvalInputData,
     SingleTurnEvalInputData,
     SyntheticUserInfo,
+    TaskRunSplit,
     UserMessage,
     V2EvalResult,
 )
@@ -1221,3 +1223,290 @@ async def test_tool_error_reaches_the_model_and_ends_the_episode(
     (trace,) = _traces(task)
     assert trace.world_episode.final_state["notes"] == []
     assert trace.world_episode.final_state["step_count"] == 1
+
+
+# -- validate_world_readiness -------------------------------------------------
+#
+# The check needs no environment: every world here points at an address where
+# nothing listens, so a test that reached the environment would fail.
+
+UNREACHABLE_ENV_URL = "http://127.0.0.1:1"
+
+
+@pytest.fixture
+def offline_world(project):
+    w = World(name="Offline", parent=project, env_url=UNREACHABLE_ENV_URL)
+    w.save_to_file()
+    return w
+
+
+@pytest.fixture
+def offline_run_config(task, offline_world):
+    tool_id = build_world_tool_id(offline_world.id, "append_note")
+    return _run_config(task, [tool_id], name="world rc")
+
+
+def _readiness_runner(eval_, run_configs, item_ids=None, config=None):
+    task = eval_.parent_task()
+    return EvalRunner(
+        eval_configs=[
+            config or _config(eval_, ExactMatchProperties(expected_value="x"))
+        ],
+        run_configs=run_configs,
+        eval_run_type="task_run_eval",
+        split=resolve_split(task, eval_, "test"),
+        item_ids=item_ids,
+    )
+
+
+def _readiness_error(eval_, run_configs, **kwargs) -> str:
+    with pytest.raises(ValueError) as error:
+        _readiness_runner(eval_, run_configs, **kwargs).validate_world_readiness()
+    message = str(error.value)
+    assert message.startswith("Cannot run this eval's items in their worlds. ")
+    assert message.endswith(".") and ".." not in message
+    return message
+
+
+def _unreset_multi_turn_input(task, id, drive_config):
+    ei = EvalInput(
+        id=id,
+        parent=task,
+        data=MultiTurnSyntheticEvalInputData(
+            first_message=UserMessage(text="first note"),
+            synthetic_user_info=SyntheticUserInfo(
+                persona="a technician", goal="log two notes", behavior_guidance=None
+            ),
+            drive_config=drive_config,
+        ),
+    )
+    ei.save_to_file()
+    return ei
+
+
+def test_world_readiness_passes_for_items_in_the_run_configs_world(
+    task, offline_world, offline_run_config, eval_
+):
+    _input(task, "a", _reset(offline_world, "a"), id="ei_a")
+    _input(task, "b", _reset(offline_world, "b"), id="ei_b")
+
+    _readiness_runner(eval_, [offline_run_config]).validate_world_readiness()
+
+
+def test_world_readiness_groups_inputs_without_a_world(
+    task, offline_world, offline_run_config, eval_
+):
+    _input(task, "a", _reset(offline_world, "a"), id="ei_a")
+    _input(task, "plain 1", id="ei_plain_1")
+    _input(task, "plain 2", id="ei_plain_2")
+
+    message = _readiness_error(eval_, [offline_run_config])
+
+    # One sentence for the run config and its kind, naming both items once.
+    assert message.count("Run config 'world rc'") == 1
+    assert "these eval inputs have no world_reset: " in message
+    assert "ei_plain_1" in message and "ei_plain_2" in message
+    assert "ei_a" not in message
+    assert "leave them out with item_ids" in message
+
+
+def test_world_readiness_refuses_world_tools_from_another_world(
+    project, task, offline_run_config, eval_
+):
+    other = World(name="Other", parent=project, env_url=UNREACHABLE_ENV_URL)
+    other.save_to_file()
+    _input(task, "a", _reset(other, "a"), id="ei_a")
+
+    message = _readiness_error(eval_, [offline_run_config])
+
+    assert "these eval inputs run in another world: ei_a" in message
+    assert "A job runs in one world" in message
+
+
+def test_world_readiness_refuses_a_deleted_world_named_by_world_tools(task, eval_):
+    # The common case: the run config lists the tools of a world that is not in the
+    # project (deleted, or never synced), and the items reset that same world.
+    run_config = _run_config(task, [build_world_tool_id("w_gone", "append_note")])
+    _input(task, "a", WorldReset(world_id="w_gone", reset_kwargs={}), id="ei_a")
+
+    message = _readiness_error(eval_, [run_config])
+
+    assert "World w_gone not found in project" in message
+    assert "these items run in it: ei_a" in message
+
+
+def test_world_readiness_refuses_a_missing_world_for_a_project_tools_run_config(
+    task, project_run_config, eval_
+):
+    # A project-tools run config still resolves the item's world, to refuse the
+    # project's own version of a served tool. A missing world fails every such job.
+    _input(task, "a", WorldReset(world_id="w_gone", reset_kwargs={}), id="ei_a")
+
+    message = _readiness_error(eval_, [project_run_config])
+
+    assert "World w_gone not found in project" in message
+
+
+def test_world_readiness_names_a_missing_world_once_and_first(
+    task, project_run_config, offline_run_config, eval_
+):
+    # Several items and two run configs name one missing world: one sentence, before
+    # the per-run-config problems, so the cap on ids never hides it.
+    for i in range(3):
+        _input(
+            task, f"a {i}", WorldReset(world_id="w_gone", reset_kwargs={}), id=f"ei_{i}"
+        )
+
+    message = _readiness_error(eval_, [project_run_config, offline_run_config])
+
+    assert message.count("World w_gone not found") == 1
+    assert message.index("World w_gone not found") < message.index("Run config")
+    missing = message[: message.index("Run config")]
+    assert all(f"ei_{i}" in missing for i in range(3))
+
+
+def test_world_readiness_ignores_a_world_no_job_resolves(task, eval_):
+    # A run config with no tools never needs the item's world, so the runner never
+    # looks it up, and neither does the check.
+    _input(task, "a", WorldReset(world_id="w_gone", reset_kwargs={}), id="ei_a")
+
+    bare = _run_config(task, [], name="bare rc")
+    _readiness_runner(eval_, [bare]).validate_world_readiness()
+
+
+def test_world_readiness_checks_only_the_selected_items(
+    task, offline_world, offline_run_config, eval_
+):
+    good = _input(task, "a", _reset(offline_world, "a"), id="ei_a")
+    _input(task, "plain", id="ei_plain")
+
+    _readiness_runner(
+        eval_, [offline_run_config], item_ids={good.id}
+    ).validate_world_readiness()
+
+
+def test_world_readiness_skips_multi_turn_inputs_that_cannot_be_driven(
+    task, offline_run_config, eval_
+):
+    # The runner skips this item before its world lane, so the check does too.
+    _unreset_multi_turn_input(task, "ei_undrivable", drive_config=None)
+
+    _readiness_runner(eval_, [offline_run_config]).validate_world_readiness()
+
+
+def test_world_readiness_checks_multi_turn_inputs_that_can_be_driven(
+    task, offline_run_config, eval_
+):
+    _unreset_multi_turn_input(
+        task,
+        "ei_drivable",
+        drive_config=MultiTurnDriveConfig(
+            model_name="claude_4_5_haiku", model_provider="openrouter", turns=2
+        ),
+    )
+
+    message = _readiness_error(eval_, [offline_run_config])
+
+    assert "have no world_reset: ei_drivable" in message
+
+
+def _stored_run(task, id, parent_task_run_id=None):
+    run = TaskRun(
+        id=id,
+        parent=task,
+        input="x",
+        input_source=DataSource(
+            type=DataSourceType.human, properties={"created_by": "test"}
+        ),
+        output=TaskOutput(output="y"),
+        tags=["stored"],
+        parent_task_run_id=parent_task_run_id,
+    )
+    run.save_to_file()
+    return run
+
+
+def _stored_eval(task):
+    e = Eval(
+        name="stored eval",
+        splits={"test": TaskRunSplit(filter_id="tag::stored")},
+        eval_configs_filter_id="all",
+        output_scores=[
+            EvalOutputScore(
+                name="Accuracy",
+                instruction="is it accurate",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        parent=task,
+    )
+    e.save_to_file()
+    return e
+
+
+@pytest.fixture
+def stored_eval(task):
+    return _stored_eval(task)
+
+
+def test_world_readiness_names_stored_task_runs_as_task_runs(
+    task, offline_run_config, stored_eval
+):
+    _stored_run(task, "tr_1")
+
+    message = _readiness_error(stored_eval, [offline_run_config])
+
+    assert "these items are stored task runs, which can't run in a world: tr_1" in (
+        message
+    )
+    assert "eval input" not in message
+    assert "world_reset" not in message
+
+
+def test_world_readiness_skips_stored_multi_turn_chains(project, offline_world):
+    # The runner skips a stored chain before its world lane, so the check does too.
+    chat = Task(
+        name="chat", instruction="chat", turn_mode=TurnMode.multiturn, parent=project
+    )
+    chat.save_to_file()
+    run_config = _run_config(
+        chat, [build_world_tool_id(offline_world.id, "append_note")], name="world rc"
+    )
+    parent = _stored_run(chat, "tr_parent")
+    parent.tags = []
+    parent.save_to_file()
+    _stored_run(chat, "tr_chain", parent_task_run_id=parent.id)
+
+    _readiness_runner(_stored_eval(chat), [run_config]).validate_world_readiness()
+
+
+def test_world_readiness_ignores_a_legacy_judge(task, offline_run_config, eval_):
+    # A legacy judge never reaches the world lane (run_job sends it to
+    # _run_legacy_job), so the check has nothing to say about it.
+    _input(task, "plain", id="ei_plain")
+    legacy = EvalConfig(
+        name="legacy",
+        config_type=EvalConfigType.g_eval,
+        model_name="gpt-4",
+        model_provider="openai",
+        properties={"eval_steps": ["step"]},
+        parent=eval_,
+    )
+    legacy.save_to_file()
+
+    _readiness_runner(
+        eval_, [offline_run_config], config=legacy
+    ).validate_world_readiness()
+
+
+@pytest.mark.parametrize(("count", "suffix"), [(10, ""), (12, " (and 2 more)")])
+def test_world_readiness_names_ten_items_and_counts_the_rest(
+    task, offline_run_config, eval_, count, suffix
+):
+    for i in range(count):
+        _input(task, f"plain {i}", id=f"ei_plain_{i:02d}")
+
+    message = _readiness_error(eval_, [offline_run_config])
+
+    assert message.count("ei_plain_") == 10
+    assert ("and 0 more" not in message) and (suffix in message)

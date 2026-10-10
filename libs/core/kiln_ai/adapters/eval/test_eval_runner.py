@@ -13,6 +13,7 @@ from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 from kiln_ai.adapters.eval.conftest import SkippingStubV2Eval, StubV2Eval
 from kiln_ai.adapters.eval.eval_runner import (
+    DEFAULT_EVAL_CONCURRENCY,
     EvalJob,
     EvalRunner,
     _conversation_usage,
@@ -64,7 +65,7 @@ from kiln_ai.datamodel.task_output import TASK_OUTPUT_SCHEMA_ERROR_PREFIX
 from kiln_ai.datamodel.usage import MessageUsage, Usage
 from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
 from kiln_ai.synthetic_user.models import TAG_SU_ENDED_CONVERSATION
-from kiln_ai.utils.async_job_runner import RetryableError
+from kiln_ai.utils.async_job_runner import AsyncJobRunnerObserver, RetryableError
 from kiln_ai.utils.git_sync_protocols import default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
@@ -318,6 +319,33 @@ async def test_async_eval_runner_status_updates(mock_eval_runner, concurrency):
 
     # Verify run_job was called for each job
     assert mock_eval_runner.run_job.call_count == job_count
+
+
+@pytest.mark.asyncio
+async def test_run_collects_tasks_again_after_a_torn_read(
+    mock_eval_runner, monkeypatch
+):
+    # collect_tasks reads every EvalRun in a worker thread, while another job can be
+    # saving one. A file read between the truncate and the write raises
+    # JSONDecodeError; run() collects again once instead of failing.
+    monkeypatch.setattr("kiln_ai.utils.torn_read.TORN_READ_RETRY_DELAY_SECONDS", 0)
+    jobs = [{} for _ in range(3)]
+    calls: list[int] = []
+
+    def collect_tasks():
+        calls.append(1)
+        if len(calls) == 1:
+            raise json.JSONDecodeError("Expecting value", "", 0)
+        return jobs
+
+    mock_eval_runner.collect_tasks = collect_tasks
+    mock_eval_runner.run_job = AsyncMock(return_value=True)
+
+    progresses = [progress async for progress in mock_eval_runner.run()]
+
+    assert len(calls) == 2
+    assert progresses[-1].complete == 3
+    assert mock_eval_runner.run_job.call_count == 3
 
 
 def test_collect_tasks_filtering(
@@ -4551,6 +4579,41 @@ class TestValidateMultiTurnDriveReadiness:
         with pytest.raises(ValueError, match="synthetic user configuration"):
             runner.validate_multi_turn_drive_readiness()
 
+    def test_item_ids_limit_the_check_to_selected_items(
+        self, mock_task, mock_run_config, mock_v2_redrive_config, mock_eval_inputs
+    ):
+        """Unstamped multi-turn items outside an `item_ids` subset must not block a
+        job over selected single-turn items: the check covers what the runner
+        will actually work."""
+        for item_id in ("ei_bare_1", "ei_bare_2"):
+            EvalInput(
+                id=item_id,
+                data=MultiTurnSyntheticEvalInputData(
+                    first_message=UserMessage(text="hi"),
+                    synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+                ),
+                parent=mock_task,
+            ).save_to_file()
+        split = _test_split([mock_v2_redrive_config])
+
+        whole_split = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+            split=split,
+        )
+        with pytest.raises(ValueError, match="synthetic user configuration"):
+            whole_split.validate_multi_turn_drive_readiness()
+
+        subset = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+            split=split,
+            item_ids={"ei_1"},
+        )
+        subset.validate_multi_turn_drive_readiness()
+
     def test_partially_stamped_split_passes(
         self, mock_task, mock_run_config, mock_v2_redrive_config, multi_turn_eval_input
     ):
@@ -5566,3 +5629,138 @@ class TestDrivenConversationIsVettedBeforeSaving:
         assert drive.await_count == 3
         assert eval_traces(mock_task) == []
         assert mock_v2_redrive_config.runs(readonly=True) == []
+
+
+def test_collect_tasks_item_ids_narrow_the_split(
+    mock_eval, mock_task, mock_eval_config, data_source, mock_run_config
+):
+    """`item_ids` runs only the named items of the split. Ids outside the split are
+    ignored, and a named item that is already scored is still skipped."""
+    runs = []
+    for _ in range(3):
+        task_run = TaskRun(
+            parent=mock_task,
+            input="test1",
+            input_source=data_source,
+            output=TaskOutput(output="test1"),
+            tags=["tag1"],
+        )
+        task_run.save_to_file()
+        runs.append(task_run)
+    outside = TaskRun(
+        parent=mock_task,
+        input="x",
+        input_source=data_source,
+        output=TaskOutput(output="x"),
+        tags=["other"],
+    )
+    outside.save_to_file()
+    mock_eval.splits["test"] = TaskRunSplit(filter_id="tag::tag1")
+    EvalRun(
+        parent=mock_eval_config,
+        dataset_id=runs[2].id,
+        task_run_config_id=mock_run_config.id,
+        input="test",
+        output="test",
+        scores={"accuracy": 1.0},
+    ).save_to_file()
+
+    runner = build_task_run_eval_runner(
+        [mock_eval_config],
+        [mock_run_config],
+        item_ids={runs[0].id, runs[1].id, runs[2].id, outside.id},
+    )
+    jobs = runner.collect_tasks()
+    assert {job.item.id for job in jobs} == {runs[0].id, runs[1].id}
+
+    full = build_task_run_eval_runner([mock_eval_config], [mock_run_config])
+    assert {job.item.id for job in full.collect_tasks()} == {runs[0].id, runs[1].id}
+
+    only_scored = build_task_run_eval_runner(
+        [mock_eval_config], [mock_run_config], item_ids={runs[2].id}
+    )
+    assert only_scored.collect_tasks() == []
+
+
+def test_item_ids_rejected_outside_task_run_eval(mock_eval, mock_eval_config):
+    mock_eval.eval_configs_filter_id = "tag::tag1"
+    with pytest.raises(ValueError, match="task_run_eval"):
+        EvalRunner(
+            eval_configs=[mock_eval_config],
+            run_configs=None,
+            eval_run_type="eval_config_eval",
+            item_ids={"x"},
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "run_kwargs,expected",
+    [
+        (
+            {},
+            {
+                "concurrency": DEFAULT_EVAL_CONCURRENCY,
+                "max_retries": 2,
+                "retry_delay": 1.0,
+                "observers": None,
+            },
+        ),
+        (
+            {"concurrency": 3, "max_retries": 4, "retry_delay": 5.0},
+            {"concurrency": 3, "max_retries": 4, "retry_delay": 5.0},
+        ),
+    ],
+)
+async def test_run_threads_config_to_async_job_runner(
+    mock_eval_runner, run_kwargs, expected
+):
+    captured: dict = {}
+
+    class FakeRunner:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        async def run(self):
+            for _ in ():
+                yield
+
+    with patch("kiln_ai.adapters.eval.eval_runner.AsyncJobRunner", FakeRunner):
+        async for _ in mock_eval_runner.run(**run_kwargs):
+            pass
+
+    for key, value in expected.items():
+        assert captured[key] == value
+
+
+@pytest.mark.asyncio
+async def test_run_notifies_observers_of_a_failed_item(
+    mock_eval, mock_task, mock_eval_config, mock_run_config, data_source
+):
+    task_run = TaskRun(
+        parent=mock_task,
+        input="test",
+        input_source=data_source,
+        output=TaskOutput(output="test"),
+        tags=["tag1"],
+    )
+    task_run.save_to_file()
+    mock_eval.splits["test"] = TaskRunSplit(filter_id="tag::tag1")
+    runner = build_task_run_eval_runner([mock_eval_config], [mock_run_config])
+    failures: list[tuple[EvalJob, Exception]] = []
+
+    class Recorder(AsyncJobRunnerObserver[EvalJob]):
+        async def on_error(self, job: EvalJob, error: Exception):
+            failures.append((job, error))
+
+    async def failing_run_job(job: EvalJob) -> bool:
+        raise ValueError("judge exploded")
+
+    with patch.object(runner, "run_job", side_effect=failing_run_job):
+        progress = [p async for p in runner.run(observers=[Recorder()])]
+
+    assert progress[-1].errors == 1
+    assert progress[-1].complete == 0
+    assert len(failures) == 1
+    assert failures[0][0].item.id == task_run.id
+    assert str(failures[0][1]) == "judge exploded"

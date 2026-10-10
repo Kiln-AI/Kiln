@@ -23,6 +23,7 @@ from kiln_ai.datamodel.basemodel import (
     KilnParentModel,
 )
 from kiln_ai.datamodel.chunk import ChunkedDocument
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance, provenance_field
 from kiln_ai.utils.validation import NonEmptyString
 
 logger = logging.getLogger(__name__)
@@ -176,6 +177,7 @@ class ExtractorConfig(KilnParentedModel):
         # the discriminator refers to the properties->extractor_type key (not the extractor_type field on the parent model)
         discriminator="extractor_type",
     )
+    provenance: KilnArtifactProvenance | None = provenance_field()
 
     @model_validator(mode="before")
     def upgrade_missing_discriminator_properties(

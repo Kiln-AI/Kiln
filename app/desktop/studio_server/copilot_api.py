@@ -23,6 +23,7 @@ from kiln_ai.datamodel.eval import (
     MultiTurnDriveConfig,
 )
 from kiln_ai.datamodel.json_schema import validate_schema
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.spec import (
     Spec,
     SpecStatus,
@@ -331,6 +332,10 @@ class CreateSpecWithCopilotRequest(BaseModel):
         "whose tools and skills describe the target task while examples are "
         "generated. Omit to use the task's default run config. The eval "
         "builder generates nothing, so this does not apply to it.",
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance stamped onto the created judge eval config. The judge belongs to a new eval, so derived_from_ids must be empty.",
     )
 
     @field_validator("splits")
@@ -1307,7 +1312,16 @@ def connect_copilot_api(app: FastAPI):
                     multi_turn=request.evaluate_full_trace,
                 ),
             ),
+            provenance=request.provenance,
         )
+        if (
+            eval_config.provenance is not None
+            and eval_config.provenance.derived_from_ids
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="derived_from_ids must be empty: the judge eval config belongs to a new eval, which has no eval config to derive from.",
+            )
 
         # Set as default config after ID is assigned
         eval.current_config_id = eval_config.id

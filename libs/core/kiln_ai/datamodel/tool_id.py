@@ -17,6 +17,7 @@ Tool IDs can be one of:
 - A remote MCP tool: mcp::remote::<server_id>::<tool_name>
 - A local MCP tool: mcp::local::<server_id>::<tool_name>
 - A Kiln task tool: kiln_task::<server_id>
+- An assistant-memory tool: kiln_tool::memory::<operation> (project-bound)
 - An SDK / adapter-injected unmanaged tool: kiln_unmanaged::<id> (single slug, not from the registry)
 - A world tool: kiln_tool::world::<world_id>::<tool_name>, a tool the world's OpenEnv
   environment serves, usable only while an episode of that world is active
@@ -41,9 +42,13 @@ RAG_TOOL_ID_PREFIX = "kiln_tool::rag::"
 MCP_LOCAL_TOOL_ID_PREFIX = "mcp::local::"
 KILN_TASK_TOOL_ID_PREFIX = "kiln_task::"
 SKILL_TOOL_ID_PREFIX = "kiln_tool::skill::"
+MEMORY_TOOL_ID_PREFIX = "kiln_tool::memory::"
 KILN_UNMANAGED_TOOL_ID_PREFIX = "kiln_unmanaged::"
 CODE_TOOL_ID_PREFIX = "kiln_tool::code::"
 WORLD_TOOL_ID_PREFIX = "kiln_tool::world::"
+
+# The six assistant-memory operations, project-bound (see kiln_ai.tools.memory_tools).
+MEMORY_TOOL_OPERATIONS = ("save", "list", "get", "update", "delete", "summary")
 
 
 def kiln_unmanaged_tool_slug_from_id(id: str) -> str:
@@ -136,6 +141,11 @@ def _check_tool_id(id: str) -> str:
         code_tool_id_from_tool_id(id)
         return id
 
+    # Memory tools must have format: kiln_tool::memory::<operation>
+    if id.startswith(MEMORY_TOOL_ID_PREFIX):
+        memory_operation_from_tool_id(id)
+        return id
+
     # SDK / AdapterConfig.unmanaged_tools — not resolved by tool_from_id
     if id.startswith(KILN_UNMANAGED_TOOL_ID_PREFIX):
         kiln_unmanaged_tool_slug_from_id(id)
@@ -147,6 +157,32 @@ def _check_tool_id(id: str) -> str:
         return id
 
     raise ValueError(f"Invalid tool ID: {id}")
+
+
+def memory_operation_from_tool_id(id: str) -> str:
+    """Parse ``kiln_tool::memory::<operation>`` and return the operation."""
+    parts = id.split("::")
+    if (
+        not id.startswith(MEMORY_TOOL_ID_PREFIX)
+        or len(parts) != 3
+        or parts[2] not in MEMORY_TOOL_OPERATIONS
+    ):
+        raise ValueError(
+            f"Invalid memory tool ID: {id}. Expected format: "
+            f"'kiln_tool::memory::<operation>' where operation is one of "
+            f"{', '.join(MEMORY_TOOL_OPERATIONS)}."
+        )
+    return parts[2]
+
+
+def build_memory_tool_id(operation: str) -> str:
+    """Construct the tool ID for an assistant-memory operation."""
+    if operation not in MEMORY_TOOL_OPERATIONS:
+        raise ValueError(
+            f"Unknown memory operation: {operation}. Expected one of "
+            f"{', '.join(MEMORY_TOOL_OPERATIONS)}."
+        )
+    return f"{MEMORY_TOOL_ID_PREFIX}{operation}"
 
 
 def mcp_server_and_tool_name_from_id(id: str) -> tuple[str, str]:

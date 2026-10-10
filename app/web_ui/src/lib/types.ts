@@ -47,6 +47,8 @@ export type EvalConfigType = components["schemas"]["EvalConfigType"]
 export type EvalDataType = components["schemas"]["EvalDataType"]
 export type EvalConfig = components["schemas"]["EvalConfig"]
 export type TaskRunConfig = components["schemas"]["TaskRunConfig"]
+export type KilnArtifactProvenance =
+  components["schemas"]["KilnArtifactProvenance"]
 export type DataGuide = components["schemas"]["DataGuide"]
 export type KilnAgentRunConfigProperties =
   components["schemas"]["KilnAgentRunConfigProperties"]

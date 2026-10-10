@@ -490,6 +490,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/memories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Memories
+         * @description List memory summaries newest-first. content_length 0 means the overview
+         *     is the whole memory. Truncation fields nudge how to narrow the results.
+         */
+        get: operations["list_memories_api_projects__project_id__memories_get"];
+        put?: never;
+        /** Save Memory */
+        post: operations["save_memory_api_projects__project_id__memories_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/memories/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Memory Summary
+         * @description Cheap per-scope orientation (counts, newest timestamp, tag cardinalities)
+         *     with no record content. Call before targeted list queries.
+         */
+        get: operations["memory_summary_api_projects__project_id__memories_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/memories/by_ids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Memories
+         * @description Fetch full memory records by id. Unknown ids are omitted from the result.
+         */
+        get: operations["get_memories_api_projects__project_id__memories_by_ids_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/memories/{memory_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Memory
+         * @description Hard-delete a memory. For junk, wrong, or obsolete memories; use update
+         *     instead if the memory should be corrected rather than removed.
+         */
+        delete: operations["delete_memory_api_projects__project_id__memories__memory_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Memory */
+        patch: operations["update_memory_api_projects__project_id__memories__memory_id__patch"];
+        trace?: never;
+    };
     "/api/projects/{project_id}/documents/bulk": {
         parameters: {
             query?: never;
@@ -4052,6 +4137,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/wait": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wait For Jobs
+         * @description Block until ALL the given jobs reach a terminal state, then return
+         *     their records in the order given. A pure observer: disconnecting never
+         *     stops a job. The timeout covers the whole set. Empty `ids` returns an
+         *     empty list. A paused job is not terminal, so a wait on one runs out
+         *     the timeout (504).
+         */
+        post: operations["wait_for_jobs_api_jobs_wait_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/evals/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Eval Job
+         * @description Start a background job that runs one split of an eval against one run
+         *     config, and return at once. Items that already have a score for this eval
+         *     config and run config are skipped. If an identical job (same eval, judge,
+         *     run config, split and items) is still pending, running or paused, returns
+         *     that job instead of starting a second one that would score the same items
+         *     again. A paused job is returned as it is, with `status` `paused`: the
+         *     request does not resume it. A wait on a paused job times out (504) until
+         *     someone resumes it, so check `status` and call
+         *     `POST /api/jobs/{id}/resume` if the job must run. Poll
+         *     `GET /api/jobs/{id}` or `POST /api/jobs/wait` for progress and the
+         *     result. An item with a `world_reset` runs in a fresh episode of its world
+         *     when the run config lists that world's tools. A 404 means that the eval,
+         *     the eval config or the run config does not exist. A 422 means that the
+         *     eval has no such split, or that `item_ids` names an item outside it. A 400
+         *     means that the job cannot run as requested: a V1 judge on items it cannot
+         *     score, multi-turn items that cannot be driven, or, with a V2 judge, items
+         *     that the run config's world tools cannot run, or a world that the project
+         *     does not have while the run config lists tools. World problems that need
+         *     the world's environment fail item by item, in `GET /api/jobs/{id}/errors`:
+         *     an environment that cannot be reached or refuses a reset, and a run config
+         *     that lists the project's own version of a tool that the world serves. A
+         *     503 means that a project file was not readable, for example while another
+         *     job wrote it. Send the request again.
+         */
+        post: operations["run_eval_job_api_jobs_evals_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{type}": {
         parameters: {
             query?: never;
@@ -4115,9 +4266,9 @@ export interface paths {
          * Wait For Job
          * @description Block until the job reaches a terminal state, then return its record.
          *
-         *     A pure observer, like the SSE stream: if the client disconnects, uvicorn
-         *     cancels this handler coroutine, which cancels the wait() await and tears
-         *     down only the awaiter — the job's supervising task keeps running.
+         *     A pure observer: waiting never stops the job. A client that disconnects
+         *     does not cancel this handler, so a wait without a timeout on a job that
+         *     never ends (for example a paused one) lasts until that job ends.
          */
         get: operations["wait_for_job_api_jobs__id__wait_get"];
         put?: never;
@@ -4602,6 +4753,8 @@ export interface components {
              * @description The user who created the prompt.
              */
             created_by?: string | null;
+            /** @description Why this prompt exists and what it was derived from, if recorded. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** AppropriateToolUseProperties */
         AppropriateToolUseProperties: {
@@ -5259,6 +5412,8 @@ export interface components {
              * @description Properties to be used to execute the chunker config. This is chunker_type specific and should serialize to a json dict.
              */
             properties: components["schemas"]["SemanticChunkerProperties"] | components["schemas"]["FixedWindowChunkerProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -5527,6 +5682,8 @@ export interface components {
              * @description Tools this code tool may call.
              */
             tool_allowlist?: string[];
+            /** @description Provenance: why this code tool exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** CodeToolCreateResponse */
         CodeToolCreateResponse: {
@@ -5559,6 +5716,7 @@ export interface components {
             created_at?: string | null;
             /** Created By */
             created_by?: string | null;
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /**
              * Not Trusted
              * @default false
@@ -5596,6 +5754,7 @@ export interface components {
             created_at?: string | null;
             /** Created By */
             created_by?: string | null;
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** CodeToolUpdateRequest */
         CodeToolUpdateRequest: {
@@ -5698,6 +5857,8 @@ export interface components {
             chunker_type: components["schemas"]["ChunkerType"];
             /** Properties */
             properties: components["schemas"]["SemanticChunkerPropertiesPublic"] | components["schemas"]["FixedWindowChunkerPropertiesPublic"];
+            /** @description Provenance: why this chunker config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateDatasetSplitRequest
@@ -5743,6 +5904,8 @@ export interface components {
             model_name: string;
             /** @description Properties to be used to execute the embedding config. */
             properties?: components["schemas"]["EmbeddingProperties"];
+            /** @description Provenance: why this embedding config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateEvalConfigRequest
@@ -5770,6 +5933,8 @@ export interface components {
             model_name?: string | null;
             /** @description The provider of the evaluation model. Required for LLM-based eval types. */
             provider?: components["schemas"]["ModelProviderName"] | null;
+            /** @description Provenance: why this eval config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateEvalInputRequest
@@ -5876,6 +6041,8 @@ export interface components {
             passthrough_mimetypes?: components["schemas"]["OutputFormat"][];
             /** @description The properties of the extractor config, specific to the selected extractor_type. */
             properties: components["schemas"]["LitellmExtractorConfigProperties"];
+            /** @description Provenance: why this extractor config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateFeedbackRequest
@@ -5921,6 +6088,8 @@ export interface components {
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
             run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
+            /** @description Provenance: why this fine-tune exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateJobRequest
@@ -5954,10 +6123,10 @@ export interface components {
         CreateJobResponse: {
             /**
              * Job Id
-             * @description The id of the newly created job.
+             * @description The id of the job: a new job, or an existing identical job.
              */
             job_id: string;
-            /** @description The job's status immediately after creation. */
+            /** @description The job's status immediately after creation. When the request returns an existing identical job, this is that job's status, which can be 'paused'. */
             status: components["schemas"]["BackgroundJobStatus"];
         };
         /** CreateKilnCopilotApiKeyRequest */
@@ -6010,6 +6179,8 @@ export interface components {
              * @description The name of the eval config.
              */
             name?: string | null;
+            /** @description Provenance: why this eval config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateMcpRunConfigRequest
@@ -6031,6 +6202,8 @@ export interface components {
              * @description The MCP tool ID to use.
              */
             tool_id: string;
+            /** @description Provenance: why this run config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** CreateRagConfigRequest */
         CreateRagConfigRequest: {
@@ -6084,6 +6257,8 @@ export interface components {
              * @description List of document tags to filter by. If None, all documents in the project are used.
              */
             tags?: string[] | null;
+            /** @description Provenance: why this RAG config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** CreateRerankerConfigRequest */
         CreateRerankerConfigRequest: {
@@ -6116,6 +6291,8 @@ export interface components {
              *     }
              */
             properties: components["schemas"]["CohereCompatibleProperties"];
+            /** @description Provenance: why this reranker config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateSpecWithCopilotRequest
@@ -6163,6 +6340,8 @@ export interface components {
              * @description Legacy `sdg_session_config` path only: the run config whose tools and skills describe the target task while examples are generated. Omit to use the task's default run config. The eval builder generates nothing, so this does not apply to it.
              */
             run_config_id?: string | null;
+            /** @description Provenance stamped onto the created judge eval config. The judge belongs to a new eval, so derived_from_ids must be empty. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateTaskFromToolRequest
@@ -6184,6 +6363,8 @@ export interface components {
              * @description The instruction for the new task.
              */
             instruction: string;
+            /** @description Provenance stamped onto the created run config. The run config belongs to a new task, so derived_from_ids must be empty. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateTaskRunConfigRequest
@@ -6205,6 +6386,8 @@ export interface components {
              * @description The run configuration properties.
              */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
+            /** @description Provenance: why this run config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateTaskRunRequest
@@ -6264,6 +6447,8 @@ export interface components {
              * @description The properties of the vector store config, specific to the selected store_type.
              */
             properties: components["schemas"]["LanceDBConfigFTSPropertiesPublic"] | components["schemas"]["LanceDBConfigVectorPropertiesPublic"] | components["schemas"]["LanceDBConfigHybridPropertiesPublic"];
+            /** @description Provenance: why this vector store config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** DataGenCategoriesApiInput */
         DataGenCategoriesApiInput: {
@@ -6834,6 +7019,8 @@ export interface components {
             model_name: string;
             /** @description Properties to be used to execute the embedding config. */
             properties: components["schemas"]["EmbeddingProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -7097,6 +7284,8 @@ export interface components {
             properties?: {
                 [key: string]: unknown;
             } | (components["schemas"]["LlmJudgeProperties"] | components["schemas"]["ExactMatchProperties"] | components["schemas"]["PatternMatchProperties"] | components["schemas"]["SetCheckProperties"] | components["schemas"]["ToolCallCheckProperties"] | components["schemas"]["ContainsProperties"] | components["schemas"]["StepCountCheckProperties"] | components["schemas"]["CodeEvalProperties"]) | null;
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -7290,6 +7479,53 @@ export interface components {
              * @description The id of the dataset item this run was generated for. Interpreted within the store named by source_type — ids are only unique within a store.
              */
             source_id: string;
+        };
+        /**
+         * EvalJobParams
+         * @description Which split of an eval to run, against which run config, with which judge.
+         */
+        EvalJobParams: {
+            /**
+             * Project Id
+             * @description Id of the project the eval belongs to.
+             */
+            project_id: string;
+            /**
+             * Task Id
+             * @description Id of the task the eval belongs to.
+             */
+            task_id: string;
+            /**
+             * Eval Id
+             * @description Id of the eval to run.
+             */
+            eval_id: string;
+            /**
+             * Eval Config Id
+             * @description Id of the eval config (judge) to evaluate the run's output with.
+             */
+            eval_config_id: string;
+            /**
+             * Run Config Id
+             * @description Id of the task run config whose outputs are being evaluated.
+             */
+            run_config_id: string;
+            /**
+             * Concurrency
+             * @description Max dataset items evaluated in parallel by the runner, from 1 to 100. Leave null to use the runner's default (25).
+             */
+            concurrency?: number | null;
+            /**
+             * Split
+             * @description Which of the eval's dataset splits to run: train, val, or test. Required, so a caller never runs the test split by omission. Fails with 422 if the eval has no such split.
+             * @enum {string}
+             */
+            split: "train" | "val" | "test";
+            /**
+             * Item Ids
+             * @description Restrict the job to these items of the split (EvalInput ids for an EvalInput-backed split, TaskRun ids for a TaskRun-backed one). Fails with 422 if an id is not in the split when the job is created. Progress and completion are measured over the subset. Leave null to run the whole split. Lets a caller trial a run config on a few named items before paying for the full split: the rows it stores are reused by a later full run, which skips scored items.
+             */
+            item_ids?: string[] | null;
         };
         /**
          * EvalOutputScore
@@ -8034,6 +8270,8 @@ export interface components {
              * @description Properties to be used to execute the extractor config. This is extractor_type specific and should serialize to a json dict.
              */
             properties: components["schemas"]["LitellmExtractorConfigProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -8360,6 +8598,8 @@ export interface components {
             data_strategy: components["schemas"]["ChatStrategy"];
             /** @description The run configuration for this fine-tune. */
             run_config?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -9047,6 +9287,13 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             /**
+             * Properties
+             * @description Optional static, worker-published descriptive properties for this job (validated against the worker's properties_model). Derived once from params at create time and unchanged over the run.
+             */
+            properties?: {
+                [key: string]: unknown;
+            } | null;
+            /**
              * Params
              * @description The validated parameters this job was created with.
              */
@@ -9192,6 +9439,31 @@ export interface components {
              * @description Optional transform applied to the task input at run time, producing the first user message sent to the model. Default None preserves the identity path.
              */
             input_transform?: components["schemas"]["JinjaInputTransform"] | null;
+        };
+        /**
+         * KilnArtifactProvenance
+         * @description Why this artifact exists and what it was derived from.
+         *
+         *     Written once at creation; immutable thereafter (enforced at the API layer).
+         *     Compile-time metadata for future agent sessions and humans — never shown to
+         *     runtime models (not part of any tool/prompt surface).
+         */
+        KilnArtifactProvenance: {
+            /**
+             * Notes
+             * @description Why this artifact exists: the problem/hypothesis it addresses, what changed vs. the derived_from_ids parents, what validation/evidence supports it (cite eval/run_config/trace IDs inline), and known limits. First line = one-sentence summary. Record observations with conditions, never universal rules. Max ~2000 chars.
+             */
+            notes?: string | null;
+            /**
+             * Derived From Ids
+             * @description IDs of same-type sibling artifacts this one was derived from. Ordered: first = primary parent (the artifact this replaces or is a new version of); further entries = additional sources merged in. Empty = not derived. IDs resolve among siblings in the same parent scope only.
+             */
+            derived_from_ids?: (string | null)[];
+            /**
+             * Origin
+             * @description Whose judgment created this artifact. 'human': a person authored it directly OR an agent created it fulfilling a direct human request. 'agent': an agent created it autonomously. None: unknown/legacy. Required when this provenance is created; consumers must tolerate unknown values.
+             */
+            origin?: string | null;
         };
         KilnAttachmentModel: {
             [key: string]: string;
@@ -9719,6 +9991,124 @@ export interface components {
              * @description Average total LLM latency per run in milliseconds.
              */
             mean_total_llm_latency_ms?: number | null;
+        };
+        /**
+         * Memory
+         * @description One memory record of the assistant working on this project.
+         *
+         *     Stored at assistant_memory/{id}/memory.kiln. Concurrent-append safe
+         *     (file per memory); updates are last-writer-wins.
+         */
+        Memory: {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /**
+             * Overview
+             * @description One-line summary written so a future reader can decide whether to fetch the full content. For very short memories this IS the whole memory (leave content null). No newlines.
+             */
+            overview: string;
+            /**
+             * Content
+             * @description The memory body: the finding/fact/decision with its conditions and evidence level, citing related Kiln records as prose IDs (e.g. 'run_config 184623901234', 'eval 5678'). Null when the overview says everything. Record observations with conditions ('batch API 429'd at 50rps on 07-04'), never universal rules.
+             */
+            content?: string | null;
+            /**
+             * Tags
+             * @description Snake_case tags for filtering (existing Kiln tag rules). Free-form; skills define the working vocabulary (e.g. experiment, dead_end, constraint, api_quirk, session_state; faceted tags like lever_prompt, verdict_accept, evidence_weak).
+             */
+            tags?: string[];
+            /**
+             * Scope
+             * @description Opaque scope string, exact-match filterable. Conventions: 'project' for project-wide knowledge (constraints, environment facts); 'task::<task_id>' for task-scoped work. Not validated against existing records — a convention, not a reference.
+             */
+            scope: string;
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * MemoryListResult
+         * @description A page of list_memories results plus the truncation nudge data.
+         *
+         *     remaining_tag_counts is computed over the records beyond this page (the
+         *     not-returned remainder), sorted by count descending. Adapters render it into
+         *     a prompt-facing nudge string like "62 more — filter by tag: probe(18), ...".
+         */
+        MemoryListResult: {
+            /** Listings */
+            listings: components["schemas"]["MemoryListing"][];
+            /**
+             * Matched
+             * @description How many memories matched the filters, across all pages.
+             */
+            matched: number;
+            /**
+             * Remaining
+             * @description How many matching memories come after this page.
+             */
+            remaining: number;
+            /** Remaining Tag Counts */
+            remaining_tag_counts: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * MemoryListing
+         * @description A single row in a list_memories result. Carries content_length, not content.
+         */
+        MemoryListing: {
+            /** Id */
+            id: string;
+            /** Overview */
+            overview: string;
+            /** Tags */
+            tags: string[];
+            /** Scope */
+            scope: string;
+            /** Content Length */
+            content_length: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string;
+        };
+        /**
+         * MemorySummary
+         * @description An orientation view of a memory store, with no record content: the total and
+         *     one ScopeSummary per scope, newest scope first.
+         */
+        MemorySummary: {
+            /** Total */
+            total: number;
+            /** Scopes */
+            scopes: components["schemas"]["ScopeSummary"][];
         };
         /**
          * MessageUsage
@@ -10427,6 +10817,8 @@ export interface components {
              * @description Chain of thought instructions to include in the prompt.
              */
             chain_of_thought_instructions?: string | null;
+            /** @description Provenance: why this prompt exists and what it was derived from. derived_from_ids accepts a saved prompt's id with or without the 'id::' prefix; it is stored without the prefix. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * PromptGenerator
@@ -10769,6 +11161,8 @@ export interface components {
              * @description List of document tags to filter by. If None, all documents in the project are used.
              */
             tags?: string[] | null;
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -10833,6 +11227,8 @@ export interface components {
              * @description Tags for document filtering.
              */
             tags?: string[] | null;
+            /** @description Provenance: why this RAG config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** RagProgress */
         RagProgress: {
@@ -11231,6 +11627,8 @@ export interface components {
              * @description The properties of the reranker config, specific to the selected type.
              */
             properties: components["schemas"]["CohereCompatibleProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -11590,6 +11988,32 @@ export interface components {
              */
             trusted: boolean;
         };
+        /**
+         * SaveMemoryRequest
+         * @description Body for creating a memory. `scope` is required — there is no default.
+         */
+        SaveMemoryRequest: {
+            /**
+             * Overview
+             * @description One-line summary written so a future reader can decide whether to fetch the content. For very short memories this IS the whole memory (leave content null). No newlines.
+             */
+            overview: string;
+            /**
+             * Scope
+             * @description Opaque scope string. Conventions: 'project' for project-wide knowledge; 'task::<task_id>' for task-scoped work. Not validated against existing records.
+             */
+            scope: string;
+            /**
+             * Content
+             * @description The memory body: the finding/fact/decision with its conditions and evidence level. Null when the overview says everything.
+             */
+            content?: string | null;
+            /**
+             * Tags
+             * @description Snake_case tags (no spaces) for filtering.
+             */
+            tags?: string[];
+        };
         /** SaveQnaPairInput */
         SaveQnaPairInput: {
             /**
@@ -11653,6 +12077,30 @@ export interface components {
              * @description List of discovered projects.
              */
             projects: components["schemas"]["ProjectInfo"][];
+        };
+        /**
+         * ScopeSummary
+         * @description Counts for the memories of one scope: how many, the newest, and per-tag counts.
+         */
+        ScopeSummary: {
+            /** Scope */
+            scope: string;
+            /** Count */
+            count: number;
+            /**
+             * Newest
+             * Format: date-time
+             */
+            newest: string;
+            /** Tags */
+            tags: {
+                [key: string]: number;
+            };
+            /**
+             * Untagged
+             * @description How many memories in this scope have no tags. Null when none.
+             */
+            untagged?: number | null;
         };
         /**
          * ScoreDirection
@@ -11941,6 +12389,8 @@ export interface components {
              * @description The markdown body of the skill.
              */
             body: string;
+            /** @description Provenance: why this skill exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * SkillResponse
@@ -11978,6 +12428,8 @@ export interface components {
              * @description When the skill was created.
              */
             created_at?: string | null;
+            /** @description Why this skill exists and what it was derived from, if recorded. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * SkillUpdateRequest
@@ -13074,6 +13526,8 @@ export interface components {
              * @default false
              */
             starred: boolean;
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -13717,6 +14171,34 @@ export interface components {
             description?: string | null;
         };
         /**
+         * UpdateMemoryRequest
+         * @description Body for updating a memory. Only provided fields are changed; omitted
+         *     fields are left untouched. An explicit null clears `content` and `tags`, and
+         *     is rejected for `overview` and `scope`.
+         */
+        UpdateMemoryRequest: {
+            /**
+             * Overview
+             * @description New one-line summary. No newlines.
+             */
+            overview?: string | null;
+            /**
+             * Content
+             * @description New memory body. Empty or null clears it.
+             */
+            content?: string | null;
+            /**
+             * Tags
+             * @description Snake_case tags (no spaces) for filtering. Null clears them.
+             */
+            tags?: string[] | null;
+            /**
+             * Scope
+             * @description Opaque scope string. Conventions: 'project' for project-wide knowledge; 'task::<task_id>' for task-scoped work. Not validated against existing records.
+             */
+            scope?: string | null;
+        };
+        /**
          * UpdateRagConfigRequest
          * @description Request to update a RAG config.
          */
@@ -13952,6 +14434,8 @@ export interface components {
              * @description The properties of the vector store config, specific to the selected store_type.
              */
             properties: components["schemas"]["LanceDBConfigFTSProperties"] | components["schemas"]["LanceDBConfigVectorProperties"] | components["schemas"]["LanceDBConfigHybridProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -13961,6 +14445,23 @@ export interface components {
          * @enum {string}
          */
         VectorStoreType: "lancedb_fts" | "lancedb_hybrid" | "lancedb_vector";
+        /**
+         * WaitForJobsRequest
+         * @description Request body for waiting on a set of jobs.
+         */
+        WaitForJobsRequest: {
+            /**
+             * Ids
+             * @description Job ids to wait for. All must reach a terminal state.
+             */
+            ids?: string[];
+            /**
+             * Timeout
+             * @description Seconds to wait before giving up (504 on timeout; jobs keep running — re-issue the wait to keep waiting). Defaults to 600s, capped at 3600s: the wait is always bounded, since a job that never terminates (e.g. paused by the user) would otherwise hang the caller indefinitely.
+             * @default 600
+             */
+            timeout: number;
+        };
         /**
          * WorldCreateRequest
          * @description A new world: a pointer to a running OpenEnv environment.
@@ -15514,6 +16015,227 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_memories_api_projects__project_id__memories_get: {
+        parameters: {
+            query?: {
+                /** @description Exact-match scope filter. Omit for all scopes. */
+                scope?: string | null;
+                /** @description Memory must have ALL of these tags (AND). Repeat the param for multiple tags; omit for no tag filter. */
+                tags?: string[] | null;
+                /** @description Case-insensitive regex over overview + content. A pattern that takes too long to evaluate returns 422. */
+                content_match?: string | null;
+                /** @description Max rows to return. */
+                limit?: number;
+                /** @description Rows to skip. */
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryListResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_memory_api_projects__project_id__memories_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveMemoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Memory"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    memory_summary_api_projects__project_id__memories_summary_get: {
+        parameters: {
+            query?: {
+                /** @description Limit to one scope. Omit for all scopes. */
+                scope?: string | null;
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemorySummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_memories_api_projects__project_id__memories_by_ids_get: {
+        parameters: {
+            query: {
+                /** @description The memory ids to fetch. */
+                ids: string[];
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Memory"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_memory_api_projects__project_id__memories__memory_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the memory. */
+                memory_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_memory_api_projects__project_id__memories__memory_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the memory. */
+                memory_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMemoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Memory"];
                 };
             };
             /** @description Validation Error */
@@ -23068,6 +23790,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    wait_for_jobs_api_jobs_wait_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WaitForJobsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_eval_job_api_jobs_evals_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvalJobParams"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateJobResponse"];
                 };
             };
             /** @description Validation Error */

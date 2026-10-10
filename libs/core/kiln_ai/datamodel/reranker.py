@@ -5,6 +5,7 @@ from pydantic import Field, PositiveInt
 from typing_extensions import TypedDict
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance, provenance_field
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.project import Project
@@ -43,6 +44,7 @@ class RerankerConfig(KilnParentedModel):
         description="The properties of the reranker config, specific to the selected type.",
         discriminator="type",
     )
+    provenance: KilnArtifactProvenance | None = provenance_field()
 
     # Workaround to return typed parent without importing Project
     def parent_project(self) -> Union["Project", None]:
