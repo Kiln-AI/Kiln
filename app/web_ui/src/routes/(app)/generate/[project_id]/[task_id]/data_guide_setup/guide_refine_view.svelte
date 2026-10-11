@@ -99,7 +99,7 @@
   // --- Edit chooser dialog ---
   // The header "Edit" action opens this first, letting the user pick between
   // editing the guide text by hand or reviewing generated examples (and
-  // refining). Replaces the old standalone "Refine Data Guide" button.
+  // refining).
   let edit_chooser_dialog: Dialog
 
   const edit_options: OptionListItem[] = [
@@ -139,8 +139,7 @@
   }
 
   // "Continue" from the generation settings modal on the review path: kick off
-  // the same validated preview dispatch the old Refine button used, then let
-  // the dialog close.
+  // the validated preview dispatch, then let the dialog close.
   function handle_review_continue(): boolean {
     handle_refine()
     return true

@@ -8,7 +8,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.cli.commands.package_project import PackageForTrainingConfig
-from kiln_ai.datamodel import Project, PromptOptimizationJob, Task
+from kiln_ai.datamodel import Project, Prompt, PromptOptimizationJob, Task
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.eval import (
     CodeEvalProperties,
@@ -28,6 +28,7 @@ from kiln_ai.datamodel.eval import (
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_server.custom_errors import connect_custom_errors
+from kiln_server.provenance_api import validate_provenance_or_400
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.client import (
     AuthenticatedClient,
@@ -55,6 +56,8 @@ from app.desktop.studio_server.prompt_optimization_job_api import (
     PublicPromptOptimizationJobStatusResponse,
     connect_prompt_optimization_job_api,
     is_job_status_final,
+    optimization_parent_prompt_id,
+    optimized_run_config_provenance,
     prompt_optimization_job_from_id,
     update_prompt_optimization_job_and_create_artifacts,
 )
@@ -3880,3 +3883,185 @@ def test_check_eval_supported_evals_have_no_unsupported_reason(
     result = response.json()
     assert result["model_is_supported"] is True
     assert result["unsupported_reason"] is None
+
+
+def _provenance_fixture(tmp_path, prompt_id: str | None = None):
+    """A task with a saved target run config and a saved optimization job.
+
+    The target run config points to `prompt_id`, or to a saved sibling prompt
+    when `prompt_id` is None.
+    """
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(
+        name="Test Task",
+        description="Test task for Prompt Optimization",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    source_prompt = Prompt(name="Source Prompt", prompt="Be helpful.", parent=task)
+    source_prompt.save_to_file()
+
+    target_run_config = TaskRunConfig(
+        parent=task,
+        name="Original Config",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=prompt_id or f"id::{source_prompt.id}",
+            structured_output_mode=StructuredOutputMode.default,
+        ),
+    )
+    target_run_config.save_to_file()
+    assert target_run_config.id is not None
+
+    job = PromptOptimizationJob(
+        name="Test Job",
+        job_id="remote-job-123",
+        target_run_config_id=target_run_config.id,
+        latest_status="pending",
+        parent=task,
+    )
+    job.save_to_file()
+    return project, task, source_prompt, target_run_config, job
+
+
+def _succeed_job(client, project, task, target_run_config, job):
+    with (
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
+            return_value=target_run_config,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=_make_sdk_response(
+                parsed=JobStatusResponse(
+                    job_id="remote-job-123", status=JobStatus.SUCCEEDED
+                )
+            ),
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=_make_sdk_response(
+                parsed=PromptOptimizationJobResultResponse(
+                    status=JobStatus.SUCCEEDED,
+                    output=PromptOptimizationJobOutput(
+                        optimized_prompt="The optimized prompt"
+                    ),
+                )
+            ),
+        ),
+    ):
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompt_optimization_jobs/{job.id}"
+        )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_prompt_optimization_artifacts_stamp_provenance(client, mock_api_key, tmp_path):
+    project, task, source_prompt, target_run_config, job = _provenance_fixture(tmp_path)
+
+    result = _succeed_job(client, project, task, target_run_config, job)
+
+    created_prompt = next(p for p in task.prompts() if p.id != source_prompt.id)
+    assert result["created_prompt_id"] == f"id::{created_prompt.id}"
+    assert created_prompt.provenance is not None
+    assert created_prompt.provenance.origin == "human"
+    assert created_prompt.provenance.derived_from_ids == [source_prompt.id]
+    assert created_prompt.provenance.notes == (
+        f"Created by prompt optimization job {job.id} from the prompt of run "
+        f"config {target_run_config.id}."
+    )
+
+    created_run_config = next(
+        rc for rc in task.run_configs() if rc.id == result["created_run_config_id"]
+    )
+    assert created_run_config.provenance is not None
+    assert created_run_config.provenance.origin == "human"
+    assert created_run_config.provenance.derived_from_ids == [target_run_config.id]
+    assert created_run_config.provenance.notes == (
+        f"Created by prompt optimization job {job.id}. Copy of run config "
+        f"{target_run_config.id} with its prompt set to the optimized prompt "
+        f"{created_prompt.id}."
+    )
+
+    # The stamped lineage resolves to real same-type siblings.
+    validate_provenance_or_400(
+        created_prompt.provenance, created_prompt.id, Prompt, task.path
+    )
+    validate_provenance_or_400(
+        created_run_config.provenance,
+        created_run_config.id,
+        TaskRunConfig,
+        task.path,
+    )
+
+    # Stored on disk, not only in memory.
+    assert created_prompt.path is not None
+    on_disk = json.loads(created_prompt.path.read_text())
+    assert on_disk["provenance"]["derived_from_ids"] == [source_prompt.id]
+
+
+def test_prompt_optimization_from_generator_prompt_has_no_prompt_parent(
+    client, mock_api_key, tmp_path
+):
+    project, task, source_prompt, target_run_config, job = _provenance_fixture(
+        tmp_path, prompt_id="simple_prompt_builder"
+    )
+
+    result = _succeed_job(client, project, task, target_run_config, job)
+
+    created_prompt = next(p for p in task.prompts() if p.id != source_prompt.id)
+    assert created_prompt.provenance is not None
+    assert created_prompt.provenance.origin == "human"
+    assert created_prompt.provenance.derived_from_ids == []
+    created_run_config = next(
+        rc for rc in task.run_configs() if rc.id == result["created_run_config_id"]
+    )
+    assert created_run_config.provenance is not None
+    assert created_run_config.provenance.derived_from_ids == [target_run_config.id]
+
+
+def test_optimization_parent_prompt_id_skips_missing_parents(tmp_path):
+    _, task, source_prompt, target_run_config, job = _provenance_fixture(tmp_path)
+    assert optimization_parent_prompt_id(job, task) == source_prompt.id
+
+    source_prompt.delete()
+    assert optimization_parent_prompt_id(job, task) is None
+
+    target_run_config.delete()
+    assert optimization_parent_prompt_id(job, task) is None
+
+
+def test_optimization_parent_prompt_id_skips_frozen_prompt(tmp_path):
+    _, task, _, _, job = _provenance_fixture(
+        tmp_path, prompt_id="task_run_config::p1::t1::rc1"
+    )
+    assert optimization_parent_prompt_id(job, task) is None
+
+
+def test_optimized_run_config_provenance_skips_unsaved_target(tmp_path):
+    _, task, source_prompt, target_run_config, job = _provenance_fixture(tmp_path)
+    finetune_run_config = TaskRunConfig(
+        id=job.target_run_config_id,
+        name="Fine-tune run config",
+        run_config_properties=target_run_config.run_config_properties,
+        parent=task,
+    )
+    assert finetune_run_config.path is None
+
+    provenance = optimized_run_config_provenance(
+        job, finetune_run_config, source_prompt
+    )
+
+    assert provenance.origin == "human"
+    assert provenance.derived_from_ids == []

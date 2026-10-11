@@ -56,15 +56,16 @@
           `Are you sure you want to remove the project "${project.name}"?\n\nThis will remove it from the UI, but won't delete files from your disk.`,
         )
       ) {
-        const {
-          error, // only present if 4XX or 5XX response
-        } = await client.DELETE("/api/delete_project/{project_id}", {
-          params: {
-            path: {
-              project_id: project.id,
+        const { error } = await client.DELETE(
+          "/api/delete_project/{project_id}",
+          {
+            params: {
+              path: {
+                project_id: project.id,
+              },
             },
           },
-        })
+        )
         if (error) {
           throw error
         }

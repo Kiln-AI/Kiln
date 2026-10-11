@@ -2,14 +2,22 @@ import { test, expect } from "./fixtures"
 
 /**
  * The eval creation flow:
- *   type picker (LLM Judges / Programmatic Checks) -> [Pro-vs-Manual for
- *   copilot-eligible templates] -> create form
+ *   type picker (LLM Judges / Programmatic Checks) -> create form
  *
  * Every template's judge is implied (LLM judge, except tool call). The
  * programmatic checks are picked directly from the type page and create a
  * spec-less, template-less eval: the judge never reads a written rubric, so
  * no spec fields are asked for.
  */
+
+/**
+ * Without a Copilot connection the entry page opens on the Kiln Pro offer, and
+ * the template picker is the screen behind it. These tests run with no Copilot
+ * key, so each one takes the manual branch to reach the picker.
+ */
+async function setUpManually(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: "Set Up Manually" }).click()
+}
 
 test("programmatic check: type picker -> judge-only builder creates a template-less eval", async ({
   page,
@@ -35,11 +43,16 @@ test("programmatic check: type picker -> judge-only builder creates a template-l
   )
   expect(run_resp.ok()).toBe(true)
 
-  // Create Eval lands straight on the type picker with both sections
+  // Create Eval lands straight on the type picker with both sections. The
+  // judge templates section says "LLM Judge Templates" so it reads apart from
+  // the description-driven assistant a Copilot user sees above it.
   await page.goto(`/specs/${project.id}/${task.id}`)
   await page.getByRole("button", { name: "Create Eval" }).first().click()
   await expect(page).toHaveURL(/select_template/)
-  await expect(page.getByText("LLM Judges", { exact: true })).toBeVisible()
+  await setUpManually(page)
+  await expect(
+    page.getByText("LLM Judge Templates", { exact: true }),
+  ).toBeVisible()
   await expect(
     page.getByText("Programmatic Checks", { exact: true }),
   ).toBeVisible()
@@ -54,7 +67,7 @@ test("programmatic check: type picker -> judge-only builder creates a template-l
   await expect(page.getByRole("button", { name: "Save Eval" })).toBeVisible()
 
   // No spec is created for this flow, so no spec fields are asked for, and
-  // the Kiln Pro path is absent (copilot can't help a deterministic judge).
+  // no Kiln Pro creation path is offered anywhere in the builder.
   await expect(page.getByText("Issue Description")).toHaveCount(0)
   await expect(page.getByRole("button", { name: /Kiln Pro/ })).toHaveCount(0)
 
@@ -134,7 +147,7 @@ test("programmatic check: type picker -> judge-only builder creates a template-l
   await expect(page.getByText("Legacy")).toHaveCount(0)
 })
 
-test("rubric templates route through the Pro-vs-Manual screen to the spec form", async ({
+test("rubric templates go straight from the type picker to the spec form", async ({
   page,
   registeredUser,
   seededProjectWithTask,
@@ -143,24 +156,20 @@ test("rubric templates route through the Pro-vs-Manual screen to the spec form",
   const { project, task } = seededProjectWithTask
 
   await page.goto(`/specs/${project.id}/${task.id}/select_template`)
+  await setUpManually(page)
   await page.getByText("Toxicity", { exact: true }).first().click()
 
-  // Copilot-eligible template: the Pro-vs-Manual screen comes after the
-  // template choice, not before it.
-  await expect(page).toHaveURL(/select_workflow\?.*type=toxicity/)
-  await page
-    .getByRole("button", { name: "Create Manually", exact: true })
-    .click()
-
+  // The template choice is the last question: no workflow screen in between.
   await expect(page).toHaveURL(/spec_builder\?.*judge=llm_judge/)
   await expect(page).toHaveURL(/type=toxicity/)
   await expect(page).toHaveURL(/workflow=manual/)
   await expect(
     page.getByText("Toxicity Examples", { exact: true }),
   ).toBeVisible()
+  await expect(page.getByRole("button", { name: /Kiln Pro/ })).toHaveCount(0)
 })
 
-test("tool call check skips the workflow screen and the tool dialog", async ({
+test("tool call check skips the tool dialog", async ({
   page,
   registeredUser,
   seededProjectWithTask,
@@ -169,11 +178,12 @@ test("tool call check skips the workflow screen and the tool dialog", async ({
   const { project, task } = seededProjectWithTask
 
   await page.goto(`/specs/${project.id}/${task.id}/select_template`)
+  await setUpManually(page)
   await page.getByText("Tool Call Check", { exact: true }).first().click()
 
   // Straight to the builder with the tool call judge prefilled: the judge
-  // carries its own expected-tool list, and Kiln Pro doesn't support tool
-  // call specs so the workflow screen is skipped.
+  // carries its own expected-tool list, so the builder never has to ask which
+  // tool the eval is about.
   await expect(page).toHaveURL(/spec_builder\?.*judge=tool_call_check/)
   await expect(page.getByText("Tool for this Eval")).toHaveCount(0)
   await expect(
@@ -183,7 +193,7 @@ test("tool call check skips the workflow screen and the tool dialog", async ({
   await expect(page.getByRole("button", { name: "Save Eval" })).toBeVisible()
 })
 
-test("kiln pro without an account routes to the connect page", async ({
+test("the Kiln Pro eval creation path is gone", async ({
   page,
   registeredUser,
   seededProjectWithTask,
@@ -191,28 +201,29 @@ test("kiln pro without an account routes to the connect page", async ({
   void registeredUser
   const { project, task } = seededProjectWithTask
 
+  // The workflow screen that offered Pro-vs-Manual no longer exists. Its old
+  // URL now falls through to the eval detail route, which reports the missing
+  // eval instead of offering a creation workflow.
   await page.goto(
     `/specs/${project.id}/${task.id}/select_workflow?type=toxicity&judge=llm_judge`,
   )
-  await page.getByRole("button", { name: "Use Kiln Pro", exact: true }).click()
-  await expect(page).toHaveURL(/\/specs\/pro_auth/)
-
-  // A malformed workflow param must fall back to manual, never surfacing Kiln Pro
-  await page.goto(
-    `/specs/${project.id}/${task.id}/spec_builder?type=toxicity&workflow=GARBAGE`,
-  )
-  await expect(page.getByRole("button", { name: "Create Eval" })).toBeVisible()
+  await expect(page.getByText(/Spec not found/)).toBeVisible()
+  await expect(
+    page.getByText("Choose your Eval Creation Workflow"),
+  ).toHaveCount(0)
   await expect(page.getByRole("button", { name: /Kiln Pro/ })).toHaveCount(0)
 
-  // The workflow screen with no template restarts at the type picker
-  await page.goto(`/specs/${project.id}/${task.id}/select_workflow`)
-  await expect(page).toHaveURL(/select_template/)
-
-  // An unsupported combo skips straight to the manual builder
-  await page.goto(
-    `/specs/${project.id}/${task.id}/select_workflow?type=reference_answer_accuracy&judge=llm_judge`,
-  )
-  await expect(page).toHaveURL(/spec_builder\?.*workflow=manual/)
+  // The builder has one mode. A hand-edited workflow param — the old pro
+  // value, or garbage — still lands on the plain manual form.
+  for (const workflow of ["pro", "GARBAGE"]) {
+    await page.goto(
+      `/specs/${project.id}/${task.id}/spec_builder?type=toxicity&workflow=${workflow}`,
+    )
+    await expect(
+      page.getByRole("button", { name: "Create Eval" }),
+    ).toBeVisible()
+    await expect(page.getByRole("button", { name: /Kiln Pro/ })).toHaveCount(0)
+  }
 })
 
 /**
@@ -239,6 +250,7 @@ test("leaving an untouched create form does not warn about unsaved changes", asy
   const dialogs = trackDialogs(page)
 
   await page.goto(`/specs/${project.id}/${task.id}/select_template`)
+  await setUpManually(page)
   await page.getByText("Pattern Match").first().click()
   await expect(page.getByRole("button", { name: "Save Eval" })).toBeVisible()
 
@@ -260,6 +272,7 @@ test("leaving after editing the judge warns about unsaved changes", async ({
   // Navigate in-app so goBack is an SPA navigation: the guard's confirm()
   // carries a message there, unlike the browser's native beforeunload.
   await page.goto(`/specs/${project.id}/${task.id}/select_template`)
+  await setUpManually(page)
   await page.getByText("Pattern Match").first().click()
   await expect(page.getByRole("button", { name: "Save Eval" })).toBeVisible()
   await page.locator("#pattern_match_pattern").fill("^ok$")

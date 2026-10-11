@@ -28,6 +28,16 @@ ANTHROPIC_ADAPTIVE_THINKING_MODELS = {
     ModelName.claude_opus_4_8.value,
     ModelName.claude_sonnet_4_6.value,
     ModelName.claude_sonnet_5.value,
+    ModelName.claude_sonnet_5_5.value,
+}
+
+# Claude Sonnet 5.5 recalibrated its effort levels: at low and medium it skips thinking
+# entirely on simple prompts (the response carries no thinking block at all, on the raw
+# Anthropic API as well). That decision is made by the model, not the gateway, so
+# OpenRouter has nothing to surface either; for it we only assert the run succeeded
+# on OpenRouter too.
+CLAUDE_SKIPS_THINKING_ON_OPENROUTER_MODELS = {
+    ModelName.claude_sonnet_5_5.value,
 }
 
 # Gemini 3.x Flash models use adaptive reasoning: they decide per request whether to
@@ -150,6 +160,13 @@ async def test_thinking_level_reasoning_content(
     ):
         # Adaptive/encrypted-thinking models may not surface reasoning content (see
         # note above); reaching here means the run succeeded, which is what we verify.
+        pass
+    elif (
+        provider_name == ModelProviderName.openrouter
+        and model_name in CLAUDE_SKIPS_THINKING_ON_OPENROUTER_MODELS
+    ):
+        # See note above: the model skips thinking at lower effort levels regardless of
+        # gateway; reaching here means the run succeeded, which is what we verify.
         pass
     elif (
         provider_name

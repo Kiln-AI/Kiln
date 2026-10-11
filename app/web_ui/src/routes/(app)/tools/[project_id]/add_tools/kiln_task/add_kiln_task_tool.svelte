@@ -124,16 +124,16 @@
     }
     try {
       tasks_loading_error = null
-      const {
-        data: tasks_data, // only present if 2XX response
-        error: fetch_error, // only present if 4XX or 5XX response
-      } = await client.GET("/api/projects/{project_id}/tasks", {
-        params: {
-          path: {
-            project_id: project_id,
+      const { data: tasks_data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/tasks",
+        {
+          params: {
+            path: {
+              project_id: project_id,
+            },
           },
         },
-      })
+      )
       if (fetch_error) {
         throw fetch_error
       }

@@ -347,8 +347,8 @@ def _skills_block(project: Project) -> AgentOverviewSkills:
 def _specs_block(task: Task) -> AgentOverviewSpecs:
     items: list[AgentOverviewSpec] = []
     archived_count = 0
-    # Priority/status live on the eval; the spec's own fields are only a
-    # fallback for legacy files that predate the move.
+    # Priority/status live on the eval; the spec's own fields are a fallback
+    # for older files that store them only on the spec.
     evals_by_id = {ev.id: ev for ev in task.evals(readonly=True) if ev.id}
     for spec in task.specs(readonly=True):
         ev = evals_by_id.get(spec.eval_id) if spec.eval_id else None

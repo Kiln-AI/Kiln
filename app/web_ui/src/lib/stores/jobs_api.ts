@@ -10,6 +10,32 @@ export type JobErrorEntry = {
   error_message?: string
 } & Record<string, unknown>
 
+// Mirror of the backend EvalJobWorker.EvalJobProperties model. JobRecord
+// carries worker-published properties as an untyped dict on the wire (so the
+// core stays worker-agnostic); the frontend casts it per job type.
+export type EvalJobProperties = {
+  eval_name: string
+  run_config_name: string
+  run_config_model_name: string
+  run_config_model_provider: string
+  run_config_prompt_name: string
+  run_config_tools_count: number
+  run_config_skills_count: number
+  judge_name: string
+  judge_algorithm: string
+  judge_model_name: string
+  judge_model_provider: string
+  // V2 judges only: the eval type (e.g. "llm_judge"). Null for legacy judges.
+  judge_v2_type?: string | null
+}
+
+export function eval_job_properties(job: JobRecord): EvalJobProperties | null {
+  if (job.type !== "eval" || !job.properties) {
+    return null
+  }
+  return job.properties as EvalJobProperties
+}
+
 export type ListJobsQuery = {
   status?: BackgroundJobStatus
   type?: string

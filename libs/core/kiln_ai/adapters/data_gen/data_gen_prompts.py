@@ -189,7 +189,7 @@ def generate_single_input_prompt(data_guide: str | None = None) -> str:
     Unlike `generate_sample_generation_prompt`, this has no notion of a topic
     tree and no sample count: the caller supplies one input guidance per input,
     and each call produces exactly one input. Used by the batch-plan flow, where
-    the diversity that topics used to provide comes from the batch plan instead.
+    the batch plan, not a topic tree, provides the diversity.
 
     There is deliberately no `gen_type` (eval vs training). The batch plan
     already encodes what this input is for — its content, difficulty and where

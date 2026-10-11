@@ -342,9 +342,15 @@ class TestLlmJudgeEvalGEval:
         props = _make_props(g_eval=True)
         cfg = _make_config(props)
 
-        with patch(
-            "kiln_ai.adapters.eval.v2_eval_llm_judge.build_g_eval_score"
-        ) as mock_g_eval_score:
+        with (
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_llm_judge.built_in_models_from_provider",
+                return_value=Mock(supports_logprobs=True),
+            ),
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_llm_judge.build_g_eval_score"
+            ) as mock_g_eval_score,
+        ):
             mock_g_eval_score.return_value = {"quality": 4.3}
             result = await LlmJudgeEval(cfg).evaluate(_inp())
 
@@ -372,9 +378,15 @@ class TestLlmJudgeEvalGEval:
         props = _make_props(g_eval=True)
         cfg = _make_config(props)
 
-        with patch(
-            "kiln_ai.adapters.eval.v2_eval_llm_judge.build_g_eval_score"
-        ) as mock_g_eval_score:
+        with (
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_llm_judge.built_in_models_from_provider",
+                return_value=Mock(supports_logprobs=True),
+            ),
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_llm_judge.build_g_eval_score"
+            ) as mock_g_eval_score,
+        ):
             mock_g_eval_score.return_value = {"quality": 3.7}
             await LlmJudgeEval(cfg).evaluate(_inp())
 
@@ -493,6 +505,32 @@ class TestLlmJudgeEvalMissingReferenceData:
         )
         assert result.scores == {"quality": 3.0}
         assert result.skipped_reason is None
+
+    @pytest.mark.asyncio
+    async def test_unknown_template_variable_is_extraction_failure(self):
+        # A typo'd variable is a template-authoring bug, not missing reference
+        # data -- it must not masquerade as missing_reference_key.
+        props = _make_props(prompt_template="Output: {{ final_mesage }}")
+        cfg = _make_config(props)
+        result = await LlmJudgeEval(cfg).evaluate(_inp())
+        assert result.scores == {}
+        assert result.skipped_reason == SkippedReason.extraction_failed
+        assert result.skipped_detail is not None
+        assert "unknown variable" in result.skipped_detail
+        assert "final_mesage" in result.skipped_detail
+
+    @pytest.mark.asyncio
+    async def test_typo_alongside_reference_access_reports_unknown_variable(self):
+        # When the template has both a typo and a missing reference key, the
+        # authoring bug is the primary truth to surface.
+        props = _make_props(
+            prompt_template="{{ reference_data.answer }} vs {{ outpt }}"
+        )
+        cfg = _make_config(props)
+        result = await LlmJudgeEval(cfg).evaluate(_inp(reference_data=None))
+        assert result.skipped_reason == SkippedReason.extraction_failed
+        assert result.skipped_detail is not None
+        assert "outpt" in result.skipped_detail
 
 
 class TestLlmJudgeEvalDeclaredReferenceKeys:

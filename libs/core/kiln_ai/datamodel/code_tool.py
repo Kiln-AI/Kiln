@@ -1,6 +1,7 @@
 """CodeTool data model — a user-authored Python function stored as a project artifact."""
 
 import ast
+import keyword
 import re
 from typing import Any
 
@@ -21,6 +22,7 @@ from kiln_ai.datamodel.code_file_storage import (
     write_code_to_sibling_file,
 )
 from kiln_ai.datamodel.json_schema import validate_schema_dict
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance, provenance_field
 from kiln_ai.datamodel.tool_id import (
     ToolId,
     build_code_tool_id,
@@ -51,6 +53,7 @@ class CodeTool(KilnParentedModel):
         default=False,
         description="Archived tools are hidden from pickers but still resolve if referenced.",
     )
+    provenance: KilnArtifactProvenance | None = provenance_field()
 
     # Functional content — immutable post-create (enforced at the API layer)
     tool_function_name: str = Field(
@@ -136,8 +139,20 @@ class CodeTool(KilnParentedModel):
         return v
 
     @model_validator(mode="after")
-    def validate_parameters_schema(self) -> Self:
+    def validate_parameters_schema(self, info: ValidationInfo) -> Self:
         validate_schema_dict(self.parameters_schema, require_object=True)
+
+        # Parameters are passed to run() as keyword arguments keyed by these names,
+        # and a Python reserved word can never be declared as a run() parameter, so
+        # reject it at authoring. Loaded files are exempt so old projects still open.
+        # Soft keywords (match/case/type/_) are valid identifiers and stay allowed.
+        if not self.loaded_from_file(info):
+            for param_name in self.parameters_schema.get("properties", {}):
+                if keyword.iskeyword(param_name):
+                    raise ValueError(
+                        f"Parameter name '{param_name}' is a reserved Python keyword "
+                        "and cannot be used as a run() parameter. Choose a different name."
+                    )
         return self
 
     @model_validator(mode="after")

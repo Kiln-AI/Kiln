@@ -11,6 +11,7 @@ from kiln_ai.utils.config import Config
 from .custom_errors import connect_custom_errors
 from .document_api import connect_document_api
 from .feedback_api import connect_feedback_api
+from .memory_api import connect_memory_api
 from .project_api import connect_project_api
 from .prompt_api import connect_prompt_api
 from .run_api import connect_run_api
@@ -21,7 +22,6 @@ from .utils.agent_checks.policy import ALLOW_AGENT
 
 
 def _get_version() -> str:
-    """Get the version of the kiln-server package."""
     try:
         return version("kiln-server")
     except Exception:
@@ -54,6 +54,10 @@ tags_metadata = [
         "description": "Create and list feedback on task runs.",
     },
     {
+        "name": "Memory",
+        "description": "The Kiln assistant's durable memory for a project (save, list, get, update, delete, summary).",
+    },
+    {
         "name": "Run Configs",
         "description": "Manage run configurations for tasks and evals.",
     },
@@ -66,12 +70,24 @@ tags_metadata = [
         "description": "Create and run evaluations for tasks.",
     },
     {
+        "name": "Eval Inputs",
+        "description": "Author and manage eval input datasets for tasks.",
+    },
+    {
         "name": "Statistics",
         "description": "Confidence intervals and significance tests on eval metrics.",
     },
     {
         "name": "Synthetic Data",
         "description": "Generate synthetic data for evals and fine-tuning.",
+    },
+    {
+        "name": "Multiturn SDG",
+        "description": "Generate multi-turn synthetic-user conversation datasets for eval.",
+    },
+    {
+        "name": "Eval Builder",
+        "description": "Eval builder V2 review pipeline: judge and claim/evidence generation over alignment traces.",
     },
     {
         "name": "Fine-tuning",
@@ -92,6 +108,10 @@ tags_metadata = [
     {
         "name": "Code Tools",
         "description": "Create, test, and manage user-authored Python code tools.",
+    },
+    {
+        "name": "Worlds",
+        "description": "Manage worlds: pointers to running OpenEnv environments that play an agent's tool set, and the tools they serve.",
     },
     {
         "name": "Tools & MCP",
@@ -146,6 +166,7 @@ def make_app(lifespan=None, extra_middleware: list[type] | None = None):
     connect_spec_api(app)
     connect_run_api(app)
     connect_feedback_api(app)
+    connect_memory_api(app)
     connect_document_api(app)
     connect_statistics_api(app)
     connect_custom_errors(app)

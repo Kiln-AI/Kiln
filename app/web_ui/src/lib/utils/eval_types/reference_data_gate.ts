@@ -12,8 +12,8 @@
  * pane offers a reference-data input, whatever SHOW_REFERENCE_DATA_UI is set to. It is
  * the signal for prompts the server derives nothing for — a hand-written one, or one
  * still being edited. What the *saved* judge will require comes from the server
- * instead (`DefaultLlmJudgePromptResponse.reference_keys`), so this test no longer has
- * to be right on its own: a user who edits the reference block out of a default prompt
+ * instead (`DefaultLlmJudgePromptResponse.reference_keys`), so this test need not be
+ * right on its own: a user who edits the reference block out of a default prompt
  * flips this to false while the server keeps requiring the key, and the pane still
  * offers the input.
  *

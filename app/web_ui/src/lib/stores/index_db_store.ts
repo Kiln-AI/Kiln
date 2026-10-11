@@ -10,7 +10,6 @@ type StoredValueLoad<T> = { loaded: true; value: T | null } | { loaded: false }
 
 // Custom function to create an IndexedDB-backed store
 export function indexedDBStore<T>(key: string, initialValue: T) {
-  // Check if IndexedDB is available
   const isBrowser = typeof window !== "undefined" && window.indexedDB
 
   const store = writable(initialValue)
@@ -125,7 +124,6 @@ export function indexedDBStore<T>(key: string, initialValue: T) {
       return pendingOpen
     }
 
-    // Get value from IndexedDB
     const getValue = async (): Promise<StoredValueLoad<T>> => {
       try {
         const database = await initDB()
@@ -156,7 +154,6 @@ export function indexedDBStore<T>(key: string, initialValue: T) {
       }
     }
 
-    // Set value in IndexedDB
     const setValue = async (value: T): Promise<void> => {
       let database: IDBDatabase
       try {

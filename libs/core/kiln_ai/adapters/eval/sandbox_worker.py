@@ -79,6 +79,7 @@ def execute_scorer_bridged(
             "trace": inputs.get("trace"),
             "reference_data": inputs.get("reference_data"),
             "task_input": inputs["task_input"],
+            "world_episode": inputs.get("world_episode"),
         }
         sig = inspect.signature(score_fn)
         declared = set(sig.parameters.keys())
@@ -97,6 +98,20 @@ def execute_scorer_bridged(
             {
                 "type": "result",
                 "ok": result,
+                "stdout": captured_stdout.getvalue(),
+                "stderr": captured_stderr.getvalue(),
+            }
+        )
+    except SystemExit as e:
+        # sys.exit() in user code would otherwise kill the child before a
+        # result is queued, surfacing as a generic crash with no explanation.
+        # KeyboardInterrupt is deliberately NOT caught: it means the operator
+        # interrupted the process group, not that the user's code failed.
+        requests.put(
+            {
+                "type": "result",
+                "error": f"User code exited via sys.exit({e.code!r}) instead of returning scores",
+                "traceback": traceback.format_exc(),
                 "stdout": captured_stdout.getvalue(),
                 "stderr": captured_stderr.getvalue(),
             }

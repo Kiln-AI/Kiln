@@ -37,7 +37,7 @@
   const jobs_enabled = env.PUBLIC_ENABLE_JOBS === "true"
 
   // Rail-eligibility predicate: lg breakpoint, narrow viewport (< 1550px),
-  // and chat bar expanded. See functional_spec.md "Trigger".
+  // and chat bar expanded.
   const isRailEligible = derived(
     [isLg, isNarrowViewport, chatBarExpanded],
     ([$lg, $narrow, $chatOpen]) => $lg && $narrow && $chatOpen,

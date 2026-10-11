@@ -4,7 +4,7 @@ import logging
 import os
 import shutil
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi import Path as FastAPIPath
@@ -23,7 +23,7 @@ from kiln_server.project_api import (
     project_from_id,
 )
 from kiln_server.utils.agent_checks import DENY_AGENT
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.desktop.git_sync.clone import (
     clone_repo,
@@ -277,9 +277,19 @@ class ProjectInfo(BaseModel):
     """Metadata about a discovered Kiln project."""
 
     path: str = Field(description="Relative path to the project.kiln file.")
-    name: str = Field(description="Project name from the project file.")
-    description: str = Field(description="Project description from the project file.")
+    name: str = Field(default="", description="Project name from the project file.")
+    description: str = Field(
+        default="", description="Project description from the project file."
+    )
     id: str = Field(default="", description="Unique project identifier.")
+
+    # These three are display-only, and they come from project files we did not
+    # write. A null in any one of them used to fail validation for the whole
+    # scanned list, hiding every valid project in the repo, so treat it as blank.
+    @field_validator("name", "description", "id", mode="before")
+    @classmethod
+    def _blank_if_none(cls, value: Any) -> Any:
+        return "" if value is None else value
 
 
 class ScanProjectsResponse(BaseModel):

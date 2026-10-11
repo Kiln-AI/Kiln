@@ -14,7 +14,6 @@ from unittest.mock import patch
 import pytest
 
 from kiln_ai.adapters.eval.base_eval import BaseEval
-from kiln_ai.adapters.eval.eval_runner import _is_retryable_error
 from kiln_ai.adapters.eval.g_eval import GEval
 from kiln_ai.adapters.eval.v2_eval_llm_judge import LlmJudgeEval
 from kiln_ai.adapters.jev import JevApiError, JevClient
@@ -38,6 +37,7 @@ from kiln_ai.adapters.ml_model_list import (
     ModelAdapterId,
     ModelProviderName,
 )
+from kiln_ai.adapters.retry_classification import is_retryable_error
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -486,4 +486,4 @@ async def test_judge_api_error_surfaces_and_is_retryable(
         await GEval(legacy_eval_config, None).run_eval(task_run)
 
     assert "TypeSafe AI is currently unavailable" in str(err.value)
-    assert _is_retryable_error(err.value) is True
+    assert is_retryable_error(err.value) is True

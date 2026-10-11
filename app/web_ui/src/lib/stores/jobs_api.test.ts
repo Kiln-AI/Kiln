@@ -4,12 +4,14 @@ import {
   cancel_job,
   create_job,
   delete_job,
+  eval_job_properties,
   get_job,
   get_job_errors,
   get_job_result,
   list_jobs,
   pause_job,
   resume_job,
+  type JobRecord,
 } from "./jobs_api"
 
 vi.mock("$lib/api_client", () => ({
@@ -146,5 +148,42 @@ describe("jobs_api", () => {
   it("lifecycle calls throw on client error", async () => {
     mockPOST.mockResolvedValue({ data: undefined, error: { detail: "409" } })
     await expect(cancel_job("j_11")).rejects.toEqual({ detail: "409" })
+  })
+
+  describe("eval_job_properties", () => {
+    const base: JobRecord = {
+      id: "j_1",
+      type: "eval",
+      status: "running",
+      supports_pause: true,
+      created_at: "2024-01-01T00:00:00Z",
+    } as JobRecord
+
+    it("casts properties for an eval job", () => {
+      const props = {
+        eval_name: "Toxicity check",
+        run_config_name: "GPT-4o run",
+        run_config_model_name: "gpt-4o",
+        run_config_model_provider: "openai",
+        run_config_prompt_name: "Few-Shot",
+        run_config_tools_count: 0,
+        run_config_skills_count: 0,
+        judge_name: "G-Eval judge",
+        judge_algorithm: "g_eval",
+        judge_model_name: "claude",
+        judge_model_provider: "anthropic",
+      }
+      expect(eval_job_properties({ ...base, properties: props })).toEqual(props)
+    })
+
+    it("returns null for a non-eval job", () => {
+      expect(
+        eval_job_properties({ ...base, type: "noop", properties: {} }),
+      ).toBeNull()
+    })
+
+    it("returns null when properties are absent", () => {
+      expect(eval_job_properties({ ...base, properties: null })).toBeNull()
+    })
   })
 })

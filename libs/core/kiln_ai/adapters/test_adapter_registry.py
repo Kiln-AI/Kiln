@@ -61,6 +61,9 @@ def mock_config():
         mock.shared.return_value.siliconflow_cn_api_key = "test-siliconflow-key"
         mock.shared.return_value.featherless_ai_api_key = "test-featherless-key"
         mock.shared.return_value.typesafe_api_key = "test-typesafe-key"
+        mock.shared.return_value.cloudflare_api_key = "test-cloudflare-key"
+        mock.shared.return_value.cloudflare_account_id = "test-cloudflare-account"
+        mock.shared.return_value.cloudflare_ai_gateway_id = None
         mock.shared.return_value.docker_model_runner_base_url = (
             "http://localhost:12434/engines/llama.cpp"
         )
@@ -198,6 +201,37 @@ def test_siliconflow_adapter_creation(mock_config, basic_task):
         "HTTP-Referer": "https://kiln.tech/siliconflow",
         "X-Title": "KilnAI",
     }
+
+
+@pytest.mark.parametrize(
+    "gateway_id,expected_headers",
+    [
+        (None, None),
+        ("my-gateway", {"cf-aig-gateway-id": "my-gateway"}),
+    ],
+)
+def test_cloudflare_adapter_creation(
+    mock_config, basic_task, gateway_id, expected_headers
+):
+    mock_config.shared.return_value.cloudflare_ai_gateway_id = gateway_id
+
+    adapter = adapter_for_task(
+        kiln_task=basic_task,
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="@cf/zai-org/glm-5.3",
+            model_provider_name=ModelProviderName.cloudflare,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+    )
+
+    assert isinstance(adapter, LiteLlmAdapter)
+    assert (
+        adapter.config.base_url
+        == "https://api.cloudflare.com/client/v4/accounts/test-cloudflare-account/ai/v1"
+    )
+    assert adapter.config.default_headers == expected_headers
+    assert adapter.config.additional_body_options == {"api_key": "test-cloudflare-key"}
 
 
 def test_featherless_adapter_creation(mock_config, basic_task):

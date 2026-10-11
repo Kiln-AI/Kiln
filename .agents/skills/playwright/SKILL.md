@@ -35,8 +35,15 @@ playwright-cli localstorage-set ui_state \
 playwright-cli goto http://localhost:6544
 ```
 
-Then `goto` any deep link you like. `stop` when you are done, `status` if you are
-not sure what is running.
+Then `goto` any deep link you like. Run `.agents/scripts/playwright_server.sh status`
+if you are not sure the server is running.
+
+When you are done, close the browser and stop the server:
+
+```bash
+playwright-cli close
+.agents/scripts/playwright_server.sh stop
+```
 
 The sandbox keeps its data in `app/web_ui/.agent_dev_home` and is seeded from a
 committed fixture project, so the screens have content instead of an onboarding

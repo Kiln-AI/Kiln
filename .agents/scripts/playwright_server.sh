@@ -526,6 +526,7 @@ report_openrouter_key() {
 print_ready_hints() {
   print_seed_hint
   report_openrouter_key
+  echo "    playwright-cli close"
   echo "    .agents/scripts/playwright_server.sh stop"
   echo ""
 }

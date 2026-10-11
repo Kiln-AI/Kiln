@@ -290,12 +290,9 @@
       value: evaluator.id || "unknown",
     })
 
-    // Every dataset row renders whether or not the eval has that dataset. A dataset is
-    // only there if something explicitly wrote one (functional spec 3.2 — unconfigured
-    // splits stay unconfigured), so most pre-existing evals are missing several. Hiding a
-    // row would make "this eval has no val set" indistinguishable from "this page doesn't
-    // show val sets". With no dataset there is no filter to show, no items to count and
-    // nothing to link to, so the row says so instead.
+    // Every dataset row renders whether or not the eval has that dataset: unconfigured
+    // splits stay unconfigured, so many evals are missing several, and hiding a row would
+    // make "this eval has no val set" look like "this page doesn't show val sets".
     const NOT_CONFIGURED = "Not configured"
 
     const test_filter_id = eval_split_filter_id(evaluator, "test")
@@ -880,14 +877,22 @@
                             {/if}
                           {/if}
                         </div>
-                        <button
-                          class="btn btn-sm {current_step_id == 'eval_data'
-                            ? 'btn-primary'
-                            : ''}"
-                          on:click={add_eval_data}
-                        >
-                          Add Eval Data
-                        </button>
+                        {#if eval_split(evaluator, "test")?.source === "eval_input"}
+                          <!-- EvalInput-typed slice: items are minted by the eval
+                            builder at save; the add-data flow tags TaskRuns, which
+                            doesn't apply, so offer no dead-end button. -->
+                          This eval's data was created by the eval builder and can't
+                          be extended here.
+                        {:else}
+                          <button
+                            class="btn btn-sm {current_step_id == 'eval_data'
+                              ? 'btn-primary'
+                              : ''}"
+                            on:click={add_eval_data}
+                          >
+                            Add Eval Data
+                          </button>
+                        {/if}
                       </div>
                     {:else if step_id == "human_ratings"}
                       <div class="mb-1">

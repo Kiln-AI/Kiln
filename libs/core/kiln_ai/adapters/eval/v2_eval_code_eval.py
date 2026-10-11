@@ -1,5 +1,6 @@
 """V2 adapter for code_eval: runs user-authored Python scorer in a sandboxed subprocess."""
 
+import math
 from threading import Lock
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -71,11 +72,18 @@ class CodeEvalAdapter(BaseV2EvalBridge):
         props = self.properties
         assert isinstance(props, CodeEvalProperties)
 
+        world_episode: dict[str, Any] | None = (
+            eval_input.world_episode.to_sandbox_dict()
+            if eval_input.world_episode is not None
+            else None
+        )
+
         inputs: dict[str, Any] = {
             "output": eval_input.final_message,
             "trace": eval_input.trace,
             "reference_data": eval_input.reference_data,
             "task_input": eval_input.task_input,
+            "world_episode": world_episode,
         }
 
         server = NestedToolServer(
@@ -137,10 +145,22 @@ class CodeEvalAdapter(BaseV2EvalBridge):
                     f"Score '{key}' returned a bool. Use a float (e.g. 1.0 for pass, 0.0 for fail)."
                 )
             if isinstance(value, int):
-                value = float(value)
+                try:
+                    value = float(value)
+                except OverflowError:
+                    # An int too large for a float, e.g. 10**400.
+                    raise RuntimeError(
+                        f"Score '{key}' must be a finite number, got {value}"
+                    ) from None
             if not isinstance(value, float):
                 raise RuntimeError(
                     f"Score '{key}' must be a float, got {type(value).__name__}"
+                )
+            # Fail here, in the scorer's own error surface, rather than at EvalRun
+            # save time where the message loses the code eval context.
+            if not math.isfinite(value):
+                raise RuntimeError(
+                    f"Score '{key}' must be a finite number, got {value}"
                 )
             validated[key] = value
 

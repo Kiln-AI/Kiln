@@ -19,6 +19,7 @@
     Task,
     TaskRunConfig,
     InputTransform,
+    KilnArtifactProvenance,
   } from "$lib/types"
   import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
   import { inputTransformsEqual } from "$lib/utils/run_config_formatters"
@@ -50,6 +51,10 @@
   export let model_name: string = ""
   export let provider: string = ""
   export let model_dropdown_settings: Partial<ModelDropdownSettings> = {}
+  // Name and explain the model dropdown when the caller's model plays a
+  // specific role. Defaults keep the plain "Model" label with no tooltip.
+  export let model_label: string = "Model"
+  export let model_info_description: string | undefined = undefined
   export let tools_selector_settings: Partial<ToolsSelectorSettings> = {}
   export let skills_selector_settings: Partial<SkillsSelectorSettings> = {}
   export let selected_run_config_id: string | null = null
@@ -78,13 +83,33 @@
   export let skills: string[] = []
   let requires_tool_support: boolean = false
 
-  // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
-  let temperature: number = 1.0
-  let top_p: number = 1.0
+  // The run options this component starts on, before a model's own defaults or
+  // a caller's config override them. One object so reset_run_options() below
+  // cannot drift from the values used here.
+  // The sampling defaults are used by every provider I checked (OpenRouter,
+  // Fireworks, Together, etc)
+  const DEFAULT_RUN_OPTIONS: {
+    temperature: number
+    top_p: number
+    structured_output_mode: StructuredOutputMode
+    thinking_level: string | null
+    input_transform: InputTransform | null
+  } = {
+    temperature: 1.0,
+    top_p: 1.0,
+    structured_output_mode: "default",
+    thinking_level: null,
+    input_transform: null,
+  }
 
-  let structured_output_mode: StructuredOutputMode = "default"
-  let thinking_level: string | null = null
-  let input_transform: InputTransform | null = null
+  let temperature: number = DEFAULT_RUN_OPTIONS.temperature
+  let top_p: number = DEFAULT_RUN_OPTIONS.top_p
+
+  let structured_output_mode: StructuredOutputMode =
+    DEFAULT_RUN_OPTIONS.structured_output_mode
+  let thinking_level: string | null = DEFAULT_RUN_OPTIONS.thinking_level
+  let input_transform: InputTransform | null =
+    DEFAULT_RUN_OPTIONS.input_transform
   $: current_model_details = available_model_details(
     model_name,
     provider,
@@ -168,7 +193,10 @@
   // Set every run option from a config's properties. `run_config_just_loaded`
   // stops the next reactive pass from re-applying model defaults over the values
   // we just set (see update_for_state_changes).
-  function apply_run_config_properties(
+  // Exported as well: initial_run_config_properties below seeds only once, so a
+  // caller whose dialog stays mounted between opens calls this to show what it
+  // last committed rather than the edits an abandoned visit left behind.
+  export function apply_run_config_properties(
     config_properties: KilnAgentRunConfigProperties,
   ) {
     model =
@@ -443,7 +471,9 @@
     }
   }
 
-  export async function save_new_run_config(): Promise<TaskRunConfig> {
+  export async function save_new_run_config(
+    clone_source_id: string | null = null,
+  ): Promise<TaskRunConfig> {
     if (!current_task?.id) {
       throw new Error("Cannot save run config: no task selected")
     }
@@ -453,11 +483,17 @@
       run_config_name = generate_memorable_name()
     }
     run_config_name = normalize_filename_string(run_config_name)
+    // Stamp lineage: a clone derives from its source; a fresh create is
+    // human-origin with no parent. origin is required whenever provenance is set.
+    const provenance: KilnArtifactProvenance = clone_source_id
+      ? { origin: "human", derived_from_ids: [clone_source_id] }
+      : { origin: "human" }
     const saved_config = await save_new_task_run_config(
       project_id,
       current_task.id,
       run_options_as_run_config_properties(),
       run_config_name,
+      provenance,
     )
     // Reload prompts to update the dropdown with the new static prompt that is made from saving a new run config
     await load_task_prompts(project_id, current_task.id, true)
@@ -530,6 +566,28 @@
   export function clear_skills() {
     skills = []
   }
+
+  // Put the options a user edits here back to where a fresh component would
+  // have them for the model now selected. For a caller whose dialog stays
+  // mounted between opens with no config to reseed from: an abandoned visit
+  // must not leave its edits on the next one. The model and the prompt are the
+  // caller's to set, so they are left alone.
+  export function reset_run_options() {
+    tools = []
+    skills = []
+    temperature = DEFAULT_RUN_OPTIONS.temperature
+    top_p = DEFAULT_RUN_OPTIONS.top_p
+    input_transform = DEFAULT_RUN_OPTIONS.input_transform
+    structured_output_mode = DEFAULT_RUN_OPTIONS.structured_output_mode
+    // The selected model's own defaults, not the pre-model placeholders: the
+    // model is not what the user abandoned, so it keeps the settings it earned.
+    update_structured_output_mode_if_needed(
+      model_name,
+      provider,
+      $available_models,
+    )
+    update_thinking_level_if_needed()
+  }
 </script>
 
 <div class="w-full flex flex-col gap-4">
@@ -550,6 +608,8 @@
     {#if !hide_model_selector}
       <AvailableModelsDropdown
         task_id={current_task?.id ?? null}
+        label={model_label}
+        info_description={model_info_description}
         bind:model
         settings={updated_model_dropdown_settings}
         bind:error_message={model_dropdown_error_message}

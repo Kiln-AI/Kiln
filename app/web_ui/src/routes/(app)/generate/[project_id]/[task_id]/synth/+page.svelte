@@ -1,6 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
   import { client } from "$lib/api_client"
+  import { is_eval_input_split, save_eval_input } from "../eval_input_save"
   import type { RunConfigProperties, Task } from "$lib/types"
   import { isKilnAgentRunConfig } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
@@ -26,8 +27,7 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import { split_tool_and_skill_ids } from "$lib/stores/tools_store"
-  import Intro from "$lib/ui/intro.svelte"
-  import NotebookIcon from "$lib/ui/icons/notebook_icon.svelte"
+  import DataGuideOffer from "../data_guide_offer.svelte"
   import { agentInfo } from "$lib/agent"
   import { goto } from "$app/navigation"
   import SynthBatchChooser from "../synth_batch_chooser.svelte"
@@ -106,6 +106,9 @@
     eval_id: string | null
     tool_id: string | null
     splits: Record<string, number>
+    // The subset of `splits` whose tags hold eval inputs. Saved alongside them so a resumed
+    // session still knows which store each tag's cases belong in.
+    eval_input_splits: string[]
     root_node: SampleDataNode
     session_id: string | null
     fine_tuning_tools: string[] | null
@@ -119,6 +122,7 @@
     eval_id: null,
     tool_id: null,
     splits: {},
+    eval_input_splits: [],
     root_node: { topic: "", samples: [], sub_topics: [] },
     session_id: null,
     fine_tuning_tools: null,
@@ -164,6 +168,7 @@
       eval_id: null,
       tool_id: null,
       splits: {},
+      eval_input_splits: [],
       session_id: null,
       fine_tuning_tools: null,
     }))
@@ -222,6 +227,7 @@
         eval_id: null,
         tool_id: null,
         splits: {},
+        eval_input_splits: [],
         root_node: { topic: "", samples: [], sub_topics: [] },
         session_id: null,
         fine_tuning_tools: null,
@@ -285,6 +291,12 @@
         tool_id_param && tool_id_param.length > 0 ? tool_id_param : null
       const splitsParam = $page.url.searchParams.get("splits")
       const splits = get_splits_from_url_param(splitsParam)
+      // Which of those split tags hold eval inputs rather than runs.
+      const eval_input_splits =
+        $page.url.searchParams
+          .get("eval_input_splits")
+          ?.split(",")
+          .filter((tag) => tag.length > 0) ?? []
       // Distinguish "no inherited fine-tuning tools" from an inherited empty set.
       // `fine_tuning_tools=` should round-trip as [] so SDG can lock to no tools/skills.
       const has_fine_tuning_tools =
@@ -310,6 +322,7 @@
           project_id,
           task_id,
           splits,
+          eval_input_splits,
           new_session_id,
           fine_tuning_tools_list,
         )
@@ -334,6 +347,7 @@
             project_id,
             task_id,
             $saved_state.splits,
+            $saved_state.eval_input_splits ?? [],
             $saved_state.session_id ?? new_session_id,
             $saved_state.fine_tuning_tools,
           )
@@ -355,6 +369,7 @@
         project_id,
         task_id,
         $saved_state.splits,
+        $saved_state.eval_input_splits ?? [],
         $saved_state.session_id ?? new_session_id,
         $saved_state.fine_tuning_tools,
       )
@@ -402,6 +417,7 @@
     project_id: string,
     task_id: string,
     splits: Record<string, number>,
+    eval_input_splits: string[],
     session_id: string | null,
     fine_tuning_tools_list: string[] | null,
   ) {
@@ -421,6 +437,7 @@
       task,
       splits,
       data_guide?.guide ?? "",
+      eval_input_splits,
     )
     // Trigger reactivity
     guidance_data = guidance_data
@@ -432,6 +449,7 @@
       eval_id,
       tool_id,
       splits,
+      eval_input_splits,
       session_id,
       fine_tuning_tools: fine_tuning_tools_list,
     }))
@@ -513,14 +531,14 @@
     const topic_path = node.topic ? [...path, node.topic] : path
     node.samples.forEach((sample) => {
       // Rare case: already saved on old UI so saved_id is set, but no output
-      if (sample.output || sample.saved_id) {
+      if (sample.output || sample.saved_id || sample.eval_input_id) {
         already_generated_count++
       } else {
         // Path may not have been set yet
         sample.topic_path = topic_path
         samples_to_generate.push(sample)
       }
-      if (sample.saved_id) {
+      if (sample.saved_id || sample.eval_input_id) {
         already_saved_count++
       } else if (sample.output) {
         samples_to_save.push(sample)
@@ -573,10 +591,15 @@
         run_config_properties,
       )
 
+      // Kept even when the run failed, so a retry uses the split this case was dealt
+      // rather than drawing a new one.
+      sample.split_tag = result.split_tag
+
       if (result.error) {
         generate_all_sub_errors.push(result.error)
         // Trigger reactivity
         generate_all_sub_errors = generate_all_sub_errors
+        triggerSaveUiState()
       } else if (!result.output) {
         generate_all_sub_errors.push(
           new KilnError("No output returned from server"),
@@ -632,15 +655,37 @@
   }
 
   let saved_count = 0
+  // How many of the saved cases went to the eval's inputs rather than the dataset.
+  let eval_input_count = 0
   async function save_all_samples() {
     try {
       saved_count = 0
+      eval_input_count = 0
       save_all_running = true
       save_all_error = null
       save_all_completed = false
       save_all_sub_errors = []
       for (const sample of samples_to_save) {
         try {
+          const split_tag = sample.split_tag
+          // The case was run like any other; its split decides whether the run is saved to
+          // the dataset or only its input is saved to the eval.
+          if (
+            split_tag &&
+            is_eval_input_split(split_tag, $saved_state.eval_input_splits)
+          ) {
+            sample.eval_input_id = await save_eval_input(
+              project_id,
+              task_id,
+              task?.input_json_schema ? JSON.parse(sample.input) : sample.input,
+              split_tag,
+              $saved_state.session_id,
+            )
+            eval_input_count++
+            saved_count++
+            triggerSaveUiState()
+            continue
+          }
           if (!sample.output) {
             continue
           }
@@ -687,6 +732,9 @@
 
   type GenerateSampleResponse = {
     output: TaskRunOutput | null
+    // The split this case was dealt. The save step reads it to choose between the dataset
+    // and the eval's inputs.
+    split_tag: string | null
     error: KilnError | null
   }
 
@@ -695,6 +743,9 @@
     topic_path: string[] | undefined,
     run_config_properties: RunConfigProperties,
   ): Promise<GenerateSampleResponse> {
+    // Drawn before anything can fail, and reused on a retry, so a case keeps the split it
+    // was first dealt.
+    const split_tag = sample.split_tag ?? get_random_split_tag() ?? null
     try {
       if (!isKilnAgentRunConfig(run_config_properties)) {
         throw new KilnError(
@@ -711,8 +762,6 @@
       // The Data Guide is intentionally NOT sent at the output stage — it
       // describes inputs only, and output behavior is owned by the task's
       // system prompt + output schema.
-      // Get a random split tag, if splits are defined
-      const split_tag = get_random_split_tag()
       const tags = split_tag ? [split_tag] : []
       const {
         error: post_error,
@@ -755,10 +804,10 @@
         structured_output_mode: run_config_properties.structured_output_mode,
       })
 
-      return { output: data, error: null }
+      return { output: data, split_tag, error: null }
     } catch (e) {
       const error = createKilnError(e)
-      return { output: null, error }
+      return { output: null, split_tag, error }
     }
   }
 
@@ -798,7 +847,7 @@
     1: "Add topics to ensure synthetic data is diverse",
     2: "Generate synthetic inputs: data provided as input to the task",
     3: "Run the task on synthetic inputs, generating outputs",
-    4: "Save this data into your dataset",
+    4: "Save this data",
   }
   const learn_more_step_links: Record<StepNumber, string> = {
     1: "https://docs.kiln.tech/docs/synthetic-data-generation#topic-generation-for-content-breadth",
@@ -876,43 +925,12 @@
     {:else if task}
       <DataGenDescription bind:guidance_data />
       {#if is_empty && is_setup && !data_guide && !guide_loading && !skip_data_guide}
-        <div
-          class="flex flex-col items-center justify-center min-h-[50vh] mt-12"
-        >
-          <Intro
-            title="Create a Data Guide"
-            description_paragraphs={[
-              "A Data Guide tells us what realistic inputs to your task look like. Without one, the model might guess.",
-              "Add examples, rate the data we generate, and we'll refine the guide from there.",
-            ]}
-            action_buttons={[
-              {
-                label: "Set Up Data Guide",
-                is_primary: true,
-                onClick: () => {
-                  posthog.capture("data_guide_intro_clicked", {
-                    choice: "set_up",
-                  })
-                  goto(`/generate/${project_id}/${task_id}/data_guide_chooser`)
-                },
-              },
-              {
-                label: "Continue Without Data Guide",
-                is_primary: false,
-                onClick: () => {
-                  posthog.capture("data_guide_intro_clicked", {
-                    choice: "skip",
-                  })
-                  advance_synth_step("guide", "skip")
-                },
-              },
-            ]}
-          >
-            <div slot="icon" class="h-12 w-12">
-              <NotebookIcon />
-            </div>
-          </Intro>
-        </div>
+        <DataGuideOffer
+          surface="synth"
+          on_set_up={() =>
+            goto(`/generate/${project_id}/${task_id}/data_guide_chooser`)}
+          on_skip={() => advance_synth_step("guide", "skip")}
+        />
       {:else if is_empty && is_setup && !guide_loading && (data_guide || skip_data_guide) && batch_mode === null}
         <SynthBatchChooser
           on_manual={() => {
@@ -1031,7 +1049,7 @@
                         warning_message={`${leaf_topics_missing_inputs} ${leaf_topics_missing_inputs === 1 ? "topic has" : "topics have"} no inputs`}
                         warning_color="warning"
                         warning_icon="exclaim"
-                        tight
+                        inline={true}
                       />
                     </div>
                   {/if}
@@ -1080,7 +1098,7 @@
                           warning_message="No inputs available. Return to step 2 to add inputs."
                           warning_color="error"
                           warning_icon="exclaim"
-                          tight
+                          inline={true}
                         />
                       </button>
                     </div>
@@ -1118,7 +1136,7 @@
                             ? "warning"
                             : "error"}
                           warning_icon="exclaim"
-                          tight
+                          inline={true}
                         />
                       </button>
                     </div>
@@ -1129,7 +1147,7 @@
                           warning_message="No items to save. Return to step 2 to generate data."
                           warning_color="error"
                           warning_icon="exclaim"
-                          tight
+                          inline={true}
                         />
                       </button>
                     </div>
@@ -1144,10 +1162,10 @@
                   {:else if already_saved_count > 0 && samples_to_generate.length === 0}
                     <div class="flex flex-row justify-center">
                       <Warning
-                        warning_message="All items saved into the dataset!"
+                        warning_message="All items saved!"
                         warning_color="success"
                         warning_icon="check"
-                        tight
+                        inline={true}
                       />
                     </div>
                   {/if}
@@ -1407,12 +1425,28 @@
           >
         {/if}
         <div class="font-medium">Saved {saved_count} new items.</div>
-        <div class="font-light text-sm">
-          These are now available in the <a
-            href={`/dataset/${project_id}/${task_id}`}
-            class="link">dataset tab</a
-          >.
-        </div>
+        {#if eval_input_count > 0 && saved_count > eval_input_count}
+          <div class="font-light text-sm">
+            {saved_count - eval_input_count}
+            {saved_count - eval_input_count === 1 ? "is" : "are"} in the
+            <a href={`/dataset/${project_id}/${task_id}`} class="link"
+              >dataset tab</a
+            >. The other {eval_input_count} went to the eval's inputs, which the
+            eval answers fresh when it runs.
+          </div>
+        {:else if eval_input_count > 0}
+          <div class="font-light text-sm">
+            These went to the eval's inputs, which the eval answers fresh when
+            it runs.
+          </div>
+        {:else}
+          <div class="font-light text-sm">
+            These are now available in the <a
+              href={`/dataset/${project_id}/${task_id}`}
+              class="link">dataset tab</a
+            >.
+          </div>
+        {/if}
         {#if $saved_state.session_id}
           <div class="font-light text-xs mt-4 text-gray-500">
             All items are tagged with &quot;synthetic_session_{$saved_state.session_id}&quot;
@@ -1461,10 +1495,8 @@
         {/if}
       </div>
     {:else}
-      <h3 class="text-lg font-bold">Save Synthetic Data to Dataset</h3>
-      <p class="text-sm font-light mb-5">
-        Save the synthetic data below into your dataset.
-      </p>
+      <h3 class="text-lg font-bold">Save Synthetic Data</h3>
+      <p class="text-sm font-light mb-5">Save the synthetic data below.</p>
       <FormContainer
         submit_label="Save All"
         bind:submitting={save_all_running}

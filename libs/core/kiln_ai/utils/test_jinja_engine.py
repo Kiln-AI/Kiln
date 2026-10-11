@@ -7,6 +7,7 @@ from kiln_ai.utils.jinja_engine import (
     JinjaExtractionError,
     compile_expression_or_raise,
     compile_template_or_raise,
+    expression_variables,
     extract,
     render_input_transform,
 )
@@ -173,6 +174,86 @@ class TestExtract:
             extract("{{ invalid", {})
 
 
+class TestExpressionVariables:
+    @pytest.mark.parametrize(
+        "expression,expected",
+        [
+            # A bare expression has no {{ }} of its own, so it only reports
+            # variables once the function wraps it.
+            ("final_message", {"final_message"}),
+            ("final_message.strip()", {"final_message"}),
+            ("(final_message | fromjson).user.status", {"final_message"}),
+            ("trace | map(attribute='x') | list", {"trace"}),
+            ("outpt.status", {"outpt"}),
+            # Delimiters inside a string literal are lexed as text, not as the
+            # end of the wrapper block.
+            ('final_message ~ "}}"', {"final_message"}),
+            ("'literal'", set()),
+        ],
+    )
+    def test_reports_referenced_variables(self, expression, expected):
+        assert expression_variables(expression) == expected
+
+    def test_syntax_error_raises_value_error(self):
+        with pytest.raises(ValueError, match="Invalid Jinja2 expression"):
+            expression_variables("final_message[")
+
+
+class TestExtractOperationsOnMissingData:
+    """Operating on a missing value is an extraction error, not an unhandled raise.
+
+    A single missing lookup returns Undefined, but anything done to that
+    Undefined raises inside Jinja. Callers only handle JinjaExtractionError, so
+    extract() must convert -- while keeping Jinja's message, which names the
+    field that wasn't there.
+    """
+
+    @pytest.mark.parametrize(
+        "expression,data,expected_message",
+        [
+            # A filter or operator that forces the Undefined.
+            ("missing | int", {}, "'missing' is undefined"),
+            ("missing + 1", {}, "'missing' is undefined"),
+            # Reaching into a field the parsed JSON doesn't have.
+            (
+                "(final_message | fromjson).user.status",
+                {"final_message": '{"status": "ok"}'},
+                "'dict object' has no attribute 'user'",
+            ),
+            # Indexing past the end of a list.
+            (
+                "trace[-1].tool_calls[0].function.name",
+                {"trace": []},
+                "has no element -1",
+            ),
+        ],
+    )
+    def test_raising_operation_on_missing_value(
+        self, expression, data, expected_message
+    ):
+        # Only operations that force the value raise; others stay silent, which
+        # test_silent_operation_on_missing_value pins.
+        with pytest.raises(JinjaExtractionError, match=expected_message):
+            extract(expression, data)
+
+    def test_silent_operation_on_missing_value(self):
+        # The other side of the boundary: `~` stringifies Undefined to '' rather
+        # than raising, so a typo'd name yields a wrong value, not an error.
+        assert extract("final_message ~ typo", {"final_message": "hi"}) == "hi"
+
+    def test_lazy_generator_over_missing_field_raises_extraction_error(self):
+        # The sole guard that generators are materialized inside extract()'s try:
+        # map() defers its per-item lookups, so the raise fires during list(),
+        # not when the compiled expression is called.
+        with pytest.raises(
+            JinjaExtractionError, match="'dict object' has no attribute 'tool_calls'"
+        ):
+            extract(
+                "trace | map(attribute='tool_calls.0.function.name')",
+                {"trace": [{"content": "no tools"}]},
+            )
+
+
 class TestTrimAndLstripBlocks:
     def test_trim_blocks_strips_newline_after_block_tag(self):
         template = "{% if True %}\nyes\n{% endif %}"
@@ -318,3 +399,124 @@ class TestCanonicalExpressions:
             {"final_message": '{"items": ["a", "b", "c", "d"]}'},
         )
         assert result == 4
+
+
+class TestFormatTraceFilter:
+    """{{ trace | format_trace }} renders the canonical role-labelled
+    transcript (EvalTraceFormatter's format) inside templates, so every LLM
+    that sees a conversation sees the same rendering."""
+
+    def test_renders_role_labelled_turns(self):
+        trace = [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "world"},
+        ]
+        result = render_input_transform(
+            JinjaInputTransform(template="{{ input.trace | format_trace }}"),
+            {"trace": trace},
+        )
+        assert result == (
+            "user:\n<user_message>\nhello\n</user_message>\n\n"
+            "assistant:\n<assistant_message>\nworld\n</assistant_message>"
+        )
+
+    def test_matches_eval_trace_formatter(self):
+        # The filter IS the formatter — a drift between the two would split
+        # the canonical rendering back into per-consumer variants.
+        from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import (
+            EvalTraceFormatter,
+        )
+
+        trace = [
+            {"role": "system", "content": "be brief"},
+            {"role": "user", "content": "hi"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "function": {"name": "add", "arguments": '{"a":1,"b":2}'},
+                        "type": "function",
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "done"},
+        ]
+        rendered = render_input_transform(
+            JinjaInputTransform(template="{{ input.trace | format_trace }}"),
+            {"trace": trace},
+        )
+        assert rendered == EvalTraceFormatter.trace_to_formatted_conversation_history(
+            trace
+        )
+
+    def test_non_list_raises_extraction_error(self):
+        with pytest.raises(JinjaExtractionError, match="got str"):
+            render_input_transform(
+                JinjaInputTransform(template="{{ input.trace | format_trace }}"),
+                {"trace": "not a list"},
+            )
+
+    def test_non_dict_member_raises_error_naming_the_member(self):
+        # The error must name the malformed member, not the (valid) container.
+        with pytest.raises(JinjaExtractionError, match="message 1 is str, not a dict"):
+            render_input_transform(
+                JinjaInputTransform(template="{{ input.trace | format_trace }}"),
+                {"trace": [{"role": "user", "content": "hi"}, "not a dict"]},
+            )
+
+    def test_canonical_rendering_is_frozen(self):
+        # CROSS-REPO DRIFT ALARM. The TAG VOCABULARY below (system/user/
+        # assistant messages, assistant reasoning, requested tool calls, tool
+        # results) is what the kiln_server claim-builder task's instruction
+        # documents to its LLM (buildClaimEvidence "Multi-turn transcripts"
+        # section; its tests pin the same tag list). Changing a tag here
+        # without updating that instruction silently degrades citations, so a
+        # tag change must land in BOTH repos together.
+        #
+        # Role labels are not part of that contract: the instruction describes
+        # them generically ("the role: labels and <…> tags are added by the
+        # rendering software — never cite them") and enumerates no specific
+        # one. The labels below therefore changed on their own when tool
+        # results gained their tool's name, and the tags did not.
+        trace = [
+            {"role": "system", "content": "You are a support agent."},
+            {"role": "user", "content": "Is the X200 in stock?"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "check_stock",
+                            "arguments": '{"sku": "X200"}',
+                        },
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call_1", "content": "In stock: 4"},
+            {
+                "role": "assistant",
+                "content": "Yes — 4 units in stock.",
+                "reasoning_content": "Inventory says 4.",
+            },
+        ]
+        rendered = render_input_transform(
+            JinjaInputTransform(template="{{ input.trace | format_trace }}"),
+            {"trace": trace},
+        )
+        assert rendered == (
+            "system:\n<system_message>\nYou are a support agent.\n</system_message>\n\n"
+            "user:\n<user_message>\nIs the X200 in stock?\n</user_message>\n\n"
+            "assistant requested tool calls:\n<assistant_requested_tool_calls>\n"
+            '- Tool Name: check_stock\n- Arguments: {"sku": "X200"}\n'
+            "</assistant_requested_tool_calls>\n\n"
+            "tool result from check_stock:\n<tool_tool_message>\n"
+            "In stock: 4\n</tool_tool_message>\n\n"
+            "assistant reasoning:\n<assistant_reasoning_message>\n"
+            "Inventory says 4.\n</assistant_reasoning_message>\n\n"
+            "assistant:\n<assistant_message>\nYes — 4 units in stock.\n</assistant_message>"
+        )

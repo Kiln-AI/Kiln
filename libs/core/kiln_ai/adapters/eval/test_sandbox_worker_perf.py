@@ -209,7 +209,9 @@ def test_benchmark_run_scorer_heavy_main():
 
     Pre-fix: each call takes ~1-3s (child re-imports the heavy main).
     Post-fix: each call takes ~50ms (child skips the heavy main).
-    Assertion bound: 250ms (generous CI buffer; local expectation ~50ms).
+    Assertion bound: 600ms. Local runs take ~50-150ms, shared CI runners
+    ~300ms. The bound stays below the ~0.8s floor of the heavy re-import,
+    so a regression still fails.
 
     Source-only: uses ``sys.executable`` which is the Python interpreter
     from source, not the app bundle.  This benchmark is never run in a
@@ -232,8 +234,8 @@ def test_benchmark_run_scorer_heavy_main():
         data = json.loads(line)
         assert "elapsed" in data, f"Unexpected output: {data}"
         elapsed = data["elapsed"]
-        assert elapsed < 0.25, (
+        assert elapsed < 0.6, (
             f"run_scorer call {data['call']} took {elapsed:.3f}s — "
-            f"expected <0.25s (local ~0.05s, CI buffer 0.25s). "
+            f"expected <0.6s (local ~0.05-0.15s, CI ~0.3s). "
             f"The spawn child is likely re-importing the heavy __main__."
         )

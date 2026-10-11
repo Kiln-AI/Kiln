@@ -52,6 +52,17 @@ def legacy_eval_adapter_from_type(eval_config: EvalConfig) -> type[BaseEval]:
             raise_exhaustive_enum_error(eval_config.config_type)
 
 
+def has_v2_eval_adapter(eval_config: EvalConfig) -> bool:
+    """Whether `v2_eval_adapter_from_config` finds an adapter for this config, without
+    building one. False for a non-V2 config and for a V2 type with no adapter (the
+    runner's type_not_available skip)."""
+    if eval_config.config_type != EvalConfigType.v2:
+        return False
+    if not isinstance(eval_config.properties, V2_PROPERTY_TYPES):
+        return False
+    return eval_config.properties.type in _V2_ADAPTER_MAP  # type: ignore[union-attr]
+
+
 def v2_eval_adapter_from_config(
     eval_config: EvalConfig,
     run_config: "RunConfigProperties | None" = None,

@@ -37,8 +37,7 @@ logger = logging.getLogger(__name__)
 CODE_SANDBOX_MAX_CONCURRENCY = 16
 """Maximum concurrent top-level sandbox invocations (process-wide).
 
-Shared by code tools and code judges. Raises code tools' prior bound of 8 as a
-side effect of unifying the pool (arch §3.4)."""
+Shared by code tools and code judges."""
 
 _depth: contextvars.ContextVar[int] = contextvars.ContextVar(
     "_code_sandbox_depth", default=0
@@ -304,12 +303,9 @@ class NestedToolServer:
             result = await tool.run(self._context, **arguments)
 
             if result.is_error:
-                from kiln_ai.tools.code_tool import PythonCodeTool
-
-                is_timeout = isinstance(tool, PythonCodeTool) and "timed out" in (
-                    result.output or ""
-                )
-                kind = "timeout" if is_timeout else "call_error"
+                # The tool reports timeouts as a typed flag; sniffing the output
+                # text would misclassify results that merely mention a timeout.
+                kind = "timeout" if result.timed_out else "call_error"
                 responses.put(
                     {
                         "type": "tool_result",
@@ -401,7 +397,17 @@ class NestedToolServer:
 
         name_map: dict[str, list[ToolId]] = {}
         for tool_id in self._allowlist:
-            fn_name = await self._canonical_tool_name(tool_id)
+            # A broken allowlist entry (deleted tool, bad config) must not take
+            # down every other tool in the sandbox — skip it and keep serving.
+            try:
+                fn_name = await self._canonical_tool_name(tool_id)
+            except Exception as exc:
+                logger.warning(
+                    "Code tool allowlist entry '%s' failed to resolve: %s",
+                    tool_id,
+                    exc,
+                )
+                continue
             name_map.setdefault(fn_name, []).append(tool_id)
 
         self._name_map = name_map
@@ -438,12 +444,13 @@ class NestedToolServer:
                         "parameters_schema": tool_def["function"]["parameters"],
                     }
                 )
-            except Exception:
-                fn_name = await self._canonical_tool_name(tool_id)
+            except Exception as exc:
+                # Resolution failed, so no canonical name exists — key the entry
+                # by the raw tool id and surface why it is unavailable.
                 result.append(
                     {
-                        "name": fn_name,
-                        "description": "(unavailable)",
+                        "name": tool_id,
+                        "description": f"(unavailable: {exc})",
                         "parameters_schema": {},
                     }
                 )

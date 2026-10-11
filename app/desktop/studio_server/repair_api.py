@@ -198,6 +198,5 @@ def connect_repair_api(app: FastAPI):
         updated_run = TaskRun.model_validate(updated_data)
         updated_run.path = run.path
 
-        # Save the updated run
         updated_run.save_to_file()
         return updated_run

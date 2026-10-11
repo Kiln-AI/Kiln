@@ -5,6 +5,7 @@
   import type { Task, TaskRunConfig } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { generate_memorable_name } from "$lib/utils/name_generator"
+  import { run_config_clone_parent_id } from "$lib/stores/run_configs_store"
 
   export let subtitle: string | null = null
   export let project_id: string
@@ -58,7 +59,12 @@
       if (!run_config_component) {
         throw new Error("Run configuration component is not loaded")
       }
-      const saved_run_config = await run_config_component.save_new_run_config()
+      // In clone mode, stamp lineage from the source run config; a plain create
+      // sends no clone source (fresh human-origin provenance).
+      const clone_source_id =
+        mode === "clone" ? run_config_clone_parent_id(source_run_config) : null
+      const saved_run_config =
+        await run_config_component.save_new_run_config(clone_source_id)
       new_run_config_created?.(saved_run_config)
       close() // Only close on success
     } catch (e) {

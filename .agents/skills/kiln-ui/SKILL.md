@@ -8,6 +8,8 @@ allowed-tools: Read Grep Glob Bash
 
 Kiln screens are built from a small set of shared controls and DaisyUI classes. A screen assembled from Tailwind copied off a house control looks right in a screenshot and wrong next to the rest of the app, and the next screen copies it. This skill exists because that happened repeatedly on the eval builder while every unit passed review and visual sign-off. The fix is not "read the guide harder": it is to write down which control each element is, before code, and to prove it at handback in a form that does not need eyes.
 
+For code structure (stores, API calls, module layout), also follow `kiln-conventions` → `references/web_ui.md` (`.agents/skills/kiln-conventions/references/web_ui.md`).
+
 ## 0. Read, every time (5 minutes)
 
 1. `.agents/frontend_design_guide.md` and `.agents/frontend_controls.md`.
@@ -41,7 +43,7 @@ Reference screens (what "looks like Kiln" means): the Edit Task form (`routes/(a
 
 ## 2. Component plan, before code (required)
 
-Write a component plan before the first edit (in the PR description, or a `COMPONENT_PLAN.md` beside your notes; never committed to the app). One row per visible element on every screen state you touch:
+Write a component plan before the first edit (in the PR's Agentic PR Summary, or a `COMPONENT_PLAN.md` beside your notes; never committed to the app). One row per visible element on every screen state you touch:
 
 ```
 | Element | House control used | Sibling screen it matches | Justification if custom |
@@ -104,7 +106,7 @@ Style findings under this lens are valid findings.
 
 ## 7. Handback contract (the reviewer signs off on these, not on pixels)
 
-The PR description or handback carries, in this order:
+The PR's Agentic PR Summary (never the human header above it) or the handback carries, in this order:
 1. The component plan, final (every row resolved).
 2. The gate output for `--range <base>..<tip>`, verbatim, with each FAIL/WARN mapped to a plan row.
 3. A side-by-side screenshot: the new screen next to its named sibling, same window width.

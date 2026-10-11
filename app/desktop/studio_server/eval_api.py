@@ -36,7 +36,12 @@ from kiln_ai.datamodel.datamodel_enums import (
     EvalStatus,
     Priority,
 )
-from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
+from kiln_ai.datamodel.dataset_filters import (
+    DatasetFilterId,
+    EvalInputFilterId,
+    dataset_filter_from_id,
+    eval_input_filter_from_id,
+)
 from kiln_ai.datamodel.eval import (
     V2_PROPERTY_TYPES,
     CodeEvalProperties,
@@ -45,6 +50,7 @@ from kiln_ai.datamodel.eval import (
     EvalConfigType,
     EvalDataType,
     EvalInput,
+    EvalInputData,
     EvalOutputScore,
     EvalRun,
     EvalScores,
@@ -70,11 +76,13 @@ from kiln_ai.datamodel.eval_splits import (
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
 from kiln_ai.datamodel.prompt_type import generator_label
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.datamodel.usage import Usage
+from kiln_ai.datamodel.world import World, WorldReset
 from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.name_generator import generate_memorable_name
@@ -82,6 +90,8 @@ from kiln_ai.utils.open_ai_types import serialize_trace
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
+from kiln_server.provenance_api import validate_provenance_or_400
+from kiln_server.statistics_lib import percentile
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -94,7 +104,14 @@ from kiln_server.utils.spec_utils import (
     spec_eval_splits,
     tag_filter_id,
 )
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    ValidationError,
+    field_validator,
+)
 
 from app.desktop.studio_server.code_tool_api import ToolCallLogEntryResponse
 
@@ -172,6 +189,84 @@ def eval_config_from_id(
     raise HTTPException(
         status_code=404,
         detail=f"Eval config not found. ID: {eval_config_id}",
+    )
+
+
+def eval_input_from_id(project_id: str, task_id: str, eval_input_id: str) -> EvalInput:
+    task = task_from_id(project_id, task_id)
+    eval_input = EvalInput.from_id_and_parent_path(eval_input_id, task.path)
+    if eval_input is not None:
+        return eval_input
+
+    raise HTTPException(
+        status_code=404,
+        detail=f"Eval input not found. ID: {eval_input_id}",
+    )
+
+
+class EvalInputReferences(BaseModel):
+    """What still points at an eval input item, by id.
+
+    Counts rather than the records themselves: the caller is deciding whether a delete is
+    safe, and loading every trace to render a 409 body would make the guard cost more
+    than the delete it is protecting.
+    """
+
+    trace_count: int = Field(
+        description="Eval traces generated for this item (TaskRun.eval_source.source_id)."
+    )
+    score_count: int = Field(
+        description="Stored score records naming this item (EvalRun.eval_input_id)."
+    )
+
+    def __bool__(self) -> bool:
+        return self.trace_count > 0 or self.score_count > 0
+
+
+def eval_input_references(task: Task, eval_input_id: str) -> EvalInputReferences:
+    """Everything on disk that names `eval_input_id`.
+
+    Two kinds, and both are id-only — neither copies the item's content, which is exactly
+    why a delete has to be refused rather than cascaded:
+
+    - Eval traces: `TaskRun.eval_source` is `("eval_input", item_id)`, and `TraceIndex`
+      reuses a trace on that pair plus the run config. `include_eval_generated=True`
+      because these runs are excluded from `task.runs()` by default.
+    - Score records: `EvalRun.eval_input_id`, over every eval config of every eval on the
+      task. Read-only: nothing here mutates them.
+    """
+    trace_count = sum(
+        1
+        for run in task.runs(readonly=True, include_eval_generated=True)
+        if run.eval_source is not None
+        and run.eval_source.source_type == "eval_input"
+        and run.eval_source.source_id == eval_input_id
+    )
+
+    score_count = 0
+    for eval in task.evals(readonly=True):
+        for eval_config in eval.configs(readonly=True):
+            score_count += sum(
+                1
+                for eval_run in eval_config.runs(readonly=True)
+                if eval_run.eval_input_id == eval_input_id
+            )
+
+    return EvalInputReferences(trace_count=trace_count, score_count=score_count)
+
+
+def references_conflict_detail(references: EvalInputReferences) -> str:
+    """The 409 body for a delete that would orphan records.
+
+    Names both counts even when one is zero, so the reader can tell "no traces" from "we
+    didn't look at traces", and says what to do instead — retagging is the supported way
+    to take an item out of an eval's scope.
+    """
+    return (
+        f"Eval input is still referenced by {references.trace_count} eval trace(s) and "
+        f"{references.score_count} score record(s), which name it by id and hold no copy "
+        "of its content. Deleting it would leave those records describing an item that "
+        "no longer exists. Retag the item to take it out of an eval's scope instead."
     )
 
 
@@ -302,6 +397,10 @@ class CreateEvalConfigRequest(BaseModel):
         default=None,
         description="The provider of the evaluation model. Required for LLM-based eval types.",
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this eval config exists and what it was derived from.",
+    )
 
 
 class LlmJudgeBuilderInput(BaseModel):
@@ -348,6 +447,10 @@ class CreateLlmJudgeConfigRequest(LlmJudgeBuilderInput):
     """Request to create a V2 llm_judge eval config with server-baked template."""
 
     name: str | None = Field(default=None, description="The name of the eval config.")
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this eval config exists and what it was derived from.",
+    )
 
 
 class TestV2EvalRequest(BaseModel):
@@ -464,6 +567,10 @@ class CreateTaskRunConfigRequest(BaseModel):
     run_config_properties: RunConfigProperties = Field(
         description="The run configuration properties."
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this run config exists and what it was derived from.",
+    )
 
 
 class UpdateRunConfigRequest(BaseModel):
@@ -489,6 +596,34 @@ class ScoreSummary(BaseModel):
 
     mean_score: float | None = Field(
         description="The mean score across all used runs. None when n_used == 0."
+    )
+    # Distribution fields. Optional/defaulted so older stored payloads and
+    # existing API consumers keep working — the mean is unchanged. Numeric
+    # (custom-type) scores like tool-call counts or per-turn latency are
+    # heavily right-skewed, where the mean hides the tail that drives cost.
+    min_score: float | None = Field(
+        default=None,
+        description="The lowest score across all used runs. None when n_used == 0.",
+    )
+    p25_score: float | None = Field(
+        default=None,
+        description="The 25th-percentile score across all used runs. None when n_used == 0.",
+    )
+    median_score: float | None = Field(
+        default=None,
+        description="The median (50th-percentile) score across all used runs. None when n_used == 0.",
+    )
+    p75_score: float | None = Field(
+        default=None,
+        description="The 75th-percentile score across all used runs. None when n_used == 0.",
+    )
+    p90_score: float | None = Field(
+        default=None,
+        description="The 90th-percentile score across all used runs. None when n_used == 0.",
+    )
+    max_score: float | None = Field(
+        default=None,
+        description="The highest score across all used runs. None when n_used == 0.",
     )
     n_used: int = Field(
         description="Number of EvalRuns with all expected scores and not skipped."
@@ -525,15 +660,16 @@ class EvalRunWithTrace(BaseModel):
     Where the trace lives depends on the record: on a TaskRun named by `scored_run_id`,
     inline on the EvalRun for records written before the trace/score split, or nowhere at
     all for a run that was skipped before anything was generated. This resolves whichever
-    applies - falling back to the dataset item for the input of that last kind - so
-    callers see one shape regardless of which it is.
+    applies - falling back to the dataset item for the input whenever the record
+    itself has none - so callers see one shape regardless of which it is.
     """
 
     eval_run: EvalRun = Field(description="The score record itself.")
     input: str | None = Field(
         description="The input the task was run on. From the scored TaskRun, from the "
-        "EvalRun itself for legacy records, or from the dataset item for records that "
-        "were skipped before anything was generated."
+        "EvalRun itself for legacy records, or from the dataset item whenever neither "
+        "of those has it (pre-generation skips, and pointer records whose trace is "
+        "missing)."
     )
     output: str | None = Field(
         description="What the task produced. Always the original output, never a "
@@ -579,11 +715,14 @@ class EvalRunWithTrace(BaseModel):
             eval_run=eval_run,
             input=trace.input if trace is not None else None,
             # Never repaired_output: a repair can happen after scoring, so it is not
-            # what the score was computed over (functional spec 5.2).
+            # what the score was computed over.
             output=trace.output.output if trace is not None else None,
             task_run_trace=serialize_trace(trace.trace)
             if trace is not None and trace.trace
             else None,
+            # Raw per-record usage, not the summary's blended figure: it omits
+            # synthetic_user_usage. No UI renders it today; a surface that
+            # reports cost should use the summary's blend, not this field.
             task_run_usage=trace.usage if trace is not None else None,
         )
 
@@ -614,8 +753,153 @@ class UpdateEvalRequest(BaseModel):
     )
     priority: Priority | None = Field(default=None, description="The updated priority.")
     status: EvalStatus | None = Field(default=None, description="The updated status.")
-    train_set_filter_id: str | None = Field(
+    # Typed so an invalid filter id is a 422 at request validation, not a 500
+    # when TaskRunSplit rejects it inside the handler.
+    train_set_filter_id: DatasetFilterId | None = Field(
         default=None, description="The updated train set filter ID."
+    )
+
+
+def eval_input_tags_must_be_filterable(tags: list[str] | None) -> list[str] | None:
+    """Tag rule for the eval-input requests, mirroring EvalInput's own.
+
+    A tag that is empty or contains a space can't be named by a `tag::`
+    filter, so an item carrying one would silently never be selected by any
+    eval. Same two rules and same wording as the datamodel, deliberately.
+
+    Restated here because the datamodel enforces them while the item is being
+    built or assigned: that failure is about the whole model, so the caller
+    gets an error located nowhere and a body quoting the item being saved.
+    Validating the request first points the 422 at `tags` and quotes what the
+    caller actually sent.
+
+    None is the update request's "leave tags alone" and carries nothing to
+    check; the route rejects it separately for the PATCH.
+    """
+    for tag in tags or []:
+        if not tag:
+            raise ValueError("Tags cannot be empty strings")
+        if " " in tag:
+            raise ValueError("Tags cannot contain spaces. Try underscores.")
+    return tags
+
+
+def multi_turn_data_must_carry_a_drive_config(data: EvalInputData) -> EvalInputData:
+    """Drive-config rule for the eval-input create request.
+
+    A multi-turn item is only useful if it can be re-driven, and the drive
+    settings live on the item alone: `data` is the immutable scenario, so no
+    later PATCH can supply one. Without it the eval runner skips the item with
+    missing_drive_config, and nothing can lift that, so accepting the create
+    would mint a permanently unrunnable item. Reject it while the caller can
+    still fix it.
+    """
+    if isinstance(data, MultiTurnSyntheticEvalInputData) and data.drive_config is None:
+        raise ValueError(
+            "drive_config is required for multi_turn_synthetic eval inputs. "
+            "It sets the synthetic-user model and turn count the item is "
+            "re-driven with, and cannot be added after the item is created."
+        )
+    return data
+
+
+def multi_turn_data_must_carry_a_first_message(data: EvalInputData) -> EvalInputData:
+    """First-message rule for the eval-input create request.
+
+    The first message is the seed the synthetic user opens a re-driven
+    conversation with. With no seed text there is nothing to send, so the eval
+    runner skips the item with incompatible_input_shape instead of re-driving
+    it. Like the drive config this lives on `data`, which is immutable, so a
+    seedless item is permanently unrunnable and no PATCH can rescue it. Reject
+    it while the caller can still fix it.
+
+    The datamodel keeps `first_message` optional so items that already lack
+    one still load. That is a reason to keep reading them, not to mint more.
+    """
+    if isinstance(data, MultiTurnSyntheticEvalInputData) and not (
+        data.first_message and data.first_message.text
+    ):
+        raise ValueError(
+            "first_message with non-empty text is required for "
+            "multi_turn_synthetic eval inputs. It is the message the "
+            "synthetic user opens each re-driven conversation with, and "
+            "cannot be added after the item is created."
+        )
+    return data
+
+
+class CreateEvalInputRequest(BaseModel):
+    """Request to create an eval input item."""
+
+    data: EvalInputData = Field(
+        description="The input data for this eval item. A multi_turn_synthetic "
+        "item must carry both a drive_config and a first_message with non-empty "
+        "text: they are what make it re-drivable, and neither can be added "
+        "after the item is created."
+    )
+    reference: dict[str, JsonValue] | None = Field(
+        default=None,
+        description="Optional reference data (ground truth) for this eval input, keyed by reference name.",
+    )
+    tags: list[str] = Field(
+        default_factory=list,
+        description="Tags for filtering eval inputs (matched by tag:: eval_input_filter_ids).",
+    )
+    world_reset: WorldReset | None = Field(
+        default=None,
+        description="Optional world to run this item in: a world in this project, plus the keyword arguments its environment's reset() is called with. A run config that lists that world's tools runs the item in the episode the reset starts; omit it and the item runs against the project's own tools. Like the scenario, it cannot be changed afterwards — send a new item instead.",
+    )
+
+    _tags_must_be_filterable = field_validator("tags")(
+        eval_input_tags_must_be_filterable
+    )
+    _data_must_carry_a_drive_config = field_validator("data")(
+        multi_turn_data_must_carry_a_drive_config
+    )
+    _data_must_carry_a_first_message = field_validator("data")(
+        multi_turn_data_must_carry_a_first_message
+    )
+
+
+class UpdateEvalInputRequest(BaseModel):
+    """Partial update of an eval input item. Omitted fields are left unchanged.
+
+    `data` and `world_reset` are deliberately absent, and `extra="forbid"` turns an
+    attempt to send either into a 422 rather than a silent no-op the caller reads as
+    success. They are what genuinely cannot be edited in place: trace reuse
+    (`TraceIndex`) keys on `(source_type, item_id, run_config_id, world_version)`, and
+    the item id stands for the item's whole content, so a later eval would hand a judge
+    a conversation generated from the scenario this item *used to* have — or, for a
+    world item, one recorded in an episode the environment was reset into differently.
+    Changing either means POSTing a new item.
+
+    `reference` does not have that problem and is editable. It keys nothing: stored
+    scores snapshot the `reference_data` the judge actually saw (`_persist_judgment`)
+    rather than pointing back at the item, and drive fingerprints hash the scenario, not
+    the reference. So correcting ground truth invalidates nothing already on disk — it
+    changes what future runs are graded against, which is the whole point of correcting
+    it. Iterating on reference data is a normal part of authoring a corpus, and making it
+    mint-a-new-item would leave one dead item behind per correction.
+
+    The cost, stated: scores written either side of a `reference` edit hang off the same
+    item id but were graded against different ground truth. Each EvalRun carries the
+    reference it saw, so this is auditable, but a rollup that groups scores by item alone
+    would mix the two.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    tags: list[str] | None = Field(
+        default=None,
+        description="The item's tags, replacing the whole list. Send [] to clear them. Tags decide which eval_input_filter_id slices the item falls into, so this is how an item is added to or removed from an eval's scope.",
+    )
+    reference: dict[str, JsonValue] | None = Field(
+        default=None,
+        description="The item's reference data (ground truth), replacing the whole dict. Send null to clear it — omitting the field leaves it unchanged, which is a different request.",
+    )
+
+    _tags_must_be_filterable = field_validator("tags")(
+        eval_input_tags_must_be_filterable
     )
 
 
@@ -625,6 +909,17 @@ class EvalsResponse(BaseModel):
     evals: List[Eval] = Field(description="The evals which loaded successfully.")
     load_error_count: int = Field(
         description="How many eval files failed to load. Usually because they were written by a newer version of Kiln."
+    )
+
+
+class EvalInputsResponse(BaseModel):
+    """A task's eval input items, plus how many item files this version of Kiln couldn't read."""
+
+    eval_inputs: List[EvalInput] = Field(
+        description="The eval input items which loaded successfully."
+    )
+    load_error_count: int = Field(
+        description="How many eval input files failed to load. Usually because they were written by a newer version of Kiln."
     )
 
 
@@ -792,10 +1087,13 @@ def load_task_children_by_id(
     every child whose id isn't already cached in order to check it, so calling it with no
     ids to find would read the whole directory off disk. Every bulk load in this module
     goes through here so that guard can't be forgotten at one of them.
+
+    Always readonly: every caller in this module only reads the loaded children, and
+    readonly cache hits skip a deep copy per model - traces make those copies large.
     """
     if not ids:
         return {}
-    return model_type.from_ids_and_parent_path(ids, task.path)
+    return model_type.from_ids_and_parent_path(ids, task.path, readonly=True)
 
 
 def summary_eval_config(eval: Eval) -> EvalConfig | None:
@@ -821,8 +1119,8 @@ def scored_trace_usage_for_run_config(
     """Usage per scored TaskRun, for the traces this run config's summary will report on.
 
     Loaded in one pass for the whole request rather than per eval: each bulk load scans
-    the task's `runs/` directory, which now holds every eval trace as well as the
-    dataset corpus.
+    the task's `runs/` directory, which holds every eval trace as well as the dataset
+    corpus.
 
     Only the usage is kept, not the TaskRun. Traces are the large field, and this is the
     only thing read off them here - holding whole runs for the life of the request would
@@ -843,7 +1141,47 @@ def scored_trace_usage_for_run_config(
             ):
                 scored_run_ids.add(eval_run.scored_run_id)
     traces = load_task_children_by_id(TaskRun, task, scored_run_ids)
-    return {run_id: trace.usage for run_id, trace in traces.items()}
+    return {run_id: scored_trace_usage(trace) for run_id, trace in traces.items()}
+
+
+def scored_trace_usage(trace: TaskRun) -> Usage | None:
+    """The full generation spend of one scored TaskRun, as a summary reports it.
+
+    One record shape needs more than `trace.usage`:
+
+    - An eval-driven conversation stores the synthetic-user driver model's spend
+      in `synthetic_user_usage`, beside the assistant-only `usage`. Only its
+      **cost** is blended in here, deliberately, even though the field carries
+      the driver's tokens and latency too:
+
+      * Cost is total-spend semantics — what this trace cost to produce, both
+        models included. That is what a run-config summary should report, and it
+        matches migrated legacy traces, which have the blend fused inside
+        `usage` with `synthetic_user_usage` None.
+      * Tokens are not. The synthetic user is usually a different model on a
+        different provider from the agent under test, so folding its ~3.5k input
+        tokens per conversation into this figure would attribute them to the
+        agent and make `cost / total_tokens` meaningless — the exact conflation
+        `synthetic_user_usage` exists to undo.
+      * Latency is not. This summary reports how responsive the agent is;
+        driver-side wall clock is not the agent's, and summing it would make
+        every driven run config look slower than it is.
+
+      Blending everything would also make this field mean two different
+      quantities depending on record age: legacy records blend cost only, since
+      that is all the old field carried.
+
+    None when the record has nothing to report, so it contributes nothing to an
+    average instead of counting as a zero.
+    """
+    base = trace.usage
+    if trace.synthetic_user_usage is not None:
+        # Cost only — see the docstring. Adding the whole object would fold the
+        # driver's tokens and latency into the agent's figures.
+        base = (base or Usage()) + Usage(cost=trace.synthetic_user_usage.cost)
+    if base is None or all(v is None for v in base.model_dump().values()):
+        return None
+    return base
 
 
 def eval_run_task_usage(
@@ -928,7 +1266,7 @@ def _fill_missing_inputs_from_source_items(
     """Fill in `input` for the records no trace could supply one for, in two bulk loads.
 
     Bulk rather than per record: each lookup scans the task's `runs/` directory, which
-    now holds every eval trace alongside the dataset corpus.
+    holds every eval trace alongside the dataset corpus.
     """
     needs_input = [result for result in resolved if result.input is None]
     if not needs_input:
@@ -1000,9 +1338,8 @@ def _cached_test_split(
     unchanged would name whichever eval reached the filter first.
 
     `task` is deliberately NOT part of the key, so a cache must not outlive one task: the
-    same (source, filter_id) selects different items in a different task. The one caller
-    builds the cache inside a single request and passes the task it loaded, which holds
-    that invariant positionally. A second caller has to keep it too, or key on the task.
+    same (source, filter_id) selects different items in a different task. Build the cache
+    inside a single request, for the task that request loaded.
     """
     split_ref = eval.splits.get("test")
     if split_ref is None:
@@ -1018,8 +1355,11 @@ def _cached_test_split(
     return cached if cached.eval_id == eval.id else replace(cached, eval_id=eval.id)
 
 
-def require_golden_set_or_422(eval: Eval) -> None:
-    """422 unless the eval has a golden set, which judge comparison scores against.
+def require_golden_set_or_422(eval: Eval) -> DatasetFilterId:
+    """The eval's golden filter id, or 422 when none is configured.
+
+    Judge comparison scores against the golden set; returning the narrowed id
+    lets callers use it without re-checking for None.
 
     Checked here rather than left to EvalRunner because these are SSE endpoints: the
     response is a StreamingResponse over a generator, so anything raised once the
@@ -1035,6 +1375,7 @@ def require_golden_set_or_422(eval: Eval) -> None:
     """
     if eval.eval_configs_filter_id is None:
         raise HTTPException(status_code=422, detail=no_golden_set_message(eval))
+    return eval.eval_configs_filter_id
 
 
 def eval_grades_against_reference_data(data_type: EvalDataType | None) -> bool:
@@ -1116,7 +1457,7 @@ def comparable_eval_configs_or_422(eval: Eval) -> List[EvalConfig]:
     StreamingResponse's generator is running arrives after a 200 with an empty body. It
     also has to beat the runner because the runner's first act is to write a durable
     scoreless `EvalRun` per item — records nothing in the UI clears, which then read as
-    "already run" and suppress the re-run a later fix would need (functional spec 6.2).
+    "already run" and suppress the re-run a later fix would need.
 
     An eval with no judges at all is left to `EvalRunner`, which already names that case.
     """
@@ -1234,13 +1575,14 @@ def human_score_from_task_run(
     if score_key == "overall_rating":
         return task_run.output.rating.value
 
-    # Task requirement ratings
+    # Task requirement ratings. A requirement whose name matches the score
+    # key may still be unrated — fall through to the named lookup rather
+    # than letting the name collision hide a named rating for this score.
     req_id = score_key_to_task_requirement_id.get(score_key, None)
     if req_id:
         req_rating = task_run.output.rating.requirement_ratings.get(req_id, None)
         if req_rating is not None:
             return req_rating.value
-        return None
 
     # Named ratings
     named_score_id = f"named::{score.name}"
@@ -1281,6 +1623,39 @@ def count_human_evals(
     return fully_rated_count, partially_rated_count, not_rated_count
 
 
+def score_summary_from_values(values: list[float], n_excluded: int) -> ScoreSummary:
+    """Build a ScoreSummary from the raw per-run scores of one output score key.
+
+    `values` must already exclude skipped runs and runs missing this score —
+    the caller does that filtering, exactly as it always has for the mean.
+
+    Percentiles use linear interpolation between the two nearest order
+    statistics (`statistics_lib.percentile`), matching the numpy.percentile /
+    statistics.quantiles(method="inclusive") default. So an even-length list's
+    median is the average of the two middle values, and p90 of a short list is
+    interpolated rather than snapped to an existing datum. This is the only
+    percentile definition used anywhere in eval aggregation — do not mix in
+    another.
+
+    Empty `values` yields None for every statistic (never 0.0, which would read
+    downstream as a real datum rather than "no data").
+    """
+    count = len(values)
+    if count == 0:
+        return ScoreSummary(mean_score=None, n_used=0, n_excluded=n_excluded)
+    return ScoreSummary(
+        mean_score=sum(values) / count,
+        min_score=min(values),
+        p25_score=percentile(values, 25),
+        median_score=percentile(values, 50),
+        p75_score=percentile(values, 75),
+        p90_score=percentile(values, 90),
+        max_score=max(values),
+        n_used=count,
+        n_excluded=n_excluded,
+    )
+
+
 def compute_score_summary(
     eval: Eval,
     eval_config: EvalConfig,
@@ -1292,8 +1667,7 @@ def compute_score_summary(
     Takes the resolved split rather than a set of ids so the aggregate is scoped to one
     store as well as one item set: a run is counted only when the item it scored is in
     this split, keyed on (source, id). A bare id would let an EvalInput's score be
-    averaged into a TaskRun-backed split's mean, which no reader could then detect
-    (functional spec 5.3).
+    averaged into a TaskRun-backed split's mean, which no reader could then detect.
     """
     split_items = split.item_keys()
     if len(split_items) == 0:
@@ -1310,10 +1684,12 @@ def compute_score_summary(
         run_config.id: 0 for run_config in task_run_configs
     }
 
-    total_scores: Dict[ID_TYPE, Dict[str, float]] = defaultdict(
-        lambda: defaultdict(float)
+    # run_config_id -> output_score_json_key -> the individual scores, kept as a
+    # list (not a running total) so the summary can report percentiles as well
+    # as the mean.
+    score_values: Dict[ID_TYPE, Dict[str, list[float]]] = defaultdict(
+        lambda: defaultdict(list)
     )
-    score_counts: Dict[ID_TYPE, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
     excluded_counts: Dict[ID_TYPE, int] = defaultdict(int)
 
     for eval_run in eval_config.runs(readonly=True):
@@ -1331,17 +1707,18 @@ def compute_score_summary(
 
         if eval_run.skipped_reason is not None:
             excluded_counts[run_config_id] += 1
-            _ = total_scores[run_config_id]
+            _ = score_values[run_config_id]
             continue
 
         incomplete = False
         # Ensure this run_config_id has an entry even if no scores match
-        _ = total_scores[run_config_id]
+        _ = score_values[run_config_id]
         for output_score in eval.output_scores:
             score_key = output_score.json_key()
             if score_key in eval_run.scores:
-                total_scores[run_config_id][score_key] += eval_run.scores[score_key]
-                score_counts[run_config_id][score_key] += 1
+                score_values[run_config_id][score_key].append(
+                    eval_run.scores[score_key]
+                )
             else:
                 incomplete = True
 
@@ -1351,17 +1728,14 @@ def compute_score_summary(
     all_score_keys = [os.json_key() for os in eval.output_scores]
 
     results: Dict[ID_TYPE, Dict[str, ScoreSummary]] = {}
-    for run_config_id, output_scores in total_scores.items():
+    for run_config_id, output_scores in score_values.items():
         results[run_config_id] = {}
         n_excluded = excluded_counts[run_config_id]
         for score_key in all_score_keys:
-            count = score_counts[run_config_id][score_key]
-            total = output_scores.get(score_key, 0.0)
-            if count > 0 or n_excluded > 0:
-                results[run_config_id][score_key] = ScoreSummary(
-                    mean_score=total / count if count > 0 else None,
-                    n_used=count,
-                    n_excluded=n_excluded,
+            values = output_scores.get(score_key, [])
+            if len(values) > 0 or n_excluded > 0:
+                results[run_config_id][score_key] = score_summary_from_values(
+                    values, n_excluded
                 )
 
     run_config_percent_complete: Dict[ID_TYPE, float] = {}
@@ -1588,6 +1962,12 @@ def connect_evals_api(app: FastAPI):
         # Partial load: a project folder synced from a newer Kiln can contain an eval this
         # build can't parse. Return the readable evals rather than failing the whole list.
         evals, load_errors = Eval.all_children_of_parent_path_with_errors(task.path)
+        for load_error in load_errors:
+            # The response only carries a count, so log each failure with its path and
+            # reason - it is the only way to tell a corrupt file from a version mismatch.
+            logger.warning(
+                f"Failed to load eval file {load_error.path}: {load_error.message}"
+            )
         specs_by_eval_id = {
             spec.eval_id: spec for spec in task.specs(readonly=True) if spec.eval_id
         }
@@ -1632,6 +2012,209 @@ def connect_evals_api(app: FastAPI):
                     result[eval.id] = properties.type.value
                 break
         return result
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_inputs",
+        summary="List Eval Inputs",
+        tags=["Eval Inputs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_eval_inputs(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        filter_id: Annotated[
+            EvalInputFilterId | None,
+            Query(
+                description="Optional eval-input filter to apply, e.g. 'all' or 'tag::my_tag' (the same IDs evals use as eval_input_filter_id)."
+            ),
+        ] = None,
+    ) -> EvalInputsResponse:
+        """List a task's eval input items, optionally restricted to a filter."""
+        task = task_from_id(project_id, task_id)
+        # Partial load: a project folder synced from a newer Kiln can contain an item
+        # this build can't parse. Return the readable items rather than failing the
+        # whole list, which would take the corpus away over one bad file.
+        eval_inputs, load_errors = EvalInput.all_children_of_parent_path_with_errors(
+            task.path, readonly=True
+        )
+        for load_error in load_errors:
+            # The response only carries a count, so log each failure with its path and
+            # reason - it is the only way to tell a corrupt file from a version mismatch.
+            logger.warning(
+                f"Failed to load eval input file {load_error.path}: {load_error.message}"
+            )
+        if filter_id is not None:
+            try:
+                filter = eval_input_filter_from_id(filter_id)
+            except ValueError as e:
+                raise HTTPException(status_code=422, detail=str(e))
+            eval_inputs = [
+                eval_input for eval_input in eval_inputs if filter(eval_input)
+            ]
+        return EvalInputsResponse(
+            eval_inputs=eval_inputs, load_error_count=len(load_errors)
+        )
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_inputs/{eval_input_id}",
+        summary="Get Eval Input",
+        tags=["Eval Inputs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_eval_input(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_input_id: Annotated[
+            str, Path(description="The unique identifier of the eval input.")
+        ],
+    ) -> EvalInput:
+        return eval_input_from_id(project_id, task_id, eval_input_id)
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_inputs",
+        summary="Create Eval Input",
+        tags=["Eval Inputs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def create_eval_input(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        request: CreateEvalInputRequest,
+    ) -> EvalInput:
+        """Create an eval input item. Evals pick it up via their eval_input_filter_id, so tag it accordingly."""
+        task = task_from_id(project_id, task_id)
+        if request.world_reset is not None:
+            # A world the project doesn't have fails at run time, on every job the item
+            # is part of, with the eval already running. Refuse the item instead, the
+            # same way a structured input that can't match the task schema is refused.
+            # What reset_kwargs may contain is the environment's business, checked when
+            # it resets, so nothing here looks inside them.
+            project = task.parent_project()
+            world = (
+                None
+                if project is None
+                else World.from_id_and_parent_path(
+                    request.world_reset.world_id, project.path
+                )
+            )
+            if world is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"World {request.world_reset.world_id} not found in this "
+                    "project. Create the world first, or omit world_reset to run this "
+                    "item against the project's own tools.",
+                )
+        eval_input = EvalInput(
+            data=request.data,
+            reference=request.reference,
+            tags=request.tags,
+            world_reset=request.world_reset,
+            parent=task,
+        )
+        eval_input.save_to_file()
+        return eval_input
+
+    @app.patch(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_inputs/{eval_input_id}",
+        summary="Update Eval Input",
+        tags=["Eval Inputs"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit eval inputs? Tags decide which slice an item falls into, and reference data is the ground truth an item is scored against, so both change what an eval reports. Ensure you backup your project before allowing agentic edits."
+        ),
+    )
+    async def update_eval_input(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_input_id: Annotated[
+            str, Path(description="The unique identifier of the eval input.")
+        ],
+        request: UpdateEvalInputRequest,
+    ) -> EvalInput:
+        """Update an eval input item's tags and/or reference data.
+
+        `data` is not editable and sending it is a 422 — see UpdateEvalInputRequest for
+        why the scenario is the one field that can't change in place.
+
+        Reads `model_fields_set` rather than testing each field for None, because for
+        `reference` the two are genuinely different requests: omitting it leaves ground
+        truth alone, sending null clears it. Testing for None would make clearing
+        impossible and silently look like a successful no-op.
+        """
+        eval_input = eval_input_from_id(project_id, task_id, eval_input_id)
+        provided = request.model_fields_set
+
+        if "tags" in provided:
+            if request.tags is None:
+                # Not silently ignored: a client sending null here means to remove the
+                # tags, and an empty list is how that is spelled. Leaving it unchanged
+                # would drop an intended edit.
+                raise HTTPException(
+                    status_code=422,
+                    detail="tags cannot be null. Send [] to remove every tag, or omit the field to leave tags unchanged.",
+                )
+            eval_input.tags = request.tags
+        if "reference" in provided:
+            eval_input.reference = request.reference
+
+        eval_input.save_to_file()
+        return eval_input
+
+    @app.delete(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_inputs/{eval_input_id}",
+        summary="Delete Eval Input",
+        tags=["Eval Inputs"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def delete_eval_input(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_input_id: Annotated[
+            str, Path(description="The unique identifier of the eval input.")
+        ],
+    ) -> None:
+        """Delete an eval input item, if nothing on disk still points at it.
+
+        409 when anything does. Both kinds of reference name the item by id and hold no
+        copy of it, so a delete that went through would leave records describing content
+        that no longer exists — an eval trace whose scenario is gone, or a score whose
+        input can't be read back. To take a referenced item out of an eval's scope,
+        retag it with PATCH instead; to correct its ground truth, PATCH its reference.
+        """
+        task = task_from_id(project_id, task_id)
+        eval_input = eval_input_from_id(project_id, task_id, eval_input_id)
+
+        references = eval_input_references(task, eval_input_id)
+        if references:
+            raise HTTPException(
+                status_code=409, detail=references_conflict_detail(references)
+            )
+
+        eval_input.delete()
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs",
@@ -1739,6 +2322,13 @@ def connect_evals_api(app: FastAPI):
             run_config_properties=run_config_properties,
             description=request.description,
             prompt=frozen_prompt,
+            provenance=request.provenance,
+        )
+        validate_provenance_or_400(
+            task_run_config.provenance,
+            task_run_config.id,
+            TaskRunConfig,
+            task.path,
         )
         if isinstance(
             task_run_config.run_config_properties, KilnAgentRunConfigProperties
@@ -1832,6 +2422,7 @@ def connect_evals_api(app: FastAPI):
                 properties=request.properties,
                 model_name=request.model_name,
                 model_provider=request.provider,
+                provenance=request.provenance,
                 parent=eval,
             )
         except ValidationError:
@@ -1856,6 +2447,12 @@ def connect_evals_api(app: FastAPI):
                     detail="Project not trusted to add code evals. Grant code trust and retry.",
                 )
 
+        validate_provenance_or_400(
+            eval_config.provenance,
+            eval_config.id,
+            EvalConfig,
+            eval.path,
+        )
         eval_config.save_to_file()
         return eval_config
 
@@ -1894,6 +2491,7 @@ def connect_evals_api(app: FastAPI):
                 name=name,
                 config_type=EvalConfigType.v2,
                 properties=properties,
+                provenance=request.provenance,
                 parent=eval,
             )
         except (ValidationError, ValueError) as e:
@@ -1901,6 +2499,12 @@ def connect_evals_api(app: FastAPI):
                 status_code=400,
                 detail=str(e),
             )
+        validate_provenance_or_400(
+            eval_config.provenance,
+            eval_config.id,
+            EvalConfig,
+            eval.path,
+        )
         eval_config.save_to_file()
         return eval_config
 
@@ -2013,10 +2617,9 @@ def connect_evals_api(app: FastAPI):
         except (ValueError, NotImplementedError, ValidationError) as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    # GET for an operation that writes, per .agents/api_code_review.md's SSE exception.
-    # The web client is no longer an EventSource — run_eval.svelte reads this with fetch
-    # so it can see a 4xx refusal's body — but GET stays: it is the shape every SSE
-    # consumer expects, and switching to POST would break any client that is one.
+    # GET for an operation that writes, per .agents/api_code_review.md's SSE exception:
+    # SSE consumers (including EventSource clients) expect GET. run_eval.svelte reads
+    # this with fetch so it can see a 4xx refusal's body.
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_comparison",
         summary="Run Run Config Comparison",
@@ -2081,6 +2684,20 @@ def connect_evals_api(app: FastAPI):
             save_context=build_save_context(request),
         )
 
+        # Surface drive-config/run-config incompatibilities as one 400 before
+        # the SSE stream opens — otherwise each job fails individually and
+        # clients only see an anonymous error count. (EventSource consumers
+        # can't read a 400 body, but an up-front error state still beats N
+        # silent job errors; API clients get the full message.) Run-config
+        # strictness only applies to a hand-picked list — with
+        # all_run_configs, one incompatible config shouldn't block the rest.
+        try:
+            eval_runner.validate_multi_turn_drive_readiness(
+                check_run_configs=not all_run_configs
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
         return await run_eval_runner_with_status(eval_runner)
 
     @app.post(
@@ -2128,10 +2745,9 @@ def connect_evals_api(app: FastAPI):
 
         return eval
 
-    # GET for an operation that writes, per .agents/api_code_review.md's SSE exception.
-    # The web client is no longer an EventSource — run_eval.svelte reads this with fetch
-    # so it can see a 4xx refusal's body — but GET stays: it is the shape every SSE
-    # consumer expects, and switching to POST would break any client that is one.
+    # GET for an operation that writes, per .agents/api_code_review.md's SSE exception:
+    # SSE consumers (including EventSource clients) expect GET. run_eval.svelte reads
+    # this with fetch so it can see a 4xx refusal's body.
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/run_calibration",
         summary="Run Calibration",
@@ -2154,7 +2770,19 @@ def connect_evals_api(app: FastAPI):
     ) -> StreamingResponse:
         """Run all eval configs against each other for calibration and stream progress via SSE. Used to check that eval configs produce consistent scores."""
         eval = eval_from_id(project_id, task_id, eval_id)
-        require_golden_set_or_422(eval)
+        golden_filter_id = require_golden_set_or_422(eval)
+
+        # An empty golden set would "complete" instantly with zero scores — a
+        # vacuous calibration the UI reads as success. Refuse it up front.
+        task = task_from_id(project_id, task_id)
+        if not runs_in_filter(task, golden_filter_id, readonly=True):
+            raise HTTPException(
+                status_code=400,
+                detail="This eval's golden dataset is empty, so there is "
+                "nothing to calibrate the judge against. Add human-rated "
+                "examples to the golden set first.",
+            )
+
         eval_configs = comparable_eval_configs_or_422(eval)
         eval_runner = EvalRunner(
             eval_configs=eval_configs,
@@ -2239,10 +2867,8 @@ def connect_evals_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
         eval = eval_from_id(project_id, task_id, eval_id)
 
-        # Every split size is resolved in its own store, so an EvalInput-backed eval
-        # reports its real counts rather than the 400 that used to stand here. That 400
-        # was never a policy about golden sets — it fired because this code could only
-        # count TaskRuns (functional spec 6.1).
+        # Every split size is resolved in its own store, so EvalInput-backed and
+        # TaskRun-backed evals both report real counts.
         test_split = resolved_split_or_422(task, eval, "test")
         train_split = resolve_split(task, eval, "train")
         val_split = resolve_split(task, eval, "val")
@@ -2343,7 +2969,7 @@ def connect_evals_api(app: FastAPI):
         # share a test filter, so cache it. Keyed on (source, filter_id) rather than the
         # filter id alone: the `tag::` grammar is shared across both stores, so
         # "tag::golden" over task.runs() and over task.eval_inputs() are different item
-        # sets behind the same string (functional spec 5.3).
+        # sets behind the same string.
         split_cache: Dict[Tuple[ItemSource, str], ResolvedSplit] = {}
         evals_out: Dict[ID_TYPE, EvalResultsSummaryEvalInfo] = {}
         scores_out: Dict[ID_TYPE, Dict[ID_TYPE, EvalResultsSummaryResultCell]] = {}
@@ -2457,6 +3083,12 @@ def connect_evals_api(app: FastAPI):
 
         for eval_config in eval_configs:
             for eval_run in eval_config.runs(readonly=True):
+                # Only calibration records enter the judge-vs-human stats: the
+                # same eval config also accumulates task_run_eval records, and a
+                # golden item's fresh-generation score correlated against the
+                # stored item's human rating would be a category error.
+                if not eval_run.eval_config_eval:
+                    continue
                 dataset_item = expected_dataset_items.get(eval_run.dataset_id, None)
                 if dataset_item is None:
                     # A dataset_id can be removed from the dataset filter (ran previously, then removed the tag to remove it from the eval config set filter)
@@ -2571,7 +3203,7 @@ def connect_evals_api(app: FastAPI):
     ) -> RunConfigEvalScoresSummary:
         task = task_from_id(project_id, task_id)
 
-        # Verify the run config exists
+        # Called for its 404 when the run config doesn't exist.
         task_run_config_from_id(project_id, task_id, run_config_id)
 
         # Build a mapping from eval_id to spec for evals that are associated with
@@ -2595,7 +3227,7 @@ def connect_evals_api(app: FastAPI):
         eval_results: List[RunConfigEvalResult] = []
 
         # The usage reported below is the evaluated task's, which lives on the scored
-        # TaskRun for every record written since the trace/score split.
+        # TaskRun for every record that has a `scored_run_id`.
         usage_by_scored_run_id = scored_trace_usage_for_run_config(
             task, evals, run_config_id
         )
@@ -2646,9 +3278,9 @@ def connect_evals_api(app: FastAPI):
             partial_incomplete_count = 0
             eval_config_n_excluded = 0
 
-            # output_score_json_key -> score/total for calculating the mean score
-            total_scores: Dict[str, float] = {}
-            score_counts: Dict[str, int] = {}
+            # output_score_json_key -> the individual scores, for the mean and
+            # the percentile summary (see score_summary_from_values)
+            score_values: Dict[str, list[float]] = {}
 
             for eval_run in eval_config.runs(readonly=True):
                 # Only include eval_runs for our specific run_config
@@ -2668,10 +3300,9 @@ def connect_evals_api(app: FastAPI):
 
                 total_eval_runs += 1
 
-                # The evaluated task's usage: on the scored TaskRun for pointer records,
-                # inline on legacy ones. TaskRun.usage rather than cumulative_usage - it
-                # already accumulates across every call the run made, and it is the one
-                # that carries the latency this summary reports (functional spec 5.1).
+                # The evaluated task's usage: on the scored TaskRun for pointer records
+                # (as scored_trace_usage reports it - synthetic-user spend blended in for
+                # driven traces), inline on legacy ones.
                 usage = eval_run_task_usage(eval_run, usage_by_scored_run_id)
                 if usage:
                     if usage.input_tokens is not None:
@@ -2693,13 +3324,11 @@ def connect_evals_api(app: FastAPI):
                 incomplete = False
                 for output_score in eval.output_scores:
                     score_key = output_score.json_key()
-                    if score_key not in total_scores:
-                        total_scores[score_key] = 0
-                        score_counts[score_key] = 0
+                    if score_key not in score_values:
+                        score_values[score_key] = []
 
                     if score_key in eval_run.scores:
-                        total_scores[score_key] += eval_run.scores[score_key]
-                        score_counts[score_key] += 1
+                        score_values[score_key].append(eval_run.scores[score_key])
                     else:
                         # We're missing a required score, so this eval_run is incomplete
                         incomplete = True
@@ -2710,13 +3339,10 @@ def connect_evals_api(app: FastAPI):
             results: Dict[str, ScoreSummary | None] = {}
             for output_score in eval.output_scores:
                 score_key = output_score.json_key()
-                count = score_counts.get(score_key, 0)
-                total = total_scores.get(score_key, 0.0)
-                if count > 0 or eval_config_n_excluded > 0:
-                    results[score_key] = ScoreSummary(
-                        mean_score=total / count if count > 0 else None,
-                        n_used=count,
-                        n_excluded=eval_config_n_excluded,
+                values = score_values.get(score_key, [])
+                if len(values) > 0 or eval_config_n_excluded > 0:
+                    results[score_key] = score_summary_from_values(
+                        values, eval_config_n_excluded
                     )
                 else:
                     results[score_key] = None
