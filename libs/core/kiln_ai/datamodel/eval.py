@@ -106,6 +106,39 @@ class V2EvalType(str, Enum):
     code_eval = "code_eval"
 
 
+class LlmJudgeRunConfig(BaseModel):
+    """Optional settings for the judge model call. Every field is optional: an unset
+    field keeps the value the judge would use without it (the provider's default
+    thinking level, and the run config's default temperature and top_p)."""
+
+    thinking_level: str | None = Field(
+        default=None,
+        description="The judge model's thinking level (e.g. 'none', 'low', 'medium'). Must be one the model's provider offers. If unset, the provider's default applies, which for some models is 'none'.",
+    )
+    temperature: float | None = Field(
+        default=None,
+        ge=0,
+        le=2,
+        description="The judge model's temperature, between 0 and 2. If unset, the run config default applies.",
+    )
+    top_p: float | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="The judge model's top_p, between 0 and 1. If unset, the run config default applies.",
+    )
+
+    @field_validator("thinking_level")
+    @classmethod
+    def validate_thinking_level(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("thinking_level must be a non-empty string when provided")
+        return normalized
+
+
 class LlmJudgeProperties(BaseModel):
     type: Literal[V2EvalType.llm_judge] = V2EvalType.llm_judge
     model_name: str
@@ -119,19 +152,10 @@ class LlmJudgeProperties(BaseModel):
     # prompt template is rendered. Used by evals with no spec or template to
     # derive default steps from.
     judge_instructions: list[str] | None = None
-    # The judge model's thinking level (e.g. "none", "low", "medium"). None keeps the
-    # provider's default thinking level, which for some models is "none".
-    thinking_level: str | None = None
-
-    @field_validator("thinking_level")
-    @classmethod
-    def validate_thinking_level(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("thinking_level must be a non-empty string when provided")
-        return normalized
+    # Optional settings for the judge model call (thinking level, temperature, ...).
+    # None, or any unset field inside it, keeps the default, so older configs behave
+    # as before.
+    run_config: LlmJudgeRunConfig | None = None
 
 
 class ExactMatchProperties(BaseModel):

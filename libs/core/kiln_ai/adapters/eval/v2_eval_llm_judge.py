@@ -17,6 +17,7 @@ from kiln_ai.adapters.eval.base_eval import (
     BaseEval,
     BaseV2EvalBridge,
     format_judge_instructions,
+    validate_judge_thinking_level,
 )
 
 if TYPE_CHECKING:
@@ -203,34 +204,26 @@ class LlmJudgeEval(BaseV2EvalBridge):
 
         top_logprobs = 10 if props.g_eval else None
 
+        # Pass only the fields the judge's run_config sets. An unset field keeps its
+        # default: the adapter reads an unset thinking_level as "use the provider's
+        # default", which keeps older configs unchanged. Passing fields to the
+        # constructor (not model_copy) validates them and marks them as set.
+        overrides = (
+            props.run_config.model_dump(exclude_none=True)
+            if props.run_config is not None
+            else {}
+        )
+        if "thinking_level" in overrides:
+            validate_judge_thinking_level(
+                model_name, props.model_provider, overrides["thinking_level"]
+            )
         run_config_properties = KilnAgentRunConfigProperties(
             model_name=model_name,
             model_provider_name=provider,
             prompt_id=PromptGenerators.SIMPLE,
             structured_output_mode=structured_output_mode,
+            **overrides,
         )
-        # Set thinking_level only when the config sets it: the adapter reads an unset
-        # field as "use the provider's default", which keeps older configs unchanged.
-        # model_copy(update=...) marks the field as set, as the adapter requires.
-        if props.thinking_level is not None:
-            model_provider = built_in_models_from_provider(provider, model_name)
-            # available_thinking_levels maps display label -> API value ("Medium" ->
-            # "medium"); the config stores the value.
-            level_map = (
-                model_provider.available_thinking_levels
-                if model_provider is not None
-                else None
-            )
-            levels = list(level_map.values()) if level_map else None
-            if levels is None or props.thinking_level not in levels:
-                raise ValueError(
-                    f"thinking_level '{props.thinking_level}' is not available for "
-                    f"judge model '{model_name}' on provider '{props.model_provider}'. "
-                    f"Available levels: {levels or 'none (the model has no thinking levels)'}"
-                )
-            run_config_properties = run_config_properties.model_copy(
-                update={"thinking_level": props.thinking_level}
-            )
 
         adapter = adapter_for_task(
             judge_task,

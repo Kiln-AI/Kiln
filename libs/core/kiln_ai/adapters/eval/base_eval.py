@@ -4,7 +4,10 @@ from abc import abstractmethod
 from typing import Dict
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
-from kiln_ai.adapters.ml_model_list import ModelProviderName
+from kiln_ai.adapters.ml_model_list import (
+    ModelProviderName,
+    built_in_models_from_provider,
+)
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, SkillsDict
 from kiln_ai.datamodel.eval import (
     V2_PROPERTY_TYPES,
@@ -17,6 +20,7 @@ from kiln_ai.datamodel.eval import (
     EvalTaskInput,
     EvalTemplateId,
     LlmJudgeProperties,
+    LlmJudgeRunConfig,
     SingleTurnEvalInputData,
     V2EvalResult,
 )
@@ -462,6 +466,30 @@ def format_judge_instructions(instructions: list[str] | None) -> str:
     return "\n".join(f"{i + 1}) {s}" for i, s in enumerate(steps))
 
 
+def validate_judge_thinking_level(
+    model_name: str, model_provider: str, thinking_level: str
+) -> None:
+    """Raise ValueError when *thinking_level* is not one the judge model's provider
+    offers. Without this check, an unknown level is sent as-is or silently dropped."""
+    model_provider_entry = built_in_models_from_provider(
+        ModelProviderName(model_provider), model_name
+    )
+    # available_thinking_levels maps display label -> API value ("Medium" ->
+    # "medium"); the config stores the value.
+    level_map = (
+        model_provider_entry.available_thinking_levels
+        if model_provider_entry is not None
+        else None
+    )
+    levels = list(level_map.values()) if level_map else None
+    if levels is None or thinking_level not in levels:
+        raise ValueError(
+            f"thinking_level '{thinking_level}' is not available for "
+            f"judge model '{model_name}' on provider '{model_provider}'. "
+            f"Available levels: {levels or 'none (the model has no thinking levels)'}"
+        )
+
+
 def materialize_llm_judge_properties(
     eval: Eval,
     model_name: str,
@@ -470,7 +498,7 @@ def materialize_llm_judge_properties(
     judge_prompt: str | None = None,
     system_prompt: str | None = None,
     judge_instructions: list[str] | None = None,
-    thinking_level: str | None = None,
+    run_config: LlmJudgeRunConfig | None = None,
 ) -> LlmJudgeProperties:
     """Assemble LlmJudgeProperties with a backend-baked prompt template.
 
@@ -482,6 +510,8 @@ def materialize_llm_judge_properties(
     overrides the default when provided (even if empty).  *judge_instructions*
     are user-written steps stored on the config and bound to
     ``{{ judge_instructions }}`` at render time; blank steps are dropped.
+    *run_config* holds optional settings for the judge model call; a thinking level
+    the model's provider does not offer raises ValueError.
 
     ``reference_keys`` is derived from the eval, never taken from the caller: a judge
     told to grade against a reference answer declares it as required.
@@ -507,6 +537,11 @@ def materialize_llm_judge_properties(
     # data to supply.
     reference_keys = derived_reference_keys(eval)
 
+    if run_config is not None and run_config.thinking_level is not None:
+        validate_judge_thinking_level(
+            model_name, model_provider, run_config.thinking_level
+        )
+
     return LlmJudgeProperties(
         model_name=model_name,
         model_provider=model_provider,
@@ -516,7 +551,7 @@ def materialize_llm_judge_properties(
         g_eval=g_eval,
         judge_instructions=cleaned_instructions,
         reference_keys=reference_keys,
-        thinking_level=thinking_level,
+        run_config=run_config,
     )
 
 
