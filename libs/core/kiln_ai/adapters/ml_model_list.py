@@ -57,6 +57,7 @@ class ModelName(str, Enum):
     fugu_max = "fugu_max"
     fugu_ultra_v2 = "fugu_ultra_v2"
     fugu_ultra = "fugu_ultra"
+    muse_wonder_1_0 = "muse_wonder_1_0"
     muse_spark_1_2 = "muse_spark_1_2"
     muse_spark_1_1 = "muse_spark_1_1"
     muse_glimmer_30b = "muse_glimmer_30b"
@@ -5295,6 +5296,40 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 model_id="ai/llama3.1:8B-Q4_K_M",
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Muse Wonder 1.0
+    KilnModel(
+        family=ModelFamily.muse,
+        name=ModelName.muse_wonder_1_0,
+        friendly_name="Muse Wonder 1.0",
+        editorial_notes="Meta's frontier Muse reasoning model, above Muse Spark. Accepts text, images, video, audio and PDFs, with a 1M-token context.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="meta/muse-wonder",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents (html and csv excluded, as on the Muse Spark entries)
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio (ogg returns 400 unsupported file type)
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
             ),
         ],
     ),
