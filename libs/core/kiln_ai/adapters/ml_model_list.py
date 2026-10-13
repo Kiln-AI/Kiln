@@ -45,6 +45,7 @@ class ModelFamily(str, Enum):
     sakana = "sakana"
     thinking_machines = "thinking_machines"
     jev = "jev"
+    ling = "ling"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -339,6 +340,7 @@ class ModelName(str, Enum):
     mimo_v2_6_flash = "mimo_v2_6_flash"
     inkling = "inkling"
     jev_1_13 = "jev_1_13"
+    ling_3_1_flash = "ling_3_1_flash"
 
 
 class ModelParserID(str, Enum):
@@ -11313,6 +11315,22 @@ built_in_models: List[KilnModel] = [
                 supports_logprobs=False,
                 supports_function_calling=False,
                 structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # Ling 3.1 Flash (inclusionAI)
+    KilnModel(
+        family=ModelFamily.ling,
+        name=ModelName.ling_3_1_flash,
+        friendly_name="Ling 3.1 Flash",
+        editorial_notes="inclusionAI's hybrid-reasoning MoE model (560B total, 25B active) with a 262K context. Text only.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="inclusionai/ling-3.1-flash",
+                # OpenRouter lists tools but not response_format for this model
+                structured_output_mode=StructuredOutputMode.function_calling,
+                supports_data_gen=True,
             ),
         ],
     ),
