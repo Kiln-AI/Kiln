@@ -7841,6 +7841,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwen3-max-thinking",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
                 supports_function_calling=True,
@@ -7858,6 +7859,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwen3-max",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
                 supports_function_calling=True,
@@ -7922,6 +7924,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwen3-235b-a22b",
+                deprecated=True,
                 reasoning_capable=True,
                 require_openrouter_reasoning=True,
                 supports_data_gen=True,
@@ -8011,6 +8014,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwen3-235b-a22b",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 formatter=ModelFormatterID.qwen3_style_no_think,
                 supports_data_gen=True,
@@ -8339,6 +8343,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwen3-8b",
+                deprecated=True,
                 supports_structured_output=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
@@ -8385,6 +8390,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwen3-8b",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 formatter=ModelFormatterID.qwen3_style_no_think,
                 supports_data_gen=False,
