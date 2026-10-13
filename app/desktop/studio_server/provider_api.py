@@ -918,6 +918,8 @@ def connect_provider_api(app: FastAPI):
                 return await connect_cloudflare(key_data)
             case ModelProviderName.typesafe:
                 return await connect_typesafe(parse_api_key(key_data))
+            case ModelProviderName.cheaperinference:
+                return await connect_cheaperinference(parse_api_key(key_data))
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
@@ -999,6 +1001,8 @@ def connect_provider_api(app: FastAPI):
                     Config.shared().cloudflare_ai_gateway_id = None
                 case ModelProviderName.typesafe:
                     Config.shared().typesafe_api_key = None
+                case ModelProviderName.cheaperinference:
+                    Config.shared().cheaperinference_api_key = None
                 case (
                     ModelProviderName.kiln_custom_registry
                     | ModelProviderName.kiln_fine_tune
@@ -1767,6 +1771,50 @@ async def connect_typesafe(key: str):
         return JSONResponse(
             status_code=400,
             content={"message": f"Failed to connect to TypeSafe AI. Error: {e!s}"},
+        )
+
+
+async def connect_cheaperinference(key: str):
+    try:
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        # /v1/models rejects a bad key, and listing models spends no tokens.
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.cheaperinference.com/v1/models",
+                headers=headers,
+                timeout=10,
+                follow_redirects=True,
+            )
+
+        if response.status_code in (401, 403):
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "message": "Failed to connect to Cheaper Inference. Invalid API key."
+                },
+            )
+        elif response.status_code != 200:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to connect to Cheaper Inference. Error: [{response.status_code}]"
+                },
+            )
+        else:
+            Config.shared().cheaperinference_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to Cheaper Inference"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": f"Failed to connect to Cheaper Inference. Error: {e!s}"
+            },
         )
 
 

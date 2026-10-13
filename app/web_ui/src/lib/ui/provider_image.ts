@@ -26,6 +26,7 @@ const provider_image_map: Record<
   featherless_ai: "/images/featherless.svg",
   cloudflare: "/images/cloudflare.svg",
   typesafe: "/images/typesafe.svg",
+  cheaperinference: "/images/cheaperinference.svg",
   kiln_copilot: "/images/kiln_logo_black.svg",
 }
 

@@ -567,6 +567,8 @@ def provider_name_from_id(id: str) -> str:
                 return "Docker Model Runner"
             case ModelProviderName.typesafe:
                 return "TypeSafe AI"
+            case ModelProviderName.cheaperinference:
+                return "Cheaper Inference"
             case _:
                 # triggers pyright warning if I miss a case
                 raise_exhaustive_enum_error(enum_id)
@@ -644,6 +646,10 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
     ModelProviderName.typesafe: ModelProviderWarning(
         required_config_keys=["typesafe_api_key"],
         message="Attempted to use TypeSafe AI without an API key set. \nGet your API key from https://console.typesafe.ai/keys",
+    ),
+    ModelProviderName.cheaperinference: ModelProviderWarning(
+        required_config_keys=["cheaperinference_api_key"],
+        message="Attempted to use Cheaper Inference without an API key set. \nGet your API key from https://cheaperinference.com/signup",
     ),
 }
 
@@ -827,6 +833,13 @@ def lite_llm_core_config_for_provider(
             )
         case ModelProviderName.cloudflare:
             return _cloudflare_core_config()
+        case ModelProviderName.cheaperinference:
+            return LiteLlmCoreConfig(
+                base_url="https://api.cheaperinference.com/v1",
+                additional_body_options={
+                    "api_key": Config.shared().cheaperinference_api_key,
+                },
+            )
         case ModelProviderName.openai_compatible:
             # openai compatible requires a model name in the format "provider::model_name"
             if openai_compatible_provider_name is None:

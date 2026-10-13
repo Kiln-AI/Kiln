@@ -268,6 +268,18 @@
       api_key_fields: ["API Key"],
     },
     {
+      name: "Cheaper Inference",
+      id: "cheaperinference",
+      description: "OpenAI-compatible gateway to models from several labs.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://cheaperinference.com/signup",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
       name: "Weights & Biases",
       id: "wandb",
       hide_in_onboarding: true,
@@ -417,6 +429,12 @@
       custom_description: null,
     },
     typesafe: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    cheaperinference: {
       connected: false,
       connecting: false,
       error: null,
@@ -824,6 +842,9 @@
       }
       if (data["typesafe_api_key"]) {
         status.typesafe.connected = true
+      }
+      if (data["cheaperinference_api_key"]) {
+        status.cheaperinference.connected = true
       }
       if (data["kiln_copilot_api_key"]) {
         status.kiln_copilot.connected = true

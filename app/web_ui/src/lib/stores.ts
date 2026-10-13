@@ -542,6 +542,7 @@ const provider_name_map: Record<ModelProviderName, string> = {
   featherless_ai: "Featherless AI",
   cloudflare: "Cloudflare",
   typesafe: "TypeSafe AI",
+  cheaperinference: "Cheaper Inference",
 }
 
 export function provider_name_from_id(provider_id: string): string {

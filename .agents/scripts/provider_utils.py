@@ -94,6 +94,11 @@ PROVIDER_CONFIG = {
         "env": "CLOUDFLARE_API_KEY",
         "account_env": "CLOUDFLARE_ACCOUNT_ID",
     },
+    "cheaperinference": {
+        "type": "openai_compat",
+        "url": "https://api.cheaperinference.com/v1/models",
+        "env": "CHEAPER_INFERENCE_API_KEY",
+    },
 }
 
 # Providers whose model listing works without credentials, so a missing key
