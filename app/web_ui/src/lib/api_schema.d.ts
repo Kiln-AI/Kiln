@@ -6169,6 +6169,8 @@ export interface components {
              * @description User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from.
              */
             judge_instructions?: string[] | null;
+            /** @description Optional settings for the judge model call (thinking level, temperature, top_p). Each unset field keeps its default. */
+            run_config?: components["schemas"]["LlmJudgeRunConfig"] | null;
             /**
              * Name
              * @description The name of the eval config.
@@ -9774,6 +9776,8 @@ export interface components {
              * @description User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from.
              */
             judge_instructions?: string[] | null;
+            /** @description Optional settings for the judge model call (thinking level, temperature, top_p). Each unset field keeps its default. */
+            run_config?: components["schemas"]["LlmJudgeRunConfig"] | null;
         };
         /** LlmJudgeProperties */
         LlmJudgeProperties: {
@@ -9804,6 +9808,30 @@ export interface components {
             g_eval: boolean;
             /** Judge Instructions */
             judge_instructions?: string[] | null;
+            run_config?: components["schemas"]["LlmJudgeRunConfig"] | null;
+        };
+        /**
+         * LlmJudgeRunConfig
+         * @description Optional settings for the judge model call. Every field is optional: an unset
+         *     field keeps the value the judge would use without it (the provider's default
+         *     thinking level, and the run config's default temperature and top_p).
+         */
+        LlmJudgeRunConfig: {
+            /**
+             * Thinking Level
+             * @description The judge model's thinking level (e.g. 'none', 'low', 'medium'). Must be one the model's provider offers. If unset, the provider's default applies, which for some models is 'none'.
+             */
+            thinking_level?: string | null;
+            /**
+             * Temperature
+             * @description The judge model's temperature, between 0 and 2. If unset, the run config default applies.
+             */
+            temperature?: number | null;
+            /**
+             * Top P
+             * @description The judge model's top_p, between 0 and 1. If unset, the run config default applies.
+             */
+            top_p?: number | null;
         };
         /** LocalServerProperties */
         LocalServerProperties: {
