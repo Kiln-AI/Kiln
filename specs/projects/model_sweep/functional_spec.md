@@ -121,7 +121,7 @@ The existing skills stop and ask at several points. The routine answers them as 
 | Lagging-provider backfill: bundle or separate | Bundle into the adds PR |
 | SOTA "suggested" flag or zero-sum swap | Never; list as candidates in the PR body |
 | Consent to run paid tests | Granted |
-| Vertex needs Google credentials | A service-account key in the cloud environment; the sweep runs Vertex when the key check passes. When it fails, the entry gets a ⚠️ untested mark and the sweep pings the models channel to fix the key |
+| Vertex needs a Google login | The cloud environment provides one; the sweep runs Vertex when the login check passes. When it fails, the entry gets a ⚠️ untested mark and the sweep posts to the models channel |
 | Bedrock needs `aws` CLI, Ollama and Docker Model Runner need local daemons | Same as Vertex |
 | Any ❌ test | Move that model to a needs-discussion PR |
 | Any ⚠️ flake | Retry once serially (`-n 0`); then needs-discussion |
