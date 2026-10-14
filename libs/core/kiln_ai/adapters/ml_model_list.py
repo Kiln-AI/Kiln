@@ -3307,7 +3307,8 @@ built_in_models: List[KilnModel] = [
                 multimodal_capable=True,
                 supports_vision=True,
                 available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
-                default_thinking_level="high",
+                # lowest level that returns reasoning on OpenRouter
+                default_thinking_level="low",
                 multimodal_mime_types=[
                     # documents
                     KilnMimeType.PDF,
@@ -3339,6 +3340,7 @@ built_in_models: List[KilnModel] = [
                 multimodal_capable=True,
                 supports_vision=True,
                 available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                # the Gemini API returns no reasoning at low or medium, only at high
                 default_thinking_level="high",
                 multimodal_mime_types=[
                     # documents
