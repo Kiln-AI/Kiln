@@ -121,7 +121,7 @@ The existing skills stop and ask at several points. The routine answers them as 
 | Lagging-provider backfill: bundle or separate | Bundle into the adds PR |
 | SOTA "suggested" flag or zero-sum swap | Never; list as candidates in the PR body |
 | Consent to run paid tests | Granted |
-| Vertex needs `gcloud` login | Skip Vertex; entries added with a ⚠️ untested mark. The PR body, the run report and the notification ask a human to run the pair's paid tests before merge, with the exact command |
+| Vertex needs `gcloud` login | Skip Vertex; entries added with a ⚠️ untested mark. The PR body, the run report and the notification ask a human to log in; the sweep then runs the pair's paid tests and updates the PR |
 | Bedrock needs `aws` CLI, Ollama and Docker Model Runner need local daemons | Same as Vertex |
 | Any ❌ test | Move that model to a needs-discussion PR |
 | Any ⚠️ flake | Retry once serially (`-n 0`); then needs-discussion |
