@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Tuple
 
+import jsonschema
 import litellm
 from litellm.types.utils import (
     ChatCompletionMessageToolCall,
@@ -45,7 +46,7 @@ from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.json_schema import (
     close_object_schemas,
     strip_numeric_bounds,
-    validate_schema_with_value_error,
+    validate_schema,
 )
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
@@ -55,6 +56,7 @@ from kiln_ai.tools.base_tool import (
     KilnToolInterface,
     ToolCallContext,
     ToolCallDefinition,
+    ToolCallError,
 )
 from kiln_ai.tools.kiln_task_tool import KilnTaskToolResult
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -96,6 +98,49 @@ def strip_assistant_fields_for_cerebras(messages: Iterable[Any]) -> list[Any]:
 
 
 logger = logging.getLogger(__name__)
+
+_MODEL_ERROR_DETAIL_MAX_CHARS = 500
+
+
+def _tool_error_message(
+    tool_call_id: str, text: str
+) -> ChatCompletionToolMessageParamWrapper:
+    return ChatCompletionToolMessageParamWrapper(
+        role="tool",
+        tool_call_id=tool_call_id,
+        content=text,
+        is_error=True,
+        error_message=text,
+    )
+
+
+def _truncate_for_model(text: str) -> str:
+    if len(text) <= _MODEL_ERROR_DETAIL_MAX_CHARS:
+        return text
+    return text[:_MODEL_ERROR_DETAIL_MAX_CHARS] + "..."
+
+
+async def _tool_arguments_schema_error(
+    tool: KilnToolInterface, tool_name: str, arguments: Any
+) -> str | None:
+    """Why ``arguments`` fail the tool's parameters schema, or None if they pass.
+
+    Raises RuntimeError naming the tool when its own schema can't be loaded or
+    isn't a valid parameters schema; that is a tool bug the model can't fix.
+    """
+    try:
+        definition = await tool.toolcall_definition()
+        schema = json.dumps(definition["function"]["parameters"], ensure_ascii=False)
+        validate_schema(arguments, schema)
+    except jsonschema.ValidationError as e:
+        if e.json_path == "$":
+            return _truncate_for_model(e.message)
+        return f"{_truncate_for_model(e.message)} (at {e.json_path})"
+    except Exception as e:
+        raise RuntimeError(
+            f"Couldn't validate arguments for tool '{tool_name}' against its parameters schema: {e}"
+        ) from e
+    return None
 
 
 def _validate_unmanaged_tools(tools: list[KilnToolInterface]) -> None:
@@ -883,74 +928,39 @@ class LiteLlmAdapter(BaseAdapter):
     async def process_tool_calls(
         self, tool_calls: list[ChatCompletionMessageToolCall] | None
     ) -> tuple[str | None, list[ChatCompletionToolMessageParamWrapper]]:
+        """Run the model's tool calls concurrently.
+
+        Returns the ``task_response`` arguments (if the model called it) and one
+        tool message per other call. A call that fails (unknown tool, bad
+        arguments, or the tool raising) yields an error tool message instead of
+        an exception, so the model can recover and the run continues.
+        """
         if tool_calls is None:
             return None, []
 
         assistant_output_from_toolcall: str | None = None
         tool_call_response_messages: list[ChatCompletionToolMessageParamWrapper] = []
-        tool_run_coroutines = []
+        standard_tool_calls: list[ChatCompletionMessageToolCall] = []
 
         for tool_call in tool_calls:
             # Kiln "task_response" tool is used for returning structured output via tool calls.
-            # Load the output from the tool call. Also
             if tool_call.function.name == "task_response":
                 assistant_output_from_toolcall = tool_call.function.arguments
-                continue
+            else:
+                standard_tool_calls.append(tool_call)
 
-            # Process normal tool calls (not the "task_response" tool)
-            tool_name = tool_call.function.name
-            tool = None
-            for tool_option in await self._tools_for_execution():
-                if await tool_option.name() == tool_name:
-                    tool = tool_option
-                    break
-            if not tool:
-                raise RuntimeError(
-                    f"A tool named '{tool_name}' was invoked by a model, but was not available."
+        if standard_tool_calls:
+            tools_by_name = {
+                await tool.name(): tool for tool in await self._tools_for_execution()
+            }
+            tool_call_response_messages = list(
+                await asyncio.gather(
+                    *(
+                        self._run_tool_call(tool_call, tools_by_name)
+                        for tool_call in standard_tool_calls
+                    )
                 )
-
-            # Parse the arguments and validate them against the tool's schema
-            try:
-                parsed_args = json.loads(tool_call.function.arguments)
-            except json.JSONDecodeError:
-                raise RuntimeError(
-                    f"Failed to parse arguments for tool '{tool_name}' (should be JSON): {tool_call.function.arguments}"
-                )
-            try:
-                tool_call_definition = await tool.toolcall_definition()
-                json_schema = json.dumps(tool_call_definition["function"]["parameters"])
-                validate_schema_with_value_error(parsed_args, json_schema)
-            except Exception as e:
-                raise RuntimeError(
-                    f"Failed to validate arguments for tool '{tool_name}'. The arguments didn't match the tool's schema. The arguments were: {parsed_args}\n The error was: {e}"
-                ) from e
-
-            # Create context with the calling task's allow_saving setting
-            context = ToolCallContext(
-                allow_saving=self.base_adapter_config.allow_saving
             )
-
-            async def run_tool_and_format(
-                t=tool, c=context, args=parsed_args, tc_id=tool_call.id
-            ):
-                result = await t.run(c, **args)
-                return ChatCompletionToolMessageParamWrapper(
-                    role="tool",
-                    tool_call_id=tc_id,
-                    content=result.output,
-                    kiln_task_tool_data=result.kiln_task_tool_data
-                    if isinstance(result, KilnTaskToolResult)
-                    else None,
-                    is_error=result.is_error if result.is_error else None,
-                    error_message=result.error_message
-                    if result.error_message
-                    else None,
-                )
-
-            tool_run_coroutines.append(run_tool_and_format())
-
-        if tool_run_coroutines:
-            tool_call_response_messages = await asyncio.gather(*tool_run_coroutines)
 
         if (
             assistant_output_from_toolcall is not None
@@ -961,6 +971,74 @@ class LiteLlmAdapter(BaseAdapter):
             )
 
         return assistant_output_from_toolcall, tool_call_response_messages
+
+    async def _run_tool_call(
+        self,
+        tool_call: ChatCompletionMessageToolCall,
+        tools_by_name: dict[str, KilnToolInterface],
+    ) -> ChatCompletionToolMessageParamWrapper:
+        """Run one tool call and return its tool message.
+
+        Mistakes in the model's call and exceptions from ``tool.run()`` become
+        error messages. Only ``Exception`` is caught (never ``BaseException``),
+        so cancellation still propagates. A broken tool definition raises.
+        """
+        tool_name = tool_call.function.name or ""
+        tool = tools_by_name.get(tool_name)
+        if tool is None:
+            available = ", ".join(tools_by_name) or "none"
+            return _tool_error_message(
+                tool_call.id,
+                f"Error: no tool named '{tool_name}'. Available tools: {available}.",
+            )
+
+        arguments = tool_call.function.arguments
+        try:
+            parsed_args = json.loads(arguments)
+        except (json.JSONDecodeError, TypeError):
+            return _tool_error_message(
+                tool_call.id,
+                f"Error: arguments for '{tool_name}' are not valid JSON: "
+                f"{_truncate_for_model(str(arguments))}. Call it again with a JSON object.",
+            )
+
+        schema_error = await _tool_arguments_schema_error(tool, tool_name, parsed_args)
+        if schema_error is not None:
+            return _tool_error_message(
+                tool_call.id,
+                f"Error: arguments for '{tool_name}' don't match its schema: "
+                f"{schema_error}. Call it again with corrected arguments.",
+            )
+
+        context = ToolCallContext(allow_saving=self.base_adapter_config.allow_saving)
+        try:
+            result = await tool.run(context, **parsed_args)
+        except ToolCallError as e:
+            return _tool_error_message(
+                tool_call.id,
+                str(e) or f"Error: tool '{tool_name}' couldn't complete this call.",
+            )
+        except Exception:
+            logger.exception(
+                f"Tool '{tool_name}' raised an unexpected exception. Returning an error result to the model."
+            )
+            # The exception text can hold internals (paths, hosts, secrets), and
+            # this message is shown to the model and saved in the trace.
+            return _tool_error_message(
+                tool_call.id,
+                f"Error: tool '{tool_name}' failed unexpectedly and couldn't complete this call.",
+            )
+
+        return ChatCompletionToolMessageParamWrapper(
+            role="tool",
+            tool_call_id=tool_call.id,
+            content=result.output,
+            kiln_task_tool_data=result.kiln_task_tool_data
+            if isinstance(result, KilnTaskToolResult)
+            else None,
+            is_error=result.is_error if result.is_error else None,
+            error_message=result.error_message if result.error_message else None,
+        )
 
     def litellm_message_to_trace_message(
         self,

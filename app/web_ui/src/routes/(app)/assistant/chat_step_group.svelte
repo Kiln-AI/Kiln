@@ -4,6 +4,7 @@
   import ToolApprovalBox from "./tool_approval_box.svelte"
   import ChatStatusSteps from "./chat_status_steps.svelte"
   import ToolStatusLine from "./tool_status_line.svelte"
+  import { toolStatusVariant } from "./tool_status"
 
   export let items: Array<{ part: ChatMessagePart; partIndex: number }>
   export let groupLoading: boolean
@@ -176,13 +177,11 @@
           toolApprovalWaiter !== null &&
           approvalItem !== undefined &&
           toolPart.output === undefined}
-        {@const hasOutput = toolPart.output !== undefined}
         {@const method = getToolInputString(toolPart.input, "method")}
         {@const urlPath = getToolInputString(toolPart.input, "url_path")}
         {@const isGet = !method || method === "GET"}
         {@const detail = method && urlPath ? `(${method} ${urlPath})` : ""}
         {@const isActiveMessage = isLoading && isLastMessage}
-        {@const effectivelyComplete = hasOutput || !isActiveMessage}
         {#if pendingInlineApproval && toolApprovalPicks[tcId] === undefined}
           <div class="mt-2 text-sm">
             <ToolApprovalBox
@@ -195,13 +194,7 @@
           </div>
         {:else}
           <ToolStatusLine
-            variant={effectivelyComplete
-              ? isGet
-                ? "fetched"
-                : "saved"
-              : isGet
-                ? "fetching"
-                : "saving"}
+            variant={toolStatusVariant(toolPart.output, isGet, isActiveMessage)}
             {detail}
           />
         {/if}

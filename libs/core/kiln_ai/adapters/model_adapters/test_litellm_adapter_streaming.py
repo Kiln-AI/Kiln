@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock, patch
 
 import litellm
 import pytest
-from litellm.types.utils import ChatCompletionDeltaToolCall
+from litellm.types.utils import (
+    ChatCompletionDeltaToolCall,
+    ChatCompletionMessageToolCall,
+    Function,
+)
 
 from kiln_ai.adapters.ml_model_list import ModelProviderName, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
@@ -16,6 +20,9 @@ from kiln_ai.adapters.model_adapters.stream_events import (
     AiSdkEventType,
     AiSdkStreamEvent,
     FinishEvent,
+    ToolInputAvailableEvent,
+    ToolOutputAvailableEvent,
+    ToolOutputErrorEvent,
 )
 from kiln_ai.adapters.model_adapters.test_adapter_stream import (
     FakeStreamingCompletion,
@@ -831,7 +838,9 @@ async def test_invoke_structured_output_with_return_on_tool_call_and_resume(
 # ── Mocked variants (CI-friendly, no real API calls) ──────────────────────────
 
 
-def _make_mocked_adapter(task: Task, structured: bool = False) -> LiteLlmAdapter:
+def _make_mocked_adapter(
+    task: Task, structured: bool = False, return_on_tool_call: bool = True
+) -> LiteLlmAdapter:
     """Create a LiteLlmAdapter backed by openai_compatible for use with mocked API calls."""
     return LiteLlmAdapter(
         kiln_task=task,
@@ -856,7 +865,7 @@ def _make_mocked_adapter(task: Task, structured: bool = False) -> LiteLlmAdapter
                 ),
             ),
         ),
-        base_adapter_config=AdapterConfig(return_on_tool_call=True),
+        base_adapter_config=AdapterConfig(return_on_tool_call=return_on_tool_call),
     )
 
 
@@ -1018,3 +1027,123 @@ async def test_mocked_invoke_structured_output_with_return_on_tool_call_and_resu
     assert "sentence" in output
 
     _assert_completed_tool_trace(task_run2.trace, ["call_mock_multiply"])
+
+
+async def test_mocked_ai_sdk_stream_failing_tool_call_is_non_fatal(task: Task):
+    """A tool that raises becomes a tool-output-error event; the other call in the
+    turn keeps its result and the run continues to a final answer."""
+    adapter = _make_mocked_adapter(task, return_on_tool_call=False)
+
+    tool_call_response = _make_model_response(
+        content=None,
+        tool_calls=[
+            _make_tool_call(
+                call_id="call_multiply", name="multiply", arguments={"a": 3, "b": 7}
+            ),
+            _make_tool_call(
+                call_id="call_divide", name="divide", arguments={"a": 1, "b": 0}
+            ),
+        ],
+    )
+    final_content = "3 times 7 is 21, and 1 divided by 0 is undefined."
+    streams = iter(
+        [
+            FakeStreamingCompletion(
+                tool_call_response, [_make_streaming_chunk(finish_reason="tool_calls")]
+            ),
+            FakeStreamingCompletion(_make_model_response(content=final_content)),
+        ]
+    )
+
+    with patch(
+        "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+        side_effect=lambda **kw: next(streams),
+    ):
+        stream = adapter.invoke_ai_sdk_stream(input="3 * 7 and 1 / 0")
+        events = [event async for event in stream]
+
+    divide_error = (
+        "Error: tool 'divide' failed unexpectedly and couldn't complete this call."
+    )
+    outputs = [
+        e
+        for e in events
+        if isinstance(e, (ToolOutputAvailableEvent, ToolOutputErrorEvent))
+    ]
+    assert outputs == [
+        ToolOutputAvailableEvent(toolCallId="call_multiply", output="21"),
+        ToolOutputErrorEvent(toolCallId="call_divide", errorText=divide_error),
+    ]
+
+    task_run = stream.task_run
+    assert task_run.output.output == final_content
+    assert task_run.trace is not None
+    assert [m for m in task_run.trace if m["role"] == "tool"] == [
+        {
+            "role": "tool",
+            "tool_call_id": "call_multiply",
+            "content": "21",
+            "kiln_task_tool_data": None,
+            "is_error": None,
+            "error_message": None,
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call_divide",
+            "content": divide_error,
+            "is_error": True,
+            "error_message": divide_error,
+        },
+    ]
+
+
+@pytest.mark.parametrize(
+    "arguments, expected_reason",
+    [
+        pytest.param("[1, 2]", "[1, 2] is not of type 'object'", id="list"),
+        pytest.param(
+            '"{\\"a\\": 1, \\"b\\": 1}"',
+            "'{\"a\": 1, \"b\": 1}' is not of type 'object'",
+            id="double_encoded_string",
+        ),
+    ],
+)
+async def test_mocked_ai_sdk_stream_non_object_arguments_are_non_fatal(
+    task: Task, arguments: str, expected_reason: str
+):
+    """Valid JSON that isn't an object becomes a tool-output-error, and the
+    stream continues to a final answer."""
+    adapter = _make_mocked_adapter(task, return_on_tool_call=False)
+
+    tool_call = ChatCompletionMessageToolCall(
+        id="call_multiply",
+        type="function",
+        function=Function(name="multiply", arguments=arguments),
+    )
+    tool_call_response = _make_model_response(content=None, tool_calls=[tool_call])
+    final_content = "3 times 7 is 21."
+    streams = iter(
+        [
+            FakeStreamingCompletion(
+                tool_call_response, [_make_streaming_chunk(finish_reason="tool_calls")]
+            ),
+            FakeStreamingCompletion(_make_model_response(content=final_content)),
+        ]
+    )
+
+    with patch(
+        "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+        side_effect=lambda **kw: next(streams),
+    ):
+        stream = adapter.invoke_ai_sdk_stream(input="3 * 7 = ?")
+        events = [event async for event in stream]
+
+    input_events = [e for e in events if isinstance(e, ToolInputAvailableEvent)]
+    assert [(e.toolCallId, e.input) for e in input_events] == [("call_multiply", {})]
+    assert [e for e in events if isinstance(e, ToolOutputErrorEvent)] == [
+        ToolOutputErrorEvent(
+            toolCallId="call_multiply",
+            errorText=f"Error: arguments for 'multiply' don't match its schema: {expected_reason}. Call it again with corrected arguments.",
+        )
+    ]
+    assert stream.task_run.output.output == final_content

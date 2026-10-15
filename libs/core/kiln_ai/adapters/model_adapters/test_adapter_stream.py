@@ -342,10 +342,19 @@ class TestAdapterStreamToolCalls:
 
         streams_iter = iter([tool_stream, final_stream])
 
+        parse_error = "Error: arguments for 'add' are not valid JSON: not json. Call it again with a JSON object."
         mock_adapter.process_tool_calls = AsyncMock(
             return_value=(
                 None,
-                [{"role": "tool", "tool_call_id": "call_bad", "content": "error"}],
+                [
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call_bad",
+                        "content": parse_error,
+                        "is_error": True,
+                        "error_message": parse_error,
+                    }
+                ],
             )
         )
 
@@ -365,15 +374,82 @@ class TestAdapterStreamToolCalls:
             async for event in stream:
                 events.append(event)
 
-        input_events = [
+        tool_events = [e for e in events if isinstance(e, ToolCallEvent)]
+        assert [e.event_type for e in tool_events] == [
+            ToolCallEventType.INPUT_AVAILABLE,
+            ToolCallEventType.OUTPUT_ERROR,
+        ]
+        input_event, output_event = tool_events
+        assert input_event.arguments is None
+        assert "Failed to parse" in (input_event.error or "")
+        assert output_event.tool_call_id == "call_bad"
+        assert output_event.tool_name == "add"
+        assert output_event.error == parse_error
+        assert output_event.result is None
+        assert stream.result.run_output.output == "fallback"
+
+    @pytest.mark.parametrize(
+        "tool_message, expected_error",
+        [
+            pytest.param(
+                {"content": "Error: no tool named 'add'.", "is_error": True},
+                "Error: no tool named 'add'.",
+                id="content_only",
+            ),
+            pytest.param(
+                {
+                    "content": "World error: E42 rate limited, details...",
+                    "is_error": True,
+                    "error_message": "rate limited",
+                },
+                "rate limited",
+                id="prefers_error_message",
+            ),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_error_tool_result_yields_output_error(
+        self, mock_adapter, mock_provider, tool_message, expected_error
+    ):
+        tool_call = _make_tool_call(call_id="call_1", name="add")
+        tool_response = _make_model_response(content=None, tool_calls=[tool_call])
+        final_response = _make_model_response(content="recovered")
+        streams_iter = iter(
+            [
+                FakeStreamingCompletion(
+                    tool_response, [_make_streaming_chunk(finish_reason="tool_calls")]
+                ),
+                FakeStreamingCompletion(final_response),
+            ]
+        )
+        error_msg = {"role": "tool", "tool_call_id": "call_1", **tool_message}
+        mock_adapter.process_tool_calls = AsyncMock(return_value=(None, [error_msg]))
+
+        with patch(
+            "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+            side_effect=lambda **kw: next(streams_iter),
+        ):
+            stream = AdapterStream(
+                adapter=mock_adapter,
+                provider=mock_provider,
+                chat_formatter=FakeChatFormatter(),
+                initial_messages=[],
+                top_logprobs=None,
+            )
+            events = [event async for event in stream]
+
+        output_events = [
             e
             for e in events
             if isinstance(e, ToolCallEvent)
-            and e.event_type == ToolCallEventType.INPUT_AVAILABLE
+            and e.event_type != ToolCallEventType.INPUT_AVAILABLE
         ]
-        assert len(input_events) == 1
-        assert input_events[0].arguments is None
-        assert "Failed to parse" in (input_events[0].error or "")
+        assert len(output_events) == 1
+        assert output_events[0].event_type == ToolCallEventType.OUTPUT_ERROR
+        assert output_events[0].error == expected_error
+        traced_messages = mock_adapter.all_messages_to_trace.call_args.args[0]
+        assert error_msg in traced_messages
+        assert stream.result.run_output.output == "recovered"
 
 
 class TestAdapterStreamReturnOnToolCall:

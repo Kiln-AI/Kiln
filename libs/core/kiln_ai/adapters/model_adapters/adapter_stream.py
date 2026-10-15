@@ -21,6 +21,7 @@ from kiln_ai.adapters.model_adapters.stream_events import (
 )
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel import MessageUsage, Usage
+from kiln_ai.utils.open_ai_types import ChatCompletionToolMessageParamWrapper
 
 if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
@@ -325,6 +326,10 @@ class AdapterStream:
                 parsed_args = json.loads(tc.function.arguments)
             except (json.JSONDecodeError, TypeError):
                 parsed_args = None
+            # Tool input events carry a dict; process_tool_calls reports the
+            # schema mismatch to the model.
+            if not isinstance(parsed_args, dict):
+                parsed_args = None
 
             yield ToolCallEvent(
                 event_type=ToolCallEventType.INPUT_AVAILABLE,
@@ -341,14 +346,8 @@ class AdapterStream:
         _, tool_msgs = await self._adapter.process_tool_calls(tool_calls)
 
         for tool_msg in tool_msgs:
-            tc_id = tool_msg["tool_call_id"]
-            tc_name = _find_tool_name(tool_calls, tc_id)
-            content = tool_msg["content"]
-            yield ToolCallEvent(
-                event_type=ToolCallEventType.OUTPUT_AVAILABLE,
-                tool_call_id=tc_id,
-                tool_name=tc_name,
-                result=str(content) if content is not None else None,
+            yield _tool_output_event(
+                tool_msg, _find_tool_name(tool_calls, tool_msg["tool_call_id"])
             )
 
         self._messages.extend(tool_msgs)
@@ -386,6 +385,26 @@ def _validate_response(
             f"Expected ModelResponse with Choices, got {type(response)}."
         )
     return response, response.choices[0]
+
+
+def _tool_output_event(
+    tool_msg: ChatCompletionToolMessageParamWrapper, tool_name: str
+) -> ToolCallEvent:
+    content = tool_msg["content"]
+    text = str(content) if content is not None else None
+    if tool_msg.get("is_error"):
+        return ToolCallEvent(
+            event_type=ToolCallEventType.OUTPUT_ERROR,
+            tool_call_id=tool_msg["tool_call_id"],
+            tool_name=tool_name,
+            error=tool_msg.get("error_message") or text,
+        )
+    return ToolCallEvent(
+        event_type=ToolCallEventType.OUTPUT_AVAILABLE,
+        tool_call_id=tool_msg["tool_call_id"],
+        tool_name=tool_name,
+        result=text,
+    )
 
 
 def _find_tool_name(

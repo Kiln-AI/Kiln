@@ -1,4 +1,6 @@
+import asyncio
 import json
+import logging
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -20,7 +22,12 @@ from kiln_ai.datamodel import PromptId
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.tool_id import ToolId
-from kiln_ai.tools.base_tool import ToolCallContext, ToolCallResult, UnmanagedKilnTool
+from kiln_ai.tools.base_tool import (
+    ToolCallContext,
+    ToolCallError,
+    ToolCallResult,
+    UnmanagedKilnTool,
+)
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
     DivideTool,
@@ -775,7 +782,7 @@ class MockTool:
     def __init__(
         self,
         name: str,
-        raise_on_run: Exception | None = None,
+        raise_on_run: BaseException | None = None,
         return_value: str = "test_result",
     ):
         self._name = name
@@ -1060,128 +1067,333 @@ async def test_process_tool_calls_multiple_normal_tools(tmp_path):
     assert tool_messages[1].get("kiln_task_tool_data") is None
 
 
-async def test_process_tool_calls_tool_not_found(tmp_path):
-    """Test process_tool_calls when tool is not found"""
-    task = build_test_task(tmp_path)
-    config = LiteLlmConfig(
-        run_config_properties=KilnAgentRunConfigProperties(
-            structured_output_mode=StructuredOutputMode.json_schema,
-            model_name="gpt_4_1_mini",
-            model_provider_name=ModelProviderName.openai,
-            prompt_id="simple_prompt_builder",
-        )
+def _tool_error(tool_call_id: str, text: str) -> dict:
+    return {
+        "role": "tool",
+        "tool_call_id": tool_call_id,
+        "content": text,
+        "is_error": True,
+        "error_message": text,
+    }
+
+
+def _tool_success(tool_call_id: str, content: str) -> dict:
+    return {
+        "role": "tool",
+        "tool_call_id": tool_call_id,
+        "content": content,
+        "kiln_task_tool_data": None,
+        "is_error": None,
+        "error_message": None,
+    }
+
+
+def _tool_call_response(*calls: tuple[str, str, str]) -> ModelResponse:
+    return ModelResponse(
+        model="gpt-4o-mini",
+        choices=[
+            {
+                "message": {
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": call_id,
+                            "type": "function",
+                            "function": {"name": name, "arguments": arguments},
+                        }
+                        for call_id, name, arguments in calls
+                    ],
+                }
+            }
+        ],
     )
-    litellm_adapter = LiteLlmAdapter(config=config, kiln_task=task)
-
-    tool_calls = [MockToolCall("call_1", "nonexistent_tool", '{"a": 2, "b": 3}')]
-
-    with patch.object(litellm_adapter, "cached_available_tools", return_value=[]):
-        with pytest.raises(
-            RuntimeError,
-            match="A tool named 'nonexistent_tool' was invoked by a model, but was not available",
-        ):
-            await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
 
 
-async def test_process_tool_calls_invalid_json_arguments(tmp_path):
-    """Test process_tool_calls with invalid JSON arguments"""
-    task = build_test_task(tmp_path)
-    config = LiteLlmConfig(
-        run_config_properties=KilnAgentRunConfigProperties(
-            structured_output_mode=StructuredOutputMode.json_schema,
-            model_name="gpt_4_1_mini",
-            model_provider_name=ModelProviderName.openai,
-            prompt_id="simple_prompt_builder",
-        )
+@pytest.fixture
+def tools_adapter(tmp_path):
+    adapter = LiteLlmAdapter(
+        config=LiteLlmConfig(
+            run_config_properties=KilnAgentRunConfigProperties(
+                structured_output_mode=StructuredOutputMode.json_schema,
+                model_name="gpt_4_1_mini",
+                model_provider_name=ModelProviderName.openai,
+                prompt_id="simple_prompt_builder",
+            )
+        ),
+        kiln_task=build_test_task(tmp_path),
+        base_adapter_config=AdapterConfig(allow_saving=False),
     )
-    litellm_adapter = LiteLlmAdapter(config=config, kiln_task=task)
+    provider = KilnModelProvider(name=ModelProviderName.openai, model_id="gpt_4_1_mini")
+    with patch.object(adapter, "model_provider", return_value=provider):
+        yield adapter
 
-    mock_tool = MockTool("add")
-    tool_calls = [MockToolCall("call_1", "add", "invalid json")]
 
-    with patch.object(
-        litellm_adapter, "cached_available_tools", return_value=[mock_tool]
+UNEXPECTED_ADD_FAILURE = (
+    "Error: tool 'add' failed unexpectedly and couldn't complete this call."
+)
+
+
+@pytest.mark.parametrize(
+    "tools, calls, expected_tool_messages",
+    [
+        pytest.param(
+            [MockTool("add"), MockTool("multiply")],
+            [("call_1", "power", '{"a": 2, "b": 2}')],
+            [
+                _tool_error(
+                    "call_1",
+                    "Error: no tool named 'power'. Available tools: add, multiply.",
+                )
+            ],
+            id="unknown_tool",
+        ),
+        pytest.param(
+            [MockTool("add")],
+            [("call_1", "add", '{"a": 2,')],
+            [
+                _tool_error(
+                    "call_1",
+                    "Error: arguments for 'add' are not valid JSON: {\"a\": 2,. Call it again with a JSON object.",
+                )
+            ],
+            id="invalid_json",
+        ),
+        pytest.param(
+            [MockTool("add")],
+            [("call_1", "add", '{"a": 2}')],
+            [
+                _tool_error(
+                    "call_1",
+                    "Error: arguments for 'add' don't match its schema: 'b' is a required property. Call it again with corrected arguments.",
+                )
+            ],
+            id="schema_mismatch",
+        ),
+        pytest.param(
+            [MockTool("add", raise_on_run=ToolCallError("b must be positive."))],
+            [("call_1", "add", '{"a": 2, "b": -2}')],
+            [_tool_error("call_1", "b must be positive.")],
+            id="tool_call_error",
+        ),
+        pytest.param(
+            [MockTool("add", raise_on_run=ToolCallError())],
+            [("call_1", "add", '{"a": 2, "b": 2}')],
+            [_tool_error("call_1", "Error: tool 'add' couldn't complete this call.")],
+            id="tool_call_error_without_message",
+        ),
+        pytest.param(
+            [MockTool("add", raise_on_run=OSError("disk /srv/secret is full"))],
+            [("call_1", "add", '{"a": 2, "b": 2}')],
+            [_tool_error("call_1", UNEXPECTED_ADD_FAILURE)],
+            id="unexpected_exception",
+        ),
+        pytest.param(
+            [
+                MockTool("multiply", return_value="4"),
+                MockTool("add", raise_on_run=RuntimeError("boom")),
+            ],
+            [
+                ("call_1", "multiply", '{"a": 2, "b": 2}'),
+                ("call_2", "add", '{"a": 2, "b": 2}'),
+            ],
+            [
+                _tool_success("call_1", "4"),
+                _tool_error("call_2", UNEXPECTED_ADD_FAILURE),
+            ],
+            id="one_good_one_failing",
+        ),
+    ],
+)
+async def test_failing_tool_call_returns_error_and_run_continues(
+    tools_adapter, tools, calls, expected_tool_messages
+):
+    tool_call_response = _tool_call_response(*calls)
+    final_response = ModelResponse(
+        model="gpt-4o-mini",
+        choices=[{"message": {"content": "The answer is [4]", "tool_calls": None}}],
+    )
+
+    with (
+        patch.object(tools_adapter, "cached_available_tools", return_value=tools),
+        patch.object(tools_adapter, "build_completion_kwargs", return_value={}),
+        patch.object(
+            tools_adapter,
+            "acompletion_checking_response",
+            side_effect=[
+                (tool_call_response, tool_call_response.choices[0]),
+                (final_response, final_response.choices[0]),
+            ],
+        ),
     ):
-        with pytest.raises(
-            RuntimeError, match="Failed to parse arguments for tool 'add'"
-        ):
-            await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+        run = await tools_adapter.invoke("what is 2+2")
+
+    assert run.output.output == "The answer is [4]"
+    assert run.trace is not None
+    assert [m["role"] for m in run.trace] == ["system", "user", "assistant"] + [
+        "tool"
+    ] * len(expected_tool_messages) + ["assistant"]
+    assert run.trace[3:-1] == expected_tool_messages
 
 
-async def test_process_tool_calls_empty_arguments(tmp_path):
-    """Test process_tool_calls with empty arguments string"""
-    task = build_test_task(tmp_path)
-    config = LiteLlmConfig(
-        run_config_properties=KilnAgentRunConfigProperties(
-            structured_output_mode=StructuredOutputMode.json_schema,
-            model_name="gpt_4_1_mini",
-            model_provider_name=ModelProviderName.openai,
-            prompt_id="simple_prompt_builder",
+@pytest.mark.parametrize(
+    "tools, arguments, expected_text",
+    [
+        pytest.param(
+            [],
+            '{"a": 2, "b": 3}',
+            "Error: no tool named 'add'. Available tools: none.",
+            id="no_tools_available",
+        ),
+        pytest.param(
+            [MockTool("add")],
+            "",
+            "Error: arguments for 'add' are not valid JSON: . Call it again with a JSON object.",
+            id="empty_arguments",
+        ),
+        pytest.param(
+            [MockTool("add")],
+            "x" * 600,
+            f"Error: arguments for 'add' are not valid JSON: {'x' * 500}.... Call it again with a JSON object.",
+            id="long_arguments_truncated",
+        ),
+        pytest.param(
+            [MockTool("add")],
+            "[2, 3]",
+            "Error: arguments for 'add' don't match its schema: [2, 3] is not of type 'object'. Call it again with corrected arguments.",
+            id="arguments_not_an_object",
+        ),
+        pytest.param(
+            [MockTool("add")],
+            '{"a": "two", "b": 2}',
+            "Error: arguments for 'add' don't match its schema: 'two' is not of type 'number' (at $.a). Call it again with corrected arguments.",
+            id="nested_mismatch_names_field",
+        ),
+        pytest.param(
+            [MockTool("add")],
+            json.dumps({"a": "x" * 600, "b": 2}),
+            f"Error: arguments for 'add' don't match its schema: '{'x' * 499}... (at $.a). Call it again with corrected arguments.",
+            id="long_mismatch_reason_truncated",
+        ),
+    ],
+)
+async def test_process_tool_calls_bad_arguments_return_error(
+    tools_adapter, tools, arguments, expected_text
+):
+    tool_calls = [MockToolCall("call_1", "add", arguments)]
+
+    with patch.object(tools_adapter, "cached_available_tools", return_value=tools):
+        assistant_output, tool_messages = await tools_adapter.process_tool_calls(
+            tool_calls  # type: ignore
         )
-    )
-    litellm_adapter = LiteLlmAdapter(config=config, kiln_task=task)
 
-    mock_tool = MockTool("add")
-    tool_calls = [MockToolCall("call_1", "add", "")]
+    assert assistant_output is None
+    assert tool_messages == [_tool_error("call_1", expected_text)]
 
-    with patch.object(
-        litellm_adapter, "cached_available_tools", return_value=[mock_tool]
+
+@pytest.mark.parametrize(
+    "error, expect_stack_trace",
+    [
+        pytest.param(ToolCallError("b must be positive."), False, id="tool_call_error"),
+        pytest.param(OSError("disk /srv/secret is full"), True, id="unexpected"),
+    ],
+)
+async def test_process_tool_calls_logs_stack_trace_only_for_unexpected_errors(
+    tools_adapter, caplog, error, expect_stack_trace
+):
+    tool_calls = [MockToolCall("call_1", "add", '{"a": 2, "b": 3}')]
+
+    with (
+        patch.object(
+            tools_adapter,
+            "cached_available_tools",
+            return_value=[MockTool("add", raise_on_run=error)],
+        ),
+        caplog.at_level(logging.DEBUG),
     ):
-        with pytest.raises(
-            RuntimeError, match="Failed to parse arguments for tool 'add'"
-        ):
-            await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+        _, tool_messages = await tools_adapter.process_tool_calls(tool_calls)  # type: ignore
+
+    logged_errors = [r for r in caplog.records if r.exc_info]
+    if expect_stack_trace:
+        assert len(logged_errors) == 1
+        assert "'add'" in logged_errors[0].getMessage()
+        assert logged_errors[0].exc_info[1] is error  # type: ignore[index]
+        assert "secret" not in str(tool_messages[0]["content"])
+    else:
+        assert logged_errors == []
 
 
-async def test_process_tool_calls_schema_validation_error(tmp_path):
-    """Test process_tool_calls with schema validation error"""
-    task = build_test_task(tmp_path)
-    config = LiteLlmConfig(
-        run_config_properties=KilnAgentRunConfigProperties(
-            structured_output_mode=StructuredOutputMode.json_schema,
-            model_name="gpt_4_1_mini",
-            model_provider_name=ModelProviderName.openai,
-            prompt_id="simple_prompt_builder",
-        )
-    )
-    litellm_adapter = LiteLlmAdapter(config=config, kiln_task=task)
-
-    mock_tool = MockTool("add")
-    # Missing required field 'b'
-    tool_calls = [MockToolCall("call_1", "add", '{"a": 2}')]
-
-    with patch.object(
-        litellm_adapter, "cached_available_tools", return_value=[mock_tool]
-    ):
-        with pytest.raises(
-            RuntimeError, match="Failed to validate arguments for tool 'add'"
-        ):
-            await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
-
-
-async def test_process_tool_calls_tool_execution_error(tmp_path):
-    """Test process_tool_calls when tool execution raises exception"""
-    task = build_test_task(tmp_path)
-    config = LiteLlmConfig(
-        run_config_properties=KilnAgentRunConfigProperties(
-            structured_output_mode=StructuredOutputMode.json_schema,
-            model_name="gpt_4_1_mini",
-            model_provider_name=ModelProviderName.openai,
-            prompt_id="simple_prompt_builder",
-        )
-    )
-    litellm_adapter = LiteLlmAdapter(config=config, kiln_task=task)
-
-    # Mock tool that raises exception when run
-    mock_tool = MockTool("add", raise_on_run=ValueError("Tool execution failed"))
+@pytest.mark.parametrize(
+    "definition_mock_kwargs",
+    [
+        pytest.param(
+            {"return_value": {"function": {"parameters": {"type": "object"}}}},
+            id="schema_without_properties",
+        ),
+        pytest.param(
+            {"side_effect": ConnectionError("server down")},
+            id="definition_unavailable",
+        ),
+    ],
+)
+async def test_process_tool_calls_broken_tool_schema_fails_run(
+    tools_adapter, definition_mock_kwargs
+):
+    broken_tool = MockTool("add")
+    broken_tool.toolcall_definition = AsyncMock(**definition_mock_kwargs)  # type: ignore[method-assign]
     tool_calls = [MockToolCall("call_1", "add", '{"a": 2, "b": 3}')]
 
     with patch.object(
-        litellm_adapter, "cached_available_tools", return_value=[mock_tool]
+        tools_adapter, "cached_available_tools", return_value=[broken_tool]
     ):
-        # This should raise the ValueError from the tool
-        with pytest.raises(ValueError, match="Tool execution failed"):
-            await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+        with pytest.raises(
+            RuntimeError,
+            match="Couldn't validate arguments for tool 'add' against its parameters schema",
+        ):
+            await tools_adapter.process_tool_calls(tool_calls)  # type: ignore
+
+
+async def test_process_tool_calls_cancellation_propagates(tools_adapter):
+    tool_calls = [MockToolCall("call_1", "add", '{"a": 2, "b": 3}')]
+    cancelling_tool = MockTool("add", raise_on_run=asyncio.CancelledError())
+
+    with patch.object(
+        tools_adapter, "cached_available_tools", return_value=[cancelling_tool]
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await tools_adapter.process_tool_calls(tool_calls)  # type: ignore
+
+
+async def test_run_model_turn_always_failing_tool_hits_tool_call_limit(tools_adapter):
+    failing_response = _tool_call_response(("call_1", "add", '{"a": 1, "b": 1}'))
+    provider = KilnModelProvider(name=ModelProviderName.openai, model_id="gpt_4_1_mini")
+    messages: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": "Keep adding 1+1"}
+    ]
+
+    with (
+        patch.object(
+            tools_adapter,
+            "cached_available_tools",
+            return_value=[MockTool("add", raise_on_run=RuntimeError("broken"))],
+        ),
+        patch.object(tools_adapter, "build_completion_kwargs", return_value={}),
+        patch.object(
+            tools_adapter,
+            "acompletion_checking_response",
+            return_value=(failing_response, failing_response.choices[0]),
+        ),
+        patch(
+            "kiln_ai.adapters.model_adapters.litellm_adapter.MAX_TOOL_CALLS_PER_TURN",
+            3,
+        ),
+    ):
+        with pytest.raises(RuntimeError, match="Too many tool calls"):
+            await tools_adapter._run_model_turn(provider, messages, None, False)
+
+    tool_messages = [m for m in messages if isinstance(m, dict) and m["role"] == "tool"]
+    assert tool_messages == [
+        _tool_error("call_1", UNEXPECTED_ADD_FAILURE) for _ in range(3)
+    ]
 
 
 async def test_process_tool_calls_complex_result(tmp_path):
