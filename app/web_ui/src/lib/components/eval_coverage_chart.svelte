@@ -4,6 +4,7 @@
     CoverageNode,
   } from "$lib/utils/eval_coverage/eval_coverage_data"
   import { packWeighted } from "$lib/utils/eval_coverage/circle_pack"
+  import { principleGroups } from "$lib/utils/eval_coverage/constitution"
   import { formatPriority } from "$lib/utils/formatters"
 
   /**
@@ -12,8 +13,9 @@
    * One large circle is the whole product. Inside it, one circle per eval,
    * packed tightly: area is the share of the constitution the eval holds,
    * fill is its pass rate. Dashed circles are planned evals; dotted circles
-   * are principles with no eval. The ring around the outside has one arc
-   * per principle of the constitution; hovering links the two.
+   * are principles with no eval, and open the eval builder. The ring around
+   * the outside has one arc per principle of the constitution, grouped by
+   * the value each serves; hovering links the ring and the circles.
    */
 
   export let data: CoverageData
@@ -25,9 +27,10 @@
   const RING_R = 110 // centre line of the principle ring
   const RING_W = 7
   const LABEL_R = 121
-  const VIEW = 130
+  const GROUP_R = 135
   const FILL = 0.8 // target share of the boundary area the circles fill
   const RING_GAP_DEG = 2.5
+  const GROUP_GAP_DEG = 7
 
   type Hover =
     | { kind: "node"; id: string }
@@ -51,20 +54,62 @@
     .filter((c): c is typeof c & { node: CoverageNode } => !!c.node)
 
   $: principles = data.principles
-  $: arcs = principles.map((p, i) => {
-    const span = 360 / principles.length
-    const a0 = -90 + i * span + RING_GAP_DEG / 2
-    const a1 = a0 + span - RING_GAP_DEG
-    const covered = (data.coverers.get(p.n)?.length ?? 0) > 0
-    const planned = (data.planned_for.get(p.n)?.length ?? 0) > 0
-    return {
-      n: p.n,
-      text: p.text,
-      path: arc_path(RING_R, a0, a1),
-      label: polar(LABEL_R, (a0 + a1) / 2),
-      state: covered ? "covered" : planned ? "planned" : "open",
+  $: groups = principleGroups(principles)
+  $: has_groups = groups.length > 1 || (groups[0]?.name ?? "") !== ""
+  $: VIEW = has_groups ? 168 : 130
+
+  // One arc per principle; a wider gap between groups; a label per group.
+  $: ring = (() => {
+    const n = principles.length
+    if (n === 0) return { arcs: [], labels: [] }
+    const group_gaps = has_groups && groups.length > 1 ? groups.length : 0
+    const span =
+      (360 - n * RING_GAP_DEG - group_gaps * GROUP_GAP_DEG) / Math.max(n, 1)
+    let angle = -90 + (group_gaps > 0 ? GROUP_GAP_DEG / 2 : 0)
+    const arcs: {
+      n: number
+      text: string
+      path: string
+      label: { x: number; y: number }
+      state: "covered" | "planned" | "open"
+    }[] = []
+    const labels: {
+      name: string
+      x: number
+      y: number
+      anchor: "start" | "middle" | "end"
+    }[] = []
+    for (const g of groups) {
+      const g_start = angle
+      for (const p of g.principles) {
+        const a0 = angle + RING_GAP_DEG / 2
+        const a1 = a0 + span
+        const covered = (data.coverers.get(p.n)?.length ?? 0) > 0
+        const planned = (data.planned_for.get(p.n)?.length ?? 0) > 0
+        arcs.push({
+          n: p.n,
+          text: p.text,
+          path: arc_path(RING_R, a0, a1),
+          label: polar(LABEL_R, (a0 + a1) / 2),
+          state: covered ? "covered" : planned ? "planned" : "open",
+        })
+        angle = a1 + RING_GAP_DEG / 2
+      }
+      if (group_gaps > 0 && g.name) {
+        const mid = (g_start + angle) / 2
+        const pos = polar(GROUP_R, mid)
+        const c = Math.cos((mid * Math.PI) / 180)
+        labels.push({
+          name: g.name,
+          x: pos.x,
+          y: pos.y,
+          anchor: c > 0.35 ? "start" : c < -0.35 ? "end" : "middle",
+        })
+      }
+      if (group_gaps > 0) angle += GROUP_GAP_DEG
     }
-  })
+    return { arcs, labels }
+  })()
 
   $: hovered_node = hover?.kind === "node" ? nodes_by_id.get(hover.id) : null
   $: hovered_principle_n = hover?.kind === "principle" ? hover.n : null
@@ -98,6 +143,7 @@
       (data.coverers.get(p.n)?.length ?? 0) === 0 &&
       (data.planned_for.get(p.n)?.length ?? 0) === 0,
   )
+  $: table_nodes = data.nodes.filter((n) => n.kind !== "gap")
 
   function polar(r: number, deg: number): { x: number; y: number } {
     const a = (deg * Math.PI) / 180
@@ -111,19 +157,23 @@
     return `M ${s.x.toFixed(3)} ${s.y.toFixed(3)} A ${r} ${r} 0 ${large} 1 ${e.x.toFixed(3)} ${e.y.toFixed(3)}`
   }
 
-  // Sequential fill for pass rate: one hue, light to dark, five steps.
-  const RATE_STEPS = ["#e4e8fd", "#bcc6fb", "#8e9ff8", "#5c74f0", "#2a3fc2"]
-  function rate_step(rate: number): number {
-    return Math.min(RATE_STEPS.length - 1, Math.floor(rate * RATE_STEPS.length))
+  // Pass rate as a status: red below 50%, amber below 80%, green from 80%.
+  const RAG = [
+    { max: 0.5, fill: "#E74D31", ink: "#ffffff", label: "under 50%" },
+    { max: 0.8, fill: "#F4B544", ink: "#161616", label: "50 to 79%" },
+    { max: Infinity, fill: "#33B79D", ink: "#ffffff", label: "80% and up" },
+  ]
+  function rag(rate: number) {
+    return RAG.find((s) => rate < s.max) ?? RAG[RAG.length - 1]
   }
   function fill_for(node: CoverageNode): string {
     if (node.kind !== "eval") return node.kind === "gap" ? "#fafafa" : "none"
     if (node.pass_rate === null) return "#f5f5f5"
-    return RATE_STEPS[rate_step(node.pass_rate)]
+    return rag(node.pass_rate).fill
   }
   function ink_for(node: CoverageNode): string {
     if (node.kind === "eval" && node.pass_rate !== null) {
-      return rate_step(node.pass_rate) >= 3 ? "#ffffff" : "#161616"
+      return rag(node.pass_rate).ink
     }
     return node.kind === "planned" ? "#415CF5" : "#6b6b6b"
   }
@@ -181,7 +231,8 @@
 
   function node_label(node: CoverageNode): string {
     const share = `${Math.round(node.weight * 100)}% of the product`
-    if (node.kind === "gap") return `Not covered: ${node.name}. ${share}.`
+    if (node.kind === "gap")
+      return `Not covered: ${node.name}. ${share}. Opens the eval builder.`
     if (node.kind === "planned") return `${node.name}, planned eval. ${share}.`
     return `${node.name}, pass rate ${pct(node.pass_rate)}. ${share}.`
   }
@@ -202,6 +253,19 @@
       hover = null
     }
   }
+
+  // Pointer tooltip, positioned inside the chart box.
+  let chart_box: HTMLDivElement | null = null
+  let tip_x = 0
+  let tip_y = 0
+  let tip_flip = false
+  function track(event: MouseEvent) {
+    if (!chart_box) return
+    const rect = chart_box.getBoundingClientRect()
+    tip_x = event.clientX - rect.left
+    tip_y = event.clientY - rect.top
+    tip_flip = tip_x > rect.width * 0.55
+  }
 </script>
 
 <div
@@ -209,13 +273,15 @@
   class:opacity-60={loading}
 >
   <div
-    class="w-full max-w-[440px] grow-0 shrink-0 basis-[320px] sm:basis-[400px]"
+    class="relative w-full max-w-[720px] grow shrink basis-[360px] md:basis-[560px]"
+    bind:this={chart_box}
   >
     <svg
       viewBox={`${-VIEW} ${-VIEW} ${2 * VIEW} ${2 * VIEW}`}
       class="w-full h-auto select-none"
       role="group"
       aria-label="Eval coverage"
+      on:mousemove={track}
       on:mouseleave={() => (hover = null)}
     >
       <!-- The whole product -->
@@ -228,8 +294,22 @@
         stroke-width="0.8"
       />
 
-      <!-- The constitution: one arc per principle -->
-      {#each arcs as arc (arc.n)}
+      <!-- The constitution: one arc per principle, grouped by value -->
+      {#each ring.labels as label (label.name)}
+        <text
+          x={label.x}
+          y={label.y}
+          text-anchor={label.anchor}
+          dominant-baseline="middle"
+          font-size="7.5"
+          font-weight="600"
+          fill="#6b6b6b"
+          pointer-events="none"
+        >
+          {label.name}
+        </text>
+      {/each}
+      {#each ring.arcs as arc (arc.n)}
         <g
           class="cursor-default"
           role="button"
@@ -305,9 +385,7 @@
                   ? "#bebebe"
                   : c.node.pass_rate === null
                     ? "#bebebe"
-                    : rate_step(c.node.pass_rate) >= 2
-                      ? "#ffffff"
-                      : "#b3bdf5"}
+                    : "#ffffff"}
             stroke-width={lit ? 1.6 : 1}
             stroke-dasharray={c.node.kind === "planned"
               ? "3 2"
@@ -351,6 +429,49 @@
         </svelte:element>
       {/each}
     </svg>
+
+    {#if hovered_node || hovered_principle}
+      <div
+        class="pointer-events-none absolute z-10 max-w-[260px] rounded-md border bg-base-100 px-3 py-2 text-xs shadow-md"
+        style={`left:${tip_x}px; top:${tip_y}px; transform: translate(${tip_flip ? "calc(-100% - 12px)" : "12px"}, 12px);`}
+        role="tooltip"
+      >
+        {#if hovered_node}
+          <div class="font-medium">{hovered_node.name}</div>
+          {#if hovered_node.kind === "eval"}
+            <div class="text-gray-500">
+              Pass rate <span class="font-medium text-gray-800"
+                >{pct(hovered_node.pass_rate)}</span
+              >
+              {#if hovered_node.dataset_size !== null}
+                on {hovered_node.dataset_size} cases
+              {/if}
+              · {Math.round(hovered_node.weight * 100)}% of the product
+            </div>
+            <div class="text-gray-400">Click to open the eval</div>
+          {:else if hovered_node.kind === "planned"}
+            <div class="text-gray-500">
+              Planned eval · {Math.round(hovered_node.weight * 100)}% of the
+              product
+            </div>
+            <div class="text-gray-400">Click to open the spec</div>
+          {:else}
+            <div class="text-gray-500">
+              Not covered · {Math.round(hovered_node.weight * 100)}% of the
+              product
+            </div>
+            <div class="text-gray-400">Click to create an eval for it</div>
+          {/if}
+        {:else if hovered_principle}
+          <div class="font-medium">
+            Principle {hovered_principle.n}{hovered_principle.group
+              ? ` · ${hovered_principle.group}`
+              : ""}
+          </div>
+          <div class="text-gray-500">{hovered_principle.text}</div>
+        {/if}
+      </div>
+    {/if}
   </div>
 
   <div class="flex-1 min-w-[240px] flex flex-col gap-4">
@@ -386,7 +507,8 @@
         <div class="font-medium">{hovered_node.name}</div>
         <div class="text-gray-500 mt-1">
           {#if hovered_node.kind === "gap"}
-            No eval covers this principle.
+            No eval covers this principle. Click the circle to create one in the
+            eval builder.
           {:else if hovered_node.kind === "planned"}
             Planned eval, not yet active.
           {:else}
@@ -415,11 +537,15 @@
             {/if}
           </div>
         {/if}
-        {#if hovered_node.href}
-          <div class="mt-2 text-xs text-gray-400">Click to open</div>
-        {/if}
       {:else if hovered_principle}
-        <div class="font-medium">Principle {hovered_principle.n}</div>
+        <div class="font-medium">
+          Principle {hovered_principle.n}
+          {#if hovered_principle.group}
+            <span class="font-normal text-gray-500"
+              >· {hovered_principle.group}</span
+            >
+          {/if}
+        </div>
         <div class="text-gray-700 mt-1">{hovered_principle.text}</div>
         <div class="mt-2 text-gray-500">
           {#if principle_nodes.length === 0}
@@ -430,21 +556,21 @@
         </div>
       {:else}
         <div class="text-gray-500">
-          Hover a circle or an arc for details. Click a circle to open the eval.
+          Hover a circle or an arc for details. Click a circle to open the eval,
+          or to create one for an uncovered principle.
         </div>
         <div
           class="mt-3 flex flex-row flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500"
         >
-          <div class="flex items-center gap-1">
-            <span>Pass rate</span>
-            {#each RATE_STEPS as step}
+          {#each RAG as step (step.label)}
+            <div class="flex items-center gap-1">
               <span
                 class="inline-block h-3 w-3 rounded-full"
-                style={`background:${step}`}
+                style={`background:${step.fill}`}
               ></span>
-            {/each}
-            <span>0–100%</span>
-          </div>
+              {step.label}
+            </div>
+          {/each}
           <div class="flex items-center gap-1">
             <span
               class="inline-block h-3 w-3 rounded-full border border-dashed border-primary"
@@ -480,6 +606,48 @@
           {/each}
         </div>
       </div>
+    {/if}
+
+    {#if principles.length > 0 && table_nodes.length > 0}
+      <details class="text-sm">
+        <summary class="cursor-pointer text-gray-500">Table view</summary>
+        <div class="overflow-x-auto mt-2">
+          <table class="table table-xs">
+            <thead>
+              <tr>
+                <th>Eval</th>
+                {#each principles as p (p.n)}
+                  <th class="text-center" title={p.text}>{p.n}</th>
+                {/each}
+                <th class="text-right">Pass</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each table_nodes as n (n.id)}
+                <tr>
+                  <td class="whitespace-nowrap">{n.name}</td>
+                  {#each principles as p (p.n)}
+                    <td class="text-center"
+                      >{n.principles.includes(p.n) ? "●" : ""}</td
+                    >
+                  {/each}
+                  <td class="text-right">{pct(n.pass_rate)}</td>
+                </tr>
+              {/each}
+              <tr class="text-gray-500">
+                <td>Evals per principle</td>
+                {#each principles as p (p.n)}
+                  <td class="text-center"
+                    >{(data.coverers.get(p.n)?.length ?? 0) +
+                      (data.planned_for.get(p.n)?.length ?? 0)}</td
+                  >
+                {/each}
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
     {/if}
   </div>
 </div>

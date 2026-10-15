@@ -134,6 +134,9 @@ describe("buildCoverageData", () => {
     expect(by_id.get("s2")?.kind).toBe("planned")
     expect(by_id.get("s2")?.weight).toBeCloseTo(0.25)
     expect(by_id.get("gap-4")?.kind).toBe("gap")
+    expect(by_id.get("gap-4")?.href).toBe(
+      "/specs/p/t/builder?description=Principle%204%3A%20Honest%20claims.",
+    )
     expect(by_id.get("gap-4")?.weight).toBeCloseTo(0.25)
     expect(by_id.get("gap-3")).toBeUndefined()
     expect(by_id.get("old")).toBeUndefined()

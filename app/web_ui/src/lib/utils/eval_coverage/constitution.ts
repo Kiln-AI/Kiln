@@ -2,20 +2,24 @@
  * Reads the principles out of a task description.
  *
  * A constitution is markdown. Its principles are a numbered list under a
- * heading whose text contains "principle". When no such heading exists,
- * the longest numbered list in the text is used instead.
+ * heading whose text contains "principle". Sub-headings inside that section
+ * group the principles (for example by the value they serve); the group is
+ * kept on each principle. When no such heading exists, the longest numbered
+ * list in the text is used instead, with no groups.
  */
 
 export type Principle = {
   /** The number in the list, 1-based. */
   n: number
   text: string
+  /** The sub-heading the principle sits under, when the section has them. */
+  group?: string
 }
 
-const HEADING = /^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$/
+const HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/
 const ITEM = /^\s*(\d+)[.)]\s+(.*)$/
 
-type Section = { heading: string; items: Principle[] }
+type Section = { level: number; heading: string; items: Principle[] }
 
 function cleanText(text: string): string {
   return text
@@ -27,13 +31,13 @@ function cleanText(text: string): string {
 
 function sections(description: string): Section[] {
   const out: Section[] = []
-  let current: Section = { heading: "", items: [] }
+  let current: Section = { level: 0, heading: "", items: [] }
   out.push(current)
   let lastItem: Principle | null = null
   for (const raw of description.split(/\r?\n/)) {
     const heading = raw.match(HEADING)
     if (heading) {
-      current = { heading: heading[1], items: [] }
+      current = { level: heading[1].length, heading: heading[2], items: [] }
       out.push(current)
       lastItem = null
       continue
@@ -55,22 +59,47 @@ function sections(description: string): Section[] {
   return out
 }
 
+function finish(items: Principle[]): Principle[] {
+  return items.map((p, i) => ({
+    ...p,
+    n: Number.isFinite(p.n) && p.n > 0 ? p.n : i + 1,
+    text: cleanText(p.text),
+  }))
+}
+
 export function parsePrinciples(
   description: string | null | undefined,
 ): Principle[] {
   if (!description) return []
   const all = sections(description)
-  const named = all.find(
-    (s) => /principle/i.test(s.heading) && s.items.length > 0,
-  )
-  const pick =
-    named ??
-    all
-      .filter((s) => s.items.length >= 3)
-      .sort((a, b) => b.items.length - a.items.length)[0]
+  const start = all.findIndex((s) => /principle/i.test(s.heading))
+  if (start >= 0) {
+    const level = all[start].level
+    const items: Principle[] = [...all[start].items]
+    for (let i = start + 1; i < all.length; i++) {
+      const s = all[i]
+      if (s.level <= level) break
+      for (const p of s.items) items.push({ ...p, group: cleanText(s.heading) })
+    }
+    if (items.length > 0) return finish(items)
+  }
+  const pick = all
+    .filter((s) => s.items.length >= 3)
+    .sort((a, b) => b.items.length - a.items.length)[0]
   if (!pick) return []
-  return pick.items.map((p, i) => ({
-    n: Number.isFinite(p.n) && p.n > 0 ? p.n : i + 1,
-    text: cleanText(p.text),
-  }))
+  return finish(pick.items)
+}
+
+/** The distinct groups in document order, with the principles of each. */
+export function principleGroups(
+  principles: Principle[],
+): { name: string; principles: Principle[] }[] {
+  const out: { name: string; principles: Principle[] }[] = []
+  for (const p of principles) {
+    const name = p.group ?? ""
+    const last = out[out.length - 1]
+    if (last && last.name === name) last.principles.push(p)
+    else out.push({ name, principles: [p] })
+  }
+  return out
 }

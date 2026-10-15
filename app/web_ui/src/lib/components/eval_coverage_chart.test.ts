@@ -35,7 +35,7 @@ function fixture(): CoverageData {
         id: "gap-4",
         name: "Which reply speaks the user's language?",
         kind: "gap",
-        href: null,
+        href: "/specs/p/t/builder?description=Principle%204",
         weight: 0.25,
         pass_rate: null,
         dataset_size: null,
@@ -44,7 +44,11 @@ function fixture(): CoverageData {
         status: null,
       },
     ],
-    principles: [1, 2, 3, 4].map((n) => ({ n, text: `Principle text ${n}` })),
+    principles: [1, 2, 3, 4].map((n) => ({
+      n,
+      text: `Principle text ${n}`,
+      group: n <= 2 ? "Careful" : "Honest",
+    })),
     covered: 0.5,
     coverers: new Map([
       [1, ["s1"]],
@@ -69,6 +73,13 @@ describe("EvalCoverageChart", () => {
     expect(container.querySelectorAll("svg circle")).toHaveLength(4)
     const link = container.querySelector('svg a[href="/specs/p/t/s1"]')
     expect(link).not.toBeNull()
+    // the gap links to the builder; the group labels sit on the ring
+    expect(
+      container.querySelector('svg a[href^="/specs/p/t/builder?description="]'),
+    ).not.toBeNull()
+    expect(container.querySelector("svg")?.textContent).toContain("Careful")
+    expect(container.querySelector("svg")?.textContent).toContain("Honest")
+    expect(container.querySelector("details table")).not.toBeNull()
     expect(container.querySelectorAll('svg g[role="button"]')).toHaveLength(4)
     expect(container.textContent).toContain("50%")
     expect(container.textContent).toContain("3 of 4")

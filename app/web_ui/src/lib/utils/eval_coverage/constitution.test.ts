@@ -63,3 +63,46 @@ describe("parsePrinciples", () => {
     ).toBe("Bold rule")
   })
 })
+
+describe("parsePrinciples with groups", () => {
+  const GROUPED = `# Constitution
+
+## 6. Principles for critique
+
+Intro line.
+
+### Careful
+
+1. Exact records.
+2. Wait before delete.
+
+### Honest
+
+3. Right numbers.
+
+## 7. Using this
+
+- not a principle
+1. not a principle either
+`
+
+  it("collects principles across sub-headings and keeps the group", async () => {
+    const { principleGroups } = await import("./constitution")
+    const p = parsePrinciples(GROUPED)
+    expect(p.map((x) => x.n)).toEqual([1, 2, 3])
+    expect(p.map((x) => x.group)).toEqual(["Careful", "Careful", "Honest"])
+    expect(
+      principleGroups(p).map((g) => [g.name, g.principles.length]),
+    ).toEqual([
+      ["Careful", 2],
+      ["Honest", 1],
+    ])
+  })
+
+  it("has no groups for a flat list", async () => {
+    const { principleGroups } = await import("./constitution")
+    const p = parsePrinciples("## Principles\n1. a\n2. b\n")
+    expect(p.every((x) => x.group === undefined)).toBe(true)
+    expect(principleGroups(p)).toEqual([{ name: "", principles: p }])
+  })
+})

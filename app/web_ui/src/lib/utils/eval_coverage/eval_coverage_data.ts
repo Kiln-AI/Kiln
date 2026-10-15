@@ -99,6 +99,16 @@ export function pass_rate_for(
   return { pass_rate: Math.max(0, Math.min(1, mean)), dataset_size }
 }
 
+/** The eval builder, with the principle handed over as the goal. */
+export function builder_href(
+  project_id: string,
+  task_id: string,
+  principle: Principle,
+): string {
+  const goal = `Principle ${principle.n}: ${principle.text}`
+  return `/specs/${project_id}/${task_id}/builder?description=${encodeURIComponent(goal)}`
+}
+
 /** Area ratio by priority when there is no constitution: P0 is 8x a P3. */
 function priority_weight(priority: Priority | null): number {
   const p = priority ?? 1
@@ -216,7 +226,7 @@ export function buildCoverageData(input: CoverageInput): CoverageData {
       id: `gap-${p.n}`,
       name: p.text,
       kind: "gap",
-      href: null,
+      href: builder_href(project_id, task_id, p),
       weight: model.shares.get(p.n) ?? 0,
       pass_rate: null,
       dataset_size: null,
