@@ -45,6 +45,7 @@ class ModelFamily(str, Enum):
     sakana = "sakana"
     thinking_machines = "thinking_machines"
     jev = "jev"
+    liquid = "liquid"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -342,6 +343,7 @@ class ModelName(str, Enum):
     mimo_v2_6_flash = "mimo_v2_6_flash"
     inkling = "inkling"
     jev_1_13 = "jev_1_13"
+    lfm_2_5_24b_a2b = "lfm_2_5_24b_a2b"
 
 
 class ModelParserID(str, Enum):
@@ -11489,6 +11491,21 @@ built_in_models: List[KilnModel] = [
                 supports_logprobs=False,
                 supports_function_calling=False,
                 structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # LFM 2.5 24B A2B
+    KilnModel(
+        family=ModelFamily.liquid,
+        name=ModelName.lfm_2_5_24b_a2b,
+        friendly_name="LFM 2.5 24B A2B",
+        editorial_notes="Liquid AI's open-weights MoE reasoning model (24B total, about 2B active), built for tool-calling agents and on-device use. Text only, 128K context.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="liquid/lfm-2.5-24b-a2b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
             ),
         ],
     ),
