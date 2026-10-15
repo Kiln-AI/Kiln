@@ -326,7 +326,7 @@ Applies to **every LLM-based V2 judge**: the existing LLM judge (including G-Eva
 - Judgments that are skipped before the judge model is called (e.g. missing reference data) have no judge trace.
 - Judgments that fail with an error save nothing, as today.
 - Results saved before this project have no judge trace. The UI shows that none was recorded.
-- **Storage.** Judge traces can be large: an agentic judge's trace can approach its context window (several hundred KB). This is accepted for v1. Results lists must stay fast, so judge traces are loaded only when a user opens one.
+- **Storage.** Judge traces can be large: an agentic judge's trace can approach its context window (several hundred KB). This is accepted for v1. The results page receives judge traces with the rest of its data, the same way it already receives each judged trace.
 
 ## 10. Errors and Skips
 
@@ -358,7 +358,7 @@ Functional level only. Layout and details come in the UI design step.
 - Create an agentic judge, with the same inputs as creating an LLM judge, minus G-Eval.
 - Get the default agentic judge prompt for an eval (mirrors the existing default LLM judge prompt endpoint).
 - Test runs (saved and draft judges) return the judge trace.
-- Results include whether a judge trace exists; the judge trace itself is fetched separately for one result.
+- Results include each judgment's judge trace.
 - Judge configs returned by the API include the toolset version.
 
 ## 13. Out of Scope

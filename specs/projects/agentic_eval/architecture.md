@@ -14,7 +14,7 @@ Implements [functional_spec.md](functional_spec.md). The exact behavior of trace
 | Where the trace tools live | `libs/core/kiln_ai/adapters/eval/trace_tools/`, one self-contained subpackage per toolset version (`v1/`) | Only judges use them. A frozen version must not share code that could change under it. |
 | How `trace_overview` reaches templates | `utils/jinja_engine` registers a **placeholder** filter; the LLM judge renders through an **overlay environment** that binds the real, version-specific filter | `utils/` must not import `adapters/` (layering rule). Templates still compile everywhere (Jinja rejects unknown filters at compile time). |
 | Judge trace storage | New field `EvalRun.judge_trace`, typed like `TaskRun.trace` | User decision: the judge trace belongs to the score record. Storage cost accepted. |
-| Judge trace in the results list | Stripped from rows; fetched by a new per-result endpoint | Results rows already inline the judged trace. Adding judge traces to every row would double a large payload. |
+| Judge trace in results | Returned inline, on each row's `eval_run`, like the judged trace already is | The only consumer is the per-judge results page, a drill-down that loads once on open and already holds every row's full judged trace in memory. A separate endpoint would add code to save memory the page already spends. If large traces make that page slow, lazy-loading both kinds of trace is a separate fix. |
 | Tool errors | Handled in the model adapter by a **separate task**: argument mistakes and exceptions raised by tools become error results returned to the model | A general adapter bug, not specific to this project. Every tool benefits, and the trace tools can simply raise. Must merge first (§4). |
 | Structured output with tools | Keep the LLM judge's current mode selection. Verified with real providers in a late implementation phase | User decision. Expected to work; if not, that phase brings options (per-model mode, new model-list field, litellm upgrade). |
 | Eval builder | No support in v1 | User decision. |
@@ -77,7 +77,7 @@ flowchart LR
   Adapter -->|tool calls| Toolset
   Judge -->|V2EvalResult + judge_trace| Runner
   Runner -->|EvalRun.judge_trace| Disk[(EvalRun file)]
-  API[eval_api] -->|GET judge_trace| Disk
+  API[eval_api results] -->|rows incl. judge_trace| Disk
 ```
 
 ### 3.1 Trace tools package
@@ -274,8 +274,7 @@ New flow (unchanged steps elided):
 | `GET .../default_llm_judge_prompt?trace_tools=<bool>` | Default `false`. Returns the agentic default when `true`. |
 | `TestV2EvalResponse.judge_trace: list[ChatCompletionMessageParam] \| None` | Set from `result.judge_trace` in `run_v2_eval_test`. |
 | `TestV2EvalResponse` errors | `JudgeContextExceededError` maps to HTTP 422 with its message. Other errors are unchanged. |
-| `EvalRunWithTrace` | Rows carry `eval_run.model_copy(update={"judge_trace": None})` and a new `has_judge_trace: bool`, in both `from_own_fields` and `from_scored_run`. |
-| New `GET /api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/eval_run/{eval_run_id}/judge_trace` | Returns `JudgeTraceResponse { judge_trace: list[ChatCompletionMessageParam] \| None }`. Loads the EvalRun with `EvalRun.from_id_and_parent_path`. 404 if not found. `ALLOW_AGENT` like its siblings. |
+| Results endpoint | No change. `EvalRunWithTrace.eval_run` is the whole `EvalRun`, so `judge_trace` is included automatically. |
 | `prompt_optimization_job_api.optimization_unsupported_reason` | An `LlmJudgeProperties` with `trace_toolset_version` set returns `"Prompt optimization doesn't support LLM judges with trace tools."` |
 | OpenAPI client | Regenerate with `app/web_ui/src/lib/generate_schema.sh`. |
 
@@ -291,7 +290,7 @@ Specified in the UI design step, which comes after this architecture, along with
   - `trace_tools` sent on test and save;
   - the default prompt fetched with `trace_tools`.
 - **Test pane** (`eval_test_run_pane.svelte`): show the judge trace with `ChatTrace`.
-- **Results** (`run_result/+page.svelte`, `llm_judge_result.svelte`): a "Judge trace" action when `has_judge_trace`, fetching from the new endpoint into the existing trace dialog.
+- **Results** (`run_result/+page.svelte`, `llm_judge_result.svelte`): a "Judge trace" action when `eval_run.judge_trace` is present, opening it in the existing trace dialog.
 - **Judge display** (`eval_config_instruction.svelte`): show "Trace tools: on (v1)".
 
 ## 4. Prerequisite: Non-Fatal Tool Errors in the Adapter
@@ -407,7 +406,7 @@ Read `python_test_guide.md` before writing tests. Everything is pytest, and the 
 
 - **Judge creation:** create, and test with `trace_tools`. G-Eval with trace tools returns 422.
 - **Default prompt:** `default_llm_judge_prompt?trace_tools=true` contains the overview block.
-- **Judge traces:** result rows strip `judge_trace` and set `has_judge_trace`. The judge-trace endpoint returns it, and returns 404 for an unknown id.
+- **Judge traces:** result rows include `eval_run.judge_trace` for new judgments, and `null` for older ones.
 - **Prompt optimization:** rejects an LLM judge with trace tools on.
 - **Context overflow:** a test run returns 422 with the message.
 
