@@ -437,18 +437,23 @@
 
     {#if hovered_node || hovered_principle}
       <div
-        class="pointer-events-none absolute z-10 max-w-[260px] whitespace-nowrap rounded-md border bg-base-100 px-2 py-1 text-xs shadow-md"
+        class="pointer-events-none absolute z-10 w-max max-w-[260px] rounded-md border bg-base-100 px-2 py-1 text-xs shadow-md"
         style={`left:${tip_x}px; top:${tip_y}px; transform: translate(${tip_flip ? "calc(-100% - 12px)" : "12px"}, 12px);`}
         role="tooltip"
       >
         {#if hovered_node}
-          <span class="font-medium">{hovered_node.name}</span>
-          {#if hovered_node.kind === "eval"}
-            <span class="text-gray-500">· {pct(hovered_node.pass_rate)}</span>
-          {:else if hovered_node.kind === "planned"}
-            <span class="text-gray-500">· planned</span>
-          {:else}
+          {#if hovered_node.kind === "gap"}
+            <span class="font-medium"
+              >Principle {hovered_node.principles[0]}</span
+            >
             <span class="text-gray-500">· not covered</span>
+          {:else}
+            <span class="font-medium">{hovered_node.name}</span>
+            {#if hovered_node.kind === "eval"}
+              <span class="text-gray-500">· {pct(hovered_node.pass_rate)}</span>
+            {:else}
+              <span class="text-gray-500">· planned</span>
+            {/if}
           {/if}
         {:else if hovered_principle}
           <span class="font-medium">Principle {hovered_principle.n}</span>
