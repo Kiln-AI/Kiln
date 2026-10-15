@@ -106,3 +106,19 @@ Intro line.
     expect(principleGroups(p)).toEqual([{ name: "", principles: p }])
   })
 })
+
+describe("parsePrinciples with fails-when lines", () => {
+  it("keeps the statement and the failure line apart", () => {
+    const text = `## 6. Principles\n\n### Careful\n\n1. Nova changes exactly the records the user asked for,\n   and nothing else.\n   Fails when: the change log holds a change the user did not ask for,\n   or lacks one.\n2. Nova finds each record before it writes.\n`
+    const p = parsePrinciples(text)
+    expect(p).toHaveLength(2)
+    expect(p[0].text).toBe(
+      "Nova changes exactly the records the user asked for, and nothing else.",
+    )
+    expect(p[0].fails_when).toBe(
+      "the change log holds a change the user did not ask for, or lacks one.",
+    )
+    expect(p[0].group).toBe("Careful")
+    expect(p[1].fails_when).toBeUndefined()
+  })
+})

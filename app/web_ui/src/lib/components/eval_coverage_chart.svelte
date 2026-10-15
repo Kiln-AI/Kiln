@@ -534,6 +534,11 @@
           {/if}
         </div>
         <div class="mt-1">{hovered_principle.text}</div>
+        {#if hovered_principle.fails_when}
+          <div class="mt-1 text-gray-500">
+            Fails when {hovered_principle.fails_when}
+          </div>
+        {/if}
         <div class="mt-2 text-gray-500">
           {#if principle_nodes.length === 0}
             No eval covers this principle.

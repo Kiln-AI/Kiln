@@ -14,10 +14,13 @@ export type Principle = {
   text: string
   /** The sub-heading the principle sits under, when the section has them. */
   group?: string
+  /** The "Fails when: ..." line under the principle, when there is one. */
+  fails_when?: string
 }
 
 const HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/
 const ITEM = /^\s*(\d+)[.)]\s+(.*)$/
+const FAILS_WHEN = /^\s*fails when:\s*/i
 
 type Section = { level: number; heading: string; items: Principle[] }
 
@@ -49,7 +52,14 @@ function sections(description: string): Section[] {
       continue
     }
     if (lastItem && raw.trim() !== "" && /^\s+/.test(raw)) {
-      lastItem.text += " " + raw.trim()
+      const line = raw.trim()
+      if (FAILS_WHEN.test(line)) {
+        lastItem.fails_when = line.replace(FAILS_WHEN, "")
+      } else if (lastItem.fails_when !== undefined) {
+        lastItem.fails_when += " " + line
+      } else {
+        lastItem.text += " " + line
+      }
       continue
     }
     if (raw.trim() === "") {
@@ -64,6 +74,9 @@ function finish(items: Principle[]): Principle[] {
     ...p,
     n: Number.isFinite(p.n) && p.n > 0 ? p.n : i + 1,
     text: cleanText(p.text),
+    ...(p.fails_when !== undefined
+      ? { fails_when: cleanText(p.fails_when) }
+      : {}),
   }))
 }
 
