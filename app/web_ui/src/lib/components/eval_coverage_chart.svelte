@@ -160,10 +160,12 @@
   }
 
   // Pass rate as a status: red below 50%, amber below 80%, green from 80%.
+  // Pastel tints of the theme's error / warning / success colours for the
+  // fill, the full colour for the outline, dark ink for the label.
   const RAG = [
-    { max: 0.5, fill: "#E74D31", ink: "#ffffff", label: "under 50%" },
-    { max: 0.8, fill: "#F4B544", ink: "#161616", label: "50 to 79%" },
-    { max: Infinity, fill: "#33B79D", ink: "#ffffff", label: "80% and up" },
+    { max: 0.5, fill: "#F8CAC1", edge: "#E74D31", label: "under 50%" },
+    { max: 0.8, fill: "#FBE5BE", edge: "#F4B544", label: "50 to 79%" },
+    { max: Infinity, fill: "#B8E6DD", edge: "#33B79D", label: "80% and up" },
   ]
   function rag(rate: number) {
     return RAG.find((s) => rate < s.max) ?? RAG[RAG.length - 1]
@@ -174,10 +176,16 @@
     return rag(node.pass_rate).fill
   }
   function ink_for(node: CoverageNode): string {
-    if (node.kind === "eval" && node.pass_rate !== null) {
-      return rag(node.pass_rate).ink
-    }
-    return node.kind === "planned" ? "#415CF5" : "#6b6b6b"
+    return node.kind === "planned"
+      ? "#415CF5"
+      : node.kind === "gap"
+        ? "#6b6b6b"
+        : "#161616"
+  }
+  function edge_for(node: CoverageNode): string {
+    if (node.kind === "planned") return "#415CF5"
+    if (node.kind === "gap" || node.pass_rate === null) return "#bebebe"
+    return rag(node.pass_rate).edge
   }
 
   function pct(rate: number | null): string {
@@ -382,16 +390,8 @@
             cy={c.y}
             r={c.r}
             fill={fill_for(c.node)}
-            stroke={lit
-              ? "#131517"
-              : c.node.kind === "planned"
-                ? "#415CF5"
-                : c.node.kind === "gap"
-                  ? "#bebebe"
-                  : c.node.pass_rate === null
-                    ? "#bebebe"
-                    : "#ffffff"}
-            stroke-width={lit ? 1.6 : 1}
+            stroke={lit ? "#131517" : edge_for(c.node)}
+            stroke-width={lit ? 1.8 : 1.2}
             stroke-dasharray={c.node.kind === "planned"
               ? "3 2"
               : c.node.kind === "gap"
@@ -551,10 +551,20 @@
         >
           {#each RAG as step (step.label)}
             <div class="flex items-center gap-1">
-              <span
-                class="inline-block h-3 w-3 rounded-full"
-                style={`background:${step.fill}`}
-              ></span>
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 12 12"
+                aria-hidden="true"
+              >
+                <circle
+                  cx="6"
+                  cy="6"
+                  r="5"
+                  fill={step.fill}
+                  stroke={step.edge}
+                />
+              </svg>
               {step.label}
             </div>
           {/each}
