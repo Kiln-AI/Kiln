@@ -29,7 +29,7 @@
   const RING_R = 110 // centre line of the principle ring
   const RING_W = 7
   const LABEL_R = 121
-  const GROUP_R = 135
+  const GROUP_R = 130
   const FILL = 0.8 // target share of the boundary area the circles fill
   const RING_GAP_DEG = 2.5
   const GROUP_GAP_DEG = 7
@@ -58,7 +58,7 @@
   $: principles = data.principles
   $: groups = principleGroups(principles)
   $: has_groups = groups.length > 1 || (groups[0]?.name ?? "") !== ""
-  $: VIEW = has_groups ? 168 : 130
+  $: VIEW = has_groups ? 160 : 130
 
   // One arc per principle; a wider gap between groups; a label per group.
   $: ring = (() => {
@@ -224,7 +224,7 @@
           ? [pct(c.node.pass_rate)]
           : wrap(c.node.name, max_chars, 1)
     }
-    const name = wrap(c.node.name, max_chars, 2)
+    const name = wrap(c.node.name, max_chars, c.r >= 30 ? 3 : 2)
     if (c.node.kind === "eval") return [...name, pct(c.node.pass_rate)]
     if (c.node.kind === "gap")
       return [`#${c.node.principles[0] ?? ""}`, ...name]
@@ -332,15 +332,18 @@
           <path
             d={arc.path}
             fill="none"
-            stroke={lit_principles.has(arc.n)
-              ? "#415CF5"
-              : arc.state === "covered"
-                ? "#aab6f9"
-                : arc.state === "planned"
-                  ? "#d5dbfb"
-                  : "#e7e5e4"}
+            stroke={arc.state === "open" && !lit_principles.has(arc.n)
+              ? "#e7e5e4"
+              : "#415CF5"}
             stroke-width={lit_principles.has(arc.n) ? RING_W + 2 : RING_W}
-            opacity={hover && !lit_principles.has(arc.n) ? 0.55 : 1}
+            opacity={lit_principles.has(arc.n)
+              ? 1
+              : (hover ? 0.5 : 1) *
+                (arc.state === "covered"
+                  ? 0.45
+                  : arc.state === "planned"
+                    ? 0.2
+                    : 1)}
             class="transition-all duration-150"
           />
           {#if principles.length <= 24}
@@ -394,7 +397,7 @@
               : c.node.kind === "gap"
                 ? "1 2"
                 : undefined}
-            opacity={dim ? 0.45 : 1}
+            opacity={dim ? 0.55 : 1}
             class="transition-opacity duration-150"
           />
           {#if label_lines(c).length > 0}
@@ -406,7 +409,7 @@
               text-anchor="middle"
               font-size={size}
               fill={ink_for(c.node)}
-              opacity={dim ? 0.45 : 1}
+              opacity={dim ? 0.8 : 1}
               pointer-events="none"
             >
               {#each lines as line, i}
@@ -434,43 +437,24 @@
 
     {#if hovered_node || hovered_principle}
       <div
-        class="pointer-events-none absolute z-10 max-w-[260px] rounded-md border bg-base-100 px-3 py-2 text-xs shadow-md"
+        class="pointer-events-none absolute z-10 max-w-[260px] whitespace-nowrap rounded-md border bg-base-100 px-2 py-1 text-xs shadow-md"
         style={`left:${tip_x}px; top:${tip_y}px; transform: translate(${tip_flip ? "calc(-100% - 12px)" : "12px"}, 12px);`}
         role="tooltip"
       >
         {#if hovered_node}
-          <div class="font-medium">{hovered_node.name}</div>
+          <span class="font-medium">{hovered_node.name}</span>
           {#if hovered_node.kind === "eval"}
-            <div class="text-gray-500">
-              Pass rate <span class="font-medium"
-                >{pct(hovered_node.pass_rate)}</span
-              >
-              {#if hovered_node.dataset_size !== null}
-                on {hovered_node.dataset_size} cases
-              {/if}
-              · {Math.round(hovered_node.weight * 100)}% of the product
-            </div>
-            <div class="text-gray-500">Click to open the eval</div>
+            <span class="text-gray-500">· {pct(hovered_node.pass_rate)}</span>
           {:else if hovered_node.kind === "planned"}
-            <div class="text-gray-500">
-              Planned eval · {Math.round(hovered_node.weight * 100)}% of the
-              product
-            </div>
-            <div class="text-gray-500">Click to open the spec</div>
+            <span class="text-gray-500">· planned</span>
           {:else}
-            <div class="text-gray-500">
-              Not covered · {Math.round(hovered_node.weight * 100)}% of the
-              product
-            </div>
-            <div class="text-gray-500">Click to create an eval for it</div>
+            <span class="text-gray-500">· not covered</span>
           {/if}
         {:else if hovered_principle}
-          <div class="font-medium">
-            Principle {hovered_principle.n}{hovered_principle.group
-              ? ` · ${hovered_principle.group}`
-              : ""}
-          </div>
-          <div class="text-gray-500">{hovered_principle.text}</div>
+          <span class="font-medium">Principle {hovered_principle.n}</span>
+          {#if hovered_principle.group}
+            <span class="text-gray-500">· {hovered_principle.group}</span>
+          {/if}
         {/if}
       </div>
     {/if}
@@ -488,7 +472,10 @@
         <div class="text-sm text-gray-500">
           {principles.length - open_principles.length} of {principles.length}
           principles have an active or planned eval. {data.active_count} active
-          {data.active_count === 1 ? "eval" : "evals"}.
+          {data.active_count === 1 ? "eval" : "evals"}. The ring is the
+          constitution: one arc per principle{has_groups
+            ? ", grouped by value"
+            : ""}. Circle area is the share of the constitution the eval judges.
         </div>
       </div>
     {:else}
@@ -610,6 +597,7 @@
               type="button"
               class="badge badge-outline badge-sm cursor-default"
               class:badge-primary={lit_principles.has(p.n)}
+              title={p.text}
               on:mouseenter={() => set_hover({ kind: "principle", n: p.n })}
               on:mouseleave={() => clear_hover({ kind: "principle", n: p.n })}
               on:focus={() => set_hover({ kind: "principle", n: p.n })}

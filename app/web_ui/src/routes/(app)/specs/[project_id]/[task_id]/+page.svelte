@@ -965,7 +965,7 @@
       </Banner>
 
       {#if coverage_data && coverage_data.nodes.length > 0}
-        <div class="mt-10 mb-10">
+        <div class="mt-10 mb-6">
           <EvalCoverageChart
             data={coverage_data}
             loading={coverage_scores_loading}
