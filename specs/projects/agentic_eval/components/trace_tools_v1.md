@@ -371,7 +371,7 @@ The refusal is returned as `ToolCallResult(is_error=True)`.
 
 ## 7. Error Catalog
 
-All errors below are `TraceToolUsageError` and are returned as `ToolCallResult(is_error=True, output=msg, error_message=msg)`.
+All errors below are raised as `TraceToolUsageError` (a `ToolCallError`). The model adapter returns the message to the judge as an error tool result ([architecture §4](../architecture.md#4-prerequisite-non-fatal-tool-errors-in-the-adapter)).
 
 | Id | Message |
 |----|---------|
@@ -387,7 +387,6 @@ All errors below are `TraceToolUsageError` and are returned as `ToolCallResult(i
 | E10 | `pattern must not be empty.` |
 | E11 | `Invalid arguments: {validation message}` (defensive re-validation against the schema) |
 | REF | The refusal in §5 |
-| INT | `Internal error in {tool}; try different arguments.` (an unexpected exception, logged with `logger.exception`) |
 
 ## 8. Public Interface
 
@@ -399,7 +398,7 @@ TOOLSET_V1: TraceToolset                      # version, build_view, render_over
 def build_view(trace: Sequence[Mapping[str, Any]]) -> TraceView
 
 # v1/errors.py
-class TraceToolUsageError(Exception): ...
+class TraceToolUsageError(ToolCallError): ...   # ToolCallError from kiln_ai.tools.base_tool
 
 # v1/render.py  (pure; raise TraceToolUsageError)
 def render_overview(view: TraceView) -> str
@@ -417,7 +416,7 @@ def build_tools(view: TraceView) -> list[KilnToolInterface]
 
 - **Argument types.** `PreviewArgs`, `ReadArgs`, `TextArgs` and `SearchArgs` are frozen dataclasses with defaults already applied. `roles` and `parts` are tuples, or `None` for no filter.
 - **`parse_args`** re-validates `kwargs` against the tool's schema (E11), applies defaults, and checks the E3 rule.
-- **Dependencies.** v1 depends only on: `kiln_ai.tools.base_tool` (`UnmanagedKilnTool`, `ToolCallResult`), `kiln_ai.datamodel.tool_id.build_kiln_unmanaged_tool_id`, `kiln_ai.utils.open_ai_types.TASK_RESPONSE_TOOL_NAME`, `kiln_ai.datamodel.json_schema.validate_schema_with_value_error`, and `regex`. The only code that depends on v1 is `trace_tools.toolset.trace_toolset()`.
+- **Dependencies.** v1 depends only on: `kiln_ai.tools.base_tool` (`UnmanagedKilnTool`, `ToolCallResult`, `ToolCallError`), `kiln_ai.datamodel.tool_id.build_kiln_unmanaged_tool_id`, `kiln_ai.utils.open_ai_types.TASK_RESPONSE_TOOL_NAME`, `kiln_ai.datamodel.json_schema.validate_schema_with_value_error`, and `regex`. The only code that depends on v1 is `trace_tools.toolset.trace_toolset()`.
 
 ## 9. Test Plan
 
@@ -451,8 +450,8 @@ Tests live in `v1/test_view.py`, `test_render.py`, `test_search.py`, `test_tools
 | `test_search_paging_count_offset` | Header counts, footer, E9. |
 | `test_search_zero_length_matches_skipped` | e.g. `regex=true`, `pattern="x*"`. |
 | `test_search_invalid_regex` / `test_search_timeout` | E7; E8 with `timeout_seconds=0.01` and a catastrophic pattern. |
-| `test_tool_errors_returned_not_raised` | Each tool turns usage errors into `is_error=True` results. |
-| `test_tool_internal_error_is_logged_and_returned` | A patched failure gives INT and a logged exception. |
+| `test_tool_usage_errors_are_tool_call_errors` | Each tool raises `TraceToolUsageError` for usage errors, and it is a `ToolCallError`. |
+| `test_judge_loop_continues_after_tool_error` | Through the real adapter with a scripted model: a bad call is followed by a good one, and the judgment completes. |
 | `test_tool_definitions_order_and_ids` | Five tools in order, `kiln_unmanaged::trace_v1_*` ids, schemas valid. |
 | `test_golden_cases` | Every case in `golden/cases.json` matches its expected output exactly. |
 | `test_golden_definitions` | Tool names, descriptions and schemas match the saved JSON. |

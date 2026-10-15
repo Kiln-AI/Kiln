@@ -10,45 +10,43 @@ Implements [functional_spec.md](functional_spec.md). The exact behavior of trace
 
 | Decision | Choice | Why |
 |----------|--------|-----|
-| Judge type | **Option on the LLM judge** (`LlmJudgeProperties.trace_tools`), not a new `V2EvalType` | One judge with a capability. Everything an LLM judge has (prompt, model, run settings, judge traces, default prompt builder, UI form) is shared, not copied. Incompatible combinations are validation errors. |
+| Judge type | **Option on the LLM judge** (`LlmJudgeProperties.trace_toolset_version`, `None` = off), not a new `V2EvalType` | One judge with a capability. Everything an LLM judge has (prompt, model, run settings, judge traces, default prompt builder, UI form) is shared, not copied. Incompatible combinations are validation errors. |
 | Where the trace tools live | `libs/core/kiln_ai/adapters/eval/trace_tools/`, one self-contained subpackage per toolset version (`v1/`) | Only judges use them. A frozen version must not share code that could change under it. |
 | How `trace_overview` reaches templates | `utils/jinja_engine` registers a **placeholder** filter; the LLM judge renders through an **overlay environment** that binds the real, version-specific filter | `utils/` must not import `adapters/` (layering rule). Templates still compile everywhere (Jinja rejects unknown filters at compile time). |
 | Judge trace storage | New field `EvalRun.judge_trace`, typed like `TaskRun.trace` | User decision: the judge trace belongs to the score record. Storage cost accepted. |
 | Judge trace in the results list | Stripped from rows; fetched by a new per-result endpoint | Results rows already inline the judged trace. Adding judge traces to every row would double a large payload. |
-| Bad tool arguments | Fixed in the model adapter by a **separate task** (argument errors become tool errors returned to the model) | A general adapter bug, not specific to this project. Prerequisite for agentic judges being robust. |
+| Tool errors | Handled in the model adapter by a **separate task**: argument mistakes and exceptions raised by tools become error results returned to the model | A general adapter bug, not specific to this project. Every tool benefits, and the trace tools can simply raise. Must merge first (§4). |
 | Structured output with tools | Keep the LLM judge's current mode selection. Verified with real providers in a late implementation phase | User decision. Expected to work; if not, that phase brings options (per-model mode, new model-list field, litellm upgrade). |
 | Eval builder | No support in v1 | User decision. |
 | CPU-heavy work | `asyncio.to_thread` | Parsing and searching a 20 MB trace must not block the event loop, which runs up to 25 judgments at once. |
 
 ## 2. Data Model Changes
 
-### 2.1 `TraceToolsetVersion` (`datamodel/eval.py`)
+### 2.1 Version constants (`datamodel/eval.py`)
 
 ```python
-class TraceToolsetVersion(str, Enum):
-    v1 = "v1"
-
-LATEST_TRACE_TOOLSET_VERSION = TraceToolsetVersion.v1
+LATEST_TRACE_TOOLSET_VERSION = 1
+# The overview used by judges with trace tools off. Fixed forever, so their prompts never change.
+TRACE_OVERVIEW_VERSION_WITHOUT_TOOLS = 1
 ```
 
 ### 2.2 `LlmJudgeProperties` (`datamodel/eval.py`)
 
-Two new fields:
+One new field:
 
 ```python
-trace_tools: bool = Field(
-    default=False,
-    description="Give the judge model read-only tools to read the judged trace, instead of (or as well as) placing it in the prompt.",
-)
-trace_toolset_version: TraceToolsetVersion = Field(
-    default=LATEST_TRACE_TOOLSET_VERSION,
-    description="Locks the behavior of the trace tools and of the trace_overview template filter for this judge.",
+trace_toolset_version: int | None = Field(
+    default=None,
+    ge=1,
+    description="Trace tools for the judge model. None: off. A version number: on, with that version's tools and trace_overview output, locked for the life of the judge.",
 )
 ```
 
-- **Why the version is always set, even with tools off:** it also locks `{{ trace | trace_overview }}` (functional spec §5.4). `save_to_file` serializes defaults, so every judge saved from now on records its version explicitly. Judges saved before this field existed load with the latest version. That is harmless, because their templates predate the filter and they cannot have tools on.
-- **New model validator:** `g_eval and trace_tools` raises `ValueError("G-Eval scoring can't be combined with trace tools.")`.
-- **`EvalConfig.validate_v2_templates_and_expressions`:** the "must reference `final_message`, `trace` or `task_input`" rule applies only when `trace_tools` is False.
+- **Why one field.** One field means "off" and "on at version N" can't disagree, and judges saved before this field load as "off" with no migration.
+- **Why an int and not an enum.** Older Kiln builds must still load configs written by newer ones. An enum would reject an unknown version and break loading the whole eval. An int loads fine, and the judge skips with a clear message at evaluation time (§3.7).
+- **The `trace_overview` lock for tools-off judges.** A judge with tools off always renders the v1 overview (`TRACE_OVERVIEW_VERSION_WITHOUT_TOOLS`). That keeps its prompt stable (functional spec §5.4) without storing anything. The trade-off: tools-off judges never get later overview formats.
+- **New model validator:** `g_eval and trace_toolset_version is not None` raises `ValueError("G-Eval scoring can't be combined with trace tools.")`.
+- **`EvalConfig.validate_v2_templates_and_expressions`:** the "must reference `final_message`, `trace` or `task_input`" rule applies only when `trace_toolset_version is None`.
 
 ### 2.3 `EvalRun.judge_trace` (`datamodel/eval.py`)
 
@@ -105,18 +103,20 @@ libs/core/kiln_ai/adapters/eval/trace_tools/
 
 ```python
 class TraceToolset(Protocol):
-    version: TraceToolsetVersion
+    version: int
     def build_view(self, trace: Sequence[Mapping[str, Any]]) -> "TraceViewProtocol": ...
     def render_overview(self, view: "TraceViewProtocol") -> str: ...
     def build_tools(self, view: "TraceViewProtocol") -> list[KilnToolInterface]: ...
 
-def trace_toolset(version: TraceToolsetVersion) -> TraceToolset:
+class UnsupportedTraceToolsetVersion(Exception): ...
+
+def trace_toolset(version: int) -> TraceToolset:
     match version:
-        case TraceToolsetVersion.v1:
+        case 1:
             from kiln_ai.adapters.eval.trace_tools.v1 import TOOLSET_V1
             return TOOLSET_V1
         case _:
-            raise_exhaustive_enum_error(version)
+            raise UnsupportedTraceToolsetVersion(version)
 ```
 
 - `TOOLSET_V1` is a stateless, immutable instance. No module-level mutable state.
@@ -163,13 +163,13 @@ class TraceView:
 
 - **One subclass per tool.** Five subclasses of a shared `_TraceTool(UnmanagedKilnTool)`. Each takes a `TraceView` in its constructor. Tool ids are `build_kiln_unmanaged_tool_id("trace_v1_<name>")`.
 - **What `_TraceTool.run(context, **kwargs)` does:**
-  1. Re-validates `kwargs` against the tool's JSON schema. This is defensive: it covers SDK callers, and runs before the adapter fix lands.
+  1. Re-validates `kwargs` against the tool's JSON schema. This is defensive, for SDK callers that bypass the adapter.
   2. Applies defaults.
   3. Runs the tool's pure function `execute(view, args) -> str`. `search_trace` and `read_messages` run in `asyncio.to_thread`. The others are cheap and run inline.
   4. Returns `ToolCallResult(output=text)`.
-- **Errors never fail the judgment:**
-  - `TraceToolUsageError` (a judge mistake, or a refused oversized response) becomes `ToolCallResult(output=message, is_error=True, error_message=message)`.
-  - Any other exception is logged with `logger.exception` and returned as `is_error=True` with `"Internal error in <tool>; try different arguments."`. This keeps the functional spec's promise that a tool never fails the judgment, while bugs stay visible in logs.
+- **Errors are raised, not caught.** The tools do not catch exceptions. The model adapter turns every exception from a tool into an error result for the model (§4):
+  - A judge mistake, or a refused oversized response, raises `TraceToolUsageError(ToolCallError)`. The adapter returns its message as-is and doesn't log a stack trace, because these are expected.
+  - Any other exception is a bug. The adapter logs it with its stack trace and returns a short error. The judgment continues, which keeps the functional spec's promise.
   - Trace content is never logged.
 - **`build_tools(view)`** returns the five tools in a fixed order: `trace_overview`, `preview_messages`, `read_messages`, `read_message_text`, `search_trace`.
 
@@ -227,14 +227,15 @@ def assemble(units, header, footer, limit, refusal: RefusalContext) -> str  # ra
 New flow (unchanged steps elided):
 
 1. Reference-key checks: unchanged.
-2. **If `trace_tools` is on and `eval_input.trace` is empty or None:** return a `missing_trace` skip.
-3. `namespace = eval_input.model_dump()` plus `judge_instructions`: unchanged.
-4. `toolset = trace_toolset(props.trace_toolset_version)`.
-5. **If `trace_tools`:** `view = await asyncio.to_thread(toolset.build_view, namespace["trace"])`. Otherwise `view = None`.
-6. Render with `judge_template_env(toolset, namespace["trace"], view)`, with the existing error-to-skip mapping. `_unknown_template_variables` keeps parsing with `_template_env`.
-7. Build the judge task, structured output mode and run config: unchanged.
-8. `AdapterConfig(allow_saving=False, top_logprobs=..., unmanaged_tools=toolset.build_tools(view) if trace_tools else None, automatic_prompt_caching=props.trace_tools)`. Prompt caching only changes cost, and long tool loops resend a growing prefix.
-9. Invoke, mapping one specific failure:
+2. `tools_on = props.trace_toolset_version is not None`.
+3. **If `tools_on` and `eval_input.trace` is empty or None:** return a `missing_trace` skip.
+4. `toolset = trace_toolset(props.trace_toolset_version if tools_on else TRACE_OVERVIEW_VERSION_WITHOUT_TOOLS)`. `UnsupportedTraceToolsetVersion` returns a `type_not_available` skip: `"This judge uses trace tools version {n}, which this version of Kiln doesn't support. Update Kiln to run it."`
+5. `namespace = eval_input.model_dump()` plus `judge_instructions`: unchanged.
+6. **If `tools_on`:** `view = await asyncio.to_thread(toolset.build_view, namespace["trace"])`. Otherwise `view = None`.
+7. Render with `judge_template_env(toolset, namespace["trace"], view)`, with the existing error-to-skip mapping. `_unknown_template_variables` keeps parsing with `_template_env`.
+8. Build the judge task, structured output mode and run config: unchanged.
+9. `AdapterConfig(allow_saving=False, top_logprobs=..., unmanaged_tools=toolset.build_tools(view) if tools_on else None, automatic_prompt_caching=tools_on)`. Prompt caching only changes cost, and long tool loops resend a growing prefix.
+10. Invoke, mapping one specific failure:
 
    ```python
    try:
@@ -245,7 +246,7 @@ New flow (unchanged steps elided):
        raise
    ```
 
-10. Return `V2EvalResult(scores, intermediate_outputs, usage=judge_run.usage, judge_trace=judge_run.trace)`. This covers all modes: classic, G-Eval and trace tools.
+11. Return `V2EvalResult(scores, intermediate_outputs, usage=judge_run.usage, judge_trace=judge_run.trace)`. This covers all modes: classic, G-Eval and trace tools.
 
 - **`JudgeContextExceededError(Exception)`** is defined in `adapters/eval/eval_utils/errors.py`, a new module. Its message is: `"The judge model ran out of context after {n} trace tool calls. Use a judge model with a larger context window, or a prompt that needs less of the trace."` Here `n` is the number of tool messages in `e.partial_trace`. It is not in `is_retryable_error`, so the runner does not retry it, and the test endpoints return its message.
 
@@ -257,7 +258,7 @@ New flow (unchanged steps elided):
   - `Use the trace tools to inspect the parts of the trace you need.`
 
   The task description, reference answer block, steps and score criteria logic are unchanged.
-- **`materialize_llm_judge_properties(..., trace_tools: bool = False)`.** Passes `trace_tools` to the default prompt builder and to `LlmJudgeProperties`. The version takes the default, which is the latest. The G-Eval conflict is caught by the properties validator, which the endpoint maps to 422.
+- **`materialize_llm_judge_properties(..., trace_tools: bool = False)`.** Passes `trace_tools` to the default prompt builder, and sets `trace_toolset_version=LATEST_TRACE_TOOLSET_VERSION if trace_tools else None`. The API takes a boolean; only storage knows about versions. The G-Eval conflict is caught by the properties validator, which the endpoint maps to 422.
 
 ### 3.9 Eval runner (`adapters/eval/eval_runner.py`)
 
@@ -275,7 +276,7 @@ New flow (unchanged steps elided):
 | `TestV2EvalResponse` errors | `JudgeContextExceededError` maps to HTTP 422 with its message. Other errors are unchanged. |
 | `EvalRunWithTrace` | Rows carry `eval_run.model_copy(update={"judge_trace": None})` and a new `has_judge_trace: bool`, in both `from_own_fields` and `from_scored_run`. |
 | New `GET /api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/eval_run/{eval_run_id}/judge_trace` | Returns `JudgeTraceResponse { judge_trace: list[ChatCompletionMessageParam] \| None }`. Loads the EvalRun with `EvalRun.from_id_and_parent_path`. 404 if not found. `ALLOW_AGENT` like its siblings. |
-| `prompt_optimization_job_api.optimization_unsupported_reason` | An `LlmJudgeProperties` with `trace_tools=True` returns `"Prompt optimization doesn't support LLM judges with trace tools."` |
+| `prompt_optimization_job_api.optimization_unsupported_reason` | An `LlmJudgeProperties` with `trace_toolset_version` set returns `"Prompt optimization doesn't support LLM judges with trace tools."` |
 | OpenAPI client | Regenerate with `app/web_ui/src/lib/generate_schema.sh`. |
 
 These handlers stay thin: parse, call one core function, map the result (convention E16).
@@ -293,21 +294,24 @@ Specified in the UI design step, which comes after this architecture, along with
 - **Results** (`run_result/+page.svelte`, `llm_judge_result.svelte`): a "Judge trace" action when `has_judge_trace`, fetching from the new endpoint into the existing trace dialog.
 - **Judge display** (`eval_config_instruction.svelte`): show "Trace tools: on (v1)".
 
-## 4. Prerequisite: Non-Fatal Tool Argument Errors
+## 4. Prerequisite: Non-Fatal Tool Errors in the Adapter
 
-This is a separate task, already queued. `LiteLlmAdapter.process_tool_calls` will return argument errors (unknown tool, non-JSON arguments, schema mismatch) to the model as error tool messages, instead of raising.
+This is a separate task, already queued. It changes `LiteLlmAdapter.process_tool_calls` (and the streaming path) in two ways:
 
-- **Before it lands:** trace tools still work, but one malformed call fails the judgment.
-- **Required before:** the provider-verification phase. It is not required before the core phases.
+- **Model mistakes become error results.** An unknown tool, arguments that aren't JSON, or arguments that fail the schema go back to the model as error tool messages, instead of failing the run.
+- **Exceptions raised by a tool become error results.** It adds `ToolCallError` to `tools/base_tool.py` for expected, model-facing errors: the adapter returns the message without logging a stack trace. Any other `Exception` is logged with its stack trace and returned as an error. `BaseException`, including cancellation, still propagates.
+
+**It must merge before this project's implementation starts.** The trace tools subclass `ToolCallError`, and rely on the adapter to deliver their errors.
 
 ## 5. Error Handling
 
 | Failure | Where it's handled | Result |
 |---------|--------------------|--------|
-| Bad arguments that still match the schema (start > end, number out of range, offset past end, both `numbers` and `start`/`end`) | `_TraceTool.run` raises `TraceToolUsageError` | Error tool result. The judgment continues. |
-| Response over 40k | `render.assemble` | Refusal tool result with the fitting range. |
-| Regex invalid or timed out | `search.py` | Error tool result. |
-| Unexpected exception inside a tool | `_TraceTool.run` | Logged, then a generic error tool result. |
+| Arguments that fail the schema, or an unknown tool name | Adapter (§4) | Error tool result. The judgment continues. |
+| Bad arguments that still match the schema (start > end, number out of range, offset past end, both `numbers` and `start`/`end`) | `_TraceTool.run` raises `TraceToolUsageError`; adapter (§4) | Error tool result. The judgment continues. |
+| Response over 40k | `render.assemble` raises `TraceToolUsageError` | Refusal tool result with the fitting range. |
+| Regex invalid or timed out | `search.py` raises `TraceToolUsageError` | Error tool result. |
+| Unexpected exception inside a tool | Adapter (§4) | Logged with stack trace, then an error tool result. |
 | Missing or empty trace with tools on | `LlmJudgeEval.evaluate` | `missing_trace` skip. |
 | Template render problems, including the `trace_overview` misuse | Existing mapping | `extraction_failed` or `missing_reference_key` skip. |
 | Judge context overflow | `LlmJudgeEval.evaluate` | `JudgeContextExceededError`. Not retried. Nothing saved. |
@@ -384,14 +388,15 @@ Read `python_test_guide.md` before writing tests. Everything is pytest, and the 
   - missing or empty trace with tools on gives `missing_trace`;
   - `trace_overview` in a tools-off template renders the overview;
   - the placeholder filter outside judges raises.
-- **Version lock:** the filter output follows `trace_toolset_version`, by registering a fake v2 in the test only.
+- **Version lock:** the filter output follows `trace_toolset_version`, by registering a fake v2 in the test only. A tools-off judge always renders the v1 overview.
+- **Unknown version:** `trace_toolset_version=99` gives a `type_not_available` skip with the update-Kiln message.
 - **Errors:** `ContextWindowExceededError` wrapped in `KilnRunError` gives `JudgeContextExceededError`, and it is not retryable.
 
 ### 7.5 Datamodel
 
 - **G-Eval conflict:** G-Eval with trace tools is rejected.
 - **Template rule:** relaxed when tools are on, unchanged when off.
-- **Version on disk:** `trace_toolset_version` round-trips, and old files load.
+- **Version on disk:** `trace_toolset_version` round-trips. Files without the field load as off. A version newer than this build supports still loads.
 - **`EvalRun.judge_trace`:** round-trips with list content (the `materialize_lazy_content` regression), and is allowed on pointer records.
 
 ### 7.6 Runner

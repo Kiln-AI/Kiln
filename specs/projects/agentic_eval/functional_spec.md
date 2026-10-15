@@ -111,7 +111,7 @@ When evaluating the model's performance, follow these evaluation steps:
 
 ### 5.4 Prompt stability
 
-An existing judge's rendered prompt must not change when a new toolset version ships. The toolset version lock covers the `trace_overview` filter for every LLM judge, including judges with trace tools off: every LLM judge created from now on records a toolset version, and its `trace_overview` output follows that version. Judges created before this project cannot use the filter (their templates predate it), so they need no version.
+An existing judge's rendered prompt must not change when a new toolset version ships. The toolset version lock covers the `trace_overview` filter for every LLM judge: a judge with trace tools on renders the overview of its own toolset version, and a judge with trace tools off always renders the v1 overview.
 
 ## 6. Running a Judgment
 
