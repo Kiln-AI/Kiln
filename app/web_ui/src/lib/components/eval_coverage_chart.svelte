@@ -477,11 +477,8 @@
   </div>
 
   <div class="flex-1 min-w-[240px] flex flex-col gap-4">
-    <SettingsHeader title="Coverage" show_divider={false}>
-      <svelte:fragment slot="actions">
-        <slot name="controls" />
-      </svelte:fragment>
-    </SettingsHeader>
+    <SettingsHeader title="Coverage" show_divider={false} />
+    <slot name="controls" />
 
     {#if data.covered !== null}
       <div>
