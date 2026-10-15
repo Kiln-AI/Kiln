@@ -11,6 +11,7 @@ from litellm.types.utils import ChatCompletionMessageToolCall, Choices, ModelRes
 
 from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
 from kiln_ai.adapters.chat.chat_formatter import ChatFormatter, chat_message_to_dict
+from kiln_ai.adapters.errors import EMPTY_RESPONSE_ERROR_MESSAGE
 from kiln_ai.adapters.litellm_utils.litellm_streaming import StreamingCompletion
 from kiln_ai.adapters.litellm_utils.tool_calls import function_tool_calls
 from kiln_ai.adapters.ml_model_list import KilnModelProvider
@@ -30,11 +31,6 @@ MAX_CALLS_PER_TURN = 10
 MAX_TOOL_CALLS_PER_TURN = 100
 
 logger = logging.getLogger(__name__)
-
-EMPTY_RESPONSE_ERROR_MESSAGE = (
-    "Model returned an assistant message, but no content or tool calls. "
-    "This is not supported."
-)
 
 CONTENT_FILTER_ERROR_MESSAGE = (
     "The model declined to respond to this request (the provider's safety "

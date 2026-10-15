@@ -3,17 +3,24 @@
 AsyncJobRunner retries only jobs that raise RetryableError; pipelines map
 provider failures onto that contract through this classifier, so "transient"
 means the same thing everywhere a model call can flake (the eval runner,
-the synthetic-user batch runner).
+the synthetic-user batch runner). The model adapter uses it too, to decide
+which tool failures fail the run instead of going back to the model.
 """
 
 import litellm
 
-from kiln_ai.adapters.errors import KilnRunError, StructuredOutputParseError
-from kiln_ai.adapters.jev import JevApiError
-from kiln_ai.adapters.model_adapters.adapter_stream import (
+from kiln_ai.adapters.errors import (
     EMPTY_RESPONSE_ERROR_MESSAGE,
+    KilnRunError,
+    StructuredOutputParseError,
 )
+from kiln_ai.adapters.jev import JevApiError
 from kiln_ai.datamodel.task_output import TASK_OUTPUT_SCHEMA_ERROR_PREFIX
+from kiln_ai.worlds.session_manager import (
+    OpenEnvError,
+    OpenEnvTransientError,
+    tool_call_error_ends_session,
+)
 
 
 def unwrap_kiln_run_error(e: BaseException) -> BaseException:
@@ -76,6 +83,25 @@ def is_retryable_error(e: BaseException) -> bool:
         return True
 
     return False
+
+
+def is_transient_environment_error(e: BaseException) -> bool:
+    """True when a world environment failed in a way a fresh session may not
+    repeat (a dropped connection, a timeout, a full server). The eval runner
+    retries the episode on a new session."""
+    return isinstance(unwrap_kiln_run_error(e), OpenEnvTransientError)
+
+
+def is_run_ending_tool_error(e: BaseException) -> bool:
+    """True for an exception from a tool's run() that must fail the run instead
+    of going back to the model as an error result: a transient error a retry
+    layer retries, or a world environment error that ended the episode's
+    session, after which none of the world's tools can work."""
+    cause = unwrap_kiln_run_error(e)
+    ends_world_session = isinstance(cause, OpenEnvError) and (
+        tool_call_error_ends_session(cause)
+    )
+    return ends_world_session or is_retryable_error(cause)
 
 
 def is_batch_fatal_error(e: BaseException) -> bool:

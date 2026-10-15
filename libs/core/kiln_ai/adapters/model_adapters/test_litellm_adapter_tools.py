@@ -4,12 +4,14 @@ import logging
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
+import litellm
 import pytest
 from litellm.types.utils import ModelResponse
 from litellm.types.utils import Usage as LiteLlmUsage
 
 from kiln_ai import datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
+from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, built_in_models
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import (
@@ -17,6 +19,7 @@ from kiln_ai.adapters.model_adapters.litellm_adapter import (
     ModelTurnResult,
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
+from kiln_ai.adapters.retry_classification import unwrap_kiln_run_error
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel import PromptId
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
@@ -36,6 +39,11 @@ from kiln_ai.tools.built_in_tools.math_tools import (
 )
 from kiln_ai.tools.kiln_task_tool import KilnTaskToolResult
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+from kiln_ai.worlds.session_manager import (
+    OpenEnvError,
+    OpenEnvRejectedError,
+    OpenEnvTransientError,
+)
 
 
 def build_test_task(tmp_path: Path):
@@ -1189,6 +1197,19 @@ UNEXPECTED_ADD_FAILURE = (
         ),
         pytest.param(
             [
+                MockTool(
+                    "add",
+                    raise_on_run=OpenEnvRejectedError(
+                        "The environment rejected a 'step' message: bad"
+                    ),
+                )
+            ],
+            [("call_1", "add", '{"a": 2, "b": 2}')],
+            [_tool_error("call_1", UNEXPECTED_ADD_FAILURE)],
+            id="world_rejected_call_keeps_session",
+        ),
+        pytest.param(
+            [
                 MockTool("multiply", return_value="4"),
                 MockTool("add", raise_on_run=RuntimeError("boom")),
             ],
@@ -1350,6 +1371,60 @@ async def test_process_tool_calls_broken_tool_schema_fails_run(
             match="Couldn't validate arguments for tool 'add' against its parameters schema",
         ):
             await tools_adapter.process_tool_calls(tool_calls)  # type: ignore
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(
+            OpenEnvTransientError("connection dropped"), id="world_session_dropped"
+        ),
+        pytest.param(
+            OpenEnvError("The environment sent invalid JSON: <html>"),
+            id="world_session_broken",
+        ),
+        pytest.param(
+            litellm.RateLimitError(
+                message="slow down", llm_provider="openai", model="gpt-4o"
+            ),
+            id="provider_rate_limit",
+        ),
+        pytest.param(
+            KilnRunError(
+                "The run failed.",
+                partial_trace=None,
+                original=litellm.Timeout(
+                    message="timed out", llm_provider="openai", model="gpt-4o"
+                ),
+            ),
+            id="sub_task_run_timed_out",
+        ),
+    ],
+)
+async def test_run_ending_tool_error_fails_run(tools_adapter, error):
+    """A transient error the retry layers retry, or a world error that ended the
+    session, fails the run on the first call with that same error instead of
+    going back to the model."""
+    tool_call_response = _tool_call_response(("call_1", "add", '{"a": 2, "b": 2}'))
+
+    with (
+        patch.object(
+            tools_adapter,
+            "cached_available_tools",
+            return_value=[MockTool("add", raise_on_run=error)],
+        ),
+        patch.object(tools_adapter, "build_completion_kwargs", return_value={}),
+        patch.object(
+            tools_adapter,
+            "acompletion_checking_response",
+            side_effect=[(tool_call_response, tool_call_response.choices[0])],
+        ) as model_call,
+    ):
+        with pytest.raises(KilnRunError) as exc_info:
+            await tools_adapter.invoke("what is 2+2")
+
+    assert unwrap_kiln_run_error(exc_info.value) is unwrap_kiln_run_error(error)
+    assert model_call.call_count == 1
 
 
 async def test_process_tool_calls_cancellation_propagates(tools_adapter):

@@ -23,6 +23,7 @@ from openai.types.chat.chat_completion_message_tool_call_param import (
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
 from kiln_ai.adapters.chat.chat_formatter import chat_message_to_dict
+from kiln_ai.adapters.errors import EMPTY_RESPONSE_ERROR_MESSAGE
 from kiln_ai.adapters.litellm_utils.tool_calls import function_tool_calls
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
@@ -30,7 +31,6 @@ from kiln_ai.adapters.ml_model_list import (
     StructuredOutputMode,
 )
 from kiln_ai.adapters.model_adapters.adapter_stream import (
-    EMPTY_RESPONSE_ERROR_MESSAGE,
     AdapterStream,
     raise_for_empty_model_response,
 )
@@ -42,6 +42,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
     Usage,
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
+from kiln_ai.adapters.retry_classification import is_run_ending_tool_error
 from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.json_schema import (
     close_object_schemas,
@@ -933,7 +934,9 @@ class LiteLlmAdapter(BaseAdapter):
         Returns the ``task_response`` arguments (if the model called it) and one
         tool message per other call. A call that fails (unknown tool, bad
         arguments, or the tool raising) yields an error tool message instead of
-        an exception, so the model can recover and the run continues.
+        an exception, so the model can recover and the run continues. Errors
+        that ``is_run_ending_tool_error`` accepts still raise, so a caller can
+        retry the run or report the real cause.
         """
         if tool_calls is None:
             return None, []
@@ -980,8 +983,9 @@ class LiteLlmAdapter(BaseAdapter):
         """Run one tool call and return its tool message.
 
         Mistakes in the model's call and exceptions from ``tool.run()`` become
-        error messages. Only ``Exception`` is caught (never ``BaseException``),
-        so cancellation still propagates. A broken tool definition raises.
+        error messages. These still raise: cancellation (only ``Exception`` is
+        caught), a broken tool definition, and errors that must fail the run
+        (``is_run_ending_tool_error``).
         """
         tool_name = tool_call.function.name or ""
         tool = tools_by_name.get(tool_name)
@@ -1018,7 +1022,9 @@ class LiteLlmAdapter(BaseAdapter):
                 tool_call.id,
                 str(e) or f"Error: tool '{tool_name}' couldn't complete this call.",
             )
-        except Exception:
+        except Exception as e:
+            if is_run_ending_tool_error(e):
+                raise
             logger.exception(
                 f"Tool '{tool_name}' raised an unexpected exception. Returning an error result to the model."
             )
