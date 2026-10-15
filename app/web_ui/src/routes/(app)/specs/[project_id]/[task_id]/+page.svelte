@@ -41,6 +41,13 @@
   import Banner from "$lib/ui/banner.svelte"
   import posthog from "posthog-js"
   import { agentInfo } from "$lib/agent"
+  import EvalCoverageChart from "$lib/components/eval_coverage_chart.svelte"
+  import {
+    buildCoverageData,
+    type RunConfigEvalScoresSummary,
+  } from "$lib/utils/eval_coverage/eval_coverage_data"
+  import { load_task } from "$lib/stores"
+  import type { Task, TaskRunConfig } from "$lib/types"
 
   // ### Spec Table ###
 
@@ -192,6 +199,7 @@
     load_specs(project_id, task_id)
     load_evals(project_id, task_id)
     load_judge_types(project_id, task_id)
+    load_coverage_context(project_id, task_id)
     // Per-task, so it belongs with the loads keyed on the task rather than in
     // onMount: navigating between two tasks keeps this component mounted, and
     // a once-only check would advertise the previous task's draft.
@@ -250,6 +258,108 @@
     }
   }
   $: create_eval_label = create_eval_button_label(has_eval_draft)
+
+  // ### Coverage chart ###
+  // The task description holds the constitution; a run config supplies the
+  // pass rates. Both are non-fatal: the chart degrades to counts without them.
+  let coverage_task: Task | null = null
+  let coverage_run_configs: TaskRunConfig[] = []
+  let coverage_run_config_id: string | null = null
+  let coverage_scores: RunConfigEvalScoresSummary | null = null
+  let coverage_scores_loading = false
+
+  async function load_coverage_context(
+    req_project_id: string,
+    req_task_id: string,
+  ) {
+    coverage_task = null
+    coverage_run_configs = []
+    coverage_run_config_id = null
+    coverage_scores = null
+    try {
+      const [task, run_configs] = await Promise.all([
+        load_task(req_project_id, req_task_id),
+        client.GET("/api/projects/{project_id}/tasks/{task_id}/run_configs", {
+          params: {
+            path: { project_id: req_project_id, task_id: req_task_id },
+          },
+        }),
+      ])
+      if (req_project_id !== project_id || req_task_id !== task_id) return
+      if (run_configs.error) {
+        throw run_configs.error
+      }
+      coverage_task = task
+      coverage_run_configs = [...(run_configs.data || [])].sort((a, b) =>
+        (b.created_at || "").localeCompare(a.created_at || ""),
+      )
+      const default_id = task?.default_run_config_id ?? null
+      coverage_run_config_id =
+        (default_id && coverage_run_configs.some((rc) => rc.id === default_id)
+          ? default_id
+          : coverage_run_configs[0]?.id) ?? null
+    } catch (error) {
+      // Non-fatal: the chart shows sizes without pass rates.
+      console.warn("Failed to load coverage context:", error)
+    }
+  }
+
+  async function load_coverage_scores(
+    req_project_id: string,
+    req_task_id: string,
+    run_config_id: string,
+  ) {
+    try {
+      coverage_scores_loading = true
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}/eval_scores",
+        {
+          params: {
+            path: {
+              project_id: req_project_id,
+              task_id: req_task_id,
+              run_config_id,
+            },
+          },
+        },
+      )
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        run_config_id !== coverage_run_config_id
+      )
+        return
+      if (error) {
+        throw error
+      }
+      coverage_scores = data
+    } catch (error) {
+      console.warn("Failed to load eval scores for coverage:", error)
+      coverage_scores = null
+    } finally {
+      if (run_config_id === coverage_run_config_id) {
+        coverage_scores_loading = false
+      }
+    }
+  }
+
+  $: if (coverage_run_config_id) {
+    load_coverage_scores(project_id, task_id, coverage_run_config_id)
+  } else {
+    coverage_scores = null
+  }
+
+  $: coverage_data =
+    specs && evals
+      ? buildCoverageData({
+          specs,
+          evals,
+          task_description: coverage_task?.description,
+          eval_scores: coverage_scores,
+          project_id,
+          task_id,
+        })
+      : null
 
   async function load_specs(req_project_id: string, req_task_id: string) {
     try {
@@ -854,6 +964,34 @@
           </svg>
         </div>
       </Banner>
+
+      {#if coverage_data && coverage_data.nodes.length > 0}
+        <div class="mt-10 mb-10">
+          <EvalCoverageChart
+            data={coverage_data}
+            loading={coverage_scores_loading}
+          >
+            <label
+              slot="controls"
+              class="flex flex-row items-center gap-2 text-sm text-gray-500"
+            >
+              Pass rates from
+              <select
+                class="select select-bordered select-sm"
+                bind:value={coverage_run_config_id}
+                disabled={coverage_run_configs.length === 0}
+              >
+                {#if coverage_run_configs.length === 0}
+                  <option value={null}>No run configs</option>
+                {/if}
+                {#each coverage_run_configs as rc (rc.id)}
+                  <option value={rc.id}>{rc.name}</option>
+                {/each}
+              </select>
+            </label>
+          </EvalCoverageChart>
+        </div>
+      {/if}
 
       <div class="mb-4">
         <div class="-mb-4">
