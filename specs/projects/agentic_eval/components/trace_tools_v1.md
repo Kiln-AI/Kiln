@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Component: Trace Toolset v1
