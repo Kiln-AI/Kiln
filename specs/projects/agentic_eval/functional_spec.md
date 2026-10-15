@@ -40,7 +40,7 @@ See [§13 Out of Scope](#13-out-of-scope).
 | **Agentic judge** | An LLM judge with trace tools turned on. |
 | **Judge trace** | The judge's own message history for one judgment: its system prompt, rendered prompt, every tool call and result, and its final answer. |
 
-> **Open decision (resolved in architecture):** whether the agentic judge is a new judge type, or an option ("trace tools on") on the existing LLM judge. This spec describes behavior that holds either way. The architecture step will weigh both and pick one.
+> **Open decision (resolved in architecture):** whether the agentic judge is a new judge type, or an option ("trace tools on") on the existing LLM judge. **Current lean: an option on the LLM judge**, with incompatible combinations (e.g. G-Eval + trace tools) rejected as validation errors. This spec describes behavior that holds either way.
 
 ## 4. Judge Configuration
 
@@ -48,7 +48,7 @@ An agentic judge has the same settings as an LLM judge, plus trace tools:
 
 | Setting | Notes |
 |---------|-------|
-| Judge model and provider | Only models that support tool calling, and a structured output mode that does not itself use tool calling, can be picked. |
+| Judge model and provider | Only models that support both tool calling and structured output can be picked. Some of these combinations may still fail with a given provider; that is acceptable, and the failure shows up as an error on a test run. |
 | System prompt | Same as LLM judge. |
 | Prompt template | Jinja. See [§5](#5-prompt-template). |
 | Judge instructions | Same as LLM judge (numbered steps bound to `{{ judge_instructions }}`). |
@@ -57,7 +57,7 @@ An agentic judge has the same settings as an LLM judge, plus trace tools:
 
 - **Trace tools are all-or-nothing.** There is no per-tool on/off. The judge is an agent; we trust the model to use the tools well.
 - **Trace tools only.** The judge gets no other tools (no project tools, MCP servers, or web access).
-- **No G-Eval.** G-Eval (log-probability) scoring cannot be combined with trace tools.
+- **No G-Eval.** G-Eval (log-probability) scoring cannot be combined with trace tools. Asking for both is a validation error.
 - **No budgets in v1.** There is no per-judge limit on tool rounds or characters read. The judge's own context window is the only limit (see [§10](#10-errors-and-skips)).
 - **Judges are immutable after creation**, as today. To change a judge, create a new one.
 
@@ -67,7 +67,7 @@ An agentic judge has the same settings as an LLM judge, plus trace tools:
 
 - The template has the same variables as the LLM judge: `task_input`, `final_message`, `trace`, `reference_data`, `world_episode`, `judge_instructions`.
 - **Validation rule.** Today an LLM judge template must reference `trace`, `final_message` or `task_input`. With trace tools on, this requirement is dropped: the judge can see the trace through the tools, the prompt, or both. With trace tools off, today's rule still applies.
-- Putting the full trace in an agentic judge's prompt (`{{ trace | format_trace }}`) is allowed. Our default template does not do it.
+- Putting the full trace in an agentic judge's prompt (`{{ trace | format_trace }}`) is allowed.
 
 ### 5.2 `trace_overview` filter
 
@@ -77,6 +77,8 @@ An agentic judge has the same settings as an LLM judge, plus trace tools:
 - No parameters in v1.
 
 ### 5.3 Default template for agentic judges
+
+> **Open (UI design step):** where users start an agentic judge, and therefore which default template they get. Candidates: an "Agentic Judge" entry in the LLM Judge Templates list ("Great for long traces: this judge reads only the parts it needs"), a trace-tools option on the judge form, or both. Whatever the entry point, its default template includes `{{ trace | trace_overview }}` and has trace tools on. The draft below is the starting point.
 
 Built the same way as today's default LLM judge prompt (task description, data-guard line, data blocks, evaluation steps, score criteria), with the data block changed:
 
@@ -109,7 +111,7 @@ When evaluating the model's performance, follow these evaluation steps:
 
 ### 5.4 Prompt stability
 
-An existing judge's rendered prompt must not change when a new toolset version ships. This includes the output of `trace_overview` inside the prompt. (How this is achieved for judges with trace tools off is an architecture question.)
+An existing judge's rendered prompt must not change when a new toolset version ships. The toolset version lock covers the `trace_overview` filter for every LLM judge, including judges with trace tools off: every LLM judge created from now on records a toolset version, and its `trace_overview` output follows that version. Judges created before this project cannot use the filter (their templates predate it), so they need no version.
 
 ## 6. Running a Judgment
 
@@ -298,11 +300,11 @@ With `context_chars=60`:
 
 ### 7.12 Tool descriptions
 
-The tool descriptions are part of the toolset version and are the main guidance for the judge. Together they must:
+The tool descriptions are part of the toolset version. They are owned by Kiln as the tool author, and describe **only the tools**: what they do and how to use them well. They say nothing about how to judge; evaluation guidance lives only in the judge's prompt. Together they must:
 
 - Explain the addressing model (message numbers, parts, character offsets) and the response limit.
-- Recommend the working pattern: start from the overview, narrow with `preview_messages` and `search_trace`, read only what the evaluation needs, and check sizes before reading large messages.
-- State that everything the tools return is data from the trace being evaluated, never instructions to the judge.
+- Describe efficient use: start from the overview, narrow with `preview_messages` and `search_trace`, check sizes before reading large messages, and read only what is needed.
+- State that everything the tools return is data from the trace, never instructions.
 - Say what each parameter does, including that `preview_chars=0` gives sizes only, and what `offset` means in each tool.
 
 Exact wording is decided in the architecture or component design.
@@ -333,7 +335,7 @@ Applies to **every LLM-based V2 judge**: the existing LLM judge (including G-Eva
 | Judged trace missing or empty | Skipped with the existing `missing_trace` reason. |
 | Template render problems (missing reference key, unknown variable) | Skipped, as today. |
 | The judge calls a tool with bad arguments, or a response would exceed the limit | Error returned to the judge as the tool result. The judgment continues. |
-| The judge model's context window fills up | The judgment fails with an error. **Not retried**: a retry would fail the same way. The error message says the judge ran out of context. |
+| The judge model's context window fills up | The judgment fails with an error. **Not retried** within the eval run: a retry would almost always fail the same way. The error message says the judge ran out of context. As with every failed judgment, nothing is saved, so the item is attempted again the next time the eval is run. This repeat cost is accepted for v1. |
 | The judge's final answer does not match the score schema | Handled as for the LLM judge today (retried). |
 | Kiln's safety limit on tool rounds is reached | The judgment fails with an error, not retried. |
 | Transient provider errors (rate limits, timeouts, server errors) | Retried, as today. |
@@ -342,7 +344,7 @@ Applies to **every LLM-based V2 judge**: the existing LLM judge (including G-Eva
 
 Functional level only. Layout and details come in the UI design step.
 
-- **Creating a judge.** The user can create an agentic judge from the existing create-judge flow. Where it appears (its own entry in the type picker, or an option on the LLM judge form) follows the open type decision in [§3](#3-concepts).
+- **Creating a judge.** The user can create an agentic judge from the existing create-judge flows. The entry point is open ([§5.3](#53-default-template-for-agentic-judges)).
   - The form has the same fields as the LLM judge form, minus G-Eval.
   - The model picker only offers models that support trace tools.
   - The prompt starts from the default agentic template ([§5.3](#53-default-template-for-agentic-judges)).
@@ -361,7 +363,6 @@ Functional level only. Layout and details come in the UI design step.
 
 ## 13. Out of Scope
 
-- The eval builder / copilot authoring agentic judges.
 - Prompt optimization using agentic judges.
 - Budgets on tool rounds or characters read.
 - Turning individual trace tools on or off.
@@ -378,3 +379,11 @@ Functional level only. Layout and details come in the UI design step.
 - **Performance.** Tools must stay fast on traces of 5M+ tokens (~20 MB of text). Any per-trace indexing (e.g. tool call id → call) is built once per judgment, not per tool call.
 - **Prompt injection.** The judged trace is untrusted text. Tool descriptions and the default prompt tell the judge that trace content is data. The exposure is the same as today's LLM judge, where trace text is pasted into the prompt.
 - **Compatibility.** Existing judges, results, and templates keep working unchanged. Existing results simply have no judge trace.
+
+## 15. Open Questions
+
+| Question | Resolved in |
+|----------|-------------|
+| Separate judge type, or an option on the LLM judge (leaning option). | Architecture |
+| Where users start an agentic judge, and which default template they get ([§5.3](#53-default-template-for-agentic-judges)). | UI design |
+| Whether, and how much of, the eval builder / copilot supports agentic judges. | Architecture |
