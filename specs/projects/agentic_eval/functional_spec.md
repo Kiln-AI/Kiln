@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Functional Spec: Agentic Eval
@@ -385,5 +385,6 @@ Functional level only. Layout and details come in the UI design step.
 | Question | Resolved in |
 |----------|-------------|
 | Separate judge type, or an option on the LLM judge (leaning option). | Architecture |
-| Where users start an agentic judge, and which default template they get ([§5.3](#53-default-template-for-agentic-judges)). | UI design |
+| Where users start an agentic judge, and which default template they get ([§5.3](#53-default-template-for-agentic-judges)). Leaning: trace tools as an option on the judge, not a separate template card. | UI design (after architecture) |
+| What LLM judge templates default to: classic (trace in the prompt) or agentic (trace tools on). | UI design (after architecture) |
 | Whether, and how much of, the eval builder / copilot supports agentic judges. | Architecture |
