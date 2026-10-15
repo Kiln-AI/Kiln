@@ -6,6 +6,8 @@
   import { packWeighted } from "$lib/utils/eval_coverage/circle_pack"
   import { principleGroups } from "$lib/utils/eval_coverage/constitution"
   import { formatPriority } from "$lib/utils/formatters"
+  import SettingsHeader from "$lib/ui/settings_header.svelte"
+  import Collapse from "$lib/ui/collapse.svelte"
 
   /**
    * Eval coverage chart.
@@ -440,7 +442,7 @@
           <div class="font-medium">{hovered_node.name}</div>
           {#if hovered_node.kind === "eval"}
             <div class="text-gray-500">
-              Pass rate <span class="font-medium text-gray-800"
+              Pass rate <span class="font-medium"
                 >{pct(hovered_node.pass_rate)}</span
               >
               {#if hovered_node.dataset_size !== null}
@@ -448,19 +450,19 @@
               {/if}
               · {Math.round(hovered_node.weight * 100)}% of the product
             </div>
-            <div class="text-gray-400">Click to open the eval</div>
+            <div class="text-gray-500">Click to open the eval</div>
           {:else if hovered_node.kind === "planned"}
             <div class="text-gray-500">
               Planned eval · {Math.round(hovered_node.weight * 100)}% of the
               product
             </div>
-            <div class="text-gray-400">Click to open the spec</div>
+            <div class="text-gray-500">Click to open the spec</div>
           {:else}
             <div class="text-gray-500">
               Not covered · {Math.round(hovered_node.weight * 100)}% of the
               product
             </div>
-            <div class="text-gray-400">Click to create an eval for it</div>
+            <div class="text-gray-500">Click to create an eval for it</div>
           {/if}
         {:else if hovered_principle}
           <div class="font-medium">
@@ -475,14 +477,15 @@
   </div>
 
   <div class="flex-1 min-w-[240px] flex flex-col gap-4">
-    <div class="flex flex-row flex-wrap items-center justify-between gap-2">
-      <div class="text-xl font-bold">Coverage</div>
-      <slot name="controls" />
-    </div>
+    <SettingsHeader title="Coverage" show_divider={false}>
+      <svelte:fragment slot="actions">
+        <slot name="controls" />
+      </svelte:fragment>
+    </SettingsHeader>
 
     {#if data.covered !== null}
       <div>
-        <div class="text-4xl font-medium">
+        <div class="text-2xl font-medium">
           {Math.round(data.covered * 100)}%
         </div>
         <div class="text-sm text-gray-500">
@@ -493,7 +496,7 @@
       </div>
     {:else}
       <div>
-        <div class="text-4xl font-medium">{data.active_count}</div>
+        <div class="text-2xl font-medium">{data.active_count}</div>
         <div class="text-sm text-gray-500">
           active {data.active_count === 1 ? "eval" : "evals"}, sized by
           priority. Add a numbered list of principles to the task description to
@@ -502,7 +505,7 @@
       </div>
     {/if}
 
-    <div class="rounded-lg border p-4 text-sm min-h-[7rem]" aria-live="polite">
+    <div class="text-sm min-h-[7rem]" aria-live="polite">
       {#if hovered_node}
         <div class="font-medium">{hovered_node.name}</div>
         <div class="text-gray-500 mt-1">
@@ -512,7 +515,7 @@
           {:else if hovered_node.kind === "planned"}
             Planned eval, not yet active.
           {:else}
-            Pass rate <span class="font-medium text-gray-800"
+            Pass rate <span class="font-medium"
               >{pct(hovered_node.pass_rate)}</span
             >
             {#if hovered_node.dataset_size !== null}
@@ -546,7 +549,7 @@
             >
           {/if}
         </div>
-        <div class="text-gray-700 mt-1">{hovered_principle.text}</div>
+        <div class="mt-1">{hovered_principle.text}</div>
         <div class="mt-2 text-gray-500">
           {#if principle_nodes.length === 0}
             No eval covers this principle.
@@ -572,15 +575,29 @@
             </div>
           {/each}
           <div class="flex items-center gap-1">
-            <span
-              class="inline-block h-3 w-3 rounded-full border border-dashed border-primary"
-            ></span>
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <circle
+                cx="6"
+                cy="6"
+                r="5"
+                fill="none"
+                stroke="#415CF5"
+                stroke-dasharray="3 2"
+              />
+            </svg>
             planned
           </div>
           <div class="flex items-center gap-1">
-            <span
-              class="inline-block h-3 w-3 rounded-full border border-dotted border-gray-400"
-            ></span>
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <circle
+                cx="6"
+                cy="6"
+                r="5"
+                fill="none"
+                stroke="#9ca3af"
+                stroke-dasharray="1 2"
+              />
+            </svg>
             not covered
           </div>
         </div>
@@ -609,9 +626,8 @@
     {/if}
 
     {#if principles.length > 0 && table_nodes.length > 0}
-      <details class="text-sm">
-        <summary class="cursor-pointer text-gray-500">Table view</summary>
-        <div class="overflow-x-auto mt-2">
+      <Collapse title="Table view" small={true}>
+        <div class="rounded-lg border overflow-x-auto">
           <table class="table table-xs">
             <thead>
               <tr>
@@ -647,7 +663,7 @@
             </tbody>
           </table>
         </div>
-      </details>
+      </Collapse>
     {/if}
   </div>
 </div>

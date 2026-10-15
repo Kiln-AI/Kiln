@@ -46,8 +46,13 @@
     buildCoverageData,
     type RunConfigEvalScoresSummary,
   } from "$lib/utils/eval_coverage/eval_coverage_data"
-  import { load_task } from "$lib/stores"
-  import type { Task, TaskRunConfig } from "$lib/types"
+  import { get_task_composite_id, load_task } from "$lib/stores"
+  import {
+    load_task_run_configs,
+    run_configs_by_task_composite_id,
+  } from "$lib/stores/run_configs_store"
+  import SavedRunConfigsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
+  import type { Task } from "$lib/types"
 
   // ### Spec Table ###
 
@@ -263,7 +268,6 @@
   // The task description holds the constitution; a run config supplies the
   // pass rates. Both are non-fatal: the chart degrades to counts without them.
   let coverage_task: Task | null = null
-  let coverage_run_configs: TaskRunConfig[] = []
   let coverage_run_config_id: string | null = null
   let coverage_scores: RunConfigEvalScoresSummary | null = null
   let coverage_scores_loading = false
@@ -273,31 +277,26 @@
     req_task_id: string,
   ) {
     coverage_task = null
-    coverage_run_configs = []
     coverage_run_config_id = null
     coverage_scores = null
     try {
-      const [task, run_configs] = await Promise.all([
+      const [task] = await Promise.all([
         load_task(req_project_id, req_task_id),
-        client.GET("/api/projects/{project_id}/tasks/{task_id}/run_configs", {
-          params: {
-            path: { project_id: req_project_id, task_id: req_task_id },
-          },
-        }),
+        load_task_run_configs(req_project_id, req_task_id),
       ])
       if (req_project_id !== project_id || req_task_id !== task_id) return
-      if (run_configs.error) {
-        throw run_configs.error
-      }
       coverage_task = task
-      coverage_run_configs = [...(run_configs.data || [])].sort((a, b) =>
-        (b.created_at || "").localeCompare(a.created_at || ""),
-      )
+      const run_configs = [
+        ...(get(run_configs_by_task_composite_id)[
+          get_task_composite_id(req_project_id, req_task_id)
+        ] || []),
+      ].sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
+      // The task default, else the newest run config.
       const default_id = task?.default_run_config_id ?? null
       coverage_run_config_id =
-        (default_id && coverage_run_configs.some((rc) => rc.id === default_id)
+        (default_id && run_configs.some((rc) => rc.id === default_id)
           ? default_id
-          : coverage_run_configs[0]?.id) ?? null
+          : run_configs[0]?.id) ?? null
     } catch (error) {
       // Non-fatal: the chart shows sizes without pass rates.
       console.warn("Failed to load coverage context:", error)
@@ -343,7 +342,7 @@
     }
   }
 
-  $: if (coverage_run_config_id) {
+  $: if (coverage_run_config_id && coverage_run_config_id !== "custom") {
     load_coverage_scores(project_id, task_id, coverage_run_config_id)
   } else {
     coverage_scores = null
@@ -971,24 +970,18 @@
             data={coverage_data}
             loading={coverage_scores_loading}
           >
-            <label
-              slot="controls"
-              class="flex flex-row items-center gap-2 text-sm text-gray-500"
-            >
-              Pass rates from
-              <select
-                class="select select-bordered select-sm"
-                bind:value={coverage_run_config_id}
-                disabled={coverage_run_configs.length === 0}
-              >
-                {#if coverage_run_configs.length === 0}
-                  <option value={null}>No run configs</option>
-                {/if}
-                {#each coverage_run_configs as rc (rc.id)}
-                  <option value={rc.id}>{rc.name}</option>
-                {/each}
-              </select>
-            </label>
+            <svelte:fragment slot="controls">
+              {#if coverage_task}
+                <SavedRunConfigsDropdown
+                  title="Pass rates from"
+                  {project_id}
+                  current_task={coverage_task}
+                  bind:selected_run_config_id={coverage_run_config_id}
+                  run_page={false}
+                  auto_select_default={false}
+                />
+              {/if}
+            </svelte:fragment>
           </EvalCoverageChart>
         </div>
       {/if}

@@ -70,7 +70,9 @@ describe("EvalCoverageChart", () => {
   it("draws one circle per node, links evals, and one arc per principle", () => {
     const { container } = render(EvalCoverageChart, { data: fixture() })
     // 1 boundary + 3 nodes
-    expect(container.querySelectorAll("svg circle")).toHaveLength(4)
+    expect(container.querySelectorAll('svg[role="group"] circle')).toHaveLength(
+      4,
+    )
     const link = container.querySelector('svg a[href="/specs/p/t/s1"]')
     expect(link).not.toBeNull()
     // the gap links to the builder; the group labels sit on the ring
@@ -79,7 +81,7 @@ describe("EvalCoverageChart", () => {
     ).not.toBeNull()
     expect(container.querySelector("svg")?.textContent).toContain("Careful")
     expect(container.querySelector("svg")?.textContent).toContain("Honest")
-    expect(container.querySelector("details table")).not.toBeNull()
+    expect(container.querySelector("table")).not.toBeNull()
     expect(container.querySelectorAll('svg g[role="button"]')).toHaveLength(4)
     expect(container.textContent).toContain("50%")
     expect(container.textContent).toContain("3 of 4")
