@@ -1,7 +1,11 @@
 from typing import Any
 
 from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
-from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import build_binary_scores
+from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import (
+    build_binary_scores,
+    invalid_tool_call_ids,
+    is_invalid_tool_call,
+)
 from kiln_ai.datamodel.eval import (
     EvalTaskInput,
     SkippedReason,
@@ -14,7 +18,8 @@ class StepCountCheckEval(BaseV2EvalBridge):
     """V2 adapter for step_count_check: validates the number of steps in the trace.
 
     count_type determines what is counted:
-    - "tool_calls": total number of individual tool call invocations across all assistant messages
+    - "tool_calls": total number of individual tool call invocations across all assistant
+      messages, leaving out calls the adapter rejected without running
     - "model_responses": number of assistant messages, including tool-call-only
     - "turns": number of distinct user/assistant turn pairs (count of user messages)
     """
@@ -45,13 +50,14 @@ class StepCountCheckEval(BaseV2EvalBridge):
     def _count(trace: list[dict[str, Any]], count_type: str) -> int:
         """Count steps in the trace based on count_type."""
         if count_type == "tool_calls":
+            rejected_ids = invalid_tool_call_ids(trace)
             total = 0
             for msg in trace:
                 if msg.get("role") != "assistant":
                     continue
-                tool_calls = msg.get("tool_calls")
-                if tool_calls:
-                    total += len(tool_calls)
+                for tc in msg.get("tool_calls") or []:
+                    if not is_invalid_tool_call(tc, rejected_ids):
+                        total += 1
             return total
         elif count_type == "model_responses":
             total = 0

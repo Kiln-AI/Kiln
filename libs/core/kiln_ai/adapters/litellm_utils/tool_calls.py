@@ -26,3 +26,27 @@ def function_tool_calls(
             )
         result.append(tool_call)
     return result
+
+
+def response_function_tool_calls(
+    tool_calls: Sequence[
+        ChatCompletionMessageToolCall | ChatCompletionMessageCustomToolCall
+    ]
+    | None,
+) -> list[ChatCompletionMessageToolCall]:
+    """The function tool calls of a model response, normalized in place so the
+    message can be re-sent to the provider and saved in a trace.
+
+    `None` arguments become an empty string, as LiteLLM itself does, so the call is
+    answered as unparseable arguments. A call without a function name raises: it
+    can't be answered or saved.
+    """
+    result = function_tool_calls(tool_calls)
+    for tool_call in result:
+        if tool_call.function.name is None:
+            raise ValueError(
+                "The model requested a tool call, without providing a function name (required)."
+            )
+        if tool_call.function.arguments is None:
+            tool_call.function.arguments = ""
+    return result

@@ -81,7 +81,12 @@ def test_tool_message_param_properties_match():
     openai_properties = set(openai_annotations.keys())
     kiln_properties = set(kiln_annotations.keys())
 
-    kiln_extra_properties = {"kiln_task_tool_data", "is_error", "error_message"}
+    kiln_extra_properties = {
+        "kiln_task_tool_data",
+        "is_error",
+        "error_message",
+        "invalid_call",
+    }
     for prop in kiln_extra_properties:
         assert prop in kiln_properties, f"Kiln should have {prop}"
         kiln_properties.remove(prop)
@@ -225,7 +230,14 @@ def test_tool_message_wrapper_can_be_instantiated():
 
 def test_kiln_only_message_fields_set():
     assert KILN_ONLY_MESSAGE_FIELDS == frozenset(
-        {"latency_ms", "is_error", "error_message", "kiln_task_tool_data", "usage"}
+        {
+            "latency_ms",
+            "is_error",
+            "error_message",
+            "invalid_call",
+            "kiln_task_tool_data",
+            "usage",
+        }
     )
 
 
@@ -245,6 +257,7 @@ def test_sanitize_messages_strips_kiln_only_fields():
             "tool_call_id": "c1",
             "is_error": True,
             "error_message": "boom",
+            "invalid_call": "unknown_tool",
             "kiln_task_tool_data": "p:::t:::ta:::r",
         },
     ]

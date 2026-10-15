@@ -21,6 +21,7 @@ from kiln_ai.tools.base_tool import (
     ToolCallContext,
     ToolCallDefinition,
     ToolCallResult,
+    calling_context,
 )
 
 
@@ -68,8 +69,9 @@ class OpenEnvToolProxy(KilnToolInterface):
         return openenv_toolcall_definition(self._tool)
 
     async def run(
-        self, context: ToolCallContext | None = None, **kwargs: Any
+        self, context: ToolCallContext | None = None, /, **kwargs: Any
     ) -> ToolCallResult:
+        calling_context(context, kwargs)
         outcome = await self._ctx.session_manager.call_tool(
             self._ctx.episode, self._tool.name, dict(kwargs)
         )

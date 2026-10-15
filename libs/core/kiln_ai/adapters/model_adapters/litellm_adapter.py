@@ -1,11 +1,14 @@
 import asyncio
 import copy
+import inspect
 import json
 import logging
 import time
 from dataclasses import dataclass
 from typing import Any, Coroutine, Dict, Iterable, List, Tuple
 
+import jsonschema
+import jsonschema.exceptions
 import litellm
 from litellm.types.utils import (
     ChatCompletionMessageToolCall,
@@ -22,7 +25,10 @@ from openai.types.chat.chat_completion_message_tool_call_param import (
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
 from kiln_ai.adapters.chat.chat_formatter import chat_message_to_dict
-from kiln_ai.adapters.litellm_utils.tool_calls import function_tool_calls
+from kiln_ai.adapters.litellm_utils.tool_calls import (
+    function_tool_calls,
+    response_function_tool_calls,
+)
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     ModelProviderName,
@@ -31,6 +37,7 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.adapters.model_adapters.adapter_stream import (
     EMPTY_RESPONSE_ERROR_MESSAGE,
     AdapterStream,
+    count_invalid_tool_call_round,
     raise_for_empty_model_response,
 )
 from kiln_ai.adapters.model_adapters.base_adapter import (
@@ -45,7 +52,7 @@ from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.json_schema import (
     close_object_schemas,
     strip_numeric_bounds,
-    validate_schema_with_value_error,
+    validate_tool_parameters_schema,
 )
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
@@ -64,11 +71,40 @@ from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionMessageParam,
     ChatCompletionToolMessageParamWrapper,
+    InvalidToolCall,
     sanitize_messages_for_provider,
 )
 
 MAX_CALLS_PER_TURN = 10
 MAX_TOOL_CALLS_PER_TURN = 100
+
+MAX_ECHOED_ARGUMENTS_LENGTH = 1000
+
+
+@dataclass(frozen=True)
+class RejectedToolCall:
+    """A model's tool call the adapter won't run, and the error to send back."""
+
+    reason: InvalidToolCall
+    message: str
+
+
+def _takes_context_as_argument(run_signature: inspect.Signature) -> bool:
+    """Whether a tool's `run` can take an argument named "context" alongside its
+    calling context (it does when `context` is positional-only)."""
+    try:
+        run_signature.bind(None, context=None)
+    except TypeError:
+        return False
+    return True
+
+
+def _truncated(arguments: str | None) -> str:
+    text = str(arguments)
+    if len(text) <= MAX_ECHOED_ARGUMENTS_LENGTH:
+        return text
+    return f"{text[:MAX_ECHOED_ARGUMENTS_LENGTH]}... ({len(text) - MAX_ECHOED_ARGUMENTS_LENGTH} more characters)"
+
 
 # Cerebras validates assistant messages strictly and rejects the reasoning fields
 # LiteLLM attaches to responses from reasoning models, so prior assistant turns are
@@ -164,6 +200,7 @@ class LiteLlmAdapter(BaseAdapter):
 
         usage = Usage()
         tool_calls_count = 0
+        invalid_tool_call_rounds = 0
         # Per-LLM-call latency / usage, keyed by index in the messages list.
         # Kept separate because we don't own the LiteLLM message objects.
         message_latency: dict[int, int] = {}
@@ -196,7 +233,9 @@ class LiteLlmAdapter(BaseAdapter):
             if not hasattr(response_choice, "message"):
                 raise ValueError("Response choice has no message")
             content = response_choice.message.content
-            tool_calls = function_tool_calls(response_choice.message.tool_calls)
+            tool_calls = response_function_tool_calls(
+                response_choice.message.tool_calls
+            )
             if not content and not tool_calls:
                 raise_for_empty_model_response(response_choice)
 
@@ -252,6 +291,9 @@ class LiteLlmAdapter(BaseAdapter):
 
                 # If there were tool calls, increment counter and continue
                 if tool_call_messages:
+                    invalid_tool_call_rounds = count_invalid_tool_call_round(
+                        tool_call_messages, invalid_tool_call_rounds
+                    )
                     tool_calls_count += 1
                     continue
 
@@ -885,8 +927,7 @@ class LiteLlmAdapter(BaseAdapter):
     def _tool_message(
         tool_call_id: str, result: ToolCallResult
     ) -> ChatCompletionToolMessageParamWrapper:
-        """The tool message answering one tool call, for a result a tool returned or an
-        error found in the call itself."""
+        """The tool message answering one tool call with the result its tool returned."""
         return ChatCompletionToolMessageParamWrapper(
             role="tool",
             tool_call_id=tool_call_id,
@@ -898,41 +939,87 @@ class LiteLlmAdapter(BaseAdapter):
             error_message=result.error_message if result.error_message else None,
         )
 
-    async def _resolved_message(
-        self, tool_call_id: str, result: ToolCallResult
+    @staticmethod
+    def _rejected_tool_message(
+        tool_call_id: str, rejection: RejectedToolCall
     ) -> ChatCompletionToolMessageParamWrapper:
-        return self._tool_message(tool_call_id, result)
+        """The error tool message answering a call the adapter didn't run."""
+        return ChatCompletionToolMessageParamWrapper(
+            role="tool",
+            tool_call_id=tool_call_id,
+            content=rejection.message,
+            is_error=True,
+            error_message=rejection.message,
+            invalid_call=rejection.reason,
+        )
 
     async def _resolve_tool_call(
         self, tool_call: ChatCompletionMessageToolCall
-    ) -> tuple[KilnToolInterface, dict[str, Any]] | str:
-        """The tool and parsed arguments for a call, or the error text to send back to
-        the model when the call names no available tool, or its arguments aren't JSON or
-        don't match the tool's schema."""
+    ) -> tuple[KilnToolInterface, dict[str, Any]] | RejectedToolCall:
+        """The tool and parsed arguments for a call, or why the call can't be run: it
+        names no available tool, or its arguments aren't JSON, don't match the tool's
+        schema or can't be passed to the tool's `run`.
+
+        A broken tool (its definition can't be built or its schema is invalid) raises,
+        as that isn't a mistake the model can fix.
+        """
         tool_name = tool_call.function.name
+        tools = await self._tools_for_execution()
         tool = None
-        for tool_option in await self._tools_for_execution():
+        for tool_option in tools:
             if await tool_option.name() == tool_name:
                 tool = tool_option
                 break
         if not tool:
-            return f"A tool named '{tool_name}' was invoked by a model, but was not available."
+            available = ", ".join([f"'{await t.name()}'" for t in tools]) or "none"
+            return RejectedToolCall(
+                InvalidToolCall.unknown_tool,
+                f"No tool named '{tool_name}' is available. The available tools are: {available}.",
+            )
 
         try:
             parsed_args = json.loads(tool_call.function.arguments)
         except (json.JSONDecodeError, TypeError):
-            return f"Failed to parse arguments for tool '{tool_name}' (should be JSON): {tool_call.function.arguments}"
+            return RejectedToolCall(
+                InvalidToolCall.invalid_json,
+                f"Failed to parse arguments for tool '{tool_name}' (should be JSON): {_truncated(tool_call.function.arguments)}",
+            )
 
-        # A failure to build the definition is a broken tool, not a model mistake, so
-        # it raises instead of being reported as arguments that didn't match.
         tool_call_definition = await tool.toolcall_definition()
-        json_schema = json.dumps(
-            tool_call_definition["function"]["parameters"], ensure_ascii=False
-        )
+        schema = tool_call_definition["function"]["parameters"]
+        validate_tool_parameters_schema(schema)
+        run_signature = inspect.signature(tool.run)
+        if "context" in schema.get("properties", {}) and not _takes_context_as_argument(
+            run_signature
+        ):
+            raise ValueError(
+                f"'context' is a reserved argument name and can't be used as a tool parameter: tool '{tool_name}'"
+            )
+
         try:
-            validate_schema_with_value_error(parsed_args, json_schema)
-        except ValueError as e:
-            return f"Failed to validate arguments for tool '{tool_name}'. The arguments didn't match the tool's schema. The arguments were: {parsed_args}\n The error was: {e}"
+            jsonschema.Draft202012Validator(schema).validate(parsed_args)
+        except jsonschema.exceptions.ValidationError as e:
+            location = "" if e.json_path == "$" else f" (at {e.json_path})"
+            return RejectedToolCall(
+                InvalidToolCall.schema_mismatch,
+                f"Failed to validate arguments for tool '{tool_name}'. The arguments didn't match the tool's schema: {e.message}{location}",
+            )
+
+        # The schema allows keys the tool's run doesn't accept, such as extra keys
+        # or "context" (passed separately). Calling run with them would fail
+        # before the tool's body runs.
+        try:
+            run_signature.bind(None, **parsed_args)
+        except TypeError as e:
+            reason = (
+                "'context' is a reserved argument name"
+                if "context" in parsed_args
+                else str(e)
+            )
+            return RejectedToolCall(
+                InvalidToolCall.schema_mismatch,
+                f"Failed to validate arguments for tool '{tool_name}'. The tool doesn't accept these arguments: {reason}",
+            )
         return tool, parsed_args
 
     async def process_tool_calls(
@@ -941,19 +1028,20 @@ class LiteLlmAdapter(BaseAdapter):
         """Run the model's tool calls and return the task_response arguments (if any)
         and one tool message per other call, in the model's order.
 
-        A call naming no available tool, or with arguments that aren't JSON or don't
-        match the tool's schema, is not run: its tool message is an error the model
-        can read and recover from. An exception raised inside a tool's `run` propagates.
+        A call naming no available tool, or with arguments that aren't JSON or that
+        the tool doesn't accept, is not run: its tool message is an error, marked with
+        `invalid_call`, that the model can read and recover from. An exception raised
+        inside a tool's `run` propagates.
         """
         if tool_calls is None:
             return None, []
 
         assistant_output_from_toolcall: str | None = None
-        tool_call_response_messages: list[ChatCompletionToolMessageParamWrapper] = []
-        # gather returns results in argument order, so each tool message keeps the
-        # position of the call it answers.
-        tool_message_coroutines: list[
-            Coroutine[Any, Any, ChatCompletionToolMessageParamWrapper]
+        # One slot per call in the model's order; slots for calls that run are
+        # filled once all the runs finish.
+        tool_messages: list[ChatCompletionToolMessageParamWrapper | None] = []
+        tool_runs: list[
+            tuple[int, Coroutine[Any, Any, ChatCompletionToolMessageParamWrapper]]
         ] = []
 
         for tool_call in tool_calls:
@@ -963,12 +1051,9 @@ class LiteLlmAdapter(BaseAdapter):
                 continue
 
             resolved = await self._resolve_tool_call(tool_call)
-            if isinstance(resolved, str):
-                error = ToolCallResult(
-                    output=resolved, is_error=True, error_message=resolved
-                )
-                tool_message_coroutines.append(
-                    self._resolved_message(tool_call.id, error)
+            if isinstance(resolved, RejectedToolCall):
+                tool_messages.append(
+                    self._rejected_tool_message(tool_call.id, resolved)
                 )
                 continue
             tool, parsed_args = resolved
@@ -983,12 +1068,14 @@ class LiteLlmAdapter(BaseAdapter):
             ):
                 return self._tool_message(tc_id, await t.run(c, **args))
 
-            tool_message_coroutines.append(run_tool_and_format())
+            tool_runs.append((len(tool_messages), run_tool_and_format()))
+            tool_messages.append(None)
 
-        if tool_message_coroutines:
-            tool_call_response_messages = list(
-                await asyncio.gather(*tool_message_coroutines)
-            )
+        if tool_runs:
+            results = await asyncio.gather(*(run for _, run in tool_runs))
+            for (slot, _), message in zip(tool_runs, results):
+                tool_messages[slot] = message
+        tool_call_response_messages = [m for m in tool_messages if m is not None]
 
         if (
             assistant_output_from_toolcall is not None

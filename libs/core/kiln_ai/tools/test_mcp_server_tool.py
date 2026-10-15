@@ -15,6 +15,7 @@ from kiln_ai.datamodel.external_tool_server import (
     ToolServerType,
 )
 from kiln_ai.datamodel.tool_id import MCP_REMOTE_TOOL_ID_PREFIX
+from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
 
 
@@ -54,6 +55,37 @@ class TestMCPServerTool:
         # Instead we verify that _tool is initially None before properties are loaded
         assert tool._tool_server_model == server
         assert tool._tool is None
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id")
+    @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
+    async def test_run_passes_context_argument_to_server(
+        self, mock_session_manager, mock_get_run_id
+    ):
+        """A tool argument named "context" reaches the server, and a calling
+        context passed as `context=` does not."""
+        mock_get_run_id.return_value = "test_run_123"
+        mock_session = AsyncMock()
+        mock_session_manager.shared.return_value.get_or_create_session = AsyncMock(
+            return_value=mock_session
+        )
+        mock_session.call_tool.return_value = CallToolResult(
+            content=[TextContent(type="text", text="ok")], isError=False
+        )
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={"server_url": "https://example.com", "is_archived": False},
+        )
+        tool = MCPServerTool(server, "ctx_tool")
+
+        assert (await tool.run(ToolCallContext(), context="hi")).output == "ok"
+        assert (await tool.run(context=ToolCallContext(), x=1)).output == "ok"
+
+        assert [c.kwargs for c in mock_session.call_tool.call_args_list] == [
+            {"name": "ctx_tool", "arguments": {"context": "hi"}},
+            {"name": "ctx_tool", "arguments": {"x": 1}},
+        ]
 
     @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id")

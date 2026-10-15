@@ -12,6 +12,7 @@ from kiln_ai.tools.base_tool import (
     ToolCallContext,
     ToolCallDefinition,
     ToolCallResult,
+    calling_context,
 )
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 
@@ -46,8 +47,9 @@ class MCPServerTool(KilnToolInterface):
         }
 
     async def run(
-        self, context: ToolCallContext | None = None, **kwargs
+        self, context: ToolCallContext | None = None, /, **kwargs
     ) -> ToolCallResult:
+        calling_context(context, kwargs)
         result = await self._call_tool(**kwargs)
 
         # MCP tool returned an application-level error - return it to the agent

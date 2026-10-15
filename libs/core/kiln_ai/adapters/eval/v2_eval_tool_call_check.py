@@ -3,7 +3,11 @@ import re
 from typing import Any
 
 from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
-from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import build_binary_scores
+from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import (
+    build_binary_scores,
+    invalid_tool_call_ids,
+    is_invalid_tool_call,
+)
 from kiln_ai.datamodel.eval import (
     ArgMatch,
     EvalTaskInput,
@@ -42,10 +46,12 @@ class ToolCallCheckEval(BaseV2EvalBridge):
 
     @staticmethod
     def _extract_tool_calls(trace: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Extract all tool calls from the trace as a flat list.
+        """Extract the tool calls made in the trace as a flat list.
 
-        Each entry is {"name": str, "arguments": dict}.
+        Each entry is {"name": str, "arguments": dict}. Calls the adapter rejected
+        without running them are left out: they weren't made.
         """
+        rejected_ids = invalid_tool_call_ids(trace)
         calls: list[dict[str, Any]] = []
         for msg in trace:
             if msg.get("role") != "assistant":
@@ -54,6 +60,8 @@ class ToolCallCheckEval(BaseV2EvalBridge):
             if not tool_calls:
                 continue
             for tc in tool_calls:
+                if is_invalid_tool_call(tc, rejected_ids):
+                    continue
                 # .get("function", {}) isn't enough: the default only covers an
                 # absent key, so a present-but-null value raises on the .get below.
                 func = tc.get("function") if isinstance(tc, dict) else None

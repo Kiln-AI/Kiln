@@ -15,7 +15,9 @@ from litellm.types.utils import (
 from litellm.types.utils import Message as LiteLLMMessage
 
 from kiln_ai.adapters.chat import ChatFormatter
+from kiln_ai.adapters.errors import InvalidToolCallsError
 from kiln_ai.adapters.model_adapters.adapter_stream import (
+    MAX_CONSECUTIVE_INVALID_TOOL_CALL_ROUNDS,
     AdapterStream,
     raise_for_empty_model_response,
 )
@@ -28,6 +30,7 @@ from kiln_ai.adapters.model_adapters.stream_events import (
 from kiln_ai.datamodel import MessageUsage, Task, Usage
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.utils.open_ai_types import InvalidToolCall
 
 
 def _make_streaming_chunk(
@@ -379,10 +382,13 @@ class TestAdapterStreamToolCalls:
         assert input_events[0].arguments is None
         assert "Failed to parse" in (input_events[0].error or "")
 
-    @pytest.mark.asyncio
-    async def test_stream_tool_call_error_continues(self, mock_adapter, mock_provider):
-        """A call naming no available tool is answered with an error tool message and
-        the stream goes on to the model's next response."""
+    @staticmethod
+    async def _run_with_real_tool_calls(
+        mock_adapter, mock_provider, responses: list[ModelResponse]
+    ) -> tuple[AdapterStream, list[Any]]:
+        """Stream the responses with tool calls handled by a real LiteLlmAdapter that
+        has no tools, so its validation answers them. The rest of the adapter stays
+        mocked; the trace is the conversation's messages as they are."""
         litellm_adapter = LiteLlmAdapter(
             config=LiteLlmConfig(
                 run_config_properties=KilnAgentRunConfigProperties(
@@ -395,15 +401,16 @@ class TestAdapterStreamToolCalls:
             kiln_task=Task(name="t", instruction="i"),
         )
         mock_adapter.process_tool_calls = litellm_adapter.process_tool_calls
-        unknown_call = _make_tool_call(call_id="call_1", name="nonexistent_tool")
-        error_text = "A tool named 'nonexistent_tool' was invoked by a model, but was not available."
+        mock_adapter.all_messages_to_trace = MagicMock(
+            side_effect=lambda messages, *_: list(messages)
+        )
         streams_iter = iter(
             [
                 FakeStreamingCompletion(
-                    _make_model_response(content=None, tool_calls=[unknown_call]),
+                    response,
                     [_make_streaming_chunk(finish_reason="tool_calls")],
-                ),
-                FakeStreamingCompletion(_make_model_response(content="Recovered")),
+                )
+                for response in responses
             ]
         )
 
@@ -422,20 +429,127 @@ class TestAdapterStreamToolCalls:
                 top_logprobs=None,
             )
             events = [event async for event in stream]
+        return stream, events
+
+    @pytest.mark.asyncio
+    async def test_stream_tool_call_error_continues(self, mock_adapter, mock_provider):
+        """A call naming no available tool is answered with an error tool message,
+        streamed as a tool output error, and the stream goes on to the model's next
+        response."""
+        unknown_call = _make_tool_call(call_id="call_1", name="nonexistent_tool")
+        error_text = "No tool named 'nonexistent_tool' is available. The available tools are: none."
+
+        stream, events = await self._run_with_real_tool_calls(
+            mock_adapter,
+            mock_provider,
+            [
+                _make_model_response(content=None, tool_calls=[unknown_call]),
+                _make_model_response(content="Recovered"),
+            ],
+        )
 
         tool_events = [e for e in events if isinstance(e, ToolCallEvent)]
         assert [(e.event_type, e.tool_name) for e in tool_events] == [
             (ToolCallEventType.INPUT_AVAILABLE, "nonexistent_tool"),
-            (ToolCallEventType.OUTPUT_AVAILABLE, "nonexistent_tool"),
+            (ToolCallEventType.OUTPUT_ERROR, "nonexistent_tool"),
         ]
-        assert tool_events[1].result == error_text
-        assert stream.result.run_output.output == "Recovered"
-        error_message = next(
-            m for m in stream._messages if isinstance(m, dict) and m["role"] == "tool"
+        assert tool_events[1].error == error_text
+        assert tool_events[1].result is None
+        result = stream.result.run_output
+        assert result.output == "Recovered"
+        assert result.trace is not None
+        error_message = next(m for m in result.trace if m["role"] == "tool")
+        assert error_message == {
+            "role": "tool",
+            "tool_call_id": "call_1",
+            "content": error_text,
+            "is_error": True,
+            "error_message": error_text,
+            "invalid_call": InvalidToolCall.unknown_tool,
+        }
+
+    @pytest.mark.asyncio
+    async def test_stream_stops_after_repeated_invalid_tool_calls(
+        self, mock_adapter, mock_provider
+    ):
+        responses = [
+            _make_model_response(
+                content=None,
+                tool_calls=[_make_tool_call(call_id=f"call_{i}", name=f"missing_{i}")],
+            )
+            for i in range(MAX_CONSECUTIVE_INVALID_TOOL_CALL_ROUNDS)
+        ] + [_make_model_response(content="never reached")]
+
+        with pytest.raises(InvalidToolCallsError) as exc_info:
+            await self._run_with_real_tool_calls(mock_adapter, mock_provider, responses)
+
+        last = MAX_CONSECUTIVE_INVALID_TOOL_CALL_ROUNDS - 1
+        assert exc_info.value.last_error == (
+            f"No tool named 'missing_{last}' is available. The available tools are: none."
         )
-        assert error_message["tool_call_id"] == "call_1"
-        assert error_message.get("is_error") is True
-        assert error_message.get("error_message") == error_text
+        assert mock_adapter.build_completion_kwargs.call_count == (
+            MAX_CONSECUTIVE_INVALID_TOOL_CALL_ROUNDS
+        )
+
+    @pytest.mark.asyncio
+    async def test_stream_emits_output_error_for_tool_returned_error(
+        self, mock_adapter, mock_provider
+    ):
+        """A tool's own error result is streamed as an output error too."""
+        mock_adapter.process_tool_calls = AsyncMock(
+            return_value=(
+                None,
+                [
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call_1",
+                        "content": "upstream said no",
+                        "is_error": True,
+                        "error_message": "upstream said no",
+                    },
+                    {"role": "tool", "tool_call_id": "call_2", "content": "3"},
+                ],
+            )
+        )
+        streams_iter = iter(
+            [
+                FakeStreamingCompletion(
+                    _make_model_response(
+                        content=None,
+                        tool_calls=[
+                            _make_tool_call(call_id="call_1"),
+                            _make_tool_call(call_id="call_2"),
+                        ],
+                    ),
+                    [_make_streaming_chunk(finish_reason="tool_calls")],
+                ),
+                FakeStreamingCompletion(_make_model_response(content="Done")),
+            ]
+        )
+
+        with patch(
+            "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+            side_effect=lambda **kw: next(streams_iter),
+        ):
+            stream = AdapterStream(
+                adapter=mock_adapter,
+                provider=mock_provider,
+                chat_formatter=FakeChatFormatter(),
+                initial_messages=[],
+                top_logprobs=None,
+            )
+            events = [event async for event in stream]
+
+        outputs = [
+            (e.event_type, e.tool_call_id, e.result, e.error)
+            for e in events
+            if isinstance(e, ToolCallEvent)
+            and e.event_type != ToolCallEventType.INPUT_AVAILABLE
+        ]
+        assert outputs == [
+            (ToolCallEventType.OUTPUT_ERROR, "call_1", None, "upstream said no"),
+            (ToolCallEventType.OUTPUT_AVAILABLE, "call_2", "3", None),
+        ]
 
 
 class TestAdapterStreamReturnOnToolCall:

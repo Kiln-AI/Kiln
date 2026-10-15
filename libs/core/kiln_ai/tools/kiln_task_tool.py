@@ -11,6 +11,7 @@ from kiln_ai.tools.base_tool import (
     ToolCallContext,
     ToolCallDefinition,
     ToolCallResult,
+    calling_context,
 )
 from kiln_ai.utils.project_utils import project_from_id
 
@@ -62,9 +63,10 @@ class KilnTaskTool(KilnToolInterface):
         }
 
     async def run(
-        self, context: ToolCallContext | None = None, **kwargs
+        self, context: ToolCallContext | None = None, /, **kwargs
     ) -> KilnTaskToolResult:
         """Execute the wrapped Kiln task with the given parameters and calling context."""
+        context = calling_context(context, kwargs)
         if context is None:
             context = ToolCallContext(
                 allow_saving=False,

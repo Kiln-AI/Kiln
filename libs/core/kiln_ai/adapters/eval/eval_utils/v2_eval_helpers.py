@@ -26,6 +26,28 @@ def build_binary_scores(
     return {score.json_key(): value for score in output_scores}
 
 
+def invalid_tool_call_ids(trace: list[dict[str, Any]]) -> set[str]:
+    """Ids of the tool calls the adapter rejected without running (an unknown tool,
+    or arguments the tool doesn't accept), from the `invalid_call` marker on the
+    tool message answering each one."""
+    return {
+        msg["tool_call_id"]
+        for msg in trace
+        if msg.get("role") == "tool"
+        and msg.get("invalid_call")
+        and isinstance(msg.get("tool_call_id"), str)
+    }
+
+
+def is_invalid_tool_call(tool_call: Any, invalid_ids: set[str]) -> bool:
+    """True if a trace tool call's id is one of `invalid_ids` (see
+    `invalid_tool_call_ids`). Tolerates malformed tool call entries."""
+    if not isinstance(tool_call, dict):
+        return False
+    call_id = tool_call.get("id")
+    return isinstance(call_id, str) and call_id in invalid_ids
+
+
 def references_trace(expression: str) -> bool:
     """True if a Jinja expression references the `trace` variable.
 

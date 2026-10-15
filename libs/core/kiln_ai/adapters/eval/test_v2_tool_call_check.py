@@ -511,3 +511,72 @@ class TestToolCallCheckEdgeCases:
         )
         strict = await ToolCallCheckEval(strict_cfg).evaluate(_inp(trace=trace))
         assert strict.scores == {"score_a": 0.0}
+
+
+def _trace_with_rejected_call(
+    rejected: tuple[str, dict], made: tuple[str, dict] | None = None
+) -> list[dict]:
+    """A trace where the adapter rejected the first call (an `invalid_call` tool
+    message answers it) and, optionally, ran a second one."""
+    calls = [rejected] + ([made] if made else [])
+    trace = _trace_with_tool_calls(*calls)
+    trace.append(
+        {
+            "role": "tool",
+            "tool_call_id": "call_0",
+            "content": "rejected",
+            "is_error": True,
+            "error_message": "rejected",
+            "invalid_call": "schema_mismatch",
+        }
+    )
+    if made:
+        trace.append({"role": "tool", "tool_call_id": "call_1", "content": "ok"})
+    return trace
+
+
+class TestToolCallCheckRejectedCalls:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("match_mode", ["any", "all", "ordered"])
+    async def test_rejected_call_does_not_count_as_made(self, match_mode: str):
+        cfg = _make_config(
+            ToolCallCheckProperties(
+                expected_tools=[ToolCallSpec(tool_name="search")],
+                match_mode=match_mode,  # type: ignore[arg-type]
+            )
+        )
+        trace = _trace_with_rejected_call(("search", {"q": 1}))
+        result = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        assert result.scores == {"score_a": 0.0}
+
+    @pytest.mark.asyncio
+    async def test_rejected_unknown_tool_is_not_unexpected(self):
+        cfg = _make_config(
+            ToolCallCheckProperties(
+                expected_tools=[ToolCallSpec(tool_name="search")],
+                on_unexpected_tools="fail",
+            )
+        )
+        trace = _trace_with_rejected_call(("serch", {}), ("search", {"q": "hi"}))
+        result = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        assert result.scores == {"score_a": 1.0}
+
+    @pytest.mark.asyncio
+    async def test_tool_returned_error_still_counts_as_made(self):
+        """Only adapter rejections are left out; a tool that ran and reported an
+        error was still called."""
+        cfg = _make_config(
+            ToolCallCheckProperties(expected_tools=[ToolCallSpec(tool_name="search")])
+        )
+        trace = _trace_with_tool_calls(("search", {"q": "hi"}))
+        trace.append(
+            {
+                "role": "tool",
+                "tool_call_id": "call_0",
+                "content": "upstream failed",
+                "is_error": True,
+                "error_message": "upstream failed",
+            }
+        )
+        result = await ToolCallCheckEval(cfg).evaluate(_inp(trace=trace))
+        assert result.scores == {"score_a": 1.0}

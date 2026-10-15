@@ -1,4 +1,5 @@
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -11,9 +12,14 @@ from litellm.types.utils import Usage as LiteLlmUsage
 
 from kiln_ai import datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
+from kiln_ai.adapters.errors import InvalidToolCallsError, format_error_message
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, built_in_models
+from kiln_ai.adapters.model_adapters.adapter_stream import (
+    MAX_CONSECUTIVE_INVALID_TOOL_CALL_ROUNDS,
+)
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import (
+    MAX_ECHOED_ARGUMENTS_LENGTH,
     LiteLlmAdapter,
     ModelTurnResult,
 )
@@ -34,7 +40,7 @@ from kiln_ai.tools.built_in_tools.math_tools import (
 )
 from kiln_ai.tools.kiln_task_tool import KilnTaskToolResult
 from kiln_ai.tools.world_tool import OpenEnvToolProxy
-from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam, InvalidToolCall
 from kiln_ai.worlds.session_manager import ToolCallOutcome
 
 
@@ -1079,84 +1085,278 @@ def build_tools_adapter(tmp_path: Path) -> LiteLlmAdapter:
     return LiteLlmAdapter(config=config, kiln_task=build_test_task(tmp_path))
 
 
-SCHEMA_ERROR_PREFIX = "Failed to validate arguments for tool 'add'. The arguments didn't match the tool's schema. The arguments were: "
+SCHEMA_ERROR_PREFIX = "Failed to validate arguments for tool 'add'. The arguments didn't match the tool's schema: "
+UNKNOWN_TOOL_ERROR = (
+    "No tool named 'nonexistent_tool' is available. The available tools are: 'add'."
+)
+
+
+class KeywordArgsTool(MockTool):
+    """A tool whose run takes its arguments as explicit keywords, so it can't take
+    keys its schema doesn't list."""
+
+    async def run(  # type: ignore[override]
+        self, context: ToolCallContext | None = None, *, a: float, b: float
+    ) -> ToolCallResult:
+        return ToolCallResult(output=str(a + b))
 
 
 @pytest.mark.parametrize(
-    "tool_name,arguments,expected_prefix,expected_detail",
+    "tool,tool_name,arguments,expected_reason,expected_content",
     [
         pytest.param(
+            MockTool("add"),
             "nonexistent_tool",
             '{"a": 2, "b": 3}',
-            "A tool named 'nonexistent_tool' was invoked by a model, but was not available.",
-            None,
+            InvalidToolCall.unknown_tool,
+            UNKNOWN_TOOL_ERROR,
             id="unknown",
         ),
         pytest.param(
+            MockTool("add"),
             "add",
             "invalid json",
+            InvalidToolCall.invalid_json,
             "Failed to parse arguments for tool 'add' (should be JSON): invalid json",
-            None,
             id="invalid_json",
         ),
         pytest.param(
+            MockTool("add"),
             "add",
             "",
+            InvalidToolCall.invalid_json,
             "Failed to parse arguments for tool 'add' (should be JSON): ",
-            None,
             id="empty",
         ),
         pytest.param(
+            MockTool("add"),
             "add",
             None,
+            InvalidToolCall.invalid_json,
             "Failed to parse arguments for tool 'add' (should be JSON): None",
-            None,
             id="none_args",
         ),
         pytest.param(
+            MockTool("add"),
             "add",
             '{"a": 2}',
-            SCHEMA_ERROR_PREFIX + "{'a': 2}\n The error was: ",
-            "'b' is a required property",
+            InvalidToolCall.schema_mismatch,
+            SCHEMA_ERROR_PREFIX + "'b' is a required property",
             id="schema_miss",
         ),
         pytest.param(
+            MockTool("add"),
+            "add",
+            '{"a": "two", "b": 3}',
+            InvalidToolCall.schema_mismatch,
+            SCHEMA_ERROR_PREFIX + "'two' is not of type 'number' (at $.a)",
+            id="schema_miss_nested",
+        ),
+        pytest.param(
+            MockTool("add"),
             "add",
             "[1, 2]",
-            SCHEMA_ERROR_PREFIX + "[1, 2]\n The error was: ",
-            "is not of type 'object'",
+            InvalidToolCall.schema_mismatch,
+            SCHEMA_ERROR_PREFIX + "[1, 2] is not of type 'object'",
             id="non_object_json",
+        ),
+        pytest.param(
+            MockTool("add"),
+            "add",
+            '{"a": 2, "b": 3, "context": "x"}',
+            InvalidToolCall.schema_mismatch,
+            "Failed to validate arguments for tool 'add'. The tool doesn't accept these arguments: 'context' is a reserved argument name",
+            id="context_key",
+        ),
+        pytest.param(
+            KeywordArgsTool("add"),
+            "add",
+            '{"a": 2, "b": 3, "c": 4}',
+            InvalidToolCall.schema_mismatch,
+            "Failed to validate arguments for tool 'add'. The tool doesn't accept these arguments: got an unexpected keyword argument 'c'",
+            id="extra_key",
         ),
     ],
 )
 async def test_process_tool_calls_bad_call_returns_tool_error(
-    tmp_path, tool_name, arguments, expected_prefix, expected_detail
+    tmp_path, tool, tool_name, arguments, expected_reason, expected_content
 ):
-    """A call the adapter can't run comes back to the model as an error tool message."""
+    """A call the adapter can't run comes back to the model as an error tool message,
+    marked with why it was rejected, and the tool doesn't run."""
     litellm_adapter = build_tools_adapter(tmp_path)
+    tool._raise_on_run = AssertionError("must not run")
     tool_calls = [MockToolCall("call_1", tool_name, arguments)]
 
-    with patch.object(
-        litellm_adapter, "cached_available_tools", return_value=[MockTool("add")]
-    ):
+    with patch.object(litellm_adapter, "cached_available_tools", return_value=[tool]):
         assistant_output, tool_messages = await litellm_adapter.process_tool_calls(
             tool_calls  # type: ignore
         )
 
     assert assistant_output is None
-    assert len(tool_messages) == 1
-    message = tool_messages[0]
-    assert message["role"] == "tool"
-    assert message["tool_call_id"] == "call_1"
-    assert message.get("is_error") is True
-    content = message["content"]
-    assert isinstance(content, str)
-    assert message.get("error_message") == content
-    if expected_detail is None:
-        assert content == expected_prefix
-    else:
-        assert content.startswith(expected_prefix)
-        assert expected_detail in content.removeprefix(expected_prefix)
+    assert tool_messages == [
+        {
+            "role": "tool",
+            "tool_call_id": "call_1",
+            "content": expected_content,
+            "is_error": True,
+            "error_message": expected_content,
+            "invalid_call": expected_reason,
+        }
+    ]
+
+
+async def test_process_tool_calls_keyword_args_tool_runs_with_valid_args(tmp_path):
+    litellm_adapter = build_tools_adapter(tmp_path)
+    tool_calls = [MockToolCall("call_1", "add", '{"a": 2, "b": 3}')]
+
+    with patch.object(
+        litellm_adapter, "cached_available_tools", return_value=[KeywordArgsTool("add")]
+    ):
+        _, tool_messages = await litellm_adapter.process_tool_calls(
+            tool_calls  # type: ignore
+        )
+
+    assert tool_messages[0]["content"] == "5"
+    assert tool_messages[0].get("invalid_call") is None
+
+
+async def test_process_tool_calls_unparseable_arguments_echo_is_truncated(tmp_path):
+    litellm_adapter = build_tools_adapter(tmp_path)
+    arguments = "x" * (MAX_ECHOED_ARGUMENTS_LENGTH + 250)
+    tool_calls = [MockToolCall("call_1", "add", arguments)]
+
+    with patch.object(
+        litellm_adapter, "cached_available_tools", return_value=[MockTool("add")]
+    ):
+        _, tool_messages = await litellm_adapter.process_tool_calls(
+            tool_calls  # type: ignore
+        )
+
+    assert tool_messages[0]["content"] == (
+        "Failed to parse arguments for tool 'add' (should be JSON): "
+        + "x" * MAX_ECHOED_ARGUMENTS_LENGTH
+        + "... (250 more characters)"
+    )
+
+
+async def test_process_tool_calls_unknown_tool_with_no_tools_available(tmp_path):
+    litellm_adapter = build_tools_adapter(tmp_path)
+    tool_calls = [MockToolCall("call_1", "lookup", "{}")]
+
+    with patch.object(litellm_adapter, "cached_available_tools", return_value=[]):
+        _, tool_messages = await litellm_adapter.process_tool_calls(
+            tool_calls  # type: ignore
+        )
+
+    assert tool_messages[0]["content"] == (
+        "No tool named 'lookup' is available. The available tools are: none."
+    )
+
+
+class BrokenDefinitionTool(MockTool):
+    async def toolcall_definition(self) -> dict:
+        raise RuntimeError("definition unavailable")
+
+
+class SchemaTool(MockTool):
+    """A mock tool with the given parameters schema."""
+
+    def __init__(self, name: str, parameters: dict, **kwargs):
+        super().__init__(name, **kwargs)
+        self._parameters = parameters
+
+    async def toolcall_definition(self) -> dict:
+        return {"function": {"parameters": self._parameters}}
+
+
+class PositionalContextTool(SchemaTool):
+    """Takes its context positionally, so `context` can be one of its arguments."""
+
+    async def run(  # type: ignore[override]
+        self, context: ToolCallContext | None = None, /, **kwargs
+    ) -> ToolCallResult:
+        return ToolCallResult(output=json.dumps(kwargs))
+
+
+@pytest.mark.parametrize(
+    "tool,expected_error,match",
+    [
+        pytest.param(
+            BrokenDefinitionTool("add"),
+            RuntimeError,
+            "definition unavailable",
+            id="definition_raises",
+        ),
+        pytest.param(
+            SchemaTool("add", {"type": "array"}),
+            ValueError,
+            "must have type 'object'",
+            id="not_object_schema",
+        ),
+        pytest.param(
+            SchemaTool(
+                "add", {"type": "object", "properties": {"a": {"type": "nope"}}}
+            ),
+            ValueError,
+            "Invalid JSON schema",
+            id="invalid_schema",
+        ),
+        pytest.param(
+            SchemaTool(
+                "add",
+                {"type": "object", "properties": {"context": {"type": "string"}}},
+            ),
+            ValueError,
+            "'context' is a reserved argument name and can't be used as a tool parameter: tool 'add'",
+            id="context_parameter_on_keyword_context_tool",
+        ),
+    ],
+)
+async def test_process_tool_calls_broken_tool_raises(
+    tmp_path, tool, expected_error, match
+):
+    """A broken tool isn't a mistake the model can fix, so it isn't sent back as one."""
+    litellm_adapter = build_tools_adapter(tmp_path)
+    tool_calls = [MockToolCall("call_1", "add", "{}")]
+
+    with patch.object(litellm_adapter, "cached_available_tools", return_value=[tool]):
+        with pytest.raises(expected_error, match=re.escape(match)):
+            await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+
+
+@pytest.mark.parametrize(
+    "tool,arguments,expected_output",
+    [
+        pytest.param(
+            SchemaTool("add", {"type": "object"}, return_value="ran"),
+            "{}",
+            "ran",
+            id="no_properties_schema",
+        ),
+        pytest.param(
+            PositionalContextTool(
+                "add",
+                {"type": "object", "properties": {"context": {"type": "string"}}},
+            ),
+            '{"context": "hi"}',
+            '{"context": "hi"}',
+            id="context_parameter",
+        ),
+    ],
+)
+async def test_process_tool_calls_runs_tool_with_external_schema(
+    tmp_path, tool, arguments, expected_output
+):
+    litellm_adapter = build_tools_adapter(tmp_path)
+    tool_calls = [MockToolCall("call_1", "add", arguments)]
+
+    with patch.object(litellm_adapter, "cached_available_tools", return_value=[tool]):
+        _, tool_messages = await litellm_adapter.process_tool_calls(
+            tool_calls  # type: ignore
+        )
+
+    assert tool_messages[0]["content"] == expected_output
+    assert tool_messages[0].get("is_error") is None
 
 
 async def test_process_tool_calls_bad_call_does_not_block_other_calls(tmp_path):
@@ -1189,41 +1389,40 @@ async def test_process_tool_calls_bad_call_does_not_block_other_calls(tmp_path):
     ]
     assert tool_messages[0]["content"] == "5"
     assert tool_messages[0].get("is_error") is None
+    assert tool_messages[0].get("invalid_call") is None
     assert tool_messages[2]["content"] == "6"
     assert tool_messages[2].get("is_error") is None
-    assert tool_messages[1].get("is_error") is True
+    assert tool_messages[1].get("invalid_call") == InvalidToolCall.unknown_tool
     assert tool_messages[1]["content"] == (
-        "A tool named 'nonexistent_tool' was invoked by a model, but was not available."
+        "No tool named 'nonexistent_tool' is available. The available tools are: 'add', 'multiply'."
     )
-    assert tool_messages[3].get("is_error") is True
+    assert tool_messages[3].get("invalid_call") == InvalidToolCall.invalid_json
     assert tool_messages[3]["content"] == (
         "Failed to parse arguments for tool 'add' (should be JSON): invalid json"
     )
 
 
-async def test_process_tool_calls_invalid_args_tool_not_run(tmp_path):
-    litellm_adapter = build_tools_adapter(tmp_path)
-    tool = MockTool("add", raise_on_run=AssertionError("must not run"))
-    tool_calls = [MockToolCall("call_1", "add", '{"a": "two"}')]
-
-    with patch.object(litellm_adapter, "cached_available_tools", return_value=[tool]):
-        _, tool_messages = await litellm_adapter.process_tool_calls(
-            tool_calls  # type: ignore
-        )
-
-    assert len(tool_messages) == 1
-    assert tool_messages[0].get("is_error") is True
-    assert str(tool_messages[0]["content"]).startswith(SCHEMA_ERROR_PREFIX)
-
-
-async def test_process_tool_calls_task_response_with_invalid_call_raises(tmp_path):
+@pytest.mark.parametrize(
+    "other_call",
+    [
+        pytest.param(("call_2", "add", '{"a": 2, "b": 3}'), id="valid_call"),
+        pytest.param(("call_2", "nonexistent_tool", "{}"), id="invalid_call"),
+    ],
+)
+async def test_process_tool_calls_task_response_with_other_call_raises(
+    tmp_path, other_call
+):
     litellm_adapter = build_tools_adapter(tmp_path)
     tool_calls = [
         MockToolCall("call_1", "task_response", '{"answer": "42"}'),
-        MockToolCall("call_2", "nonexistent_tool", "{}"),
+        MockToolCall(*other_call),
     ]
 
-    with patch.object(litellm_adapter, "cached_available_tools", return_value=[]):
+    with patch.object(
+        litellm_adapter,
+        "cached_available_tools",
+        return_value=[MockTool("add", return_value="5")],
+    ):
         with pytest.raises(
             RuntimeError,
             match="task_response tool call and other tool calls were both provided",
@@ -1286,35 +1485,6 @@ async def test_process_tool_calls_complex_result(tmp_path):
     assert len(tool_messages) == 1
     assert tool_messages[0]["content"] == complex_result
     assert tool_messages[0].get("kiln_task_tool_data") is None
-
-
-async def test_process_tool_calls_task_response_with_normal_tools_error(tmp_path):
-    """Test process_tool_calls raises error when mixing task_response with normal tools"""
-    task = build_test_task(tmp_path)
-    config = LiteLlmConfig(
-        run_config_properties=KilnAgentRunConfigProperties(
-            structured_output_mode=StructuredOutputMode.json_schema,
-            model_name="gpt_4_1_mini",
-            model_provider_name=ModelProviderName.openai,
-            prompt_id="simple_prompt_builder",
-        )
-    )
-    litellm_adapter = LiteLlmAdapter(config=config, kiln_task=task)
-
-    mock_tool = MockTool("add", return_value="5")
-    tool_calls = [
-        MockToolCall("call_1", "task_response", '{"answer": "42"}'),
-        MockToolCall("call_2", "add", '{"a": 2, "b": 3}'),
-    ]
-
-    with patch.object(
-        litellm_adapter, "cached_available_tools", return_value=[mock_tool]
-    ):
-        with pytest.raises(
-            RuntimeError,
-            match="task_response tool call and other tool calls were both provided",
-        ):
-            await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
 
 
 async def test_run_model_turn_return_on_tool_call_mixed_task_response_raises(
@@ -1426,9 +1596,12 @@ async def test_process_tool_calls_kiln_task_tool_result(tmp_path):
     )
 
 
-def tool_call_response(*calls: tuple[str, str, str | None]) -> ModelResponse:
-    """A model response whose message makes the given (id, name, arguments) calls."""
-    return ModelResponse(
+def tool_call_response(*calls: tuple[str, str | None, str | None]) -> ModelResponse:
+    """A model response whose message makes the given (id, name, arguments) calls.
+
+    A None name or arguments is set after construction, as LiteLLM would otherwise
+    turn None arguments into an empty string."""
+    response = ModelResponse(
         model="gpt-4o-mini",
         choices=[
             {
@@ -1446,6 +1619,13 @@ def tool_call_response(*calls: tuple[str, str, str | None]) -> ModelResponse:
             }
         ],
     )
+    for tool_call, (_, name, arguments) in zip(
+        response.choices[0].message.tool_calls,
+        calls,  # type: ignore[union-attr]
+    ):
+        tool_call.function.name = name
+        tool_call.function.arguments = arguments  # type: ignore[assignment]
+    return response
 
 
 def content_response(content: str) -> ModelResponse:
@@ -1464,15 +1644,19 @@ def openai_api_key(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "mock_api_key")
 
 
+OPENAI_PROVIDER = KilnModelProvider(
+    name=ModelProviderName.openai, model_id="gpt_4_1_mini"
+)
+
+
 async def test_run_model_turn_continues_after_tool_call_error(tmp_path, openai_api_key):
     litellm_adapter = build_tools_adapter(tmp_path)
-    provider = KilnModelProvider(name=ModelProviderName.openai, model_id="gpt_4_1_mini")
     acompletion = completion_mock(
         tool_call_response(("call_1", "nonexistent_tool", "{}")),
         content_response("Recovered"),
     )
     unknown_tool_error = (
-        "A tool named 'nonexistent_tool' was invoked by a model, but was not available."
+        "No tool named 'nonexistent_tool' is available. The available tools are: none."
     )
 
     with (
@@ -1480,7 +1664,7 @@ async def test_run_model_turn_continues_after_tool_call_error(tmp_path, openai_a
         patch.object(litellm_adapter, "acompletion_checking_response", acompletion),
     ):
         result = await litellm_adapter._run_model_turn(
-            provider, [{"role": "user", "content": "hi"}], None, False
+            OPENAI_PROVIDER, [{"role": "user", "content": "hi"}], None, False
         )
 
     assert result.assistant_message == "Recovered"
@@ -1493,9 +1677,9 @@ async def test_run_model_turn_continues_after_tool_call_error(tmp_path, openai_a
         "role": "tool",
         "tool_call_id": "call_1",
         "content": unknown_tool_error,
-        "kiln_task_tool_data": None,
         "is_error": True,
         "error_message": unknown_tool_error,
+        "invalid_call": InvalidToolCall.unknown_tool,
     }
 
     second_request_messages = acompletion.call_args_list[1].kwargs["messages"]
@@ -1504,6 +1688,91 @@ async def test_run_model_turn_continues_after_tool_call_error(tmp_path, openai_a
         "tool_call_id": "call_1",
         "content": unknown_tool_error,
     }
+
+
+async def test_run_model_turn_stops_after_repeated_invalid_tool_calls(
+    tmp_path, openai_api_key
+):
+    """A model that only makes invalid calls is stopped after a few responses, with
+    the last specific rejection, instead of running to the per-turn tool call cap."""
+    litellm_adapter = build_tools_adapter(tmp_path)
+    acompletion = completion_mock(
+        tool_call_response(("call_1", "nonexistent_tool", "{}")),
+        tool_call_response(("call_2", "nonexistent_tool", "{}")),
+        tool_call_response(("call_3", "add", "not json")),
+        content_response("never reached"),
+    )
+
+    with (
+        patch.object(
+            litellm_adapter, "cached_available_tools", return_value=[MockTool("add")]
+        ),
+        patch.object(litellm_adapter, "build_completion_kwargs", return_value={}),
+        patch.object(litellm_adapter, "acompletion_checking_response", acompletion),
+    ):
+        with pytest.raises(InvalidToolCallsError) as exc_info:
+            await litellm_adapter._run_model_turn(
+                OPENAI_PROVIDER, [{"role": "user", "content": "hi"}], None, False
+            )
+
+    assert acompletion.call_count == MAX_CONSECUTIVE_INVALID_TOOL_CALL_ROUNDS
+    assert exc_info.value.last_error == (
+        "Failed to parse arguments for tool 'add' (should be JSON): not json"
+    )
+    assert format_error_message(exc_info.value) == (
+        "The model made only invalid tool calls 3 times in a row. The last error was: "
+        "Failed to parse arguments for tool 'add' (should be JSON): not json"
+    )
+
+
+async def test_run_model_turn_invalid_tool_call_count_resets(tmp_path, openai_api_key):
+    """Only consecutive responses whose calls were all rejected count toward the
+    cap: a response with any call that ran resets it."""
+    litellm_adapter = build_tools_adapter(tmp_path)
+    acompletion = completion_mock(
+        tool_call_response(("call_1", "nonexistent_tool", "{}")),
+        tool_call_response(("call_2", "nonexistent_tool", "{}")),
+        tool_call_response(
+            ("call_3", "nonexistent_tool", "{}"),
+            ("call_4", "add", '{"a": 1, "b": 2}'),
+        ),
+        tool_call_response(("call_5", "nonexistent_tool", "{}")),
+        tool_call_response(("call_6", "nonexistent_tool", "{}")),
+        content_response("Recovered"),
+    )
+
+    with (
+        patch.object(
+            litellm_adapter, "cached_available_tools", return_value=[MockTool("add")]
+        ),
+        patch.object(litellm_adapter, "build_completion_kwargs", return_value={}),
+        patch.object(litellm_adapter, "acompletion_checking_response", acompletion),
+    ):
+        result = await litellm_adapter._run_model_turn(
+            OPENAI_PROVIDER, [{"role": "user", "content": "hi"}], None, False
+        )
+
+    assert result.assistant_message == "Recovered"
+    assert acompletion.call_count == 6
+
+
+async def test_run_model_turn_tool_call_without_name_raises(tmp_path, openai_api_key):
+    litellm_adapter = build_tools_adapter(tmp_path)
+    acompletion = completion_mock(
+        tool_call_response(("call_1", None, "{}")),
+        content_response("never reached"),
+    )
+
+    with (
+        patch.object(litellm_adapter, "cached_available_tools", return_value=[]),
+        patch.object(litellm_adapter, "acompletion_checking_response", acompletion),
+    ):
+        with pytest.raises(ValueError, match="without providing a function name"):
+            await litellm_adapter._run_model_turn(
+                OPENAI_PROVIDER, [{"role": "user", "content": "hi"}], None, False
+            )
+
+    assert acompletion.call_count == 1
 
 
 @dataclass
@@ -1515,12 +1784,70 @@ class FakeWorldSessionManager:
         return ToolCallOutcome(result="found", error=None, reward=None, done=False)
 
 
+def build_world_tool(
+    task: datamodel.Task,
+    env_tool: OpenEnvTool,
+    session_manager: FakeWorldSessionManager,
+) -> OpenEnvToolProxy:
+    world = World(name="w", parent=task.parent_project())
+    world.save_to_file()
+    return OpenEnvToolProxy(
+        tool_id=build_world_tool_id(world.id, env_tool.name),
+        tool=env_tool,
+        context=EpisodeContext(
+            episode=WorldEpisode(
+                reset=WorldReset(world_id=world.id),
+                episode_id="ep_test",
+                world_version="w@1",
+            ),
+            world=world,
+            session_manager=session_manager,  # type: ignore[arg-type]
+            tools={env_tool.name: env_tool},
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "input_schema,arguments",
+    [
+        pytest.param({"type": "object"}, {}, id="no_properties"),
+        pytest.param(
+            {"type": "object", "properties": {"context": {"type": "string"}}},
+            {"context": "hi"},
+            id="context_property",
+        ),
+    ],
+)
+async def test_process_tool_calls_world_tool_external_schemas_run(
+    tmp_path, input_schema, arguments
+):
+    """An environment's schema is valid without properties and may name an
+    argument "context": both reach the environment as sent."""
+    litellm_adapter = build_tools_adapter(tmp_path)
+    session_manager = FakeWorldSessionManager()
+    world_tool = build_world_tool(
+        litellm_adapter.task,
+        OpenEnvTool(name="env_tool", input_schema=input_schema),
+        session_manager,
+    )
+    tool_calls = [MockToolCall("call_1", "env_tool", json.dumps(arguments))]
+
+    with patch.object(
+        litellm_adapter, "cached_available_tools", return_value=[world_tool]
+    ):
+        _, tool_messages = await litellm_adapter.process_tool_calls(
+            tool_calls  # type: ignore
+        )
+
+    assert session_manager.calls == [arguments]
+    assert tool_messages[0]["content"] == "found"
+    assert tool_messages[0].get("is_error") is None
+
+
 async def test_invoke_saves_trace_with_tool_call_error(tmp_path, openai_api_key):
     """Tool-call mistakes against a world tool are answered as errors, and the run
     still reaches its final answer and is saved with the original calls in its trace."""
     task = build_test_task(tmp_path)
-    world = World(name="w", parent=task.parent_project())
-    world.save_to_file()
     session_manager = FakeWorldSessionManager()
     lookup = OpenEnvTool(
         name="lookup",
@@ -1530,20 +1857,7 @@ async def test_invoke_saves_trace_with_tool_call_error(tmp_path, openai_api_key)
             "required": ["id"],
         },
     )
-    world_tool = OpenEnvToolProxy(
-        tool_id=build_world_tool_id(world.id, "lookup"),
-        tool=lookup,
-        context=EpisodeContext(
-            episode=WorldEpisode(
-                reset=WorldReset(world_id=world.id),
-                episode_id="ep_test",
-                world_version="w@1",
-            ),
-            world=world,
-            session_manager=session_manager,  # type: ignore[arg-type]
-            tools={"lookup": lookup},
-        ),
-    )
+    world_tool = build_world_tool(task, lookup, session_manager)
     adapter = adapter_for_task(
         task,
         KilnAgentRunConfigProperties(
@@ -1556,6 +1870,7 @@ async def test_invoke_saves_trace_with_tool_call_error(tmp_path, openai_api_key)
     bad_calls = [
         ("call_unknown", "get_user_contexts", "{}"),
         ("call_json", "lookup", '{"id": "W-1"'),
+        ("call_none", "lookup", None),
         ("call_schema", "lookup", '{"id": 7}'),
     ]
 
@@ -1584,21 +1899,42 @@ async def test_invoke_saves_trace_with_tool_call_error(tmp_path, openai_api_key)
     assert [
         (c["id"], c["function"]["name"], c["function"]["arguments"])
         for c in assistant_call.get("tool_calls") or []
-    ] == bad_calls
+    ] == [
+        ("call_unknown", "get_user_contexts", "{}"),
+        ("call_json", "lookup", '{"id": "W-1"'),
+        ("call_none", "lookup", ""),
+        ("call_schema", "lookup", '{"id": 7}'),
+    ]
 
     expected_errors = {
-        "call_unknown": "A tool named 'get_user_contexts' was invoked by a model, but was not available.",
-        "call_json": 'Failed to parse arguments for tool \'lookup\' (should be JSON): {"id": "W-1"',
-        "call_schema": "Failed to validate arguments for tool 'lookup'. The arguments didn't match the tool's schema. The arguments were: {'id': 7}\n The error was: ",
+        "call_unknown": (
+            InvalidToolCall.unknown_tool,
+            "No tool named 'get_user_contexts' is available. The available tools are: 'lookup'.",
+        ),
+        "call_json": (
+            InvalidToolCall.invalid_json,
+            'Failed to parse arguments for tool \'lookup\' (should be JSON): {"id": "W-1"',
+        ),
+        "call_none": (
+            InvalidToolCall.invalid_json,
+            "Failed to parse arguments for tool 'lookup' (should be JSON): ",
+        ),
+        "call_schema": (
+            InvalidToolCall.schema_mismatch,
+            "Failed to validate arguments for tool 'lookup'. The arguments didn't match the tool's schema: 7 is not of type 'string' (at $.id)",
+        ),
     }
-    tool_messages = trace[3:6]
+    tool_messages = trace[3:7]
     assert [m.get("tool_call_id") for m in tool_messages] == list(expected_errors)
     for message in tool_messages:
-        expected = expected_errors[message["tool_call_id"]]  # type: ignore[typeddict-item]
-        assert message["role"] == "tool"
-        assert message.get("is_error") is True
-        assert message.get("error_message") == message["content"]
-        assert str(message["content"]).startswith(expected)
-    assert "7 is not of type 'string'" in str(tool_messages[2]["content"])
-    assert trace[6]["role"] == "assistant"
-    assert trace[6].get("content") == "Done [0]"
+        reason, text = expected_errors[message["tool_call_id"]]  # type: ignore[typeddict-item]
+        assert message == {
+            "role": "tool",
+            "tool_call_id": message["tool_call_id"],  # type: ignore[typeddict-item]
+            "content": text,
+            "is_error": True,
+            "error_message": text,
+            "invalid_call": reason,
+        }
+    assert trace[7]["role"] == "assistant"
+    assert trace[7].get("content") == "Done [0]"

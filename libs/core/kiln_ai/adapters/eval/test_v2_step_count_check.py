@@ -175,3 +175,28 @@ class TestStepCountEdgeCases:
         result = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
         assert result.scores == {"score_a": 1.0}
         assert result.skipped_reason is None
+
+
+class TestStepCountRejectedToolCalls:
+    @pytest.mark.asyncio
+    async def test_rejected_calls_are_not_counted(self):
+        cfg = _make_config(
+            StepCountCheckProperties(count_type="tool_calls", max_count=1)
+        )
+        trace = _multi_turn_trace(n_user=1, n_assistant=1, tools_per_assistant=3)
+        trace += [
+            {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": "rejected",
+                "is_error": True,
+                "invalid_call": "unknown_tool",
+            }
+            for call_id in ("call_0_0", "call_0_1")
+        ]
+        trace.append(
+            {"role": "tool", "tool_call_id": "call_0_2", "content": "ok"},
+        )
+        assert StepCountCheckEval._count(trace, "tool_calls") == 1
+        result = await StepCountCheckEval(cfg).evaluate(_inp(trace=trace))
+        assert result.scores == {"score_a": 1.0}

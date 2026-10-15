@@ -223,6 +223,52 @@ class TestKilnTaskTool:
             )
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("keyword_context", [False, True])
+    async def test_run_passes_context_input_field_to_task(
+        self, kiln_task_tool, mock_task, mock_run_config, keyword_context
+    ):
+        """A task input field named "context" reaches the task, whether the calling
+        context is passed positionally or as `context=`."""
+        mock_task.input_json_schema = {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string"},
+                "context": {"type": "string"},
+            },
+        }
+        kiln_task_tool._task = mock_task
+        kiln_task_tool._run_config = mock_run_config
+        calling = ToolCallContext(allow_saving=False)
+
+        with (
+            patch(
+                "kiln_ai.adapters.adapter_registry.adapter_for_task"
+            ) as mock_adapter_for_task,
+            patch(
+                "kiln_ai.adapters.adapter_registry.load_skills_for_task",
+                return_value={},
+            ),
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.AdapterConfig"
+            ) as mock_adapter_config,
+        ):
+            mock_adapter = AsyncMock()
+            mock_adapter_for_task.return_value = mock_adapter
+            task_run = MagicMock(id="run_1")
+            task_run.output.output = "done"
+            mock_adapter.invoke.return_value = task_run
+
+            if keyword_context:
+                await kiln_task_tool.run(context=calling, question="q")
+                expected_input = {"question": "q"}
+            else:
+                await kiln_task_tool.run(calling, question="q", context="background")
+                expected_input = {"question": "q", "context": "background"}
+
+        assert mock_adapter.invoke.call_args.args[0] == expected_input
+        assert mock_adapter_config.call_args.kwargs["allow_saving"] is False
+
+    @pytest.mark.asyncio
     async def test_run_with_structured_input(
         self, kiln_task_tool, mock_context, mock_task, mock_run_config
     ):
@@ -257,7 +303,7 @@ class TestKilnTaskTool:
 
             # Test with structured input
             result = await kiln_task_tool.run(
-                context=mock_context, param1="value1", param2="value2"
+                mock_context, param1="value1", param2="value2"
             )
 
             # Verify adapter invoke was called with kwargs

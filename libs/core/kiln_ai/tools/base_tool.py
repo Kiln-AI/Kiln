@@ -38,6 +38,23 @@ class ToolCallContext:
     eval_output_schema: str | None = None
 
 
+def calling_context(
+    context: ToolCallContext | None, kwargs: dict[str, Any]
+) -> ToolCallContext | None:
+    """The calling context for a tool whose `run` takes `context` positional-only.
+
+    A `ToolCallContext` passed as `context=` by keyword lands in `kwargs`; it is
+    removed from `kwargs` and returned. Any other `context` value is a tool argument
+    (model arguments come from JSON, so they are never a `ToolCallContext`) and stays
+    in `kwargs`.
+    """
+    keyword_context = kwargs.get("context")
+    if isinstance(keyword_context, ToolCallContext):
+        del kwargs["context"]
+        return keyword_context
+    return context
+
+
 class ToolCallResult(BaseModel):
     output: str
     is_error: bool = Field(
@@ -62,9 +79,14 @@ class KilnToolInterface(ABC):
 
     @abstractmethod
     async def run(
-        self, context: ToolCallContext | None = None, **kwargs
+        self, context: ToolCallContext | None = None, /, **kwargs
     ) -> ToolCallResult:
-        """Execute the tool with the given parameters and calling context if provided."""
+        """Execute the tool with the given parameters and calling context if provided.
+
+        `context` is positional-only so that a tool whose schema has an argument
+        named `context` receives that argument in `kwargs`. Passing a
+        `ToolCallContext` as `context=` by keyword is still supported (see
+        `calling_context`)."""
         pass
 
     @abstractmethod
@@ -131,7 +153,7 @@ class UnmanagedKilnTool(KilnToolInterface):
         }
 
     async def run(
-        self, context: ToolCallContext | None = None, **kwargs
+        self, context: ToolCallContext | None = None, /, **kwargs
     ) -> ToolCallResult:
         raise RuntimeError(
             "This tool is supplied as an unmanaged KilnTool for API tool definitions only; "

@@ -78,7 +78,7 @@ class MCPAdapter(BaseAdapter):
         else:
             tool_kwargs = {"input": input}
 
-        result = await tool.run(context=None, **tool_kwargs)
+        result = await tool.run(None, **tool_kwargs)
         return RunOutput(output=result.output, intermediate_outputs=None), None
 
     async def invoke(

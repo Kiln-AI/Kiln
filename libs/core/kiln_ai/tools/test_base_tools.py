@@ -6,6 +6,7 @@ from kiln_ai.tools.base_tool import (
     ToolCallContext,
     ToolCallResult,
     UnmanagedKilnTool,
+    calling_context,
 )
 
 
@@ -254,3 +255,18 @@ class TestValidationEdgeCases:
 
         definition = await tool.toolcall_definition()
         assert definition["function"]["parameters"] == schema
+
+
+def test_calling_context_takes_keyword_tool_call_context():
+    ctx = ToolCallContext(allow_saving=False)
+    kwargs = {"context": ctx, "x": 1}
+    assert calling_context(None, kwargs) is ctx
+    assert kwargs == {"x": 1}
+
+
+def test_calling_context_leaves_context_argument():
+    ctx = ToolCallContext()
+    kwargs = {"context": "hi"}
+    assert calling_context(ctx, kwargs) is ctx
+    assert kwargs == {"context": "hi"}
+    assert calling_context(None, {}) is None

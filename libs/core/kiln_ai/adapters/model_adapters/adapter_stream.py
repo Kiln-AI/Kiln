@@ -11,8 +11,9 @@ from litellm.types.utils import ChatCompletionMessageToolCall, Choices, ModelRes
 
 from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
 from kiln_ai.adapters.chat.chat_formatter import ChatFormatter, chat_message_to_dict
+from kiln_ai.adapters.errors import InvalidToolCallsError
 from kiln_ai.adapters.litellm_utils.litellm_streaming import StreamingCompletion
-from kiln_ai.adapters.litellm_utils.tool_calls import function_tool_calls
+from kiln_ai.adapters.litellm_utils.tool_calls import response_function_tool_calls
 from kiln_ai.adapters.ml_model_list import KilnModelProvider
 from kiln_ai.adapters.model_adapters.stream_events import (
     AdapterStreamEvent,
@@ -21,12 +22,14 @@ from kiln_ai.adapters.model_adapters.stream_events import (
 )
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel import MessageUsage, Usage
+from kiln_ai.utils.open_ai_types import ChatCompletionToolMessageParamWrapper
 
 if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 
 MAX_CALLS_PER_TURN = 10
 MAX_TOOL_CALLS_PER_TURN = 100
+MAX_CONSECUTIVE_INVALID_TOOL_CALL_ROUNDS = 3
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +88,24 @@ def raise_for_empty_model_response(response_choice: Any) -> NoReturn:
             CONTENT_FILTER_ERROR_MESSAGE.format(finish_reason=finish_reason)
         )
     raise ValueError(EMPTY_RESPONSE_ERROR_MESSAGE)
+
+
+def count_invalid_tool_call_round(
+    tool_messages: list[ChatCompletionToolMessageParamWrapper],
+    consecutive_rounds: int,
+) -> int:
+    """The number of consecutive model responses, up to this one, whose tool calls
+    were all rejected without running. Raises `InvalidToolCallsError`, carrying the
+    last rejection, once that reaches `MAX_CONSECUTIVE_INVALID_TOOL_CALL_ROUNDS`."""
+    if not tool_messages or not all(m.get("invalid_call") for m in tool_messages):
+        return 0
+    rounds = consecutive_rounds + 1
+    if rounds >= MAX_CONSECUTIVE_INVALID_TOOL_CALL_ROUNDS:
+        last = tool_messages[-1]
+        raise InvalidToolCallsError(
+            rounds, str(last.get("error_message") or last["content"])
+        )
+    return rounds
 
 
 @dataclass
@@ -216,6 +237,7 @@ class AdapterStream:
     ) -> AsyncIterator[AdapterStreamEvent | _ModelTurnComplete]:
         usage = Usage()
         tool_calls_count = 0
+        invalid_tool_call_rounds = 0
 
         while tool_calls_count < MAX_TOOL_CALLS_PER_TURN:
             completion_kwargs = await self._adapter.build_completion_kwargs(
@@ -239,7 +261,9 @@ class AdapterStream:
             ) + call_latency_ms
 
             content = response_choice.message.content
-            tool_calls = function_tool_calls(response_choice.message.tool_calls)
+            tool_calls = response_function_tool_calls(
+                response_choice.message.tool_calls
+            )
             if not content and not tool_calls:
                 raise_for_empty_model_response(response_choice)
 
@@ -281,7 +305,8 @@ class AdapterStream:
                         return
 
                 # Existing flow: handle tool calls internally
-                async for event in self._handle_tool_calls(tool_calls):
+                tool_msgs: list[ChatCompletionToolMessageParamWrapper] = []
+                async for event in self._handle_tool_calls(tool_calls, tool_msgs):
                     yield event
 
                 assistant_msg = self._extract_task_response(tool_calls)
@@ -293,6 +318,9 @@ class AdapterStream:
                     )
                     return
 
+                invalid_tool_call_rounds = count_invalid_tool_call_round(
+                    tool_msgs, invalid_tool_call_rounds
+                )
                 tool_calls_count += 1
                 continue
 
@@ -315,7 +343,10 @@ class AdapterStream:
     async def _handle_tool_calls(
         self,
         tool_calls: list[ChatCompletionMessageToolCall],
+        tool_msgs_out: list[ChatCompletionToolMessageParamWrapper],
     ) -> AsyncIterator[AdapterStreamEvent]:
+        """Run the tool calls, yielding their input and output events, and append
+        the tool messages to both the conversation and `tool_msgs_out`."""
         real_tool_calls = [
             tc for tc in tool_calls if tc.function.name != "task_response"
         ]
@@ -344,14 +375,23 @@ class AdapterStream:
             tc_id = tool_msg["tool_call_id"]
             tc_name = _find_tool_name(tool_calls, tc_id)
             content = tool_msg["content"]
-            yield ToolCallEvent(
-                event_type=ToolCallEventType.OUTPUT_AVAILABLE,
-                tool_call_id=tc_id,
-                tool_name=tc_name,
-                result=str(content) if content is not None else None,
-            )
+            if tool_msg.get("is_error"):
+                yield ToolCallEvent(
+                    event_type=ToolCallEventType.OUTPUT_ERROR,
+                    tool_call_id=tc_id,
+                    tool_name=tc_name,
+                    error=tool_msg.get("error_message") or str(content),
+                )
+            else:
+                yield ToolCallEvent(
+                    event_type=ToolCallEventType.OUTPUT_AVAILABLE,
+                    tool_call_id=tc_id,
+                    tool_name=tc_name,
+                    result=str(content) if content is not None else None,
+                )
 
         self._messages.extend(tool_msgs)
+        tool_msgs_out.extend(tool_msgs)
 
     @staticmethod
     def _extract_task_response(

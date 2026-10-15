@@ -7,6 +7,7 @@ Provides:
   it to the client.
 - `StructuredOutputParseError`: on a structured-output task, the model's
   response wasn't parseable JSON, or parsed to something other than an object.
+- `InvalidToolCallsError`: the model kept making only invalid tool calls.
 - `format_error_message`: maps known exceptions to user-friendly text.
 """
 
@@ -62,6 +63,20 @@ class StructuredOutputParseError(ValueError):
     classification can treat wrong-shape output like a schema mismatch: both
     mean the model flubbed its output shape once, and a retry may fix it.
     """
+
+
+class InvalidToolCallsError(RuntimeError):
+    """Raised when every tool call the model made was rejected (unknown tool,
+    arguments that aren't JSON, or arguments the tool doesn't accept) for too many
+    model responses in a row. Each rejection is sent back to the model so it can
+    correct itself; this bounds the cost when it doesn't."""
+
+    def __init__(self, rounds: int, last_error: str) -> None:
+        super().__init__(
+            f"The model made only invalid tool calls {rounds} times in a row. The last error was: {last_error}"
+        )
+        self.rounds = rounds
+        self.last_error = last_error
 
 
 def _safe_str(exc: Exception) -> str:
@@ -120,9 +135,9 @@ def format_error_message(exc: Exception) -> str:
                 return "The run exceeded the maximum number of turns."
             if msg.startswith("Too many tool calls"):
                 return "The run exceeded the maximum number of tool calls in one turn."
-            # Other RuntimeErrors from the adapter (reasoning required, a
-            # task_response mixed with other tool calls) already have
-            # user-friendly messages, so pass them through.
+            # Other RuntimeErrors from the adapter (e.g. reasoning required,
+            # repeated invalid tool calls) already have user-friendly
+            # messages, so pass them through.
             return msg
 
         if isinstance(exc, ValueError):

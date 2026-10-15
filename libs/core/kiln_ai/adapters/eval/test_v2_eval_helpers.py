@@ -4,6 +4,8 @@ from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import (
     check_reference_key,
     extract_output_value,
     extract_value,
+    invalid_tool_call_ids,
+    is_invalid_tool_call,
     references_trace,
     stringify_for_match,
 )
@@ -267,3 +269,22 @@ class TestStringifyForMatch:
 
     def test_non_serializable_falls_back_to_str(self):
         assert stringify_for_match(object.__class__) == str(object.__class__)
+
+
+class TestInvalidToolCalls:
+    def test_ids_of_rejected_calls_only(self):
+        trace = [
+            {"role": "assistant", "tool_calls": [{"id": "a"}, {"id": "b"}]},
+            {"role": "tool", "tool_call_id": "a", "invalid_call": "invalid_json"},
+            {"role": "tool", "tool_call_id": "b", "is_error": True},
+            {"role": "tool", "tool_call_id": ["bad"], "invalid_call": "unknown_tool"},
+            {"role": "user", "tool_call_id": "c", "invalid_call": "unknown_tool"},
+        ]
+        assert invalid_tool_call_ids(trace) == {"a"}
+
+    def test_is_invalid_tool_call_tolerates_malformed_entries(self):
+        ids = {"a"}
+        assert is_invalid_tool_call({"id": "a"}, ids)
+        assert not is_invalid_tool_call({"id": "b"}, ids)
+        assert not is_invalid_tool_call({"id": ["a"]}, ids)
+        assert not is_invalid_tool_call("a", ids)

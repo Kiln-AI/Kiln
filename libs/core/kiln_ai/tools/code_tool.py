@@ -24,6 +24,7 @@ from kiln_ai.tools.base_tool import (
     ToolCallContext,
     ToolCallDefinition,
     ToolCallResult,
+    calling_context,
 )
 from kiln_ai.tools.sandbox_bridge import (
     BridgeResult,
@@ -95,8 +96,9 @@ class PythonCodeTool(KilnToolInterface):
         }
 
     async def run(
-        self, context: ToolCallContext | None = None, **kwargs: Any
+        self, context: ToolCallContext | None = None, /, **kwargs: Any
     ) -> ToolCallResult:
+        context = calling_context(context, kwargs)
         outcome = await self._invoke(context, kwargs)
 
         tool_name = self._code_tool.tool_function_name

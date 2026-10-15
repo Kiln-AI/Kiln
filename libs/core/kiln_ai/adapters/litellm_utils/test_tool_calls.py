@@ -5,7 +5,10 @@ from litellm.types.utils import (
     Function,
 )
 
-from kiln_ai.adapters.litellm_utils.tool_calls import function_tool_calls
+from kiln_ai.adapters.litellm_utils.tool_calls import (
+    function_tool_calls,
+    response_function_tool_calls,
+)
 
 
 def _function_call() -> ChatCompletionMessageToolCall:
@@ -34,3 +37,23 @@ def test_function_tool_calls_rejects_custom_tool_call():
     )
     with pytest.raises(ValueError, match="custom tool call"):
         function_tool_calls([_function_call(), custom])
+
+
+def test_response_function_tool_calls_normalizes_none_arguments():
+    call = _function_call()
+    call.function.arguments = None  # type: ignore[assignment]
+    assert response_function_tool_calls([call]) == [call]
+    assert call.function.arguments == ""
+
+
+def test_response_function_tool_calls_keeps_arguments():
+    call = _function_call()
+    response_function_tool_calls([call])
+    assert call.function.arguments == "{}"
+
+
+def test_response_function_tool_calls_rejects_missing_name():
+    call = _function_call()
+    call.function.name = None
+    with pytest.raises(ValueError, match="without providing a function name"):
+        response_function_tool_calls([call])

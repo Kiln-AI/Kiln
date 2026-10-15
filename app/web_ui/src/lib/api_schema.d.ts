@@ -5130,6 +5130,7 @@ export interface components {
             is_error?: boolean | null;
             /** Error Message */
             error_message?: string | null;
+            invalid_call?: components["schemas"]["InvalidToolCall"] | null;
         };
         /**
          * ChatCompletionUserMessageParam
@@ -8910,6 +8911,12 @@ export interface components {
             /** Error Message */
             error_message?: string | null;
         };
+        /**
+         * InvalidToolCall
+         * @description Why the adapter rejected a model's tool call without running the tool.
+         * @enum {string}
+         */
+        InvalidToolCall: "unknown_tool" | "invalid_json" | "schema_mismatch";
         /** IssueProperties */
         IssueProperties: {
             /**

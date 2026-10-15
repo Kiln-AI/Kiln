@@ -7,6 +7,7 @@ https://github.com/pydantic/pydantic/issues/9541
 Otherwise we are using OpenAI SDK types directly.
 """
 
+from enum import Enum
 from typing import (
     Any,
     Iterable,
@@ -107,6 +108,14 @@ class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):
     """
 
 
+class InvalidToolCall(str, Enum):
+    """Why the adapter rejected a model's tool call without running the tool."""
+
+    unknown_tool = "unknown_tool"
+    invalid_json = "invalid_json"
+    schema_mismatch = "schema_mismatch"
+
+
 class ChatCompletionToolMessageParamWrapper(TypedDict, total=False):
     content: Required[Union[str, Iterable[ChatCompletionContentPartTextParam]]]
     """The contents of the tool message."""
@@ -129,6 +138,11 @@ class ChatCompletionToolMessageParamWrapper(TypedDict, total=False):
     error_message: Optional[str]
     """Human-readable error description when is_error is True."""
 
+    invalid_call: Optional[InvalidToolCall]
+    """Set when the tool was never run because the model's call was invalid (an
+    unknown tool, arguments that aren't JSON, or arguments the tool doesn't accept).
+    Distinguishes these rejections from errors a tool itself returned."""
+
 
 ChatCompletionMessageParam: TypeAlias = Union[
     ChatCompletionDeveloperMessageParam,
@@ -145,6 +159,7 @@ KILN_ONLY_MESSAGE_FIELDS: frozenset[str] = frozenset(
         "latency_ms",
         "is_error",
         "error_message",
+        "invalid_call",
         "kiln_task_tool_data",
         "usage",
     }
