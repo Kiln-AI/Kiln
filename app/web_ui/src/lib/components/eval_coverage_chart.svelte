@@ -87,7 +87,6 @@
       text: string
       path: string
       edge_path: string
-      hard_path: string
       label: { x: number; y: number }
       span: number
       state: "covered" | "planned" | "open"
@@ -113,7 +112,6 @@
           text: p.text,
           path: arc_path(RING_R, a0, a1),
           edge_path: arc_path(RING_R + RING_W / 2 + 0.8, a0, a1),
-          hard_path: arc_path(RING_R - RING_W / 2 - 1.6, a0, a1),
           label: polar(LABEL_R, (a0 + a1) / 2),
           span,
           state: covered ? "covered" : planned ? "planned" : "open",
@@ -417,15 +415,6 @@
               opacity={dim ? 0.55 : 1}
             />
           {/if}
-          {#if arc.hard}
-            <path
-              d={arc.hard_path}
-              fill="none"
-              stroke="#161616"
-              stroke-width="1.4"
-              opacity={dim ? 0.55 : 1}
-            />
-          {/if}
           {#if principles.length <= 30 && arc.span >= 4}
             <text
               x={arc.label.x}
@@ -707,19 +696,6 @@
               />
             </svg>
             not covered
-          </div>
-          <div class="flex items-center gap-1">
-            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-              <circle
-                cx="6"
-                cy="6"
-                r="5"
-                fill="none"
-                stroke="#161616"
-                stroke-width="1.6"
-              />
-            </svg>
-            hard line
           </div>
         </div>
       {/if}
