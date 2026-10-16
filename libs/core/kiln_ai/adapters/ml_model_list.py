@@ -46,6 +46,7 @@ class ModelFamily(str, Enum):
     thinking_machines = "thinking_machines"
     jev = "jev"
     liquid = "liquid"
+    ling = "ling"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -59,6 +60,7 @@ class ModelName(str, Enum):
     fugu_ultra_v2 = "fugu_ultra_v2"
     fugu_ultra = "fugu_ultra"
     muse_wonder_1_0 = "muse_wonder_1_0"
+    muse_spark_open = "muse_spark_open"
     muse_spark_1_2 = "muse_spark_1_2"
     muse_spark_1_1 = "muse_spark_1_1"
     muse_glimmer_30b = "muse_glimmer_30b"
@@ -190,6 +192,7 @@ class ModelName(str, Enum):
     gemini_3_5_flash = "gemini_3_5_flash"
     gemini_3_flash = "gemini_3_flash"
     nemotron_70b = "nemotron_70b"
+    nemotron_3p5_super_vl = "nemotron_3p5_super_vl"
     nemotron_3p5_lightning = "nemotron_3p5_lightning"
     nemotron_3_ultra = "nemotron_3_ultra"
     nemotron_3_super = "nemotron_3_super"
@@ -344,6 +347,7 @@ class ModelName(str, Enum):
     inkling = "inkling"
     jev_1_13 = "jev_1_13"
     lfm_2_5_24b_a2b = "lfm_2_5_24b_a2b"
+    ling_3_1_flash = "ling_3_1_flash"
 
 
 class ModelParserID(str, Enum):
@@ -4728,6 +4732,44 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Nemotron 3.5 Super VL
+    KilnModel(
+        family=ModelFamily.nemotron,
+        name=ModelName.nemotron_3p5_super_vl,
+        friendly_name="Nemotron 3.5 Super VL",
+        editorial_notes="NVIDIA's open multimodal MoE model (120B total, 12B active) with configurable reasoning. Takes text, images and video, with a 1M-token context.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="nvidia/nemotron-3.5-super-vl",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                require_openrouter_reasoning=True,
+                supports_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="nvidia/NVIDIA-Nemotron-3.5-Super-VL",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
+        ],
+    ),
     # Nemotron 3.5 Lightning
     KilnModel(
         family=ModelFamily.nemotron,
@@ -5438,6 +5480,55 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Muse Spark Open
+    KilnModel(
+        family=ModelFamily.muse,
+        name=ModelName.muse_spark_open,
+        friendly_name="Muse Spark Open",
+        editorial_notes="Meta's open-weights Muse reasoning model (816B MoE, 42B active), tuned for coding and agentic work. Text and image input, 1M-token context.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="meta/muse-spark-open",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_function_calling=True,
+                supports_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents (html and csv excluded, as on the Muse Spark entries)
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/muse-spark-open",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="meta-models/Muse-Spark-Open-816B-A42B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
             ),
         ],
     ),
@@ -11106,6 +11197,22 @@ built_in_models: List[KilnModel] = [
                 multimodal_requires_pdf_as_image=True,
                 supports_vision=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="stepfun-ai/Step-5-Preview",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                # Featherless doesn't advertise tool_use for this model
+                supports_function_calling=False,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+            ),
         ],
     ),
     # StepFun Step 3.7 Flash
@@ -11504,6 +11611,21 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="liquid/lfm-2.5-24b-a2b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+            ),
+        ],
+    ),
+    # Ling 3.1 Flash
+    KilnModel(
+        family=ModelFamily.ling,
+        name=ModelName.ling_3_1_flash,
+        friendly_name="Ling 3.1 Flash",
+        editorial_notes="inclusionAI's hybrid-reasoning MoE model (560B total, 25B active). Text only, 256K context.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="inclusionai/ling-3.1-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
