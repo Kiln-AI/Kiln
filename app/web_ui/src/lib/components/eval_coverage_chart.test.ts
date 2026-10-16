@@ -98,9 +98,6 @@ describe("EvalCoverageChart", () => {
     expect(container.querySelectorAll('svg g[role="button"]')).toHaveLength(4)
     expect(container.textContent).toContain("50%")
     expect(container.textContent).toContain("3 of 4")
-    // the risk list ranks the uncovered principles first
-    expect(container.textContent).toContain("Where to look next")
-    expect(container.textContent).toContain("no eval")
   })
 
   it("shows the hovered eval and its principles in the panel", async () => {

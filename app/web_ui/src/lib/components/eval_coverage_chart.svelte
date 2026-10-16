@@ -185,17 +185,6 @@
     return den > 0 ? num / den : null
   })()
 
-  // Where to look next: importance times fail rate; no result counts as a
-  // full fail, so an uncovered principle ranks by its weight alone.
-  $: risks = principles
-    .map((p) => {
-      const h = health_of(p.n)
-      return { p, health: h, risk: share_of(p.n) * (h === null ? 1 : 1 - h) }
-    })
-    .sort((a, b) => b.risk - a.risk)
-    .slice(0, 8)
-  $: max_risk = risks[0]?.risk ?? 0
-
   function polar(r: number, deg: number): { x: number; y: number } {
     const a = (deg * Math.PI) / 180
     return { x: r * Math.cos(a), y: r * Math.sin(a) }
@@ -735,43 +724,6 @@
         </div>
       {/if}
     </div>
-
-    {#if risks.length > 0}
-      <div class="text-sm">
-        <div class="text-gray-500 mb-1">
-          Where to look next: importance × fail rate, no eval counted as a fail
-        </div>
-        <ol class="flex flex-col gap-1">
-          {#each risks as r (r.p.n)}
-            <li>
-              <button
-                type="button"
-                class="flex w-full flex-row items-center gap-2 rounded text-left"
-                class:text-primary={lit_principles.has(r.p.n)}
-                title={r.p.text}
-                on:mouseenter={() => set_hover({ kind: "principle", n: r.p.n })}
-                on:mouseleave={() =>
-                  clear_hover({ kind: "principle", n: r.p.n })}
-                on:focus={() => set_hover({ kind: "principle", n: r.p.n })}
-                on:blur={() => clear_hover({ kind: "principle", n: r.p.n })}
-              >
-                <span
-                  class="inline-block h-2 shrink-0 rounded-sm bg-primary/40"
-                  style={`width:${Math.max(4, Math.round((r.risk / Math.max(max_risk, 1e-9)) * 56))}px`}
-                ></span>
-                <span class="min-w-0 truncate">
-                  {r.p.n}
-                  {short(r.p.text, 70)}
-                </span>
-                <span class="ml-auto shrink-0 text-gray-500">
-                  {r.health === null ? "no eval" : `fails ${pct(1 - r.health)}`}
-                </span>
-              </button>
-            </li>
-          {/each}
-        </ol>
-      </div>
-    {/if}
 
     {#if principles.length > 0 && table_nodes.length > 0}
       <Collapse title="Table view" small={true}>
