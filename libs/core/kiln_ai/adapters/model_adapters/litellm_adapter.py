@@ -24,7 +24,11 @@ import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
 from kiln_ai.adapters.chat.chat_formatter import chat_message_to_dict
 from kiln_ai.adapters.errors import EMPTY_RESPONSE_ERROR_MESSAGE
-from kiln_ai.adapters.litellm_utils.tool_calls import function_tool_calls
+from kiln_ai.adapters.litellm_utils.tool_calls import (
+    MISSING_TOOL_NAME_ERROR,
+    function_tool_calls,
+    response_function_tool_calls,
+)
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     ModelProviderName,
@@ -241,7 +245,9 @@ class LiteLlmAdapter(BaseAdapter):
             if not hasattr(response_choice, "message"):
                 raise ValueError("Response choice has no message")
             content = response_choice.message.content
-            tool_calls = function_tool_calls(response_choice.message.tool_calls)
+            tool_calls = response_function_tool_calls(
+                response_choice.message.tool_calls
+            )
             if not content and not tool_calls:
                 raise_for_empty_model_response(response_choice)
 
@@ -1073,9 +1079,7 @@ class LiteLlmAdapter(BaseAdapter):
             for litellm_tool_call in function_tool_calls(raw_message.tool_calls):
                 # Optional in the SDK for streaming responses, but should never be None at this point.
                 if litellm_tool_call.function.name is None:
-                    raise ValueError(
-                        "The model requested a tool call, without providing a function name (required)."
-                    )
+                    raise ValueError(MISSING_TOOL_NAME_ERROR)
                 open_ai_tool_calls.append(
                     ChatCompletionMessageToolCallParam(
                         id=litellm_tool_call.id,

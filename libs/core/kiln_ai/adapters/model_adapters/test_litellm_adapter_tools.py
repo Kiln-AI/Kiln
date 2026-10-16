@@ -12,6 +12,7 @@ from litellm.types.utils import Usage as LiteLlmUsage
 from kiln_ai import datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.errors import KilnRunError
+from kiln_ai.adapters.litellm_utils.tool_calls import MISSING_TOOL_NAME_ERROR
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, built_in_models
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import (
@@ -19,6 +20,10 @@ from kiln_ai.adapters.model_adapters.litellm_adapter import (
     ModelTurnResult,
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
+from kiln_ai.adapters.model_adapters.test_adapter_stream import (
+    _make_model_response,
+    _make_raw_tool_call,
+)
 from kiln_ai.adapters.retry_classification import unwrap_kiln_run_error
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel import PromptId
@@ -1157,6 +1162,12 @@ UNEXPECTED_ADD_FAILURE = (
         ),
         pytest.param(
             [MockTool("add")],
+            [("call_1", "", '{"a": 2, "b": 2}')],
+            [_tool_error("call_1", "Error: no tool named ''. Available tools: add.")],
+            id="empty_tool_name",
+        ),
+        pytest.param(
+            [MockTool("add")],
             [("call_1", "add", '{"a": 2,')],
             [
                 _tool_error(
@@ -1424,6 +1435,110 @@ async def test_run_ending_tool_error_fails_run(tools_adapter, error):
             await tools_adapter.invoke("what is 2+2")
 
     assert unwrap_kiln_run_error(exc_info.value) is unwrap_kiln_run_error(error)
+    assert model_call.call_count == 1
+
+
+async def test_null_tool_arguments_return_invalid_json_error_and_run_saves(
+    tools_adapter,
+):
+    tool_call_response = _make_model_response(
+        content=None, tool_calls=[_make_raw_tool_call("call_1", "add", None)]
+    )
+    final_response = _make_model_response(content="The answer is [4]")
+    tools_adapter.base_adapter_config.allow_saving = True
+
+    with (
+        patch.object(
+            tools_adapter, "cached_available_tools", return_value=[MockTool("add")]
+        ),
+        patch.object(tools_adapter, "build_completion_kwargs", return_value={}),
+        patch.object(
+            tools_adapter,
+            "acompletion_checking_response",
+            side_effect=[
+                (tool_call_response, tool_call_response.choices[0]),
+                (final_response, final_response.choices[0]),
+            ],
+        ),
+    ):
+        run = await tools_adapter.invoke("what is 2+2")
+
+    assert run.output.output == "The answer is [4]"
+    assert run.trace is not None
+    assert run.trace[2].get("tool_calls") == [
+        {
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "add", "arguments": ""},
+        }
+    ]
+    assert run.trace[3] == _tool_error(
+        "call_1",
+        "Error: arguments for 'add' are not valid JSON: . Call it again with a JSON object.",
+    )
+    assert run.path is not None
+    assert datamodel.TaskRun.load_from_file(run.path).trace == run.trace
+
+
+async def test_tool_call_without_name_fails_run_before_any_tool_runs(tools_adapter):
+    tool_call_response = _make_model_response(
+        content=None,
+        tool_calls=[
+            _make_raw_tool_call("call_1", "add", '{"a": 2, "b": 2}'),
+            _make_raw_tool_call("call_2", None, '{"a": 2, "b": 2}'),
+        ],
+    )
+
+    with (
+        patch.object(
+            tools_adapter, "cached_available_tools", return_value=[MockTool("add")]
+        ),
+        patch.object(tools_adapter, "build_completion_kwargs", return_value={}),
+        patch.object(
+            tools_adapter,
+            "acompletion_checking_response",
+            side_effect=[(tool_call_response, tool_call_response.choices[0])],
+        ) as model_call,
+        patch.object(
+            tools_adapter, "process_tool_calls", wraps=tools_adapter.process_tool_calls
+        ) as process_tool_calls,
+    ):
+        with pytest.raises(KilnRunError) as exc_info:
+            await tools_adapter.invoke("what is 2+2")
+
+    original = unwrap_kiln_run_error(exc_info.value)
+    assert isinstance(original, ValueError)
+    assert str(original) == MISSING_TOOL_NAME_ERROR
+    assert model_call.call_count == 1
+    process_tool_calls.assert_not_called()
+
+
+@pytest.mark.parametrize("content", [None, "some text"])
+async def test_task_response_with_null_arguments_fails_after_one_model_call(
+    tools_adapter, content
+):
+    tool_call_response = _make_model_response(
+        content=content,
+        tool_calls=[_make_raw_tool_call("call_1", "task_response", None)],
+    )
+
+    with (
+        patch.object(
+            tools_adapter, "cached_available_tools", return_value=[MockTool("add")]
+        ),
+        patch.object(tools_adapter, "build_completion_kwargs", return_value={}),
+        patch.object(
+            tools_adapter,
+            "acompletion_checking_response",
+            side_effect=[(tool_call_response, tool_call_response.choices[0])],
+        ) as model_call,
+    ):
+        with pytest.raises(KilnRunError) as exc_info:
+            await tools_adapter.invoke("what is 2+2")
+
+    original = unwrap_kiln_run_error(exc_info.value)
+    assert isinstance(original, RuntimeError)
+    assert str(original) == "No assistant message/output returned from model"
     assert model_call.call_count == 1
 
 

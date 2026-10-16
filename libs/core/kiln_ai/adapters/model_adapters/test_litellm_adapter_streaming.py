@@ -12,6 +12,7 @@ from litellm.types.utils import (
     Function,
 )
 
+from kiln_ai.adapters.litellm_utils.tool_calls import MISSING_TOOL_NAME_ERROR
 from kiln_ai.adapters.ml_model_list import ModelProviderName, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
@@ -27,10 +28,11 @@ from kiln_ai.adapters.model_adapters.stream_events import (
 from kiln_ai.adapters.model_adapters.test_adapter_stream import (
     FakeStreamingCompletion,
     _make_model_response,
+    _make_raw_tool_call,
     _make_streaming_chunk,
     _make_tool_call,
 )
-from kiln_ai.datamodel import Project, PromptGenerators, Task
+from kiln_ai.datamodel import Project, PromptGenerators, Task, TaskRun
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.pytest_test_output import make_test_output_dir
@@ -1147,3 +1149,85 @@ async def test_mocked_ai_sdk_stream_non_object_arguments_are_non_fatal(
         )
     ]
     assert stream.task_run.output.output == final_content
+
+
+async def test_mocked_ai_sdk_stream_null_arguments_are_non_fatal_and_run_saves(
+    task: Task,
+):
+    """Null arguments are stored as "" and get the invalid-JSON error. The stream
+    continues to a final answer, and the saved run reloads."""
+    adapter = _make_mocked_adapter(task, return_on_tool_call=False)
+
+    tool_call_response = _make_model_response(
+        content=None,
+        tool_calls=[_make_raw_tool_call("call_multiply", "multiply", None)],
+    )
+    final_content = "3 times 7 is 21."
+    streams = iter(
+        [
+            FakeStreamingCompletion(
+                tool_call_response, [_make_streaming_chunk(finish_reason="tool_calls")]
+            ),
+            FakeStreamingCompletion(_make_model_response(content=final_content)),
+        ]
+    )
+
+    with patch(
+        "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+        side_effect=lambda **kw: next(streams),
+    ):
+        stream = adapter.invoke_ai_sdk_stream(input="3 * 7 = ?")
+        events = [event async for event in stream]
+
+    assert [e for e in events if isinstance(e, ToolOutputErrorEvent)] == [
+        ToolOutputErrorEvent(
+            toolCallId="call_multiply",
+            errorText="Error: arguments for 'multiply' are not valid JSON: . Call it again with a JSON object.",
+        )
+    ]
+    task_run = stream.task_run
+    assert task_run.output.output == final_content
+    assert task_run.trace is not None
+    assert task_run.trace[2].get("tool_calls") == [
+        {
+            "id": "call_multiply",
+            "type": "function",
+            "function": {"name": "multiply", "arguments": ""},
+        }
+    ]
+    assert task_run.path is not None
+    assert TaskRun.load_from_file(task_run.path).trace == task_run.trace
+
+
+async def test_mocked_ai_sdk_stream_tool_call_without_name_fails_before_any_tool_runs(
+    task: Task,
+):
+    adapter = _make_mocked_adapter(task, return_on_tool_call=False)
+
+    tool_call_response = _make_model_response(
+        content=None,
+        tool_calls=[
+            _make_raw_tool_call("call_multiply", "multiply", '{"a": 3, "b": 7}'),
+            _make_raw_tool_call("call_nameless", None, '{"a": 3, "b": 7}'),
+        ],
+    )
+
+    with (
+        patch(
+            "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+            return_value=FakeStreamingCompletion(
+                tool_call_response, [_make_streaming_chunk(finish_reason="tool_calls")]
+            ),
+        ) as streaming_completion,
+        patch.object(
+            adapter, "process_tool_calls", wraps=adapter.process_tool_calls
+        ) as process_tool_calls,
+    ):
+        stream = adapter.invoke_ai_sdk_stream(input="3 * 7 = ?")
+        with pytest.raises(ValueError) as exc_info:
+            async for _ in stream:
+                pass
+
+    assert str(exc_info.value) == MISSING_TOOL_NAME_ERROR
+    assert streaming_completion.call_count == 1
+    process_tool_calls.assert_not_called()

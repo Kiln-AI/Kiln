@@ -13,7 +13,7 @@ from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
 from kiln_ai.adapters.chat.chat_formatter import ChatFormatter, chat_message_to_dict
 from kiln_ai.adapters.errors import EMPTY_RESPONSE_ERROR_MESSAGE
 from kiln_ai.adapters.litellm_utils.litellm_streaming import StreamingCompletion
-from kiln_ai.adapters.litellm_utils.tool_calls import function_tool_calls
+from kiln_ai.adapters.litellm_utils.tool_calls import response_function_tool_calls
 from kiln_ai.adapters.ml_model_list import KilnModelProvider
 from kiln_ai.adapters.model_adapters.stream_events import (
     AdapterStreamEvent,
@@ -236,7 +236,9 @@ class AdapterStream:
             ) + call_latency_ms
 
             content = response_choice.message.content
-            tool_calls = function_tool_calls(response_choice.message.tool_calls)
+            tool_calls = response_function_tool_calls(
+                response_choice.message.tool_calls
+            )
             if not content and not tool_calls:
                 raise_for_empty_model_response(response_choice)
 

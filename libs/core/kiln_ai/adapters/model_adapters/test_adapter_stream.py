@@ -67,6 +67,18 @@ def _make_tool_call(
     )
 
 
+def _make_raw_tool_call(
+    call_id: str, name: str | None, arguments: str | None
+) -> ChatCompletionMessageToolCall:
+    """A tool call holding exactly ``name`` and ``arguments``, nulls included.
+
+    ``Function()`` turns null arguments into "", so they are set after construction.
+    """
+    function = Function(name=name, arguments="")
+    function.arguments = arguments  # type: ignore[assignment]
+    return ChatCompletionMessageToolCall(id=call_id, type="function", function=function)
+
+
 class FakeChatFormatter(ChatFormatter):
     """A simple chat formatter that returns a single turn then None."""
 
