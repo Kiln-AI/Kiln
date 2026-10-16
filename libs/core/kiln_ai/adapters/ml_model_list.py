@@ -762,6 +762,15 @@ QWEN_3P6_GROQ_THINKING_LEVELS = {
     "On": "default",
 }
 
+# Muse Spark Open's chat template accepts only low/medium/high/xhigh, and
+# OpenRouter rejects "none" (reasoning cannot be turned off).
+MUSE_SPARK_OPEN_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+}
+
 QWEN_3P8_THINKING_LEVELS = {
     "Off/None": "none",
     "Low": "low",
@@ -4765,7 +4774,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="nvidia/NVIDIA-Nemotron-3.5-Super-VL",
-                structured_output_mode=StructuredOutputMode.json_instructions,
+                structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
         ],
@@ -5494,6 +5503,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="meta/muse-spark-open",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=MUSE_SPARK_OPEN_THINKING_LEVELS,
+                default_thinking_level="medium",
                 supports_function_calling=True,
                 supports_data_gen=True,
                 supports_doc_extraction=True,
@@ -5513,7 +5524,9 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/muse-spark-open",
-                structured_output_mode=StructuredOutputMode.json_instructions,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                # Fireworks streams nothing when reasoning_effort is set on this
+                # model (request hangs until timeout), so no thinking levels here.
                 supports_data_gen=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -5527,7 +5540,9 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="meta-models/Muse-Spark-Open-816B-A42B",
-                structured_output_mode=StructuredOutputMode.json_instructions,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=MUSE_SPARK_OPEN_THINKING_LEVELS,
+                default_thinking_level="medium",
                 supports_data_gen=True,
             ),
         ],
