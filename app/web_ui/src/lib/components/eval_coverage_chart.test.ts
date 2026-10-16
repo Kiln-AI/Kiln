@@ -72,16 +72,24 @@ function fixture(): CoverageData {
       [3, null],
       [4, null],
     ]),
-    floor: null,
+    floor: null as CoverageData["floor"],
     active_count: 1,
   }
+}
+
+function fixture_with_floor(): CoverageData {
+  const data = fixture()
+  data.floor = data.nodes[0]
+  return data
 }
 
 afterEach(() => cleanup())
 
 describe("EvalCoverageChart", () => {
   it("draws one circle per node, links evals, and one arc per principle", () => {
-    const { container } = render(EvalCoverageChart, { data: fixture() })
+    const { container } = render(EvalCoverageChart, {
+      data: fixture_with_floor(),
+    })
     // 1 boundary + 3 nodes
     expect(container.querySelectorAll('svg[role="group"] circle')).toHaveLength(
       4,
@@ -92,12 +100,17 @@ describe("EvalCoverageChart", () => {
     expect(
       container.querySelector('svg a[href^="/specs/p/t/builder?description="]'),
     ).not.toBeNull()
-    expect(container.querySelector("svg")?.textContent).toContain("Careful")
-    expect(container.querySelector("svg")?.textContent).toContain("Honest")
+    expect(container.querySelector('svg[role="group"]')?.textContent).toContain(
+      "Careful",
+    )
+    expect(container.querySelector('svg[role="group"]')?.textContent).toContain(
+      "Honest",
+    )
     expect(container.querySelector("table")).not.toBeNull()
     expect(container.querySelectorAll('svg g[role="button"]')).toHaveLength(4)
     expect(container.textContent).toContain("50%")
     expect(container.textContent).toContain("3 of 4")
+    expect(container.textContent).toContain("Weakest eval")
   })
 
   it("shows the hovered eval and its principles in the panel", async () => {
@@ -108,7 +121,7 @@ describe("EvalCoverageChart", () => {
     expect(container.textContent).toContain("74%")
     expect(container.textContent).toContain("Principles 1, 2")
     await fireEvent.mouseLeave(link)
-    expect(container.textContent).toContain("Hover a circle")
+    expect(container.textContent).toMatch(/Hover an arc/)
   })
 
   it("shows a principle and who covers it on arc hover", async () => {

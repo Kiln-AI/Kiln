@@ -234,10 +234,6 @@
     return rate === null ? "—" : `${Math.round(rate * 100)}%`
   }
 
-  function short(text: string, max: number): string {
-    return text.length <= max ? text : text.slice(0, max - 1).trimEnd() + "…"
-  }
-
   /** Word-wraps a label to fit a circle; ends with an ellipsis if cut. */
   function wrap(text: string, max_chars: number, max_lines: number): string[] {
     const words = text.split(/\s+/).filter(Boolean)
@@ -340,250 +336,243 @@
   class="flex flex-row flex-wrap gap-8 items-start"
   class:opacity-60={loading}
 >
-  <div
-    class="relative w-full max-w-[720px] grow shrink basis-[360px] md:basis-[560px]"
-    bind:this={chart_box}
-  >
-    <svg
-      viewBox={`${-VIEW} ${-VIEW} ${2 * VIEW} ${2 * VIEW}`}
-      class="w-full h-auto select-none"
-      role="group"
-      aria-label="Eval coverage"
-      on:mousemove={track}
-      on:mouseleave={() => (hover = null)}
+  <div class="w-full max-w-[720px] grow shrink basis-[360px] md:basis-[560px]">
+    <!-- Legend, above the chart -->
+    <div
+      class="mb-2 flex flex-row flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500"
     >
-      <!-- The whole product -->
-      <circle
-        cx="0"
-        cy="0"
-        r={R}
-        fill="#ffffff"
-        stroke="#bebebe"
-        stroke-width="0.8"
-      />
-
-      <!-- The constitution: one arc per principle, as long as its weight,
-           grouped by value, tinted by the pass rate of its evals -->
-      {#each ring.labels as label (label.name)}
-        <text
-          x={label.x}
-          y={label.y}
-          text-anchor={label.anchor}
-          dominant-baseline="middle"
-          font-size="7.5"
-          font-weight="600"
-          fill="#6b6b6b"
-          pointer-events="none"
-        >
-          {label.name}
-        </text>
+      <span>Pass rate</span>
+      {#each RAG as step (step.label)}
+        <div class="flex items-center gap-1">
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <circle cx="6" cy="6" r="5" fill={step.fill} stroke={step.edge} />
+          </svg>
+          {step.label}
+        </div>
       {/each}
-      {#each ring.arcs as arc (arc.n)}
-        {@const lit = lit_principles.has(arc.n)}
-        {@const dim = hover !== null && !lit}
-        <g
-          class="cursor-default"
-          role="button"
-          tabindex="0"
-          aria-label={principle_label(arc)}
-          on:mouseenter={() => set_hover({ kind: "principle", n: arc.n })}
-          on:mouseleave={() => clear_hover({ kind: "principle", n: arc.n })}
-          on:focus={() => set_hover({ kind: "principle", n: arc.n })}
-          on:blur={() => clear_hover({ kind: "principle", n: arc.n })}
-        >
-          <!-- wide invisible hit target -->
-          <path
-            d={arc.path}
-            fill="none"
-            stroke="transparent"
-            stroke-width={RING_W + 12}
-          />
-          <path
-            d={arc.path}
-            fill="none"
-            stroke={lit ? "#415CF5" : arc_stroke(arc)}
-            stroke-width={lit ? RING_W + 2 : RING_W}
-            opacity={dim ? 0.55 : 1}
-            class="transition-all duration-150"
-          />
-          {#if arc.health !== null && !lit}
-            <path
-              d={arc.edge_path}
-              fill="none"
-              stroke={rag(arc.health).edge}
-              stroke-width="1.1"
-              opacity={dim ? 0.55 : 1}
-            />
-          {/if}
-          {#if principles.length <= 30 && arc.span >= 4}
-            <text
-              x={arc.label.x}
-              y={arc.label.y}
-              text-anchor="middle"
-              dominant-baseline="middle"
-              font-size="6.5"
-              fill={lit ? "#161616" : "#6b6b6b"}
-              font-weight={lit ? "600" : "400"}
-            >
-              {arc.n}
-            </text>
-          {/if}
-        </g>
-      {/each}
-
-      <!-- The evals -->
-      {#each circles as c (c.id)}
-        {@const lit = lit_nodes.has(c.id)}
-        {@const dim = hover !== null && !lit}
-        <svelte:element
-          this={c.node.href ? "a" : "g"}
-          href={c.node.href ?? undefined}
-          role={c.node.href ? undefined : "img"}
-          aria-label={node_label(c.node)}
-          class={c.node.href ? "cursor-pointer" : "cursor-default"}
-          on:mouseenter={() => set_hover({ kind: "node", id: c.id })}
-          on:mouseleave={() => clear_hover({ kind: "node", id: c.id })}
-          on:focus={() => set_hover({ kind: "node", id: c.id })}
-          on:blur={() => clear_hover({ kind: "node", id: c.id })}
-        >
+      <div class="flex items-center gap-1">
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
           <circle
-            cx={c.x}
-            cy={c.y}
-            r={c.r}
-            fill={fill_for(c.node)}
-            stroke={lit ? "#131517" : edge_for(c.node)}
-            stroke-width={lit ? 1.8 : 1.2}
-            stroke-dasharray={c.node.kind === "planned"
-              ? "3 2"
-              : c.node.kind === "gap"
-                ? "1 2"
-                : undefined}
-            opacity={dim ? 0.55 : 1}
-            class="transition-opacity duration-150"
+            cx="6"
+            cy="6"
+            r="5"
+            fill="none"
+            stroke="#415CF5"
+            stroke-dasharray="3 2"
           />
-          {#if label_lines(c).length > 0}
-            {@const lines = label_lines(c)}
-            {@const is_rate = c.node.kind === "eval"}
-            {@const size = c.r >= 24 ? 6.2 : 7}
-            {@const start = c.y - ((lines.length - 1) * size * 1.25) / 2}
-            <text
-              text-anchor="middle"
-              font-size={size}
-              fill={ink_for(c.node)}
-              opacity={dim ? 0.8 : 1}
-              pointer-events="none"
-            >
-              {#each lines as line, i}
-                <tspan
-                  x={c.x}
-                  y={start + i * size * 1.25}
-                  dominant-baseline="middle"
-                  font-weight={is_rate && i === lines.length - 1
-                    ? "700"
-                    : "500"}
-                  font-size={is_rate &&
-                  i === lines.length - 1 &&
-                  lines.length > 1
-                    ? size * 1.15
-                    : size}
-                >
-                  {line}
-                </tspan>
-              {/each}
-            </text>
-          {/if}
-        </svelte:element>
-      {/each}
-    </svg>
+        </svg>
+        planned eval
+      </div>
+      <div class="flex items-center gap-1">
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+          <circle
+            cx="6"
+            cy="6"
+            r="5"
+            fill="none"
+            stroke="#9ca3af"
+            stroke-dasharray="1 2"
+          />
+        </svg>
+        no eval yet
+      </div>
+    </div>
 
-    {#if hovered_node || hovered_principle}
-      <div
-        class="pointer-events-none absolute z-10 w-max max-w-[260px] rounded-md border bg-base-100 px-2 py-1 text-xs shadow-md"
-        style={`left:${tip_x}px; top:${tip_y}px; transform: translate(${tip_flip ? "calc(-100% - 12px)" : "12px"}, 12px);`}
-        role="tooltip"
+    <div class="relative" bind:this={chart_box}>
+      <svg
+        viewBox={`${-VIEW} ${-VIEW} ${2 * VIEW} ${2 * VIEW}`}
+        class="w-full h-auto select-none"
+        role="group"
+        aria-label="Eval coverage"
+        on:mousemove={track}
+        on:mouseleave={() => (hover = null)}
       >
-        {#if hovered_node}
-          {#if hovered_node.kind === "gap"}
-            <span class="font-medium"
-              >Principle {hovered_node.principles[0]}</span
-            >
-            <span class="text-gray-500">· not covered</span>
-          {:else}
-            <span class="font-medium">{hovered_node.name}</span>
-            {#if hovered_node.kind === "eval"}
-              <span class="text-gray-500">· {pct(hovered_node.pass_rate)}</span>
-            {:else}
-              <span class="text-gray-500">· planned</span>
-            {/if}
-          {/if}
-        {:else if hovered_principle}
-          <span class="font-medium">Principle {hovered_principle.n}</span>
-          {#if hovered_principle.group}
-            <span class="text-gray-500">· {hovered_principle.group}</span>
-          {/if}
-          <span class="text-gray-500"
-            >· {pct(health_of(hovered_principle.n))}</span
+        <!-- The whole product -->
+        <circle
+          cx="0"
+          cy="0"
+          r={R}
+          fill="#ffffff"
+          stroke="#bebebe"
+          stroke-width="0.8"
+        />
+
+        <!-- The constitution: one arc per principle, as long as its weight,
+           grouped by value, tinted by the pass rate of its evals -->
+        {#each ring.labels as label (label.name)}
+          <text
+            x={label.x}
+            y={label.y}
+            text-anchor={label.anchor}
+            dominant-baseline="middle"
+            font-size="7.5"
+            font-weight="600"
+            fill="#6b6b6b"
+            pointer-events="none"
           >
-        {/if}
-      </div>
-    {/if}
-  </div>
+            {label.name}
+          </text>
+        {/each}
+        {#each ring.arcs as arc (arc.n)}
+          {@const lit = lit_principles.has(arc.n)}
+          {@const dim = hover !== null && !lit}
+          <g
+            class="cursor-default"
+            role="button"
+            tabindex="0"
+            aria-label={principle_label(arc)}
+            on:mouseenter={() => set_hover({ kind: "principle", n: arc.n })}
+            on:mouseleave={() => clear_hover({ kind: "principle", n: arc.n })}
+            on:focus={() => set_hover({ kind: "principle", n: arc.n })}
+            on:blur={() => clear_hover({ kind: "principle", n: arc.n })}
+          >
+            <!-- wide invisible hit target -->
+            <path
+              d={arc.path}
+              fill="none"
+              stroke="transparent"
+              stroke-width={RING_W + 12}
+            />
+            <path
+              d={arc.path}
+              fill="none"
+              stroke={lit ? "#415CF5" : arc_stroke(arc)}
+              stroke-width={lit ? RING_W + 2 : RING_W}
+              opacity={dim ? 0.55 : 1}
+              class="transition-all duration-150"
+            />
+            {#if arc.health !== null && !lit}
+              <path
+                d={arc.edge_path}
+                fill="none"
+                stroke={rag(arc.health).edge}
+                stroke-width="1.1"
+                opacity={dim ? 0.55 : 1}
+              />
+            {/if}
+            {#if principles.length <= 30 && arc.span >= 4}
+              <text
+                x={arc.label.x}
+                y={arc.label.y}
+                text-anchor="middle"
+                dominant-baseline="middle"
+                font-size="6.5"
+                fill={lit ? "#161616" : "#6b6b6b"}
+                font-weight={lit ? "600" : "400"}
+              >
+                {arc.n}
+              </text>
+            {/if}
+          </g>
+        {/each}
 
-  <div class="flex-1 min-w-[240px] flex flex-col gap-4">
-    <SettingsHeader title="Coverage" show_divider={false} />
-    <slot name="controls" />
-
-    {#if data.covered !== null}
-      <div class="flex flex-row flex-wrap gap-x-8 gap-y-2">
-        <div>
-          <div class="text-2xl font-medium">
-            {Math.round(data.covered * 100)}%
-          </div>
-          <div class="text-sm text-gray-500">of importance has an eval</div>
+        <!-- The evals -->
+        {#each circles as c (c.id)}
+          {@const lit = lit_nodes.has(c.id)}
+          {@const dim = hover !== null && !lit}
+          <svelte:element
+            this={c.node.href ? "a" : "g"}
+            href={c.node.href ?? undefined}
+            role={c.node.href ? undefined : "img"}
+            aria-label={node_label(c.node)}
+            class={c.node.href ? "cursor-pointer" : "cursor-default"}
+            on:mouseenter={() => set_hover({ kind: "node", id: c.id })}
+            on:mouseleave={() => clear_hover({ kind: "node", id: c.id })}
+            on:focus={() => set_hover({ kind: "node", id: c.id })}
+            on:blur={() => clear_hover({ kind: "node", id: c.id })}
+          >
+            <circle
+              cx={c.x}
+              cy={c.y}
+              r={c.r}
+              fill={fill_for(c.node)}
+              stroke={lit ? "#131517" : edge_for(c.node)}
+              stroke-width={lit ? 1.8 : 1.2}
+              stroke-dasharray={c.node.kind === "planned"
+                ? "3 2"
+                : c.node.kind === "gap"
+                  ? "1 2"
+                  : undefined}
+              opacity={dim ? 0.55 : 1}
+              class="transition-opacity duration-150"
+            />
+            {#if label_lines(c).length > 0}
+              {@const lines = label_lines(c)}
+              {@const is_rate = c.node.kind === "eval"}
+              {@const size = c.r >= 24 ? 6.2 : 7}
+              {@const start = c.y - ((lines.length - 1) * size * 1.25) / 2}
+              <text
+                text-anchor="middle"
+                font-size={size}
+                fill={ink_for(c.node)}
+                opacity={dim ? 0.8 : 1}
+                pointer-events="none"
+              >
+                {#each lines as line, i}
+                  <tspan
+                    x={c.x}
+                    y={start + i * size * 1.25}
+                    dominant-baseline="middle"
+                    font-weight={is_rate && i === lines.length - 1
+                      ? "700"
+                      : "500"}
+                    font-size={is_rate &&
+                    i === lines.length - 1 &&
+                    lines.length > 1
+                      ? size * 1.15
+                      : size}
+                  >
+                    {line}
+                  </tspan>
+                {/each}
+              </text>
+            {/if}
+          </svelte:element>
+        {/each}
+      </svg>
+      {#if hovered_node || hovered_principle}
+        <div
+          class="pointer-events-none absolute z-10 w-max max-w-[260px] rounded-md border bg-base-100 px-2 py-1 text-xs shadow-md"
+          style={`left:${tip_x}px; top:${tip_y}px; transform: translate(${tip_flip ? "calc(-100% - 12px)" : "12px"}, 12px);`}
+          role="tooltip"
+        >
+          {#if hovered_node}
+            {#if hovered_node.kind === "gap"}
+              <span class="font-medium"
+                >Principle {hovered_node.principles[0]}</span
+              >
+              <span class="text-gray-500">· not covered</span>
+            {:else}
+              <span class="font-medium">{hovered_node.name}</span>
+              {#if hovered_node.kind === "eval"}
+                <span class="text-gray-500"
+                  >· {pct(hovered_node.pass_rate)}</span
+                >
+              {:else}
+                <span class="text-gray-500">· planned</span>
+              {/if}
+            {/if}
+          {:else if hovered_principle}
+            <span class="font-medium">Principle {hovered_principle.n}</span>
+            {#if hovered_principle.group}
+              <span class="text-gray-500">· {hovered_principle.group}</span>
+            {/if}
+            <span class="text-gray-500"
+              >· {pct(health_of(hovered_principle.n))}</span
+            >
+          {/if}
         </div>
-        {#if data.floor}
-          <div>
-            <div class="text-2xl font-medium">{pct(data.floor.pass_rate)}</div>
-            <div class="text-sm text-gray-500">
-              floor: {short(data.floor.name, 32)}
-            </div>
-          </div>
-        {/if}
-        {#if health_overall !== null}
-          <div>
-            <div class="text-2xl font-medium">{pct(health_overall)}</div>
-            <div class="text-sm text-gray-500">health of what is covered</div>
-          </div>
-        {/if}
-      </div>
-      <div class="text-sm text-gray-500">
-        {principles.length - open_count} of {principles.length} principles have an
-        active or planned eval. {data.active_count} active
-        {data.active_count === 1 ? "eval" : "evals"}. The ring is the
-        constitution: one arc per principle{has_groups
-          ? ", grouped by value"
-          : ""}, as long as its weight, tinted by the pass rate of the evals
-        that judge it. Circle area is the share of the constitution the eval
-        judges.
-      </div>
-    {:else}
-      <div>
-        <div class="text-2xl font-medium">{data.active_count}</div>
-        <div class="text-sm text-gray-500">
-          active {data.active_count === 1 ? "eval" : "evals"}, sized by
-          priority. Add a numbered list of principles to the task description to
-          measure coverage.
-        </div>
-      </div>
-    {/if}
+      {/if}
+    </div>
 
-    <div class="text-sm min-h-[7rem]" aria-live="polite">
+    <!-- What is under the pointer, below the chart -->
+    <div class="mt-2 text-sm min-h-[6rem]" aria-live="polite">
       {#if hovered_node}
         <div class="font-medium">{hovered_node.name}</div>
         <div class="text-gray-500 mt-1">
           {#if hovered_node.kind === "gap"}
-            No eval covers this principle. Click the circle to create one in the
-            eval builder.
+            No eval tests this principle yet. Click the circle to create one in
+            the eval builder.
           {:else if hovered_node.kind === "planned"}
             Planned eval, not yet active.
           {:else}
@@ -597,13 +586,13 @@
               (no results on this run config)
             {/if}
           {/if}
-          · {Math.round(hovered_node.weight * 100)}% of the product
+          · tests {Math.round(hovered_node.weight * 100)}% of the constitution
           {#if hovered_node.priority !== null}
             · {formatPriority(hovered_node.priority)}
           {/if}
         </div>
         {#if hovered_node.kind !== "gap" && principles.length > 0}
-          <div class="mt-2 text-gray-500">
+          <div class="mt-1 text-gray-500">
             {#if hovered_node.principles.length === 0}
               No principles tagged. Tag the eval with
               <code class="text-xs">principle_&lt;n&gt;</code> to count it.
@@ -623,6 +612,11 @@
           {#if isHardLine(hovered_principle)}
             <span class="font-normal text-gray-500">· hard line</span>
           {/if}
+          {#if hovered_principle.weight !== undefined}
+            <span class="font-normal text-gray-500"
+              >· weight {hovered_principle.weight}</span
+            >
+          {/if}
         </div>
         <div class="mt-1">{hovered_principle.text}</div>
         {#if hovered_principle.fails_when}
@@ -630,76 +624,76 @@
             Fails when {hovered_principle.fails_when}
           </div>
         {/if}
-        <div class="mt-2 text-gray-500">
-          {Math.round(share_of(hovered_principle.n) * 100)}% of importance
-          {#if hovered_principle.weight !== undefined}
-            (weight {hovered_principle.weight})
-          {/if}
-          ·
+        <div class="mt-1 text-gray-500">
           {#if principle_nodes.length === 0}
-            no eval covers this principle.
+            No eval covers this principle.
           {:else}
-            pass rate {pct(health_of(hovered_principle.n))} from {principle_nodes
+            Pass rate {pct(health_of(hovered_principle.n))} from {principle_nodes
               .map((n) => n.name)
               .join(", ")}
           {/if}
         </div>
       {:else}
         <div class="text-gray-500">
-          Hover a circle or an arc for details. Click a circle to open the eval,
-          or to create one for an uncovered principle.
-        </div>
-        <div
-          class="mt-3 flex flex-row flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500"
-        >
-          {#each RAG as step (step.label)}
-            <div class="flex items-center gap-1">
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 12 12"
-                aria-hidden="true"
-              >
-                <circle
-                  cx="6"
-                  cy="6"
-                  r="5"
-                  fill={step.fill}
-                  stroke={step.edge}
-                />
-              </svg>
-              {step.label}
-            </div>
-          {/each}
-          <div class="flex items-center gap-1">
-            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-              <circle
-                cx="6"
-                cy="6"
-                r="5"
-                fill="none"
-                stroke="#415CF5"
-                stroke-dasharray="3 2"
-              />
-            </svg>
-            planned
-          </div>
-          <div class="flex items-center gap-1">
-            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-              <circle
-                cx="6"
-                cy="6"
-                r="5"
-                fill="none"
-                stroke="#9ca3af"
-                stroke-dasharray="1 2"
-              />
-            </svg>
-            not covered
-          </div>
+          Hover an arc for the principle, or a circle for the eval. Click a
+          circle to open the eval, or to create one where there is none.
         </div>
       {/if}
     </div>
+  </div>
+
+  <div class="flex-1 min-w-[240px] flex flex-col gap-4">
+    <SettingsHeader title="Coverage" show_divider={false} />
+    <slot name="controls" />
+
+    {#if data.covered !== null}
+      <div class="flex flex-col gap-3">
+        <div>
+          <div class="text-2xl font-medium">
+            {Math.round(data.covered * 100)}%
+          </div>
+          <div class="text-sm">Covered</div>
+          <div class="text-sm text-gray-500">
+            How much of the constitution has an eval, weighted by how much each
+            principle matters.
+          </div>
+        </div>
+        {#if health_overall !== null}
+          <div>
+            <div class="text-2xl font-medium">{pct(health_overall)}</div>
+            <div class="text-sm">Passing</div>
+            <div class="text-sm text-gray-500">
+              The pass rate across the covered principles, weighted the same
+              way.
+            </div>
+          </div>
+        {/if}
+        {#if data.floor}
+          <div>
+            <div class="text-2xl font-medium">{pct(data.floor.pass_rate)}</div>
+            <div class="text-sm">Weakest eval</div>
+            <div class="text-sm text-gray-500">{data.floor.name}</div>
+          </div>
+        {/if}
+      </div>
+      <div class="text-sm text-gray-500">
+        The ring is the constitution. Each arc is one principle: a longer arc
+        matters more, and its colour is the pass rate of the evals that test it.
+        Each circle is an eval, sized by how much of the constitution it tests
+        and coloured by its pass rate. Dotted circles are principles with no
+        eval yet. {principles.length - open_count} of {principles.length}
+        principles have an eval.
+      </div>
+    {:else}
+      <div>
+        <div class="text-2xl font-medium">{data.active_count}</div>
+        <div class="text-sm text-gray-500">
+          active {data.active_count === 1 ? "eval" : "evals"}, sized by
+          priority. Add a numbered list of principles to the task description to
+          measure coverage.
+        </div>
+      </div>
+    {/if}
 
     {#if principles.length > 0 && table_nodes.length > 0}
       <Collapse title="Table view" small={true}>
