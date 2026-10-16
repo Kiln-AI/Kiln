@@ -12,7 +12,9 @@ from kiln_ai.datamodel.json_schema import (
     string_to_json_key,
     strip_numeric_bounds,
     validate_schema,
+    validate_schema_dict,
     validate_schema_with_value_error,
+    validate_tool_parameters_schema,
 )
 
 
@@ -507,3 +509,33 @@ def test_close_object_schemas_strict_no_properties():
 )
 def test_single_string_field_name(schema, expected):
     assert single_string_field_name(schema) == expected
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"type": "object"},
+        {"type": "object", "properties": {}},
+        {"type": "object", "properties": {"a": {"type": "string"}}},
+    ],
+)
+def test_validate_tool_parameters_schema_accepts_object_schemas(schema):
+    validate_tool_parameters_schema(schema)
+
+
+@pytest.mark.parametrize(
+    "schema,match",
+    [
+        ({"type": "array"}, "must have type 'object'"),
+        ({"properties": {}}, "must have type 'object'"),
+        ({"type": "object", "properties": {"a": {"type": "nope"}}}, "Invalid"),
+    ],
+)
+def test_validate_tool_parameters_schema_rejects_invalid(schema, match):
+    with pytest.raises(ValueError, match=match):
+        validate_tool_parameters_schema(schema)
+
+
+def test_task_schemas_still_require_properties():
+    with pytest.raises(ValueError, match="must be an object with properties"):
+        validate_schema_dict({"type": "object"})
