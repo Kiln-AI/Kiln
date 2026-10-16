@@ -688,9 +688,6 @@
             <div class="text-sm text-gray-500">{data.floor.name}</div>
           </div>
         {/if}
-            </div>
-          </div>
-        {/if}
       </div>
       <div class="text-sm text-gray-500">
         The ring is the constitution, one arc per principle: length is
