@@ -89,7 +89,6 @@
       n: number
       text: string
       path: string
-      edge_path: string
       label: { x: number; y: number }
       span: number
       state: "covered" | "planned" | "open"
@@ -114,7 +113,6 @@
           n: p.n,
           text: p.text,
           path: arc_path(RING_R, a0, a1),
-          edge_path: arc_path(RING_R + RING_W / 2 + 0.8, a0, a1),
           label: polar(LABEL_R, (a0 + a1) / 2),
           span,
           state: covered ? "covered" : planned ? "planned" : "open",
@@ -171,6 +169,36 @@
       (data.coverers.get(p.n)?.length ?? 0) === 0 &&
       (data.planned_for.get(p.n)?.length ?? 0) === 0,
   ).length
+
+  // The weight scale, the hard lines and the largest evals, for the summary.
+  $: weight_range = (() => {
+    const ws = principles
+      .map((p) => p.weight)
+      .filter((w): w is number => w !== undefined)
+    if (ws.length === 0) return null
+    return { min: Math.min(...ws), max: Math.max(...ws) }
+  })()
+  $: hard_lines = (() => {
+    const hard = principles.filter(isHardLine)
+    const covered = hard.filter(
+      (p) => (data.coverers.get(p.n)?.length ?? 0) > 0,
+    )
+    const rates = covered
+      .map((p) => health_of(p.n))
+      .filter((h): h is number => h !== null)
+    return {
+      total: hard.length,
+      covered: covered.length,
+      lowest: rates.length > 0 ? Math.min(...rates) : null,
+    }
+  })()
+  $: top3 = (() => {
+    const evals = data.nodes
+      .filter((n) => n.kind === "eval")
+      .sort((a, b) => b.weight - a.weight)
+    const k = Math.min(3, evals.length)
+    return { k, share: evals.slice(0, k).reduce((s, n) => s + n.weight, 0) }
+  })()
 
   // Health of what is covered: the importance-weighted mean pass rate.
   $: health_overall = (() => {
@@ -343,7 +371,11 @@
     <div
       class="mb-2 flex flex-row flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500"
     >
-      <span>Arc length = importance · colour = pass rate:</span>
+      <span
+        >Arc length = importance{weight_range
+          ? ` (severity × frequency, ${weight_range.min} to ${weight_range.max})`
+          : ""} · colour = pass rate:</span
+      >
       {#each RAG as step (step.label)}
         <div class="flex items-center gap-1">
           <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
@@ -443,15 +475,6 @@
               opacity={dim ? 0.55 : 1}
               class="transition-all duration-150"
             />
-            {#if arc.health !== null && !lit}
-              <path
-                d={arc.edge_path}
-                fill="none"
-                stroke={rag(arc.health).edge}
-                stroke-width="1.1"
-                opacity={dim ? 0.55 : 1}
-              />
-            {/if}
             {#if principles.length <= 30 && arc.span >= 4}
               <text
                 x={arc.label.x}
@@ -489,7 +512,11 @@
               r={c.r}
               fill={fill_for(c.node)}
               stroke={lit ? "#131517" : edge_for(c.node)}
-              stroke-width={lit ? 1.8 : 1.2}
+              stroke-width={lit
+                ? 1.8
+                : data.floor && c.id === data.floor.id
+                  ? 2.6
+                  : 1.2}
               stroke-dasharray={c.node.kind === "planned"
                 ? "3 2"
                 : c.node.kind === "gap"
@@ -548,7 +575,10 @@
               <span class="font-medium">{hovered_node.name}</span>
               {#if hovered_node.kind === "eval"}
                 <span class="text-gray-500"
-                  >· {pct(hovered_node.pass_rate)}</span
+                  >· {pct(hovered_node.pass_rate)}{hovered_node.dataset_size !==
+                  null
+                    ? ` of ${hovered_node.dataset_size}`
+                    : ""}</span
                 >
               {:else}
                 <span class="text-gray-500">· planned</span>
@@ -680,15 +710,29 @@
             <div class="text-sm text-gray-500">{data.floor.name}</div>
           </div>
         {/if}
+        {#if hard_lines.total > 0}
+          <div>
+            <div class="text-2xl font-medium">
+              {hard_lines.covered} of {hard_lines.total}
+            </div>
+            <div class="text-sm">Hard lines with an eval</div>
+            <div class="text-sm text-gray-500">
+              {#if hard_lines.lowest !== null}
+                The lowest passes {pct(hard_lines.lowest)}.
+              {:else}
+                No hard line has a result yet.
+              {/if}
+            </div>
+          </div>
+        {/if}
       </div>
       <div class="text-sm text-gray-500">
-        The ring is the constitution. Each arc is one principle: a longer arc
-        matters more, and its colour is the pass rate of the evals that test it.
-        Each circle is an eval, sized by how much of the constitution it tests
-        and coloured by its pass rate. Dotted circles are principles with no
-        eval yet. Importance is set in the constitution: how severe a failure is
-        (a hard line counts most) times how often the situation comes up in
-        production. {principles.length - open_count} of {principles.length}
+        The ring is the constitution, one arc per principle: length is
+        importance (severity × frequency, set in the constitution), colour is
+        the pass rate of the evals that test it. Circles are evals, sized by how
+        much of the constitution they test. Dotted circles have no eval yet. The {top3.k}
+        largest evals test {Math.round(top3.share * 100)}% of the constitution; {principles.length -
+          open_count} of {principles.length}
         principles have an eval.
       </div>
     {:else}
