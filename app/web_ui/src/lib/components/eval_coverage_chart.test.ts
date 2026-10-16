@@ -106,7 +106,6 @@ describe("EvalCoverageChart", () => {
     expect(container.querySelector('svg[role="group"]')?.textContent).toContain(
       "Honest",
     )
-    expect(container.querySelector("table")).not.toBeNull()
     expect(container.querySelectorAll('svg g[role="button"]')).toHaveLength(4)
     expect(container.textContent).toContain("50%")
     expect(container.textContent).toContain("3 of 4")

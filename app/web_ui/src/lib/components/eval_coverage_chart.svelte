@@ -10,7 +10,6 @@
   } from "$lib/utils/eval_coverage/constitution"
   import { formatPriority } from "$lib/utils/formatters"
   import SettingsHeader from "$lib/ui/settings_header.svelte"
-  import Collapse from "$lib/ui/collapse.svelte"
 
   /**
    * Eval coverage chart.
@@ -64,6 +63,10 @@
   $: groups = principleGroups(principles)
   $: has_groups = groups.length > 1 || (groups[0]?.name ?? "") !== ""
   $: VIEW = has_groups ? 160 : 130
+  // The labels reach about 140 units out; the box is trimmed below that so
+  // the chart wastes no height, and capped to the viewport so the text under
+  // it stays on screen.
+  $: VIEW_Y = has_groups ? 146 : 130
 
   function share_of(n: number): number {
     const s = data.shares.get(n)
@@ -168,7 +171,6 @@
       (data.coverers.get(p.n)?.length ?? 0) === 0 &&
       (data.planned_for.get(p.n)?.length ?? 0) === 0,
   ).length
-  $: table_nodes = data.nodes.filter((n) => n.kind !== "gap")
 
   // Health of what is covered: the importance-weighted mean pass rate.
   $: health_overall = (() => {
@@ -336,12 +338,12 @@
   class="flex flex-row flex-wrap gap-8 items-start"
   class:opacity-60={loading}
 >
-  <div class="w-full max-w-[720px] grow shrink basis-[360px] md:basis-[560px]">
+  <div class="w-full max-w-[640px] grow shrink basis-[360px] md:basis-[480px]">
     <!-- Legend, above the chart -->
     <div
       class="mb-2 flex flex-row flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500"
     >
-      <span>Pass rate</span>
+      <span>Arc length = importance · colour = pass rate:</span>
       {#each RAG as step (step.label)}
         <div class="flex items-center gap-1">
           <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
@@ -380,8 +382,8 @@
 
     <div class="relative" bind:this={chart_box}>
       <svg
-        viewBox={`${-VIEW} ${-VIEW} ${2 * VIEW} ${2 * VIEW}`}
-        class="w-full h-auto select-none"
+        viewBox={`${-VIEW} ${-VIEW_Y} ${2 * VIEW} ${2 * VIEW_Y}`}
+        class="mx-auto h-auto max-h-[58vh] w-full select-none"
         role="group"
         aria-label="Eval coverage"
         on:mousemove={track}
@@ -614,7 +616,10 @@
           {/if}
           {#if hovered_principle.weight !== undefined}
             <span class="font-normal text-gray-500"
-              >· weight {hovered_principle.weight}</span
+              >· importance {Math.round(share_of(hovered_principle.n) * 100)}%
+              (weight {hovered_principle.weight}{hovered_principle.weight_note
+                ? `: ${hovered_principle.weight_note}`
+                : ""})</span
             >
           {/if}
         </div>
@@ -681,7 +686,9 @@
         matters more, and its colour is the pass rate of the evals that test it.
         Each circle is an eval, sized by how much of the constitution it tests
         and coloured by its pass rate. Dotted circles are principles with no
-        eval yet. {principles.length - open_count} of {principles.length}
+        eval yet. Importance is set in the constitution: how severe a failure is
+        (a hard line counts most) times how often the situation comes up in
+        production. {principles.length - open_count} of {principles.length}
         principles have an eval.
       </div>
     {:else}
@@ -693,54 +700,6 @@
           measure coverage.
         </div>
       </div>
-    {/if}
-
-    {#if principles.length > 0 && table_nodes.length > 0}
-      <Collapse title="Table view" small={true}>
-        <div class="rounded-lg border overflow-x-auto">
-          <table class="table table-xs">
-            <thead>
-              <tr>
-                <th>Eval</th>
-                {#each principles as p (p.n)}
-                  <th class="text-center" title={p.text}>{p.n}</th>
-                {/each}
-                <th class="text-right">Pass</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each table_nodes as n (n.id)}
-                <tr>
-                  <td class="whitespace-nowrap">{n.name}</td>
-                  {#each principles as p (p.n)}
-                    <td class="text-center"
-                      >{n.principles.includes(p.n) ? "●" : ""}</td
-                    >
-                  {/each}
-                  <td class="text-right">{pct(n.pass_rate)}</td>
-                </tr>
-              {/each}
-              <tr class="text-gray-500">
-                <td>Weight</td>
-                {#each principles as p (p.n)}
-                  <td class="text-center">{p.weight ?? 1}</td>
-                {/each}
-                <td></td>
-              </tr>
-              <tr class="text-gray-500">
-                <td>Evals per principle</td>
-                {#each principles as p (p.n)}
-                  <td class="text-center"
-                    >{(data.coverers.get(p.n)?.length ?? 0) +
-                      (data.planned_for.get(p.n)?.length ?? 0)}</td
-                  >
-                {/each}
-                <td></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </Collapse>
     {/if}
   </div>
 </div>
