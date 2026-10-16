@@ -4,10 +4,7 @@
     CoverageNode,
   } from "$lib/utils/eval_coverage/eval_coverage_data"
   import { packWeighted } from "$lib/utils/eval_coverage/circle_pack"
-  import {
-    isHardLine,
-    principleGroups,
-  } from "$lib/utils/eval_coverage/constitution"
+  import { principleGroups } from "$lib/utils/eval_coverage/constitution"
   import { formatPriority } from "$lib/utils/formatters"
   import SettingsHeader from "$lib/ui/settings_header.svelte"
 
@@ -93,7 +90,6 @@
       span: number
       state: "covered" | "planned" | "open"
       health: number | null
-      hard: boolean
     }[] = []
     const labels: {
       name: string
@@ -117,7 +113,6 @@
           span,
           state: covered ? "covered" : planned ? "planned" : "open",
           health: health_of(p.n),
-          hard: isHardLine(p),
         })
         angle = a1 + RING_GAP_DEG / 2
       }
@@ -177,20 +172,6 @@
       .filter((w): w is number => w !== undefined)
     if (ws.length === 0) return null
     return { min: Math.min(...ws), max: Math.max(...ws) }
-  })()
-  $: hard_lines = (() => {
-    const hard = principles.filter(isHardLine)
-    const covered = hard.filter(
-      (p) => (data.coverers.get(p.n)?.length ?? 0) > 0,
-    )
-    const rates = covered
-      .map((p) => health_of(p.n))
-      .filter((h): h is number => h !== null)
-    return {
-      total: hard.length,
-      covered: covered.length,
-      lowest: rates.length > 0 ? Math.min(...rates) : null,
-    }
   })()
   $: top3 = (() => {
     const evals = data.nodes
@@ -641,9 +622,6 @@
               >· {hovered_principle.group}</span
             >
           {/if}
-          {#if isHardLine(hovered_principle)}
-            <span class="font-normal text-gray-500">· hard line</span>
-          {/if}
           {#if hovered_principle.weight !== undefined}
             <span class="font-normal text-gray-500"
               >· importance {Math.round(share_of(hovered_principle.n) * 100)}%
@@ -710,18 +688,6 @@
             <div class="text-sm text-gray-500">{data.floor.name}</div>
           </div>
         {/if}
-        {#if hard_lines.total > 0}
-          <div>
-            <div class="text-2xl font-medium">
-              {hard_lines.covered} of {hard_lines.total}
-            </div>
-            <div class="text-sm">Hard lines with an eval</div>
-            <div class="text-sm text-gray-500">
-              {#if hard_lines.lowest !== null}
-                The lowest passes {pct(hard_lines.lowest)}.
-              {:else}
-                No hard line has a result yet.
-              {/if}
             </div>
           </div>
         {/if}
