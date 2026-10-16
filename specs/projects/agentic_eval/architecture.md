@@ -282,16 +282,14 @@ These handlers stay thin: parse, call one core function, map the result (convent
 
 ### 3.11 Web UI
 
-Specified in the UI design step, which comes after this architecture, along with the open template-default question. Known touch points:
+Specified in [ui_design.md](ui_design.md):
 
-- **Judge form** (`llm_judge_form.svelte`, `eval_config_builder.svelte`):
-  - a trace tools option, which disables G-Eval;
-  - `requires_tool_support` on the model dropdown when on;
-  - `trace_tools` sent on test and save;
-  - the default prompt fetched with `trace_tools`.
-- **Test pane** (`eval_test_run_pane.svelte`): show the judge trace with `ChatTrace`.
-- **Results** (`run_result/+page.svelte`, `llm_judge_result.svelte`): a "Judge trace" action when `eval_run.judge_trace` is present, opening it in the existing trace dialog.
-- **Judge display** (`eval_config_instruction.svelte`): show "Trace tools: on (v1)".
+- **Judge form:** an "Agentic Judge" algorithm card.
+- **Test pane:** a "Judge Trace" button.
+- **Results:** a "Judge Trace" link.
+- **Judge details:** "Method: Agentic Judge".
+
+No new pages, and no shared-control changes.
 
 ## 4. Prerequisite: Non-Fatal Tool Errors in the Adapter
 

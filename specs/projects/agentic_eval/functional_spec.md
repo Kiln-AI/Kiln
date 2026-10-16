@@ -78,7 +78,7 @@ An agentic judge has the same settings as an LLM judge, plus trace tools:
 
 ### 5.3 Default template for agentic judges
 
-> **Open (UI design step):** where users start an agentic judge, and therefore which default template they get. Candidates: an "Agentic Judge" entry in the LLM Judge Templates list ("Great for long traces: this judge reads only the parts it needs"), a trace-tools option on the judge form, or both. Whatever the entry point, its default template includes `{{ trace | trace_overview }}` and has trace tools on. The draft below is the starting point.
+Users pick **Agentic Judge** as the third algorithm on the LLM judge form ([ui_design.md §1](ui_design.md#1-llm-judge-form-agentic-judge-algorithm)), and the form loads this default prompt. The LLM judge templates are unchanged: they don't select Agentic Judge by default.
 
 Built the same way as today's default LLM judge prompt (task description, data-guard line, data blocks, evaluation steps, score criteria), with the data block changed:
 
@@ -344,13 +344,13 @@ Applies to **every LLM-based V2 judge**: the existing LLM judge (including G-Eva
 
 Functional level only. Layout and details come in the UI design step.
 
-- **Creating a judge.** The user can create an agentic judge from the existing create-judge flows. The entry point is open ([§5.3](#53-default-template-for-agentic-judges)).
+- **Creating a judge.** The user picks **Agentic Judge** as the third algorithm card on the LLM judge form, next to LLM as Judge and G-Eval. It's never selected by default.
   - The form has the same fields as the LLM judge form, minus G-Eval.
   - The model picker only offers models that support trace tools.
   - The prompt starts from the default agentic template ([§5.3](#53-default-template-for-agentic-judges)).
   - The toolset version is not a choice. It is always the latest.
 - **Test run.** Testing a draft or saved agentic judge on an item shows the scores, the reasoning, and the judge trace.
-- **Judge details.** Wherever a judge's configuration is shown, an agentic judge shows that trace tools are on, and which toolset version.
+- **Judge details.** Wherever a judge's configuration is shown, an agentic judge shows "Method: Agentic Judge". The toolset version is not shown.
 - **Results.** For each scored item, the user can open the judge trace, next to the existing view of the judged trace. Applies to both LLM judges and agentic judges.
 
 ## 12. API
@@ -380,11 +380,11 @@ Functional level only. Layout and details come in the UI design step.
 - **Prompt injection.** The judged trace is untrusted text. Tool descriptions and the default prompt tell the judge that trace content is data. The exposure is the same as today's LLM judge, where trace text is pasted into the prompt.
 - **Compatibility.** Existing judges, results, and templates keep working unchanged. Existing results simply have no judge trace.
 
-## 15. Open Questions
+## 15. Resolved Questions
 
-| Question | Resolved in |
-|----------|-------------|
-| Separate judge type, or an option on the LLM judge (leaning option). | Architecture |
-| Where users start an agentic judge, and which default template they get ([§5.3](#53-default-template-for-agentic-judges)). Leaning: trace tools as an option on the judge, not a separate template card. | UI design (after architecture) |
-| What LLM judge templates default to: classic (trace in the prompt) or agentic (trace tools on). | UI design (after architecture) |
-| Whether, and how much of, the eval builder / copilot supports agentic judges. | Architecture |
+| Question | Decision |
+|----------|----------|
+| Separate judge type, or an option on the LLM judge | An option on the LLM judge ([architecture §1](architecture.md#1-decisions)). |
+| Where users start an agentic judge | The third algorithm card, "Agentic Judge", on the LLM judge form ([ui_design.md](ui_design.md)). |
+| What LLM judge templates default to | Unchanged (classic). Agentic Judge is opt-in for v1. |
+| Eval builder / copilot support | None in v1. |
