@@ -1093,6 +1093,12 @@ class TestLlmJudgeRunConfig:
 
 
 class TestSystemPromptFromTrace:
+    def test_reads_text_parts_of_list_content(self):
+        trace = [
+            {"role": "system", "content": [{"type": "text", "text": "Be terse."}]},
+        ]
+        assert system_prompt_from_trace(trace) == "Be terse."
+
     def test_returns_first_system_message(self):
         trace = [
             {"role": "system", "content": "first"},

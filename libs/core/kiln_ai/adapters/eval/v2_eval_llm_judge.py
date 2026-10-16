@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
     from kiln_ai.datamodel.task import RunConfigProperties
 
+from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import EvalTraceFormatter
 from kiln_ai.adapters.eval.eval_utils.scoring_utils import (
     build_g_eval_score,
     build_llm_as_judge_score,
@@ -63,8 +64,9 @@ def system_prompt_from_trace(trace: list[dict[str, Any]] | None) -> str:
     message in its trace, or an empty string when there is none."""
     for message in trace or []:
         if message.get("role") == "system":
-            content = message.get("content")
-            return content if isinstance(content, str) else ""
+            # Loose dicts are the runtime reality for traces; the formatter reads
+            # them like its typed message params.
+            return EvalTraceFormatter.content_from_message(message) or ""  # type: ignore[arg-type]
     return ""
 
 

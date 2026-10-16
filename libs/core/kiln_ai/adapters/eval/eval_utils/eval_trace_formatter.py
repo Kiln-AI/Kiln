@@ -136,25 +136,36 @@ class EvalTraceFormatter:
 
     @staticmethod
     def content_from_message(message: ChatCompletionMessageParam) -> str | None:
-        """Get the content of a message."""
-        if (
-            "content" not in message
-            or message["content"] is None
-            or not isinstance(message["content"], str)
-        ):
+        """Get the content of a message.
+
+        A list of content parts is reduced to its text parts, joined by blank
+        lines: a seeded or multimodal message carries its text that way, and
+        dropping it would hide what the user said from the judge.
+        """
+        content = message.get("content")
+        if isinstance(content, list):
+            texts = [
+                part["text"]
+                for part in content
+                if isinstance(part, dict)
+                and part.get("type") == "text"
+                and isinstance(part.get("text"), str)
+            ]
+            return "\n\n".join(texts) if texts else None
+        if not isinstance(content, str):
             return None
 
         # For Kiln task tools, extract just the output field from the JSON response
         if message["role"] == "tool":
             try:
-                parsed = json.loads(message["content"])
+                parsed = json.loads(content)
                 if parsed and isinstance(parsed, dict) and "output" in parsed:
                     return parsed["output"]
             except Exception:
                 # Content is not JSON, we will return as-is
                 pass
 
-        return message["content"]
+        return content
 
     @staticmethod
     def reasoning_content_from_message(
