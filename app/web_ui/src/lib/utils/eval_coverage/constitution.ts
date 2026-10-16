@@ -20,6 +20,8 @@ export type Principle = {
   fails_when?: string
   /** The "Weight: <n>" line under the principle, when there is one. */
   weight?: number
+  /** What follows the number on the Weight line, e.g. "severity 2 × frequency 3". */
+  weight_note?: string
 }
 
 const HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/
@@ -62,8 +64,14 @@ function sections(description: string): Section[] {
       if (FAILS_WHEN.test(line)) {
         lastItem.fails_when = line.replace(FAILS_WHEN, "")
       } else if (WEIGHT.test(line)) {
-        const value = Number(line.replace(WEIGHT, "").trim())
-        if (Number.isFinite(value) && value > 0) lastItem.weight = value
+        const rest = line.replace(WEIGHT, "").trim()
+        const m = rest.match(/^([0-9]+(?:\.[0-9]+)?)\s*(.*)$/)
+        const value = m ? Number(m[1]) : NaN
+        if (Number.isFinite(value) && value > 0) {
+          lastItem.weight = value
+          const note = (m?.[2] ?? "").replace(/^[\s(—–:-]+|[\s)]+$/g, "").trim()
+          if (note) lastItem.weight_note = note
+        }
       } else if (lastItem.fails_when !== undefined) {
         lastItem.fails_when += " " + line
       } else {
