@@ -11,6 +11,7 @@ from kiln_ai.adapters.eval.v2_eval_llm_judge import (
     _DEFAULT_SYSTEM_PROMPT,
     LlmJudgeEval,
     _LlmJudgeTask,
+    system_prompt_from_trace,
 )
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
@@ -223,6 +224,41 @@ class TestLlmJudgeEvalLlmAsJudge:
         rendered = call_args[0][0]
         assert "Input: question" in rendered
         assert "Output: answer" in rendered
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "trace, expected",
+        [
+            (
+                [
+                    {"role": "system", "content": "Be terse."},
+                    {"role": "user", "content": "hi"},
+                    {"role": "assistant", "content": "Hello world"},
+                ],
+                "System: [Be terse.]",
+            ),
+            ([{"role": "user", "content": "hi"}], "System: []"),
+            (None, "System: []"),
+        ],
+        ids=["system-message", "no-system-message", "no-trace"],
+    )
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_system_prompt_variable(self, mock_adapter_for_task, trace, expected):
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.return_value = (
+            _judge_run(),
+            RunOutput(output={"quality": "3"}, intermediate_outputs=None),
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+
+        props = _make_props(
+            prompt_template="System: [{{ system_prompt }}] Output: {{ final_message }}"
+        )
+        result = await LlmJudgeEval(_make_config(props)).evaluate(_inp(trace=trace))
+
+        assert result.skipped_reason is None
+        rendered = mock_adapter.invoke_returning_run_output.call_args[0][0]
+        assert rendered.startswith(expected)
 
     @pytest.mark.asyncio
     @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
@@ -688,6 +724,10 @@ class TestBackendBakedReferenceAnswerJudge:
             _inp(
                 final_message="Herbert, 1965.",
                 task_input="Who wrote Dune?",
+                trace=[
+                    {"role": "user", "content": "Who wrote Dune?"},
+                    {"role": "assistant", "content": "Herbert, 1965."},
+                ],
                 reference_data={"reference_answer": "Frank Herbert."},
             )
         )
@@ -695,6 +735,23 @@ class TestBackendBakedReferenceAnswerJudge:
         assert result.skipped_reason is None
         rendered = mock_adapter.invoke_returning_run_output.call_args[0][0]
         assert "<reference_answer>\nFrank Herbert.\n</reference_answer>" in rendered
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_item_without_a_trace_skips_before_the_model_call(
+        self, mock_adapter_for_task
+    ):
+        """The default prompt is built on the trace, so an item without one has
+        nothing for the judge to read and is skipped rather than scored blind."""
+        mock_adapter_for_task.return_value = AsyncMock()
+        cfg = _make_config(self._baked_props())
+
+        result = await LlmJudgeEval(cfg).evaluate(
+            _inp(trace=None, reference_data={"reference_answer": "Frank Herbert."})
+        )
+
+        assert result.skipped_reason == SkippedReason.extraction_failed
+        mock_adapter_for_task.return_value.invoke_returning_run_output.assert_not_called()
 
 
 class TestLlmJudgeEvalNoParentEval:
@@ -1033,3 +1090,21 @@ class TestLlmJudgeRunConfig:
     def test_materialize_rejects_unknown_level(self):
         with pytest.raises(ValueError, match="not available"):
             self._materialize(run_config=LlmJudgeRunConfig(thinking_level="ultra"))
+
+
+class TestSystemPromptFromTrace:
+    def test_returns_first_system_message(self):
+        trace = [
+            {"role": "system", "content": "first"},
+            {"role": "user", "content": "hi"},
+            {"role": "system", "content": "second"},
+        ]
+        assert system_prompt_from_trace(trace) == "first"
+
+    @pytest.mark.parametrize(
+        "trace",
+        [None, [], [{"role": "user", "content": "hi"}], [{"role": "system"}]],
+        ids=["none", "empty", "no-system", "no-content"],
+    )
+    def test_empty_when_absent(self, trace):
+        assert system_prompt_from_trace(trace) == ""

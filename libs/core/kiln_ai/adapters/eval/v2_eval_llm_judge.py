@@ -58,6 +58,16 @@ _DEFAULT_SYSTEM_PROMPT = (
 )
 
 
+def system_prompt_from_trace(trace: list[dict[str, Any]] | None) -> str:
+    """The system prompt the evaluated model was given: the first system
+    message in its trace, or an empty string when there is none."""
+    for message in trace or []:
+        if message.get("role") == "system":
+            content = message.get("content")
+            return content if isinstance(content, str) else ""
+    return ""
+
+
 def _unknown_template_variables(template: str, namespace: dict[str, Any]) -> set[str]:
     """Top-level variables the template uses that aren't EvalTaskInput fields.
 
@@ -143,6 +153,9 @@ class LlmJudgeEval(BaseV2EvalBridge):
         namespace["judge_instructions"] = format_judge_instructions(
             props.judge_instructions
         )
+        # Bound for hand-written templates that judge a single turn's
+        # final_message against the system prompt without the full trace.
+        namespace["system_prompt"] = system_prompt_from_trace(eval_input.trace)
         try:
             rendered_prompt = _template_env.from_string(props.prompt_template).render(
                 **namespace
