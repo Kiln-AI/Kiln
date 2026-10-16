@@ -9,13 +9,18 @@
  * - "gap": a principle with no active or planned eval. Drawn as a dotted
  *   outline, so the hole in coverage is visible and named.
  *
- * When the task description holds no principles, areas come from priority
- * (P0 largest) and there are no gaps.
+ * Each principle's share is its weight from the constitution ("Weight: n",
+ * 1 when absent) over the sum of weights. When the task description holds
+ * no principles, areas come from priority (P0 largest) and there are no gaps.
  */
 
 import type { Eval, Priority, Spec, SpecStatus } from "$lib/types"
 import type { components } from "$lib/api_schema"
-import { parsePrinciples, type Principle } from "./constitution"
+import {
+  parsePrinciples,
+  principleWeights,
+  type Principle,
+} from "./constitution"
 import { buildCoverageModel, principlesFromTags } from "./coverage_model"
 
 export type RunConfigEvalScoresSummary =
@@ -46,6 +51,12 @@ export type CoverageData = {
   coverers: Map<number, string[]>
   /** Planned node ids that claim each principle. */
   planned_for: Map<number, string[]>
+  /** Importance share of each principle, 0..1; sums to 1. */
+  shares: Map<number, number>
+  /** Mean pass rate of the active evals covering each principle; null when none has a result. */
+  health: Map<number, number | null>
+  /** The active eval with the lowest pass rate, when any has one. */
+  floor: CoverageNode | null
   active_count: number
 }
 
@@ -94,7 +105,10 @@ export function pass_rate_for(
   if (mean === null || mean === undefined)
     return { pass_rate: null, dataset_size }
   if (pick?.type === "five_star") {
-    return { pass_rate: Math.max(0, Math.min(1, (mean - 1) / 4)), dataset_size }
+    return {
+      pass_rate: Math.max(0, Math.min(1, (mean - 1) / 4)),
+      dataset_size,
+    }
   }
   return { pass_rate: Math.max(0, Math.min(1, mean)), dataset_size }
 }
@@ -113,6 +127,15 @@ export function builder_href(
 function priority_weight(priority: Priority | null): number {
   const p = priority ?? 1
   return Math.pow(2, 3 - p)
+}
+
+function lowest(nodes: CoverageNode[]): CoverageNode | null {
+  let out: CoverageNode | null = null
+  for (const n of nodes) {
+    if (n.kind !== "eval" || n.pass_rate === null) continue
+    if (out === null || n.pass_rate < (out.pass_rate ?? 1)) out = n
+  }
+  return out
 }
 
 export function buildCoverageData(input: CoverageInput): CoverageData {
@@ -188,6 +211,9 @@ export function buildCoverageData(input: CoverageInput): CoverageData {
       covered: null,
       coverers: new Map(),
       planned_for,
+      shares: new Map(),
+      health: new Map(),
+      floor: lowest(nodes),
       active_count: active.length,
     }
   }
@@ -195,6 +221,7 @@ export function buildCoverageData(input: CoverageInput): CoverageData {
   const model = buildCoverageModel(
     principles,
     active.map((n) => ({ id: n.id, principles: n.principles })),
+    principleWeights(principles),
   )
   for (const n of active) {
     nodes.push({
@@ -236,12 +263,30 @@ export function buildCoverageData(input: CoverageInput): CoverageData {
     })
   }
 
+  // Health per principle: the mean pass rate of the active evals that cover it.
+  const health = new Map<number, number | null>()
+  const active_by_id = new Map(
+    nodes.filter((n) => n.kind === "eval").map((n) => [n.id, n]),
+  )
+  for (const p of principles) {
+    const rates = (model.coverers.get(p.n) ?? [])
+      .map((id) => active_by_id.get(id)?.pass_rate)
+      .filter((r): r is number => r !== null && r !== undefined)
+    health.set(
+      p.n,
+      rates.length > 0 ? rates.reduce((s, r) => s + r, 0) / rates.length : null,
+    )
+  }
+
   return {
     nodes,
     principles,
     covered: model.covered,
     coverers: model.coverers,
     planned_for,
+    shares: model.shares,
+    health,
+    floor: lowest(nodes),
     active_count: active.length,
   }
 }

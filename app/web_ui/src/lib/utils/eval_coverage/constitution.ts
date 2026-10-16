@@ -4,8 +4,10 @@
  * A constitution is markdown. Its principles are a numbered list under a
  * heading whose text contains "principle". Sub-headings inside that section
  * group the principles (for example by the value they serve); the group is
- * kept on each principle. When no such heading exists, the longest numbered
- * list in the text is used instead, with no groups.
+ * kept on each principle. Two indented lines under a principle carry its
+ * checkable form and its importance: "Fails when: ..." and "Weight: <n>".
+ * When no such heading exists, the longest numbered list in the text is
+ * used instead, with no groups.
  */
 
 export type Principle = {
@@ -16,11 +18,15 @@ export type Principle = {
   group?: string
   /** The "Fails when: ..." line under the principle, when there is one. */
   fails_when?: string
+  /** The "Weight: <n>" line under the principle, when there is one. */
+  weight?: number
 }
 
 const HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/
 const ITEM = /^\s*(\d+)[.)]\s+(.*)$/
 const FAILS_WHEN = /^\s*fails when:\s*/i
+const WEIGHT = /^\s*weight:\s*/i
+const HARD_LINE = /\(hard line\)/i
 
 type Section = { level: number; heading: string; items: Principle[] }
 
@@ -55,6 +61,9 @@ function sections(description: string): Section[] {
       const line = raw.trim()
       if (FAILS_WHEN.test(line)) {
         lastItem.fails_when = line.replace(FAILS_WHEN, "")
+      } else if (WEIGHT.test(line)) {
+        const value = Number(line.replace(WEIGHT, "").trim())
+        if (Number.isFinite(value) && value > 0) lastItem.weight = value
       } else if (lastItem.fails_when !== undefined) {
         lastItem.fails_when += " " + line
       } else {
@@ -115,4 +124,14 @@ export function principleGroups(
     else out.push({ name, principles: [p] })
   }
   return out
+}
+
+/** Importance per principle number; 1 when the text gives no weight. */
+export function principleWeights(principles: Principle[]): Map<number, number> {
+  return new Map(principles.map((p) => [p.n, p.weight ?? 1]))
+}
+
+/** True when the statement is marked "(hard line)". */
+export function isHardLine(p: Principle): boolean {
+  return HARD_LINE.test(p.text)
 }

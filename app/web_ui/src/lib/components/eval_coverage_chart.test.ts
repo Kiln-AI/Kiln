@@ -60,6 +60,19 @@ function fixture(): CoverageData {
       [3, ["s2"]],
       [4, []],
     ]),
+    shares: new Map([
+      [1, 0.25],
+      [2, 0.25],
+      [3, 0.25],
+      [4, 0.25],
+    ]),
+    health: new Map<number, number | null>([
+      [1, 0.74],
+      [2, 0.74],
+      [3, null],
+      [4, null],
+    ]),
+    floor: null,
     active_count: 1,
   }
 }
@@ -85,6 +98,9 @@ describe("EvalCoverageChart", () => {
     expect(container.querySelectorAll('svg g[role="button"]')).toHaveLength(4)
     expect(container.textContent).toContain("50%")
     expect(container.textContent).toContain("3 of 4")
+    // the risk list ranks the uncovered principles first
+    expect(container.textContent).toContain("Where to look next")
+    expect(container.textContent).toContain("no eval")
   })
 
   it("shows the hovered eval and its principles in the panel", async () => {
@@ -103,17 +119,17 @@ describe("EvalCoverageChart", () => {
     const arcs = container.querySelectorAll('svg g[role="button"]')
     await fireEvent.mouseEnter(arcs[0])
     expect(container.textContent).toContain("Principle 1")
-    expect(container.textContent).toContain(
-      "Covered by Exact Record Modification",
-    )
+    expect(container.textContent).toContain("from Exact Record Modification")
     await fireEvent.mouseEnter(arcs[3])
-    expect(container.textContent).toContain("No eval covers this principle")
+    expect(container.textContent).toMatch(/no eval covers this principle/i)
   })
 
   it("falls back to a count when there is no constitution", () => {
     const data = fixture()
     data.principles = []
     data.covered = null
+    data.shares = new Map()
+    data.health = new Map()
     data.nodes = data.nodes.filter((n) => n.kind === "eval")
     const { container } = render(EvalCoverageChart, { data })
     expect(container.textContent).toMatch(/sized by\s+priority/)

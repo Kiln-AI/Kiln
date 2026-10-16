@@ -122,3 +122,16 @@ describe("parsePrinciples with fails-when lines", () => {
     expect(p[1].fails_when).toBeUndefined()
   })
 })
+
+describe("parsePrinciples with weight lines", () => {
+  it("reads Weight lines and marks hard lines", async () => {
+    const { principleWeights, isHardLine } = await import("./constitution")
+    const text = `## 6. Principles\n\n### Careful\n\n1. Nova waits for a yes. (hard line)\n   Fails when: a delete has no yes.\n   Weight: 3\n2. Nova is brief.\n   Fails when: a wall of rows.\n   Weight: 1.5\n3. Nova is kind.\n   Fails when: it is rude.\n`
+    const p = parsePrinciples(text)
+    expect(p.map((x) => x.weight)).toEqual([3, 1.5, undefined])
+    expect(p[0].fails_when).toBe("a delete has no yes.")
+    expect(isHardLine(p[0])).toBe(true)
+    expect(isHardLine(p[1])).toBe(false)
+    expect([...principleWeights(p).values()]).toEqual([3, 1.5, 1])
+  })
+})

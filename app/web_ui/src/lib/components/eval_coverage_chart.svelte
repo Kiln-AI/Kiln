@@ -4,7 +4,10 @@
     CoverageNode,
   } from "$lib/utils/eval_coverage/eval_coverage_data"
   import { packWeighted } from "$lib/utils/eval_coverage/circle_pack"
-  import { principleGroups } from "$lib/utils/eval_coverage/constitution"
+  import {
+    isHardLine,
+    principleGroups,
+  } from "$lib/utils/eval_coverage/constitution"
   import { formatPriority } from "$lib/utils/formatters"
   import SettingsHeader from "$lib/ui/settings_header.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
@@ -17,7 +20,9 @@
    * fill is its pass rate. Dashed circles are planned evals; dotted circles
    * are principles with no eval, and open the eval builder. The ring around
    * the outside has one arc per principle of the constitution, grouped by
-   * the value each serves; hovering links the ring and the circles.
+   * the value each serves; an arc's length is the principle's importance
+   * and its tint is the pass rate of the evals that judge it. Hovering
+   * links the ring and the circles.
    */
 
   export let data: CoverageData
@@ -31,7 +36,7 @@
   const LABEL_R = 121
   const GROUP_R = 130
   const FILL = 0.8 // target share of the boundary area the circles fill
-  const RING_GAP_DEG = 2.5
+  const RING_GAP_DEG = 2.2
   const GROUP_GAP_DEG = 7
 
   type Hover =
@@ -60,20 +65,34 @@
   $: has_groups = groups.length > 1 || (groups[0]?.name ?? "") !== ""
   $: VIEW = has_groups ? 160 : 130
 
-  // One arc per principle; a wider gap between groups; a label per group.
+  function share_of(n: number): number {
+    const s = data.shares.get(n)
+    if (s !== undefined) return s
+    return principles.length > 0 ? 1 / principles.length : 0
+  }
+  function health_of(n: number): number | null {
+    return data.health.get(n) ?? null
+  }
+
+  // One arc per principle, as long as its share; a wider gap between groups;
+  // a label per group.
   $: ring = (() => {
     const n = principles.length
     if (n === 0) return { arcs: [], labels: [] }
     const group_gaps = has_groups && groups.length > 1 ? groups.length : 0
-    const span =
-      (360 - n * RING_GAP_DEG - group_gaps * GROUP_GAP_DEG) / Math.max(n, 1)
+    const avail = 360 - n * RING_GAP_DEG - group_gaps * GROUP_GAP_DEG
     let angle = -90 + (group_gaps > 0 ? GROUP_GAP_DEG / 2 : 0)
     const arcs: {
       n: number
       text: string
       path: string
+      edge_path: string
+      hard_path: string
       label: { x: number; y: number }
+      span: number
       state: "covered" | "planned" | "open"
+      health: number | null
+      hard: boolean
     }[] = []
     const labels: {
       name: string
@@ -84,6 +103,7 @@
     for (const g of groups) {
       const g_start = angle
       for (const p of g.principles) {
+        const span = avail * share_of(p.n)
         const a0 = angle + RING_GAP_DEG / 2
         const a1 = a0 + span
         const covered = (data.coverers.get(p.n)?.length ?? 0) > 0
@@ -92,8 +112,13 @@
           n: p.n,
           text: p.text,
           path: arc_path(RING_R, a0, a1),
+          edge_path: arc_path(RING_R + RING_W / 2 + 0.8, a0, a1),
+          hard_path: arc_path(RING_R - RING_W / 2 - 1.6, a0, a1),
           label: polar(LABEL_R, (a0 + a1) / 2),
+          span,
           state: covered ? "covered" : planned ? "planned" : "open",
+          health: health_of(p.n),
+          hard: isHardLine(p),
         })
         angle = a1 + RING_GAP_DEG / 2
       }
@@ -140,12 +165,36 @@
         (n) => n.kind !== "gap" && n.principles.includes(hovered_principle.n),
       )
     : []
-  $: open_principles = principles.filter(
+  $: open_count = principles.filter(
     (p) =>
       (data.coverers.get(p.n)?.length ?? 0) === 0 &&
       (data.planned_for.get(p.n)?.length ?? 0) === 0,
-  )
+  ).length
   $: table_nodes = data.nodes.filter((n) => n.kind !== "gap")
+
+  // Health of what is covered: the importance-weighted mean pass rate.
+  $: health_overall = (() => {
+    let num = 0
+    let den = 0
+    for (const p of principles) {
+      const h = health_of(p.n)
+      if (h === null) continue
+      num += share_of(p.n) * h
+      den += share_of(p.n)
+    }
+    return den > 0 ? num / den : null
+  })()
+
+  // Where to look next: importance times fail rate; no result counts as a
+  // full fail, so an uncovered principle ranks by its weight alone.
+  $: risks = principles
+    .map((p) => {
+      const h = health_of(p.n)
+      return { p, health: h, risk: share_of(p.n) * (h === null ? 1 : 1 - h) }
+    })
+    .sort((a, b) => b.risk - a.risk)
+    .slice(0, 8)
+  $: max_risk = risks[0]?.risk ?? 0
 
   function polar(r: number, deg: number): { x: number; y: number } {
     const a = (deg * Math.PI) / 180
@@ -187,9 +236,19 @@
     if (node.kind === "gap" || node.pass_rate === null) return "#bebebe"
     return rag(node.pass_rate).edge
   }
+  function arc_stroke(arc: { state: string; health: number | null }): string {
+    if (arc.health !== null) return rag(arc.health).fill
+    if (arc.state === "covered") return "#aab6f9"
+    if (arc.state === "planned") return "#d5dbfb"
+    return "#e7e5e4"
+  }
 
   function pct(rate: number | null): string {
     return rate === null ? "—" : `${Math.round(rate * 100)}%`
+  }
+
+  function short(text: string, max: number): string {
+    return text.length <= max ? text : text.slice(0, max - 1).trimEnd() + "…"
   }
 
   /** Word-wraps a label to fit a circle; ends with an ellipsis if cut. */
@@ -245,6 +304,18 @@
       return `Not covered: ${node.name}. ${share}. Opens the eval builder.`
     if (node.kind === "planned") return `${node.name}, planned eval. ${share}.`
     return `${node.name}, pass rate ${pct(node.pass_rate)}. ${share}.`
+  }
+
+  function principle_label(arc: {
+    n: number
+    text: string
+    health: number | null
+  }): string {
+    return `Principle ${arc.n}: ${arc.text} ${
+      arc.health === null
+        ? "No eval covers it."
+        : `Pass rate ${pct(arc.health)}.`
+    }`
   }
 
   function set_hover(h: Hover) {
@@ -304,7 +375,8 @@
         stroke-width="0.8"
       />
 
-      <!-- The constitution: one arc per principle, grouped by value -->
+      <!-- The constitution: one arc per principle, as long as its weight,
+           grouped by value, tinted by the pass rate of its evals -->
       {#each ring.labels as label (label.name)}
         <text
           x={label.x}
@@ -320,11 +392,13 @@
         </text>
       {/each}
       {#each ring.arcs as arc (arc.n)}
+        {@const lit = lit_principles.has(arc.n)}
+        {@const dim = hover !== null && !lit}
         <g
           class="cursor-default"
           role="button"
           tabindex="0"
-          aria-label={`Principle ${arc.n}: ${arc.text}`}
+          aria-label={principle_label(arc)}
           on:mouseenter={() => set_hover({ kind: "principle", n: arc.n })}
           on:mouseleave={() => clear_hover({ kind: "principle", n: arc.n })}
           on:focus={() => set_hover({ kind: "principle", n: arc.n })}
@@ -335,34 +409,43 @@
             d={arc.path}
             fill="none"
             stroke="transparent"
-            stroke-width={RING_W + 10}
+            stroke-width={RING_W + 12}
           />
           <path
             d={arc.path}
             fill="none"
-            stroke={arc.state === "open" && !lit_principles.has(arc.n)
-              ? "#e7e5e4"
-              : "#415CF5"}
-            stroke-width={lit_principles.has(arc.n) ? RING_W + 2 : RING_W}
-            opacity={lit_principles.has(arc.n)
-              ? 1
-              : (hover ? 0.5 : 1) *
-                (arc.state === "covered"
-                  ? 0.45
-                  : arc.state === "planned"
-                    ? 0.2
-                    : 1)}
+            stroke={lit ? "#415CF5" : arc_stroke(arc)}
+            stroke-width={lit ? RING_W + 2 : RING_W}
+            opacity={dim ? 0.55 : 1}
             class="transition-all duration-150"
           />
-          {#if principles.length <= 24}
+          {#if arc.health !== null && !lit}
+            <path
+              d={arc.edge_path}
+              fill="none"
+              stroke={rag(arc.health).edge}
+              stroke-width="1.1"
+              opacity={dim ? 0.55 : 1}
+            />
+          {/if}
+          {#if arc.hard}
+            <path
+              d={arc.hard_path}
+              fill="none"
+              stroke="#161616"
+              stroke-width="1.4"
+              opacity={dim ? 0.55 : 1}
+            />
+          {/if}
+          {#if principles.length <= 30 && arc.span >= 4}
             <text
               x={arc.label.x}
               y={arc.label.y}
               text-anchor="middle"
               dominant-baseline="middle"
               font-size="6.5"
-              fill={lit_principles.has(arc.n) ? "#161616" : "#6b6b6b"}
-              font-weight={lit_principles.has(arc.n) ? "600" : "400"}
+              fill={lit ? "#161616" : "#6b6b6b"}
+              font-weight={lit ? "600" : "400"}
             >
               {arc.n}
             </text>
@@ -460,6 +543,9 @@
           {#if hovered_principle.group}
             <span class="text-gray-500">· {hovered_principle.group}</span>
           {/if}
+          <span class="text-gray-500"
+            >· {pct(health_of(hovered_principle.n))}</span
+          >
         {/if}
       </div>
     {/if}
@@ -470,18 +556,37 @@
     <slot name="controls" />
 
     {#if data.covered !== null}
-      <div>
-        <div class="text-2xl font-medium">
-          {Math.round(data.covered * 100)}%
+      <div class="flex flex-row flex-wrap gap-x-8 gap-y-2">
+        <div>
+          <div class="text-2xl font-medium">
+            {Math.round(data.covered * 100)}%
+          </div>
+          <div class="text-sm text-gray-500">of importance has an eval</div>
         </div>
-        <div class="text-sm text-gray-500">
-          {principles.length - open_principles.length} of {principles.length}
-          principles have an active or planned eval. {data.active_count} active
-          {data.active_count === 1 ? "eval" : "evals"}. The ring is the
-          constitution: one arc per principle{has_groups
-            ? ", grouped by value"
-            : ""}. Circle area is the share of the constitution the eval judges.
-        </div>
+        {#if data.floor}
+          <div>
+            <div class="text-2xl font-medium">{pct(data.floor.pass_rate)}</div>
+            <div class="text-sm text-gray-500">
+              floor: {short(data.floor.name, 32)}
+            </div>
+          </div>
+        {/if}
+        {#if health_overall !== null}
+          <div>
+            <div class="text-2xl font-medium">{pct(health_overall)}</div>
+            <div class="text-sm text-gray-500">health of what is covered</div>
+          </div>
+        {/if}
+      </div>
+      <div class="text-sm text-gray-500">
+        {principles.length - open_count} of {principles.length} principles have an
+        active or planned eval. {data.active_count} active
+        {data.active_count === 1 ? "eval" : "evals"}. The ring is the
+        constitution: one arc per principle{has_groups
+          ? ", grouped by value"
+          : ""}, as long as its weight, tinted by the pass rate of the evals
+        that judge it. Circle area is the share of the constitution the eval
+        judges.
       </div>
     {:else}
       <div>
@@ -537,6 +642,9 @@
               >· {hovered_principle.group}</span
             >
           {/if}
+          {#if isHardLine(hovered_principle)}
+            <span class="font-normal text-gray-500">· hard line</span>
+          {/if}
         </div>
         <div class="mt-1">{hovered_principle.text}</div>
         {#if hovered_principle.fails_when}
@@ -545,10 +653,17 @@
           </div>
         {/if}
         <div class="mt-2 text-gray-500">
+          {Math.round(share_of(hovered_principle.n) * 100)}% of importance
+          {#if hovered_principle.weight !== undefined}
+            (weight {hovered_principle.weight})
+          {/if}
+          ·
           {#if principle_nodes.length === 0}
-            No eval covers this principle.
+            no eval covers this principle.
           {:else}
-            Covered by {principle_nodes.map((n) => n.name).join(", ")}
+            pass rate {pct(health_of(hovered_principle.n))} from {principle_nodes
+              .map((n) => n.name)
+              .join(", ")}
           {/if}
         </div>
       {:else}
@@ -604,29 +719,57 @@
             </svg>
             not covered
           </div>
+          <div class="flex items-center gap-1">
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <circle
+                cx="6"
+                cy="6"
+                r="5"
+                fill="none"
+                stroke="#161616"
+                stroke-width="1.6"
+              />
+            </svg>
+            hard line
+          </div>
         </div>
       {/if}
     </div>
 
-    {#if open_principles.length > 0}
+    {#if risks.length > 0}
       <div class="text-sm">
-        <div class="text-gray-500 mb-1">Principles with no eval</div>
-        <div class="flex flex-row flex-wrap gap-1">
-          {#each open_principles as p (p.n)}
-            <button
-              type="button"
-              class="badge badge-outline badge-sm cursor-default"
-              class:badge-primary={lit_principles.has(p.n)}
-              title={p.text}
-              on:mouseenter={() => set_hover({ kind: "principle", n: p.n })}
-              on:mouseleave={() => clear_hover({ kind: "principle", n: p.n })}
-              on:focus={() => set_hover({ kind: "principle", n: p.n })}
-              on:blur={() => clear_hover({ kind: "principle", n: p.n })}
-            >
-              {p.n}
-            </button>
-          {/each}
+        <div class="text-gray-500 mb-1">
+          Where to look next: importance × fail rate, no eval counted as a fail
         </div>
+        <ol class="flex flex-col gap-1">
+          {#each risks as r (r.p.n)}
+            <li>
+              <button
+                type="button"
+                class="flex w-full flex-row items-center gap-2 rounded text-left"
+                class:text-primary={lit_principles.has(r.p.n)}
+                title={r.p.text}
+                on:mouseenter={() => set_hover({ kind: "principle", n: r.p.n })}
+                on:mouseleave={() =>
+                  clear_hover({ kind: "principle", n: r.p.n })}
+                on:focus={() => set_hover({ kind: "principle", n: r.p.n })}
+                on:blur={() => clear_hover({ kind: "principle", n: r.p.n })}
+              >
+                <span
+                  class="inline-block h-2 shrink-0 rounded-sm bg-primary/40"
+                  style={`width:${Math.max(4, Math.round((r.risk / Math.max(max_risk, 1e-9)) * 56))}px`}
+                ></span>
+                <span class="min-w-0 truncate">
+                  {r.p.n}
+                  {short(r.p.text, 70)}
+                </span>
+                <span class="ml-auto shrink-0 text-gray-500">
+                  {r.health === null ? "no eval" : `fails ${pct(1 - r.health)}`}
+                </span>
+              </button>
+            </li>
+          {/each}
+        </ol>
       </div>
     {/if}
 
@@ -655,6 +798,13 @@
                   <td class="text-right">{pct(n.pass_rate)}</td>
                 </tr>
               {/each}
+              <tr class="text-gray-500">
+                <td>Weight</td>
+                {#each principles as p (p.n)}
+                  <td class="text-center">{p.weight ?? 1}</td>
+                {/each}
+                <td></td>
+              </tr>
               <tr class="text-gray-500">
                 <td>Evals per principle</td>
                 {#each principles as p (p.n)}

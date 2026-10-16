@@ -6,7 +6,7 @@ import {
   type RunConfigEvalScoresSummary,
 } from "./eval_coverage_data"
 
-const CONSTITUTION = `## 6. Principles\n1. Exact records.\n2. Wait before delete.\n3. Right numbers.\n4. Honest claims.\n`
+const CONSTITUTION = `## 6. Principles\n1. Exact records.\n   Weight: 3\n2. Wait before delete.\n   Weight: 1\n3. Right numbers.\n   Weight: 1\n4. Honest claims.\n   Weight: 1\n`
 
 function make_spec(over: Partial<Spec> = {}): Spec {
   return {
@@ -128,16 +128,21 @@ describe("buildCoverageData", () => {
       ],
     })
     expect(data.active_count).toBe(1)
-    expect(data.covered).toBeCloseTo(0.5)
+    // weights 3,1,1,1: s1 covers 1 and 2 = 4/6
+    expect(data.covered).toBeCloseTo(4 / 6)
+    expect(data.shares.get(1)).toBeCloseTo(0.5)
+    expect(data.health.get(1)).toBe(0.75)
+    expect(data.health.get(3)).toBeNull()
+    expect(data.floor?.id).toBe("s1")
     const by_id = new Map(data.nodes.map((n) => [n.id, n]))
-    expect(by_id.get("s1")?.weight).toBeCloseTo(0.5)
+    expect(by_id.get("s1")?.weight).toBeCloseTo(4 / 6)
     expect(by_id.get("s2")?.kind).toBe("planned")
-    expect(by_id.get("s2")?.weight).toBeCloseTo(0.25)
+    expect(by_id.get("s2")?.weight).toBeCloseTo(1 / 6)
     expect(by_id.get("gap-4")?.kind).toBe("gap")
     expect(by_id.get("gap-4")?.href).toBe(
       "/specs/p/t/builder?description=Principle%204%3A%20Honest%20claims.",
     )
-    expect(by_id.get("gap-4")?.weight).toBeCloseTo(0.25)
+    expect(by_id.get("gap-4")?.weight).toBeCloseTo(1 / 6)
     expect(by_id.get("gap-3")).toBeUndefined()
     expect(by_id.get("old")).toBeUndefined()
     const sum = data.nodes.reduce((s, n) => s + n.weight, 0)
