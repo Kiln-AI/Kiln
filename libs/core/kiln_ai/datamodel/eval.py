@@ -49,6 +49,7 @@ from kiln_ai.datamodel.world import (
     WorldReset,
 )
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.spec import Spec
@@ -580,6 +581,10 @@ class V2EvalResult(BaseModel):
         default=None,
         description="What the judgment itself cost, if it called a model. None for the deterministic eval types, which call none. Stored on the resulting EvalRun as eval_usage.",
     )
+    judge_trace: list[ChatCompletionMessageParam] | None = Field(
+        default=None,
+        description="The judge model's conversation, if the judgment called a model. None for the deterministic eval types, which call none. Stored on the resulting EvalRun as judge_trace.",
+    )
 
 
 class UserMessage(BaseModel):
@@ -1011,6 +1016,10 @@ class EvalRun(KilnParentedModel):
     eval_usage: Usage | None = Field(
         default=None,
         description="The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field.",
+    )
+    judge_trace: list[ChatCompletionMessageParam] | None = Field(
+        default=None,
+        description="The evaluation model's (judge's) conversation in OpenAI format: the system prompt, the rendered judge prompt, and the judge's reply. Distinct from the evaluated task run's trace. None for non-LLM evals (e.g. code evals) and for records that predate this field.",
     )
 
     eval_input_id: ID_TYPE | None = Field(
