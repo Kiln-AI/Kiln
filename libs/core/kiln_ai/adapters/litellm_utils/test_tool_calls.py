@@ -43,7 +43,7 @@ def test_function_tool_calls_rejects_custom_tool_call():
 @pytest.mark.parametrize(
     "arguments, expected",
     [
-        pytest.param(None, "", id="null"),
+        pytest.param(None, "{}", id="null"),
         pytest.param("", "", id="empty"),
         pytest.param('{"a": 1}', '{"a": 1}', id="json"),
         pytest.param("not json", "not json", id="invalid_json"),

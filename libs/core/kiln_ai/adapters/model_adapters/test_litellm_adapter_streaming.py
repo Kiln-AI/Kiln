@@ -1151,10 +1151,10 @@ async def test_mocked_ai_sdk_stream_non_object_arguments_are_non_fatal(
     assert stream.task_run.output.output == final_content
 
 
-async def test_mocked_ai_sdk_stream_null_arguments_are_non_fatal_and_run_saves(
+async def test_mocked_ai_sdk_stream_null_arguments_become_empty_object_and_run_saves(
     task: Task,
 ):
-    """Null arguments are stored as "" and get the invalid-JSON error. The stream
+    """Null arguments are stored as "{}" and get the schema error. The stream
     continues to a final answer, and the saved run reloads."""
     adapter = _make_mocked_adapter(task, return_on_tool_call=False)
 
@@ -1182,7 +1182,7 @@ async def test_mocked_ai_sdk_stream_null_arguments_are_non_fatal_and_run_saves(
     assert [e for e in events if isinstance(e, ToolOutputErrorEvent)] == [
         ToolOutputErrorEvent(
             toolCallId="call_multiply",
-            errorText="Error: arguments for 'multiply' are not valid JSON: . Call it again with a JSON object.",
+            errorText="Error: arguments for 'multiply' don't match its schema: 'a' is a required property. Call it again with corrected arguments.",
         )
     ]
     task_run = stream.task_run
@@ -1192,7 +1192,7 @@ async def test_mocked_ai_sdk_stream_null_arguments_are_non_fatal_and_run_saves(
         {
             "id": "call_multiply",
             "type": "function",
-            "function": {"name": "multiply", "arguments": ""},
+            "function": {"name": "multiply", "arguments": "{}"},
         }
     ]
     assert task_run.path is not None
