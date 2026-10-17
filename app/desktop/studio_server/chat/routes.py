@@ -92,6 +92,8 @@ class TraceMessage(BaseModel):
     tool_calls: list[TraceToolCall] | None = None
     tool_call_id: str | None = None
     reasoning_content: str | None = None
+    is_error: bool | None = None
+    error_message: str | None = None
 
 
 class TaskRunSnapshot(BaseModel):
