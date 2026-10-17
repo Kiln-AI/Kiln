@@ -4,9 +4,12 @@ import httpx
 import litellm
 import pytest
 
-from kiln_ai.adapters.errors import KilnRunError, StructuredOutputParseError
-from kiln_ai.adapters.model_adapters.adapter_stream import (
+from kiln_ai.adapters.errors import (
     EMPTY_RESPONSE_ERROR_MESSAGE,
+    KilnRunError,
+    StructuredOutputParseError,
+)
+from kiln_ai.adapters.model_adapters.adapter_stream import (
     raise_for_empty_model_response,
 )
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
@@ -14,10 +17,17 @@ from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.retry_classification import (
     is_batch_fatal_error,
     is_retryable_error,
+    is_run_ending_tool_error,
+    is_transient_environment_error,
 )
 from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task_output import TaskOutput
+from kiln_ai.worlds.session_manager import (
+    OpenEnvError,
+    OpenEnvRejectedError,
+    OpenEnvTransientError,
+)
 
 COUNT_SCHEMA = json.dumps(
     {
@@ -241,3 +251,22 @@ class TestEmptyModelResponseClassification:
             )
         assert not str(exc_info.value).startswith(EMPTY_RESPONSE_ERROR_MESSAGE)
         assert is_retryable_error(exc_info.value) is False
+
+
+class TestToolErrorClassification:
+    @pytest.mark.parametrize(
+        "error, transient_environment, run_ending",
+        [
+            (OpenEnvTransientError("dropped"), True, True),
+            (_wrapped(OpenEnvTransientError("dropped")), True, True),
+            (_provider_error(litellm.RateLimitError), False, True),
+            (_wrapped(_provider_error(litellm.RateLimitError)), False, True),
+            (OpenEnvError("sent invalid JSON"), False, True),
+            (_wrapped(OpenEnvError("sent invalid JSON")), False, True),
+            (OpenEnvRejectedError("rejected a 'step' message"), False, False),
+            (ValueError("bad input"), False, False),
+        ],
+    )
+    def test_classification(self, error, transient_environment, run_ending):
+        assert is_transient_environment_error(error) is transient_environment
+        assert is_run_ending_tool_error(error) is run_ending
