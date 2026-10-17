@@ -38,6 +38,12 @@
             Chain-of-thought scoring
           </div>
         {/if}
+        {#if props.trace_toolset_version != null}
+          <div class="flex items-center gap-1">
+            <span class="badge badge-outline badge-xs">Agentic Judge</span>
+            Reads the trace with tools
+          </div>
+        {/if}
       {/if}
       {#if judge_trace}
         <div>

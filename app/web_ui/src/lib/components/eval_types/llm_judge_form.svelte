@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { EvalConfigType, AvailableModels } from "$lib/types"
+  import type { AvailableModels } from "$lib/types"
   import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
   import { build_suggested_models } from "$lib/ui/run_config_component/suggested_models"
   import { get_provider_image } from "$lib/ui/provider_image"
@@ -8,8 +8,16 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import FormList from "$lib/utils/form_list.svelte"
   import JudgePromptFields from "$lib/components/eval_types/judge_prompt_fields.svelte"
-  import { getDefaultLlmJudgePrompt } from "$lib/api/v2_eval_api"
-  import { onMount } from "svelte"
+  import {
+    getDefaultLlmJudgePrompt,
+    type DefaultLlmJudgePromptResponse,
+  } from "$lib/api/v2_eval_api"
+  import {
+    judge_algorithm_for_model,
+    unsupported_judge_algorithms,
+    type JudgeAlgorithm,
+  } from "$lib/utils/eval_types/judge_algorithm"
+  import { createEventDispatcher, onMount } from "svelte"
 
   export let task_id: string
   export let project_id: string
@@ -18,7 +26,7 @@
   export let model_name: string | undefined = undefined
   export let provider_name: string | undefined = undefined
   export let combined_model_name: string | undefined = undefined
-  export let selected_algo: EvalConfigType | undefined = undefined
+  export let selected_algo: JudgeAlgorithm | undefined = undefined
 
   export let judge_prompt: string | undefined = undefined
   export let system_prompt: string | undefined = undefined
@@ -54,43 +62,90 @@
    * text, so editing the reference block out of the prompt does not remove it.
    *
    * `default_prompt_unavailable` tracks the outcome of each fetch attempt, not just
-   * its failures — see the clear in `onMount`. The pane fails open on "unknown", so a
-   * value left set from a previous attempt would keep offering an input nothing needs.
+   * its failures — see the clear in `load_default_prompt`. The pane fails open on
+   * "unknown", so a value left set from a previous attempt would keep offering an
+   * input nothing needs.
    */
   export let default_reference_keys: string[] = []
   export let default_prompt_unavailable: boolean = false
 
-  onMount(async () => {
+  // Agentic judges have their own default prompt, so it is refetched whenever the
+  // selection moves to or from Agentic Judge. A prompt field still holding the last
+  // fetched default takes the new one; a field the user edited is kept.
+  let requested_trace_tools: boolean | null = null
+  let last_default: DefaultLlmJudgePromptResponse | null = null
+  let latest_request_id = 0
+
+  // Fired when a fetch changes a prompt the user may already have tested, since the
+  // change arrives without the DOM input events the builder watches for edits.
+  const dispatch = createEventDispatcher<{ prompt_replaced: void }>()
+
+  onMount(() => load_default_prompt(wants_trace_tools))
+
+  async function load_default_prompt(trace_tools: boolean) {
+    requested_trace_tools = trace_tools
+    const request_id = ++latest_request_id
+    let defaults: DefaultLlmJudgePromptResponse | null = null
     try {
       // Cleared up front, not left to the initializer: `bind:` seeds this child from
       // the parent's retained value, so a form recreated after one failed fetch starts
       // at `true` and would stay there for the session.
       default_prompt_unavailable = false
-      const defaults = await getDefaultLlmJudgePrompt(
+      defaults = await getDefaultLlmJudgePrompt(
         project_id,
         task_id,
         eval_id,
+        trace_tools,
       )
+    } catch (e) {
+      console.warn("Failed to fetch default LLM judge prompt:", e)
+    }
+    if (request_id !== latest_request_id) return
+
+    if (defaults) {
+      prompt_fetch_error = null
       show_instructions_ui = defaults.judge_prompt.includes(
         "{{ judge_instructions }}",
       )
-      if (judge_prompt === undefined) {
-        judge_prompt = defaults.judge_prompt
-      }
-      if (system_prompt === undefined) {
-        system_prompt = defaults.system_prompt
-      }
       default_reference_keys = defaults.reference_keys ?? []
-    } catch (e) {
+    } else {
       prompt_fetch_error =
         "Could not load default judge prompt. The server will use its default."
       default_prompt_unavailable = true
-      console.warn("Failed to fetch default LLM judge prompt:", e)
     }
-  })
+    replace_unedited_prompts(defaults)
+  }
+
+  // With no new default, an unedited field is cleared rather than left holding the
+  // other algorithm's default. A test then sends no prompt and the server builds the
+  // default; the required Judge Prompt field blocks Save until the user writes one.
+  function replace_unedited_prompts(
+    defaults: DefaultLlmJudgePromptResponse | null,
+  ) {
+    const previous_judge_prompt = judge_prompt
+    const previous_system_prompt = system_prompt
+    if (judge_prompt === last_default?.judge_prompt) {
+      judge_prompt = defaults?.judge_prompt
+    }
+    if (system_prompt === last_default?.system_prompt) {
+      system_prompt = defaults?.system_prompt
+    }
+    last_default = defaults
+
+    const replaced = (
+      previous: string | undefined,
+      current: string | undefined,
+    ) => previous !== undefined && previous !== current
+    if (
+      replaced(previous_judge_prompt, judge_prompt) ||
+      replaced(previous_system_prompt, system_prompt)
+    ) {
+      dispatch("prompt_replaced")
+    }
+  }
 
   const evaluator_algorithms: {
-    id: EvalConfigType
+    id: JudgeAlgorithm
     name: string
     description: string
   }[] = [
@@ -106,21 +161,31 @@
       description:
         "A more advanced LLM-as-Judge method which considers token probabilities for more precise scores.",
     },
+    {
+      id: "agentic_judge",
+      name: "Agentic Judge",
+      description:
+        "Reads the trace with tools, only the parts it needs. Best for long agent traces.",
+    },
   ]
 
   $: suggested_models = build_suggested_models($available_models || [], "evals")
   let force_select_dropdown = false
 
-  $: unsupported_algos = update_unsupported_algos_and_default_algo(
+  // The card the user picked. Only a pick survives a model change; an automatic
+  // default is recomputed for each model.
+  let chosen_algo: JudgeAlgorithm | undefined = undefined
+
+  $: unsupported_algos = update_unsupported_algos_and_selected_algo(
     $available_models,
     model_name,
     provider_name,
   )
-  function update_unsupported_algos_and_default_algo(
+  function update_unsupported_algos_and_selected_algo(
     avail_models: AvailableModels[],
     mn: string | undefined,
     pn: string | undefined,
-  ): Record<string, string> {
+  ): Partial<Record<JudgeAlgorithm, string>> {
     const model_info = avail_models
       .find((m) => m.provider_id === pn)
       ?.models.find((m) => m.id === mn)
@@ -128,17 +193,21 @@
       selected_algo = undefined
       return {}
     }
-
-    if (model_info.supports_logprobs) {
-      selected_algo = "g_eval"
-      return {}
+    selected_algo = judge_algorithm_for_model(chosen_algo, model_info)
+    if (selected_algo !== chosen_algo) {
+      chosen_algo = undefined
     }
+    return unsupported_judge_algorithms(model_info)
+  }
 
-    selected_algo = "llm_as_judge"
-    return {
-      g_eval:
-        "G-Eval requires logprobs which do not work with this model or provider.",
-    }
+  // Must stay below the model-change block above: Svelte orders reactive blocks by
+  // the variables they name, and that block sets selected_algo inside a function.
+  $: wants_trace_tools = selected_algo === "agentic_judge"
+  $: if (
+    requested_trace_tools !== null &&
+    wants_trace_tools !== requested_trace_tools
+  ) {
+    load_default_prompt(wants_trace_tools)
   }
 
   $: available_algorithms = evaluator_algorithms.filter(
@@ -146,7 +215,8 @@
   )
   $: show_algorithm_section = model_name && available_algorithms.length > 1
 
-  function select_evaluator(algo: EvalConfigType) {
+  function select_evaluator(algo: JudgeAlgorithm) {
+    chosen_algo = algo
     selected_algo = algo
   }
 </script>
@@ -215,6 +285,7 @@
       settings={{
         requires_structured_output: selected_algo !== "g_eval",
         requires_logprobs: selected_algo === "g_eval",
+        requires_tool_support: selected_algo === "agentic_judge",
         suggested_mode: "evals",
       }}
     />

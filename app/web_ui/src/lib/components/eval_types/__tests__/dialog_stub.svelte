@@ -8,6 +8,11 @@
       delete actionButtonsByTitle[key]
     }
   }
+  // Titles of the dialogs whose show() was called, in call order.
+  export const shownTitles: string[] = []
+  export function resetShownTitles() {
+    shownTitles.length = 0
+  }
 </script>
 
 <script lang="ts">
@@ -19,7 +24,9 @@
 
   $: actionButtonsByTitle[title] = action_buttons
 
-  export function show() {}
+  export function show() {
+    shownTitles.push(title)
+  }
   export function close() {}
 </script>
 

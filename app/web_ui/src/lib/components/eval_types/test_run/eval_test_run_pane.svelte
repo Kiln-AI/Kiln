@@ -7,6 +7,8 @@
   import TestRunBrowseDialog from "./test_run_browse_dialog.svelte"
   import ReferenceDataField from "./reference_data_field.svelte"
   import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
+  import TraceView from "$lib/ui/trace/trace.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import ToolCallLogTable from "$lib/components/tool_calls/tool_call_log_table.svelte"
   import {
@@ -33,6 +35,7 @@
   export let test_score_range_warning: string | null = null
   export let test_has_valid_run: boolean = false
   export let is_llm_judge: boolean = false
+  export let agentic_judge: boolean = false
   export let can_submit_llm: boolean = false
   export let manual_example_supported: boolean = true
   /**
@@ -64,6 +67,7 @@
 
   let browse_dialog: TestRunBrowseDialog
   let see_all_dialog: SeeAllDialog
+  let judge_trace_dialog: Dialog | null = null
 
   $: has_runs = available_runs.length > 0
 
@@ -138,7 +142,11 @@
     >
       <span class="loading loading-spinner loading-md text-primary"></span>
       <div class="text-sm font-medium">Running...</div>
-      <p class="text-xs text-gray-500">Executing the scorer on your input</p>
+      <p class="text-xs text-gray-500 text-center">
+        {agentic_judge
+          ? "The judge is reading the trace. This can take a minute."
+          : "Executing the scorer on your input"}
+      </p>
       <button
         type="button"
         class="btn btn-sm btn-outline mt-1"
@@ -209,6 +217,17 @@
           {/each}
         </div>
       </div>
+    {/if}
+
+    {#if test_result.judge_trace}
+      <button
+        type="button"
+        class="btn btn-sm w-full"
+        on:click={() => judge_trace_dialog?.show()}
+        data-testid="judge-trace-btn"
+      >
+        Judge Trace
+      </button>
     {/if}
 
     <ToolCallLogTable
@@ -304,3 +323,13 @@
 />
 
 <SeeAllDialog bind:this={see_all_dialog} />
+
+{#if test_result?.judge_trace}
+  {@const judge_trace = test_result.judge_trace}
+  <Dialog bind:this={judge_trace_dialog} title="Judge Trace" width="wide">
+    <TraceView
+      trace={judge_trace}
+      auto_expand_indices={judge_trace.map((_, index) => index)}
+    />
+  </Dialog>
+{/if}

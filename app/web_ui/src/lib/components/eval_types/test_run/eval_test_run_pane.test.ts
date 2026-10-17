@@ -38,9 +38,12 @@ const ManualExampleDialog = (await import("./manual_example_dialog.svelte"))
   .default
 const ReferenceDataField = (await import("./reference_data_field.svelte"))
   .default
-const { actionButtonsByTitle, resetActionButtons } = await import(
-  "../__tests__/dialog_stub.svelte"
-)
+const {
+  actionButtonsByTitle,
+  resetActionButtons,
+  shownTitles,
+  resetShownTitles,
+} = await import("../__tests__/dialog_stub.svelte")
 const { ALL_V2_EVAL_TYPES } = await import("$lib/utils/eval_types/registry")
 
 // ---------------------------------------------------------------------------
@@ -483,6 +486,28 @@ describe("EvalTestRunPane", () => {
       ) as HTMLButtonElement
       expect(changeBtn?.disabled).toBe(true)
     })
+
+    it("tells the user an agentic judge can take a while", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: {
+          available_runs: [run1],
+          selected_run: run1,
+          test_loading: true,
+          runs_loading: false,
+          is_llm_judge: true,
+          agentic_judge: true,
+        },
+      })
+
+      const runningState = container.querySelector(
+        '[data-testid="running-state"]',
+      )
+      expect(runningState?.textContent).toContain(
+        "The judge is reading the trace. This can take a minute.",
+      )
+      expect(runningState?.textContent).not.toContain("Executing the scorer")
+    })
   })
 
   describe("State 4: Results", () => {
@@ -718,6 +743,84 @@ describe("EvalTestRunPane", () => {
         '[data-testid="score-range-warning"]',
       )
       expect(rangeWarning).toBeNull()
+    })
+
+    describe("Judge Trace", () => {
+      const judge_trace = [
+        { role: "system" as const, content: "You are an evaluator." },
+        { role: "user" as const, content: "Rendered judge prompt" },
+        { role: "assistant" as const, content: '{"accuracy": 1.0}' },
+      ]
+
+      function renderResult(result_judge_trace: unknown) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return render(EvalTestRunPane as any, {
+          props: {
+            available_runs: [run1],
+            selected_run: run1,
+            runs_loading: false,
+            is_llm_judge: true,
+            test_result: {
+              scores: { accuracy: 1.0 },
+              skipped_reason: null,
+              judge_trace: result_judge_trace,
+            },
+            test_has_valid_run: true,
+          },
+        })
+      }
+
+      it("shows a grey Judge Trace button after the scores", () => {
+        const { container } = renderResult(judge_trace)
+
+        const button = container.querySelector(
+          '[data-testid="judge-trace-btn"]',
+        ) as HTMLButtonElement
+        expect(button).not.toBeNull()
+        expect(button.textContent?.trim()).toBe("Judge Trace")
+        expect(button.className).toBe("btn btn-sm w-full")
+
+        const scores = container.querySelector('[data-testid="scores-section"]')
+        expect(
+          scores!.compareDocumentPosition(button) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy()
+      })
+
+      it("opens the Judge Trace dialog on click", async () => {
+        resetShownTitles()
+        const { container } = renderResult(judge_trace)
+
+        await fireEvent.click(
+          container.querySelector('[data-testid="judge-trace-btn"]')!,
+        )
+
+        expect(shownTitles).toEqual(["Judge Trace"])
+      })
+
+      it("holds the judge trace in a wide Judge Trace dialog", () => {
+        const { container } = renderResult(judge_trace)
+
+        const dialog = container.querySelector('[data-title="Judge Trace"]')
+        expect(dialog).not.toBeNull()
+        expect(dialog!.getAttribute("data-width")).toBe("wide")
+        expect(dialog!.textContent).toContain("Rendered judge prompt")
+        expect(dialog!.textContent).toContain("You are an evaluator.")
+      })
+
+      it.each([null, undefined])(
+        "shows neither the button nor the dialog when judge_trace is %s",
+        (result_judge_trace) => {
+          const { container } = renderResult(result_judge_trace)
+
+          expect(
+            container.querySelector('[data-testid="judge-trace-btn"]'),
+          ).toBeNull()
+          expect(
+            container.querySelector('[data-title="Judge Trace"]'),
+          ).toBeNull()
+        },
+      )
     })
 
     it("dispatches runAgain event on Run again click", async () => {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from "vitest"
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest"
 import { render, cleanup, fireEvent } from "@testing-library/svelte"
 import * as svelteMod from "svelte"
 import { tick } from "svelte"
@@ -56,6 +56,7 @@ function makeModel(
     supports_logprobs?: boolean
     suggested_for_evals?: boolean
     supports_structured_output?: boolean
+    supports_function_calling?: boolean
   } = {},
 ) {
   return {
@@ -67,7 +68,7 @@ function makeModel(
     supports_logprobs: opts.supports_logprobs ?? false,
     suggested_for_evals: opts.suggested_for_evals ?? false,
     suggested_for_synthetic_user: false,
-    supports_function_calling: false,
+    supports_function_calling: opts.supports_function_calling ?? false,
     uncensored: false,
     suggested_for_uncensored_data_gen: false,
     supports_vision: false,
@@ -384,6 +385,7 @@ describe("LlmJudgeForm", () => {
         "proj1",
         "task1",
         "eval1",
+        false,
       )
 
       const judgeTextarea = container.querySelector(
@@ -588,5 +590,461 @@ describe("state bound out to the builder", () => {
         .querySelector('[data-testid="harness-reference-keys"]')
         ?.textContent?.trim(),
     ).toBe("reference_answer")
+  })
+})
+
+describe("Agentic Judge algorithm", () => {
+  const CLASSIC_DEFAULT = {
+    judge_prompt: "Classic prompt {{ trace | format_trace }}",
+    system_prompt: "You are an evaluator.",
+    reference_keys: [],
+  }
+  const AGENTIC_DEFAULT = {
+    judge_prompt: "Agentic prompt {{ trace | trace_overview }}",
+    system_prompt: "You are an agentic evaluator.",
+    reference_keys: [],
+  }
+
+  // One provider with every capability mix, so tests can switch models in place.
+  const provider: AvailableModels = {
+    provider_name: "OpenAI",
+    provider_id: "openai",
+    models: [
+      makeModel("all", "All Capabilities", {
+        supports_logprobs: true,
+        supports_function_calling: true,
+      }),
+      makeModel("tools", "Tools Only", { supports_function_calling: true }),
+      makeModel("tools-2", "Tools Only 2", {
+        supports_function_calling: true,
+      }),
+      makeModel("logprobs", "Logprobs Only", { supports_logprobs: true }),
+    ],
+  }
+
+  beforeEach(() => {
+    mockGetDefaultLlmJudgePrompt.mockReset()
+    mockGetDefaultLlmJudgePrompt.mockImplementation(
+      async (_p: string, _t: string, _e: string, trace_tools: boolean) =>
+        trace_tools ? AGENTIC_DEFAULT : CLASSIC_DEFAULT,
+    )
+  })
+
+  afterEach(() => {
+    cleanup()
+    setModels([])
+    mockGetDefaultLlmJudgePrompt.mockReset()
+    mockGetDefaultLlmJudgePrompt.mockResolvedValue({
+      judge_prompt: "Default judge prompt {{ task_input }} {{ final_message }}",
+      system_prompt: "You are an evaluator.",
+    })
+  })
+
+  async function flush() {
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+  }
+
+  async function renderWithModel(model_id: string) {
+    setModels([provider])
+    const onMountCallbacks: Array<() => unknown> = []
+    const spy = vi
+      .spyOn(svelteMod, "onMount")
+      .mockImplementation((fn: () => unknown) => {
+        onMountCallbacks.push(fn)
+      })
+    const rendered = render(LlmJudgeForm, {
+      props: {
+        task_id: "task1",
+        project_id: "proj1",
+        eval_id: "eval1",
+        model_name: model_id,
+        provider_name: "openai",
+        combined_model_name: `openai/${model_id}`,
+      },
+    })
+    spy.mockRestore()
+    for (const cb of onMountCallbacks) {
+      await cb()
+    }
+    await flush()
+    return rendered
+  }
+
+  function algorithmRadio(container: HTMLElement, name: string) {
+    const label = Array.from(
+      container.querySelectorAll('[data-testid="algorithm-section"] label'),
+    ).find((l) => l.textContent?.includes(name))
+    return (label?.querySelector('input[type="radio"]') ??
+      null) as HTMLInputElement | null
+  }
+
+  async function selectAlgorithm(container: HTMLElement, name: string) {
+    const radio = algorithmRadio(container, name)
+    expect(radio).not.toBeNull()
+    await fireEvent.change(radio!)
+    await flush()
+  }
+
+  function promptValue(container: HTMLElement, id: string) {
+    return (container.querySelector(`#${id}`) as HTMLTextAreaElement).value
+  }
+
+  function dropdownSettings(container: HTMLElement) {
+    const text = container.querySelector(
+      '[data-testid="available-models-dropdown-stub"]',
+    )!.textContent!
+    return JSON.parse(text.slice(text.indexOf("settings=") + 9, -1).trim())
+  }
+
+  it("shows the card with its copy for a model with tool calling", async () => {
+    const { container } = await renderWithModel("all")
+    expect(algorithmRadio(container, "Agentic Judge")).not.toBeNull()
+    expect(container.textContent).toContain(
+      "Reads the trace with tools, only the parts it needs. Best for long agent traces.",
+    )
+  })
+
+  it("hides the card for a model without tool calling", async () => {
+    const { container } = await renderWithModel("logprobs")
+    expect(
+      container.querySelector('[data-testid="algorithm-section"]'),
+    ).not.toBeNull()
+    expect(algorithmRadio(container, "Agentic Judge")).toBeNull()
+    expect(algorithmRadio(container, "G-Eval Judge")).not.toBeNull()
+  })
+
+  it("offers LLM as Judge and Agentic Judge for a tool model without logprobs", async () => {
+    const { container } = await renderWithModel("tools")
+    expect(algorithmRadio(container, "LLM as Judge")).not.toBeNull()
+    expect(algorithmRadio(container, "Agentic Judge")).not.toBeNull()
+    expect(algorithmRadio(container, "G-Eval Judge")).toBeNull()
+  })
+
+  it.each([
+    ["all", "G-Eval Judge"],
+    ["tools", "LLM as Judge"],
+  ])(
+    "never selects Agentic Judge by default (%s model)",
+    async (model_id, default_name) => {
+      const { container } = await renderWithModel(model_id)
+      expect(algorithmRadio(container, default_name)!.checked).toBe(true)
+      expect(algorithmRadio(container, "Agentic Judge")!.checked).toBe(false)
+      expect(mockGetDefaultLlmJudgePrompt).toHaveBeenCalledTimes(1)
+      expect(mockGetDefaultLlmJudgePrompt).toHaveBeenCalledWith(
+        "proj1",
+        "task1",
+        "eval1",
+        false,
+      )
+    },
+  )
+
+  it("asks the model picker for tool support only while Agentic Judge is selected", async () => {
+    const { container } = await renderWithModel("tools")
+    expect(dropdownSettings(container).requires_tool_support).toBe(false)
+
+    await selectAlgorithm(container, "Agentic Judge")
+    expect(dropdownSettings(container)).toMatchObject({
+      requires_tool_support: true,
+      requires_structured_output: true,
+      requires_logprobs: false,
+    })
+
+    await selectAlgorithm(container, "LLM as Judge")
+    expect(dropdownSettings(container).requires_tool_support).toBe(false)
+  })
+
+  it("keeps Agentic Judge across a change to another tool model", async () => {
+    const { container, component } = await renderWithModel("tools")
+    await selectAlgorithm(container, "Agentic Judge")
+
+    component.$set({ model_name: "tools-2" })
+    await flush()
+
+    expect(algorithmRadio(container, "Agentic Judge")!.checked).toBe(true)
+  })
+
+  it("recomputes the default on a model change when no card was picked", async () => {
+    const { container, component } = await renderWithModel("tools")
+    expect(algorithmRadio(container, "LLM as Judge")!.checked).toBe(true)
+
+    component.$set({ model_name: "all" })
+    await flush()
+
+    expect(algorithmRadio(container, "G-Eval Judge")!.checked).toBe(true)
+  })
+
+  it("keeps a picked card the new model still supports", async () => {
+    const { container, component } = await renderWithModel("all")
+    await selectAlgorithm(container, "LLM as Judge")
+
+    component.$set({ model_name: "logprobs" })
+    await flush()
+
+    expect(algorithmRadio(container, "LLM as Judge")!.checked).toBe(true)
+  })
+
+  it("forgets a pick once a model change falls back from it", async () => {
+    const { container, component } = await renderWithModel("tools")
+    await selectAlgorithm(container, "Agentic Judge")
+
+    component.$set({ model_name: "logprobs" })
+    await flush()
+    component.$set({ model_name: "tools" })
+    await flush()
+
+    expect(algorithmRadio(container, "LLM as Judge")!.checked).toBe(true)
+  })
+
+  it("falls back to the default when the new model can't call tools", async () => {
+    const { container, component } = await renderWithModel("tools")
+    await selectAlgorithm(container, "Agentic Judge")
+
+    component.$set({ model_name: "logprobs" })
+    await flush()
+
+    expect(algorithmRadio(container, "Agentic Judge")).toBeNull()
+    expect(algorithmRadio(container, "G-Eval Judge")!.checked).toBe(true)
+    expect(mockGetDefaultLlmJudgePrompt).toHaveBeenLastCalledWith(
+      "proj1",
+      "task1",
+      "eval1",
+      false,
+    )
+    expect(promptValue(container, "judge_prompt")).toBe(
+      CLASSIC_DEFAULT.judge_prompt,
+    )
+  })
+
+  it("loads the agentic default prompt when Agentic Judge is picked, and the classic one when it is left", async () => {
+    const { container } = await renderWithModel("tools")
+    expect(promptValue(container, "judge_prompt")).toBe(
+      CLASSIC_DEFAULT.judge_prompt,
+    )
+
+    await selectAlgorithm(container, "Agentic Judge")
+    expect(mockGetDefaultLlmJudgePrompt).toHaveBeenLastCalledWith(
+      "proj1",
+      "task1",
+      "eval1",
+      true,
+    )
+    expect(promptValue(container, "judge_prompt")).toBe(
+      AGENTIC_DEFAULT.judge_prompt,
+    )
+    expect(promptValue(container, "system_prompt")).toBe(
+      AGENTIC_DEFAULT.system_prompt,
+    )
+
+    await selectAlgorithm(container, "LLM as Judge")
+    expect(mockGetDefaultLlmJudgePrompt).toHaveBeenLastCalledWith(
+      "proj1",
+      "task1",
+      "eval1",
+      false,
+    )
+    expect(promptValue(container, "judge_prompt")).toBe(
+      CLASSIC_DEFAULT.judge_prompt,
+    )
+    expect(promptValue(container, "system_prompt")).toBe(
+      CLASSIC_DEFAULT.system_prompt,
+    )
+  })
+
+  it("does not refetch between the two non-agentic algorithms", async () => {
+    const { container } = await renderWithModel("all")
+    await selectAlgorithm(container, "LLM as Judge")
+    await selectAlgorithm(container, "G-Eval Judge")
+    expect(mockGetDefaultLlmJudgePrompt).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps an edited judge prompt, and still replaces an unedited system prompt", async () => {
+    const { container } = await renderWithModel("tools")
+    const judge_textarea = container.querySelector(
+      "#judge_prompt",
+    ) as HTMLTextAreaElement
+    await fireEvent.input(judge_textarea, {
+      target: { value: "My own prompt {{ trace }}" },
+    })
+
+    await selectAlgorithm(container, "Agentic Judge")
+
+    expect(promptValue(container, "judge_prompt")).toBe(
+      "My own prompt {{ trace }}",
+    )
+    expect(promptValue(container, "system_prompt")).toBe(
+      AGENTIC_DEFAULT.system_prompt,
+    )
+  })
+
+  it("ignores a response that a newer request superseded", async () => {
+    const { container } = await renderWithModel("tools")
+
+    let resolve_agentic: (value: typeof AGENTIC_DEFAULT) => void = () => {}
+    let resolve_classic: (value: typeof CLASSIC_DEFAULT) => void = () => {}
+    mockGetDefaultLlmJudgePrompt
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (resolve_agentic = resolve)),
+      )
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (resolve_classic = resolve)),
+      )
+
+    await selectAlgorithm(container, "Agentic Judge")
+    await selectAlgorithm(container, "LLM as Judge")
+
+    const newer_classic = {
+      ...CLASSIC_DEFAULT,
+      judge_prompt: "Newer classic prompt",
+    }
+    resolve_classic(newer_classic)
+    await flush()
+    resolve_agentic(AGENTIC_DEFAULT)
+    await flush()
+
+    expect(promptValue(container, "judge_prompt")).toBe("Newer classic prompt")
+  })
+
+  it("clears the fetch warning once a refetch succeeds", async () => {
+    mockGetDefaultLlmJudgePrompt.mockRejectedValueOnce(
+      new Error("Network error"),
+    )
+    const { container } = await renderWithModel("tools")
+    expect(container.textContent).toContain(
+      "Could not load default judge prompt",
+    )
+
+    await selectAlgorithm(container, "Agentic Judge")
+
+    expect(container.textContent).not.toContain(
+      "Could not load default judge prompt",
+    )
+    expect(promptValue(container, "judge_prompt")).toBe(
+      AGENTIC_DEFAULT.judge_prompt,
+    )
+  })
+
+  describe("bound state", () => {
+    async function renderHarnessWithModel(model_id: string) {
+      setModels([provider])
+      const onMountCallbacks: Array<() => unknown> = []
+      const spy = vi
+        .spyOn(svelteMod, "onMount")
+        .mockImplementation((fn: () => unknown) => {
+          onMountCallbacks.push(fn)
+        })
+      const rendered = render(LlmJudgeFormHarness, {
+        props: {
+          model_name: model_id,
+          provider_name: "openai",
+          combined_model_name: `openai/${model_id}`,
+        },
+      })
+      spy.mockRestore()
+      for (const cb of onMountCallbacks) {
+        await cb()
+      }
+      await flush()
+      return rendered
+    }
+
+    function harnessValue(container: HTMLElement, name: string) {
+      return container
+        .querySelector(`[data-testid="harness-${name}"]`)!
+        .textContent!.trim()
+    }
+
+    it("clears unedited prompts when a refetch fails, so the server builds the default for the new algorithm", async () => {
+      const { container } = await renderHarnessWithModel("tools")
+      expect(harnessValue(container, "judge-prompt")).toBe(
+        CLASSIC_DEFAULT.judge_prompt,
+      )
+      mockGetDefaultLlmJudgePrompt.mockRejectedValueOnce(
+        new Error("Network error"),
+      )
+
+      await selectAlgorithm(container, "Agentic Judge")
+
+      expect(harnessValue(container, "judge-prompt")).toBe("undefined")
+      expect(harnessValue(container, "system-prompt")).toBe("undefined")
+      expect(harnessValue(container, "prompt-unavailable")).toBe("true")
+      expect(container.textContent).toContain(
+        "Could not load default judge prompt. The server will use its default.",
+      )
+    })
+
+    it("keeps an edited prompt when a refetch fails", async () => {
+      const { container } = await renderHarnessWithModel("tools")
+      await fireEvent.input(container.querySelector("#judge_prompt")!, {
+        target: { value: "My own prompt {{ trace }}" },
+      })
+      mockGetDefaultLlmJudgePrompt.mockRejectedValueOnce(
+        new Error("Network error"),
+      )
+
+      await selectAlgorithm(container, "Agentic Judge")
+
+      expect(harnessValue(container, "judge-prompt")).toBe(
+        "My own prompt {{ trace }}",
+      )
+      expect(harnessValue(container, "system-prompt")).toBe("undefined")
+    })
+
+    it("loads the default again after a failed refetch", async () => {
+      const { container } = await renderHarnessWithModel("tools")
+      mockGetDefaultLlmJudgePrompt.mockRejectedValueOnce(
+        new Error("Network error"),
+      )
+      await selectAlgorithm(container, "Agentic Judge")
+      expect(harnessValue(container, "prompt-unavailable")).toBe("true")
+
+      await selectAlgorithm(container, "LLM as Judge")
+
+      expect(harnessValue(container, "prompt-unavailable")).toBe("false")
+      expect(harnessValue(container, "judge-prompt")).toBe(
+        CLASSIC_DEFAULT.judge_prompt,
+      )
+      expect(container.textContent).not.toContain(
+        "Could not load default judge prompt",
+      )
+    })
+
+    it("fires prompt_replaced when a fetch changes a prompt, but not on the first load", async () => {
+      const { container } = await renderHarnessWithModel("tools")
+      expect(harnessValue(container, "prompt-replaced-count")).toBe("0")
+
+      await selectAlgorithm(container, "Agentic Judge")
+      expect(harnessValue(container, "prompt-replaced-count")).toBe("1")
+
+      mockGetDefaultLlmJudgePrompt.mockRejectedValueOnce(
+        new Error("Network error"),
+      )
+      await selectAlgorithm(container, "LLM as Judge")
+      expect(harnessValue(container, "prompt-replaced-count")).toBe("2")
+    })
+
+    it("does not fire prompt_replaced when both prompts were edited", async () => {
+      const { container } = await renderHarnessWithModel("tools")
+      await fireEvent.input(container.querySelector("#judge_prompt")!, {
+        target: { value: "My own prompt {{ trace }}" },
+      })
+      await fireEvent.input(container.querySelector("#system_prompt")!, {
+        target: { value: "My own system prompt" },
+      })
+
+      await selectAlgorithm(container, "Agentic Judge")
+
+      expect(harnessValue(container, "prompt-replaced-count")).toBe("0")
+    })
+  })
+
+  it("lists the trace_overview filter among the template variables", async () => {
+    const { container } = await renderWithModel("logprobs")
+    const text = container.textContent!.replace(/\s+/g, " ")
+    expect(text).toContain(
+      "Add the trace_overview filter (e.g. {{ trace | trace_overview }}) for a short overview of the trace: message counts and sizes, tool calls, and previews of the first and last messages.",
+    )
   })
 })

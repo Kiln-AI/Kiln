@@ -89,6 +89,11 @@
     return config.config_type === "g_eval"
   }
 
+  function isAgenticJudge(config: EvalConfig): boolean {
+    if (getV2TypeFromEvalConfig(config) !== "llm_judge") return false
+    return getV2Props(config, "llm_judge")?.trace_toolset_version != null
+  }
+
   function isJudgeEval(config: EvalConfig): boolean {
     const v2Type = getV2TypeFromEvalConfig(config)
     if (v2Type === "llm_judge") return true
@@ -121,6 +126,10 @@
       {#if isGEval(eval_config)}
         <div data-testid="judge-method-line">
           <span class="font-medium">Method:</span> G-Eval
+        </div>
+      {:else if isAgenticJudge(eval_config)}
+        <div data-testid="judge-method-line">
+          <span class="font-medium">Method:</span> Agentic Judge
         </div>
       {/if}
     {/if}

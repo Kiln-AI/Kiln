@@ -30,7 +30,7 @@ What those PRs already built is kept as they built it. Phases 2 and 3 add only w
   - API: `trace_tools` on the builder input, the default-prompt query parameter, `judge_trace` in test responses, 422 on context overflow, and the prompt optimization gate.
   - Regenerate the OpenAPI client.
   - Specs: [architecture §2, §3.7–3.10](architecture.md#2-data-model-changes).
-- [ ] **Phase 3: Web UI.**
+- [x] **Phase 3: Web UI.**
   - The Agentic Judge algorithm card and its form behavior.
   - The `trace_overview` variable entry.
   - Judge Trace in the test pane. The results-page link comes from #1938.

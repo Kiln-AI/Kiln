@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import {
   testV2Eval,
   testV2EvalLlmJudge,
+  getDefaultLlmJudgePrompt,
   fetchTaskRuns,
   createEvalConfig,
   checkAddCodeTrust,
@@ -241,6 +242,51 @@ describe("testV2EvalLlmJudge", () => {
 
     const [, options] = mockPost.mock.calls[0]
     expect(options.signal).toBe(controller.signal)
+  })
+})
+
+describe("getDefaultLlmJudgePrompt", () => {
+  it.each([true, false])(
+    "sends the eval path and trace_tools=%s",
+    async (traceTools) => {
+      const responseData = {
+        judge_prompt: "Judge {{ trace | trace_overview }}",
+        system_prompt: "You are an evaluator.",
+        reference_keys: [],
+      }
+      mockGet.mockResolvedValue({ data: responseData, error: undefined })
+
+      const result = await getDefaultLlmJudgePrompt(
+        "proj-1",
+        "task-2",
+        "eval-3",
+        traceTools,
+      )
+
+      expect(mockGet).toHaveBeenCalledTimes(1)
+      const [path, options] = mockGet.mock.calls[0]
+      expect(path).toBe(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/default_llm_judge_prompt",
+      )
+      expect(options.params.path).toEqual({
+        project_id: "proj-1",
+        task_id: "task-2",
+        eval_id: "eval-3",
+      })
+      expect(options.params.query).toEqual({ trace_tools: traceTools })
+      expect(result).toEqual(responseData)
+    },
+  )
+
+  it("throws with the server's message on error", async () => {
+    mockGet.mockResolvedValue({
+      data: undefined,
+      error: { message: "Eval not found" },
+    })
+
+    await expect(
+      getDefaultLlmJudgePrompt("p", "t", "e", false),
+    ).rejects.toThrow("default_llm_judge_prompt failed: Eval not found")
   })
 })
 

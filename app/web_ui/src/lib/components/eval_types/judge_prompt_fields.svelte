@@ -32,6 +32,14 @@
           <span class="font-mono font-bold">{"{{ trace | format_trace }}"}</span
           >) to render the trace as a readable transcript instead of raw data.
         </li>
+        <li>
+          Add the <span class="font-mono font-bold">trace_overview</span> filter
+          (e.g.
+          <span class="font-mono font-bold"
+            >{"{{ trace | trace_overview }}"}</span
+          >) for a short overview of the trace: message counts and sizes, tool
+          calls, and previews of the first and last messages.
+        </li>
       </ul>
     </li>
     <li>
