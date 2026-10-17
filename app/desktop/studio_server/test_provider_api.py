@@ -49,6 +49,7 @@ from app.desktop.studio_server.provider_api import (
     connect_anthropic,
     connect_azure_openai,
     connect_bedrock,
+    connect_cheaperinference,
     connect_cloudflare,
     connect_docker_model_runner,
     connect_featherless,
@@ -134,6 +135,7 @@ def patched_non_builtin_available_model_sources(patch_openai_compatible: bool = 
         "featherless_ai",
         "cloudflare",
         "typesafe",
+        "cheaperinference",
     ],
 )
 def test_connect_api_key_invalid_payload(client, provider):
@@ -2262,6 +2264,7 @@ def mock_config_all_providers():
     mock_config.cloudflare_account_id = "test_key"
     mock_config.cloudflare_ai_gateway_id = "test_key"
     mock_config.typesafe_api_key = "test_key"
+    mock_config.cheaperinference_api_key = "test_key"
     return mock_config
 
 
@@ -4844,3 +4847,147 @@ def test_connect_api_key_typesafe_success(mock_connect_typesafe, client):
 
     assert response.status_code == 200
     mock_connect_typesafe.assert_called_once_with("test_key")
+
+
+# Cheaper Inference connection tests.
+#
+# GET /v1/models rejects a bad key, which is the check connect_cheaperinference makes.
+
+
+def _cheaperinference_expected_request(key: str):
+    return {
+        "url": "https://api.cheaperinference.com/v1/models",
+        "headers": {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        },
+    }
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_cheaperinference_success(mock_config_shared, mock_httpx_get):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_httpx_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    result = await connect_cheaperinference("test_api_key")
+
+    expected = _cheaperinference_expected_request("test_api_key")
+    mock_httpx_get.assert_called_once_with(
+        expected["url"],
+        headers=expected["headers"],
+        timeout=10,
+        follow_redirects=True,
+    )
+    assert mock_config.cheaperinference_api_key == "test_api_key"
+    assert result.status_code == 200
+    assert result.body == b'{"message":"Connected to Cheaper Inference"}'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [401, 403])
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_cheaperinference_invalid_api_key(
+    mock_config_shared, mock_httpx_get, status_code
+):
+    mock_response = MagicMock()
+    mock_response.status_code = status_code
+    mock_httpx_get.return_value = mock_response
+
+    result = await connect_cheaperinference("invalid_api_key")
+
+    expected = _cheaperinference_expected_request("invalid_api_key")
+    mock_httpx_get.assert_called_once_with(
+        expected["url"],
+        headers=expected["headers"],
+        timeout=10,
+        follow_redirects=True,
+    )
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 401
+    assert (
+        result.body
+        == b'{"message":"Failed to connect to Cheaper Inference. Invalid API key."}'
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [400, 429, 500, 503])
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_cheaperinference_other_error(
+    mock_config_shared, mock_httpx_get, status_code
+):
+    mock_response = MagicMock()
+    mock_response.status_code = status_code
+    mock_httpx_get.return_value = mock_response
+
+    result = await connect_cheaperinference("test_api_key")
+
+    mock_httpx_get.assert_called_once()
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 400
+    assert (
+        result.body
+        == f'{{"message":"Failed to connect to Cheaper Inference. Error: [{status_code}]"}}'.encode()
+    )
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_cheaperinference_request_exception(
+    mock_config_shared, mock_httpx_get
+):
+    mock_httpx_get.side_effect = httpx.RequestError("Connection error")
+
+    result = await connect_cheaperinference("test_api_key")
+
+    mock_httpx_get.assert_called_once()
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 400
+    assert (
+        result.body
+        == b'{"message":"Failed to connect to Cheaper Inference. Error: Connection error"}'
+    )
+
+
+@pytest.mark.asyncio
+async def test_disconnect_api_key_cheaperinference(client, mock_config_all_providers):
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config.return_value = mock_config_all_providers
+
+        response = client.post(
+            "/api/provider/disconnect_api_key",
+            params={"provider_id": "cheaperinference"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "Provider disconnected"}
+        assert mock_config_all_providers.cheaperinference_api_key is None
+
+        # Check it didn't unset the other providers
+        assert mock_config_all_providers.open_ai_api_key is not None
+
+
+@patch("app.desktop.studio_server.provider_api.connect_cheaperinference")
+def test_connect_api_key_cheaperinference_success(
+    mock_connect_cheaperinference, client
+):
+    mock_connect_cheaperinference.return_value = {
+        "message": "Connected to Cheaper Inference"
+    }
+
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "cheaperinference", "key_data": {"API Key": "test_key"}},
+    )
+
+    assert response.status_code == 200
+    mock_connect_cheaperinference.assert_called_once_with("test_key")

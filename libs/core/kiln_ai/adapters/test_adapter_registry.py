@@ -61,6 +61,7 @@ def mock_config():
         mock.shared.return_value.siliconflow_cn_api_key = "test-siliconflow-key"
         mock.shared.return_value.featherless_ai_api_key = "test-featherless-key"
         mock.shared.return_value.typesafe_api_key = "test-typesafe-key"
+        mock.shared.return_value.cheaperinference_api_key = "test-cheaperinference-key"
         mock.shared.return_value.cloudflare_api_key = "test-cloudflare-key"
         mock.shared.return_value.cloudflare_account_id = "test-cloudflare-account"
         mock.shared.return_value.cloudflare_ai_gateway_id = None
@@ -258,6 +259,29 @@ def test_featherless_adapter_creation(mock_config, basic_task):
     }
     # Featherless uses LiteLLM's native provider, not a custom base URL
     assert adapter.config.base_url is None
+
+
+def test_cheaperinference_adapter_creation(mock_config, basic_task):
+    adapter = adapter_for_task(
+        kiln_task=basic_task,
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-5.4-mini",
+            model_provider_name=ModelProviderName.cheaperinference,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+    )
+
+    assert isinstance(adapter, LiteLlmAdapter)
+    assert adapter.config.run_config_properties.model_name == "gpt-5.4-mini"
+    assert adapter.config.additional_body_options == {
+        "api_key": "test-cheaperinference-key"
+    }
+    assert (
+        adapter.config.run_config_properties.model_provider_name
+        == ModelProviderName.cheaperinference
+    )
+    assert adapter.config.base_url == "https://api.cheaperinference.com/v1"
 
 
 @pytest.mark.parametrize(

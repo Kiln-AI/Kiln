@@ -193,6 +193,11 @@ class Config:
                 env_var="TYPESAFE_API_KEY",
                 sensitive=True,
             ),
+            "cheaperinference_api_key": ConfigProperty(
+                str,
+                env_var="CHEAPER_INFERENCE_API_KEY",
+                sensitive=True,
+            ),
             "kiln_copilot_api_key": ConfigProperty(
                 str,
                 env_var="KILN_COPILOT_API_KEY",

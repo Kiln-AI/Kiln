@@ -135,6 +135,7 @@ class ModelProviderName(str, Enum):
     featherless_ai = "featherless_ai"
     cloudflare = "cloudflare"
     typesafe = "typesafe"
+    cheaperinference = "cheaperinference"
 
 
 class KilnMimeType(str, Enum):

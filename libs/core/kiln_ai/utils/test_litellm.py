@@ -72,6 +72,7 @@ class TestGetLitellmProviderInfo:
             (ModelProviderName.kiln_custom_registry, "openai", True),
             (ModelProviderName.kiln_fine_tune, "openai", True),
             (ModelProviderName.cloudflare, "openai", True),
+            (ModelProviderName.cheaperinference, "openai", True),
         ],
     )
     def test_provider_mappings_with_model_provider(
