@@ -35,6 +35,24 @@ class TestEvalTraceFormatter:
         message = {"role": "user", "content": None}  # type: ignore
         assert EvalTraceFormatter.content_from_message(message) is None
 
+    def test_content_from_message_list_of_parts(self):
+        message: ChatCompletionMessageParam = {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "first"},
+                {"type": "image_url", "image_url": {"url": "https://x"}},
+                {"type": "text", "text": "second"},
+            ],
+        }  # type: ignore
+        assert EvalTraceFormatter.content_from_message(message) == "first\n\nsecond"
+
+    def test_content_from_message_list_without_text_parts(self):
+        message: ChatCompletionMessageParam = {
+            "role": "user",
+            "content": [{"type": "image_url", "image_url": {"url": "https://x"}}],
+        }  # type: ignore
+        assert EvalTraceFormatter.content_from_message(message) is None
+
     def test_content_from_message_tool_with_json_output(self):
         tool_output = json.dumps({"output": "tool result", "other": "ignored"})
         message: ChatCompletionMessageParam = {

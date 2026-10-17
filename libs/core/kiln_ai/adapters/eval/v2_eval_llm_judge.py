@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
     from kiln_ai.datamodel.task import RunConfigProperties
 
+from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import EvalTraceFormatter
 from kiln_ai.adapters.eval.eval_utils.scoring_utils import (
     build_g_eval_score,
     build_llm_as_judge_score,
@@ -56,6 +57,17 @@ _DEFAULT_SYSTEM_PROMPT = (
     "Your job is to evaluate a model's performance on a task. "
     "Score the output according to the criteria provided."
 )
+
+
+def system_prompt_from_trace(trace: list[dict[str, Any]] | None) -> str:
+    """The system prompt the evaluated model was given: the first system
+    message in its trace, or an empty string when there is none."""
+    for message in trace or []:
+        if message.get("role") == "system":
+            # Loose dicts are the runtime reality for traces; the formatter reads
+            # them like its typed message params.
+            return EvalTraceFormatter.content_from_message(message) or ""  # type: ignore[arg-type]
+    return ""
 
 
 def _unknown_template_variables(template: str, namespace: dict[str, Any]) -> set[str]:
@@ -143,6 +155,9 @@ class LlmJudgeEval(BaseV2EvalBridge):
         namespace["judge_instructions"] = format_judge_instructions(
             props.judge_instructions
         )
+        # Bound for hand-written templates that judge a single turn's
+        # final_message against the system prompt without the full trace.
+        namespace["system_prompt"] = system_prompt_from_trace(eval_input.trace)
         try:
             rendered_prompt = _template_env.from_string(props.prompt_template).render(
                 **namespace
