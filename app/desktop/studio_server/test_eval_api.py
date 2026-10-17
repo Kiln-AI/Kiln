@@ -6902,10 +6902,10 @@ class TestTestV2Eval:
             intermediate_outputs=None,
         )
         mock_adapter = MagicMock()
-        # The adapter's first return value is the judge's own TaskRun, whose usage the
-        # V2 result carries as eval_usage.
+        # The adapter's first return value is the judge's own TaskRun, whose usage and
+        # trace the V2 result carries as eval_usage and judge_trace.
         mock_adapter.invoke_returning_run_output = AsyncMock(
-            return_value=(Mock(usage=None), mock_run_output)
+            return_value=(Mock(usage=None, trace=None), mock_run_output)
         )
         with (
             patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
@@ -6960,10 +6960,10 @@ class TestTestV2Eval:
             intermediate_outputs=None,
         )
         mock_adapter = MagicMock()
-        # The adapter's first return value is the judge's own TaskRun, whose usage the
-        # V2 result carries as eval_usage.
+        # The adapter's first return value is the judge's own TaskRun, whose usage and
+        # trace the V2 result carries as eval_usage and judge_trace.
         mock_adapter.invoke_returning_run_output = AsyncMock(
-            return_value=(Mock(usage=None), mock_run_output)
+            return_value=(Mock(usage=None, trace=None), mock_run_output)
         )
         with (
             patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,

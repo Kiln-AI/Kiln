@@ -552,6 +552,7 @@
                     eval_config={results.eval_config}
                     intermediate_outputs={result.eval_run
                       .intermediate_outputs ?? null}
+                    judge_trace={result.eval_run.judge_trace ?? null}
                   />
                 </td>
               {:else}

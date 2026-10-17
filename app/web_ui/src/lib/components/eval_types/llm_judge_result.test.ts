@@ -191,4 +191,57 @@ describe("LlmJudgeResult", () => {
     })
     expect(container.textContent).toContain("View reasoning")
   })
+
+  it("does not render the judge trace dialog when judge_trace is null", () => {
+    const { container } = render(LlmJudgeResult, {
+      props: {
+        scores: { quality: 0.8 },
+        eval_config: makeConfig(),
+        judge_trace: null,
+      },
+    })
+    expect(container.querySelector('[data-title="Judge Trace"]')).toBeFalsy()
+  })
+
+  it("shows only the Judge trace link when both trace and reasoning exist", () => {
+    const { container } = render(LlmJudgeResult, {
+      props: {
+        scores: { quality: 0.8 },
+        eval_config: makeConfig(),
+        intermediate_outputs: { reasoning: "The model output was good." },
+        judge_trace: [
+          { role: "user", content: "Rendered judge prompt" },
+          {
+            role: "assistant",
+            content: '{"quality": "4"}',
+            reasoning_content: "The model output was good.",
+          },
+        ],
+      },
+    })
+    const links = container.querySelectorAll("button.link")
+    expect(links.length).toBe(1)
+    expect(links[0].textContent).toContain("Judge trace")
+  })
+
+  it("shows the judge trace in a dialog when judge_trace is present", () => {
+    const { container } = render(LlmJudgeResult, {
+      props: {
+        scores: { quality: 0.8 },
+        eval_config: null,
+        judge_trace: [
+          { role: "system", content: "Score the output." },
+          { role: "user", content: "Rendered judge prompt with variables" },
+          { role: "assistant", content: '{"quality": "4"}' },
+        ],
+      },
+    })
+    expect(container.textContent).toContain("Judge trace")
+    expect(container.textContent).not.toContain("View reasoning")
+    const dialog = container.querySelector('[data-title="Judge Trace"]')
+    expect(dialog).toBeTruthy()
+    expect(dialog!.textContent).toContain(
+      "Rendered judge prompt with variables",
+    )
+  })
 })

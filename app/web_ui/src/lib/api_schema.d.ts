@@ -7826,6 +7826,11 @@ export interface components {
             /** @description The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field. */
             eval_usage?: components["schemas"]["Usage"] | null;
             /**
+             * Judge Trace
+             * @description The evaluation model's (judge's) conversation in OpenAI format: the system prompt, the rendered judge prompt, and the judge's reply. Distinct from the evaluated task run's trace. None for non-LLM evals (e.g. code evals) and for records that predate this field.
+             */
+            judge_trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            /**
              * Eval Input Id
              * @description ID of the EvalInput used for this run (V2 evals). Mutually exclusive with dataset_id.
              */
