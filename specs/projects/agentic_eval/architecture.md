@@ -232,7 +232,7 @@ New flow (unchanged steps elided):
 4. `toolset = trace_toolset(props.trace_toolset_version if tools_on else TRACE_OVERVIEW_VERSION_WITHOUT_TOOLS)`. `UnsupportedTraceToolsetVersion` returns a `type_not_available` skip: `"This judge uses trace tools version {n}, which this version of Kiln doesn't support. Update Kiln to run it."`
 5. `namespace = eval_input.model_dump()` plus `judge_instructions`: unchanged.
 6. **If `tools_on`:** `view = await asyncio.to_thread(toolset.build_view, namespace["trace"])`. Otherwise `view = None`.
-7. Render with `judge_template_env(toolset, namespace["trace"], view)`, with the existing error-to-skip mapping. `_unknown_template_variables` keeps parsing with `_template_env`.
+7. Render with `judge_template_env(toolset, namespace["trace"], view)` in `asyncio.to_thread`, with the existing error-to-skip mapping. The thread matters for tools-off judges too: a template that uses `trace_overview` builds its view during the render, and `format_trace` walks the whole trace. `_unknown_template_variables` keeps parsing with `_template_env`.
 8. Build the judge task, structured output mode and run config: unchanged.
 9. `AdapterConfig(allow_saving=False, top_logprobs=..., unmanaged_tools=toolset.build_tools(view) if tools_on else None, automatic_prompt_caching=tools_on)`. Prompt caching only changes cost, and long tool loops resend a growing prefix.
 10. Invoke, mapping one specific failure:
@@ -252,12 +252,13 @@ New flow (unchanged steps elided):
 
 ### 3.8 Default prompt and properties builder (`adapters/eval/base_eval.py`)
 
-- **`build_default_llm_judge_prompt(eval, trace_tools: bool = False)`.** With `trace_tools`, the guard line and data blocks are replaced by the functional spec §5.3 block:
-  - the guard line naming the trace overview and tool results;
+- **`build_default_llm_judge_prompt(eval, trace_tools: bool = False)`.** With `trace_tools`, the intro, guard line and `<trace>` block are replaced by the functional spec §5.3 sections:
+  - `<system_prompt>\n{{ system_prompt }}\n</system_prompt>`, the judged run's own system prompt;
+  - the guard line naming the system prompt, the trace overview and tool results (and the reference answer, when shown);
   - `<trace_overview>\n{{ trace | trace_overview }}\n</trace_overview>`;
   - `Use the trace tools to inspect the parts of the trace you need.`
 
-  The task description, reference answer block, steps and score criteria logic are unchanged.
+  The reference answer block, steps and score criteria logic are unchanged, except that `build_eval_steps` and `template_eval_steps` take `trace_tools` and then say "the trace" where they otherwise point at the `<trace>` tag.
 - **`materialize_llm_judge_properties(..., trace_tools: bool = False)`.** Passes `trace_tools` to the default prompt builder, and sets `trace_toolset_version=LATEST_TRACE_TOOLSET_VERSION if trace_tools else None`. The API takes a boolean; only storage knows about versions. The G-Eval conflict is caught by the properties validator, which the endpoint maps to 422.
 
 ### 3.9 Eval runner (`adapters/eval/eval_runner.py`)

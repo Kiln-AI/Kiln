@@ -103,6 +103,19 @@ def _format_trace(value: Any) -> str:
         ) from e
 
 
+def _trace_overview_placeholder(value: Any) -> str:
+    """Jinja2 filter stand-in for ``trace_overview``.
+
+    The real filter depends on the judge's trace toolset version, so only an LLM
+    judge's template environment binds it. Registering this stand-in lets judge
+    templates compile everywhere else (Jinja rejects unknown filters at compile
+    time), and makes any other render fail with a clear message.
+    """
+    raise JinjaExtractionError(
+        "trace_overview is only available in LLM judge prompt templates."
+    )
+
+
 _template_env = SandboxedEnvironment(
     undefined=StrictUndefined,
     trim_blocks=True,
@@ -110,6 +123,7 @@ _template_env = SandboxedEnvironment(
 )
 _template_env.filters["fromjson"] = _fromjson
 _template_env.filters["format_trace"] = _format_trace
+_template_env.filters["trace_overview"] = _trace_overview_placeholder
 
 _expression_env = SandboxedEnvironment(
     undefined=Undefined,

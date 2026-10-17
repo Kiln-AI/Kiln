@@ -4,13 +4,19 @@ Supports two scoring modes:
 - LLM-as-Judge (g_eval=False): uses structured output directly.
 - G-Eval (g_eval=True): uses logprob-weighted scoring.
 
+With trace_toolset_version set, the judge also gets the trace tools: read-only
+tools for reading the judged trace, at that locked toolset version. It can't be
+combined with G-Eval.
+
 The prompt_template is rendered with Jinja2 using the EvalTaskInput fields
 as the template namespace.
 """
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 
-from jinja2 import UndefinedError, meta
+import litellm
+from jinja2 import Environment, UndefinedError, meta
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.eval.base_eval import (
@@ -24,6 +30,8 @@ if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
     from kiln_ai.datamodel.task import RunConfigProperties
 
+from kiln_ai.adapters.errors import KilnRunError
+from kiln_ai.adapters.eval.eval_utils.errors import JudgeContextExceededError
 from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import EvalTraceFormatter
 from kiln_ai.adapters.eval.eval_utils.scoring_utils import (
     build_g_eval_score,
@@ -34,13 +42,20 @@ from kiln_ai.adapters.eval.eval_utils.scoring_utils import (
     score_from_token_string,
 )
 from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import check_reference_key
+from kiln_ai.adapters.eval.trace_tools import (
+    UnsupportedTraceToolsetVersion,
+    judge_template_env,
+    trace_toolset,
+)
 from kiln_ai.adapters.ml_model_list import (
     ModelProviderName,
     built_in_models_from_provider,
     default_structured_output_mode_for_model_provider,
 )
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
+from kiln_ai.adapters.retry_classification import unwrap_kiln_run_error
 from kiln_ai.datamodel.eval import (
+    TRACE_OVERVIEW_VERSION_WITHOUT_TOOLS,
     EvalConfig,
     EvalTaskInput,
     LlmJudgeProperties,
@@ -68,6 +83,10 @@ def system_prompt_from_trace(trace: list[dict[str, Any]] | None) -> str:
             # them like its typed message params.
             return EvalTraceFormatter.content_from_message(message) or ""  # type: ignore[arg-type]
     return ""
+
+
+def _render_prompt(env: Environment, template: str, namespace: dict[str, Any]) -> str:
+    return env.from_string(template).render(**namespace)
 
 
 def _unknown_template_variables(template: str, namespace: dict[str, Any]) -> set[str]:
@@ -149,6 +168,31 @@ class LlmJudgeEval(BaseV2EvalBridge):
                     skipped_detail=skip_detail,
                 )
 
+        trace_tools_version = props.trace_toolset_version
+        trace_tools_on = trace_tools_version is not None
+        if trace_tools_on and not eval_input.trace:
+            return V2EvalResult(
+                skipped_reason=SkippedReason.missing_trace,
+                skipped_detail=(
+                    "This judge reads the trace with trace tools, but this run has "
+                    "no trace."
+                ),
+            )
+        try:
+            toolset = trace_toolset(
+                trace_tools_version
+                if trace_tools_version is not None
+                else TRACE_OVERVIEW_VERSION_WITHOUT_TOOLS
+            )
+        except UnsupportedTraceToolsetVersion as e:
+            return V2EvalResult(
+                skipped_reason=SkippedReason.type_not_available,
+                skipped_detail=(
+                    f"This judge uses trace tools version {e.version}, which this "
+                    "version of Kiln doesn't support. Update Kiln to run it."
+                ),
+            )
+
         namespace = eval_input.model_dump()
         # Always bound (even when unset) so templates referencing it never hit
         # StrictUndefined; blank steps render as an empty <steps> body.
@@ -156,11 +200,22 @@ class LlmJudgeEval(BaseV2EvalBridge):
             props.judge_instructions
         )
         # Bound for hand-written templates that judge a single turn's
-        # final_message against the system prompt without the full trace.
+        # final_message against the system prompt without the full trace, and
+        # for the default trace tools prompt.
         namespace["system_prompt"] = system_prompt_from_trace(eval_input.trace)
+
+        # Parsing a large trace is CPU-bound, so the view is built and the
+        # template rendered off the event loop. A judge with trace tools off that
+        # uses trace_overview builds its view during the render.
+        trace_view = (
+            await asyncio.to_thread(toolset.build_view, namespace["trace"])
+            if trace_tools_on
+            else None
+        )
+        template_env = judge_template_env(toolset, namespace["trace"], trace_view)
         try:
-            rendered_prompt = _template_env.from_string(props.prompt_template).render(
-                **namespace
+            rendered_prompt = await asyncio.to_thread(
+                _render_prompt, template_env, props.prompt_template, namespace
             )
         except JinjaExtractionError as e:
             return V2EvalResult(
@@ -246,12 +301,22 @@ class LlmJudgeEval(BaseV2EvalBridge):
             base_adapter_config=AdapterConfig(
                 allow_saving=False,
                 top_logprobs=top_logprobs,
+                unmanaged_tools=toolset.build_tools(trace_view)
+                if trace_view is not None
+                else None,
+                # A trace tool loop resends a growing prefix on every round.
+                automatic_prompt_caching=trace_tools_on,
             ),
         )
 
-        judge_run, run_output = await adapter.invoke_returning_run_output(
-            rendered_prompt
-        )
+        try:
+            judge_run, run_output = await adapter.invoke_returning_run_output(
+                rendered_prompt
+            )
+        except KilnRunError as e:
+            if isinstance(unwrap_kiln_run_error(e), litellm.ContextWindowExceededError):
+                raise JudgeContextExceededError.from_run_error(e) from e
+            raise
 
         if props.g_eval:
             scores = build_g_eval_score(

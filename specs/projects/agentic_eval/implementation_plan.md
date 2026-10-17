@@ -22,7 +22,7 @@ What those PRs already built is kept as they built it. Phases 2 and 3 add only w
   - Unit tests, golden tests with the update flag, and benchmarks.
   - No judge wiring yet.
   - Specs: [components/trace_tools_v1.md](components/trace_tools_v1.md), [architecture §3.1–3.6](architecture.md#31-trace-tools-package).
-- [ ] **Phase 2: Judge integration and API.**
+- [x] **Phase 2: Judge integration and API.**
   - Datamodel: `LlmJudgeProperties.trace_toolset_version` and its validators. `EvalRun.judge_trace` and `V2EvalResult.judge_trace` come from #1938; add only the `materialize_lazy_content` validator on `EvalRun.judge_trace` if it is still missing.
   - Jinja: the `trace_overview` placeholder filter.
   - `LlmJudgeEval`: tools, the overlay template environment, the unsupported-version skip, and `JudgeContextExceededError`. The judge trace itself comes from #1938.

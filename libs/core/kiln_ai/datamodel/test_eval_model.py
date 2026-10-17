@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from kiln_ai.datamodel.basemodel import KilnParentModel, ReadOnlyMutationError
 from kiln_ai.datamodel.datamodel_enums import EvalStatus, Priority
 from kiln_ai.datamodel.eval import (
+    G_EVAL_WITH_TRACE_TOOLS_ERROR,
     LEGACY_TRACE_FIELDS,
     SCORER_CODE_FILENAME,
     ArgMatch,
@@ -3221,6 +3222,41 @@ class TestV2TemplateValidation:
         )
         assert cfg is not None
 
+    @pytest.mark.parametrize(
+        "prompt_template",
+        [
+            "Read the trace with your tools and judge it.",
+            "{{ judge_instructions }}",
+            "{{ reference_data.expected_output }}",
+        ],
+    )
+    def test_trace_tools_judge_may_omit_model_output(self, prompt_template):
+        """A judge with trace tools reads the trace through them, so its template
+        need not reference it. The same template without tools is still rejected."""
+        props = {
+            "model_name": "m",
+            "model_provider": "p",
+            "prompt_template": prompt_template,
+        }
+        cfg = _make_v2_eval_config(
+            properties=LlmJudgeProperties(**props, trace_toolset_version=1)
+        )
+        assert cfg is not None
+        with pytest.raises(ValidationError, match="never references the model output"):
+            _make_v2_eval_config(properties=LlmJudgeProperties(**props))
+
+    def test_trace_overview_template_compiles(self):
+        """trace_overview is bound only when a judge renders, but its templates must
+        pass save-time compilation."""
+        cfg = _make_v2_eval_config(
+            properties=LlmJudgeProperties(
+                model_name="m",
+                model_provider="p",
+                prompt_template="<overview>{{ trace | trace_overview }}</overview>",
+            ),
+        )
+        assert cfg is not None
+
     def test_valid_value_expression(self):
         """A valid value_expression compiles without error."""
         cfg = _make_v2_eval_config(
@@ -4126,6 +4162,83 @@ class TestV2EvalResult:
             intermediate_outputs={"chain_of_thought": "reasoning text"},
         )
         assert result.intermediate_outputs == {"chain_of_thought": "reasoning text"}
+
+    def test_judge_trace_list_content_survives_every_dump(self):
+        result = V2EvalResult(scores={"quality": 5.0}, judge_trace=_LIST_CONTENT_TRACE)
+        for _ in range(2):
+            assert result.model_dump(mode="json")["judge_trace"] == _LIST_CONTENT_TRACE
+
+
+class TestLlmJudgeTraceToolset:
+    @staticmethod
+    def _props(**overrides) -> LlmJudgeProperties:
+        return LlmJudgeProperties(
+            model_name="m",
+            model_provider="p",
+            prompt_template="{{ final_message }}",
+            **overrides,
+        )
+
+    def test_off_by_default(self):
+        assert self._props().trace_toolset_version is None
+
+    def test_g_eval_with_trace_tools_rejected(self):
+        with pytest.raises(ValidationError, match=G_EVAL_WITH_TRACE_TOOLS_ERROR):
+            self._props(g_eval=True, trace_toolset_version=1)
+
+    @pytest.mark.parametrize(
+        "overrides", [{"g_eval": True}, {"trace_toolset_version": 1}]
+    )
+    def test_each_scoring_option_alone_is_valid(self, overrides):
+        assert self._props(**overrides) is not None
+
+    @pytest.mark.parametrize("version", [0, -1])
+    def test_version_must_be_positive(self, version):
+        with pytest.raises(ValidationError):
+            self._props(trace_toolset_version=version)
+
+    @staticmethod
+    def _saved_config_json(parent_eval: Eval, **overrides) -> tuple[Path, dict]:
+        config = EvalConfig(
+            name="Agentic Judge",
+            parent=parent_eval,
+            config_type=EvalConfigType.v2,
+            properties=TestLlmJudgeTraceToolset._props(**overrides),
+        )
+        config.save_to_file()
+        assert config.path is not None
+        return config.path, json.loads(config.path.read_text())
+
+    def test_version_round_trips(self, v2_eval_config):
+        path, _ = self._saved_config_json(
+            v2_eval_config.parent_eval(), trace_toolset_version=1
+        )
+        loaded = EvalConfig.load_from_file(path)
+        assert isinstance(loaded.properties, LlmJudgeProperties)
+        assert loaded.properties.trace_toolset_version == 1
+
+    @pytest.mark.parametrize(
+        "stored, expected",
+        [
+            # Configs written before trace tools existed have no such key.
+            (None, None),
+            # A newer Kiln's version still loads; the judge skips at evaluation time.
+            (99, 99),
+        ],
+    )
+    def test_configs_from_other_kiln_versions_load(
+        self, v2_eval_config, stored, expected
+    ):
+        path, data = self._saved_config_json(v2_eval_config.parent_eval())
+        if stored is None:
+            del data["properties"]["trace_toolset_version"]
+        else:
+            data["properties"]["trace_toolset_version"] = stored
+        path.write_text(json.dumps(data))
+
+        loaded = EvalConfig.load_from_file(path)
+        assert isinstance(loaded.properties, LlmJudgeProperties)
+        assert loaded.properties.trace_toolset_version == expected
 
 
 # ---------------------------------------------------------------------------
@@ -5649,6 +5762,33 @@ def test_pointer_eval_run_bypasses_v1_output_requirement(
     )
     assert run.output is None
     assert run.task_run_trace is None
+
+
+_LIST_CONTENT_TRACE = [
+    {"role": "system", "content": "Score the output."},
+    {"role": "user", "content": [{"type": "text", "text": "rendered judge prompt"}]},
+    {
+        "role": "tool",
+        "tool_call_id": "call_1",
+        "content": [{"type": "text", "text": "trace tool output"}],
+    },
+    {"role": "assistant", "content": '{"accuracy": "pass"}'},
+]
+
+
+def test_judge_trace_list_content_round_trips_on_a_pointer_record(v2_eval_config):
+    """List `content` must survive every dump and a save and load, not serialize
+    once and then as []. The judge trace is not a copy of the scored trace, so a
+    pointer record may carry it."""
+    run = EvalRun(
+        parent=v2_eval_config, **pointer_run_data(judge_trace=_LIST_CONTENT_TRACE)
+    )
+    for _ in range(2):
+        assert run.model_dump(mode="json")["judge_trace"] == _LIST_CONTENT_TRACE
+
+    run.save_to_file()
+    loaded = EvalRun.load_from_file(str(run.path))
+    assert loaded.model_dump(mode="json")["judge_trace"] == _LIST_CONTENT_TRACE
 
 
 def test_eval_usage_defaults_to_none_and_round_trips(v2_eval_config):

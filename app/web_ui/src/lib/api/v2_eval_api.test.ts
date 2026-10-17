@@ -194,6 +194,7 @@ describe("testV2EvalLlmJudge", () => {
       model_name: "gpt-4o",
       provider: "openai" as const,
       g_eval: false,
+      trace_tools: false,
     }
     const evalInput = { final_message: "test output" }
 
@@ -228,7 +229,12 @@ describe("testV2EvalLlmJudge", () => {
       "p",
       "t",
       "e",
-      { model_name: "m", provider: "openai" as const, g_eval: false },
+      {
+        model_name: "m",
+        provider: "openai" as const,
+        g_eval: false,
+        trace_tools: false,
+      },
       { final_message: "x" },
       controller.signal,
     )

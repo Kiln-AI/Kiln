@@ -1,18 +1,26 @@
 """Tests for LlmJudgeEval adapter."""
 
 import json
+import threading
 from unittest.mock import AsyncMock, Mock, patch
 
+import litellm
 import pytest
 from litellm.types.utils import ModelResponse
 
+from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.base_eval import materialize_llm_judge_properties
+from kiln_ai.adapters.eval.eval_utils.errors import JudgeContextExceededError
+from kiln_ai.adapters.eval.trace_tools import trace_toolset
 from kiln_ai.adapters.eval.v2_eval_llm_judge import (
     _DEFAULT_SYSTEM_PROMPT,
     LlmJudgeEval,
     _LlmJudgeTask,
     system_prompt_from_trace,
 )
+from kiln_ai.adapters.ml_model_list import KilnModelProvider, ModelProviderName
+from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
+from kiln_ai.adapters.retry_classification import is_retryable_error
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
@@ -29,6 +37,7 @@ from kiln_ai.datamodel.eval import (
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_run import Usage
+from kiln_ai.utils.config import Config
 
 
 def _make_props(**overrides) -> LlmJudgeProperties:
@@ -1139,3 +1148,312 @@ class TestSystemPromptFromTrace:
     )
     def test_empty_when_absent(self, trace):
         assert system_prompt_from_trace(trace) == ""
+
+
+_JUDGED_TRACE = [
+    {"role": "system", "content": "You are a librarian."},
+    {"role": "user", "content": "Who wrote Dune?"},
+    {"role": "assistant", "content": "Frank Herbert, in 1965."},
+]
+
+
+def _v1_overview(trace: list[dict[str, str]]) -> str:
+    toolset = trace_toolset(1)
+    return toolset.render_overview(toolset.build_view(trace))
+
+
+def _scoring_adapter(trace: list[dict[str, str]] | None = None) -> AsyncMock:
+    adapter = AsyncMock()
+    adapter.invoke_returning_run_output.return_value = (
+        _judge_run(trace=trace),
+        RunOutput(output={"quality": "4"}, intermediate_outputs=None),
+    )
+    return adapter
+
+
+class _RecordingToolset:
+    """A stand-in trace toolset that records which thread did its CPU work."""
+
+    def __init__(self, version: int):
+        self.version = version
+        self.threads: list[int] = []
+
+    def build_view(self, trace):
+        self.threads.append(threading.get_ident())
+        return ("view", self.version)
+
+    def render_overview(self, view) -> str:
+        self.threads.append(threading.get_ident())
+        return f"overview v{view[1]}"
+
+    def build_tools(self, view):
+        return []
+
+
+class TestLlmJudgeTraceTools:
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_trace_tools_on_passes_the_five_tools_and_caches(
+        self, mock_adapter_for_task
+    ):
+        judge_trace = [{"role": "assistant", "content": '{"quality": "4"}'}]
+        mock_adapter_for_task.return_value = _scoring_adapter(judge_trace)
+        cfg = _make_config(
+            _make_props(prompt_template="Judge it.", trace_toolset_version=1)
+        )
+
+        result = await LlmJudgeEval(cfg).evaluate(_inp(trace=_JUDGED_TRACE))
+
+        adapter_config = mock_adapter_for_task.call_args[1]["base_adapter_config"]
+        assert adapter_config.automatic_prompt_caching is True
+        assert adapter_config.unmanaged_tools is not None
+        assert [await tool.name() for tool in adapter_config.unmanaged_tools] == [
+            "trace_overview",
+            "preview_messages",
+            "read_messages",
+            "read_message_text",
+            "search_trace",
+        ]
+        assert result.scores == {"quality": 4.0}
+        assert result.judge_trace == judge_trace
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_trace_tools_off_passes_no_tools(self, mock_adapter_for_task):
+        mock_adapter_for_task.return_value = _scoring_adapter()
+
+        await LlmJudgeEval(_make_config()).evaluate(_inp(trace=_JUDGED_TRACE))
+
+        adapter_config = mock_adapter_for_task.call_args[1]["base_adapter_config"]
+        assert adapter_config.unmanaged_tools is None
+        assert adapter_config.automatic_prompt_caching is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("trace", [None, []])
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_trace_tools_without_a_trace_skips(
+        self, mock_adapter_for_task, trace
+    ):
+        cfg = _make_config(_make_props(trace_toolset_version=1))
+
+        result = await LlmJudgeEval(cfg).evaluate(_inp(trace=trace))
+
+        assert result.skipped_reason == SkippedReason.missing_trace
+        assert result.skipped_detail is not None
+        mock_adapter_for_task.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_trace_overview_renders_in_a_tools_off_template(
+        self, mock_adapter_for_task
+    ):
+        mock_adapter = _scoring_adapter()
+        mock_adapter_for_task.return_value = mock_adapter
+        cfg = _make_config(
+            _make_props(prompt_template="<o>{{ trace | trace_overview }}</o>")
+        )
+
+        await LlmJudgeEval(cfg).evaluate(_inp(trace=_JUDGED_TRACE))
+
+        rendered = mock_adapter.invoke_returning_run_output.call_args[0][0]
+        assert rendered == f"<o>{_v1_overview(_JUDGED_TRACE)}</o>"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "trace_toolset_version, expected_overview",
+        [(2, "overview v2"), (None, "overview v1")],
+    )
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_trace_overview_follows_the_judge_version(
+        self, mock_adapter_for_task, trace_toolset_version, expected_overview
+    ):
+        """A judge with trace tools renders its own version's overview; one without
+        them always renders the v1 overview, so its prompt never changes."""
+        mock_adapter = _scoring_adapter()
+        mock_adapter_for_task.return_value = mock_adapter
+        cfg = _make_config(
+            _make_props(
+                prompt_template="{{ trace | trace_overview }}",
+                trace_toolset_version=trace_toolset_version,
+            )
+        )
+
+        with patch(
+            "kiln_ai.adapters.eval.v2_eval_llm_judge.trace_toolset",
+            side_effect=lambda version: _RecordingToolset(version),
+        ):
+            await LlmJudgeEval(cfg).evaluate(_inp(trace=_JUDGED_TRACE))
+
+        rendered = mock_adapter.invoke_returning_run_output.call_args[0][0]
+        assert rendered == expected_overview
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_unsupported_trace_toolset_version_skips(self, mock_adapter_for_task):
+        cfg = _make_config(_make_props(trace_toolset_version=99))
+
+        result = await LlmJudgeEval(cfg).evaluate(_inp(trace=_JUDGED_TRACE))
+
+        assert result.skipped_reason == SkippedReason.type_not_available
+        assert result.skipped_detail == (
+            "This judge uses trace tools version 99, which this version of Kiln "
+            "doesn't support. Update Kiln to run it."
+        )
+        mock_adapter_for_task.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("trace_toolset_version", [1, None])
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_view_and_render_run_off_the_event_loop(
+        self, mock_adapter_for_task, trace_toolset_version
+    ):
+        """Parsing a large trace is CPU-bound. With tools on the view is built up
+        front; with tools off the overview filter builds it during the render.
+        Neither may run on the event loop's thread."""
+        mock_adapter_for_task.return_value = _scoring_adapter()
+        cfg = _make_config(
+            _make_props(
+                prompt_template="{{ trace | trace_overview }}",
+                trace_toolset_version=trace_toolset_version,
+            )
+        )
+        toolset = _RecordingToolset(1)
+
+        with patch(
+            "kiln_ai.adapters.eval.v2_eval_llm_judge.trace_toolset",
+            return_value=toolset,
+        ):
+            await LlmJudgeEval(cfg).evaluate(_inp(trace=_JUDGED_TRACE))
+
+        assert len(toolset.threads) == 2
+        assert threading.get_ident() not in toolset.threads
+
+
+def _run_error(original: Exception, tool_messages: int = 0) -> KilnRunError:
+    partial_trace = [{"role": "user", "content": "rendered judge prompt"}] + [
+        {"role": "tool", "tool_call_id": f"call_{i}", "content": "tool output"}
+        for i in range(tool_messages)
+    ]
+    return KilnRunError(
+        message="The judge failed.", partial_trace=partial_trace, original=original
+    )
+
+
+class TestLlmJudgeContextExceeded:
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_context_window_overflow_is_not_retried(self, mock_adapter_for_task):
+        overflow = litellm.ContextWindowExceededError(
+            message="too long", model="gpt-4o", llm_provider="openai"
+        )
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.side_effect = _run_error(
+            overflow, tool_messages=2
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+        cfg = _make_config(_make_props(trace_toolset_version=1))
+
+        with pytest.raises(JudgeContextExceededError) as exc_info:
+            await LlmJudgeEval(cfg).evaluate(_inp(trace=_JUDGED_TRACE))
+
+        assert exc_info.value.tool_call_count == 2
+        assert "after 2 trace tool calls" in str(exc_info.value)
+        assert is_retryable_error(exc_info.value) is False
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_other_run_errors_propagate_unchanged(self, mock_adapter_for_task):
+        run_error = _run_error(RuntimeError("Too many tool calls"))
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.side_effect = run_error
+        mock_adapter_for_task.return_value = mock_adapter
+
+        with pytest.raises(KilnRunError) as exc_info:
+            await LlmJudgeEval(_make_config()).evaluate(_inp())
+
+        assert exc_info.value is run_error
+
+    @pytest.mark.parametrize(
+        "tool_call_count, expected",
+        [
+            (
+                1234,
+                "The judge model ran out of context after 1,234 trace tool calls. Use "
+                "a judge model with a larger context window, or a prompt that needs "
+                "less of the trace.",
+            ),
+            (
+                1,
+                "The judge model ran out of context after 1 trace tool call. Use "
+                "a judge model with a larger context window, or a prompt that needs "
+                "less of the trace.",
+            ),
+            (
+                0,
+                "The judge model ran out of context. Use a judge model with a larger "
+                "context window, or a prompt that needs less of the trace.",
+            ),
+        ],
+    )
+    def test_message(self, tool_call_count, expected):
+        assert str(JudgeContextExceededError(tool_call_count)) == expected
+
+    def test_from_run_error_counts_tool_results(self):
+        error = JudgeContextExceededError.from_run_error(
+            _run_error(ValueError("overflow"), tool_messages=3)
+        )
+        assert error.tool_call_count == 3
+
+
+class TestLlmJudgeTraceToolsEndToEnd:
+    """The real adapter loop with a scripted model: the judge reads the trace with a
+    tool, then answers."""
+
+    @staticmethod
+    def _model_turns() -> list[ModelResponse]:
+        tool_call = {
+            "id": "call_overview",
+            "type": "function",
+            "function": {"name": "trace_overview", "arguments": "{}"},
+        }
+        return [
+            ModelResponse(
+                model="gpt-4o",
+                choices=[{"message": {"content": None, "tool_calls": [tool_call]}}],
+            ),
+            ModelResponse(
+                model="gpt-4o",
+                choices=[{"message": {"content": json.dumps({"quality": 4})}}],
+            ),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_judge_reads_the_trace_then_scores(self):
+        Config.shared().save_setting("open_ai_api_key", "fake-key")
+        turns = self._model_turns()
+        cfg = _make_config(
+            _make_props(prompt_template="Judge the trace.", trace_toolset_version=1)
+        )
+
+        with (
+            patch.object(
+                LiteLlmAdapter,
+                "model_provider",
+                return_value=KilnModelProvider(
+                    name=ModelProviderName.openai, model_id="gpt-4o"
+                ),
+            ),
+            patch.object(LiteLlmAdapter, "build_completion_kwargs", return_value={}),
+            patch.object(
+                LiteLlmAdapter,
+                "acompletion_checking_response",
+                side_effect=[(turn, turn.choices[0]) for turn in turns],
+            ),
+        ):
+            result = await LlmJudgeEval(cfg).evaluate(_inp(trace=_JUDGED_TRACE))
+
+        assert result.scores == {"quality": 4.0}
+        assert result.judge_trace is not None
+        tool_results = [m for m in result.judge_trace if m["role"] == "tool"]
+        assert len(tool_results) == 1
+        assert tool_results[0]["content"] == _v1_overview(_JUDGED_TRACE)

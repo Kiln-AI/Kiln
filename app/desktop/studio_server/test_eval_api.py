@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 from kiln_ai.adapters.eval.eval_runner import EvalRunner
+from kiln_ai.adapters.eval.eval_utils.errors import JudgeContextExceededError
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel import (
@@ -31,6 +32,8 @@ from kiln_ai.datamodel.datamodel_enums import (
     StructuredOutputMode,
 )
 from kiln_ai.datamodel.eval import (
+    G_EVAL_WITH_TRACE_TOOLS_ERROR,
+    LATEST_TRACE_TOOLSET_VERSION,
     ContainsProperties,
     Eval,
     EvalConfig,
@@ -6994,10 +6997,102 @@ class TestTestV2Eval:
             system_prompt=None,
             judge_instructions=None,
             run_config=None,
+            trace_tools=False,
         )
         body = response.json()
         assert "accuracy" in body["scores"]
         assert body["skipped_reason"] is None
+
+    def test_trace_tools_builder_input_runs_an_agentic_judge(
+        self, client, mock_v2_eval
+    ):
+        """The judge gets the trace tools and the overview, and the response carries
+        its trace with list content intact."""
+        judge_trace = [
+            {"role": "system", "content": "You are an evaluator."},
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": "rendered judge prompt"}],
+            },
+            {"role": "assistant", "content": '{"accuracy": "pass"}'},
+        ]
+        mock_adapter = MagicMock()
+        mock_adapter.invoke_returning_run_output = AsyncMock(
+            return_value=(
+                Mock(usage=None, trace=judge_trace),
+                RunOutput(output={"accuracy": "pass"}, intermediate_outputs=None),
+            )
+        )
+        payload = {
+            "llm_judge_builder_input": {
+                "model_name": "gpt-4o",
+                "provider": "openai",
+                "g_eval": False,
+                "trace_tools": True,
+            },
+            "eval_input": {
+                "final_message": "Frank Herbert.",
+                "trace": [
+                    {"role": "user", "content": "Who wrote Dune?"},
+                    {"role": "assistant", "content": "Frank Herbert."},
+                ],
+            },
+        }
+        with (
+            patch(
+                "app.desktop.studio_server.eval_api.eval_from_id",
+                return_value=mock_v2_eval,
+            ),
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task",
+                return_value=mock_adapter,
+            ) as mock_adapter_for_task,
+        ):
+            response = client.post(self._url(), json=payload)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"] == {"accuracy": 1.0}
+        assert body["judge_trace"] == judge_trace
+        adapter_config = mock_adapter_for_task.call_args.kwargs["base_adapter_config"]
+        assert len(adapter_config.unmanaged_tools) == 5
+        rendered = mock_adapter.invoke_returning_run_output.call_args.args[0]
+        assert "<trace_overview>\nTrace: 2 messages," in rendered
+
+    def test_g_eval_with_trace_tools_returns_422(self, client, mock_v2_eval):
+        payload = {
+            "llm_judge_builder_input": {
+                "model_name": "gpt-4o",
+                "provider": "openai",
+                "g_eval": True,
+                "trace_tools": True,
+            },
+            "eval_input": {"final_message": "test output"},
+        }
+        with patch(
+            "app.desktop.studio_server.eval_api.eval_from_id",
+            return_value=mock_v2_eval,
+        ):
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 422
+        assert G_EVAL_WITH_TRACE_TOOLS_ERROR in response.json()["message"]
+
+    def test_judge_context_overflow_returns_422(self, client, mock_v2_eval):
+        with (
+            patch(
+                "app.desktop.studio_server.eval_api.eval_from_id",
+                return_value=mock_v2_eval,
+            ),
+            patch(
+                "app.desktop.studio_server.eval_api.v2_eval_adapter_from_config"
+            ) as mock_adapter_factory,
+        ):
+            mock_adapter_factory.return_value.evaluate = AsyncMock(
+                side_effect=JudgeContextExceededError(3)
+            )
+            response = client.post(self._url(), json=self._exact_match_payload())
+        assert response.status_code == 422
+        assert response.json()["message"] == str(JudgeContextExceededError(3))
 
     def test_400_when_no_properties_or_builder_input(self, client, mock_v2_eval):
         payload = {
@@ -7118,6 +7213,41 @@ class TestCreateLlmJudgeConfig:
         assert props["system_prompt"] is not None
         assert props["thinking_instruction"] is not None
         assert props["reference_keys"] == []
+        assert props["trace_toolset_version"] is None
+
+    def test_trace_tools(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                    "trace_tools": True,
+                },
+            )
+        assert response.status_code == 200
+        props = response.json()["properties"]
+        assert props["trace_toolset_version"] == LATEST_TRACE_TOOLSET_VERSION
+        assert "{{ trace | trace_overview }}" in props["prompt_template"]
+        assert "{{ trace | format_trace }}" not in props["prompt_template"]
+
+    def test_g_eval_with_trace_tools_returns_422(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(
+                self._url(),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": True,
+                    "trace_tools": True,
+                },
+            )
+        assert response.status_code == 422
+        assert G_EVAL_WITH_TRACE_TOOLS_ERROR in response.json()["message"]
+        assert mock_v2_eval.configs() == []
 
     def test_g_eval_true(self, client, mock_v2_eval):
         with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
@@ -7527,6 +7657,21 @@ class TestDefaultLlmJudgePrompt:
             == created.json()["properties"]["reference_keys"]
         )
 
+    @pytest.mark.parametrize(
+        "query, uses_trace_tools",
+        [("", False), ("?trace_tools=false", False), ("?trace_tools=true", True)],
+    )
+    def test_trace_tools_query(self, client, mock_v2_eval, query, uses_trace_tools):
+        with patch(
+            "app.desktop.studio_server.eval_api.eval_from_id",
+            return_value=mock_v2_eval,
+        ):
+            response = client.get(self._url() + query)
+        assert response.status_code == 200
+        judge_prompt = response.json()["judge_prompt"]
+        assert ("{{ trace | trace_overview }}" in judge_prompt) is uses_trace_tools
+        assert ("{{ trace | format_trace }}" in judge_prompt) is not uses_trace_tools
+
     def test_reference_keys_empty_for_an_ordinary_eval(self, client, mock_v2_eval):
         with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
             mock_eid.return_value = mock_v2_eval
@@ -7683,6 +7828,20 @@ class TestTestV2EvalDraft:
         assert response.status_code == 200
         # The transient eval must never be saved to the task.
         assert mock_task.evals() == []
+
+    def test_judge_context_overflow_returns_422(
+        self, client, mock_task, mock_task_from_id
+    ):
+        mock_task_from_id.return_value = mock_task
+        with patch(
+            "app.desktop.studio_server.eval_api.v2_eval_adapter_from_config"
+        ) as mock_adapter_factory:
+            mock_adapter_factory.return_value.evaluate = AsyncMock(
+                side_effect=JudgeContextExceededError(3)
+            )
+            response = client.post(self._url(), json=self._payload())
+        assert response.status_code == 422
+        assert response.json()["message"] == str(JudgeContextExceededError(3))
 
     def test_code_eval_untrusted_skip(self, client, mock_task, mock_task_from_id):
         payload = self._payload()

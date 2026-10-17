@@ -31,6 +31,15 @@ class TestCompileTemplateOrRaise:
             compile_template_or_raise("{% for x in items %}")
 
 
+class TestTraceOverviewPlaceholder:
+    def test_compiles_outside_judges(self):
+        compile_template_or_raise("{{ trace | trace_overview }}")
+
+    def test_rendering_outside_judges_raises(self):
+        with pytest.raises(JinjaExtractionError, match="only available in LLM judge"):
+            _template_env.from_string("{{ trace | trace_overview }}").render(trace=[])
+
+
 class TestCompileExpressionOrRaise:
     def test_valid_expression(self):
         compile_expression_or_raise("foo")
@@ -537,6 +546,13 @@ class TestTemplateEnvWithFilters:
         assert dict(_template_env.filters) == base_filters
         with pytest.raises(TemplateAssertionError):
             _template_env.from_string("{{ 'hi' | shout }}")
+
+    def test_binding_trace_overview_keeps_the_base_placeholder(self):
+        env = template_env_with_filters({"trace_overview": lambda value: "overview"})
+
+        assert env.from_string("{{ x | trace_overview }}").render(x=[]) == "overview"
+        with pytest.raises(JinjaExtractionError, match="only available in LLM judge"):
+            _template_env.from_string("{{ x | trace_overview }}").render(x=[])
 
     def test_keeps_template_env_settings(self):
         env = template_env_with_filters({})

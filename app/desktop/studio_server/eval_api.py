@@ -14,6 +14,7 @@ from kiln_ai.adapters.eval.base_eval import (
     materialize_llm_judge_properties,
 )
 from kiln_ai.adapters.eval.eval_runner import EvalRunner, no_golden_set_message
+from kiln_ai.adapters.eval.eval_utils.errors import JudgeContextExceededError
 from kiln_ai.adapters.eval.registry import v2_eval_adapter_from_config
 from kiln_ai.adapters.eval.v2_eval_code_eval import (
     CodeEvalAdapter,
@@ -43,6 +44,7 @@ from kiln_ai.datamodel.dataset_filters import (
     eval_input_filter_from_id,
 )
 from kiln_ai.datamodel.eval import (
+    G_EVAL_WITH_TRACE_TOOLS_ERROR,
     V2_PROPERTY_TYPES,
     CodeEvalProperties,
     Eval,
@@ -87,7 +89,11 @@ from kiln_ai.datamodel.world import World, WorldReset
 from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.name_generator import generate_memorable_name
-from kiln_ai.utils.open_ai_types import serialize_trace
+from kiln_ai.utils.open_ai_types import (
+    ChatCompletionMessageParam,
+    materialize_lazy_content,
+    serialize_trace,
+)
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
@@ -112,7 +118,9 @@ from pydantic import (
     JsonValue,
     ValidationError,
     field_validator,
+    model_validator,
 )
+from typing_extensions import Self
 
 from app.desktop.studio_server.code_tool_api import ToolCallLogEntryResponse
 
@@ -405,11 +413,15 @@ class CreateEvalConfigRequest(BaseModel):
 
 
 class LlmJudgeBuilderInput(BaseModel):
-    """Shared fields for llm_judge: model, provider, g_eval."""
+    """Shared fields for llm_judge: model, provider, scoring mode."""
 
     model_name: str = Field(description="The LLM model to use as judge.")
     provider: ModelProviderName = Field(description="The model provider.")
     g_eval: bool = Field(description="Whether to use G-Eval logprob scoring.")
+    trace_tools: bool = Field(
+        default=False,
+        description="Give the judge read-only tools for reading the judged trace (an agentic judge), at the latest toolset version. If judge_prompt is unset, the default prompt for trace tools is used. Can't be combined with g_eval.",
+    )
     judge_prompt: str | None = Field(
         default=None,
         description="Override the judge prompt template. If unset, the server assembles a rich default from the eval's task and spec.",
@@ -426,6 +438,12 @@ class LlmJudgeBuilderInput(BaseModel):
         default=None,
         description="Optional settings for the judge model call (thinking level, temperature, top_p). Each unset field keeps its default.",
     )
+
+    @model_validator(mode="after")
+    def validate_scoring_mode(self) -> Self:
+        if self.g_eval and self.trace_tools:
+            raise ValueError(G_EVAL_WITH_TRACE_TOOLS_ERROR)
+        return self
 
 
 class DefaultLlmJudgePromptResponse(BaseModel):
@@ -480,6 +498,18 @@ class TestV2EvalResponse(BaseModel):
         default_factory=list,
         description="Tools the scorer code called, in call order. Code evals only.",
     )
+    judge_trace: list[ChatCompletionMessageParam] | None = Field(
+        default=None,
+        description="The judge model's conversation, for LLM judges: system prompt, rendered judge prompt, any trace tool calls and results, and final answer.",
+    )
+
+    @model_validator(mode="after")
+    def materialize_judge_trace_content(self) -> Self:
+        # Same reason as TaskRun.materialize_trace_content: lazily validated list
+        # `content` would otherwise serialize as [].
+        if self.judge_trace is not None:
+            materialize_lazy_content(self.judge_trace)
+        return self
 
 
 class TestV2EvalDraftRequest(BaseModel):
@@ -532,7 +562,10 @@ async def run_v2_eval_test(
         # it called -- nested LLM calls in particular are real spend.
         adapter.tool_call_recorder = tool_call_log.append
 
-    result = await adapter.evaluate(eval_input)
+    try:
+        result = await adapter.evaluate(eval_input)
+    except JudgeContextExceededError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
     score_range_errors: list[str] | None = None
     if result.skipped_reason is None and result.scores:
@@ -549,6 +582,7 @@ async def run_v2_eval_test(
         score_range_errors=score_range_errors,
         intermediate_outputs=result.intermediate_outputs,
         tool_call_log=ToolCallLogEntryResponse.from_log(tool_call_log),
+        judge_trace=result.judge_trace,
     )
 
 
@@ -2487,6 +2521,7 @@ def connect_evals_api(app: FastAPI):
                 system_prompt=request.system_prompt,
                 judge_instructions=request.judge_instructions,
                 run_config=request.run_config,
+                trace_tools=request.trace_tools,
             )
             eval_config = EvalConfig(
                 name=name,
@@ -2524,6 +2559,12 @@ def connect_evals_api(app: FastAPI):
             Path(description="The unique identifier of the task within the project."),
         ],
         eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+        trace_tools: Annotated[
+            bool,
+            Query(
+                description="Return the default prompt for a judge with trace tools (an agentic judge): the run's system prompt and a trace overview instead of the full trace."
+            ),
+        ] = False,
     ) -> DefaultLlmJudgePromptResponse:
         eval = eval_from_id(project_id, task_id, eval_id)
         # `reference_keys` comes from the same predicate `materialize_llm_judge_properties`
@@ -2531,7 +2572,7 @@ def connect_evals_api(app: FastAPI):
         # including when the user edits the reference block out of the prompt, which the
         # server ignores.
         return DefaultLlmJudgePromptResponse(
-            judge_prompt=build_default_llm_judge_prompt(eval),
+            judge_prompt=build_default_llm_judge_prompt(eval, trace_tools),
             system_prompt=DEFAULT_SYSTEM_PROMPT,
             reference_keys=derived_reference_keys(eval),
         )
@@ -2567,6 +2608,7 @@ def connect_evals_api(app: FastAPI):
                     system_prompt=builder.system_prompt,
                     judge_instructions=builder.judge_instructions,
                     run_config=builder.run_config,
+                    trace_tools=builder.trace_tools,
                 )
             elif request.properties is not None:
                 properties = request.properties

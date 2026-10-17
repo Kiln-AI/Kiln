@@ -312,6 +312,7 @@
             provider:
               llm_provider_name! as components["schemas"]["ModelProviderName"],
             g_eval,
+            trace_tools: false,
             judge_prompt: llm_judge_prompt ?? null,
             system_prompt: llm_system_prompt ?? null,
             judge_instructions: cleaned_judge_instructions(),
@@ -467,6 +468,7 @@
           provider:
             llm_provider_name as components["schemas"]["ModelProviderName"],
           g_eval,
+          trace_tools: false,
           judge_prompt: llm_judge_prompt ?? null,
           system_prompt: llm_system_prompt ?? null,
           judge_instructions: cleaned_judge_instructions(),
