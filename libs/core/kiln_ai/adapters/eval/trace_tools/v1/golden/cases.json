@@ -1,0 +1,729 @@
+[
+  {
+    "id": "coding_overview",
+    "trace": "coding_agent",
+    "tool": "trace_overview",
+    "args": {}
+  },
+  {
+    "id": "coding_preview_default",
+    "trace": "coding_agent",
+    "tool": "preview_messages",
+    "args": {}
+  },
+  {
+    "id": "coding_preview_sizes_only",
+    "trace": "coding_agent",
+    "tool": "preview_messages",
+    "args": {
+      "preview_chars": 0
+    }
+  },
+  {
+    "id": "coding_preview_assistant_range",
+    "trace": "coding_agent",
+    "tool": "preview_messages",
+    "args": {
+      "roles": [
+        "assistant"
+      ],
+      "start": 5,
+      "end": 14,
+      "preview_chars": 30
+    }
+  },
+  {
+    "id": "coding_preview_single_message",
+    "trace": "coding_agent",
+    "tool": "preview_messages",
+    "args": {
+      "start": 16,
+      "end": 16,
+      "preview_chars": 1000
+    }
+  },
+  {
+    "id": "coding_preview_no_match",
+    "trace": "coding_agent",
+    "tool": "preview_messages",
+    "args": {
+      "roles": [
+        "developer"
+      ]
+    }
+  },
+  {
+    "id": "coding_read_default",
+    "trace": "coding_agent",
+    "tool": "read_messages",
+    "args": {}
+  },
+  {
+    "id": "coding_read_numbers",
+    "trace": "coding_agent",
+    "tool": "read_messages",
+    "args": {
+      "numbers": [
+        4,
+        3,
+        3,
+        5
+      ]
+    }
+  },
+  {
+    "id": "coding_read_numbers_excluded",
+    "trace": "coding_agent",
+    "tool": "read_messages",
+    "args": {
+      "numbers": [
+        1,
+        2,
+        6,
+        14
+      ],
+      "roles": [
+        "assistant",
+        "user"
+      ],
+      "parts": [
+        "content"
+      ]
+    }
+  },
+  {
+    "id": "coding_read_numbers_none_kept",
+    "trace": "coding_agent",
+    "tool": "read_messages",
+    "args": {
+      "numbers": [
+        6,
+        14
+      ],
+      "parts": [
+        "content"
+      ]
+    }
+  },
+  {
+    "id": "coding_read_reasoning",
+    "trace": "coding_agent",
+    "tool": "read_messages",
+    "args": {
+      "roles": [
+        "assistant"
+      ],
+      "parts": [
+        "reasoning"
+      ]
+    }
+  },
+  {
+    "id": "coding_read_all_parts_cut",
+    "trace": "coding_agent",
+    "tool": "read_messages",
+    "args": {
+      "start": 3,
+      "end": 6,
+      "parts": [
+        "tool_calls",
+        "content",
+        "reasoning"
+      ],
+      "max_chars": 60
+    }
+  },
+  {
+    "id": "coding_read_tool_calls_only",
+    "trace": "coding_agent",
+    "tool": "read_messages",
+    "args": {
+      "roles": [
+        "assistant"
+      ],
+      "parts": [
+        "tool_calls"
+      ],
+      "max_chars": 80
+    }
+  },
+  {
+    "id": "coding_read_user_and_assistant_text",
+    "trace": "coding_agent",
+    "tool": "read_messages",
+    "args": {
+      "roles": [
+        "user",
+        "assistant"
+      ],
+      "parts": [
+        "content"
+      ]
+    }
+  },
+  {
+    "id": "coding_text_default",
+    "trace": "coding_agent",
+    "tool": "read_message_text",
+    "args": {
+      "number": 4
+    }
+  },
+  {
+    "id": "coding_text_window",
+    "trace": "coding_agent",
+    "tool": "read_message_text",
+    "args": {
+      "number": 4,
+      "offset": 1000,
+      "max_chars": 200
+    }
+  },
+  {
+    "id": "coding_text_tail",
+    "trace": "coding_agent",
+    "tool": "read_message_text",
+    "args": {
+      "number": 4,
+      "offset": 1300
+    }
+  },
+  {
+    "id": "coding_text_last_char",
+    "trace": "coding_agent",
+    "tool": "read_message_text",
+    "args": {
+      "number": 5,
+      "offset": 32
+    }
+  },
+  {
+    "id": "coding_text_reasoning",
+    "trace": "coding_agent",
+    "tool": "read_message_text",
+    "args": {
+      "number": 3,
+      "part": "reasoning",
+      "max_chars": 50
+    }
+  },
+  {
+    "id": "coding_text_tool_calls",
+    "trace": "coding_agent",
+    "tool": "read_message_text",
+    "args": {
+      "number": 6,
+      "part": "tool_calls",
+      "offset": 60,
+      "max_chars": 100
+    }
+  },
+  {
+    "id": "coding_search_default",
+    "trace": "coding_agent",
+    "tool": "search_trace",
+    "args": {
+      "pattern": "failed"
+    }
+  },
+  {
+    "id": "coding_search_case_sensitive_context",
+    "trace": "coding_agent",
+    "tool": "search_trace",
+    "args": {
+      "pattern": "FAILED",
+      "case_sensitive": true,
+      "context_chars": 40
+    }
+  },
+  {
+    "id": "coding_search_regex",
+    "trace": "coding_agent",
+    "tool": "search_trace",
+    "args": {
+      "pattern": "\\d+ passed",
+      "regex": true,
+      "context_chars": 10
+    }
+  },
+  {
+    "id": "coding_search_literal_metacharacters",
+    "trace": "coding_agent",
+    "tool": "search_trace",
+    "args": {
+      "pattern": "0.01",
+      "context_chars": 15
+    }
+  },
+  {
+    "id": "coding_search_with_reasoning",
+    "trace": "coding_agent",
+    "tool": "search_trace",
+    "args": {
+      "pattern": "quantize",
+      "parts": [
+        "reasoning",
+        "content",
+        "tool_calls"
+      ]
+    }
+  },
+  {
+    "id": "coding_search_paging",
+    "trace": "coding_agent",
+    "tool": "search_trace",
+    "args": {
+      "pattern": "billing",
+      "count": 3,
+      "offset": 2
+    }
+  },
+  {
+    "id": "coding_search_roles_and_range",
+    "trace": "coding_agent",
+    "tool": "search_trace",
+    "args": {
+      "pattern": "tests",
+      "roles": [
+        "tool"
+      ],
+      "start": 10,
+      "end": 16
+    }
+  },
+  {
+    "id": "coding_search_no_match",
+    "trace": "coding_agent",
+    "tool": "search_trace",
+    "args": {
+      "pattern": "kubernetes \"cluster\""
+    }
+  },
+  {
+    "id": "error_message_out_of_range",
+    "trace": "coding_agent",
+    "tool": "read_message_text",
+    "args": {
+      "number": 17
+    },
+    "raises": true
+  },
+  {
+    "id": "error_end_out_of_range",
+    "trace": "coding_agent",
+    "tool": "preview_messages",
+    "args": {
+      "start": 2,
+      "end": 40
+    },
+    "raises": true
+  },
+  {
+    "id": "error_start_after_end",
+    "trace": "coding_agent",
+    "tool": "preview_messages",
+    "args": {
+      "start": 9,
+      "end": 3
+    },
+    "raises": true
+  },
+  {
+    "id": "error_numbers_and_range",
+    "trace": "coding_agent",
+    "tool": "read_messages",
+    "args": {
+      "numbers": [
+        1
+      ],
+      "start": 1
+    },
+    "raises": true
+  },
+  {
+    "id": "error_part_missing",
+    "trace": "coding_agent",
+    "tool": "read_message_text",
+    "args": {
+      "number": 4,
+      "part": "reasoning"
+    },
+    "raises": true
+  },
+  {
+    "id": "error_offset_past_end",
+    "trace": "coding_agent",
+    "tool": "read_message_text",
+    "args": {
+      "number": 5,
+      "offset": 33
+    },
+    "raises": true
+  },
+  {
+    "id": "error_invalid_regex",
+    "trace": "coding_agent",
+    "tool": "search_trace",
+    "args": {
+      "pattern": "(unclosed",
+      "regex": true
+    },
+    "raises": true
+  },
+  {
+    "id": "error_search_offset_past_matches",
+    "trace": "coding_agent",
+    "tool": "search_trace",
+    "args": {
+      "pattern": "billing",
+      "offset": 500
+    },
+    "raises": true
+  },
+  {
+    "id": "error_regex_too_large",
+    "trace": "coding_agent",
+    "tool": "search_trace",
+    "args": {
+      "pattern": "a{100000000}",
+      "regex": true
+    },
+    "raises": true
+  },
+  {
+    "id": "error_regex_verbose",
+    "trace": "coding_agent",
+    "tool": "search_trace",
+    "args": {
+      "pattern": "(?x) billing",
+      "regex": true
+    },
+    "raises": true
+  },
+  {
+    "id": "edge_overview",
+    "trace": "edge_cases",
+    "tool": "trace_overview",
+    "args": {}
+  },
+  {
+    "id": "edge_preview_default",
+    "trace": "edge_cases",
+    "tool": "preview_messages",
+    "args": {}
+  },
+  {
+    "id": "edge_read_all_parts",
+    "trace": "edge_cases",
+    "tool": "read_messages",
+    "args": {
+      "parts": [
+        "reasoning",
+        "content",
+        "tool_calls"
+      ]
+    }
+  },
+  {
+    "id": "edge_search_unicode_case_folding",
+    "trace": "edge_cases",
+    "tool": "search_trace",
+    "args": {
+      "pattern": "CAFÉ",
+      "context_chars": 5
+    }
+  },
+  {
+    "id": "edge_error_empty_message",
+    "trace": "edge_cases",
+    "tool": "read_message_text",
+    "args": {
+      "number": 17
+    },
+    "raises": true
+  },
+  {
+    "id": "synthetic_overview",
+    "trace": "synthetic",
+    "tool": "trace_overview",
+    "args": {}
+  },
+  {
+    "id": "synthetic_preview_refused",
+    "trace": "synthetic",
+    "tool": "preview_messages",
+    "args": {},
+    "raises": true
+  },
+  {
+    "id": "synthetic_preview_sizes_tail",
+    "trace": "synthetic",
+    "tool": "preview_messages",
+    "args": {
+      "preview_chars": 0,
+      "roles": [
+        "assistant"
+      ],
+      "start": 1290
+    }
+  },
+  {
+    "id": "synthetic_read_range_refused",
+    "trace": "synthetic",
+    "tool": "read_messages",
+    "args": {
+      "start": 100,
+      "end": 400
+    },
+    "raises": true
+  },
+  {
+    "id": "synthetic_read_numbers_refused",
+    "trace": "synthetic",
+    "tool": "read_messages",
+    "args": {
+      "numbers": [
+        500,
+        501,
+        502,
+        503,
+        504,
+        505,
+        506,
+        507,
+        508,
+        509,
+        510,
+        511,
+        512,
+        513,
+        514,
+        515,
+        516,
+        517,
+        518,
+        519,
+        520,
+        521,
+        522,
+        523,
+        524,
+        525,
+        526,
+        527,
+        528,
+        529,
+        530,
+        531,
+        532,
+        533,
+        534,
+        535,
+        536,
+        537,
+        538,
+        539,
+        540,
+        541,
+        542,
+        543,
+        544,
+        545,
+        546,
+        547,
+        548,
+        549,
+        550,
+        551,
+        552,
+        553,
+        554,
+        555,
+        556,
+        557,
+        558,
+        559,
+        560,
+        561,
+        562,
+        563,
+        564,
+        565,
+        566,
+        567,
+        568,
+        569,
+        570,
+        571,
+        572,
+        573,
+        574,
+        575,
+        576,
+        577,
+        578,
+        579,
+        580,
+        581,
+        582,
+        583,
+        584,
+        585,
+        586,
+        587,
+        588,
+        589,
+        590,
+        591,
+        592,
+        593,
+        594,
+        595,
+        596,
+        597,
+        598,
+        599,
+        600,
+        601,
+        602,
+        603,
+        604,
+        605,
+        606,
+        607,
+        608,
+        609,
+        610,
+        611,
+        612,
+        613,
+        614,
+        615,
+        616,
+        617,
+        618,
+        619,
+        620,
+        621,
+        622,
+        623,
+        624,
+        625,
+        626,
+        627,
+        628,
+        629,
+        630,
+        631,
+        632,
+        633,
+        634,
+        635,
+        636,
+        637,
+        638,
+        639,
+        640,
+        641,
+        642,
+        643,
+        644,
+        645,
+        646,
+        647,
+        648,
+        649,
+        650,
+        651,
+        652,
+        653,
+        654,
+        655,
+        656,
+        657,
+        658,
+        659,
+        660,
+        661,
+        662,
+        663,
+        664,
+        665,
+        666,
+        667,
+        668,
+        669,
+        670,
+        671,
+        672,
+        673,
+        674,
+        675,
+        676,
+        677,
+        678,
+        679,
+        680,
+        681,
+        682,
+        683,
+        684,
+        685,
+        686,
+        687,
+        688,
+        689,
+        690,
+        691,
+        692,
+        693,
+        694,
+        695,
+        696,
+        697,
+        698,
+        699
+      ],
+      "roles": [
+        "tool"
+      ]
+    },
+    "raises": true
+  },
+  {
+    "id": "synthetic_read_largest_message",
+    "trace": "synthetic",
+    "tool": "read_messages",
+    "args": {
+      "numbers": [
+        248
+      ],
+      "max_chars": 40000,
+      "parts": [
+        "content"
+      ]
+    }
+  },
+  {
+    "id": "synthetic_search_paged_context",
+    "trace": "synthetic",
+    "tool": "search_trace",
+    "args": {
+      "pattern": "FAILED tests",
+      "count": 5,
+      "offset": 3,
+      "context_chars": 30
+    }
+  },
+  {
+    "id": "synthetic_search_refused",
+    "trace": "synthetic",
+    "tool": "search_trace",
+    "args": {
+      "pattern": "value_",
+      "count": 1000,
+      "context_chars": 2000
+    },
+    "raises": true
+  }
+]

@@ -1,0 +1,71 @@
+=== #1 developer (content 18) ===
+Answer in English.
+=== #2 user (content 114) ===
+Look at this chart
+[image]
+[audio]
+[file]
+[refusal] a refusal part
+[video]
+and tell me "what" it shows \ in	detail
+=== #3 assistant (content 13; tool_calls 120) ===
+Let me check.
+[call] lookup_task {"q": "chart"} → #4 ok, 64 chars
+[call] broken_args {not json → #5 ERROR, 53 chars
+[call] dict_args {"a": 1, "café": "ü"} → #6 ok, 3 chars
+[call] never_answered {} → no result
+[call] unknown  → #10 ok, 13 chars
+[call] unknown null → no result
+=== #4 tool result from lookup_task (content 64) ===
+{"output": "The chart shows revenue by month.", "run_id": "123"}
+=== #5 tool result from broken_args (content 53) ERROR ===
+Error: arguments for 'broken_args' are not valid JSON
+=== #6 tool result from dict_args (content 3) ===
+a=1
+=== #7 tool result from dict_args (content 20) ===
+second result for t3
+=== #8 tool result from unknown tool (content 13) ===
+orphan result
+=== #9 tool result from unknown tool (content 24) ===
+a result with no call id
+=== #10 tool result from unknown (content 13) ===
+{"output": 5}
+=== #11 tool result from legacy_fn (content 13) ===
+legacy result
+=== #12 assistant (tool_calls 18) ===
+[call] legacy_fn {"x": 1} → no result
+=== #13 assistant (content 33) ===
+[refusal] I can't help with that.
+=== #14 assistant (content 16) ===
+{"answer": "42"}
+=== #15 assistant (content 37; reasoning 36) ===
+[reasoning]
+Thinking about which answer to give.
+The answer follows.
+
+{"answer": "43"}
+=== #16 unknown (content 22) ===
+a message with no role
+=== #18 critic (content 16) ===
+An unusual role.
+=== #19 user (content 45) ===
+{"output": "a user message, so kept as JSON"}
+=== #21 assistant (content 78) ===
+Final answer: the chart shows revenue by month.
+Tabs	here, and unicode: café ✓
+=== #22 assistant (tool_calls 80) ===
+[call] a_tool_name_from_a_third_party_server_that_goes_on_well_past_sixty_characters {} → #23 ok, 40 chars
+=== #23 tool result from a_tool_name_from_a_third_party_server_that_goes_on_well_past… (content 40) ===
+{"output": "kept whole", "exit_code": 1}
+=== #24 tool result from a_tool_name_from_a_third_party_server_that_goes_on_well_past… (content 22) ===
+only key, so extracted
+=== #25 reviewer_a (content 9) ===
+Review a.
+=== #26 reviewer_b (content 9) ===
+Review b.
+=== #27 reviewer_c (content 9) ===
+Review c.
+=== #28 reviewer_d (content 9) ===
+Review d.
+=== #29 reviewer_e (content 9) ===
+Review e.

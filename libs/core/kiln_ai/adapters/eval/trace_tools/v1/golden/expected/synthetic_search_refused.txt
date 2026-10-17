@@ -1,0 +1,3 @@
+Too large: this would return 761,082 chars, over the 40,000 limit. Nothing was returned.
+count=54 fits at these settings.
+To narrow it: use a lower count or context_chars, a roles, parts or start/end filter, or a more specific pattern.

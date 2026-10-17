@@ -1,0 +1,3 @@
+Too large: this would return 140,064 chars, over the 40,000 limit. Nothing was returned.
+Messages #100–#188 fit at these settings (start=100, end=188).
+To narrow it: use a smaller range or fewer numbers, a roles filter, fewer parts, or a lower max_chars; or call preview_messages first to choose messages.

@@ -1,0 +1,3 @@
+=== #3 assistant — reasoning chars 0–50 of 150 ===
+The user wants invoices built from line items. Fir
+<truncated: 100 more chars; read_message_text(number=3, part=reasoning, offset=50)>

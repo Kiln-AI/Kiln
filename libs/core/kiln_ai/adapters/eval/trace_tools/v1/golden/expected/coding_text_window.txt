@@ -1,0 +1,11 @@
+=== #4 tool result from read_file — content chars 1,000–1,200 of 1,353 ===
+turn "\n".join([header, *rows])
+
+
+def legacy_total(invoice: Invoice) -> Decimal:
+    # Kept for the legacy exporter.
+    return invoice.total(Decimal("0.2"))
+
+
+def format_money(amount: Decimal) -> str
+<truncated: 153 more chars; read_message_text(number=4, part=content, offset=1200)>

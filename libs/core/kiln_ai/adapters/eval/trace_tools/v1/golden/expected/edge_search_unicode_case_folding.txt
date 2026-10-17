@@ -1,0 +1,3 @@
+2 matches in 2 messages. Showing matches 1–2.
+#3 assistant tool_calls @69: <truncated> " 1, \"café\": \"ü" <truncated>
+#21 assistant content @72: <truncated> "ode: café ✓"

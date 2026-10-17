@@ -1,0 +1,1 @@
+#16 assistant 204: "Done. I split billing into three modules: invoice.py, line_items.py and totals.py. The public Invoice API is unchanged, and all 212 tests pass. billing/legacy didn't exist, so there was nothing to delete."

@@ -1,0 +1,1 @@
+Pattern too large: it would compile to over 100,000 elements. Use smaller {m,n} repeat counts (or * and + instead), or a shorter pattern.

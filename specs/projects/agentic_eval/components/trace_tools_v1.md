@@ -42,7 +42,7 @@ Built in this order, with non-empty pieces joined by a blank line (`"\n\n"`):
      - any other dict with a string `type` becomes `[<type>]`;
      - anything else is skipped.
    - `None` or anything else gives `""`.
-2. **Kiln task-tool results**, for role `tool` only. If the text from step 1 parses as a JSON object with a string `"output"` key, it is replaced by that value.
+2. **Kiln task-tool results**, for role `tool` only. If the text from step 1 parses as a JSON object whose only key is `"output"`, with a string value, it is replaced by that value. An object with any other key is kept whole, so no field is hidden from the judge.
 3. **Assistant refusals.** If `refusal` is a non-empty string, append `[refusal] <refusal>`.
 4. **Structured answers.** For each assistant `tool_calls` entry named `task_response`, take its `function.arguments`; the last one wins. If one is found, append it, canonicalized as in §2.4.
 
@@ -84,8 +84,9 @@ Built in this order, with non-empty pieces joined by a blank line (`"\n\n"`):
 | `count_(x, word, plural=None)` | `"1 message"`, `"2 messages"`. `plural` overrides the form, e.g. `"matches"`. |
 | `approx_tokens(chars)` | With `t = chars / 4`: below 1,000 gives `~{round(t)}`; below 1,000,000 gives `~{round(t/1000)}k`; otherwise `~{t/1e6:.1f}M`. |
 | `quote(text, n)` | `json.dumps(text[:n], ensure_ascii=False)`, followed by `" <truncated>"` if `len(text) > n`. |
-| `short_label(m)` | `"tool <tool_name>"` for tool results, otherwise the role. |
-| `long_label(m)` | `"tool result from <tool_name>"` for tool results, otherwise the role. |
+| `display_name(name)` | `name` if it is at most `NAME_CHARS` (60) characters, otherwise its first 60 characters followed by `…`. |
+| `short_label(m)` | `"tool <tool_name>"` for tool results, otherwise the role. Both through `display_name`. |
+| `long_label(m)` | `"tool result from <tool_name>"` for tool results, otherwise the role. Both through `display_name`. |
 | `roles_suffix(roles)` | `""`, or `", roles: user, assistant"` (in the order given). |
 
 ### 3.2 Cut markers
@@ -93,6 +94,7 @@ Built in this order, with non-empty pieces joined by a blank line (`"\n\n"`):
 - **Previews:** `quote()` puts ` <truncated>` after the closing quote.
 - **Full text cut by `max_chars`:** the next line is `<truncated: {n_(rest)} more chars; read_message_text(number={n}, part={part}, offset={o})>`.
 - **Nothing else** in the output contains `<truncated`.
+- **Names.** Roles and tool names come from the trace and can be any length. Every label, preview line and overview row shows them through `display_name`. The one exception is the `[call]` lines of `read_messages`, which show the full name, because their continuation offsets count it.
 
 ### 3.3 Limits (`limits.py`)
 
@@ -107,9 +109,12 @@ Built in this order, with non-empty pieces joined by a blank line (`"\n\n"`):
 | `SEARCH_COUNT_DEFAULT` / `SEARCH_COUNT_MAX` | 100 / 1,000 |
 | `SEARCH_CONTEXT_DEFAULT` / `SEARCH_CONTEXT_MAX` | 0 / 2,000 |
 | `SEARCH_TIMEOUT_SECONDS` | 30 |
+| `SEARCH_PATTERN_ELEMENTS_MAX` | 100,000 |
 | `OVERVIEW_PREVIEW_CHARS` | 300 |
 | `OVERVIEW_TOP_TOOLS` | 20 |
 | `OVERVIEW_LARGEST` | 5 |
+| `OVERVIEW_OTHER_ROLES` | 5 |
+| `NAME_CHARS` | 60 |
 
 ### 3.4 Shared argument rules
 
@@ -130,8 +135,8 @@ The fixed definition order is `trace_overview`, `preview_messages`, `read_messag
 Shared schema fragments:
 
 ```json
-"roles":  {"type": "array", "items": {"type": "string", "enum": ["system", "developer", "user", "assistant", "tool"]}, "minItems": 1, "uniqueItems": true}
-"parts":  {"type": "array", "items": {"type": "string", "enum": ["content", "reasoning", "tool_calls"]}, "minItems": 1, "uniqueItems": true}
+"roles":  {"type": "array", "items": {"type": "string", "enum": ["system", "developer", "user", "assistant", "tool"]}, "minItems": 1}
+"parts":  {"type": "array", "items": {"type": "string", "enum": ["content", "reasoning", "tool_calls"]}, "minItems": 1}
 "start":  {"type": "integer", "minimum": 1, "description": "First message number to include (inclusive). Default 1."}
 "end":    {"type": "integer", "minimum": 1, "description": "Last message number to include (inclusive). Default: the last message."}
 ```
@@ -159,17 +164,18 @@ Last assistant message with text (#{n}, {n_(len)} chars): {quote(content, 300)}
 
 - **`T`** is the sum of message totals.
 - **Role rows:**
-  - Order: `system, developer, user, assistant, tool`, then any other roles sorted by name. Roles with no messages are left out.
+  - Order: `system, developer, user, assistant, tool`, then at most 5 other roles, sorted by name. Roles with no messages are left out. If more other roles remain, a last row reads `  +{count_(r, "more role")}`.
+  - Role names are shown through `display_name`.
   - Format: `f"  {role:<9} {count:>{cw}} {chars:>{chw}} chars{extras}"`, where `chars = n_(content + tool_calls sizes)`. `cw` and `chw` are the widest count and widest formatted chars across the rows.
   - Assistant extras: ` (+{n_(reasoning)} reasoning)` if there is any reasoning, then `, {count_(calls, "tool call")}` if there are any calls.
   - Tool extras: `, {count_(errors, "error")}` if there are any errors.
-- **Tool calls:** call counts by name (`task_response` is already excluded), sorted by count descending, then name ascending. At most 20 are listed. If more remain, the line ends with `, +{r} more tools`. Left out if there are no calls.
+- **Tool calls:** call counts by name (`task_response` is already excluded), sorted by count descending, then name ascending. Names are shown through `display_name`. At most 20 are listed. If more remain, the line ends with `, +{r} more tools`. Left out if there are no calls.
 - **Largest messages:** the top 5 by message total, descending, with ties broken by message number ascending, joined with ` · `. Left out if there are no messages.
 - **First user message:** the first `user` message with non-empty content. Left out if there is none.
 - **Last assistant message with text:** the last `assistant` message with non-empty content. Left out if there is none.
 - **Empty trace:** `Trace: 0 messages, 0 chars (~0 tokens)`.
 
-The output is bounded by construction, so the response limit is not applied.
+The output is bounded by construction (a fixed number of lines, each with cut names and previews), so the response limit is not applied.
 
 ### 4.2 `preview_messages`
 
@@ -190,7 +196,7 @@ The output is bounded by construction, so the response limit is not applied.
 
 | Piece | When |
 |-------|------|
-| `#{n} {role}` | always |
+| `#{n} {role}` | always. The role is shown through `display_name`, as are all names below. |
 | ` {tool_name}` | tool results |
 | ` {n_(len(content))}` | always |
 | ` ERROR` | `is_error` |
@@ -344,16 +350,20 @@ The refusal is returned as `ToolCallResult(is_error=True)`.
 
 **Algorithm (`search.py`):**
 
-1. **Compile** `regex.compile(pattern if regex else regex.escape(pattern), flags)`, where `flags = 0 if case_sensitive else regex.IGNORECASE`.
-   - A `regex.error` raises E7.
+1. **Check the pattern** (`pattern_check.py`, `regex=true` only). Compiling has no time limit: the regex package expands counted repeats when it compiles, so `a{100000000}` would build a hundred million nodes. The patterns come from the judge model, so this check is a best effort against accidental blow-ups, not a guarantee: a deliberately crafted pattern can still be slow to compile. Before compiling:
+   - If an inline flag group (`(?x)`, `(?ix:…)`, `(?f)` and so on) turns on verbose mode (`x`) or full case folding (`f`), raise E13. In verbose mode, whitespace and comments can sit between an item and its repeat, which the estimate below doesn't model. Full case folding makes large character classes far slower to compile.
+   - Estimate the elements it compiles to: every character, escape (`\p{…}`, `\P{…}` and `\N{…}` with their braces) and character class counts as one; a group counts as 1 plus its alternatives, each at least 1, so empty groups and empty branches count too; a counted repeat (`{m}`, `{m,}`, `{m,n}`, `{,n}`) multiplies the item before it by `max(1, m, n)`. If the estimate is over `SEARCH_PATTERN_ELEMENTS_MAX`, raise E12.
+2. **Compile** `regex.compile(pattern if regex else regex.escape(pattern), flags, cache_pattern=False)`, where `flags = regex.VERSION0` plus `regex.IGNORECASE` unless `case_sensitive`. `cache_pattern=False` keeps the regex package from holding up to 500 compiled patterns for the life of the process.
+   - A `regex.error` raises E7 with its message. A `RecursionError` (groups nested thousands deep) raises E7 with `groups are nested too deeply`.
    - An empty pattern raises E10. The schema also prevents it.
-2. **Set a deadline** of `monotonic() + timeout_seconds`.
-3. **Scan.** For each message in `start..end` with role in `roles`, then for each part in the order `reasoning`, `content`, `tool_calls` (if in `parts` and non-empty):
-   - run `pattern.finditer(text, timeout=max(0.001, deadline - monotonic()))`;
+3. **Set a deadline** of `monotonic() + timeout_seconds`.
+4. **Scan.** For each message in `start..end` with role in `roles`, then for each part in the order `reasoning`, `content`, `tool_calls` (if in `parts` and non-empty):
+   - if `deadline - monotonic() ≤ 0`, raise E8;
+   - otherwise run `pattern.finditer(text, timeout=deadline - monotonic(), concurrent=True)`. `concurrent=True` releases the GIL while matching, so a slow search in a worker thread doesn't stall the event loop;
    - record `(number, part, m.start(), m.end())` for every match with `m.end() > m.start()`.
    - A `TimeoutError` raises E8.
-4. **Totals:** `M` is the number of matches, `K` the number of distinct messages.
-5. **Output:**
+5. **Totals:** `M` is the number of matches, `K` the number of distinct messages.
+6. **Output:**
    - If `M = 0`: `No matches for {json.dumps(pattern, ensure_ascii=False)}.` This is a normal result.
    - If `offset ≥ M`: raise E9.
    - Otherwise:
@@ -365,7 +375,7 @@ The refusal is returned as `ToolCallResult(is_error=True)`.
          - a ` <truncated>` suffix if `b < len`.
        - `a = max(0, start - context_chars)` and `b = min(len, end + context_chars)`.
      - **Footer**, if `offset + shown < M`: `Use offset={offset+shown} for more.`
-6. **Limit:** the response limit applies, using the search refusal rows in §5.
+7. **Limit:** the response limit applies, using the search refusal rows in §5.
 
 `search_trace` runs in `asyncio.to_thread`. Its timeout is a function parameter, so tests can inject a small one.
 
@@ -385,7 +395,9 @@ All errors below are raised as `TraceToolUsageError` (a `ToolCallError`). The mo
 | E8 | `Search timed out after 30 seconds. Use a simpler pattern, or narrow it with start/end, roles or parts.` |
 | E9 | `offset {o} is past the last match ({count_(M, "match", "matches")}).` |
 | E10 | `pattern must not be empty.` |
-| E11 | `Invalid arguments: {validation message}` (defensive re-validation against the schema) |
+| E11 | `Invalid arguments: {validation message}` (defensive re-validation against the schema; the validation message is jsonschema's wording, so tests check only the prefix) |
+| E12 | `Pattern too large: it would compile to over 100,000 elements. Use smaller {m,n} repeat counts (or * and + instead), or a shorter pattern.` |
+| E13 | `Verbose mode (?x) and full case folding (?f) aren't supported in search patterns. Write the pattern without them.` |
 | REF | The refusal in §5 |
 
 ## 8. Public Interface
@@ -416,7 +428,7 @@ def build_tools(view: TraceView) -> list[KilnToolInterface]
 
 - **Argument types.** `PreviewArgs`, `ReadArgs`, `TextArgs` and `SearchArgs` are frozen dataclasses with defaults already applied. `roles` and `parts` are tuples, or `None` for no filter.
 - **`parse_args`** re-validates `kwargs` against the tool's schema (E11), applies defaults, and checks the E3 rule.
-- **Dependencies.** v1 depends only on: `kiln_ai.tools.base_tool` (`UnmanagedKilnTool`, `ToolCallResult`, `ToolCallError`), `kiln_ai.datamodel.tool_id.build_kiln_unmanaged_tool_id`, `kiln_ai.utils.open_ai_types.TASK_RESPONSE_TOOL_NAME`, `kiln_ai.datamodel.json_schema.validate_schema_with_value_error`, and `regex`. The only code that depends on v1 is `trace_tools.toolset.trace_toolset()`.
+- **Dependencies.** v1 depends only on: `kiln_ai.tools.base_tool` (`UnmanagedKilnTool`, `ToolCallResult`, `ToolCallError`), `kiln_ai.datamodel.tool_id.build_kiln_unmanaged_tool_id`, `kiln_ai.utils.open_ai_types.TASK_RESPONSE_TOOL_NAME`, `jsonschema`, and `regex`. The only code that depends on v1 is `trace_tools.toolset.trace_toolset()`.
 
 ## 9. Test Plan
 
@@ -426,12 +438,13 @@ Tests live in `v1/test_view.py`, `test_render.py`, `test_search.py`, `test_tools
 |------|----------|
 | `test_view_numbers_from_one_including_system` | Message numbers and role mapping (§2.1). |
 | `test_view_content_list_parts` | Text joined with newlines; `[image]`, `[audio]`, `[file]`, `[refusal]` and unknown part types. |
-| `test_view_kiln_task_tool_output_extracted` | §2.2 step 2, and non-JSON tool content kept as-is. |
+| `test_view_kiln_task_tool_output_extracted` | §2.2 step 2: only an object whose only key is `output` is replaced; other objects and non-JSON tool content are kept as-is. |
 | `test_view_task_response_is_content_not_call` | The last `task_response` is appended to content and excluded from `tool_calls`. |
 | `test_view_tool_args_canonicalized` | JSON args re-serialized; non-JSON kept; non-string dumped. |
 | `test_view_tool_name_resolution` | Matched, unmatched (`unknown tool`), legacy `function`, and two results for one call id (first wins). |
 | `test_view_loose_dicts_never_raise` | Missing role or content, wrong types, and non-dict tool calls. |
 | `test_overview_format` / `test_overview_empty_trace` / `test_overview_top_tools_overflow` | §4.1, including `+N more tools` and the omitted lines. |
+| `test_overview_caps_other_role_rows` / `test_long_names_are_cut_in_labels` / `test_overview_bounded_for_pathological_traces` | `+N more roles`, `display_name`, and an overview that stays small for thousands of long roles and tool names. |
 | `test_approx_tokens_buckets` | `~0`, `~999`, `~1k`, `~526k`, `~1.2M`. |
 | `test_preview_line_pieces` | Each optional piece; `preview_chars=0`; ` ×k`; ERROR. |
 | `test_preview_no_match` | The "No messages match" text. |
@@ -450,6 +463,11 @@ Tests live in `v1/test_view.py`, `test_render.py`, `test_search.py`, `test_tools
 | `test_search_paging_count_offset` | Header counts, footer, E9. |
 | `test_search_zero_length_matches_skipped` | e.g. `regex=true`, `pattern="x*"`. |
 | `test_search_invalid_regex` / `test_search_timeout` | E7; E8 with `timeout_seconds=0.01` and a catastrophic pattern. |
+| `test_search_timeout_across_many_small_parts` | E8 when the deadline passes between parts that each finish quickly. |
+| `test_search_releases_the_gil_while_matching` | The event loop keeps running while a slow search runs in a worker thread. |
+| `test_pattern_elements` / `test_large_counted_repeats_rejected_quickly` / `test_ordinary_patterns_accepted` / `test_unsupported_inline_flags_rejected` / `test_verbose_flag_check_is_linear` | The element estimate in §6 step 1, including empty groups and branches; E12 returned in well under a second for `a{100000000}`, `(){100000000}`, `(|){100000000}` and similar; E13 for `x` and `f`. |
+| `test_search_does_not_cache_compiled_patterns` | Both compile calls pass `cache_pattern=False`. |
+| `test_search_deeply_nested_groups_are_invalid` | E7 for groups nested thousands deep. |
 | `test_tool_usage_errors_are_tool_call_errors` | Each tool raises `TraceToolUsageError` for usage errors, and it is a `ToolCallError`. |
 | `test_judge_loop_continues_after_tool_error` | Through the real adapter with a scripted model: a bad call is followed by a good one, and the judgment completes. |
 | `test_tool_definitions_order_and_ids` | Five tools in order, `kiln_unmanaged::trace_v1_*` ids, schemas valid. |

@@ -8,6 +8,7 @@ Two SandboxedEnvironment instances:
 Both envs share trim_blocks=True and lstrip_blocks=True for prompt-friendly output.
 
 Public API:
+  - template_env_with_filters(filters) -> Environment
   - compile_template_or_raise(template) -> None
   - compile_expression_or_raise(expression) -> None
   - expression_variables(expression) -> set[str]
@@ -19,9 +20,16 @@ from __future__ import annotations
 
 import json
 import types
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from jinja2 import StrictUndefined, TemplateSyntaxError, Undefined, UndefinedError
+from jinja2 import (
+    Environment,
+    StrictUndefined,
+    TemplateSyntaxError,
+    Undefined,
+    UndefinedError,
+)
 from jinja2.sandbox import SandboxedEnvironment
 
 if TYPE_CHECKING:
@@ -110,6 +118,20 @@ _expression_env = SandboxedEnvironment(
 )
 _expression_env.filters["fromjson"] = _fromjson
 _expression_env.filters["format_trace"] = _format_trace
+
+
+def template_env_with_filters(
+    filters: Mapping[str, Callable[..., Any]],
+) -> Environment:
+    """The template environment with ``filters`` added, replacing any of the same name.
+
+    Returns an overlay: the template environment itself is never changed.
+    """
+    env = _template_env.overlay()
+    # overlay() copies attributes by reference, so until reassigned env.filters
+    # is the template environment's own dict.
+    env.filters = {**_template_env.filters, **filters}
+    return env
 
 
 def compile_template_or_raise(template: str) -> None:

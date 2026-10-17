@@ -1,0 +1,6 @@
+=== #3 assistant (content 41 not shown; reasoning 150; tool_calls 96 not shown) ===
+[reasoning]
+The user wants invoices built from line items. First I need to see how Invoice stores lines today, and whether anything still lives in billing/legacy.
+=== #12 assistant (content 86 not shown; reasoning 86; tool_calls 299 not shown) ===
+[reasoning]
+The old Invoice.tax quantized to 0.01. My totals.tax dropped that, so 35.999 != 36.00.

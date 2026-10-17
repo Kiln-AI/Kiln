@@ -16,7 +16,7 @@ What those PRs already built is kept as they built it. Phases 2 and 3 add only w
 
 ## Phases
 
-- [ ] **Phase 1: Trace toolset v1.**
+- [x] **Phase 1: Trace toolset v1.**
   - The self-contained `adapters/eval/trace_tools/` package: `TraceView` canonicalization, the five tools, search with a time limit, the response limit and refusals.
   - The `trace_toolset()` dispatch and `judge_template_env()`.
   - Unit tests, golden tests with the update flag, and benchmarks.
