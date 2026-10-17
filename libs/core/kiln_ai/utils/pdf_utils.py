@@ -4,8 +4,11 @@ Utilities for working with PDF files.
 
 import asyncio
 import atexit
+import logging
 import tempfile
+import weakref
 from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
@@ -13,7 +16,22 @@ from typing import AsyncGenerator
 import pypdfium2
 from pypdf import PdfReader, PdfWriter
 
+logger = logging.getLogger(__name__)
+
+
 _pdf_conversion_executor: ProcessPoolExecutor | None = None
+_pdf_conversion_locks = weakref.WeakKeyDictionary()
+
+
+def get_pdf_conversion_lock() -> asyncio.Lock:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.Lock()
+
+    if loop not in _pdf_conversion_locks:
+        _pdf_conversion_locks[loop] = asyncio.Lock()
+    return _pdf_conversion_locks[loop]
 
 
 # Lazy load for speed, singleton so dev-server reloading doesn't recreate the executor
@@ -71,14 +89,31 @@ def _convert_pdf_to_images_sync(pdf_path: Path, output_dir: Path) -> list[Path]:
 
 
 async def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
-    loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(
-        get_pdf_conversion_executor(),
-        _convert_pdf_to_images_sync,
-        pdf_path,
-        output_dir,
-    )
-    return result
+    async with get_pdf_conversion_lock():
+        global _pdf_conversion_executor
+        try:
+            executor = get_pdf_conversion_executor()
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                executor,
+                _convert_pdf_to_images_sync,
+                pdf_path,
+                output_dir,
+            )
+            return result
+        except (BrokenProcessPool, Exception) as e:
+            logger.warning(
+                f"PDF conversion via process pool failed, falling back to thread: {e}"
+            )
+            # Reset executor so it gets recreated next time
+            _shutdown_pdf_conversion_executor()
+
+            # Fallback: run in a thread (which is safe here since we are holding _pdf_conversion_lock)
+            return await asyncio.to_thread(
+                _convert_pdf_to_images_sync,
+                pdf_path,
+                output_dir,
+            )
 
 
 def _shutdown_pdf_conversion_executor():
