@@ -1488,11 +1488,14 @@ async def test_run_ending_tool_error_fails_run(tools_adapter, error):
         ),
     ],
 )
-async def test_null_tool_arguments_become_empty_object_and_run_saves(
-    tools_adapter, tool, expected_tool_message
+@pytest.mark.parametrize(
+    "arguments", [pytest.param(None, id="null"), pytest.param("", id="empty")]
+)
+async def test_null_or_empty_tool_arguments_become_empty_object_and_run_saves(
+    tools_adapter, tool, expected_tool_message, arguments
 ):
     tool_call_response = _make_model_response(
-        content=None, tool_calls=[_make_raw_tool_call("call_1", "add", None)]
+        content=None, tool_calls=[_make_raw_tool_call("call_1", "add", arguments)]
     )
     final_response = _make_model_response(content="The answer is [4]")
     tools_adapter.base_adapter_config.allow_saving = True
@@ -1565,12 +1568,15 @@ async def test_tool_call_without_name_fails_run_before_any_tool_runs(tools_adapt
 
 
 @pytest.mark.parametrize("content", [None, "some text"])
-async def test_task_response_with_null_arguments_is_checked_against_output_schema(
-    structured_tools_adapter, content
+@pytest.mark.parametrize(
+    "arguments", [pytest.param(None, id="null"), pytest.param("", id="empty")]
+)
+async def test_task_response_with_null_or_empty_arguments_is_checked_against_output_schema(
+    structured_tools_adapter, content, arguments
 ):
     tool_call_response = _make_model_response(
         content=content,
-        tool_calls=[_make_raw_tool_call("call_1", "task_response", None)],
+        tool_calls=[_make_raw_tool_call("call_1", "task_response", arguments)],
     )
 
     with (
