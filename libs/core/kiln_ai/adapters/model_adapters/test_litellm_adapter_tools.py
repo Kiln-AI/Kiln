@@ -828,6 +828,22 @@ class MockTool:
         return f"mock_tool_{self._name}"
 
 
+class MockNoArgsTool(MockTool):
+    """A tool whose parameters schema has no properties, like no-argument MCP tools."""
+
+    async def toolcall_definition(self) -> dict:
+        return {"function": {"parameters": {"type": "object"}}}
+
+
+class MockExplicitArgsTool(MockTool):
+    """A tool whose run takes named arguments instead of **kwargs."""
+
+    async def run(
+        self, context: ToolCallContext | None = None, *, a: float, b: float
+    ) -> ToolCallResult:
+        return ToolCallResult(output=str(a + b))
+
+
 class MockKilnTaskTool:
     """Mock tool class that returns KilnTaskToolResult for testing"""
 
@@ -1189,6 +1205,34 @@ UNEXPECTED_ADD_FAILURE = (
             id="schema_mismatch",
         ),
         pytest.param(
+            [MockExplicitArgsTool("add")],
+            [("call_1", "add", '{"a": 2, "b": 2, "c": 3}')],
+            [
+                _tool_error(
+                    "call_1",
+                    "Error: 'add' doesn't accept these arguments: got an unexpected keyword argument 'c'. Call it again with only the arguments in its schema.",
+                )
+            ],
+            id="extra_argument",
+        ),
+        pytest.param(
+            [MockTool("add")],
+            [("call_1", "add", '{"a": 2, "b": 2, "context": "x"}')],
+            [
+                _tool_error(
+                    "call_1",
+                    "Error: 'add' doesn't accept these arguments: 'context' is a reserved argument name. Call it again with only the arguments in its schema.",
+                )
+            ],
+            id="context_argument",
+        ),
+        pytest.param(
+            [MockNoArgsTool("ping", return_value="pong")],
+            [("call_1", "ping", "{}")],
+            [_tool_success("call_1", "pong")],
+            id="tool_without_parameters",
+        ),
+        pytest.param(
             [MockTool("add", raise_on_run=ToolCallError("b must be positive."))],
             [("call_1", "add", '{"a": 2, "b": -2}')],
             [_tool_error("call_1", "b must be positive.")],
@@ -1358,8 +1402,21 @@ async def test_process_tool_calls_logs_stack_trace_only_for_unexpected_errors(
     "definition_mock_kwargs",
     [
         pytest.param(
-            {"return_value": {"function": {"parameters": {"type": "object"}}}},
-            id="schema_without_properties",
+            {"return_value": {"function": {"parameters": {"type": "array"}}}},
+            id="schema_not_an_object",
+        ),
+        pytest.param(
+            {
+                "return_value": {
+                    "function": {
+                        "parameters": {
+                            "type": "object",
+                            "properties": {"a": {"type": "nope"}},
+                        }
+                    }
+                }
+            },
+            id="invalid_schema",
         ),
         pytest.param(
             {"side_effect": ConnectionError("server down")},
