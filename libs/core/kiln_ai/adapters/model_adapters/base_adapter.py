@@ -11,6 +11,7 @@ from litellm.types.utils import ModelResponseStream
 from kiln_ai.adapters.chat.chat_formatter import (
     ChatFormatter,
     MultiturnFormatter,
+    TwoMessageCotFormatter,
     chat_strategy_for_run,
     get_chat_formatter,
 )
@@ -75,12 +76,18 @@ if TYPE_CHECKING:
 SkillsDict = Dict[str, Skill]
 
 
+def _has_reasoning_content(message: ChatCompletionMessageParam) -> bool:
+    reasoning = message.get("reasoning_content")
+    return isinstance(reasoning, str) and bool(reasoning.strip())
+
+
 @dataclass
 class AdapterConfig:
     """
-    An adapter config is config options that do NOT impact the output of the model.
-
-    For example: if it's saved, of if we request additional data like logprobs.
+    Options for an adapter run that aren't part of its run config. Some only change
+    how the run is handled: for example, if the run is saved, or if we request
+    additional data like logprobs. Others change what the model is asked:
+    ``prompt_builder``, ``unmanaged_tools`` and ``separate_final_answer_turn``.
     """
 
     allow_saving: bool = True
@@ -133,6 +140,20 @@ class AdapterConfig:
     requests. This is a cost optimization and does not affect model output.
     """
     automatic_prompt_caching: bool = False
+
+    """
+    When True, a fresh run always takes the two-turn chain of thought path, on every
+    model: a first turn that sends the input as is, followed by the prompt's thinking
+    instructions, without the response format, then a final turn that asks for the
+    result and alone carries the response format. Format instructions that the
+    structured output mode puts in the system prompt are sent in both turns. For callers
+    whose input is a complete prompt, and whose model must work freely (for example,
+    with tools) before giving a formatted answer. Requires a prompt with thinking
+    instructions. A run continued from a prior trace, including one resumed after
+    ``return_on_tool_call``, ignores it and answers in a single final turn. Not
+    reflected in ``chat_strategy_for_run``.
+    """
+    separate_final_answer_turn: bool = False
 
 
 class BaseAdapter(metaclass=ABCMeta):
@@ -300,28 +321,7 @@ class BaseAdapter(metaclass=ABCMeta):
                             f"response is not a string for non-structured task: {parsed_output.output}"
                         )
 
-                trace_has_toolcalls = parsed_output.trace is not None and any(
-                    message.get("role", None) == "tool"
-                    for message in parsed_output.trace
-                )
-
-                # Validate reasoning content is present if required.
-                # Models often skip reasoning on the final turn when tools are involved, so we don't require it then.
-                if (
-                    provider.reasoning_capable
-                    and (
-                        not parsed_output.intermediate_outputs
-                        or "reasoning" not in parsed_output.intermediate_outputs
-                    )
-                    and not (
-                        provider.reasoning_optional_for_structured_output
-                        and self.has_structured_output()
-                    )
-                    and not trace_has_toolcalls
-                ):
-                    raise RuntimeError(
-                        "Reasoning is required for this model, but no reasoning was returned."
-                    )
+                self._raise_if_required_reasoning_missing(provider, parsed_output)
 
                 run_output = parsed_output
 
@@ -491,24 +491,7 @@ class BaseAdapter(metaclass=ABCMeta):
                         f"response is not a string for non-structured task: {parsed_output.output}"
                     )
 
-            trace_has_toolcalls = parsed_output.trace is not None and any(
-                message.get("role", None) == "tool" for message in parsed_output.trace
-            )
-            if (
-                provider.reasoning_capable
-                and (
-                    not parsed_output.intermediate_outputs
-                    or "reasoning" not in parsed_output.intermediate_outputs
-                )
-                and not (
-                    provider.reasoning_optional_for_structured_output
-                    and self.has_structured_output()
-                )
-                and not trace_has_toolcalls
-            ):
-                raise RuntimeError(
-                    "Reasoning is required for this model, but no reasoning was returned."
-                )
+            self._raise_if_required_reasoning_missing(provider, parsed_output)
 
             run_output = parsed_output
 
@@ -526,6 +509,36 @@ class BaseAdapter(metaclass=ABCMeta):
             run.id = None
 
         return run
+
+    def _raise_if_required_reasoning_missing(
+        self, provider: KilnModelProvider, parsed_output: RunOutput
+    ) -> None:
+        """Raise ``RuntimeError`` when a reasoning model returned no reasoning and
+        nothing excuses it."""
+        if not provider.reasoning_capable:
+            return
+        if (
+            provider.reasoning_optional_for_structured_output
+            and self.has_structured_output()
+        ):
+            return
+        if parsed_output.intermediate_outputs and (
+            "reasoning" in parsed_output.intermediate_outputs
+        ):
+            return
+        trace = parsed_output.trace or []
+        # Models often skip reasoning on the final turn when tools are involved, so we don't require it then.
+        if any(message.get("role", None) == "tool" for message in trace):
+            return
+        # With a separate final answer turn, the thinking happens in the first turn, and
+        # models often skip reasoning on the short final request.
+        if self.base_adapter_config.separate_final_answer_turn and any(
+            _has_reasoning_content(message) for message in trace
+        ):
+            return
+        raise RuntimeError(
+            "Reasoning is required for this model, but no reasoning was returned."
+        )
 
     def _apply_input_transform(self, input: InputType) -> InputType:
         """If the run config has an input_transform, render it and return the
@@ -669,6 +682,15 @@ class BaseAdapter(metaclass=ABCMeta):
 
         cot_prompt = self.prompt_builder.chain_of_thought_prompt()
         system_message = self.build_prompt()
+
+        if self.base_adapter_config.separate_final_answer_turn:
+            if not cot_prompt:
+                raise ValueError(
+                    "separate_final_answer_turn requires a prompt with thinking instructions."
+                )
+            return TwoMessageCotFormatter(
+                system_message, input, cot_prompt, wrap_user_input=False
+            )
 
         # The model only enters the decision once a COT prompt is in play, so keep the
         # provider lookup lazy: a plain prompt is single turn whatever the model is, and

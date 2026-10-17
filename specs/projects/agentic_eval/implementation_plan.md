@@ -36,7 +36,7 @@ What those PRs already built is kept as they built it. Phases 2 and 3 add only w
   - Judge Trace in the test pane. The results-page link comes from #1938.
   - The "Agentic Judge" badge and the method line.
   - Spec: [ui_design.md](ui_design.md).
-- [ ] **Phase 4: Real-provider check.**
+- [x] **Phase 4: Real-provider check.**
   - Paid end-to-end agentic judge tests on a small set of OpenRouter models. Each checks that the judge calls at least one trace tool before answering, and that it returns schema-valid scores.
   - This also covers structured output combined with tools, and tool schemas with numeric bounds.
   - If any model fails, stop and bring the options to the user: a per-model structured output mode, a new model-list field, or a litellm upgrade.

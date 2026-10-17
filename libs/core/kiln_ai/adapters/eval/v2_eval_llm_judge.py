@@ -6,7 +6,9 @@ Supports two scoring modes:
 
 With trace_toolset_version set, the judge also gets the trace tools: read-only
 tools for reading the judged trace, at that locked toolset version. It can't be
-combined with G-Eval.
+combined with G-Eval. Such a judge answers in two turns: it reads the trace with
+the tools and describes its decision, then gives its scores in a final turn that
+alone carries the structured output format.
 
 The prompt_template is rendered with Jinja2 using the EvalTaskInput fields
 as the template namespace.
@@ -100,17 +102,35 @@ def _unknown_template_variables(template: str, namespace: dict[str, Any]) -> set
     return meta.find_undeclared_variables(ast) - set(namespace)
 
 
+def _judge_intermediate_outputs(
+    intermediate_outputs: dict[str, str] | None, trace_tools_on: bool
+) -> dict[str, str] | None:
+    """The intermediate outputs a judgment reports.
+
+    A trace tools judge's reasoning is its first-turn findings, reported as
+    ``chain_of_thought``. Its final turn only formats the scores, so that turn's own
+    ``reasoning`` is left out here; it stays in the judge trace.
+    """
+    if not trace_tools_on or intermediate_outputs is None:
+        return intermediate_outputs
+    return {
+        key: value for key, value in intermediate_outputs.items() if key != "reasoning"
+    }
+
+
 class _LlmJudgeTask(Task, parent_of={}):
     """Ephemeral Task for invoking an LLM judge via adapter_for_task().
 
-    Creates a temporary Project/Task with the system prompt and output
-    JSON schema.
+    Creates a temporary Project/Task with the system prompt, output JSON
+    schema and, for a judge that thinks in a turn of its own, the thinking
+    instruction.
     """
 
     def __init__(
         self,
         system_prompt: str,
         output_json_schema: str,
+        thinking_instruction: str | None = None,
     ):
         tmp_project = Project(name="LlmJudge")
         super().__init__(
@@ -118,6 +138,7 @@ class _LlmJudgeTask(Task, parent_of={}):
             parent=tmp_project,
             instruction=system_prompt,
             output_json_schema=output_json_schema,
+            thinking_instruction=thinking_instruction,
         )
 
 
@@ -248,6 +269,9 @@ class LlmJudgeEval(BaseV2EvalBridge):
         judge_task = _LlmJudgeTask(
             system_prompt=system_prompt,
             output_json_schema=output_json_schema,
+            thinking_instruction=toolset.judge_thinking_instruction
+            if trace_tools_on
+            else None,
         )
 
         model_name = props.model_name
@@ -290,7 +314,9 @@ class LlmJudgeEval(BaseV2EvalBridge):
         run_config_properties = KilnAgentRunConfigProperties(
             model_name=model_name,
             model_provider_name=provider,
-            prompt_id=PromptGenerators.SIMPLE,
+            prompt_id=PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT
+            if trace_tools_on
+            else PromptGenerators.SIMPLE,
             structured_output_mode=structured_output_mode,
             **overrides,
         )
@@ -306,6 +332,9 @@ class LlmJudgeEval(BaseV2EvalBridge):
                 else None,
                 # A trace tool loop resends a growing prefix on every round.
                 automatic_prompt_caching=trace_tools_on,
+                # Models asked to read with tools and answer in the score format in one
+                # turn tend to wrap the JSON in prose.
+                separate_final_answer_turn=trace_tools_on,
             ),
         )
 
@@ -333,7 +362,9 @@ class LlmJudgeEval(BaseV2EvalBridge):
 
         return V2EvalResult(
             scores=scores,
-            intermediate_outputs=run_output.intermediate_outputs,
+            intermediate_outputs=_judge_intermediate_outputs(
+                run_output.intermediate_outputs, trace_tools_on
+            ),
             # `usage`, not `cumulative_usage`: it already accumulates every call this
             # judgment made, and it is the one that carries latency.
             usage=judge_run.usage,

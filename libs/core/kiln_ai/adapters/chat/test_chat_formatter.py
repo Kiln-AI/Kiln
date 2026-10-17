@@ -5,6 +5,7 @@ from kiln_ai.adapters.chat.chat_formatter import (
     COT_FINAL_ANSWER_PROMPT,
     MultiturnFormatter,
     SingleTurnR1ThinkingFormatter,
+    TwoMessageCotFormatter,
     format_user_message,
     is_two_message_cot_strategy,
 )
@@ -99,6 +100,35 @@ def test_chat_formatter_two_message_cot():
     assert formatter.next_turn("test output") is None
     assert formatter.message_dicts() == expected
     assert formatter.intermediate_outputs() == {"chain_of_thought": "thinking output"}
+
+
+@pytest.mark.parametrize(
+    "user_input, wrap_user_input, expected_user_message",
+    [
+        (
+            "test input",
+            True,
+            "The input is:\n<user_input>\ntest input\n</user_input>\n\nthinking",
+        ),
+        ("test input", False, "test input\n\nthinking"),
+        (
+            "<conversation_history>turns</conversation_history>",
+            True,
+            "<conversation_history>turns</conversation_history>\n\nthinking",
+        ),
+    ],
+)
+def test_two_message_cot_wraps_only_plain_inputs(
+    user_input, wrap_user_input, expected_user_message
+):
+    formatter = TwoMessageCotFormatter(
+        "system message", user_input, "thinking", wrap_user_input=wrap_user_input
+    )
+
+    first = formatter.next_turn()
+
+    assert first is not None
+    assert first.messages[-1].content == expected_user_message
 
 
 def test_chat_formatter_r1_style():

@@ -118,10 +118,11 @@ An existing judge's rendered prompt must not change when a new toolset version s
 ## 6. Running a Judgment
 
 1. Render the prompt template, exactly as for an LLM judge.
-2. Call the judge model with the system prompt, the rendered prompt, the trace tools, and the score schema as structured output.
-3. The model either calls trace tools, or returns its final answer. Tool calls run against the judged trace and their results go back to the model. This repeats until the model answers.
-4. The final answer is parsed and validated against the eval's output scores, exactly as for an LLM judge.
-5. The judgment is saved: scores, reasoning (as today), cost (summed over every model call in the loop, as today), and the judge trace ([§9](#9-judge-traces)).
+2. **Investigate.** Call the judge model with the system prompt, the trace tools, and one user message: the rendered prompt, followed by an instruction to investigate the trace with the tools and describe its evaluation and its decision for each score. The instruction tells the judge not to give the final format yet, because it will be asked for the formal, formatted version next. This turn sends no structured output format. For judge models whose structured output mode is instructions in the prompt, the system prompt's format instructions are in both turns.
+3. The model either calls trace tools, or writes its findings. Tool calls run against the judged trace and their results go back to the model. This repeats until the model writes its findings.
+4. **Score.** A second, final turn asks only for the result, with the score schema as structured output. It doesn't invite more tool calls. This is Kiln's existing two-step chain of thought, used here on every judge model, including reasoning models.
+5. The final answer is parsed and validated against the eval's output scores, exactly as for an LLM judge.
+6. The judgment is saved: scores, reasoning (the findings from step 3; the final turn's own thinking is only about formatting, and stays in the judge trace), cost (summed over every model call in both turns, as today), and the judge trace ([§9](#9-judge-traces)), which holds both turns.
 
 - The judged trace is loaded once per judgment and never modified.
 - Tool results are deterministic: the same trace and the same arguments always give the same output.

@@ -16,7 +16,7 @@ Implements [functional_spec.md](functional_spec.md). The exact behavior of trace
 | Judge trace storage | New field `EvalRun.judge_trace`, typed like `TaskRun.trace` | User decision: the judge trace belongs to the score record. Storage cost accepted. |
 | Judge trace in results | Returned inline, on each row's `eval_run`, like the judged trace already is | The only consumer is the per-judge results page, a drill-down that loads once on open and already holds every row's full judged trace in memory. A separate endpoint would add code to save memory the page already spends. If large traces make that page slow, lazy-loading both kinds of trace is a separate fix. |
 | Tool errors | Handled in the model adapter by a **separate task**: argument mistakes and exceptions raised by tools become error results returned to the model | A general adapter bug, not specific to this project. Every tool benefits, and the trace tools can simply raise. Must merge first (§4). |
-| Structured output with tools | Keep the LLM judge's current mode selection. Verified with real providers in a late implementation phase | User decision. Expected to work; if not, that phase brings options (per-model mode, new model-list field, litellm upgrade). |
+| Structured output with tools | Keep the LLM judge's current mode selection, and send it only on a separate, final scores-only turn (§3.7) | User decision, after real-provider runs (§7.8) showed models writing prose around their JSON when the tools and the score format share one turn. |
 | Eval builder | No support in v1 | User decision. |
 | CPU-heavy work | `asyncio.to_thread` | Parsing and searching a 20 MB trace must not block the event loop, which runs up to 25 judgments at once. |
 
@@ -107,6 +107,8 @@ class TraceToolset(Protocol):
     def build_view(self, trace: Sequence[Mapping[str, Any]]) -> "TraceViewProtocol": ...
     def render_overview(self, view: "TraceViewProtocol") -> str: ...
     def build_tools(self, view: "TraceViewProtocol") -> list[KilnToolInterface]: ...
+    @property
+    def judge_thinking_instruction(self) -> str: ...  # first-turn instruction (§3.7)
 
 class UnsupportedTraceToolsetVersion(Exception): ...
 
@@ -233,8 +235,8 @@ New flow (unchanged steps elided):
 5. `namespace = eval_input.model_dump()` plus `judge_instructions`: unchanged.
 6. **If `tools_on`:** `view = await asyncio.to_thread(toolset.build_view, namespace["trace"])`. Otherwise `view = None`.
 7. Render with `judge_template_env(toolset, namespace["trace"], view)` in `asyncio.to_thread`, with the existing error-to-skip mapping. The thread matters for tools-off judges too: a template that uses `trace_overview` builds its view during the render, and `format_trace` walks the whole trace. `_unknown_template_variables` keeps parsing with `_template_env`.
-8. Build the judge task, structured output mode and run config: unchanged.
-9. `AdapterConfig(allow_saving=False, top_logprobs=..., unmanaged_tools=toolset.build_tools(view) if tools_on else None, automatic_prompt_caching=tools_on)`. Prompt caching only changes cost, and long tool loops resend a growing prefix.
+8. Build the judge task, structured output mode and run config. Unchanged with tools off. **If `tools_on`:** the judge task gets `thinking_instruction=toolset.judge_thinking_instruction` (frozen text in `v1/definitions.py`, so the toolset version locks it too), and the run config uses `PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT`, so the prompt builder returns that instruction as the chain of thought prompt.
+9. `AdapterConfig(allow_saving=False, top_logprobs=..., unmanaged_tools=toolset.build_tools(view) if tools_on else None, automatic_prompt_caching=tools_on, separate_final_answer_turn=tools_on)`. Prompt caching only changes cost, and long tool loops resend a growing prefix.
 10. Invoke, mapping one specific failure:
 
    ```python
@@ -248,6 +250,12 @@ New flow (unchanged steps elided):
 
 11. Return `V2EvalResult(scores, intermediate_outputs, usage=judge_run.usage, judge_trace=judge_run.trace)`. This covers all modes: classic, G-Eval and trace tools.
 
+- **Two turns with tools on.** A judge with trace tools answers in two turns, built on the existing two-step chain of thought (`TwoMessageCotFormatter`), whose first turn is not final and so is sent without the response format (format instructions in the system prompt, for the instruction-based modes, are in both turns):
+  1. **Investigate.** The user message is the rendered prompt as is (not wrapped in `<user_input>` tags), followed by the thinking instruction: investigate the trace with the trace tools, describe the evaluation and the decision for each score, and don't give the final format yet, because a request for the formal, formatted version follows. This turn has the trace tools and no response format. The model may call tools any number of times (up to the adapter's round limit) before it writes its findings.
+  2. **Score.** The formatter's standard final request (`COT_FINAL_ANSWER_PROMPT`, "Considering the above, return a final result."), with the score schema as structured output. It asks only for the result. The tools stay defined, because some providers reject a conversation that holds tool calls when no tools are defined, but nothing in the request invites more calls.
+  - **Why.** Models asked to read with tools and answer in the score format in one turn tend to narrate their findings around the JSON. Providers don't enforce `json_object` alongside tools, and instruction-based modes can't. Real-provider runs (§7.8) showed this on Qwen and GLM.
+  - **`AdapterConfig.separate_final_answer_turn`.** New, general adapter option. With it, `BaseAdapter.build_chat_formatter` always returns a `TwoMessageCotFormatter(..., wrap_user_input=False)`, on every model, so reasoning models and fine-tunes that would otherwise answer in one turn also get the separate final turn. It raises `ValueError` if the prompt has no thinking instructions. Runs continued from a prior trace are unaffected.
+  - **The judge trace holds both turns:** the rendered prompt with the instruction, every tool call and result, the findings, the final request, and the scores. The findings are the `chain_of_thought` intermediate output, the judge's reasoning. The final call's own `reasoning` only concerns formatting the scores, so the judge leaves it out of the intermediate outputs; it stays in the judge trace.
 - **`JudgeContextExceededError(Exception)`** is defined in `adapters/eval/eval_utils/errors.py`, a new module. Its message is: `"The judge model ran out of context after {n} trace tool calls. Use a judge model with a larger context window, or a prompt that needs less of the trace."` Here `n` is the number of tool messages in `e.partial_trace`. It is not in `is_retryable_error`, so the runner does not retry it, and the test endpoints return its message.
 
 ### 3.8 Default prompt and properties builder (`adapters/eval/base_eval.py`)
@@ -422,7 +430,7 @@ This is the check for the structured-output-with-tools question in §1.
 
 | Risk | Mitigation |
 |------|------------|
-| Providers or litellm force the structured-output answer when tools are present (e.g. litellm's Anthropic path for models without native structured output), so the judge answers without reading | §7.8 detects it ("called at least one tool"). Options are decided then. |
-| Tool schema bounds (`minimum`/`maximum`) rejected by some providers in tool definitions | Covered by §7.8. Fallback: drop the bounds from the schema, which a new toolset version would do. The tools still validate internally. |
+| Providers or litellm force the structured-output answer when tools are present (e.g. litellm's Anthropic path for models without native structured output), so the judge answers without reading | Checked by §7.8 on five OpenRouter models: every judge called a trace tool before answering, and no provider rejected the score format alongside tools. Qwen and GLM wrote prose around their JSON when both shared a turn, which the separate final scores-only turn (§3.7) fixed. |
+| Tool schema bounds (`minimum`/`maximum`) rejected by some providers in tool definitions | Checked by §7.8: all five OpenRouter provider paths accepted the bounds. Separately, OpenRouter makes OpenAI models' tool calls strict, so they fill every optional argument and `read_messages` refuses every call; a separate adapter task sends `"strict": false` on tool definitions. |
 | Judge trace storage grows git-synced projects | Accepted (user decision). |
 | Overlay environment accidentally mutating the shared filters dict | A new dict is assigned (§3.6), and a test asserts the base env's filter is still the placeholder after a judge render. |

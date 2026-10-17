@@ -8,6 +8,7 @@ import litellm
 import pytest
 from litellm.types.utils import ModelResponse
 
+from kiln_ai.adapters.chat.chat_formatter import COT_FINAL_ANSWER_PROMPT
 from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.base_eval import materialize_llm_judge_properties
 from kiln_ai.adapters.eval.eval_utils.errors import JudgeContextExceededError
@@ -20,10 +21,14 @@ from kiln_ai.adapters.eval.v2_eval_llm_judge import (
 )
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, ModelProviderName
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
+from kiln_ai.adapters.model_adapters.test_paid_utils import (
+    skip_if_missing_provider_keys,
+)
 from kiln_ai.adapters.retry_classification import is_retryable_error
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
+    LATEST_TRACE_TOOLSET_VERSION,
     Eval,
     EvalConfig,
     EvalConfigType,
@@ -34,9 +39,11 @@ from kiln_ai.datamodel.eval import (
     LlmJudgeRunConfig,
     SkippedReason,
 )
+from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_run import Usage
+from kiln_ai.tools.base_tool import ToolCallDefinition
 from kiln_ai.utils.config import Config
 
 
@@ -1189,6 +1196,10 @@ class _RecordingToolset:
     def build_tools(self, view):
         return []
 
+    @property
+    def judge_thinking_instruction(self) -> str:
+        return f"investigate v{self.version}"
+
 
 class TestLlmJudgeTraceTools:
     @pytest.mark.asyncio
@@ -1227,6 +1238,75 @@ class TestLlmJudgeTraceTools:
         adapter_config = mock_adapter_for_task.call_args[1]["base_adapter_config"]
         assert adapter_config.unmanaged_tools is None
         assert adapter_config.automatic_prompt_caching is False
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_trace_tools_judge_answers_in_a_separate_turn(
+        self, mock_adapter_for_task
+    ):
+        mock_adapter_for_task.return_value = _scoring_adapter()
+        toolset = _RecordingToolset(2)
+        cfg = _make_config(_make_props(trace_toolset_version=2))
+
+        with patch(
+            "kiln_ai.adapters.eval.v2_eval_llm_judge.trace_toolset",
+            return_value=toolset,
+        ):
+            await LlmJudgeEval(cfg).evaluate(_inp(trace=_JUDGED_TRACE))
+
+        judge_task = mock_adapter_for_task.call_args[0][0]
+        kwargs = mock_adapter_for_task.call_args[1]
+        assert judge_task.thinking_instruction == toolset.judge_thinking_instruction
+        assert (
+            kwargs["run_config_properties"].prompt_id
+            == PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT
+        )
+        assert kwargs["base_adapter_config"].separate_final_answer_turn is True
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_judge_without_trace_tools_answers_in_one_turn(
+        self, mock_adapter_for_task
+    ):
+        mock_adapter_for_task.return_value = _scoring_adapter()
+
+        await LlmJudgeEval(_make_config()).evaluate(_inp(trace=_JUDGED_TRACE))
+
+        judge_task = mock_adapter_for_task.call_args[0][0]
+        kwargs = mock_adapter_for_task.call_args[1]
+        assert judge_task.thinking_instruction is None
+        assert kwargs["run_config_properties"].prompt_id == PromptGenerators.SIMPLE
+        assert kwargs["base_adapter_config"].separate_final_answer_turn is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "trace_toolset_version, expected",
+        [
+            (1, {"chain_of_thought": "Findings."}),
+            (None, {"chain_of_thought": "Findings.", "reasoning": "Format it."}),
+        ],
+    )
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_trace_tools_judge_reports_its_findings_as_reasoning(
+        self, mock_adapter_for_task, trace_toolset_version, expected
+    ):
+        adapter = AsyncMock()
+        adapter.invoke_returning_run_output.return_value = (
+            _judge_run(),
+            RunOutput(
+                output={"quality": "4"},
+                intermediate_outputs={
+                    "chain_of_thought": "Findings.",
+                    "reasoning": "Format it.",
+                },
+            ),
+        )
+        mock_adapter_for_task.return_value = adapter
+        cfg = _make_config(_make_props(trace_toolset_version=trace_toolset_version))
+
+        result = await LlmJudgeEval(cfg).evaluate(_inp(trace=_JUDGED_TRACE))
+
+        assert result.intermediate_outputs == expected
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("trace", [None, []])
@@ -1406,11 +1486,14 @@ class TestLlmJudgeContextExceeded:
 
 
 class TestLlmJudgeTraceToolsEndToEnd:
-    """The real adapter loop with a scripted model: the judge reads the trace with a
-    tool, then answers."""
+    """The real adapter loop with a scripted model: in its first turn the judge reads
+    the trace with a tool and describes its decision; in the final turn it gives its
+    scores."""
 
-    @staticmethod
-    def _model_turns() -> list[ModelResponse]:
+    _FINDINGS = "The answer matches the trace. I'd rate it 4."
+
+    @classmethod
+    def _model_turns(cls) -> list[ModelResponse]:
         tool_call = {
             "id": "call_overview",
             "type": "function",
@@ -1423,27 +1506,45 @@ class TestLlmJudgeTraceToolsEndToEnd:
             ),
             ModelResponse(
                 model="gpt-4o",
-                choices=[{"message": {"content": json.dumps({"quality": 4})}}],
+                choices=[{"message": {"content": cls._FINDINGS}}],
+            ),
+            ModelResponse(
+                model="gpt-4o",
+                choices=[
+                    {
+                        "message": {
+                            "content": json.dumps({"quality": 4}),
+                            "reasoning_content": "Now format the scores.",
+                        }
+                    }
+                ],
             ),
         ]
 
     @pytest.mark.asyncio
-    async def test_judge_reads_the_trace_then_scores(self):
+    async def test_judge_reads_the_trace_then_scores_in_a_final_turn(self):
         Config.shared().save_setting("open_ai_api_key", "fake-key")
         turns = self._model_turns()
         cfg = _make_config(
             _make_props(prompt_template="Judge the trace.", trace_toolset_version=1)
         )
+        build_completion_kwargs = AsyncMock(return_value={})
 
         with (
+            # A reasoning model would answer in one turn on the usual chain of thought
+            # path; a trace tools judge still gets its separate final turn.
             patch.object(
                 LiteLlmAdapter,
                 "model_provider",
                 return_value=KilnModelProvider(
-                    name=ModelProviderName.openai, model_id="gpt-4o"
+                    name=ModelProviderName.openai,
+                    model_id="gpt-4o",
+                    reasoning_capable=True,
                 ),
             ),
-            patch.object(LiteLlmAdapter, "build_completion_kwargs", return_value={}),
+            patch.object(
+                LiteLlmAdapter, "build_completion_kwargs", build_completion_kwargs
+            ),
             patch.object(
                 LiteLlmAdapter,
                 "acompletion_checking_response",
@@ -1453,7 +1554,194 @@ class TestLlmJudgeTraceToolsEndToEnd:
             result = await LlmJudgeEval(cfg).evaluate(_inp(trace=_JUDGED_TRACE))
 
         assert result.scores == {"quality": 4.0}
+        assert result.intermediate_outputs == {"chain_of_thought": self._FINDINGS}
+        skip_response_format = [
+            call.args[3] for call in build_completion_kwargs.call_args_list
+        ]
+        assert skip_response_format == [True, True, False]
+
         assert result.judge_trace is not None
-        tool_results = [m for m in result.judge_trace if m["role"] == "tool"]
-        assert len(tool_results) == 1
-        assert tool_results[0]["content"] == _v1_overview(_JUDGED_TRACE)
+        assert [m["role"] for m in result.judge_trace] == [
+            "system",
+            "user",
+            "assistant",
+            "tool",
+            "assistant",
+            "user",
+            "assistant",
+        ]
+        _, prompt, _, tool_result, findings, final_request, answer = result.judge_trace
+        assert prompt["content"] == (
+            f"Judge the trace.\n\n{trace_toolset(1).judge_thinking_instruction}"
+        )
+        assert tool_result["content"] == _v1_overview(_JUDGED_TRACE)
+        assert findings["content"] == self._FINDINGS
+        assert final_request["content"] == COT_FINAL_ANSWER_PROMPT
+        assert answer["content"] == json.dumps({"quality": 4})
+        assert answer.get("reasoning_content") == "Now format the scores."
+
+
+_ORDER_LOOKUP_ANSWER = (
+    "Good news! Order A1234 is on schedule with UPS and will arrive tomorrow, "
+    "October 18."
+)
+_ORDER_LOOKUP_TRACE = [
+    {
+        "role": "system",
+        "content": (
+            "You are a support agent for an online store. Look up orders with the "
+            "lookup_order tool before answering questions about them."
+        ),
+    },
+    {"role": "user", "content": "Where is my order A1234, and when will it arrive?"},
+    {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "call_lookup",
+                "type": "function",
+                "function": {
+                    "name": "lookup_order",
+                    "arguments": '{"order_id": "A1234"}',
+                },
+            }
+        ],
+    },
+    {
+        "role": "tool",
+        "tool_call_id": "call_lookup",
+        "content": json.dumps(
+            {
+                "order_id": "A1234",
+                "status": "delayed",
+                "carrier": "UPS",
+                "estimated_delivery": "2026-10-31",
+                "note": "Held at the regional depot after a storm.",
+            }
+        ),
+    },
+    {"role": "assistant", "content": _ORDER_LOOKUP_ANSWER},
+]
+
+# Cheap judges from five vendor families. Between them they cover each structured
+# output mode the judge sends alongside its tools: json_schema,
+# json_instruction_and_object and json_instructions.
+_AGENTIC_JUDGE_LIVE_MODELS = [
+    # TODO: fails until the adapter sends tool definitions with "strict": false, a
+    # separate fix. Without it OpenRouter makes OpenAI models fill every optional tool
+    # argument, so read_messages is always refused and the judge loops until the tool
+    # round limit.
+    "gpt_6_luna",
+    "claude_haiku_5_5",
+    "gemini_3_8_flash",
+    "qwen_3p8_flash",
+    "glm_5_3_flash",
+]
+
+
+class TestAgenticJudgeLive:
+    """An agentic judge on real models through OpenRouter.
+
+    The trace overview in the judge's prompt previews the question and the final
+    answer, but not the tool result the answer contradicts, so the judge has to read
+    the trace with its tools to score it. Run these alone with:
+
+        uv run python3 -m pytest -n0 -v --runpaid \\
+            "libs/core/kiln_ai/adapters/eval/test_v2_eval_llm_judge.py::TestAgenticJudgeLive"
+    """
+
+    @staticmethod
+    def _judge_config(model_name: str) -> EvalConfig:
+        eval = Eval(
+            name="Order Answers",
+            parent=Task(
+                name="Order Support", instruction="Answer questions about orders."
+            ),
+            eval_set_filter_id="tag::eval_set",
+            evaluation_data_type=EvalDataType.full_trace,
+            output_scores=[
+                EvalOutputScore(
+                    name="Matches Order Data",
+                    instruction=(
+                        "Does the final answer give the order status and delivery "
+                        "date that the order lookup returned?"
+                    ),
+                    type=TaskOutputRatingType.pass_fail,
+                ),
+                EvalOutputScore(
+                    name="Overall Rating",
+                    instruction="Rate the final answer overall.",
+                    type=TaskOutputRatingType.five_star,
+                ),
+            ],
+        )
+        return EvalConfig(
+            name="Agentic Judge",
+            parent=eval,
+            config_type=EvalConfigType.v2,
+            properties=materialize_llm_judge_properties(
+                eval,
+                model_name,
+                ModelProviderName.openrouter.value,
+                g_eval=False,
+                judge_instructions=[
+                    "Compare the final answer with what the order lookup tool returned."
+                ],
+                trace_tools=True,
+            ),
+        )
+
+    @staticmethod
+    async def _trace_tool_definitions() -> list[ToolCallDefinition]:
+        toolset = trace_toolset(LATEST_TRACE_TOOLSET_VERSION)
+        tools = toolset.build_tools(toolset.build_view(_ORDER_LOOKUP_TRACE))
+        return [await tool.toolcall_definition() for tool in tools]
+
+    @pytest.mark.paid
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("model_name", _AGENTIC_JUDGE_LIVE_MODELS)
+    async def test_judge_reads_the_trace_then_scores(self, model_name: str):
+        skip_if_missing_provider_keys(ModelProviderName.openrouter)
+        definitions = await self._trace_tool_definitions()
+        trace_tool_names = {
+            definition["function"]["name"] for definition in definitions
+        }
+        assert any(
+            "maximum" in parameter
+            for definition in definitions
+            for parameter in definition["function"]["parameters"]["properties"].values()
+        ), "a pass should also show the provider accepts numeric bounds in tool schemas"
+
+        result = await LlmJudgeEval(self._judge_config(model_name)).evaluate(
+            EvalTaskInput(
+                final_message=_ORDER_LOOKUP_ANSWER,
+                trace=_ORDER_LOOKUP_TRACE,
+            )
+        )
+
+        assert result.skipped_reason is None, result.skipped_detail
+        assert result.judge_trace is not None
+        *before_answer, answer = result.judge_trace
+        assert answer["role"] == "assistant" and not answer.get("tool_calls")
+        called = [
+            call["function"]["name"]
+            for message in before_answer
+            if message["role"] == "assistant"
+            for call in message.get("tool_calls") or []
+        ]
+        assert trace_tool_names & set(called), (
+            f"{model_name} answered without calling a trace tool; it called {called}"
+        )
+        tool_results = [m for m in before_answer if m["role"] == "tool"]
+        assert any(not m.get("is_error") for m in tool_results), (
+            f"every trace tool call by {model_name} failed: {tool_results}"
+        )
+
+        assert set(result.scores) == {"matches_order_data", "overall_rating"}
+        assert result.scores["matches_order_data"] in (0.0, 1.0)
+        overall = result.scores["overall_rating"]
+        assert 1.0 <= overall <= 5.0 and overall == int(overall)
+        # The answer plainly contradicts the lookup result, so a pass means the tool
+        # output didn't reach the judge intact.
+        assert result.scores["matches_order_data"] == 0.0, result.intermediate_outputs

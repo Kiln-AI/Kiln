@@ -22,6 +22,7 @@ from kiln_ai.tools.base_tool import KilnToolInterface
 
 EXPECTED_DIR = GOLDEN_DIR / "expected"
 DEFINITIONS_PATH = GOLDEN_DIR / "definitions.json"
+JUDGE_THINKING_INSTRUCTION_PATH = GOLDEN_DIR / "judge_thinking_instruction.txt"
 CASES: list[dict[str, Any]] = json.loads(
     (GOLDEN_DIR / "cases.json").read_text(encoding="utf-8")
 )
@@ -90,6 +91,14 @@ async def test_golden_definitions(update_goldens):
     _check_golden(
         DEFINITIONS_PATH,
         json.dumps(definitions, indent=2, ensure_ascii=False),
+        update_goldens,
+    )
+
+
+def test_golden_judge_thinking_instruction(update_goldens):
+    _check_golden(
+        JUDGE_THINKING_INSTRUCTION_PATH,
+        TOOLSET_V1.judge_thinking_instruction,
         update_goldens,
     )
 

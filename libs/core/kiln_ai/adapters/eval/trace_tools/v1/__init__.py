@@ -10,6 +10,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from kiln_ai.adapters.eval.trace_tools.v1.definitions import (
+    JUDGE_THINKING_INSTRUCTION,
+)
 from kiln_ai.adapters.eval.trace_tools.v1.render import render_overview
 from kiln_ai.adapters.eval.trace_tools.v1.tools import build_tools
 from kiln_ai.adapters.eval.trace_tools.v1.view import TraceView, build_view
@@ -40,6 +43,11 @@ class TraceToolsetV1:
     def build_tools(self, view: object) -> list[KilnToolInterface]:
         """The five trace tools over a view from ``build_view``, in their fixed order."""
         return build_tools(_own_view(view))
+
+    @property
+    def judge_thinking_instruction(self) -> str:
+        """The first-turn instruction for a judge with these tools."""
+        return JUDGE_THINKING_INSTRUCTION
 
 
 def _own_view(view: object) -> TraceView:

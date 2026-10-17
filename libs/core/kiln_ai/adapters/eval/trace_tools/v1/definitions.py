@@ -1,7 +1,8 @@
-"""Names, descriptions and parameter schemas of the v1 trace tools.
+"""Names, descriptions and parameter schemas of the v1 trace tools, and the
+first-turn instruction a judge with them gets.
 
 Frozen: the model sees this text, so any change to it needs a new toolset
-version. The golden definitions test fails on any change.
+version. The golden tests fail on any change.
 """
 
 from collections.abc import Mapping
@@ -23,6 +24,7 @@ from kiln_ai.adapters.eval.trace_tools.v1.limits import (
 from kiln_ai.adapters.eval.trace_tools.v1.view import FILTERABLE_ROLES, PARTS
 
 __all__ = [
+    "JUDGE_THINKING_INSTRUCTION",
     "PREVIEW_MESSAGES",
     "READ_MESSAGES",
     "READ_MESSAGE_TEXT",
@@ -241,6 +243,16 @@ TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ),
 )
 """The five v1 trace tools, in the fixed order the judge is given them."""
+
+
+JUDGE_THINKING_INSTRUCTION = (
+    "First, investigate the trace: use the trace tools to read the parts of it you "
+    "need. Then describe your evaluation and the decision you reach for each score. "
+    "Don't give your scores in their final format yet: after this, you'll be asked "
+    "for the formal, formatted version."
+)
+"""What a judge with the v1 tools is told after its rendered prompt, in the first of
+its two turns."""
 
 
 def tool_definition(name: str) -> ToolDefinition:

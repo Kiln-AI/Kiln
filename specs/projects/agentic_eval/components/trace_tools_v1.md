@@ -404,7 +404,7 @@ All errors below are raised as `TraceToolUsageError` (a `ToolCallError`). The mo
 
 ```python
 # v1/__init__.py
-TOOLSET_V1: TraceToolset                      # version, build_view, render_overview, build_tools
+TOOLSET_V1: TraceToolset                      # version, build_view, render_overview, build_tools, judge_thinking_instruction
 
 # v1/view.py
 def build_view(trace: Sequence[Mapping[str, Any]]) -> TraceView
@@ -426,6 +426,7 @@ def parse_args(tool_name: str, kwargs: dict[str, Any]) -> PreviewArgs | ReadArgs
 def build_tools(view: TraceView) -> list[KilnToolInterface]
 ```
 
+- **Judge thinking instruction.** `definitions.JUDGE_THINKING_INSTRUCTION`, returned by `TOOLSET_V1.judge_thinking_instruction`, is what the judge is told after its rendered prompt in its first turn (architecture §3.7): "First, investigate the trace: use the trace tools to read the parts of it you need. Then describe your evaluation and the decision you reach for each score. Don't give your scores in their final format yet: after this, you'll be asked for the formal, formatted version." Frozen like the tool text, by `golden/judge_thinking_instruction.txt`.
 - **Argument types.** `PreviewArgs`, `ReadArgs`, `TextArgs` and `SearchArgs` are frozen dataclasses with defaults already applied. `roles` and `parts` are tuples, or `None` for no filter.
 - **`parse_args`** re-validates `kwargs` against the tool's schema (E11), applies defaults, and checks the E3 rule.
 - **Dependencies.** v1 depends only on: `kiln_ai.tools.base_tool` (`UnmanagedKilnTool`, `ToolCallResult`, `ToolCallError`), `kiln_ai.datamodel.tool_id.build_kiln_unmanaged_tool_id`, `kiln_ai.utils.open_ai_types.TASK_RESPONSE_TOOL_NAME`, `jsonschema`, and `regex`. The only code that depends on v1 is `trace_tools.toolset.trace_toolset()`.

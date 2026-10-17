@@ -31,6 +31,13 @@ class TraceToolset(Protocol):
         """The judge's tools over ``view``, in their fixed order."""
         ...
 
+    @property
+    def judge_thinking_instruction(self) -> str:
+        """Sent after the judge's rendered prompt in its first turn, which has the
+        tools and no score format: investigate the trace and describe the decision,
+        because the formatted scores are asked for in a final turn of their own."""
+        ...
+
 
 class UnsupportedTraceToolsetVersion(Exception):
     """A judge asked for a trace toolset version this build of Kiln doesn't have."""
