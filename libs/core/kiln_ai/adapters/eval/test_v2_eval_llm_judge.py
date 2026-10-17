@@ -22,8 +22,10 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
     EvalTaskInput,
     LlmJudgeProperties,
+    LlmJudgeRunConfig,
     SkippedReason,
 )
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_run import Usage
 
@@ -888,3 +890,146 @@ class TestLlmJudgeE2EMessageConstruction:
 
         assert result.scores == {"quality": 4.0, "correctness": 1.0}
         assert result.skipped_reason is None
+
+
+class TestLlmJudgeRunConfig:
+    """The judge's optional run_config. Unset (or any unset field in it) must keep the
+    default, so older configs behave as before; a set field must reach the model call;
+    an unknown thinking level must fail rather than be sent or silently dropped."""
+
+    @staticmethod
+    def _mock_adapter(mock_adapter_for_task) -> None:
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.return_value = (
+            _judge_run(),
+            RunOutput(output={"quality": "4"}, intermediate_outputs=None),
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+
+    @staticmethod
+    def _run_config_properties(mock_adapter_for_task) -> KilnAgentRunConfigProperties:
+        return mock_adapter_for_task.call_args.kwargs["run_config_properties"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("run_config", [None, LlmJudgeRunConfig()])
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_unset_keeps_defaults(self, mock_adapter_for_task, run_config):
+        self._mock_adapter(mock_adapter_for_task)
+        props = _make_props(
+            model_name="gpt_5_6_terra",
+            model_provider="openrouter",
+            run_config=run_config,
+        )
+        await LlmJudgeEval(_make_config(props)).evaluate(_inp())
+
+        rc = self._run_config_properties(mock_adapter_for_task)
+        for field in ("thinking_level", "temperature", "top_p"):
+            assert field not in rc.model_fields_set
+        assert rc.thinking_level is None
+        assert rc.temperature == 1.0
+        assert rc.top_p == 1.0
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_set_fields_reach_the_model_call(self, mock_adapter_for_task):
+        self._mock_adapter(mock_adapter_for_task)
+        props = _make_props(
+            model_name="gpt_5_6_terra",
+            model_provider="openrouter",
+            run_config=LlmJudgeRunConfig(
+                thinking_level="medium", temperature=0.2, top_p=0.9
+            ),
+        )
+        await LlmJudgeEval(_make_config(props)).evaluate(_inp())
+
+        rc = self._run_config_properties(mock_adapter_for_task)
+        assert {"thinking_level", "temperature", "top_p"} <= rc.model_fields_set
+        assert rc.thinking_level == "medium"
+        assert rc.temperature == 0.2
+        assert rc.top_p == 0.9
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_partial_run_config_keeps_other_defaults(self, mock_adapter_for_task):
+        self._mock_adapter(mock_adapter_for_task)
+        props = _make_props(run_config=LlmJudgeRunConfig(temperature=0.0))
+        await LlmJudgeEval(_make_config(props)).evaluate(_inp())
+
+        rc = self._run_config_properties(mock_adapter_for_task)
+        assert rc.temperature == 0.0
+        assert "thinking_level" not in rc.model_fields_set
+        assert rc.top_p == 1.0
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_unknown_level_raises(self, mock_adapter_for_task):
+        self._mock_adapter(mock_adapter_for_task)
+        props = _make_props(
+            model_name="gpt_5_6_terra",
+            model_provider="openrouter",
+            run_config=LlmJudgeRunConfig(thinking_level="ultra"),
+        )
+        with pytest.raises(ValueError, match="not available"):
+            await LlmJudgeEval(_make_config(props)).evaluate(_inp())
+        mock_adapter_for_task.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_level_on_model_without_levels_raises(self, mock_adapter_for_task):
+        self._mock_adapter(mock_adapter_for_task)
+        props = _make_props(
+            model_name="gpt_4o",
+            model_provider="openai",
+            run_config=LlmJudgeRunConfig(thinking_level="low"),
+        )
+        with pytest.raises(ValueError, match="has no thinking levels"):
+            await LlmJudgeEval(_make_config(props)).evaluate(_inp())
+        mock_adapter_for_task.assert_not_called()
+
+    def test_run_config_validation(self):
+        with pytest.raises(ValueError, match="non-empty"):
+            LlmJudgeRunConfig(thinking_level="  ")
+        assert LlmJudgeRunConfig(thinking_level=" low ").thinking_level == "low"
+        with pytest.raises(ValueError):
+            LlmJudgeRunConfig(temperature=2.5)
+        with pytest.raises(ValueError):
+            LlmJudgeRunConfig(top_p=-0.1)
+
+    def test_older_config_without_run_config_loads(self):
+        props = LlmJudgeProperties.model_validate(
+            {
+                "model_name": "gpt-4o",
+                "model_provider": "openai",
+                "prompt_template": "Rate this",
+            }
+        )
+        assert props.run_config is None
+
+    @staticmethod
+    def _materialize(**kwargs) -> LlmJudgeProperties:
+        with (
+            patch(
+                "kiln_ai.adapters.eval.base_eval.build_default_llm_judge_prompt",
+                return_value="prompt",
+            ),
+            patch(
+                "kiln_ai.adapters.eval.base_eval.derived_reference_keys",
+                return_value=[],
+            ),
+        ):
+            return materialize_llm_judge_properties(
+                eval=Mock(),
+                model_name="gpt_5_6_terra",
+                model_provider="openrouter",
+                g_eval=False,
+                **kwargs,
+            )
+
+    def test_materialize_carries_run_config(self):
+        run_config = LlmJudgeRunConfig(thinking_level="low", temperature=0.5)
+        assert self._materialize(run_config=run_config).run_config == run_config
+        assert self._materialize().run_config is None
+
+    def test_materialize_rejects_unknown_level(self):
+        with pytest.raises(ValueError, match="not available"):
+            self._materialize(run_config=LlmJudgeRunConfig(thinking_level="ultra"))

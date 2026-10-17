@@ -45,6 +45,7 @@ class ModelFamily(str, Enum):
     sakana = "sakana"
     thinking_machines = "thinking_machines"
     jev = "jev"
+    liquid = "liquid"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -57,6 +58,7 @@ class ModelName(str, Enum):
     fugu_max = "fugu_max"
     fugu_ultra_v2 = "fugu_ultra_v2"
     fugu_ultra = "fugu_ultra"
+    muse_wonder_1_0 = "muse_wonder_1_0"
     muse_spark_1_2 = "muse_spark_1_2"
     muse_spark_1_1 = "muse_spark_1_1"
     muse_glimmer_30b = "muse_glimmer_30b"
@@ -181,6 +183,7 @@ class ModelName(str, Enum):
     gemini_3_1_flash_lite_preview = "gemini_3_1_flash_lite_preview"
     gemini_3_1_pro_preview = "gemini_3_1_pro_preview"
     gemini_3_pro_preview = "gemini_3_pro_preview"
+    gemini_4_argon = "gemini_4_argon"
     gemini_3_8_flash = "gemini_3_8_flash"
     gemini_3_7_flash = "gemini_3_7_flash"
     gemini_3_6_flash = "gemini_3_6_flash"
@@ -327,6 +330,7 @@ class ModelName(str, Enum):
     bytedance_seed_1_6 = "bytedance_seed_1_6"
     bytedance_seed_1_6_flash = "bytedance_seed_1_6_flash"
     arcee_trinity_large_thinking = "arcee_trinity_large_thinking"
+    stepfun_step5_preview = "stepfun_step5_preview"
     stepfun_step3_7_flash = "stepfun_step3_7_flash"
     stepfun_step3 = "stepfun_step3"
     mimo_v2_pro = "mimo_v2_pro"
@@ -339,6 +343,7 @@ class ModelName(str, Enum):
     mimo_v2_6_flash = "mimo_v2_6_flash"
     inkling = "inkling"
     jev_1_13 = "jev_1_13"
+    lfm_2_5_24b_a2b = "lfm_2_5_24b_a2b"
 
 
 class ModelParserID(str, Enum):
@@ -3109,6 +3114,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-sonnet-4",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.function_calling,
             ),
             KilnModelProvider(
@@ -3287,6 +3293,110 @@ built_in_models: List[KilnModel] = [
                 model_id="claude-3-5-haiku",
                 deprecated=True,
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
+            ),
+        ],
+    ),
+    # Gemini 4 Argon
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_4_argon,
+        friendly_name="Gemini 4 Argon",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-4-argon",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                # lowest level that returns reasoning on OpenRouter
+                default_thinking_level="low",
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-4-argon",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                # the Gemini API returns no reasoning at low or medium, only at high
+                default_thinking_level="high",
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-4-argon",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                default_thinking_level="high",
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
             ),
         ],
     ),
@@ -5295,6 +5405,40 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 model_id="ai/llama3.1:8B-Q4_K_M",
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Muse Wonder 1.0
+    KilnModel(
+        family=ModelFamily.muse,
+        name=ModelName.muse_wonder_1_0,
+        friendly_name="Muse Wonder 1.0",
+        editorial_notes="Meta's frontier Muse reasoning model, above Muse Spark. Accepts text, images, video, audio and PDFs, with a 1M-token context.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="meta/muse-wonder",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents (html and csv excluded, as on the Muse Spark entries)
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio (ogg returns 400 unsupported file type)
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
             ),
         ],
     ),
@@ -7841,6 +7985,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwen3-max-thinking",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
                 supports_function_calling=True,
@@ -7858,6 +8003,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwen3-max",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
                 supports_function_calling=True,
@@ -7922,6 +8068,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwen3-235b-a22b",
+                deprecated=True,
                 reasoning_capable=True,
                 require_openrouter_reasoning=True,
                 supports_data_gen=True,
@@ -8011,6 +8158,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwen3-235b-a22b",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 formatter=ModelFormatterID.qwen3_style_no_think,
                 supports_data_gen=True,
@@ -8339,6 +8487,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwen3-8b",
+                deprecated=True,
                 supports_structured_output=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
@@ -8385,6 +8534,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwen3-8b",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 formatter=ModelFormatterID.qwen3_style_no_think,
                 supports_data_gen=False,
@@ -10930,6 +11080,35 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # StepFun Step 5 Preview
+    KilnModel(
+        family=ModelFamily.stepfun,
+        name=ModelName.stepfun_step5_preview,
+        friendly_name="StepFun Step 5 Preview",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="stepfun/step-5-preview",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=False,
+                supports_data_gen=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                supports_vision=True,
+            ),
+        ],
+    ),
     # StepFun Step 3.7 Flash
     KilnModel(
         family=ModelFamily.stepfun,
@@ -11313,6 +11492,21 @@ built_in_models: List[KilnModel] = [
                 supports_logprobs=False,
                 supports_function_calling=False,
                 structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # LFM 2.5 24B A2B
+    KilnModel(
+        family=ModelFamily.liquid,
+        name=ModelName.lfm_2_5_24b_a2b,
+        friendly_name="LFM 2.5 24B A2B",
+        editorial_notes="Liquid AI's open-weights MoE reasoning model (24B total, about 2B active), built for tool-calling agents and on-device use. Text only, 128K context.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="liquid/lfm-2.5-24b-a2b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
             ),
         ],
     ),

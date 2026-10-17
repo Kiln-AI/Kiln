@@ -6,23 +6,30 @@ episode. The world run config lists the environment's tool
 by its `kiln_tool::world::<world_id>::append_note` id; a second run config lists a
 project code tool with the same function name for inputs without an environment. Nothing
 is swapped: the runner refuses a job whose run config and input disagree. Generation
-is stubbed at the model boundary only: the fake `run_task` resolves the run config's
-tool through the registry (so the proxy runs for real) and calls it once.
+is stubbed at the model boundary only: most tests use a fake `run_task` that resolves
+the run config's tool through the registry (so the proxy runs for real) and calls it
+once; the tool-error tests run the real `LiteLlmAdapter` with only the provider call
+stubbed.
 """
 
 import asyncio
 import json
 import re
+from contextlib import contextmanager
 from typing import ClassVar
 from unittest.mock import patch
 
 import pytest
+from litellm.types.utils import ModelResponse
 
 from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
 from kiln_ai.adapters.eval.eval_runner import EvalJob, EvalRunner
+from kiln_ai.adapters.ml_model_list import KilnModelProvider
+from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.datamodel_enums import (
+    ModelProviderName,
     StructuredOutputMode,
     TaskOutputRatingType,
     TurnMode,
@@ -60,6 +67,7 @@ from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.async_job_runner import RetryableError
 from kiln_ai.worlds.session_manager import (
     OpenEnvError,
+    OpenEnvRejectedError,
     OpenEnvSessionManager,
     OpenEnvTransientError,
 )
@@ -674,6 +682,130 @@ async def test_transient_error_in_a_tool_call_is_retried(
         with pytest.raises(RetryableError, match="connection dropped"):
             await runner.run_job(runner.collect_tasks()[0])
     assert session_manager._sessions == {}
+
+
+def _model_reply(content: str | None = None, note: str | None = None):
+    tool_calls = (
+        [
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {
+                    "name": "append_note",
+                    "arguments": json.dumps({"note": note}),
+                },
+            }
+        ]
+        if note is not None
+        else None
+    )
+    response = ModelResponse(
+        model="gpt-4",
+        choices=[{"message": {"content": content, "tool_calls": tool_calls}}],
+    )
+    return response, response.choices[0]
+
+
+@contextmanager
+def _real_model_adapter(*replies):
+    """Runs generation through the real LiteLlmAdapter, stubbed only where it
+    would reach the model provider. Yields the mock that returns `replies`."""
+    provider = KilnModelProvider(name=ModelProviderName.openai, model_id="gpt-4")
+    with (
+        patch(
+            "kiln_ai.adapters.adapter_registry.kiln_model_provider_from",
+            return_value=provider,
+        ),
+        patch.object(LiteLlmAdapter, "model_provider", return_value=provider),
+        patch.object(LiteLlmAdapter, "build_completion_kwargs", return_value={}),
+        patch.object(
+            LiteLlmAdapter, "acompletion_checking_response", side_effect=list(replies)
+        ) as model_call,
+    ):
+        yield model_call
+
+
+@contextmanager
+def _first_tool_step_raises(session_manager, error):
+    """The environment's reply to the first tool call is `error`; everything else
+    reaches the real environment, and call_tool's own error handling runs."""
+    original_request = session_manager._request
+    raised = False
+
+    async def request(ws, message, expected_type):
+        nonlocal raised
+        is_tool_call = message.get("data", {}).get("type") == "call_tool"
+        if is_tool_call and not raised:
+            raised = True
+            raise error
+        return await original_request(ws, message, expected_type)
+
+    with patch.object(session_manager, "_request", side_effect=request):
+        yield
+
+
+@pytest.mark.parametrize(
+    "error, expected_exception",
+    [
+        pytest.param(
+            OpenEnvTransientError("connection dropped"),
+            RetryableError,
+            id="transient_is_retried",
+        ),
+        pytest.param(
+            OpenEnvError("The environment sent invalid JSON: <html>"),
+            KilnRunError,
+            id="broken_session_fails_the_job",
+        ),
+    ],
+)
+async def test_session_ending_tool_error_in_the_model_adapter_fails_the_run(
+    project, task, world, run_config, eval_, session_manager, error, expected_exception
+):
+    """The real model adapter runs the world tool. An error that ends the session
+    fails the run on that first call with the real error, instead of going back to
+    the model; a transient one is retried."""
+    _input(task, "note", _reset(world, "a"), id="ei_a")
+    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
+
+    with (
+        _real_model_adapter(_model_reply(note="hi")) as model_call,
+        _first_tool_step_raises(session_manager, error),
+    ):
+        runner = _runner([cfg], run_config, session_manager)
+        with pytest.raises(expected_exception, match=re.escape(str(error))):
+            await runner.run_job(runner.collect_tasks()[0])
+
+    assert model_call.call_count == 1
+    assert session_manager._sessions == {}
+
+
+async def test_rejected_world_tool_call_goes_back_to_the_model(
+    project, task, world, run_config, eval_, session_manager
+):
+    """A rejection keeps the session: the model gets an error result, answers, and
+    the episode ends normally."""
+    _input(task, "note", _reset(world, "a"), id="ei_a")
+    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
+    rejection = OpenEnvRejectedError("The environment rejected a 'step' message: no")
+
+    with (
+        _real_model_adapter(
+            _model_reply(note="hi"), _model_reply(content="x")
+        ) as model_call,
+        _first_tool_step_raises(session_manager, rejection),
+    ):
+        runner = _runner([cfg], run_config, session_manager)
+        await runner.run_job(runner.collect_tasks()[0])
+
+    assert model_call.call_count == 2
+    (trace,) = _traces(task)
+    assert trace.output.output == "x"
+    tool_message = next(m for m in trace.trace if m["role"] == "tool")
+    assert tool_message["is_error"] is True
+    assert "failed unexpectedly" in tool_message["content"]
+    assert trace.world_episode is not None
+    assert trace.world_episode.final_state is not None
 
 
 async def test_failed_world_resolution_is_remembered_for_the_run(

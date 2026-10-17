@@ -741,8 +741,8 @@ def connect_run_api(app: FastAPI):
         tags=["Runs"],
         openapi_extra=agent_policy_require_approval("Run task with LLM?"),
         responses={
-            # Adapter failures (e.g., LLM rate limit, tool crash) return
-            # ErrorWithTrace with the partial conversation trace so the UI
+            # Adapter failures (e.g., LLM rate limit, a broken tool definition)
+            # return ErrorWithTrace with the partial conversation trace so the UI
             # can show what happened before the error. Other 500s and 4xx
             # errors use the standard error shape.
             500: {"model": ErrorWithTrace},
