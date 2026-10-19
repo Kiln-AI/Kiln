@@ -36,7 +36,7 @@
 | Entry point | What it sets up |
 |---|---|
 | `app/desktop/desktop.py` (`__main__`, the shipped app) | At import: `setup_certs()` and the `LLAMA_INDEX_CACHE_DIR` / `NLTK_DATA` env vars. In `__main__`: multiprocessing start method, Sentry (when `SENTRY_DSN` is set), `setup_resource_limits()`, then the tray app and a `DesktopServer` thread running `desktop_server.make_app` via `server_config`. |
-| `app/desktop/dev_server.py` (`__main__`) → `app/desktop/dev_app.py` | `set_dev_env_vars()` at import of both modules, `setup_resource_limits()`, then uvicorn with reload on `app.desktop.dev_app:dev_app` (`make_app()` at import of `dev_app`). The reload watch skips the repo's `.venv` and `.worktrees` via `dev_reload.reload_excludes`: uvicorn 0.32 needs absolute paths, and crashes on one that doesn't exist. |
+| `app/desktop/dev_server.py` (`__main__`) → `app/desktop/dev_app.py` | `set_dev_env_vars()` at import of both modules, `setup_resource_limits()`, then uvicorn with reload on `app.desktop.dev_app:dev_app` (`make_app()` at import of `dev_app`). |
 | `desktop_server.make_app` (used by both above) | `setup_litellm_logging()`, the remote model-list refresh, all routers, `GitSyncMiddleware`. Its `lifespan` sets strict mode, starts and stops background git syncs, and closes the job event bus. |
 | `kiln_server` script (`kiln_server.server:main`) | Writes host/port CLI args to `os.environ`, then runs uvicorn on `kiln_server.server:app`. No lifespan, strict mode or litellm logging. |
 | `kiln_mcp` script (`kiln_server.mcp.mcp:main`) | `logging.basicConfig` at the CLI's log level, then serves a project's tools over MCP. No strict mode or litellm logging. |

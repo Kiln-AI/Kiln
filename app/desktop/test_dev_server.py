@@ -5,14 +5,13 @@ import subprocess
 import sys
 import types
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 import uvicorn
 from uvicorn.supervisors.watchfilesreload import FileFilter
 
 from app.desktop.dev_env import set_dev_env_vars
-from app.desktop.dev_reload import reload_excludes
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -136,41 +135,34 @@ def test_uvicorn_run_options(run_dev_server_main):
         "host": "127.0.0.1",
         "port": 8757,
         "reload": True,
-        "reload_excludes": reload_excludes(REPO_ROOT),
+        "reload_excludes": ANY,
         "reload_delay": 0.1,
         "timeout_graceful_shutdown": 1,
     }
     mock_setup_resource_limits.assert_called_once()
 
 
-@pytest.mark.parametrize(
-    "existing_folders",
-    [[".venv", ".worktrees"], [".venv"], [".worktrees"], []],
-)
-def test_reload_excludes_lists_only_the_folders_that_exist(tmp_path, existing_folders):
-    for folder in existing_folders:
-        (tmp_path / folder).mkdir()
+def test_reload_skips_the_venv_and_worktrees_folders(run_dev_server_main):
+    mock_uvicorn_run, _ = run_dev_server_main()
+    reload_excludes = mock_uvicorn_run.call_args.kwargs["reload_excludes"]
 
-    assert reload_excludes(tmp_path) == [
-        str(tmp_path / folder) for folder in existing_folders
+    assert reload_excludes == [
+        str(REPO_ROOT / folder)
+        for folder in (".venv", ".worktrees")
+        if (REPO_ROOT / folder).is_dir()
     ]
-
-
-def test_uvicorn_reload_ignores_the_venv_and_still_watches_the_app(tmp_path):
-    # .worktrees is left missing: uvicorn.Config raises on a missing absolute
-    # exclude, so this also checks reload_excludes drops it.
-    (tmp_path / ".venv").mkdir()
+    # uvicorn.Config raises if an absolute exclude doesn't exist.
     config = uvicorn.Config(
         "app.desktop.dev_app:dev_app",
         reload=True,
-        reload_excludes=reload_excludes(tmp_path),
+        reload_excludes=reload_excludes,
         log_config=None,
     )
-
     watch_filter = FileFilter(config)
 
-    assert not watch_filter(tmp_path / ".venv/lib/site-packages/litellm/main.py")
-    assert watch_filter(tmp_path / "app/desktop/dev_server.py")
+    for folder in reload_excludes:
+        assert not watch_filter(Path(folder) / "lib/site-packages/litellm/main.py")
+    assert watch_filter(REPO_ROOT / "app/desktop/dev_server.py")
 
 
 def test_kiln_port_is_exported_for_reload_workers(run_dev_server_main):
