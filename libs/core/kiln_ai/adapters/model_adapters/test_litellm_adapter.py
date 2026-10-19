@@ -23,6 +23,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import (
     LiteLlmAdapter,
     ModelTurnResult,
+    replace_unparseable_tool_arguments,
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel import MessageUsage, Project, Task, Usage
@@ -1231,6 +1232,145 @@ async def test_build_completion_kwargs_keeps_reasoning_fields_for_other_provider
     assert kwargs["messages"][1] is messages[1]
     assert kwargs["messages"][1].reasoning_content == "thinking"
     assert kwargs["messages"][2]["reasoning_content"] == "thinking"
+
+
+def _assistant_tool_calls(*arguments: str | None) -> dict:
+    return {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {
+                "id": f"c{i}",
+                "type": "function",
+                "function": {"name": "add", "arguments": args},
+            }
+            for i, args in enumerate(arguments)
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    "arguments, expected",
+    [
+        pytest.param('{"a": 1}', '{"a": 1}', id="object_kept"),
+        pytest.param("{}", "{}", id="empty_object_kept"),
+        pytest.param('{"a": 1', "{}", id="invalid_json"),
+        pytest.param("", "{}", id="empty_string"),
+        pytest.param(None, "{}", id="null"),
+        pytest.param("[1, 2]", "{}", id="json_array"),
+        pytest.param('"text"', "{}", id="json_string"),
+    ],
+)
+def test_replace_unparseable_tool_arguments_dict_message(arguments, expected):
+    message = _assistant_tool_calls(arguments)
+    original = copy.deepcopy(message)
+
+    [result] = replace_unparseable_tool_arguments([message])
+
+    assert result == {
+        **original,
+        "tool_calls": [
+            {
+                **original["tool_calls"][0],
+                "function": {"name": "add", "arguments": expected},
+            }
+        ],
+    }
+    assert message == original
+
+
+def test_replace_unparseable_tool_arguments_only_replaces_bad_calls():
+    [result] = replace_unparseable_tool_arguments(
+        [_assistant_tool_calls('{"a": 1}', "{nope")]
+    )
+
+    assert [c["function"]["arguments"] for c in result["tool_calls"]] == [
+        '{"a": 1}',
+        "{}",
+    ]
+
+
+def test_replace_unparseable_tool_arguments_leaves_valid_messages_untouched():
+    litellm_message = LiteLLMMessage(
+        role="assistant",
+        content=None,
+        tool_calls=[
+            {
+                "id": "c1",
+                "type": "function",
+                "function": {"name": "add", "arguments": "{}"},
+            }
+        ],
+    )
+    messages = [
+        {"role": "user", "content": "hi"},
+        litellm_message,
+        _assistant_tool_calls('{"a": 1}'),
+        {"role": "tool", "content": "{not json", "tool_call_id": "c0"},
+    ]
+
+    result = replace_unparseable_tool_arguments(messages)
+
+    assert all(r is m for r, m in zip(result, messages, strict=True))
+
+
+def test_replace_unparseable_tool_arguments_converts_litellm_message_with_bad_call():
+    litellm_message = LiteLLMMessage(
+        role="assistant",
+        content=None,
+        tool_calls=[
+            {
+                "id": "c1",
+                "type": "function",
+                "function": {"name": "add", "arguments": "{nope"},
+            }
+        ],
+    )
+
+    [result] = replace_unparseable_tool_arguments([litellm_message])
+
+    assert isinstance(result, dict)
+    assert result["role"] == "assistant"
+    assert result["tool_calls"][0]["id"] == "c1"
+    assert result["tool_calls"][0]["function"] == {"name": "add", "arguments": "{}"}
+    assert litellm_message.tool_calls[0].function.arguments == "{nope"
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_replaces_unparseable_tool_arguments(
+    config, mock_task
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.anthropic
+    mock_provider.temp_top_p_exclusive = False
+    messages = [
+        {"role": "user", "content": "hi"},
+        _assistant_tool_calls("{nope"),
+        {
+            "role": "tool",
+            "content": "Error: not valid JSON",
+            "tool_call_id": "c0",
+            "is_error": True,
+        },
+    ]
+    original = copy.deepcopy(messages)
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="anthropic/test"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    assert kwargs["messages"][1] == _assistant_tool_calls("{}")
+    assert kwargs["messages"][2] == {
+        "role": "tool",
+        "content": "Error: not valid JSON",
+        "tool_call_id": "c0",
+    }
+    assert messages == original
 
 
 @pytest.mark.asyncio
