@@ -24,7 +24,8 @@
   <ul class="text-xs text-gray-500 list-disc list-inside mb-2 indent-2">
     <li>
       <span class="font-mono font-bold">{"{{ trace }}"}</span> The entire
-      conversation, including the system prompt, as raw message data.
+      conversation, including the system prompt, as a raw list of message
+      objects.
       <ul class="list-[circle] list-inside ml-4">
         <li>
           Add the <span class="font-mono font-bold">format_trace</span> filter
@@ -36,7 +37,8 @@
     </li>
     <li>
       <span class="font-mono font-bold">{"{{ system_prompt }}"}</span> The system
-      prompt the model was given.
+      prompt of the model being evaluated, taken from its trace (empty if none was
+      recorded). Not the judge's system prompt below.
     </li>
     <li>
       <span class="font-mono font-bold">{"{{ task_input }}"}</span> The input to

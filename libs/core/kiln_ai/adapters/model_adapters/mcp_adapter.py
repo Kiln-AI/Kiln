@@ -1,4 +1,3 @@
-import json
 from typing import Tuple
 
 from kiln_ai.adapters.errors import KilnRunError, format_error_message
@@ -18,9 +17,8 @@ from kiln_ai.tools.mcp_session_manager import mcp_session_scope
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.open_ai_types import (
-    ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionMessageParam,
-    ChatCompletionUserMessageParam,
+    single_turn_trace,
 )
 
 
@@ -175,7 +173,7 @@ class MCPAdapter(BaseAdapter):
                         f"response is not a string for non-structured task: {run_output.output}"
                     )
 
-            trace = self._build_single_turn_trace(input, run_output.output)
+            trace = single_turn_trace(input, run_output.output)
 
             run = self.generate_run(
                 input, input_source, run_output, usage, trace, parent_task_run
@@ -200,23 +198,3 @@ class MCPAdapter(BaseAdapter):
                 partial_trace=None,
                 original=e,
             ) from e
-
-    # Helpers
-
-    @staticmethod
-    def _build_single_turn_trace(
-        input: InputType, output: str | dict
-    ) -> list[ChatCompletionMessageParam]:
-        user_message: ChatCompletionUserMessageParam = {
-            "role": "user",
-            "content": input
-            if isinstance(input, str)
-            else json.dumps(input, ensure_ascii=False),
-        }
-        assistant_message: ChatCompletionAssistantMessageParamWrapper = {
-            "role": "assistant",
-            "content": output
-            if isinstance(output, str)
-            else json.dumps(output, ensure_ascii=False),
-        }
-        return [user_message, assistant_message]

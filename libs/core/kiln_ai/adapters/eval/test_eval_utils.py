@@ -44,14 +44,44 @@ class TestEvalTraceFormatter:
                 {"type": "text", "text": "second"},
             ],
         }  # type: ignore
-        assert EvalTraceFormatter.content_from_message(message) == "first\n\nsecond"
+        assert (
+            EvalTraceFormatter.content_from_message(message)
+            == "first\n\n[image]\n\nsecond"
+        )
 
-    def test_content_from_message_list_without_text_parts(self):
+    def test_content_from_message_list_of_only_non_text_parts(self):
+        """A message of only images still shows up in the transcript."""
         message: ChatCompletionMessageParam = {
             "role": "user",
-            "content": [{"type": "image_url", "image_url": {"url": "https://x"}}],
+            "content": [
+                {"type": "image_url", "image_url": {"url": "https://x"}},
+                {"type": "input_audio", "input_audio": {"data": "", "format": "wav"}},
+                {"type": "file", "file": {"file_id": "f"}},
+                {"type": "something_new"},
+            ],
         }  # type: ignore
+        assert EvalTraceFormatter.content_from_message(message) == (
+            "[image]\n\n[audio]\n\n[file]\n\n[something_new]"
+        )
+
+    @pytest.mark.parametrize(
+        "content",
+        [[], ["bare string"], [{"type": "text", "text": 3}], [{"no_type": True}]],
+        ids=["empty", "non-dict-part", "non-string-text", "untyped-part"],
+    )
+    def test_content_from_message_list_with_nothing_readable(self, content):
+        message: ChatCompletionMessageParam = {"role": "user", "content": content}  # type: ignore
         assert EvalTraceFormatter.content_from_message(message) is None
+
+    def test_content_from_message_tool_list_content_unwraps_json_output(self):
+        """A Kiln tool result reads the same whether it arrives as a string or
+        as a text part."""
+        message: ChatCompletionMessageParam = {
+            "role": "tool",
+            "content": [{"type": "text", "text": json.dumps({"output": "42"})}],
+            "tool_call_id": "call_123",
+        }  # type: ignore
+        assert EvalTraceFormatter.content_from_message(message) == "42"
 
     def test_content_from_message_tool_with_json_output(self):
         tool_output = json.dumps({"output": "tool result", "other": "ignored"})
@@ -843,3 +873,27 @@ assistant requested tool calls:
             EvalTraceFormatter.structured_output_from_message(message)
             == '{"second": true}'
         )
+
+
+class TestSystemPromptFromTrace:
+    def test_reads_text_parts_of_list_content(self):
+        trace = [
+            {"role": "system", "content": [{"type": "text", "text": "Be terse."}]},
+        ]
+        assert EvalTraceFormatter.system_prompt_from_trace(trace) == "Be terse."
+
+    def test_returns_first_system_message(self):
+        trace = [
+            {"role": "system", "content": "first"},
+            {"role": "user", "content": "hi"},
+            {"role": "system", "content": "second"},
+        ]
+        assert EvalTraceFormatter.system_prompt_from_trace(trace) == "first"
+
+    @pytest.mark.parametrize(
+        "trace",
+        [None, [], [{"role": "user", "content": "hi"}], [{"role": "system"}]],
+        ids=["none", "empty", "no-system", "no-content"],
+    )
+    def test_empty_when_absent(self, trace):
+        assert EvalTraceFormatter.system_prompt_from_trace(trace) == ""

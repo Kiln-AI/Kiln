@@ -11,7 +11,6 @@ from kiln_ai.adapters.eval.v2_eval_llm_judge import (
     _DEFAULT_SYSTEM_PROMPT,
     LlmJudgeEval,
     _LlmJudgeTask,
-    system_prompt_from_trace,
 )
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
@@ -738,20 +737,56 @@ class TestBackendBakedReferenceAnswerJudge:
 
     @pytest.mark.asyncio
     @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
-    async def test_item_without_a_trace_skips_before_the_model_call(
+    async def test_item_without_a_trace_is_judged_on_its_input_and_output(
         self, mock_adapter_for_task
     ):
-        """The default prompt is built on the trace, so an item without one has
-        nothing for the judge to read and is skipped rather than scored blind."""
-        mock_adapter_for_task.return_value = AsyncMock()
+        """A run saved without a trace (e.g. a single-turn CSV import used as a
+        calibration golden set) is still judged, from its input and output."""
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.return_value = (
+            _judge_run(),
+            RunOutput(output={"quality": "5"}, intermediate_outputs=None),
+        )
+        mock_adapter_for_task.return_value = mock_adapter
         cfg = _make_config(self._baked_props())
 
         result = await LlmJudgeEval(cfg).evaluate(
-            _inp(trace=None, reference_data={"reference_answer": "Frank Herbert."})
+            _inp(
+                final_message="Herbert, 1965.",
+                task_input="Who wrote Dune?",
+                trace=None,
+                reference_data={"reference_answer": "Frank Herbert."},
+            )
+        )
+
+        assert result.skipped_reason is None
+        rendered = mock_adapter.invoke_returning_run_output.call_args[0][0]
+        assert (
+            "<trace>\n"
+            "user:\n<user_message>\nWho wrote Dune?\n</user_message>\n\n"
+            "assistant:\n<assistant_message>\nHerbert, 1965.\n</assistant_message>\n"
+            "</trace>"
+        ) in rendered
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_item_without_a_trace_or_input_skips_before_the_model_call(
+        self, mock_adapter_for_task
+    ):
+        """With neither a trace nor an input there is no conversation to rebuild,
+        so the item is skipped rather than scored blind."""
+        cfg = _make_config(self._baked_props())
+
+        result = await LlmJudgeEval(cfg).evaluate(
+            _inp(
+                trace=None,
+                task_input=None,
+                reference_data={"reference_answer": "Frank Herbert."},
+            )
         )
 
         assert result.skipped_reason == SkippedReason.extraction_failed
-        mock_adapter_for_task.return_value.invoke_returning_run_output.assert_not_called()
+        mock_adapter_for_task.assert_not_called()
 
 
 class TestLlmJudgeEvalNoParentEval:
@@ -1090,27 +1125,3 @@ class TestLlmJudgeRunConfig:
     def test_materialize_rejects_unknown_level(self):
         with pytest.raises(ValueError, match="not available"):
             self._materialize(run_config=LlmJudgeRunConfig(thinking_level="ultra"))
-
-
-class TestSystemPromptFromTrace:
-    def test_reads_text_parts_of_list_content(self):
-        trace = [
-            {"role": "system", "content": [{"type": "text", "text": "Be terse."}]},
-        ]
-        assert system_prompt_from_trace(trace) == "Be terse."
-
-    def test_returns_first_system_message(self):
-        trace = [
-            {"role": "system", "content": "first"},
-            {"role": "user", "content": "hi"},
-            {"role": "system", "content": "second"},
-        ]
-        assert system_prompt_from_trace(trace) == "first"
-
-    @pytest.mark.parametrize(
-        "trace",
-        [None, [], [{"role": "user", "content": "hi"}], [{"role": "system"}]],
-        ids=["none", "empty", "no-system", "no-content"],
-    )
-    def test_empty_when_absent(self, trace):
-        assert system_prompt_from_trace(trace) == ""
