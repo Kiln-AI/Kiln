@@ -49,8 +49,8 @@ describe("EditDialog custom_setter", () => {
             input_type: "input",
           },
           {
-            label: "Score Name",
-            api_name: "output_score_name_0",
+            label: "Display Name",
+            api_name: "display_name_a",
             value: "Quality Check",
             input_type: "input",
             custom_setter,
@@ -64,7 +64,9 @@ describe("EditDialog custom_setter", () => {
     await submit_form()
 
     await waitFor(() => expect(custom_setter).toHaveBeenCalledTimes(1))
-    expect(custom_setter).toHaveBeenCalledWith("Quality Check")
+    expect(custom_setter).toHaveBeenCalledWith({
+      display_name_a: "Quality Check",
+    })
 
     expect(fetch_mock).toHaveBeenCalledTimes(1)
     const [, init] = fetch_mock.mock.calls[0]
@@ -72,7 +74,7 @@ describe("EditDialog custom_setter", () => {
     expect(body).toEqual({ name: "new name" })
   })
 
-  it("invokes a shared custom_setter only once across multiple fields", async () => {
+  it("invokes a shared custom_setter once, with every field's value", async () => {
     const fetch_mock = vi
       .spyOn(global, "fetch")
       .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }))
@@ -85,14 +87,14 @@ describe("EditDialog custom_setter", () => {
         fields: [
           {
             label: "Score 0",
-            api_name: "output_score_name_0",
+            api_name: "display_name_a",
             value: "A",
             input_type: "input",
             custom_setter,
           },
           {
             label: "Score 1",
-            api_name: "output_score_name_1",
+            api_name: "display_name_b",
             value: "B",
             input_type: "input",
             custom_setter,
@@ -106,16 +108,20 @@ describe("EditDialog custom_setter", () => {
     await submit_form()
 
     await waitFor(() => expect(custom_setter).toHaveBeenCalledTimes(1))
+    expect(custom_setter).toHaveBeenCalledWith({
+      display_name_a: "A",
+      display_name_b: "B",
+    })
     expect(fetch_mock).not.toHaveBeenCalled()
   })
 
-  it("does not call after_save when a custom_setter rejects (dialog stays open)", async () => {
+  it("skips the main PATCH and after_save when a custom_setter rejects", async () => {
     const fetch_mock = vi
       .spyOn(global, "fetch")
       .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }))
     const custom_setter = vi
       .fn()
-      .mockRejectedValue(new Error("migration failed"))
+      .mockRejectedValue(new Error("display name rejected"))
     const after_save = vi.fn()
 
     const { component, getAllByText, container } = render(EditDialog, {
@@ -131,8 +137,8 @@ describe("EditDialog custom_setter", () => {
             input_type: "input",
           },
           {
-            label: "Score Name",
-            api_name: "output_score_name_0",
+            label: "Display Name",
+            api_name: "display_name_a",
             value: "Quality Check",
             input_type: "input",
             custom_setter,
@@ -145,13 +151,13 @@ describe("EditDialog custom_setter", () => {
 
     await submit_form()
 
-    // The main PATCH ran, the setter was attempted and rejected
+    // The setter runs first and rejects, so the main PATCH is never sent
     await waitFor(() => expect(custom_setter).toHaveBeenCalledTimes(1))
-    expect(fetch_mock).toHaveBeenCalledTimes(1)
+    expect(fetch_mock).not.toHaveBeenCalled()
     // after_save is never called, so the dialog is not dismissed; the error is shown
     expect(after_save).not.toHaveBeenCalled()
     await waitFor(() =>
-      expect(getAllByText(/migration failed/).length).toBeGreaterThan(0),
+      expect(getAllByText(/display name rejected/).length).toBeGreaterThan(0),
     )
     // The dialog remains open
     expect(container.querySelector("dialog[open]")).not.toBeNull()
@@ -169,8 +175,8 @@ describe("EditDialog custom_setter", () => {
         patch_url: "/api/thing",
         fields: [
           {
-            label: "Score Name",
-            api_name: "output_score_name_0",
+            label: "Display Name",
+            api_name: "display_name_a",
             value: "Quality Check",
             input_type: "input",
             custom_setter,
@@ -185,5 +191,48 @@ describe("EditDialog custom_setter", () => {
 
     await waitFor(() => expect(custom_setter).toHaveBeenCalledTimes(1))
     expect(fetch_mock).not.toHaveBeenCalled()
+  })
+
+  it("shows the error and skips after_save when the main PATCH fails after custom setters", async () => {
+    vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ message: "spec save failed" }), {
+        status: 400,
+      }),
+    )
+    const custom_setter = vi.fn().mockResolvedValue(undefined)
+    const after_save = vi.fn()
+
+    const { component, getAllByText } = render(EditDialog, {
+      props: {
+        name: "Thing",
+        patch_url: "/api/thing",
+        after_save,
+        fields: [
+          {
+            label: "Name",
+            api_name: "name",
+            value: "new name",
+            input_type: "input",
+          },
+          {
+            label: "Display Name",
+            api_name: "display_name_a",
+            value: "Quality Check",
+            input_type: "input",
+            custom_setter,
+          },
+        ],
+      },
+    })
+    component.show()
+    await tick()
+
+    await submit_form()
+
+    await waitFor(() =>
+      expect(getAllByText(/spec save failed/).length).toBeGreaterThan(0),
+    )
+    expect(custom_setter).toHaveBeenCalledTimes(1)
+    expect(after_save).not.toHaveBeenCalled()
   })
 })

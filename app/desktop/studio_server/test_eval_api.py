@@ -83,7 +83,6 @@ from app.desktop.studio_server.eval_api import (
     score_summary_from_values,
     scored_trace_usage,
     scored_trace_usage_for_run_config,
-    set_output_score_display_names,
     split_size,
     summary_eval_config,
     task_run_config_from_id,
@@ -4144,7 +4143,7 @@ def test_update_eval_set_display_names(
 
         response = client.patch(
             "/api/projects/project1/tasks/task1/evals/eval1",
-            json={"output_score_display_names": ["Quality Check", None]},
+            json={"output_score_display_names": {"score1": "Quality Check"}},
         )
 
     assert response.status_code == 200
@@ -4166,11 +4165,11 @@ def test_update_eval_set_display_names(
             assert run.path.read_bytes() == run_files[run.path]
 
 
-def test_update_eval_clear_display_name(
+def test_update_eval_display_names_partial_update(
     client, mock_task_from_id, mock_eval, mock_task
 ):
-    """An empty/whitespace display name clears it back to None."""
-    mock_eval.output_scores[0].display_name = "Existing"
+    """Scores left out of the request keep their current display name."""
+    mock_eval.set_output_score_display_names({"overall_rating": "Overall"})
     mock_eval.save_to_file()
 
     with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
@@ -4178,7 +4177,29 @@ def test_update_eval_clear_display_name(
 
         response = client.patch(
             "/api/projects/project1/tasks/task1/evals/eval1",
-            json={"output_score_display_names": ["   ", None]},
+            json={"output_score_display_names": {"score1": "Quality Check"}},
+        )
+
+    assert response.status_code == 200
+    eval_from_disk = _reload_eval(mock_task)
+    assert eval_from_disk.output_scores[0].display_name == "Quality Check"
+    assert eval_from_disk.output_scores[1].display_name == "Overall"
+
+
+@pytest.mark.parametrize("cleared_value", ["   ", None, "score1"])
+def test_update_eval_clear_display_name(
+    client, mock_task_from_id, mock_eval, mock_task, cleared_value
+):
+    """Blank, null, or the score's own name clears the display name back to None."""
+    mock_eval.set_output_score_display_names({"score1": "Existing"})
+    mock_eval.save_to_file()
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/evals/eval1",
+            json={"output_score_display_names": {"score1": cleared_value}},
         )
 
     assert response.status_code == 200
@@ -4197,7 +4218,10 @@ def test_update_eval_display_name_with_eval_name_change(
             "/api/projects/project1/tasks/task1/evals/eval1",
             json={
                 "name": "Renamed Eval",
-                "output_score_display_names": ["Quality Check", "Overall"],
+                "output_score_display_names": {
+                    "score1": "Quality Check",
+                    "overall_rating": "Overall",
+                },
             },
         )
 
@@ -4208,40 +4232,52 @@ def test_update_eval_display_name_with_eval_name_change(
     assert eval_from_disk.output_scores[1].display_name == "Overall"
 
 
-def test_update_eval_display_names_length_mismatch(
-    client, mock_task_from_id, mock_eval
+def test_update_eval_display_name_exactly_max_length(
+    client, mock_task_from_id, mock_eval, mock_task
 ):
+    """32 characters is allowed, and surrounding whitespace doesn't count toward it."""
     with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
         mock_eval_from_id.return_value = mock_eval
 
         response = client.patch(
             "/api/projects/project1/tasks/task1/evals/eval1",
-            json={"output_score_display_names": ["only_one"]},
+            json={"output_score_display_names": {"score1": "  " + "x" * 32 + "  "}},
         )
 
-    assert response.status_code == 400
-    assert "same length" in response.json()["message"]
+    assert response.status_code == 200
+    assert _reload_eval(mock_task).output_scores[0].display_name == "x" * 32
 
 
-def test_update_eval_display_name_too_long(client, mock_task_from_id, mock_eval):
+@pytest.mark.parametrize(
+    "display_names, expected_message",
+    [
+        ({"not_a_score": "Quality"}, "Unknown output score keys"),
+        ({"score1": "x" * 33}, "at most 32 characters"),
+        ({"score1": "Overall", "overall_rating": "overall"}, "unique display names"),
+        ({"score1": "Overall_Rating"}, "unique display names"),
+        ({"score1": "Quality", "overall_rating": "x" * 33}, "at most 32 characters"),
+    ],
+)
+def test_update_eval_invalid_display_names_saves_nothing(
+    client, mock_task_from_id, mock_eval, mock_task, display_names, expected_message
+):
+    """A rejected request returns 400 and leaves the eval file unchanged, including other fields in the same request."""
+    eval_bytes = mock_eval.path.read_bytes()
+
     with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
         mock_eval_from_id.return_value = mock_eval
 
         response = client.patch(
             "/api/projects/project1/tasks/task1/evals/eval1",
-            json={"output_score_display_names": ["x" * 33, None]},
+            json={
+                "name": "Renamed Eval",
+                "output_score_display_names": display_names,
+            },
         )
 
     assert response.status_code == 400
-    assert "32 characters" in response.json()["message"]
-
-
-def test_set_output_score_display_names_helper(mock_eval, mock_task):
-    """The helper sets display names and saves the eval."""
-    set_output_score_display_names(mock_eval, ["Quality Check", None])
-    eval_from_disk = _reload_eval(mock_task)
-    assert eval_from_disk.output_scores[0].display_name == "Quality Check"
-    assert eval_from_disk.output_scores[1].display_name is None
+    assert expected_message in response.json()["message"]
+    assert mock_eval.path.read_bytes() == eval_bytes
 
 
 def test_runs_in_filter():

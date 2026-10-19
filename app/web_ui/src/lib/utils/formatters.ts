@@ -93,6 +93,16 @@ export function score_display_name(score: {
   return score.display_name || score.name
 }
 
+// Escapes text for interpolation into an HTML string (e.g. ECharts tooltip formatters).
+export function escape_html(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
 export function eval_config_to_ui_name(
   eval_config_type: EvalConfigType,
 ): string {

@@ -169,36 +169,6 @@ def eval_from_id(project_id: str, task_id: str, eval_id: str) -> Eval:
     )
 
 
-def set_output_score_display_names(eval: Eval, display_names: list[str | None]) -> None:
-    """Set the user-facing display name for each of the eval's output scores.
-
-    display_names must be positionally aligned with eval.output_scores (same length). A display name
-    is purely cosmetic: it does not affect the score's name, JSON key, or any stored eval run, so only
-    the single eval file is written. Empty/whitespace entries clear the display name (fall back to
-    the score's name). Only the eval is saved.
-    """
-    if len(display_names) != len(eval.output_scores):
-        raise HTTPException(
-            status_code=400,
-            detail=f"output_score_display_names must have the same length as the eval's output scores. Got {len(display_names)}, expected {len(eval.output_scores)}.",
-        )
-
-    normalized: list[str | None] = []
-    for display_name in display_names:
-        cleaned = display_name.strip() if display_name is not None else None
-        if cleaned is not None and len(cleaned) > 32:
-            raise HTTPException(
-                status_code=400,
-                detail="Score display names must be 32 characters or fewer.",
-            )
-        normalized.append(cleaned or None)
-
-    for index, display_name in enumerate(normalized):
-        eval.output_scores[index].display_name = display_name
-
-    eval.save_to_file()
-
-
 def resolve_eval_display_fields(eval: Eval, spec: Spec | None = None) -> Eval:
     """Fill priority/status with their resolved values for API responses.
 
@@ -812,9 +782,9 @@ class UpdateEvalRequest(BaseModel):
     train_set_filter_id: DatasetFilterId | None = Field(
         default=None, description="The updated train set filter ID."
     )
-    output_score_display_names: list[str | None] | None = Field(
+    output_score_display_names: Dict[str, str | None] | None = Field(
         default=None,
-        description="Updated user-facing display names for the eval's output scores. Must be positionally aligned with the eval's existing output_scores (same length). Display names are cosmetic only: they do not change the score name, JSON key, or any stored eval run. Empty entries clear the display name.",
+        description="Updated user-facing display names for the eval's output scores, keyed by each score's JSON key (as in eval run scores). Scores not included keep their current display name; null or blank clears it, as does a value equal to the score's name. Max 32 characters, unique across the eval's scores. Display names are cosmetic only: they do not change the score name, JSON key, or any stored eval run.",
     )
 
 
@@ -1113,7 +1083,6 @@ class RunConfigEvalResult(BaseModel):
         default=None, description="The associated spec ID, if any."
     )
     score_display_names: Dict[str, str] = Field(
-        default_factory=dict,
         description="The user-facing name of each of the eval's output scores, keyed by the score's JSON key (the keys of eval_config_result.results). The score's display_name when set, otherwise its name.",
     )
 
@@ -1121,8 +1090,7 @@ class RunConfigEvalResult(BaseModel):
 def score_display_names(eval: Eval) -> Dict[str, str]:
     """Map each output score's JSON key to the name the UI should show for it."""
     return {
-        score.json_key(): score.display_name or score.name
-        for score in eval.output_scores
+        score.json_key(): score.resolved_display_name() for score in eval.output_scores
     }
 
 
@@ -2010,11 +1978,12 @@ def connect_evals_api(app: FastAPI):
             eval.set_split("train", TaskRunSplit(filter_id=request.train_set_filter_id))
 
         if request.output_score_display_names is not None:
-            # Saves the eval, including the field changes above. Display names are cosmetic,
-            # so no eval run data is touched.
-            set_output_score_display_names(eval, request.output_score_display_names)
-        else:
-            eval.save_to_file()
+            try:
+                eval.set_output_score_display_names(request.output_score_display_names)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
+
+        eval.save_to_file()
         return resolve_eval_display_fields(eval)
 
     @app.get(

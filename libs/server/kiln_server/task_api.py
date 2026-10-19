@@ -61,6 +61,10 @@ class RatingOption(BaseModel):
     show_for_tags: List[str] = Field(
         description="Tags for which this rating option is shown."
     )
+    display_name: str | None = Field(
+        default=None,
+        description="The user-facing label for this rating, when it differs from requirement.name (an eval score's display name). requirement.name stays the identifier.",
+    )
 
 
 class RatingOptionResponse(BaseModel):
@@ -309,6 +313,7 @@ def connect_task_api(app: FastAPI):
                         requirement=requirement,
                         show_for_all=False,
                         show_for_tags=[golden_set_tag],
+                        display_name=output_score.display_name,
                     )
                 )
 

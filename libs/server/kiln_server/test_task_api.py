@@ -460,11 +460,13 @@ def test_get_rating_options_with_evals(client, project_and_task):
     # Create score mocks with proper name attributes
     score1 = MagicMock()
     score1.name = "Score 1"
+    score1.display_name = "Quality"
     score1.instruction = "Score 1 instruction"
     score1.type = "five_star"
 
     score2 = MagicMock()
     score2.name = "Overall Rating"
+    score2.display_name = None
     score2.instruction = "Overall instruction"
     score2.type = "five_star"
 
@@ -477,6 +479,7 @@ def test_get_rating_options_with_evals(client, project_and_task):
     # Create score mocks with proper name attributes
     score3 = MagicMock()
     score3.name = "Score 1"
+    score3.display_name = None
     score3.instruction = "Score 1 instruction"
     score3.type = "five_star"
 
@@ -498,6 +501,8 @@ def test_get_rating_options_with_evals(client, project_and_task):
     assert len(res["options"]) == 1  # Only Score 1, Overall Rating is skipped
     option = res["options"][0]
     assert option["requirement"]["name"] == "Score 1"
+    assert option["requirement"]["id"] == "named::Score 1"
+    assert option["display_name"] == "Quality"
     assert option["show_for_all"] is False
     # Note: we're checking it's not added twice with the dupe
     assert option["show_for_tags"] == ["golden_set"]
@@ -548,6 +553,7 @@ def test_get_rating_options_duplicate_requirements(client, project_and_task):
 
     score1 = MagicMock()
     score1.name = "Duplicate Score"
+    score1.display_name = None
     score1.instruction = "Score 1 instruction"
     score1.type = "five_star"
     eval1.output_scores = [score1]
@@ -557,6 +563,7 @@ def test_get_rating_options_duplicate_requirements(client, project_and_task):
 
     score2 = MagicMock()
     score2.name = "Duplicate Score"  # Same name as eval1
+    score2.display_name = None
     score2.instruction = "Score 2 instruction"
     score2.type = "five_star"
     eval2.output_scores = [score2]

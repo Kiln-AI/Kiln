@@ -361,6 +361,13 @@
       )
   }
 
+  $: score_labels = Object.fromEntries(
+    (results?.eval.output_scores || []).map((score) => [
+      string_to_json_key(score.name),
+      score_display_name(score),
+    ]),
+  )
+
   $: v2_result_component = (() => {
     if (!results?.eval_config) return null
     const v2type = getV2TypeFromEvalConfig(results.eval_config)
@@ -566,6 +573,7 @@
                   <svelte:component
                     this={v2_result_component}
                     scores={result.eval_run.scores}
+                    {score_labels}
                     skipped_reason={result.eval_run.skipped_reason ?? null}
                     skipped_detail={result.eval_run.skipped_detail ?? null}
                     eval_config={results.eval_config}

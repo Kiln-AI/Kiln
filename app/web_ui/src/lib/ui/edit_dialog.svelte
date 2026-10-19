@@ -28,11 +28,10 @@
     placeholder?: string
     optional?: boolean
     max_length?: number
-    // Optional custom validator. Falls back to FormElement's default ("<label>" is required).
-    validator?: (value: unknown) => string | null
     // When set, this field is excluded from the main PATCH body and persisted via this
-    // callback instead (e.g. fields that target a different endpoint).
-    custom_setter?: (value: string) => Promise<void>
+    // callback instead (e.g. fields that target a different endpoint). Fields sharing a
+    // setter are saved in one call, with their values keyed by api_name.
+    custom_setter?: (values: Record<string, string>) => Promise<void>
   }
   export let fields: EditField[]
 
@@ -43,6 +42,22 @@
   async function save() {
     loading = true
     try {
+      // Custom setters run first: if one fails, the main PATCH hasn't been sent yet.
+      const custom_setter_values = new Map<
+        (values: Record<string, string>) => Promise<void>,
+        Record<string, string>
+      >()
+      for (const field of fields) {
+        if (field.custom_setter) {
+          const values = custom_setter_values.get(field.custom_setter) || {}
+          values[field.api_name] = field.value
+          custom_setter_values.set(field.custom_setter, values)
+        }
+      }
+      for (const [custom_setter, values] of custom_setter_values) {
+        await custom_setter(values)
+      }
+
       const body = fields.reduce(
         (acc, field) => {
           if (!field.custom_setter) {
@@ -68,16 +83,6 @@
             throw new Error("Failed to save edit. Invalid JSON response.")
           }
           throw createKilnError(error_body)
-        }
-      }
-      // Invoke each distinct custom_setter once. Multiple fields may share a setter (e.g. all eval
-      // score-name fields persist via a single endpoint call), so we dedupe by function reference to
-      // avoid redundant requests.
-      const called_setters = new Set<(value: string) => Promise<void>>()
-      for (const field of fields) {
-        if (field.custom_setter && !called_setters.has(field.custom_setter)) {
-          called_setters.add(field.custom_setter)
-          await field.custom_setter(field.value)
         }
       }
       after_save()
@@ -153,7 +158,6 @@
           placeholder={field.placeholder}
           optional={field.optional}
           max_length={field.max_length}
-          validator={field.validator}
         />
       {/each}
     </FormContainer>

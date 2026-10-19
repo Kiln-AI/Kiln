@@ -109,9 +109,8 @@
   let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null
   let edit_dialog: EditDialog | null = null
 
-  // Editable score display-name fields for the eval (spec evals usually have a single score).
-  // The display name is cosmetic: it persists to the eval endpoint (not the spec endpoint) via a
-  // custom setter and never changes the underlying score name, JSON key, or stored eval runs.
+  // Score display names are cosmetic: they persist to the eval endpoint (not the spec
+  // endpoint) and never change the score name, JSON key, or stored eval runs.
   type ScoreEditField = {
     label: string
     api_name: string
@@ -119,42 +118,57 @@
     input_type: "input"
     description: string
     placeholder: string
+    optional: true
     max_length: number
-    validator: (value: unknown) => string | null
-    custom_setter: (value: string) => Promise<void>
+    custom_setter: (values: Record<string, string>) => Promise<void>
   }
   $: output_score_fields = (evaluator?.output_scores || []).map(
-    (score, index): ScoreEditField => ({
+    (score): ScoreEditField => ({
       label: `Score Display Name: ${score.name}`,
-      api_name: `output_score_display_name_${index}`,
-      value: score.display_name || score.name,
+      api_name: score_display_name_field_id(score.name),
+      value: score.display_name || "",
       input_type: "input",
       description:
-        "The name shown for this score across Kiln. Existing eval results are not changed.",
-      placeholder: "Score Display Name",
+        "Shown in place of the score name in eval results and comparisons. Leave blank to use the original name. Stored results and the judge are unchanged.",
+      placeholder: score.name,
+      optional: true,
       max_length: 32,
-      // Custom message so the empty state doesn't echo the full label (with the score name).
-      validator: (value) =>
-        typeof value === "string" && value.trim().length > 0
-          ? null
-          : "Score display name is required",
       custom_setter: save_output_score_display_names,
     }),
   )
 
-  async function save_output_score_display_names(): Promise<void> {
+  function score_display_name_field_id(score_name: string): string {
+    return `output_score_display_name_${string_to_json_key(score_name)}`
+  }
+
+  async function save_output_score_display_names(
+    values: Record<string, string>,
+  ): Promise<void> {
     const eval_id = spec?.eval_id
-    if (!eval_id) {
+    if (!eval_id || !evaluator) {
+      throw new Error("This spec has no eval to save score display names to.")
+    }
+    const changed: Record<string, string | null> = {}
+    for (const score of evaluator.output_scores) {
+      const field_id = score_display_name_field_id(score.name)
+      if (!(field_id in values)) {
+        continue
+      }
+      const display_name = values[field_id].trim() || null
+      if (display_name !== (score.display_name || null)) {
+        changed[string_to_json_key(score.name)] = display_name
+      }
+    }
+    if (Object.keys(changed).length === 0) {
       return
     }
-    const display_names = output_score_fields.map((field) => field.value)
     const { error: patch_error } = await client.PATCH(
       "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
       {
         params: {
           path: { project_id, task_id, eval_id },
         },
-        body: { output_score_display_names: display_names },
+        body: { output_score_display_names: changed },
       },
     )
     if (patch_error) {
