@@ -59,7 +59,7 @@ Built in this order, with non-empty pieces joined by a blank line (`"\n\n"`):
   - `arguments`:
     - if `function.arguments` is a string that parses as JSON, it is re-serialized with `json.dumps(value, ensure_ascii=False)`, giving one line with default separators;
     - a string that doesn't parse is kept as-is;
-    - a non-string is passed through `json.dumps(value, ensure_ascii=False)`;
+    - a non-string is passed through `json.dumps(value, ensure_ascii=False, default=str)`, or `str(value)` if that fails, so `build_view` never raises;
     - a missing value becomes `""`.
 - **The part's text** is one line per call, `f"{name} {arguments}"`, joined with `"\n"`.
 
@@ -80,8 +80,8 @@ Built in this order, with non-empty pieces joined by a blank line (`"\n\n"`):
 
 | Helper | Output |
 |--------|--------|
-| `n_(x)` | `f"{x:,}"` |
-| `count_(x, word, plural=None)` | `"1 message"`, `"2 messages"`. `plural` overrides the form, e.g. `"matches"`. |
+| `fmt_number(x)` | `f"{x:,}"` |
+| `fmt_count(x, word, plural=None)` | `"1 message"`, `"2 messages"`. `plural` overrides the form, e.g. `"matches"`. |
 | `approx_tokens(chars)` | With `t = chars / 4`: below 1,000 gives `~{round(t)}`; below 1,000,000 gives `~{round(t/1000)}k`; otherwise `~{t/1e6:.1f}M`. |
 | `quote(text, n)` | `json.dumps(text[:n], ensure_ascii=False)`, followed by `" <truncated>"` if `len(text) > n`. |
 | `display_name(name)` | `name` if it is at most `NAME_CHARS` (60) characters, otherwise its first 60 characters followed by `…`. |
@@ -92,7 +92,7 @@ Built in this order, with non-empty pieces joined by a blank line (`"\n\n"`):
 ### 3.2 Cut markers
 
 - **Previews:** `quote()` puts ` <truncated>` after the closing quote.
-- **Full text cut by `max_chars`:** the next line is `<truncated: {n_(rest)} more chars; read_message_text(number={n}, part={part}, offset={o})>`.
+- **Full text cut by `max_chars`:** the next line is `<truncated: {fmt_number(rest)} more chars; read_message_text(number={n}, part={part}, offset={o})>`.
 - **Nothing else** in the output contains `<truncated`.
 - **Names.** Roles and tool names come from the trace and can be any length. Every label, preview line and overview row shows them through `display_name`. The one exception is the `[call]` lines of `read_messages`, which show the full name, because their continuation offsets count it.
 
@@ -154,21 +154,21 @@ Shared schema fragments:
 **Output** (lines in this order, optional lines left out):
 
 ```
-Trace: {count_(N,"message")}, {n_(T)} chars ({approx_tokens(T)} tokens)
+Trace: {fmt_count(N,"message")}, {fmt_number(T)} chars ({approx_tokens(T)} tokens)
 {role rows}
 Tool calls: {name} ×{k}, ...[, +{r} more tools]
-Largest messages: #{n} {short_label} {n_(total)} · ...
-First user message (#{n}, {n_(len)} chars): {quote(content, 300)}
-Last assistant message with text (#{n}, {n_(len)} chars): {quote(content, 300)}
+Largest messages: #{n} {short_label} {fmt_number(total)} · ...
+First user message (#{n}, {fmt_number(len)} chars): {quote(content, 300)}
+Last assistant message with text (#{n}, {fmt_number(len)} chars): {quote(content, 300)}
 ```
 
 - **`T`** is the sum of message totals.
 - **Role rows:**
-  - Order: `system, developer, user, assistant, tool`, then at most 5 other roles, sorted by name. Roles with no messages are left out. If more other roles remain, a last row reads `  +{count_(r, "more role")}`.
+  - Order: `system, developer, user, assistant, tool`, then at most 5 other roles, sorted by name. Roles with no messages are left out. If more other roles remain, a last row reads `  +{fmt_count(r, "more role")}`.
   - Role names are shown through `display_name`.
-  - Format: `f"  {role:<9} {count:>{cw}} {chars:>{chw}} chars{extras}"`, where `chars = n_(content + tool_calls sizes)`. `cw` and `chw` are the widest count and widest formatted chars across the rows.
-  - Assistant extras: ` (+{n_(reasoning)} reasoning)` if there is any reasoning, then `, {count_(calls, "tool call")}` if there are any calls.
-  - Tool extras: `, {count_(errors, "error")}` if there are any errors.
+  - Format: `f"  {role:<9} {count:>{cw}} {chars:>{chw}} chars{extras}"`, where `chars = fmt_number(content + tool_calls sizes)`. `cw` and `chw` are the widest count and widest formatted chars across the rows.
+  - Assistant extras: ` (+{fmt_number(reasoning)} reasoning)` if there is any reasoning, then `, {fmt_count(calls, "tool call")}` if there are any calls.
+  - Tool extras: `, {fmt_count(errors, "error")}` if there are any errors.
 - **Tool calls:** call counts by name (`task_response` is already excluded), sorted by count descending, then name ascending. Names are shown through `display_name`. At most 20 are listed. If more remain, the line ends with `, +{r} more tools`. Left out if there are no calls.
 - **Largest messages:** the top 5 by message total, descending, with ties broken by message number ascending, joined with ` · `. Left out if there are no messages.
 - **First user message:** the first `user` message with non-empty content. Left out if there is none.
@@ -198,10 +198,10 @@ The output is bounded by construction (a fixed number of lines, each with cut na
 |-------|------|
 | `#{n} {role}` | always. The role is shown through `display_name`, as are all names below. |
 | ` {tool_name}` | tool results |
-| ` {n_(len(content))}` | always |
+| ` {fmt_number(len(content))}` | always |
 | ` ERROR` | `is_error` |
-| ` (+{n_(len(reasoning))} reasoning)` | reasoning non-empty |
-| `, calls {names} ({n_(len(tool_calls_text))})` | at least one call. `names` are distinct call names in first-appearance order, with ` ×k` when a name appears k > 1 times, joined with `, `. |
+| ` (+{fmt_number(len(reasoning))} reasoning)` | reasoning non-empty |
+| `, calls {names} ({fmt_number(len(tool_calls_text))})` | at least one call. `names` are distinct call names in first-appearance order, with ` ×k` when a name appears k > 1 times, joined with `, `. |
 | `: {quote(content, preview_chars)}` | `preview_chars > 0` and content non-empty |
 
 **Example:**
@@ -238,7 +238,7 @@ Lines are joined with `"\n"`. There is no header or footer. The response limit a
    - When `numbers` was given, record each excluded number with its reason: `role not in roles`, checked first, or `no requested parts`.
 4. Render one block (unit) per kept message.
 5. **Footer.** When `numbers` was given and something was excluded: `Not shown: #7 (no requested parts), #9 (role not in roles)`.
-6. If nothing is kept, output `No messages match (...)` as in `preview_messages`, followed by the footer if any.
+6. If nothing is kept, output `No messages match (#{first}–#{last}{roles_suffix}).` as in `preview_messages`, where `first` and `last` are the lowest and highest candidates, followed by the footer if any.
 
 **Block format:**
 
@@ -250,16 +250,16 @@ Lines are joined with `"\n"`. There is no header or footer. The response limit a
 [call] {name} {arguments, cut} → {result}
 ```
 
-- **`sizes`:** for each non-empty part, in the order `content`, `reasoning`, `tool_calls`, the entry `{part} {n_(size)}`, with ` not shown` added when the part isn't requested. Entries are joined with `"; "`.
+- **`sizes`:** for each non-empty part, in the order `content`, `reasoning`, `tool_calls`, the entry `{part} {fmt_number(size)}`, with ` not shown` added when the part isn't requested. Entries are joined with `"; "`.
 - **Body order:** reasoning (with the `[reasoning]` label line), then content, then call lines. Only requested, non-empty parts appear.
 - **Content and reasoning cuts:**
   - if `len > max_chars`, show `text[:max_chars]`;
   - follow it with the §3.2 marker, where `offset = max_chars`.
 - **Call lines:**
-  - Each call's `arguments` is cut at `max_chars` on its own. A cut argument is followed by ` <truncated: {n_(rest)} more chars; read_message_text(number={n}, part=tool_calls, offset={o})>`. Here `o` is the cut point's position in the `tool_calls` text: the line start, plus `len(name) + 1`, plus `max_chars`.
+  - Each call's `arguments` is cut at `max_chars` on its own. A cut argument is followed by ` <truncated: {fmt_number(rest)} more chars; read_message_text(number={n}, part=tool_calls, offset={o})>`. Here `o` is the cut point's position in the `tool_calls` text: the line start, plus `len(name) + 1`, plus `max_chars`.
   - `result` is one of:
-    - `#{r} ok, {n_(size)} chars`;
-    - `#{r} ERROR, {n_(size)} chars`;
+    - `#{r} ok, {fmt_number(size)} chars`;
+    - `#{r} ERROR, {fmt_number(size)} chars`;
     - `no result`.
 
     `size` is the content size of the result message.
@@ -287,9 +287,9 @@ Lines are joined with `"\n"`. There is no header or footer. The response limit a
 **Output:**
 
 ```
-=== #{n} {long_label} — {part} chars {n_(offset)}–{n_(end)} of {n_(len)} ===
+=== #{n} {long_label} — {part} chars {fmt_number(offset)}–{fmt_number(end)} of {fmt_number(len)} ===
 {text[offset:end]}
-<truncated: {n_(len - end)} more chars; read_message_text(number={n}, part={part}, offset={end})>
+<truncated: {fmt_number(len - end)} more chars; read_message_text(number={n}, part={part}, offset={end})>
 ```
 
 - The last line appears only if `end < len`.
@@ -302,11 +302,11 @@ Lines are joined with `"\n"`. There is no header or footer. The response limit a
 1. Join `header` (if any), the unit texts and `footer` (if any) with `"\n"`.
 2. If the length is at most `RESPONSE_CHARS`, return it.
 3. Otherwise:
-   - find the largest `k ≥ 0` such that header, the first `k` units and footer fit;
+   - find the largest `k ≥ 0` such that header, the first `k` units and footer fit. For `search_trace`, the footer counted is always `Use offset=... for more.`, even when this response has none, so a request narrowed to `count={k}` is sure to fit;
    - raise `TraceToolUsageError` with this message:
 
 ```
-Too large: this would return {n_(size)} chars, over the 40,000 limit. Nothing was returned.
+Too large: this would return {fmt_number(size)} chars, over the 40,000 limit. Nothing was returned.
 {fit line}
 To narrow it: {advice}.
 ```
@@ -315,7 +315,7 @@ To narrow it: {advice}.
 
 | Tool and selection | `k ≥ 1` | `k = 0` |
 |--------------------|---------|---------|
-| `preview_messages`, `read_messages` with a range | `Messages #{a}–#{b} fit at these settings (start={a}, end={b}).` Here `a` is the first selected message number and `b` is the message number of unit `k`. | `Even #{a} alone is {n_(size of unit 1)} chars at these settings.` |
+| `preview_messages`, `read_messages` with a range | `Messages #{a}–#{b} fit at these settings (start={a}, end={b}).` Here `a` is the first selected message number and `b` is the message number of unit `k`. | `Even #{a} alone is {fmt_number(size of unit 1)} chars at these settings.` |
 | `read_messages` with `numbers` | `The first {k} of the requested messages fit (through #{b}).` | same as above |
 | `search_trace` | `count={k} fits at these settings.` | `Even one match is too large at these settings.` |
 
@@ -367,8 +367,8 @@ The refusal is returned as `ToolCallResult(is_error=True)`.
    - If `M = 0`: `No matches for {json.dumps(pattern, ensure_ascii=False)}.` This is a normal result.
    - If `offset ≥ M`: raise E9.
    - Otherwise:
-     - **Header:** `{count_(M, "match", "matches")} in {count_(K, "message")}. Showing matches {offset+1}–{offset+shown}.`
-     - **One unit per match on the page** `[offset, offset+count)`: `#{n} {short_label} {part} @{n_(start)}`.
+     - **Header:** `{fmt_count(M, "match", "matches")} in {fmt_count(K, "message")}. Showing matches {offset+1}–{offset+shown}.`
+     - **One unit per match on the page** `[offset, offset+count)`: `#{n} {short_label} {part} @{fmt_number(start)}`.
        - If `context_chars > 0`, append `: ` followed by:
          - a `<truncated> ` prefix if `a > 0`;
          - the snippet `json.dumps(text[a:b], ensure_ascii=False)`;
@@ -385,17 +385,17 @@ All errors below are raised as `TraceToolUsageError` (a `ToolCallError`). The mo
 
 | Id | Message |
 |----|---------|
-| E1 | `Message #{n} doesn't exist. The trace has {count_(N,"message")} (#1–#{N}).` If N = 0: `The trace has no messages.` |
+| E1 | `Message #{n} doesn't exist. The trace has {fmt_count(N,"message")} (#1–#{N}).` If N = 0: `The trace has no messages.` |
 | E2 | `start ({s}) is after end ({e}).` |
 | E3 | `Use either numbers or start/end, not both.` |
 | E4 | `Unknown {kind} "{value}". Valid {kind}s: {list}.` (`kind` is `role` or `part`. This is defensive; the schema normally catches it.) |
 | E5 | `Message #{n} has no {part}. Its parts: {non-empty parts joined ", "}.` If it has none: `Message #{n} is empty.` |
-| E6 | `offset {n_(o)} is past the end of #{n} {part} ({n_(len)} chars).` |
+| E6 | `offset {fmt_number(o)} is past the end of #{n} {part} ({fmt_number(len)} chars).` |
 | E7 | `Invalid regex: {error}. Use regex=false to search plain text.` |
-| E8 | `Search timed out after 30 seconds. Use a simpler pattern, or narrow it with start/end, roles or parts.` |
-| E9 | `offset {o} is past the last match ({count_(M, "match", "matches")}).` |
+| E8 | `Search timed out after {timeout_seconds} seconds. Use a simpler pattern, or narrow it with start/end, roles or parts.` (`timeout_seconds` is `SEARCH_TIMEOUT_SECONDS`, 30, except in tests.) |
+| E9 | `offset {o} is past the last match ({fmt_count(M, "match", "matches")}).` |
 | E10 | `pattern must not be empty.` |
-| E11 | `Invalid arguments: {validation message}` (defensive re-validation against the schema; the validation message is jsonschema's wording, so tests check only the prefix) |
+| E11 | `Invalid arguments: {validation message} (at {path})` (defensive re-validation against the schema; the validation message is jsonschema's wording, so tests check only the prefix. `path` is the JSON path of the bad value, such as `$.start`, and the suffix is left out for the arguments object itself) |
 | E12 | `Pattern too large: it would compile to over 100,000 elements. Use smaller {m,n} repeat counts (or * and + instead), or a shorter pattern.` |
 | E13 | `Verbose mode (?x) and full case folding (?f) aren't supported in search patterns. Write the pattern without them.` |
 | REF | The refusal in §5 |
@@ -433,7 +433,7 @@ def build_tools(view: TraceView) -> list[KilnToolInterface]
 
 ## 9. Test Plan
 
-Tests live in `v1/test_view.py`, `test_render.py`, `test_search.py`, `test_tools.py` and `test_golden.py`. Shared fixtures go in `v1/conftest.py`.
+Tests live in `v1/test_view.py`, `test_render.py`, `test_search.py`, `test_pattern_check.py`, `test_tools.py` and `test_golden.py`, with the benchmarks in `test_perf.py`. Shared fixtures go in `v1/conftest.py`.
 
 | Test | Verifies |
 |------|----------|

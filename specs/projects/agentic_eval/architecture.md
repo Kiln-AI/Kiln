@@ -38,14 +38,14 @@ One new field:
 trace_toolset_version: int | None = Field(
     default=None,
     ge=1,
-    description="Trace tools for the judge model. None: off. A version number: on, with that version's tools and trace_overview output, locked for the life of the judge.",
+    description="Trace tools for the judge model: read-only tools for reading the judged trace. None: off. A version number: on, with that version's tools and trace_overview output, locked for the life of the judge.",
 )
 ```
 
 - **Why one field.** One field means "off" and "on at version N" can't disagree, and judges saved before this field load as "off" with no migration.
 - **Why an int and not an enum.** Older Kiln builds must still load configs written by newer ones. An enum would reject an unknown version and break loading the whole eval. An int loads fine, and the judge skips with a clear message at evaluation time (§3.7).
 - **The `trace_overview` lock for tools-off judges.** A judge with tools off always renders the v1 overview (`TRACE_OVERVIEW_VERSION_WITHOUT_TOOLS`). That keeps its prompt stable (functional spec §5.4) without storing anything. The trade-off: tools-off judges never get later overview formats.
-- **New model validator:** `g_eval and trace_toolset_version is not None` raises `ValueError("G-Eval scoring can't be combined with trace tools.")`.
+- **New model validator:** `g_eval and trace_toolset_version is not None` raises `ValueError(G_EVAL_WITH_TRACE_TOOLS_ERROR)`, whose text is "G-Eval scoring can't be combined with trace tools."
 - **`EvalConfig.validate_v2_templates_and_expressions`:** the "must reference `final_message`, `trace` or `task_input`" rule applies only when `trace_toolset_version is None`.
 
 ### 2.3 `EvalRun.judge_trace` (`datamodel/eval.py`)
@@ -66,6 +66,8 @@ judge_trace: list[ChatCompletionMessageParam] | None = Field(
 judge_trace: list[ChatCompletionMessageParam] | None = None
 ```
 
+With the same `materialize_lazy_content` validator as `EvalRun.judge_trace`.
+
 ## 3. Components
 
 ```mermaid
@@ -84,16 +86,20 @@ flowchart LR
 
 ```
 libs/core/kiln_ai/adapters/eval/trace_tools/
-  __init__.py        # public API: trace_toolset(), TraceToolset, judge_template_env()
+  __init__.py        # public API: trace_toolset(), TraceToolset, TraceViewProtocol,
+                     #   UnsupportedTraceToolsetVersion, judge_template_env()
   toolset.py         # TraceToolset protocol + trace_toolset(version) dispatch
+  template_env.py    # judge_template_env(): the judge's template environment
   v1/
     __init__.py      # TOOLSET_V1: TraceToolset
     view.py          # TraceView, MessageView, ToolCallRef: parse + canonicalize once
     render.py        # overview, preview lines, read blocks, windows, refusals
     search.py        # matching with regex timeout
-    tools.py         # the five UnmanagedKilnTool subclasses + build_tools()
+    pattern_check.py # regex size estimate, checked before compiling
+    tools.py         # the trace tool class, parse_args() + build_tools()
     definitions.py   # tool names, descriptions, JSON schemas (frozen text)
     limits.py        # numeric limits (frozen)
+    errors.py        # TraceToolUsageError
     conftest.py      # --update-trace-tool-goldens option
     golden/          # fixture traces, cases, expected outputs
     test_*.py
@@ -124,7 +130,7 @@ def trace_toolset(version: int) -> TraceToolset:
 - `TOOLSET_V1` is a stateless, immutable instance. No module-level mutable state.
 - The view type is opaque outside a version: each version owns its canonicalization, because canonical text determines sizes, offsets and search positions, and those are locked per version.
 
-**Freezing v1.** Nothing under `v1/` imports from another version or from shared trace-tools code that could change. It may import only stable primitives: `open_ai_types` constants, `UnmanagedKilnTool`, `ToolCallResult`, `build_kiln_unmanaged_tool_id`, `regex`. Golden tests (§7.2) fail on any output change. A v2 starts as a copy of `v1/`.
+**Freezing v1.** Nothing under `v1/` imports from another version or from shared trace-tools code that could change. It may import only stable primitives: `open_ai_types` constants, the `tools.base_tool` types (`UnmanagedKilnTool`, `ToolCallResult`, `ToolCallError`, `KilnToolInterface`, `ToolCallContext`), `build_kiln_unmanaged_tool_id`, `jsonschema` and `regex`. Golden tests (§7.2) fail on any output change. A v2 starts as a copy of `v1/`.
 
 ### 3.2 `TraceView` (v1)
 
@@ -163,7 +169,7 @@ class TraceView:
 
 ### 3.3 Tools (v1)
 
-- **One subclass per tool.** Five subclasses of a shared `_TraceTool(UnmanagedKilnTool)`. Each takes a `TraceView` in its constructor. Tool ids are `build_kiln_unmanaged_tool_id("trace_v1_<name>")`.
+- **One class, five instances.** `_TraceTool(UnmanagedKilnTool)` takes a `TraceView` and one row of the tool table in `tools.py`: the tool's definition, its argument parser and its pure function. Tool ids are `build_kiln_unmanaged_tool_id("trace_v1_<name>")`.
 - **What `_TraceTool.run(context, **kwargs)` does:**
   1. Re-validates `kwargs` against the tool's JSON schema. This is defensive, for SDK callers that bypass the adapter.
   2. Applies defaults.
@@ -194,10 +200,10 @@ class Unit:            # one line or block of a response
     message_number: int
     text: str
 
-def assemble(units, header, footer, limit, refusal: RefusalContext) -> str  # raises TraceToolUsageError
+def assemble(units, header, footer, refusal: RefusalContext) -> str  # raises TraceToolUsageError
 ```
 
-- `assemble` joins the units. If the result exceeds `LIMIT_RESPONSE_CHARS = 40_000`, it computes the longest prefix of units that fits and raises a refusal naming that range, using the tool-specific advice in `RefusalContext`.
+- `assemble` joins the units. If the result exceeds `RESPONSE_CHARS = 40_000` (`limits.py`), it computes the longest prefix of units that fits and raises a refusal naming that range, using the tool-specific advice in `RefusalContext`.
 - **Which tools it applies to:** `preview_messages`, `read_messages` and `search_trace`. `read_message_text` is bounded by `max_chars ≤ 40,000` plus a fixed-size header. `trace_overview` is bounded by construction.
 
 ### 3.6 `trace_overview` in templates
@@ -211,18 +217,23 @@ def assemble(units, header, footer, limit, refusal: RefusalContext) -> str  # ra
   ```
 
   Templates that use it then compile in datamodel validation, and in any other environment it fails clearly.
-- **`trace_tools/__init__.py`** provides the judge's environment:
+- **`trace_tools/template_env.py`** provides the judge's environment, and `trace_tools` re-exports it. It builds on `template_env_with_filters` in `utils/jinja_engine.py`, which returns an overlay of `_template_env` with a filters dict of its own:
 
   ```python
-  def judge_template_env(toolset: TraceToolset, trace: list[dict[str, Any]] | None, view: TraceViewProtocol | None) -> SandboxedEnvironment:
+  # utils/jinja_engine.py
+  def template_env_with_filters(filters: Mapping[str, Callable[..., Any]]) -> Environment:
       env = _template_env.overlay()
       # overlay() shares the parent's filters dict by reference; assign a new dict
       # so the parent's placeholder is never replaced.
-      env.filters = {**_template_env.filters, "trace_overview": _overview_filter(toolset, trace, view)}
+      env.filters = {**_template_env.filters, **filters}
       return env
+
+  # adapters/eval/trace_tools/template_env.py
+  def judge_template_env(toolset: TraceToolset, trace: list[dict[str, Any]] | None, view: TraceViewProtocol | None) -> Environment:
+      return template_env_with_filters({"trace_overview": _trace_overview_filter(toolset, trace, view)})
   ```
 
-- **How the filter gets its view.** `_overview_filter` returns a closure. If called with the judge's own `trace` list (identity check), it reuses the prebuilt `view`. If none was built, because tools are off, it builds one on first use and keeps it in the closure. Any other value must be a list of dicts, or it raises `JinjaExtractionError`, which becomes the existing `extraction_failed` skip. A new environment per judgment means no module-level cache.
+- **How the filter gets its view.** `_trace_overview_filter` returns a closure. If called with the judge's own `trace` list (identity check), it reuses the prebuilt `view`. If none was built, because tools are off, it builds one on first use and keeps it in the closure. Any other value must be a list of dicts, or it raises `JinjaExtractionError`, which becomes the existing `extraction_failed` skip. A new environment per judgment means no module-level cache.
 
 ### 3.7 `LlmJudgeEval.evaluate` (`adapters/eval/v2_eval_llm_judge.py`)
 
@@ -256,7 +267,7 @@ New flow (unchanged steps elided):
   - **Why.** Models asked to read with tools and answer in the score format in one turn tend to narrate their findings around the JSON. Providers don't enforce `json_object` alongside tools, and instruction-based modes can't. Real-provider runs (§7.8) showed this on Qwen and GLM.
   - **`AdapterConfig.separate_final_answer_turn`.** New, general adapter option. With it, `BaseAdapter.build_chat_formatter` always returns a `TwoMessageCotFormatter(..., wrap_user_input=False)`, on every model, so reasoning models and fine-tunes that would otherwise answer in one turn also get the separate final turn. It raises `ValueError` if the prompt has no thinking instructions. Runs continued from a prior trace are unaffected.
   - **The judge trace holds both turns:** the rendered prompt with the instruction, every tool call and result, the findings, the final request, and the scores. The findings are the `chain_of_thought` intermediate output, the judge's reasoning. The final call's own `reasoning` only concerns formatting the scores, so the judge leaves it out of the intermediate outputs; it stays in the judge trace.
-- **`JudgeContextExceededError(Exception)`** is defined in `adapters/eval/eval_utils/errors.py`, a new module. Its message is: `"The judge model ran out of context after {n} trace tool calls. Use a judge model with a larger context window, or a prompt that needs less of the trace."` Here `n` is the number of tool messages in `e.partial_trace`. It is not in `is_retryable_error`, so the runner does not retry it, and the test endpoints return its message.
+- **`JudgeContextExceededError(Exception)`** is defined in `adapters/eval/eval_utils/errors.py`, a new module. Its message is: `"The judge model ran out of context after {n} trace tool calls. Use a judge model with a larger context window, or a prompt that needs less of the trace."` Here `n` is the number of tool messages in `e.partial_trace`. It says "call" when `n` is 1, and drops the count ("The judge model ran out of context.") when `n` is 0. It is not in `is_retryable_error`, so the runner does not retry it, and the test endpoints return its message.
 
 ### 3.8 Default prompt and properties builder (`adapters/eval/base_eval.py`)
 
@@ -267,7 +278,7 @@ New flow (unchanged steps elided):
   - `Use the trace tools to inspect the parts of the trace you need.`
 
   The reference answer block, steps and score criteria logic are unchanged, except that `build_eval_steps` and `template_eval_steps` take `trace_tools` and then say "the trace" where they otherwise point at the `<trace>` tag.
-- **`materialize_llm_judge_properties(..., trace_tools: bool = False)`.** Passes `trace_tools` to the default prompt builder, and sets `trace_toolset_version=LATEST_TRACE_TOOLSET_VERSION if trace_tools else None`. The API takes a boolean; only storage knows about versions. The G-Eval conflict is caught by the properties validator, which the endpoint maps to 422.
+- **`materialize_llm_judge_properties(..., trace_tools: bool = False)`.** Passes `trace_tools` to the default prompt builder, and sets `trace_toolset_version=LATEST_TRACE_TOOLSET_VERSION if trace_tools else None`. The API takes a boolean; only storage knows about versions. The API rejects G-Eval with trace tools before this, in a validator on `LlmJudgeBuilderInput` that raises the same `G_EVAL_WITH_TRACE_TOOLS_ERROR`, so request validation returns 422.
 
 ### 3.9 Eval runner (`adapters/eval/eval_runner.py`)
 
@@ -279,12 +290,12 @@ New flow (unchanged steps elided):
 
 | Change | Detail |
 |--------|--------|
-| `LlmJudgeBuilderInput.trace_tools: bool = False` | Used by `create_llm_judge_config` and `test_v2_eval`; passed to `materialize_llm_judge_properties`. |
+| `LlmJudgeBuilderInput.trace_tools: bool = False` | Used by `create_llm_judge_config` and `test_v2_eval`; passed to `materialize_llm_judge_properties`. A validator rejects it together with `g_eval`. |
 | `GET .../default_llm_judge_prompt?trace_tools=<bool>` | Default `false`. Returns the agentic default when `true`. |
-| `TestV2EvalResponse.judge_trace: list[ChatCompletionMessageParam] \| None` | Set from `result.judge_trace` in `run_v2_eval_test`. |
-| `TestV2EvalResponse` errors | `JudgeContextExceededError` maps to HTTP 422 with its message. Other errors are unchanged. |
+| `TestV2EvalResponse.judge_trace: list[ChatCompletionMessageParam] \| None` | Set from `result.judge_trace` in `run_v2_eval_test`, with the same `materialize_lazy_content` validator as `EvalRun.judge_trace`. |
+| `TestV2EvalResponse` errors | `JudgeContextExceededError` maps to HTTP 422 with its message, on both test endpoints and for every judge mode. Other errors are unchanged. |
 | Results endpoint | No change. `EvalRunWithTrace.eval_run` is the whole `EvalRun`, so `judge_trace` is included automatically. |
-| `prompt_optimization_job_api.optimization_unsupported_reason` | An `LlmJudgeProperties` with `trace_toolset_version` set returns `"Prompt optimization doesn't support LLM judges with trace tools."` |
+| `prompt_optimization_job_api.optimization_unsupported_reason` | An `LlmJudgeProperties` with `trace_toolset_version` set returns `"Eval '{name}' uses an LLM judge with trace tools, which prompt optimization does not support yet."` |
 | OpenAPI client | Regenerate with `app/web_ui/src/lib/generate_schema.sh`. |
 
 These handlers stay thin: parse, call one core function, map the result (convention E16).
@@ -293,9 +304,9 @@ These handlers stay thin: parse, call one core function, map the result (convent
 
 Specified in [ui_design.md](ui_design.md):
 
-- **Judge form:** an "Agentic Judge" algorithm card.
+- **Judge form:** an "Agentic Judge" option in the judge algorithm radio list.
 - **Test pane:** a "Judge Trace" button.
-- **Results:** a "Judge Trace" link.
+- **Results:** a "Judge trace" link.
 - **Judge details:** "Method: Agentic Judge".
 
 No new pages, and no shared-control changes.
@@ -322,7 +333,7 @@ This is a separate task, already queued. It changes `LiteLlmAdapter.process_tool
 | Template render problems, including the `trace_overview` misuse | Existing mapping | `extraction_failed` or `missing_reference_key` skip. |
 | Judge context overflow | `LlmJudgeEval.evaluate` | `JudgeContextExceededError`. Not retried. Nothing saved. |
 | Tool round limit (`MAX_TOOL_CALLS_PER_TURN`) | Adapter `RuntimeError` | Not retried. Nothing saved. |
-| G-Eval with trace tools | `LlmJudgeProperties` validator | `ValueError`, which the API turns into a 422. |
+| G-Eval with trace tools | `LlmJudgeProperties` validator; in the API, the `LlmJudgeBuilderInput` validator | `ValueError`. The API returns 422 from request validation. |
 | Transient provider errors | Runner, as today | Retried. |
 
 ## 6. Performance
@@ -369,7 +380,7 @@ Read `python_test_guide.md` before writing tests. Everything is pytest, and the 
 
 ### 7.2 Golden tests: freezing v1
 
-- **Cases.** `golden/cases.json` lists `(fixture trace, tool, arguments)` cases. Each has an expected output file under `golden/expected/`. Also frozen: the tool definitions (names, descriptions, schemas) and the overview filter output.
+- **Cases.** `golden/cases.json` lists `(fixture trace, tool, arguments)` cases. Each has an expected output file under `golden/expected/`. Also frozen: the tool definitions (names, descriptions, schemas), the judge thinking instruction, and the overview filter output.
 - **Updating.** `uv run pytest libs/core/kiln_ai/adapters/eval/trace_tools/v1 --update-trace-tool-goldens` rewrites the expected files. Changing them must be a deliberate, reviewed act.
 - **Fixtures.** Handcrafted fixtures cover the edge cases. A seeded synthetic generator produces a realistic coding-agent trace of about 1,300 messages.
 

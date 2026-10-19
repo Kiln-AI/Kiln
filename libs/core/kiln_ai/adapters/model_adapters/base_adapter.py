@@ -678,7 +678,7 @@ class BaseAdapter(metaclass=ABCMeta):
             return MultiturnFormatter(prior_trace, input)
         if self.prompt_builder is None:
             raise ValueError("Prompt builder is not available for MCP run config")
-        # Determine the chat strategy to use based on the prompt the user selected, the model's capabilities, and if the model was finetuned with a specific chat strategy.
+        # Determine the chat strategy to use based on the prompt the user selected, the model's capabilities, and if the model was finetuned with a specific chat strategy. With AdapterConfig.separate_final_answer_turn set, it is always two-message chain of thought.
 
         cot_prompt = self.prompt_builder.chain_of_thought_prompt()
         system_message = self.build_prompt()

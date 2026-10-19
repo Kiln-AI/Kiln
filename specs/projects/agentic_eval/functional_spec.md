@@ -328,7 +328,7 @@ Applies to **every LLM-based V2 judge**: the existing LLM judge (including G-Eva
 - Shown in the UI with the existing trace viewer ([§11](#11-ui)).
 - Judgments that are skipped before the judge model is called (e.g. missing reference data) have no judge trace.
 - Judgments that fail with an error save nothing, as today.
-- Results saved before this project have no judge trace. The UI shows that none was recorded.
+- Results saved before this project have no judge trace. The UI shows no judge trace link for them.
 - **Storage.** Judge traces can be large: an agentic judge's trace can approach its context window (several hundred KB). This is accepted for v1. The results page receives judge traces with the rest of its data, the same way it already receives each judged trace.
 
 ## 10. Errors and Skips
@@ -347,7 +347,7 @@ Applies to **every LLM-based V2 judge**: the existing LLM judge (including G-Eva
 
 Functional level only. Layout and details come in the UI design step.
 
-- **Creating a judge.** The user picks **Agentic Judge** as the third algorithm card on the LLM judge form, next to LLM as Judge and G-Eval. It's never selected by default.
+- **Creating a judge.** The user picks **Agentic Judge** as the third option in the judge algorithm list on the LLM judge form, after LLM as Judge and G-Eval. It's never selected by default.
   - The form has the same fields as the LLM judge form, minus G-Eval.
   - The model picker only offers models that support trace tools.
   - The prompt starts from the default agentic template ([§5.3](#53-default-template-for-agentic-judges)).
@@ -388,6 +388,6 @@ Functional level only. Layout and details come in the UI design step.
 | Question | Decision |
 |----------|----------|
 | Separate judge type, or an option on the LLM judge | An option on the LLM judge ([architecture §1](architecture.md#1-decisions)). |
-| Where users start an agentic judge | The third algorithm card, "Agentic Judge", on the LLM judge form ([ui_design.md](ui_design.md)). |
+| Where users start an agentic judge | The third judge algorithm option, "Agentic Judge", on the LLM judge form ([ui_design.md](ui_design.md)). |
 | What LLM judge templates default to | Unchanged (classic). Agentic Judge is opt-in for v1. |
 | Eval builder / copilot support | None in v1. |
