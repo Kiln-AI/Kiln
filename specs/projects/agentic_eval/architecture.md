@@ -389,7 +389,8 @@ Read `python_test_guide.md` before writing tests. Everything is pytest, and the 
 - `pytest-benchmark` tests, on a seeded synthetic 20 MB trace, for:
   - `build_view`;
   - `preview_messages(preview_chars=0)` over the whole trace (refused);
-  - a literal search.
+  - a literal search;
+  - four literal searches run at once, which must finish well under the 30 s search limit.
 - Asserted bounds match §6, with generous slack for CI.
 
 ### 7.4 Judge integration (`test_v2_eval_llm_judge.py`, mocked adapter)
