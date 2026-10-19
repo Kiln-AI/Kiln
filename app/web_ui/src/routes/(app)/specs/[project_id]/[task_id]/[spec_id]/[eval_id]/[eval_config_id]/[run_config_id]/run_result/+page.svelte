@@ -13,6 +13,7 @@
   import ChatTrace from "$lib/ui/trace/chat_trace.svelte"
   import { isKilnAgentRunConfig } from "$lib/types"
   import { client } from "$lib/api_client"
+  import { getEvalRunJudgeTrace } from "$lib/api/v2_eval_api"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
@@ -343,6 +344,23 @@
 
   $: is_v2_config = results?.eval_config?.config_type === "v2"
 
+  function judge_trace_loader(
+    result: EvalRunWithTrace,
+  ): (() => Promise<Trace | null>) | null {
+    const eval_run_id = result.eval_run.id
+    if (!result.has_judge_trace || !eval_run_id) {
+      return null
+    }
+    return () =>
+      getEvalRunJudgeTrace(
+        project_id,
+        task_id,
+        eval_id,
+        eval_config_id,
+        eval_run_id,
+      )
+  }
+
   $: v2_result_component = (() => {
     if (!results?.eval_config) return null
     const v2type = getV2TypeFromEvalConfig(results.eval_config)
@@ -553,6 +571,7 @@
                     eval_config={results.eval_config}
                     intermediate_outputs={result.eval_run
                       .intermediate_outputs ?? null}
+                    load_judge_trace={judge_trace_loader(result)}
                   />
                 </td>
               {:else}

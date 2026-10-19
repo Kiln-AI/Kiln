@@ -2218,6 +2218,45 @@ class TestV2FreshGeneration:
         assert saved.task_run_usage is None
 
     @pytest.mark.asyncio
+    async def test_judge_trace_is_recorded_on_the_score(
+        self,
+        mock_v2_task_run_eval_runner,
+        mock_v2_task_run_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        """The judge's conversation, so what its template rendered can be inspected."""
+        judge_trace = [
+            {"role": "system", "content": "Score the output."},
+            {"role": "user", "content": "rendered judge prompt"},
+            {"role": "assistant", "content": '{"accuracy": 1.0}'},
+        ]
+
+        class TracedJudge(StubV2Eval):
+            async def evaluate(self, eval_input):
+                return V2EvalResult(scores={"accuracy": 1.0}, judge_trace=judge_trace)
+
+        item = TaskRun(
+            input="test input",
+            output=TaskOutput(output="stale output", source=data_source),
+            parent=mock_v2_task_run_eval_runner.task,
+        )
+        item.save_to_file()
+
+        job = EvalJob(
+            item=item,
+            eval_config=mock_v2_task_run_eval_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+        with generating(TraceGenerator(mock_v2_task_run_eval_runner.task), TracedJudge):
+            await mock_v2_task_run_eval_runner.run_job(job)
+
+        (saved,) = mock_v2_task_run_eval_config.runs(readonly=True)
+        assert saved.judge_trace == judge_trace
+        assert saved.task_run_trace is None
+
+    @pytest.mark.asyncio
     async def test_scoring_skip_still_names_the_trace_it_could_not_score(
         self,
         mock_v2_task_run_eval_runner,
