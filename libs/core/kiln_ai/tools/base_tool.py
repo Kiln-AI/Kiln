@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, TypedDict
+from typing import Any, Dict
 
 from pydantic import BaseModel, Field
+from typing_extensions import NotRequired, TypedDict
 
 from kiln_ai.datamodel.json_schema import validate_schema_dict
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId, ToolId
@@ -14,6 +15,7 @@ class ToolFunction(TypedDict):
     name: str
     description: str
     parameters: Dict[str, Any]
+    strict: NotRequired[bool]
 
 
 class ToolCallDefinition(TypedDict):
