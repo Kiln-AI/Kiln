@@ -142,23 +142,6 @@ class TestFormatUserMessage:
             == "The run exceeded the maximum number of tool calls in one turn."
         )
 
-    def test_tool_not_available_passes_through(self):
-        msg = "A tool named 'foo' was invoked by a model, but was not available."
-        exc = RuntimeError(msg)
-        assert format_error_message(exc) == msg
-
-    def test_parse_arguments_passes_through(self):
-        msg = "Failed to parse arguments for tool 'foo' (should be JSON): blah"
-        exc = RuntimeError(msg)
-        assert format_error_message(exc) == msg
-
-    def test_validate_arguments_passes_through(self):
-        msg = (
-            "Failed to validate arguments for tool 'foo'. The arguments didn't match..."
-        )
-        exc = RuntimeError(msg)
-        assert format_error_message(exc) == msg
-
     def test_reasoning_required_passes_through(self):
         msg = "Reasoning is required for this model, but no reasoning was returned."
         exc = RuntimeError(msg)

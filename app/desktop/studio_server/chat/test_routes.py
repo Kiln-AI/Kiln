@@ -193,6 +193,45 @@ def test_get_chat_session_forwards_to_kiln(mock_asyncio_detailed, client, mock_a
     "app.desktop.studio_server.chat.routes.get_session_v1_chat_sessions_session_id_get.asyncio_detailed",
     new_callable=AsyncMock,
 )
+def test_get_chat_session_keeps_tool_error_fields(
+    mock_asyncio_detailed, client, mock_api_key
+):
+    failed_tool_message = {
+        "role": "tool",
+        "tool_call_id": "tc1",
+        "content": "Error: no tool named 'foo'.",
+        "is_error": True,
+        "error_message": "Error: no tool named 'foo'.",
+    }
+    successful_tool_message = {"role": "tool", "tool_call_id": "tc2", "content": "3"}
+    parsed = ChatSnapshot.from_dict(
+        {
+            "id": "trace-abc",
+            "task_run": _make_task_run_dict(
+                trace=[failed_tool_message, successful_tool_message]
+            ),
+        }
+    )
+    mock_asyncio_detailed.return_value = KilnResponse(
+        status_code=HTTPStatus.OK,
+        content=b"{}",
+        headers={"content-type": "application/json"},
+        parsed=parsed,
+    )
+
+    r = client.get("/api/chat/sessions/trace-abc")
+
+    assert r.status_code == 200
+    assert r.json()["task_run"]["trace"] == [
+        failed_tool_message,
+        successful_tool_message,
+    ]
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.get_session_v1_chat_sessions_session_id_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
 def test_get_chat_session_passes_through_error_status(
     mock_asyncio_detailed, client, mock_api_key
 ):

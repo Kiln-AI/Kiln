@@ -17,6 +17,7 @@ from kiln_ai.adapters.eval.base_eval import (
     BaseEval,
     BaseV2EvalBridge,
     format_judge_instructions,
+    validate_judge_thinking_level,
 )
 
 if TYPE_CHECKING:
@@ -203,14 +204,30 @@ class LlmJudgeEval(BaseV2EvalBridge):
 
         top_logprobs = 10 if props.g_eval else None
 
+        # Pass only the fields the judge's run_config sets. An unset field keeps its
+        # default: the adapter reads an unset thinking_level as "use the provider's
+        # default", which keeps older configs unchanged. Passing fields to the
+        # constructor (not model_copy) validates them and marks them as set.
+        overrides = (
+            props.run_config.model_dump(exclude_none=True)
+            if props.run_config is not None
+            else {}
+        )
+        if "thinking_level" in overrides:
+            validate_judge_thinking_level(
+                model_name, props.model_provider, overrides["thinking_level"]
+            )
+        run_config_properties = KilnAgentRunConfigProperties(
+            model_name=model_name,
+            model_provider_name=provider,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=structured_output_mode,
+            **overrides,
+        )
+
         adapter = adapter_for_task(
             judge_task,
-            run_config_properties=KilnAgentRunConfigProperties(
-                model_name=model_name,
-                model_provider_name=provider,
-                prompt_id=PromptGenerators.SIMPLE,
-                structured_output_mode=structured_output_mode,
-            ),
+            run_config_properties=run_config_properties,
             base_adapter_config=AdapterConfig(
                 allow_saving=False,
                 top_logprobs=top_logprobs,

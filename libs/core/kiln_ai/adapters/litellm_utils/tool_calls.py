@@ -5,6 +5,10 @@ from litellm.types.utils import (
     ChatCompletionMessageToolCall,
 )
 
+MISSING_TOOL_NAME_ERROR = (
+    "The model requested a tool call, without providing a function name (required)."
+)
+
 
 def function_tool_calls(
     tool_calls: Sequence[
@@ -26,3 +30,27 @@ def function_tool_calls(
             )
         result.append(tool_call)
     return result
+
+
+def response_function_tool_calls(
+    tool_calls: Sequence[
+        ChatCompletionMessageToolCall | ChatCompletionMessageCustomToolCall
+    ]
+    | None,
+) -> list[ChatCompletionMessageToolCall]:
+    """Take the function tool calls from a model response, ready for the trace.
+
+    Null, empty or whitespace-only arguments become "{}" (no arguments) on the
+    calls themselves, so the response message that holds them carries valid
+    JSON into the trace and into the next request to the provider. Any other
+    arguments are left as the model sent them. Raises ValueError for a custom
+    tool call, or for a call with no function name, which a trace can't store.
+    """
+    calls = function_tool_calls(tool_calls)
+    for call in calls:
+        if call.function.name is None:
+            raise ValueError(MISSING_TOOL_NAME_ERROR)
+        arguments = call.function.arguments
+        if arguments is None or arguments.strip() == "":
+            call.function.arguments = "{}"
+    return calls

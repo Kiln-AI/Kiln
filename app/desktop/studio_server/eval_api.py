@@ -57,6 +57,7 @@ from kiln_ai.datamodel.eval import (
     EvalSplitName,
     EvalTaskInput,
     EvalTemplateId,
+    LlmJudgeRunConfig,
     MultiTurnSyntheticEvalInputData,
     SingleTurnEvalInputData,
     SkippedReason,
@@ -420,6 +421,10 @@ class LlmJudgeBuilderInput(BaseModel):
     judge_instructions: list[str] | None = Field(
         default=None,
         description="User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from.",
+    )
+    run_config: LlmJudgeRunConfig | None = Field(
+        default=None,
+        description="Optional settings for the judge model call (thinking level, temperature, top_p). Each unset field keeps its default.",
     )
 
 
@@ -2481,6 +2486,7 @@ def connect_evals_api(app: FastAPI):
                 judge_prompt=request.judge_prompt,
                 system_prompt=request.system_prompt,
                 judge_instructions=request.judge_instructions,
+                run_config=request.run_config,
             )
             eval_config = EvalConfig(
                 name=name,
@@ -2560,6 +2566,7 @@ def connect_evals_api(app: FastAPI):
                     judge_prompt=builder.judge_prompt,
                     system_prompt=builder.system_prompt,
                     judge_instructions=builder.judge_instructions,
+                    run_config=builder.run_config,
                 )
             elif request.properties is not None:
                 properties = request.properties
