@@ -43,9 +43,9 @@ The form's **Select Judge Algorithm** step is a radio list: one row per algorith
 
 File: `app/web_ui/src/lib/components/eval_types/test_run/eval_test_run_pane.svelte`.
 
-- **The button.** When a test result has `judge_trace`, a grey, full-width `btn btn-sm w-full` labelled **Judge Trace** appears after the scores.
-- **The dialog.** The button opens a `Dialog` titled "Judge Trace" (`width="wide"`) that renders the judge trace with `TraceView` (`lib/ui/trace/trace.svelte`), every message expanded. It is the same dialog as on the results page (§3).
-- **Which judges.** This applies to every LLM judge, classic and G-Eval included. The spec builder's draft test uses the same pane, so it shows the button too.
+- **The link.** When a test result has `judge_trace`, a **Judge Trace** link (`link underline text-xs text-gray-500`) sits on the right of the Scores header, where the selected run card above it has its Change link. The "Preview only · not saved" caption sits under the scores.
+- **The dialog.** The link opens a `Dialog` titled "Judge Trace" (`width="wide"`) that renders the judge trace with `TraceView` (`lib/ui/trace/trace.svelte`), every message expanded. It is the same dialog as on the results page (§3).
+- **Which judges.** This applies to every LLM judge, classic and G-Eval included. The spec builder's draft test uses the same pane, so it shows the link too.
 - **Loading text.** While an Agentic Judge test runs, the pane's existing loading state reads: "The judge is reading the trace. This can take a minute."
 
 ## 3. Results Page: Judge Trace
@@ -75,7 +75,7 @@ File: `eval_configs/eval_config_instruction.svelte`.
 | Element | House control | Sibling it matches |
 |---------|---------------|--------------------|
 | Agentic Judge option | `FormElement` radio list (`inputType="radio"`), as a new `evaluator_algorithms` entry | "Match Mode" on the Tool Call Check form |
-| Judge Trace button (test pane) | DaisyUI grey `btn btn-sm w-full` | Run Test and Run Again, the pane's full-width buttons |
+| Judge Trace link (test pane) | `link underline text-xs text-gray-500` in the Scores header | The Change link in the selected run card header |
 | Judge Trace dialog (test pane) | `Dialog` (`width="wide"`) + `TraceView` (`trace.svelte`), every message expanded | The Judge Trace dialog on the results page |
 | Judge trace link (results) | Same markup as the reasoning link in `llm_judge_result.svelte` | The reasoning link |
 | "Agentic Judge" badge | Same markup as the G-Eval badge line | The G-Eval badge line |
