@@ -45,9 +45,9 @@ def _judge_run(
 ) -> Mock:
     """The judge's own TaskRun, the first half of what the adapter returns.
 
-    Only `usage` and `trace` are read from it — they become `V2EvalResult.usage` and
-    `V2EvalResult.judge_trace`, and must be real values or None because the result
-    model validates them.
+    Only `usage` and `trace` are read from it. They become `V2EvalResult.usage` and
+    `V2EvalResult.judge_trace`, so each must be a real value or None: the result model
+    validates them.
     """
     run = Mock()
     run.usage = usage
@@ -420,6 +420,38 @@ class TestLlmJudgeEvalGEval:
         mock_g_eval_score.assert_called_once()
         call_args = mock_g_eval_score.call_args[0]
         assert call_args[0] == mock_run_output
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_g_eval_judge_trace_is_reported(self, mock_adapter_for_task):
+        judge_trace = [
+            {"role": "system", "content": "Score the output."},
+            {"role": "user", "content": "rendered judge prompt"},
+            {"role": "assistant", "content": '{"quality": "5"}'},
+        ]
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.return_value = (
+            _judge_run(trace=judge_trace),
+            RunOutput(output={"quality": "5"}, intermediate_outputs=None),
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+
+        with (
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_llm_judge.built_in_models_from_provider",
+                return_value=Mock(supports_logprobs=True),
+            ),
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_llm_judge.build_g_eval_score",
+                return_value={"quality": 4.3},
+            ),
+        ):
+            result = await LlmJudgeEval(
+                _make_config(_make_props(g_eval=True))
+            ).evaluate(_inp())
+
+        assert result.scores == {"quality": 4.3}
+        assert result.judge_trace == judge_trace
 
 
 class TestLlmJudgeEvalGEvalFailFast:

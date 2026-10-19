@@ -1,7 +1,7 @@
 <script lang="ts">
   import EvalResultScores from "./eval_result_scores.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
-  import TraceView from "$lib/ui/trace/trace.svelte"
+  import JudgeTraceLink from "./judge_trace_link.svelte"
   import type { EvalConfig, Trace } from "$lib/types"
   import { model_info, model_name } from "$lib/stores"
   import { extractV2Props } from "$lib/utils/eval_types/registry"
@@ -11,7 +11,8 @@
   export let skipped_detail: string | null = null
   export let eval_config: EvalConfig | null = null
   export let intermediate_outputs: Record<string, string> | null = null
-  export let judge_trace: Trace | null = null
+  /** Fetches the judge's conversation. Null when the run saved none. */
+  export let load_judge_trace: (() => Promise<Trace | null>) | null = null
 
   $: props = extractV2Props(eval_config, "llm_judge")
   $: reasoning =
@@ -20,13 +21,12 @@
     null
 
   let reasoning_dialog: Dialog | null = null
-  let judge_trace_dialog: Dialog | null = null
 </script>
 
 <div class="flex flex-col gap-2">
   <EvalResultScores {scores} {skipped_reason} {skipped_detail} />
 
-  {#if props || reasoning || judge_trace}
+  {#if props || reasoning || load_judge_trace}
     <div class="text-xs text-gray-400 flex flex-col gap-0.5">
       {#if props}
         <div>
@@ -39,14 +39,9 @@
           </div>
         {/if}
       {/if}
-      {#if judge_trace}
+      {#if load_judge_trace}
         <div>
-          <button
-            class="text-xs link link-hover text-gray-400"
-            on:click={() => judge_trace_dialog?.show()}
-          >
-            Judge trace
-          </button>
+          <JudgeTraceLink load_trace={load_judge_trace} />
         </div>
       {:else if reasoning}
         <div>
@@ -67,12 +62,3 @@
     {reasoning}
   </div>
 </Dialog>
-
-{#if judge_trace}
-  <Dialog bind:this={judge_trace_dialog} title="Judge Trace" width="wide">
-    <TraceView
-      trace={judge_trace}
-      auto_expand_indices={judge_trace.map((_, index) => index)}
-    />
-  </Dialog>
-{/if}

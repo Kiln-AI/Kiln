@@ -2297,6 +2297,95 @@ async def test_get_eval_run_results_content_part_trace_after_readonly_scan(
     assert "content part" in results[0]["task_run_trace"]
 
 
+JUDGE_TRACE = [
+    {"role": "system", "content": "Score the output."},
+    {"role": "user", "content": "rendered judge prompt"},
+    {"role": "assistant", "content": '{"score1": "3"}'},
+]
+
+
+def _judge_trace_path(eval_run_id: str) -> str:
+    return (
+        "/api/projects/project1/tasks/task1/evals/eval1"
+        f"/eval_config/eval_config1/eval_run/{eval_run_id}/judge_trace"
+    )
+
+
+@pytest.mark.parametrize(
+    ("judge_trace", "has_judge_trace"),
+    [(JUDGE_TRACE, True), ([], False), (None, False)],
+)
+def test_get_eval_run_results_flags_the_judge_trace_without_embedding_it(
+    client,
+    mock_task_from_id,
+    mock_task,
+    mock_eval,
+    mock_eval_config,
+    mock_run_config,
+    data_source,
+    judge_trace,
+    has_judge_trace,
+):
+    mock_task_from_id.return_value = mock_task
+    item = _tagged_task_run(mock_task, data_source, "eval_set")
+    _scored(mock_eval_config, dataset_id=item.id, judge_trace=judge_trace)
+
+    response = client.get(RUN_RESULTS_PATH, params={"split": "test"})
+
+    assert response.status_code == 200
+    (result,) = response.json()["results"]
+    assert result["has_judge_trace"] is has_judge_trace
+    assert result["eval_run"]["judge_trace"] is None
+
+
+class TestGetEvalRunJudgeTrace:
+    def test_returns_the_saved_trace(
+        self, client, mock_task_from_id, mock_task, mock_eval_config, data_source
+    ):
+        mock_task_from_id.return_value = mock_task
+        item = _tagged_task_run(mock_task, data_source, "eval_set")
+        eval_run = _scored(
+            mock_eval_config, dataset_id=item.id, judge_trace=JUDGE_TRACE
+        )
+
+        response = client.get(_judge_trace_path(str(eval_run.id)))
+
+        assert response.status_code == 200
+        assert response.json() == JUDGE_TRACE
+
+    def test_returns_null_when_no_trace_was_saved(
+        self, client, mock_task_from_id, mock_task, mock_eval_config, data_source
+    ):
+        mock_task_from_id.return_value = mock_task
+        item = _tagged_task_run(mock_task, data_source, "eval_set")
+        eval_run = _scored(mock_eval_config, dataset_id=item.id)
+
+        response = client.get(_judge_trace_path(str(eval_run.id)))
+
+        assert response.status_code == 200
+        assert response.json() is None
+
+    def test_unknown_eval_run_is_404(
+        self, client, mock_task_from_id, mock_task, mock_eval_config
+    ):
+        mock_task_from_id.return_value = mock_task
+
+        response = client.get(_judge_trace_path("missing"))
+
+        assert response.status_code == 404
+        assert "missing" in response.json()["message"]
+
+    def test_unknown_eval_config_is_404(self, client, mock_task_from_id, mock_task):
+        mock_task_from_id.return_value = mock_task
+
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1"
+            "/eval_config/invalid_config/eval_run/any/judge_trace"
+        )
+
+        assert response.status_code == 404
+
+
 class TestGetEvalRunResultsSplits:
     """Every response about eval results is scoped to exactly one split (spec 5)."""
 
@@ -6920,6 +7009,42 @@ class TestTestV2Eval:
         body = response.json()
         assert "accuracy" in body["scores"]
         assert body["skipped_reason"] is None
+        assert body["judge_trace"] is None
+
+    def test_llm_judge_returns_the_judge_trace(self, client, mock_v2_eval):
+        payload = {
+            "properties": {
+                "type": "llm_judge",
+                "model_name": "gpt-4o",
+                "model_provider": "openai",
+                "prompt_template": "Is this correct? Output: {{ final_message }}",
+            },
+            "eval_input": {"final_message": "test output"},
+        }
+        judge_trace = [
+            {"role": "system", "content": "Score the output."},
+            {"role": "user", "content": "Is this correct? Output: test output"},
+            {"role": "assistant", "content": '{"accuracy": 5}'},
+        ]
+        mock_adapter = MagicMock()
+        mock_adapter.invoke_returning_run_output = AsyncMock(
+            return_value=(
+                Mock(usage=None, trace=judge_trace),
+                RunOutput(output={"accuracy": 5}, intermediate_outputs=None),
+            )
+        )
+        with (
+            patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task",
+                return_value=mock_adapter,
+            ),
+        ):
+            mock_eid.return_value = mock_v2_eval
+            response = client.post(self._url(), json=payload)
+
+        assert response.status_code == 200
+        assert response.json()["judge_trace"] == judge_trace
 
     def test_nothing_persisted(self, client, mock_v2_eval):
         eval_dir = mock_v2_eval.path.parent
