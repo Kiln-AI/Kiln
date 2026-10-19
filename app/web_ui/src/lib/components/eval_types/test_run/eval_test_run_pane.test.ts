@@ -770,7 +770,7 @@ describe("EvalTestRunPane", () => {
         })
       }
 
-      it("shows a grey Judge Trace button after the scores", () => {
+      it("shows a Judge Trace link in the Scores header", () => {
         const { container } = renderResult(judge_trace)
 
         const button = container.querySelector(
@@ -778,13 +778,10 @@ describe("EvalTestRunPane", () => {
         ) as HTMLButtonElement
         expect(button).not.toBeNull()
         expect(button.textContent?.trim()).toBe("Judge Trace")
-        expect(button.className).toBe("btn btn-sm w-full")
+        expect(button.className).toBe("link underline text-xs text-gray-500")
 
         const scores = container.querySelector('[data-testid="scores-section"]')
-        expect(
-          scores!.compareDocumentPosition(button) &
-            Node.DOCUMENT_POSITION_FOLLOWING,
-        ).toBeTruthy()
+        expect(scores!.contains(button)).toBe(true)
       })
 
       it("opens the Judge Trace dialog on click", async () => {

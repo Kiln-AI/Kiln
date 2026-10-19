@@ -202,9 +202,16 @@
       <div class="flex flex-col gap-2" data-testid="scores-section">
         <div class="flex items-center justify-between">
           <span class="text-sm font-medium">Scores</span>
-          <span class="text-xs text-gray-500"
-            >Preview only &middot; not saved</span
-          >
+          {#if test_result.judge_trace}
+            <button
+              type="button"
+              class="link underline text-xs text-gray-500"
+              on:click={() => judge_trace_dialog?.show()}
+              data-testid="judge-trace-btn"
+            >
+              Judge Trace
+            </button>
+          {/if}
         </div>
         <div class="flex flex-col gap-1.5">
           {#each Object.entries(test_result.scores) as [name, value]}
@@ -216,18 +223,10 @@
             </div>
           {/each}
         </div>
+        <span class="text-xs text-gray-500"
+          >Preview only &middot; not saved</span
+        >
       </div>
-    {/if}
-
-    {#if test_result.judge_trace}
-      <button
-        type="button"
-        class="btn btn-sm w-full"
-        on:click={() => judge_trace_dialog?.show()}
-        data-testid="judge-trace-btn"
-      >
-        Judge Trace
-      </button>
     {/if}
 
     <ToolCallLogTable
