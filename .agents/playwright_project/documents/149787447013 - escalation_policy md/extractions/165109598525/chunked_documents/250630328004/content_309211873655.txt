@@ -1,0 +1,23 @@
+**A customer mentions their lawyer in passing while complaining about downtime.**
+Escalate. Threats of legal action are escalated whether or not they are serious,
+because judging seriousness is exactly the thing a human should do.
+
+**A customer asks us to delete all their data.** Escalate if they cite a law or a
+regulator. An ordinary account-deletion request is not an escalation.
+
+## What escalation is not
+
+Escalation is not a priority level, and it is not a way to get a ticket answered
+faster. A low-priority ticket can be escalated and stay low priority. An urgent
+ticket can be answered automatically and never involve a human at all.
+
+Escalation is also not a judgement about the customer. Nothing about the customer's
+tone, plan tier, or history changes whether a ticket is escalated. The four
+categories above are the whole test.
+
+## After escalation
+
+The reviewer records which of the four categories applied. Those records are reviewed
+monthly, and a category that is firing constantly on tickets the reviewer then
+releases unchanged is a sign the rule is drawn too widely, not a sign the reviewers
+are being careless.

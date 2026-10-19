@@ -2,23 +2,23 @@ import { test, expect } from "./fixtures"
 
 /* @act
 ## Goals
-With no saved data guide, navigating directly to /data_guide must redirect to
-/data_guide_setup. The saved-guide page renders only when a guide exists; for
-an empty task, it forwards to the setup wizard so deep-links / bookmarks land
-somewhere usable.
+With no saved input data guide, navigating directly to /data_guide must
+redirect to the synth page. The synth page intro is the single entry point
+for creating a new guide ("Set Up Data Guide" → /data_guide_chooser, or
+"Continue Without").
 
 ## Fixtures
 - seededProjectWithTask
 
 ## Hints
 - Guard lives in data_guide/+page.svelte: if `guide` is empty/whitespace,
-  goto /data_guide_setup with replaceState.
-- No backend write needed — a fresh task has no data guide.
+  goto /synth with replaceState.
+- No backend write needed — a fresh task has no input data guide.
 
 ## Assertions
-- After page.goto on /data_guide, the final URL ends with /data_guide_setup.
+- After page.goto on /data_guide, the final URL ends with /synth.
 */
-test("/data_guide redirects to setup when no guide exists", async ({
+test("/data_guide redirects to synth when no guide exists", async ({
   page,
   registeredUser,
   seededProjectWithTask,
@@ -27,9 +27,7 @@ test("/data_guide redirects to setup when no guide exists", async ({
   const { project, task } = seededProjectWithTask
 
   await page.goto(`/generate/${project.id}/${task.id}/data_guide`)
-  await expect(page).toHaveURL(
-    `/generate/${project.id}/${task.id}/data_guide_setup`,
-  )
+  await expect(page).toHaveURL(`/generate/${project.id}/${task.id}/synth`)
 })
 
 /* @act
@@ -68,7 +66,7 @@ test("/data_guide/refine direct hit redirects to /data_guide", async ({
     {
       data: {
         guide:
-          "# Reference Examples\n\n## Example 1\n```input\nHello\n```\n\n```output\nHi there\n```\n\n# Guidelines & Rules\n\nBe concise and friendly.",
+          "# Reference Inputs\n\n## Example 1\n```input\nHello\n```\n\n# Input Guidelines & Rules\n\nBe concise and friendly.",
       },
     },
   )

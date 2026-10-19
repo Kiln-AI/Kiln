@@ -30,6 +30,25 @@ class ToolCallContext:
     """Used for Kiln Tasks as Tools, to know if the tool call should save the task run it invoked to that task's Dataset."""
     allow_saving: bool = True
 
+    """The code-eval judge score schema (allow_float_scores=False) as a JSON string.
+
+    Set only by the code-eval pump so the llm_judge tool can resolve through the
+    generic tool path yet still see the eval's schema at call time. Ignored by every
+    other caller and tool."""
+    eval_output_schema: str | None = None
+
+
+class ToolCallError(Exception):
+    """An expected tool failure the model can recover from.
+
+    Raise it from ``run()`` with a message written for the model. The adapter
+    sends the message to the model, as-is, as an error result for that call,
+    and the run continues.
+
+    ``kiln_ai.sandbox.tools_surface.ToolCallError`` is a different class, for
+    sandboxed code tools. Only this class gets its message passed through.
+    """
+
 
 class ToolCallResult(BaseModel):
     output: str
@@ -40,6 +59,10 @@ class ToolCallResult(BaseModel):
     error_message: str | None = Field(
         default=None,
         description="Human-readable error message, set when is_error is True.",
+    )
+    timed_out: bool = Field(
+        default=False,
+        description="Whether the error was the tool hitting its execution time limit. Carried structurally so callers can classify timeouts without parsing output text.",
     )
 
 
@@ -53,7 +76,16 @@ class KilnToolInterface(ABC):
     async def run(
         self, context: ToolCallContext | None = None, **kwargs
     ) -> ToolCallResult:
-        """Execute the tool with the given parameters and calling context if provided."""
+        """Execute the tool with the given parameters and calling context if provided.
+
+        Raise ToolCallError with a message written for the model to return that
+        message to the model as an error result; the run continues. Errors that
+        ``kiln_ai.adapters.retry_classification.is_run_ending_tool_error``
+        accepts (such as a provider rate limit or timeout, or a world
+        environment error that ends the session) propagate and fail the run, so
+        a caller can retry the run or report the real cause. Any other
+        exception is logged, and the model gets a generic error for that call.
+        """
         pass
 
     @abstractmethod

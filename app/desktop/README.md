@@ -18,9 +18,23 @@ uv venv --python 3.13 --python-preference only-system
 # Check it worked
 uv run python --version
 
-# Run desktop
-uv run python -m app.desktop.desktop
+# Run desktop (see below)
+make dev_desktop
 ```
+
+## Run Desktop App for Development
+
+`make dev` runs the API server alone, without Tk, so it can't exercise the tray icon, the macOS dock reopen handler or native file dialogs. To test those, run the real desktop app from the repo root:
+
+```bash
+make dev_desktop
+```
+
+- It serves the built web UI from `app/web_ui/build`. Build it first with `cd app/web_ui && nvm use && npm run build`, and rebuild after UI changes.
+- It uses port 8757 by default (`KILN_LOCAL_API_PORT`), the same as `make dev`. Stop `make dev` first. If the port is taken, the app assumes another copy is running, opens the browser and exits.
+- For UI hot reload, run `make ui` alongside it and use the Vite URL (http://localhost:5173). The Vite UI calls the desktop app's API on port 8757.
+- Python changes need a restart; there is no hot reload.
+- It skips the remote model list fetch by default. Set `KILN_SKIP_REMOTE_MODEL_LIST=false` to fetch it.
 
 ## Building the Desktop App
 

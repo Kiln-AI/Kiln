@@ -1,0 +1,135 @@
+{
+  "v": 1,
+  "id": "237372582418",
+  "created_at": "2026-08-17T19:04:24.135545Z",
+  "created_by": "root",
+  "input": "{\"subject\": \"Suspicious login from an IP we don't recognize\", \"body\": \"We got an alert for a successful login to our admin account from an IP in a country where nobody on the team is based. Nobody here recognises it. Please lock the account and tell us what that session did.\", \"customer_plan\": \"enterprise\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "root"
+    },
+    "run_config_id": null,
+    "run_config": null
+  },
+  "output": {
+    "v": 1,
+    "id": "236175184362",
+    "path": null,
+    "created_at": "2026-08-17T19:04:24.135241Z",
+    "created_by": "root",
+    "output": "{\"team\": \"security\", \"priority\": \"urgent\", \"needs_human_review\": true, \"summary\": \"Enterprise customer reports unrecognized successful admin login from a foreign IP; lock the account now, investigate what the session accessed/did, and respond with a full audit.\"}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_openai_compatible_adapter",
+        "model_name": "deepseek_4_flash",
+        "model_provider": "openrouter",
+        "prompt_id": "task_run_config::507368061812::235956950045::293284619675",
+        "structured_output_mode": "json_schema",
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "run_config_id": "293284619675",
+      "run_config": {
+        "type": "kiln_agent",
+        "model_name": "deepseek_4_flash",
+        "model_provider_name": "openrouter",
+        "prompt_id": "task_run_config::507368061812::235956950045::293284619675",
+        "top_p": 1.0,
+        "temperature": 1.0,
+        "structured_output_mode": "json_schema",
+        "thinking_level": "high",
+        "tools_config": {
+          "tools": []
+        },
+        "input_transform": null
+      }
+    },
+    "rating": {
+      "v": 1,
+      "id": "308628476997",
+      "path": null,
+      "created_at": "2026-08-17T19:10:39.812330Z",
+      "created_by": "root",
+      "type": "five_star",
+      "value": 5.0,
+      "requirement_ratings": {
+        "named::Escalation Flagging": {
+          "value": 1.0,
+          "type": "pass_fail"
+        }
+      },
+      "model_type": "task_output_rating"
+    },
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "Security concern — escalation required immediately; customer is reporting a potentially compromised admin account and is asking for the account to be locked and a session audit, which a human security/trust agent must review and act on before any automated reply is sent.\n\nSummary for next agent: Enterprise customer reports unrecognized successful admin login from a foreign IP; lock the account now, investigate what the session accessed/did, and respond with a full audit.",
+    "reasoning": "We need to respond with final result based on previous instructions. The user asked \"Considering the above, return a final result.\" So we need to output the final decision, likely in structured format. The previous answer already gave a summary sentence and decision. But they want final result. Probably we should provide the team, priority, whether human needed, and the one-sentence summary. Keep it concise."
+  },
+  "tags": [
+    "eval_golden_escalation_flagging",
+    "manual_run",
+    "fine_tune_triage"
+  ],
+  "usage": {
+    "input_tokens": 671,
+    "output_tokens": 345,
+    "total_tokens": 1016,
+    "cost": 0.00019054,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 6884
+  },
+  "cumulative_usage": {
+    "input_tokens": 671,
+    "output_tokens": 345,
+    "total_tokens": 1016,
+    "cost": 0.00019054,
+    "cached_tokens": 0
+  },
+  "trace": [
+    {
+      "content": "You are a support triage assistant for a B2B SaaS product.\n\nRead the inbound ticket and decide which team should own it, how urgent it is, and whether a human needs to look at it before a reply goes out. Be conservative: when the ticket mentions data loss, billing disputes, or a security concern, escalate to a human.\n\nKeep the summary to one sentence, written for the engineer or agent who picks the ticket up next.",
+      "role": "system"
+    },
+    {
+      "content": "The input is:\n<user_input>\n{\"subject\": \"Suspicious login from an IP we don't recognize\", \"body\": \"We got an alert for a successful login to our admin account from an IP in a country where nobody on the team is based. Nobody here recognises it. Please lock the account and tell us what that session did.\", \"customer_plan\": \"enterprise\"}\n</user_input>\n\nFirst decide what the customer is actually asking for, then whether anything in the ticket is irreversible or disputed. Only then pick the team and priority.",
+      "role": "user"
+    },
+    {
+      "role": "assistant",
+      "content": "Security concern — escalation required immediately; customer is reporting a potentially compromised admin account and is asking for the account to be locked and a session audit, which a human security/trust agent must review and act on before any automated reply is sent.\n\nSummary for next agent: Enterprise customer reports unrecognized successful admin login from a foreign IP; lock the account now, investigate what the session accessed/did, and respond with a full audit.",
+      "reasoning_content": "We need answer. Need follow instructions. Need decide team, urgency, human review. Ticket: \"Suspicious login from an IP we don't recognize\" body asks lock account and tell what session did. Enterprise. This is security concern. Need human before reply. Need conservative escalate. Need determine team: likely security/trust/support? Need pick team. Need summary one sentence for engineer/agent. Need maybe priority critical/high. Need mention irreversible? Account lock is reversible but security incident. Need human. Let's craft concise.",
+      "latency_ms": 4266,
+      "usage": {
+        "input_tokens": 286,
+        "output_tokens": 197,
+        "total_tokens": 483,
+        "cost": 0.0000952,
+        "cached_tokens": 0
+      }
+    },
+    {
+      "content": "Considering the above, return a final result.",
+      "role": "user"
+    },
+    {
+      "role": "assistant",
+      "content": "{\n  \"team\": \"security\",\n  \"priority\": \"urgent\",\n  \"needs_human_review\": true,\n  \"summary\": \"Enterprise customer reports unrecognized successful admin login from a foreign IP; lock the account now, investigate what the session accessed/did, and respond with a full audit.\"\n}",
+      "reasoning_content": "We need to respond with final result based on previous instructions. The user asked \"Considering the above, return a final result.\" So we need to output the final decision, likely in structured format. The previous answer already gave a summary sentence and decision. But they want final result. Probably we should provide the team, priority, whether human needed, and the one-sentence summary. Keep it concise.",
+      "latency_ms": 2618,
+      "usage": {
+        "input_tokens": 385,
+        "output_tokens": 148,
+        "total_tokens": 533,
+        "cost": 0.00009534,
+        "cached_tokens": 0
+      }
+    }
+  ],
+  "parent_task_run_id": null,
+  "model_type": "task_run"
+}

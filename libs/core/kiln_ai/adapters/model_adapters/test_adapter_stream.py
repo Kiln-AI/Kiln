@@ -15,7 +15,10 @@ from litellm.types.utils import (
 from litellm.types.utils import Message as LiteLLMMessage
 
 from kiln_ai.adapters.chat import ChatFormatter
-from kiln_ai.adapters.model_adapters.adapter_stream import AdapterStream
+from kiln_ai.adapters.model_adapters.adapter_stream import (
+    AdapterStream,
+    raise_for_empty_model_response,
+)
 from kiln_ai.adapters.model_adapters.stream_events import (
     ToolCallEvent,
     ToolCallEventType,
@@ -62,6 +65,18 @@ def _make_tool_call(
         type="function",
         function=Function(name=name, arguments=args),
     )
+
+
+def _make_raw_tool_call(
+    call_id: str, name: str | None, arguments: str | None
+) -> ChatCompletionMessageToolCall:
+    """A tool call holding exactly ``name`` and ``arguments``, nulls included.
+
+    ``Function()`` turns null arguments into "", so they are set after construction.
+    """
+    function = Function(name=name, arguments="")
+    function.arguments = arguments  # type: ignore[assignment]
+    return ChatCompletionMessageToolCall(id=call_id, type="function", function=function)
 
 
 class FakeChatFormatter(ChatFormatter):
@@ -339,10 +354,19 @@ class TestAdapterStreamToolCalls:
 
         streams_iter = iter([tool_stream, final_stream])
 
+        parse_error = "Error: arguments for 'add' are not valid JSON: not json. Call it again with a JSON object."
         mock_adapter.process_tool_calls = AsyncMock(
             return_value=(
                 None,
-                [{"role": "tool", "tool_call_id": "call_bad", "content": "error"}],
+                [
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call_bad",
+                        "content": parse_error,
+                        "is_error": True,
+                        "error_message": parse_error,
+                    }
+                ],
             )
         )
 
@@ -362,15 +386,82 @@ class TestAdapterStreamToolCalls:
             async for event in stream:
                 events.append(event)
 
-        input_events = [
+        tool_events = [e for e in events if isinstance(e, ToolCallEvent)]
+        assert [e.event_type for e in tool_events] == [
+            ToolCallEventType.INPUT_AVAILABLE,
+            ToolCallEventType.OUTPUT_ERROR,
+        ]
+        input_event, output_event = tool_events
+        assert input_event.arguments is None
+        assert "Failed to parse" in (input_event.error or "")
+        assert output_event.tool_call_id == "call_bad"
+        assert output_event.tool_name == "add"
+        assert output_event.error == parse_error
+        assert output_event.result is None
+        assert stream.result.run_output.output == "fallback"
+
+    @pytest.mark.parametrize(
+        "tool_message, expected_error",
+        [
+            pytest.param(
+                {"content": "Error: no tool named 'add'.", "is_error": True},
+                "Error: no tool named 'add'.",
+                id="content_only",
+            ),
+            pytest.param(
+                {
+                    "content": "World error: E42 rate limited, details...",
+                    "is_error": True,
+                    "error_message": "rate limited",
+                },
+                "rate limited",
+                id="prefers_error_message",
+            ),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_error_tool_result_yields_output_error(
+        self, mock_adapter, mock_provider, tool_message, expected_error
+    ):
+        tool_call = _make_tool_call(call_id="call_1", name="add")
+        tool_response = _make_model_response(content=None, tool_calls=[tool_call])
+        final_response = _make_model_response(content="recovered")
+        streams_iter = iter(
+            [
+                FakeStreamingCompletion(
+                    tool_response, [_make_streaming_chunk(finish_reason="tool_calls")]
+                ),
+                FakeStreamingCompletion(final_response),
+            ]
+        )
+        error_msg = {"role": "tool", "tool_call_id": "call_1", **tool_message}
+        mock_adapter.process_tool_calls = AsyncMock(return_value=(None, [error_msg]))
+
+        with patch(
+            "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+            side_effect=lambda **kw: next(streams_iter),
+        ):
+            stream = AdapterStream(
+                adapter=mock_adapter,
+                provider=mock_provider,
+                chat_formatter=FakeChatFormatter(),
+                initial_messages=[],
+                top_logprobs=None,
+            )
+            events = [event async for event in stream]
+
+        output_events = [
             e
             for e in events
             if isinstance(e, ToolCallEvent)
-            and e.event_type == ToolCallEventType.INPUT_AVAILABLE
+            and e.event_type != ToolCallEventType.INPUT_AVAILABLE
         ]
-        assert len(input_events) == 1
-        assert input_events[0].arguments is None
-        assert "Failed to parse" in (input_events[0].error or "")
+        assert len(output_events) == 1
+        assert output_events[0].event_type == ToolCallEventType.OUTPUT_ERROR
+        assert output_events[0].error == expected_error
+        traced_messages = mock_adapter.all_messages_to_trace.call_args.args[0]
+        assert error_msg in traced_messages
+        assert stream.result.run_output.output == "recovered"
 
 
 class TestAdapterStreamReturnOnToolCall:
@@ -564,6 +655,93 @@ class TestAdapterStreamEdgeCases:
             with pytest.raises(ValueError, match="no content or tool calls"):
                 async for _ in stream:
                     pass
+
+    @pytest.mark.asyncio
+    async def test_content_filter_raises_specific_error(
+        self, mock_adapter, mock_provider
+    ):
+        response = _make_model_response(content=None, tool_calls=None)
+        response.choices[0].message.content = None
+        response.choices[0].finish_reason = "content_filter"
+        fake_stream = FakeStreamingCompletion(
+            response, [_make_streaming_chunk(finish_reason="content_filter")]
+        )
+
+        with patch(
+            "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+            return_value=fake_stream,
+        ):
+            stream = AdapterStream(
+                adapter=mock_adapter,
+                provider=mock_provider,
+                chat_formatter=FakeChatFormatter(),
+                initial_messages=[],
+                top_logprobs=None,
+            )
+            with pytest.raises(ValueError, match="content-filter/refusal") as exc_info:
+                async for _ in stream:
+                    pass
+        assert "no content or tool calls" not in str(exc_info.value)
+        # The actual finish_reason is interpolated (repr renders as 'content_filter').
+        assert "finish_reason='content_filter'" in str(exc_info.value)
+
+
+class TestRaiseForEmptyModelResponse:
+    """Direct unit tests for raise_for_empty_model_response."""
+
+    def test_content_filter_finish_reason_object(self):
+        choice = MagicMock()
+        choice.finish_reason = "content_filter"
+        choice.message = MagicMock(refusal=None)
+        with pytest.raises(ValueError, match="content-filter/refusal") as exc_info:
+            raise_for_empty_model_response(choice)
+        assert "finish_reason='content_filter'" in str(exc_info.value)
+
+    def test_refusal_finish_reason_interpolated(self):
+        choice = MagicMock()
+        choice.finish_reason = "refusal"
+        choice.message = MagicMock(refusal=None)
+        with pytest.raises(ValueError, match="content-filter/refusal") as exc_info:
+            raise_for_empty_model_response(choice)
+        assert "finish_reason='refusal'" in str(exc_info.value)
+
+    def test_message_refusal_field_object_style(self):
+        # message.refusal set while finish_reason stays 'stop' (OpenAI behavior).
+        choice = MagicMock()
+        choice.finish_reason = "stop"
+        choice.message = MagicMock(refusal="I cannot help with that request.")
+        with pytest.raises(ValueError, match="content-filter/refusal") as exc_info:
+            raise_for_empty_model_response(choice)
+        assert "no content or tool calls" not in str(exc_info.value)
+
+    def test_message_refusal_field_dict_style(self):
+        choice = {
+            "finish_reason": "stop",
+            "message": {
+                "content": None,
+                "tool_calls": None,
+                "refusal": "I cannot help with that request.",
+            },
+        }
+        with pytest.raises(ValueError, match="content-filter/refusal") as exc_info:
+            raise_for_empty_model_response(choice)
+        assert "no content or tool calls" not in str(exc_info.value)
+
+    def test_normal_empty_stop_raises_generic(self):
+        choice = MagicMock()
+        choice.finish_reason = "stop"
+        choice.message = MagicMock(refusal=None)
+        with pytest.raises(ValueError, match="no content or tool calls"):
+            raise_for_empty_model_response(choice)
+
+    def test_non_matching_finish_reason_raises_generic(self):
+        # Exercises the _is_content_filter_finish_reason `return False` branch.
+        choice = MagicMock()
+        choice.finish_reason = "length"
+        choice.message = MagicMock(refusal=None)
+        with pytest.raises(ValueError, match="no content or tool calls") as exc_info:
+            raise_for_empty_model_response(choice)
+        assert "content-filter/refusal" not in str(exc_info.value)
 
 
 class TestAdapterStreamPerMessageUsage:

@@ -1,6 +1,7 @@
 import os
 
 import httpx
+
 from app.desktop.studio_server._version import __version__
 from app.desktop.studio_server.api_client.kiln_ai_server_client.client import (
     AuthenticatedClient,
@@ -11,12 +12,10 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.client import (
 
 
 def _get_desktop_app_version() -> str:
-    """Get the version of the kiln-studio-desktop package."""
     return __version__
 
 
 def _get_base_url() -> str:
-    """Get the base URL for the Kiln server."""
     return os.getenv("KILN_SERVER_BASE_URL", "https://api.kiln.tech")
 
 

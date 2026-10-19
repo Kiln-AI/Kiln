@@ -25,7 +25,12 @@
       return raw_schema
     } else {
       validate_schema(schema_model, [name])
-      return JSON.stringify(schema_from_model(schema_model, true))
+      // creating=false preserves each property's stored key (id) instead of
+      // recomputing it from the human title. This keeps clone/edit a faithful
+      // copy -- otherwise array-of-object sub-schemas drift to the wrong parent
+      // (or collide) when a key != string_to_json_key(title). New properties
+      // have an empty id, so they still fall back to a title-derived key.
+      return JSON.stringify(schema_from_model(schema_model, false))
     }
   }
 
@@ -76,8 +81,9 @@
   function switch_to_raw_schema(): boolean {
     raw = true
 
-    // Convert the schema model to a pretty JSON Schema string
-    const json_schema_format = schema_from_model(schema_model, true)
+    // Convert the schema model to a pretty JSON Schema string.
+    // creating=false preserves stored property keys (see get_schema_string above).
+    const json_schema_format = schema_from_model(schema_model, false)
     raw_schema = JSON.stringify(json_schema_format, null, 2)
 
     // Close the dialog

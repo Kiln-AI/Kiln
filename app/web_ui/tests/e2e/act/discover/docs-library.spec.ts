@@ -388,8 +388,10 @@ test.describe("Document library page", () => {
     const { project } = seededProjectWithTask
 
     await page.goto(`/docs/library/${project.id}`)
-    await page.waitForLoadState("networkidle")
 
+    // Note: don't wait for "networkidle" here — the app holds an always-on jobs
+    // SSE stream (/api/jobs/events) open for the lifetime of the page, so the
+    // network never goes idle. The assertion below auto-waits regardless.
     const breadcrumb = page
       .locator(".breadcrumbs")
       .getByRole("link", { name: "Docs & Search", exact: true })

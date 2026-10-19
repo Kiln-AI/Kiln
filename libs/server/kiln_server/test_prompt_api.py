@@ -4,6 +4,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Prompt, PromptGenerators, Task
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.prompt_api import connect_prompt_api, prompt_generators
@@ -105,6 +106,139 @@ def test_get_prompts_success(client, project_and_task):
     assert len(res["generators"]) > 0  # Should have our predefined generators
     assert len(res["prompts"]) == 1
     assert res["prompts"][0]["name"] == "Test Prompt"
+
+
+@pytest.mark.parametrize(
+    "padding,prefix", [("", ""), ("  ", ""), ("", "id::"), ("  ", "id::")]
+)
+def test_create_prompt_with_valid_provenance(client, project_and_task, padding, prefix):
+    project, task = project_and_task
+
+    parent_prompt = Prompt(name="Parent Prompt", prompt="Parent text", parent=task)
+    parent_prompt.save_to_file()
+
+    prompt_data = {
+        "name": "Derived Prompt",
+        "prompt": "Derived text",
+        "provenance": {
+            "origin": "human",
+            "derived_from_ids": [f"{padding}{prefix}{parent_prompt.id}{padding}"],
+            "notes": "Cloned from the parent prompt.",
+        },
+    }
+
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts", json=prompt_data
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert res["provenance"]["origin"] == "human"
+    assert res["provenance"]["derived_from_ids"] == [parent_prompt.id]
+
+    # Persisted on disk.
+    saved = next(p for p in task.prompts() if p.name == "Derived Prompt")
+    assert saved.provenance is not None
+    assert saved.provenance.derived_from_ids == [parent_prompt.id]
+
+
+def test_create_prompt_derived_from_unknown_sibling_400(client, project_and_task):
+    project, task = project_and_task
+    prompt_data = {
+        "name": "Bad Lineage",
+        "prompt": "text",
+        "provenance": {"origin": "human", "derived_from_ids": ["nope"]},
+    }
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts", json=prompt_data
+        )
+    assert response.status_code == 400
+    assert "unknown sibling" in response.json()["message"]
+    assert task.prompts() == []
+
+
+def test_create_prompt_same_parent_with_and_without_prefix_422(
+    client, project_and_task
+):
+    project, task = project_and_task
+    parent_prompt = Prompt(name="Parent Prompt", prompt="Parent text", parent=task)
+    parent_prompt.save_to_file()
+    prompt_data = {
+        "name": "Duplicate Lineage",
+        "prompt": "text",
+        "provenance": {
+            "origin": "human",
+            "derived_from_ids": [f"id::{parent_prompt.id}", parent_prompt.id],
+        },
+    }
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts", json=prompt_data
+        )
+    assert response.status_code == 422
+    assert [p.name for p in task.prompts()] == ["Parent Prompt"]
+
+
+def test_create_prompt_invalid_origin_422(client, project_and_task):
+    project, task = project_and_task
+    prompt_data = {
+        "name": "Bad Origin",
+        "prompt": "text",
+        "provenance": {"origin": "banana"},
+    }
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts", json=prompt_data
+        )
+    assert response.status_code == 422
+
+
+def test_update_prompt_model_has_no_provenance_field():
+    from kiln_server.prompt_api import PromptUpdateRequest
+
+    assert "provenance" not in PromptUpdateRequest.model_fields
+
+
+STORED_PROVENANCES = [
+    {"origin": "tool", "notes": "x" * 2500},
+    {"notes": "written before origin existed"},
+    {"origin": "agent", "derived_from_ids": ["dup", "dup", ""]},
+]
+
+
+@pytest.mark.parametrize("stored", STORED_PROVENANCES)
+def test_list_prompts_forward_compat_provenance_does_not_500(
+    client, project_and_task, stored
+):
+    project, task = project_and_task
+    # A prompt whose stored provenance is valid only on load (unknown or missing
+    # origin, over-length notes, dirty ids) must list via the API, returned
+    # as-is, never 500.
+    fc_prompt = Prompt(
+        name="future-prompt",
+        prompt="text",
+        provenance=KilnArtifactProvenance.model_validate(
+            stored, context={"loading_from_file": True}
+        ),
+        parent=task,
+    )
+    fc_prompt.save_to_file()
+
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/prompts")
+
+    assert response.status_code == 200, response.text
+    saved = next(p for p in response.json()["prompts"] if p["name"] == "future-prompt")
+    assert saved["provenance"]["origin"] == stored.get("origin")
+    assert saved["provenance"]["notes"] == stored.get("notes")
+    assert saved["provenance"]["derived_from_ids"] == stored.get("derived_from_ids", [])
 
 
 def test_get_prompts_task_not_found(client):
@@ -236,3 +370,131 @@ def test_delete_prompt_success(client, project_and_task):
     # Verify the file was actually deleted, including the parent directory
     assert not prompt_path.exists()
     assert not prompt_path.parent.exists()
+
+
+def _add_default_run_config(task, prompt_id):
+    from kiln_ai.datamodel import StructuredOutputMode
+    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+    from kiln_ai.datamodel.task import TaskRunConfig
+
+    run_config = TaskRunConfig(
+        name="Default Config",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4o",
+            model_provider_name="openai",
+            prompt_id=prompt_id,
+            structured_output_mode=StructuredOutputMode.default,
+        ),
+        parent=task,
+    )
+    run_config.save_to_file()
+    task.default_run_config_id = run_config.id
+    task.save_to_file()
+    return run_config
+
+
+def test_build_prompt_with_examples_uses_instruction(client, project_and_task):
+    project, task = project_and_task
+
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/build_prompt_with_examples",
+            json={"examples": [{"input": "in", "output": "out"}]},
+        )
+
+    assert response.status_code == 200
+    prompt = response.json()["prompt"]
+    assert task.instruction in prompt
+    assert "# Example Outputs" in prompt
+    assert "Input: in" in prompt
+    assert "Output: out" in prompt
+
+
+def test_build_prompt_with_examples_uses_default_run_config_prompt(
+    client, project_and_task
+):
+    project, task = project_and_task
+
+    saved_prompt = Prompt(
+        name="Production Prompt",
+        prompt="PRODUCTION PROMPT: translate to French.",
+        parent=task,
+    )
+    saved_prompt.save_to_file()
+    _add_default_run_config(task, f"id::{saved_prompt.id}")
+
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/build_prompt_with_examples",
+            json={"examples": [{"input": "hello", "output": "bonjour"}]},
+        )
+
+    assert response.status_code == 200
+    prompt = response.json()["prompt"]
+    # The default run config prompt is used, not the task instruction
+    assert "PRODUCTION PROMPT: translate to French." in prompt
+    assert task.instruction not in prompt
+    # Examples are still appended
+    assert "# Example Outputs" in prompt
+    assert "Input: hello" in prompt
+    assert "Output: bonjour" in prompt
+
+
+def test_build_prompt_with_examples_missing_default_run_config_falls_back(
+    client, project_and_task
+):
+    project, task = project_and_task
+    # Point at a run config that doesn't exist
+    task.default_run_config_id = "nonexistent"
+    task.save_to_file()
+
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/build_prompt_with_examples",
+            json={"examples": []},
+        )
+
+    assert response.status_code == 200
+    prompt = response.json()["prompt"]
+    assert task.instruction in prompt
+
+
+def test_default_run_config_prompt_none_without_default(project_and_task):
+    from kiln_server.prompt_api import default_run_config_prompt
+
+    _, task = project_and_task
+    assert default_run_config_prompt(task) is None
+
+
+def test_default_run_config_prompt_unresolvable_returns_none(project_and_task):
+    from kiln_server.prompt_api import default_run_config_prompt
+
+    _, task = project_and_task
+    # Saved-prompt id that doesn't exist -> SavedPromptBuilder raises ValueError
+    _add_default_run_config(task, "id::does-not-exist")
+    assert default_run_config_prompt(task) is None
+
+
+def test_default_run_config_prompt_mcp_config_returns_none(project_and_task):
+    from kiln_ai.datamodel.run_config import McpRunConfigProperties, MCPToolReference
+    from kiln_ai.datamodel.task import TaskRunConfig
+
+    from kiln_server.prompt_api import default_run_config_prompt
+
+    _, task = project_and_task
+    # An MCP run config has no prompt_id -> fall back to the task instruction.
+    run_config = TaskRunConfig(
+        name="MCP Config",
+        run_config_properties=McpRunConfigProperties(
+            tool_reference=MCPToolReference(tool_id="mcp::local::server_id::tool_name"),
+        ),
+        parent=task,
+    )
+    run_config.save_to_file()
+    task.default_run_config_id = run_config.id
+    task.save_to_file()
+
+    assert default_run_config_prompt(task) is None

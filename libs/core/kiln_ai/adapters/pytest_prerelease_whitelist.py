@@ -1,0 +1,88 @@
+"""Curated whitelists for the @pytest.mark.prerelease smoke set.
+
+Several paid tests (embeddings, document extraction, thinking levels) fan out
+across every (model, provider) combination in ml_model_list.py. Running the
+full fan-out under --runprerelease would be slow and expensive. These
+whitelists are the "main highlights" — a handful of representative models
+per family/provider that the sibling prerelease tests parametrize over.
+
+Bias toward latest small / mini models per family for speed and cost. Touch
+every major provider at least once. If you add a new family/provider, widen
+the relevant list here rather than tagging an unrelated test as prerelease.
+"""
+
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
+from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
+
+# (model_name, provider_name) — used by the litellm adapter prerelease smoke
+# tests that exercise basic completion / structured output / tool calling.
+PRERELEASE_CHAT_MODELS: list[tuple[str, str]] = [
+    ("gpt_5_4_mini", ModelProviderName.openai.value),
+    ("claude_4_5_haiku", ModelProviderName.anthropic.value),
+    ("claude_sonnet_4_6", ModelProviderName.anthropic.value),
+    ("claude_opus_4_7", ModelProviderName.anthropic.value),
+    ("gemini_3_flash", ModelProviderName.gemini_api.value),
+    ("claude_sonnet_4_6", ModelProviderName.openrouter.value),
+    ("gpt_5_4_mini", ModelProviderName.openrouter.value),
+    ("gpt_oss_20b", ModelProviderName.groq.value),
+    ("qwen_3p7_plus", ModelProviderName.fireworks_ai.value),
+    ("deepseek_4_flash", ModelProviderName.together_ai.value),
+    ("glm_4_7_flash", ModelProviderName.cloudflare.value),
+]
+
+# (model_name, provider_name) — used by the Jev paid smoke tests in
+# kiln_ai/adapters/jev/test_jev_paid_smoke.py. Its own list rather than an entry in
+# PRERELEASE_CHAT_MODELS above, because that list pins the LiteLLM chat models and Jev does
+# not go through LiteLLM at all: lite_llm_core_config_for_provider and
+# get_litellm_provider_info both raise for typesafe on purpose, so an entry there would
+# fail by construction rather than tell us anything about Jev.
+PRERELEASE_JEV_MODELS: list[tuple[str, str]] = [
+    ("jev_1_13", ModelProviderName.typesafe.value),
+]
+
+# (model_name, provider_name) — used by the embedding prerelease smoke tests
+# in both test_ml_embedding_model_list.py and test_litellm_embedding_adapter.py.
+# At least one entry per embedding-supporting provider.
+PRERELEASE_EMBEDDING_MODELS: list[tuple[str, str]] = [
+    ("openai_text_embedding_3_small", ModelProviderName.openai.value),
+    ("openai_text_embedding_3_large", ModelProviderName.openai.value),
+    ("gemini_embedding_001", ModelProviderName.gemini_api.value),
+    # Default embedding for most RAG templates, and its model id tracks a
+    # Google alias (preview -> GA), so a rename must fail the release gate.
+    ("gemini_embedding_002", ModelProviderName.gemini_api.value),
+    ("nomic_text_embedding_v1_5", ModelProviderName.fireworks_ai.value),
+    ("multilingual_e5_large", ModelProviderName.openrouter.value),
+    # Verifies the Voyage 4 family n_dimensions, which we set from docs
+    # rather than a live call. The whole family shares an embedding space.
+    ("voyage_4", ModelProviderName.openrouter.value),
+    ("qwen_3_embedding_8b", ModelProviderName.siliconflow_cn.value),
+]
+
+# (model_name, provider_name) — used by the doc-extraction prerelease smoke
+# tests. One multimodal model per major vendor family.
+PRERELEASE_EXTRACTION_MODELS: list[tuple[str, str]] = [
+    ("gpt_4o", ModelProviderName.openai.value),
+    ("claude_sonnet_4_6", ModelProviderName.anthropic.value),
+    ("gemini_3_flash", ModelProviderName.gemini_api.value),
+]
+
+# Subset of mime types to exercise in the prerelease extraction smoke test.
+# The full paid test sweeps all 13 mime types per model — too slow for prerelease.
+# This covers one example per major content category.
+PRERELEASE_EXTRACTION_MIME_PROBES: list[tuple[MockFileFactoryMimeType, list[str]]] = [
+    (MockFileFactoryMimeType.PDF, ["attention"]),
+    (MockFileFactoryMimeType.PNG, ["parrot", "bird", "macaw"]),
+    (MockFileFactoryMimeType.MP3, ["ice cube"]),
+]
+
+# (provider_name, model_name, thinking_level) — explicit triples for the
+# thinking-level reasoning-content prerelease smoke test. Each entry is a
+# combo we already know exists in ml_model_list.py and has a meaningful
+# reasoning channel; the test verifies the reasoning content channel is
+# populated (or absent for "none").
+PRERELEASE_THINKING_MODELS: list[tuple[str, str, str]] = [
+    (ModelProviderName.anthropic.value, "claude_sonnet_4_6", "medium"),
+    (ModelProviderName.anthropic.value, "claude_4_5_haiku", "low"),
+    (ModelProviderName.gemini_api.value, "gemini_3_flash", "medium"),
+    (ModelProviderName.openrouter.value, "claude_sonnet_4_6", "none"),
+]

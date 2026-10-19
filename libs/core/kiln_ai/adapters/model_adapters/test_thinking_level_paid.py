@@ -5,11 +5,54 @@ import pytest
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import EvalTraceFormatter
-from kiln_ai.adapters.ml_model_list import ModelProviderName, built_in_models
+from kiln_ai.adapters.ml_model_list import (
+    ModelName,
+    ModelProviderName,
+    built_in_models,
+)
 from kiln_ai.adapters.model_adapters.test_paid_utils import (
     skip_if_missing_provider_keys,
 )
+from kiln_ai.adapters.pytest_prerelease_whitelist import PRERELEASE_THINKING_MODELS
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+
+# Anthropic's adaptive-thinking models (Opus 4.6+) decide per request whether to emit
+# a thinking block, and Opus 4.7/4.8 return encrypted thinking (a signature with no
+# plaintext) even on the raw Anthropic API. So a non-"none" thinking level is not
+# guaranteed to surface reasoning content for these models on the native Anthropic
+# provider; for them we only assert the run succeeded. OpenRouter still exposes
+# reasoning for the same models, so it is not relaxed.
+ANTHROPIC_ADAPTIVE_THINKING_MODELS = {
+    ModelName.claude_opus_4_6.value,
+    ModelName.claude_opus_4_7.value,
+    ModelName.claude_opus_4_8.value,
+    ModelName.claude_sonnet_4_6.value,
+    ModelName.claude_sonnet_5.value,
+    ModelName.claude_sonnet_5_5.value,
+}
+
+# Claude Sonnet 5.5 recalibrated its effort levels: at low and medium it skips thinking
+# entirely on simple prompts (the response carries no thinking block at all, on the raw
+# Anthropic API as well). That decision is made by the model, not the gateway, so
+# OpenRouter has nothing to surface either; for it we only assert the run succeeded
+# on OpenRouter too.
+CLAUDE_SKIPS_THINKING_ON_OPENROUTER_MODELS = {
+    ModelName.claude_sonnet_5_5.value,
+}
+
+# Gemini 3.x Flash models use adaptive reasoning: they decide per request whether to
+# emit a thinking channel, so a non-"none" thinking level is not guaranteed to surface
+# reasoning content. This is worse at low thinking budgets and on the native gemini_api
+# provider, so for these models on any Gemini provider we only assert the run succeeded.
+GEMINI_ADAPTIVE_THINKING_MODELS = {
+    ModelName.gemini_3_flash.value,
+    ModelName.gemini_3_5_flash.value,
+    ModelName.gemini_3_6_flash.value,
+    ModelName.gemini_3_8_flash.value,
+    ModelName.gemini_3_5_flash_lite.value,
+    # On gemini_api, Gemini 4 Argon returns no reasoning at low or medium.
+    ModelName.gemini_4_argon.value,
+}
 
 
 def build_thinking_level_test_task(tmp_path: Path) -> datamodel.Task:
@@ -86,8 +129,9 @@ async def test_thinking_level_reasoning_content(
     tmp_path, provider_name: str, model_name: str, thinking_level: str
 ):
     skip_if_missing_provider_keys(provider_name)
-    # For anthropic, we need to set the temperature to 1 to use thinking level.
-    temperature = 1 if provider_name == ModelProviderName.anthropic else 0
+    # Anthropic requires temperature 1 with thinking on, and GPT-6 rejects any other
+    # value. 1 is Kiln's default, so every model in the catalog accepts it.
+    temperature = 1
 
     task = build_thinking_level_test_task(tmp_path)
     adapter = adapter_for_task(
@@ -110,6 +154,79 @@ async def test_thinking_level_reasoning_content(
         assert reasoning_content is None, (
             f"Expected no reasoning content for thinking_level='none', "
             f"but got {len(reasoning_content)} chars "
+            f"(provider={provider_name}, model={model_name})"
+        )
+    elif (
+        provider_name == ModelProviderName.anthropic
+        and model_name in ANTHROPIC_ADAPTIVE_THINKING_MODELS
+    ):
+        # Adaptive/encrypted-thinking models may not surface reasoning content (see
+        # note above); reaching here means the run succeeded, which is what we verify.
+        pass
+    elif (
+        provider_name == ModelProviderName.openrouter
+        and model_name in CLAUDE_SKIPS_THINKING_ON_OPENROUTER_MODELS
+    ):
+        # See note above: the model skips thinking at lower effort levels regardless of
+        # gateway; reaching here means the run succeeded, which is what we verify.
+        pass
+    elif (
+        provider_name
+        in (
+            ModelProviderName.gemini_api,
+            ModelProviderName.openrouter,
+            ModelProviderName.vertex,
+        )
+        and model_name in GEMINI_ADAPTIVE_THINKING_MODELS
+    ):
+        # Adaptive-reasoning Gemini models may not surface reasoning content (see note
+        # above); reaching here means the run succeeded, which is what we verify.
+        pass
+    else:
+        assert reasoning_content is not None, (
+            f"Expected reasoning content for thinking_level='{thinking_level}', "
+            f"but got None "
+            f"(provider={provider_name}, model={model_name})"
+        )
+
+
+# Curated prerelease smoke test: same behavior as test_thinking_level_reasoning_content
+# above, restricted to a small whitelist so --runprerelease stays fast.
+@pytest.mark.paid
+@pytest.mark.prerelease
+@pytest.mark.parametrize(
+    ("provider_name", "model_name", "thinking_level"),
+    PRERELEASE_THINKING_MODELS,
+)
+async def test_thinking_level_reasoning_content_prerelease_smoke(
+    tmp_path, provider_name: str, model_name: str, thinking_level: str
+):
+    skip_if_missing_provider_keys(provider_name)
+    # Anthropic requires temperature 1 with thinking on, and GPT-6 rejects any other
+    # value. 1 is Kiln's default, so every model in the catalog accepts it.
+    temperature = 1
+
+    task = build_thinking_level_test_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        KilnAgentRunConfigProperties(
+            model_name=model_name,
+            model_provider_name=provider_name,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="default",
+            thinking_level=thinking_level,
+            temperature=temperature,
+            top_p=1,
+        ),
+    )
+    run = await adapter.invoke(
+        "Four people-A, B, C, and D-each have a different favorite color (red, blue, green, yellow) and a different pet (cat, dog, fish, bird). Use the clues to determine each person's color and pet.\n\n1) A does not like red or blue.\n2) The bird's owner likes yellow.\n3) B likes green.\n4) The dog is owned by the person who likes blue.\n5) C does not own the fish.\n6) D likes red.\n\nQuestion: Who owns the fish, and what color do they like? Answer with just: \"<person>, <color>\"."
+    )
+    reasoning_content = reasoning_content_from_run(run)
+    if thinking_level == "none":
+        assert reasoning_content is None, (
+            f"Expected no reasoning content for thinking_level='none', "
+            f"but got {len(reasoning_content) if reasoning_content else 0} chars "
             f"(provider={provider_name}, model={model_name})"
         )
     else:

@@ -71,6 +71,7 @@ class TestGetLitellmProviderInfo:
             (ModelProviderName.openai_compatible, "openai", True),
             (ModelProviderName.kiln_custom_registry, "openai", True),
             (ModelProviderName.kiln_fine_tune, "openai", True),
+            (ModelProviderName.cloudflare, "openai", True),
         ],
     )
     def test_provider_mappings_with_model_provider(
@@ -125,6 +126,17 @@ class TestGetLitellmProviderInfo:
         assert result.provider_name == expected_litellm_name
         assert result.is_custom == expected_is_custom
         assert result.litellm_model_id == f"{expected_litellm_name}/{sample_model_id}"
+
+    def test_cloudflare_model_id_keeps_cf_prefix(self):
+        provider = KilnModelProvider(
+            name=ModelProviderName.cloudflare,
+            model_id="@cf/zai-org/glm-5.3",
+        )
+
+        result = get_litellm_provider_info(provider)
+
+        assert result.is_custom is True
+        assert result.litellm_model_id == "openai/@cf/zai-org/glm-5.3"
 
     def test_custom_providers_use_openai_format(self, sample_model_id):
         """Test that custom providers use 'openai' as the litellm provider name"""

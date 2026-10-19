@@ -164,7 +164,7 @@
       if (error) {
         throw error
       }
-      evals = data || []
+      evals = data?.evals || []
     } catch {
       if (req_project_id !== project_id || req_task_id !== task_id) return
       evals = []

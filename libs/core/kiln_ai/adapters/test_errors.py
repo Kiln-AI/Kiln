@@ -77,6 +77,19 @@ class TestFormatUserMessage:
             == "Could not connect to the model provider. Check your network connection."
         )
 
+    def test_timeout_error(self):
+        # litellm.Timeout descends from openai's connection error, not
+        # litellm's, so without its own branch it would fall through to the
+        # generic message. Build a real instance so a litellm upgrade that
+        # reshuffles the hierarchy fails here.
+        exc = litellm.Timeout(
+            message="request timed out", model="test-model", llm_provider="openai"
+        )
+        assert (
+            format_error_message(exc)
+            == "The model provider took too long to respond. Try again in a moment."
+        )
+
     @pytest.mark.parametrize(
         "cls",
         [
@@ -128,23 +141,6 @@ class TestFormatUserMessage:
             format_error_message(exc)
             == "The run exceeded the maximum number of tool calls in one turn."
         )
-
-    def test_tool_not_available_passes_through(self):
-        msg = "A tool named 'foo' was invoked by a model, but was not available."
-        exc = RuntimeError(msg)
-        assert format_error_message(exc) == msg
-
-    def test_parse_arguments_passes_through(self):
-        msg = "Failed to parse arguments for tool 'foo' (should be JSON): blah"
-        exc = RuntimeError(msg)
-        assert format_error_message(exc) == msg
-
-    def test_validate_arguments_passes_through(self):
-        msg = (
-            "Failed to validate arguments for tool 'foo'. The arguments didn't match..."
-        )
-        exc = RuntimeError(msg)
-        assert format_error_message(exc) == msg
 
     def test_reasoning_required_passes_through(self):
         msg = "Reasoning is required for this model, but no reasoning was returned."

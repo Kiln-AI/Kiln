@@ -1,5 +1,7 @@
 ### Table Example
 
+The `rounded-lg border` frame below is for tables only. It is not a container for other content (see `frontend_design_guide.md`, Layout and containers).
+
 Here's an example of our table styling:
 
 ```

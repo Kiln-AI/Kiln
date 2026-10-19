@@ -157,7 +157,7 @@ async def test_fast_forward_skipped_when_not_ff_able(manager, git_repos, second_
 @pytest.mark.asyncio
 async def test_fetch_failure_logs_and_retries(manager, git_repos, second_clone, caplog):
     """Network error during fetch logs warning, next cycle retries successfully."""
-    local_path, remote_path = git_repos
+    local_path, _remote_path = git_repos
 
     commit_in_repo(second_clone, "retry_file.txt", "data", "retry commit")
     push_from(second_clone)

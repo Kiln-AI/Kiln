@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "195676077432",
+  "created_at": "2026-08-17T21:33:07.526614Z",
+  "created_by": "root",
+  "dataset_id": "281115927207",
+  "task_run_config_id": "177167545173",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"SSO login loop after Okta metadata update\", \"body\": \"Since we rotated our Okta signing certificate this morning, every user who clicks Sign in with SSO gets bounced back to the login page. Local password accounts still work. About 40 people are locked out.\", \"customer_plan\": \"pro\"}",
+  "output": "{\"team\": \"security\", \"priority\": \"high\", \"needs_human_review\": false, \"summary\": \"Investigate Okta certificate rotation causing SSO login redirect loop for ~40 pro-plan users; local logins work, so look for metadata/signing certificate mismatch in the identity provider configuration.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output passes.\n\n- The ticket is an SSO login outage caused by an Okta certificate rotation, locking out ~40 users.\n- It does not indicate data loss, a billing dispute, a privacy/security incident, or unauthorized/suspicious access.\n- Therefore `needs_human_review: false` is correct, even though the priority is high.\n- This matches the pass example where an urgent outage without a privacy/legal dimension does not require human review.\n\nThe summary is also one sentence and appropriate for the next engineer.",
+    "reasoning": "We need to answer with final result based on evaluation. The user asked to return final result. The model's performance passes. We should output a pass/fail verdict. Let's format appropriately."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 241,
+    "output_tokens": 410,
+    "total_tokens": 651,
+    "cost": 0.00014854,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 9977
+  },
+  "model_type": "eval_run"
+}

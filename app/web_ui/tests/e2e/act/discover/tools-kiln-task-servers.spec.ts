@@ -323,11 +323,14 @@ test.describe("Tools - Kiln task tools and servers", () => {
   - Seed a run config and kiln task tool via API
   - Route is /tools/{project_id}/kiln_task_tools
   - Table has columns: Tool Name, Description, Created At, Status
+  - Each row shows the tool server ID under the tool name, since tool names are
+    user-typed and two tools can share one
   - Active tool shows "Ready" status
   - Tool name in table is clickable
 
   ## Assertions
   - Tool name "list_test_tool" is visible in the table.
+  - The seeded tool's tool server ID is visible in its row.
   - "Ready" status indicator is visible.
   - Table column headers are visible.
   */
@@ -373,6 +376,7 @@ test.describe("Tools - Kiln task tools and servers", () => {
       },
     )
     expect(toolResp.ok()).toBeTruthy()
+    const tool = (await toolResp.json()) as { id: string }
 
     await page.goto(`/tools/${project.id}/kiln_task_tools`)
 
@@ -394,6 +398,9 @@ test.describe("Tools - Kiln task tools and servers", () => {
     ).toBeVisible()
 
     await expect(page.getByText("list_test_tool")).toBeVisible()
+    // The tool server ID is what tells two same-named tools apart, so every row
+    // carries it.
+    await expect(page.getByText(tool.id)).toBeVisible()
     await expect(page.getByText("Ready")).toBeVisible()
   })
 

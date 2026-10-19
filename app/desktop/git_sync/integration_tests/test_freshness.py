@@ -24,8 +24,6 @@ class TestPullBeforeWrite:
         self, write_ctx, git_repos, second_clone
     ):
         """Remote commits are present locally before the handler writes."""
-        local_path, remote_path = git_repos
-
         commit_in_repo(
             second_clone,
             "remote_update.kiln",
@@ -53,7 +51,7 @@ class TestPullBeforeWrite:
         self, write_ctx, git_repos, second_clone
     ):
         """Handler's commit is on top of pulled remote changes."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
 
         commit_in_repo(second_clone, "base.kiln", "base content", "remote base")
         push_from(second_clone)
@@ -79,7 +77,7 @@ class TestStaleReadUpdates:
     @pytest.mark.asyncio
     async def test_stale_read_fetches_updates(self, api_ctx, git_repos, second_clone):
         """A stale read causes local repo to update from remote."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
 
         commit_in_repo(
             second_clone,
@@ -114,8 +112,6 @@ class TestFreshnessThresholdSkipsFetch:
     @pytest.mark.asyncio
     async def test_second_write_skips_fetch(self, write_ctx, git_repos):
         """Second write within threshold does not fetch from remote."""
-        local_path, remote_path = git_repos
-
         result1 = await write_ctx.do_write(
             lambda p: (p / "first.kiln").write_text("first write")
         )
@@ -143,8 +139,6 @@ class TestFreshnessThresholdSkipsFetch:
     @pytest.mark.asyncio
     async def test_fetch_resumes_after_threshold(self, write_ctx, git_repos):
         """After freshness threshold expires, fetch is called again."""
-        local_path, remote_path = git_repos
-
         result1 = await write_ctx.do_write(
             lambda p: (p / "first.kiln").write_text("first write")
         )

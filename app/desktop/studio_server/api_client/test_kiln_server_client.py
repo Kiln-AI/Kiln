@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
+
 from app.desktop.studio_server._version import __version__
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.health import (
     ping_ping_get,

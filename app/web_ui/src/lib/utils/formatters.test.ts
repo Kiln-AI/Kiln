@@ -7,7 +7,56 @@ import {
 } from "./formatters"
 
 import type { StructuredOutputMode } from "$lib/types"
-import { structuredOutputModeToString } from "./formatters"
+import {
+  structuredOutputModeToString,
+  formatEvalConfigName,
+} from "./formatters"
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyEvalConfig = any
+
+describe("formatEvalConfigName", () => {
+  it("appends model and provider for v2 llm_judge configs", () => {
+    const config: AnyEvalConfig = {
+      name: "Unerring Biscuit",
+      config_type: "v2",
+      properties: {
+        type: "llm_judge",
+        model_name: "gpt_5_4_pro",
+        model_provider: "openai",
+      },
+    }
+    const label = formatEvalConfigName(config, null)
+    expect(label).toContain("Unerring Biscuit — LLM as Judge")
+    expect(label).toContain("(OpenAI)")
+  })
+
+  it("shows only the model for v2 llm_judge configs in compact mode", () => {
+    const config: AnyEvalConfig = {
+      name: "Unerring Biscuit",
+      config_type: "v2",
+      properties: {
+        type: "llm_judge",
+        model_name: "gpt_5_4_pro",
+        model_provider: "openai",
+      },
+    }
+    const label = formatEvalConfigName(config, null, true)
+    expect(label).toContain("Unerring Biscuit — ")
+    expect(label).not.toContain("LLM as Judge")
+    expect(label).not.toContain("(OpenAI)")
+  })
+
+  it("does not append a model for deterministic v2 configs", () => {
+    const config: AnyEvalConfig = {
+      name: "Zodiacal Scallop",
+      config_type: "v2",
+      properties: { type: "exact_match" },
+    }
+    const label = formatEvalConfigName(config, null)
+    expect(label).toBe("Zodiacal Scallop — Exact Match")
+  })
+})
 
 describe("formatDate", () => {
   // Pin "now" to 2026-04-16T13:26:04.806Z for all tests.

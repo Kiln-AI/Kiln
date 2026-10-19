@@ -22,6 +22,8 @@ from kiln_ai.datamodel import (
     strict_mode,
 )
 from kiln_ai.datamodel.basemodel import generate_model_id
+from kiln_ai.datamodel.claim_review import ClaimReview, GradedClaim
+from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.data_guide import DataGuide
 from kiln_ai.datamodel.datamodel_enums import (
     FeedbackSource,
@@ -34,6 +36,7 @@ from kiln_ai.datamodel.dataset_split import DatasetSplit, DatasetSplitDefinition
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.feedback import Feedback
 from kiln_ai.datamodel.finetune import Finetune
+from kiln_ai.datamodel.memory import Memory
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
 from kiln_ai.datamodel.prompt_id import (
@@ -42,6 +45,10 @@ from kiln_ai.datamodel.prompt_id import (
     prompt_generator_values,
 )
 from kiln_ai.datamodel.prompt_optimization_job import PromptOptimizationJob
+from kiln_ai.datamodel.provenance import (
+    KilnArtifactProvenance,
+    validate_derived_from_ids,
+)
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import Task, TaskRequirement
 from kiln_ai.datamodel.task_output import (
@@ -52,21 +59,32 @@ from kiln_ai.datamodel.task_output import (
     TaskOutput,
     TaskOutputRating,
 )
-from kiln_ai.datamodel.task_run import MessageUsage, TaskRun, Usage
+from kiln_ai.datamodel.task_run import (
+    EvalItemSource,
+    MessageUsage,
+    TaskRun,
+    Usage,
+)
 
 __all__ = [
     "BasePrompt",
+    "ClaimReview",
+    "CodeTool",
     "DataGuide",
     "DataSource",
     "DataSourceProperty",
     "DataSourceType",
     "DatasetSplit",
     "DatasetSplitDefinition",
+    "EvalItemSource",
     "ExternalToolServer",
     "Feedback",
     "FeedbackSource",
     "FineTuneStatusType",
     "Finetune",
+    "GradedClaim",
+    "KilnArtifactProvenance",
+    "Memory",
     "MessageUsage",
     "Priority",
     "Project",
@@ -94,4 +112,5 @@ __all__ = [
     "rag",
     "reranker",
     "strict_mode",
+    "validate_derived_from_ids",
 ]

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { get, writable } from "svelte/store"
 import type { ChatMessage, StreamChatOptions } from "./streaming_chat"
+import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
 
 vi.mock("./streaming_chat", () => ({
   streamChat: vi.fn(),
@@ -339,6 +340,134 @@ describe("createChatSessionStore", () => {
       const sent = await store.sendMessage("hello")
       expect(sent).toBe(true)
       expect(consentFn).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("upgrade nudge", () => {
+    it("sets upgradeNudgeVersion via onVersionNudge", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      expect(get(store).upgradeNudgeVersion).toBeNull()
+
+      await store.sendMessage("hi")
+      capture.options!.onVersionNudge!("1.2.3")
+
+      expect(get(store).upgradeNudgeVersion).toBe("1.2.3")
+    })
+
+    it("dismissUpgradeNudge clears the nudge", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      await store.sendMessage("hi")
+      capture.options!.onVersionNudge!("1.2.3")
+      expect(get(store).upgradeNudgeVersion).toBe("1.2.3")
+
+      store.dismissUpgradeNudge()
+      expect(get(store).upgradeNudgeVersion).toBeNull()
+    })
+  })
+
+  describe("version required banner", () => {
+    it("sets versionRequired (not a chat message) on a too-old error", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      await store.sendMessage("hi")
+      capture.options!.onInlineError!(
+        "Please update the Kiln desktop app to continue using chat.",
+        undefined,
+        CHAT_CLIENT_VERSION_TOO_OLD,
+      )
+
+      const state = get(store)
+      expect(state.versionRequired).toBe(true)
+      expect(state.status).toBe("ready")
+      // It must NOT show up as a conversation error bubble.
+      expect(state.messages.some((m) => m.role === "error")).toBe(false)
+    })
+
+    it("persists versionRequired across reset (aligned with the nudge)", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      await store.sendMessage("hi")
+      capture.options!.onInlineError!(
+        "too old",
+        undefined,
+        CHAT_CLIENT_VERSION_TOO_OLD,
+      )
+      expect(get(store).versionRequired).toBe(true)
+
+      // New Chat / reset must not clear a blocking version banner.
+      store.reset()
+      expect(get(store).versionRequired).toBe(true)
+    })
+  })
+
+  describe("checkVersionPolicy", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    it("sets versionRequired from the policy endpoint", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: () =>
+            Promise.resolve({ required: true, upgrade_nudge_version: null }),
+        }),
+      )
+      const { createChatSessionStore } = await importFreshWithMock()
+      const store = createChatSessionStore()
+
+      await store.checkVersionPolicy()
+      expect(get(store).versionRequired).toBe(true)
+      expect(get(store).upgradeNudgeVersion).toBeNull()
+    })
+
+    it("sets the nudge version from the policy endpoint", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              required: false,
+              upgrade_nudge_version: "1.0.5",
+            }),
+        }),
+      )
+      const { createChatSessionStore } = await importFreshWithMock()
+      const store = createChatSessionStore()
+
+      await store.checkVersionPolicy()
+      expect(get(store).versionRequired).toBe(false)
+      expect(get(store).upgradeNudgeVersion).toBe("1.0.5")
+    })
+
+    it("leaves banners untouched on a failed request", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }))
+      const { createChatSessionStore } = await importFreshWithMock()
+      const store = createChatSessionStore()
+
+      await store.checkVersionPolicy()
+      expect(get(store).versionRequired).toBe(false)
+      expect(get(store).upgradeNudgeVersion).toBeNull()
     })
   })
 

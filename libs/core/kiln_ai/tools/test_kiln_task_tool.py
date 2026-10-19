@@ -191,11 +191,13 @@ class TestKilnTaskTool:
                 base_adapter_config=mock_adapter_config.return_value,
             )
 
-            # Verify adapter config includes skills
+            # Verify adapter config includes skills and forwards the
+            # TaskRunConfig ID so the resulting TaskRun records its origin.
             mock_adapter_config.assert_called_once_with(
                 allow_saving=True,
                 default_tags=["tool_call"],
                 skills={},
+                task_run_config_id="test_config_456",
             )
 
             # Verify adapter invoke was called
@@ -512,9 +514,11 @@ class TestKilnTaskTool:
 
             await kiln_task_tool.run(context=mock_context_false, input="test input")
 
-            # Verify adapter config was called with allow_saving=False and skills
+            # Verify adapter config was called with allow_saving=False, skills,
+            # and the TaskRunConfig ID forwarded from the tool.
             mock_adapter_config.assert_called_once_with(
                 allow_saving=False,
                 default_tags=["tool_call"],
                 skills={},
+                task_run_config_id="test_config_456",
             )

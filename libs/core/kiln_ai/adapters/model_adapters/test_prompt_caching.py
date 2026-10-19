@@ -31,6 +31,7 @@ def build_caching_test_task(tmp_path) -> Task:
 
 
 @pytest.mark.paid
+@pytest.mark.prerelease
 @pytest.mark.parametrize(
     ("provider_name", "model_name"),
     [
@@ -66,8 +67,8 @@ def build_caching_test_task(tmp_path) -> Task:
         ),
         pytest.param(
             ModelProviderName.together_ai,
-            "minimax_m2_5",
-            id="together_ai/minimax_m2_5",
+            "minimax_m2_7",
+            id="together_ai/minimax_m2_7",
         ),
     ],
 )

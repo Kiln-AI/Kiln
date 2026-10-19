@@ -61,10 +61,7 @@
     post_repair_submitting = true
 
     try {
-      const {
-        data, // only present if 2XX response
-        error: fetch_error, // only present if 4XX or 5XX response
-      } = await client.POST(
+      const { data, error: fetch_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/save_repair",
         {
           params: {

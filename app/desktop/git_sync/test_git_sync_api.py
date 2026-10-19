@@ -7,8 +7,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.project_utils import DuplicateProjectError
+from pydantic import ValidationError
 
-from app.desktop.git_sync.git_sync_api import connect_git_sync_api
+from app.desktop.git_sync.git_sync_api import ProjectInfo, connect_git_sync_api
 
 
 @pytest.fixture
@@ -260,13 +261,74 @@ class TestTestWriteAccess:
             ),
             patch("app.desktop.git_sync.git_sync_api.test_write_access") as mock,
         ):
-            mock.return_value = (True, "Write access confirmed")
+            mock.return_value = (True, "Write access confirmed", False)
             resp = api_client.post(
                 "/api/git_sync/test_write_access",
                 json={"clone_path": str(clone_dir)},
             )
         data = resp.json()
         assert data["success"] is True
+        assert data["write_denied"] is False
+
+    def test_write_denied(self, api_client, tmp_path):
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.default_project_path",
+                return_value=str(tmp_path),
+            ),
+            patch("app.desktop.git_sync.git_sync_api.test_write_access") as mock,
+        ):
+            mock.return_value = (
+                False,
+                "Push rejected for refs/heads/main: denied",
+                True,
+            )
+            resp = api_client.post(
+                "/api/git_sync/test_write_access",
+                json={"clone_path": str(clone_dir)},
+            )
+        data = resp.json()
+        assert data["success"] is False
+        assert data["write_denied"] is True
+        assert data["auth_required"] is False
+
+    def test_auth_required(self, api_client, tmp_path):
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.default_project_path",
+                return_value=str(tmp_path),
+            ),
+            patch("app.desktop.git_sync.git_sync_api.test_write_access") as mock,
+        ):
+            mock.return_value = (
+                False,
+                "Authentication failed - check your token permissions",
+                False,
+            )
+            resp = api_client.post(
+                "/api/git_sync/test_write_access",
+                json={"clone_path": str(clone_dir)},
+            )
+        data = resp.json()
+        assert data["success"] is False
+        assert data["write_denied"] is False
+        assert data["auth_required"] is True
+
+
+class TestProjectInfo:
+    def test_null_display_fields_are_coerced_to_blank(self):
+        info = ProjectInfo(path="project.kiln", name=None, description=None, id=None)
+        assert info.name == ""
+        assert info.description == ""
+        assert info.id == ""
+
+    def test_path_is_still_required(self):
+        with pytest.raises(ValidationError):
+            ProjectInfo(name="x", description="y", id="z")
 
 
 class TestScanProjects:
@@ -314,8 +376,80 @@ class TestScanProjects:
             )
         assert resp.status_code == 400
 
+    def test_one_null_description_still_returns_every_project(
+        self, api_client, tmp_path
+    ):
+        # A single project file with a null description used to fail validation
+        # for the whole list, so no project in the repo could be imported.
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
+        nested = clone_dir / "nested"
+        nested.mkdir()
+        (clone_dir / "project.kiln").write_text(
+            json.dumps({"name": "Good", "description": "desc", "id": "proj_good"})
+        )
+        (nested / "project.kiln").write_text(
+            json.dumps({"name": "Null Desc", "description": None, "id": "proj_null"})
+        )
+
+        with patch(
+            "app.desktop.git_sync.git_sync_api.default_project_path",
+            return_value=str(tmp_path),
+        ):
+            resp = api_client.post(
+                "/api/git_sync/scan_projects",
+                json={"clone_path": str(clone_dir)},
+            )
+
+        assert resp.status_code == 200
+        projects = resp.json()["projects"]
+        assert sorted(p["name"] for p in projects) == ["Good", "Null Desc"]
+        by_id = {p["id"]: p for p in projects}
+        assert by_id["proj_null"]["description"] == ""
+
 
 class TestSaveAndGetConfig:
+    def test_save_rejected_when_not_trusted(self, api_client, tmp_path):
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
+        with patch(
+            "app.desktop.git_sync.git_sync_api.default_project_path",
+            return_value=str(tmp_path),
+        ):
+            resp = api_client.post(
+                "/api/git_sync/save_config",
+                json={
+                    "project_id": "proj1",
+                    "project_path": "project.kiln",
+                    "git_url": "https://github.com/test/repo.git",
+                    "clone_path": str(clone_dir),
+                    "branch": "main",
+                },
+            )
+        assert resp.status_code == 400
+        assert "you must confirm you trust" in resp.json()["detail"].lower()
+
+    def test_save_rejected_when_trusted_false(self, api_client, tmp_path):
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
+        with patch(
+            "app.desktop.git_sync.git_sync_api.default_project_path",
+            return_value=str(tmp_path),
+        ):
+            resp = api_client.post(
+                "/api/git_sync/save_config",
+                json={
+                    "project_id": "proj1",
+                    "project_path": "project.kiln",
+                    "git_url": "https://github.com/test/repo.git",
+                    "clone_path": str(clone_dir),
+                    "branch": "main",
+                    "trusted": False,
+                },
+            )
+        assert resp.status_code == 400
+        assert "you must confirm you trust" in resp.json()["detail"].lower()
+
     def test_save_and_retrieve(self, api_client, tmp_path):
         clone_dir = tmp_path / "kiln_clone_abc"
         clone_dir.mkdir()
@@ -336,6 +470,7 @@ class TestSaveAndGetConfig:
                     "clone_path": str(clone_dir),
                     "branch": "main",
                     "pat_token": "ghp_test",
+                    "trusted": True,
                 },
             )
         data = resp.json()
@@ -366,6 +501,7 @@ class TestSaveAndGetConfig:
                     "git_url": "https://github.com/test/repo.git",
                     "clone_path": str(clone_dir),
                     "branch": "main",
+                    "trusted": True,
                 },
             )
         assert resp.status_code == 409
@@ -395,6 +531,7 @@ class TestSaveAndGetConfig:
                     "git_url": "https://github.com/test/repo.git",
                     "clone_path": str(clone_dir),
                     "branch": "main",
+                    "trusted": True,
                 },
             )
         assert resp.status_code == 409
@@ -423,6 +560,7 @@ class TestSaveAndGetConfig:
                     "git_url": "https://github.com/test/repo.git",
                     "clone_path": str(clone_dir),
                     "branch": "main",
+                    "trusted": True,
                 },
             )
         assert resp.status_code == 200
@@ -980,6 +1118,7 @@ class TestOAuthTokenInConfig:
                     "branch": "main",
                     "auth_mode": "github_oauth",
                     "oauth_token": "ghu_token",
+                    "trusted": True,
                 },
             )
         data = resp.json()
@@ -1120,6 +1259,145 @@ class TestOAuthTokenInConfig:
         assert saved_config["oauth_token"] is None
 
 
+class TestSaveConfigRemoveConflicting:
+    def test_remove_conflicting_deregisters_and_saves(self, api_client, tmp_path):
+        clone_dir = tmp_path / "kiln_clone_new"
+        clone_dir.mkdir()
+        conflicting_project = MagicMock(path="/old/clone/project.kiln")
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.default_project_path",
+                return_value=str(tmp_path),
+            ),
+            patch(
+                "app.desktop.git_sync.git_sync_api.check_duplicate_project_id",
+                side_effect=DuplicateProjectError(
+                    "You already have a project with this ID.", same_path=False
+                ),
+            ),
+            patch(
+                "app.desktop.git_sync.git_sync_api.project_from_id_core",
+                return_value=conflicting_project,
+            ),
+            patch(
+                "app.desktop.git_sync.git_sync_api.remove_project_from_config",
+                return_value="/old/clone",
+            ) as mock_remove,
+            patch(
+                "app.desktop.git_sync.git_sync_api.GitSyncRegistry.unregister",
+                new_callable=AsyncMock,
+            ) as mock_unregister,
+            patch("app.desktop.git_sync.git_sync_api.save_git_sync_config"),
+            patch("app.desktop.git_sync.git_sync_api.add_project_to_config"),
+        ):
+            resp = api_client.post(
+                "/api/git_sync/save_config",
+                json={
+                    "project_id": "proj1",
+                    "project_path": "project.kiln",
+                    "git_url": "https://github.com/test/repo.git",
+                    "clone_path": str(clone_dir),
+                    "branch": "main",
+                    "remove_conflicting_id": True,
+                    "trusted": True,
+                },
+            )
+        assert resp.status_code == 200
+        mock_remove.assert_called_once_with("/old/clone/project.kiln")
+        mock_unregister.assert_awaited_once_with(Path("/old/clone"))
+
+    def test_remove_conflicting_false_still_409(self, api_client, tmp_path):
+        clone_dir = tmp_path / "kiln_clone_new"
+        clone_dir.mkdir()
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.default_project_path",
+                return_value=str(tmp_path),
+            ),
+            patch(
+                "app.desktop.git_sync.git_sync_api.check_duplicate_project_id",
+                side_effect=DuplicateProjectError(
+                    "You already have a project with this ID.", same_path=False
+                ),
+            ),
+        ):
+            resp = api_client.post(
+                "/api/git_sync/save_config",
+                json={
+                    "project_id": "proj1",
+                    "project_path": "project.kiln",
+                    "git_url": "https://github.com/test/repo.git",
+                    "clone_path": str(clone_dir),
+                    "branch": "main",
+                    "remove_conflicting_id": False,
+                    "trusted": True,
+                },
+            )
+        assert resp.status_code == 409
+
+    def test_remove_conflicting_no_conflict_is_noop(self, api_client, tmp_path):
+        clone_dir = tmp_path / "kiln_clone_new"
+        clone_dir.mkdir()
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.default_project_path",
+                return_value=str(tmp_path),
+            ),
+            patch("app.desktop.git_sync.git_sync_api.save_git_sync_config"),
+            patch("app.desktop.git_sync.git_sync_api.add_project_to_config"),
+        ):
+            resp = api_client.post(
+                "/api/git_sync/save_config",
+                json={
+                    "project_id": "proj1",
+                    "project_path": "project.kiln",
+                    "git_url": "https://github.com/test/repo.git",
+                    "clone_path": str(clone_dir),
+                    "branch": "main",
+                    "remove_conflicting_id": True,
+                    "trusted": True,
+                },
+            )
+        assert resp.status_code == 200
+
+    def test_remove_conflicting_project_not_found_still_saves(
+        self, api_client, tmp_path
+    ):
+        clone_dir = tmp_path / "kiln_clone_new"
+        clone_dir.mkdir()
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.default_project_path",
+                return_value=str(tmp_path),
+            ),
+            patch(
+                "app.desktop.git_sync.git_sync_api.check_duplicate_project_id",
+                side_effect=DuplicateProjectError(
+                    "You already have a project with this ID.", same_path=False
+                ),
+            ),
+            patch(
+                "app.desktop.git_sync.git_sync_api.project_from_id_core",
+                return_value=None,
+            ),
+            patch("app.desktop.git_sync.git_sync_api.save_git_sync_config"),
+            patch("app.desktop.git_sync.git_sync_api.add_project_to_config"),
+        ):
+            resp = api_client.post(
+                "/api/git_sync/save_config",
+                json={
+                    "project_id": "proj1",
+                    "project_path": "project.kiln",
+                    "git_url": "https://github.com/test/repo.git",
+                    "clone_path": str(clone_dir),
+                    "branch": "main",
+                    "remove_conflicting_id": True,
+                    "trusted": True,
+                },
+            )
+        assert resp.status_code == 200
+
+
 class TestSaveConfigClonePathValidation:
     def test_rejects_clone_path_outside_project_directory(self, api_client, tmp_path):
         with patch(
@@ -1135,6 +1413,7 @@ class TestSaveConfigClonePathValidation:
                     "clone_path": "/some/arbitrary/path",
                     "branch": "main",
                     "auth_mode": "system_keys",
+                    "trusted": True,
                 },
             )
         assert resp.status_code == 400

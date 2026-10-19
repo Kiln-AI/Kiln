@@ -65,7 +65,7 @@
     <textarea
       aria-label="Jinja2 template"
       placeholder="Enter your Jinja2 template..."
-      class="textarea textarea-bordered w-full font-mono h-40 text-base wrap-pre text-left align-top"
+      class="textarea textarea-bordered w-full font-mono h-40 text-base whitespace-pre-wrap break-words text-left align-top"
       bind:value={template_draft}
       on:input={() => {
         validation_error = null

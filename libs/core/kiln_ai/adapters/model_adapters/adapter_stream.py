@@ -5,13 +5,15 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, AsyncIterator
+from typing import TYPE_CHECKING, Any, AsyncIterator, NoReturn
 
 from litellm.types.utils import ChatCompletionMessageToolCall, Choices, ModelResponse
 
 from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
 from kiln_ai.adapters.chat.chat_formatter import ChatFormatter, chat_message_to_dict
+from kiln_ai.adapters.errors import EMPTY_RESPONSE_ERROR_MESSAGE
 from kiln_ai.adapters.litellm_utils.litellm_streaming import StreamingCompletion
+from kiln_ai.adapters.litellm_utils.tool_calls import response_function_tool_calls
 from kiln_ai.adapters.ml_model_list import KilnModelProvider
 from kiln_ai.adapters.model_adapters.stream_events import (
     AdapterStreamEvent,
@@ -20,14 +22,66 @@ from kiln_ai.adapters.model_adapters.stream_events import (
 )
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel import MessageUsage, Usage
+from kiln_ai.utils.open_ai_types import ChatCompletionToolMessageParamWrapper
 
 if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 
 MAX_CALLS_PER_TURN = 10
-MAX_TOOL_CALLS_PER_TURN = 30
+MAX_TOOL_CALLS_PER_TURN = 100
 
 logger = logging.getLogger(__name__)
+
+CONTENT_FILTER_ERROR_MESSAGE = (
+    "The model declined to respond to this request (the provider's safety "
+    "classifier returned a content-filter/refusal, finish_reason={finish_reason!r}). "
+    "This can be a false positive on some models; try rephrasing the prompt or using "
+    "a different model."
+)
+
+
+def _is_content_filter_finish_reason(finish_reason: Any) -> bool:
+    """Return True if the finish/stop reason indicates a content-filter/refusal."""
+    if not finish_reason:
+        return False
+    normalized = str(finish_reason).lower()
+    return "content_filter" in normalized or "refusal" in normalized
+
+
+def raise_for_empty_model_response(response_choice: Any) -> NoReturn:
+    """
+    Raise a clear error when a model returns an assistant message with no content
+    and no tool calls.
+
+    When the empty response is due to a provider content-filter/refusal, raise a
+    specific, actionable error rather than the generic "no content or tool calls"
+    message. This covers two provider signals:
+
+    - a content-filter/refusal ``finish_reason`` (e.g. Anthropic's stop_reason
+      "refusal", which LiteLLM maps to finish_reason='content_filter'), and
+    - OpenAI's ``message.refusal`` field, which can be populated while
+      ``finish_reason`` remains 'stop'.
+
+    Accepts either a dict-shaped or object-shaped choice.
+    """
+    if isinstance(response_choice, dict):
+        finish_reason = response_choice.get("finish_reason")
+        message = response_choice.get("message")
+        refusal = (
+            message.get("refusal")
+            if isinstance(message, dict)
+            else getattr(message, "refusal", None)
+        )
+    else:
+        finish_reason = getattr(response_choice, "finish_reason", None)
+        message = getattr(response_choice, "message", None)
+        refusal = getattr(message, "refusal", None) if message is not None else None
+
+    if refusal or _is_content_filter_finish_reason(finish_reason):
+        raise ValueError(
+            CONTENT_FILTER_ERROR_MESSAGE.format(finish_reason=finish_reason)
+        )
+    raise ValueError(EMPTY_RESPONSE_ERROR_MESSAGE)
 
 
 @dataclass
@@ -182,11 +236,11 @@ class AdapterStream:
             ) + call_latency_ms
 
             content = response_choice.message.content
-            tool_calls = response_choice.message.tool_calls
+            tool_calls = response_function_tool_calls(
+                response_choice.message.tool_calls
+            )
             if not content and not tool_calls:
-                raise ValueError(
-                    "Model returned an assistant message, but no content or tool calls. This is not supported."
-                )
+                raise_for_empty_model_response(response_choice)
 
             self._messages.append(response_choice.message)
             self._message_latency[len(self._messages) - 1] = call_latency_ms
@@ -270,6 +324,10 @@ class AdapterStream:
                 parsed_args = json.loads(tc.function.arguments)
             except (json.JSONDecodeError, TypeError):
                 parsed_args = None
+            # Tool input events carry a dict; process_tool_calls reports the
+            # schema mismatch to the model.
+            if not isinstance(parsed_args, dict):
+                parsed_args = None
 
             yield ToolCallEvent(
                 event_type=ToolCallEventType.INPUT_AVAILABLE,
@@ -286,14 +344,8 @@ class AdapterStream:
         _, tool_msgs = await self._adapter.process_tool_calls(tool_calls)
 
         for tool_msg in tool_msgs:
-            tc_id = tool_msg["tool_call_id"]
-            tc_name = _find_tool_name(tool_calls, tc_id)
-            content = tool_msg["content"]
-            yield ToolCallEvent(
-                event_type=ToolCallEventType.OUTPUT_AVAILABLE,
-                tool_call_id=tc_id,
-                tool_name=tc_name,
-                result=str(content) if content is not None else None,
+            yield _tool_output_event(
+                tool_msg, _find_tool_name(tool_calls, tool_msg["tool_call_id"])
             )
 
         self._messages.extend(tool_msgs)
@@ -331,6 +383,26 @@ def _validate_response(
             f"Expected ModelResponse with Choices, got {type(response)}."
         )
     return response, response.choices[0]
+
+
+def _tool_output_event(
+    tool_msg: ChatCompletionToolMessageParamWrapper, tool_name: str
+) -> ToolCallEvent:
+    content = tool_msg["content"]
+    text = str(content) if content is not None else None
+    if tool_msg.get("is_error"):
+        return ToolCallEvent(
+            event_type=ToolCallEventType.OUTPUT_ERROR,
+            tool_call_id=tool_msg["tool_call_id"],
+            tool_name=tool_name,
+            error=tool_msg.get("error_message") or text,
+        )
+    return ToolCallEvent(
+        event_type=ToolCallEventType.OUTPUT_AVAILABLE,
+        tool_call_id=tool_msg["tool_call_id"],
+        tool_name=tool_name,
+        result=text,
+    )
 
 
 def _find_tool_name(

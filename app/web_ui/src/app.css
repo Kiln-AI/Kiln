@@ -1,9 +1,39 @@
+/* Inter — self-hosted variable font. License: static/fonts/OFL.txt (SIL OFL 1.1) */
+@font-face {
+  font-family: "InterVariable";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/InterVariable.woff2") format("woff2");
+}
+@font-face {
+  font-family: "InterVariable";
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/InterVariable-Italic.woff2") format("woff2");
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 a {
   @apply cursor-pointer;
+}
+
+/* A closed daisyUI modal stays in layout (display kept for its fades).
+   When one is nested inside another modal's box, the box's permanent
+   transform makes the closed overlay position against the box instead of
+   the viewport, inflating the box's scroll area by 1rem — a permanent
+   phantom scrollbar on every dialog whose content carries its own dialogs
+   (e.g. the chat trace's tool and usage viewers). Closed nested modals
+   have no business in layout at all; the cost is their fade-in and
+   fade-out. Assumes [open] is the only open-state signal in this app —
+   a nested modal opened via modal-open/modal-toggle/:target would be
+   hidden outright. */
+.modal-box dialog.modal:not([open]) {
+  display: none;
 }
 
 /* Work around https://github.com/saadeghi/daisyui/issues/2570 */

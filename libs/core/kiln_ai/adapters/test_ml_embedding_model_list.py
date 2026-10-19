@@ -1,5 +1,3 @@
-from typing import List
-
 import pytest
 
 from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
@@ -13,6 +11,11 @@ from kiln_ai.adapters.ml_embedding_model_list import (
     get_model_by_name,
     transform_slug_for_litellm,
 )
+from kiln_ai.adapters.pytest_embedding_fanout import (
+    all_embedding_model_provider_pairs,
+    live_embedding_model_provider_pairs,
+)
+from kiln_ai.adapters.pytest_prerelease_whitelist import PRERELEASE_EMBEDDING_MODELS
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 
@@ -28,14 +31,6 @@ def litellm_adapter():
         )
     )
     return adapter
-
-
-def get_all_embedding_models_and_providers() -> List[tuple[str, str]]:
-    return [
-        (model.name, provider.name)
-        for model in built_in_embedding_models
-        for provider in model.providers
-    ]
 
 
 class TestKilnEmbeddingModelProvider:
@@ -149,7 +144,7 @@ class TestGetModelByName:
 
 class TestBuiltInEmbeddingModelsFromProvider:
     @pytest.mark.parametrize(
-        "model_name,provider_name", get_all_embedding_models_and_providers()
+        "model_name,provider_name", all_embedding_model_provider_pairs()
     )
     def test_get_all_existing_models_and_providers(self, model_name, provider_name):
         provider = built_in_embedding_models_from_provider(provider_name, model_name)
@@ -184,7 +179,7 @@ class TestGenerateEmbedding:
     """Test cases for generate_embedding function"""
 
     @pytest.mark.parametrize(
-        "model_name,provider_name", get_all_embedding_models_and_providers()
+        "model_name,provider_name", live_embedding_model_provider_pairs()
     )
     @pytest.mark.paid
     async def test_generate_embedding(self, model_name, provider_name):
@@ -207,7 +202,7 @@ class TestGenerateEmbedding:
         assert len(embedding.embeddings[0].vector) == model_provider.n_dimensions
 
     @pytest.mark.parametrize(
-        "model_name,provider_name", get_all_embedding_models_and_providers()
+        "model_name,provider_name", live_embedding_model_provider_pairs()
     )
     @pytest.mark.paid
     async def test_generate_embedding_with_user_supplied_dimensions(
@@ -238,6 +233,37 @@ class TestGenerateEmbedding:
         embedding = await embedding.generate_embeddings(["Hello, world!"])
         assert len(embedding.embeddings) == 1
         assert len(embedding.embeddings[0].vector) == dimensions_target
+
+
+def test_deprecated_providers_not_suggested():
+    """Deprecated providers should not be suggested for chunk embedding"""
+    for model in built_in_embedding_models:
+        for provider in model.providers:
+            if provider.deprecated:
+                assert not provider.suggested_for_chunk_embedding, (
+                    f"{model.name} / {provider.name} ({provider.model_id}) is deprecated "
+                    "but suggested_for_chunk_embedding=True"
+                )
+
+
+def test_every_model_has_a_live_provider():
+    """Every built-in embedding model should be usable on at least one provider"""
+    dead_models = {
+        model.name
+        for model in built_in_embedding_models
+        if all(provider.deprecated for provider in model.providers)
+    }
+    assert dead_models == {
+        # Together was the only host for these, and dropped serverless embeddings.
+        EmbeddingModelName.m2_bert_retrieval_32k,
+        EmbeddingModelName.gte_modernbert_base,
+        EmbeddingModelName.multilingual_e5_large_instruct,
+        # Google shut down the text-embedding-004 endpoint.
+        EmbeddingModelName.gemini_text_embedding_004,
+    }, (
+        "Models with no live provider changed. Remove the model (and its enum "
+        "entry) or update this list."
+    )
 
 
 def test_transform_slug_for_litellm():
@@ -295,3 +321,59 @@ def test_transform_slug_for_litellm():
         transform_slug_for_litellm(ModelProviderName.azure_openai, "azure/test-model")
         == "azure/test-model"
     )
+
+
+# Curated prerelease smoke tests: same behavior as the fan-out variants above
+# (test_generate_embedding / test_generate_embedding_with_user_supplied_dimensions)
+# but restricted to a small whitelist so --runprerelease stays fast.
+
+
+@pytest.mark.parametrize("model_name,provider_name", PRERELEASE_EMBEDDING_MODELS)
+@pytest.mark.paid
+@pytest.mark.prerelease
+async def test_generate_embedding_prerelease_smoke(model_name, provider_name):
+    model_provider = built_in_embedding_models_from_provider(provider_name, model_name)
+    assert model_provider is not None
+
+    embedding = embedding_adapter_from_type(
+        EmbeddingConfig(
+            name="test-embedding",
+            model_provider_name=provider_name,
+            model_name=model_name,
+            properties={},
+        )
+    )
+    embedding = await embedding.generate_embeddings(["Hello, world!"])
+    assert len(embedding.embeddings) == 1
+    assert len(embedding.embeddings[0].vector) == model_provider.n_dimensions
+
+
+@pytest.mark.parametrize("model_name,provider_name", PRERELEASE_EMBEDDING_MODELS)
+@pytest.mark.paid
+@pytest.mark.prerelease
+async def test_generate_embedding_with_user_supplied_dimensions_prerelease_smoke(
+    model_name, provider_name
+):
+    model_provider = built_in_embedding_models_from_provider(
+        provider_name=provider_name,
+        model_name=model_name,
+    )
+    assert model_provider is not None
+
+    if not model_provider.supports_custom_dimensions:
+        pytest.skip("Model does not support custom dimensions")
+
+    max_dimensions = model_provider.n_dimensions
+    dimensions_target = max_dimensions // 2
+
+    embedding = embedding_adapter_from_type(
+        EmbeddingConfig(
+            name="test-embedding",
+            model_provider_name=provider_name,
+            model_name=model_name,
+            properties={"dimensions": dimensions_target},
+        )
+    )
+    embedding = await embedding.generate_embeddings(["Hello, world!"])
+    assert len(embedding.embeddings) == 1
+    assert len(embedding.embeddings[0].vector) == dimensions_target

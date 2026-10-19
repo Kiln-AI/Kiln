@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-from ..models.model_provider_name import ModelProviderName
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
@@ -24,7 +23,7 @@ class ClarifySpecInput:
         target_specification (str):
         num_samples_per_topic (int):
         num_topics (int):
-        providers (list[ModelProviderName]):
+        providers (list[str]):
         num_exemplars (int | Unset):  Default: 10.
     """
 
@@ -32,7 +31,7 @@ class ClarifySpecInput:
     target_specification: str
     num_samples_per_topic: int
     num_topics: int
-    providers: list[ModelProviderName]
+    providers: list[str]
     num_exemplars: int | Unset = 10
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -45,10 +44,7 @@ class ClarifySpecInput:
 
         num_topics = self.num_topics
 
-        providers = []
-        for providers_item_data in self.providers:
-            providers_item = providers_item_data.value
-            providers.append(providers_item)
+        providers = self.providers
 
         num_exemplars = self.num_exemplars
 
@@ -81,12 +77,7 @@ class ClarifySpecInput:
 
         num_topics = d.pop("num_topics")
 
-        providers = []
-        _providers = d.pop("providers")
-        for providers_item_data in _providers:
-            providers_item = ModelProviderName(providers_item_data)
-
-            providers.append(providers_item)
+        providers = cast(list[str], d.pop("providers"))
 
         num_exemplars = d.pop("num_exemplars", UNSET)
 

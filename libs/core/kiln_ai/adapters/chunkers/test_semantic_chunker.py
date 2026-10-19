@@ -242,6 +242,7 @@ class TestSemanticChunker:
 
 
 @pytest.mark.paid
+@pytest.mark.prerelease
 async def test_semantic_chunker_real_integration(tmp_path):
     """Paid test: run SemanticChunker end-to-end with a real embedding model."""
 

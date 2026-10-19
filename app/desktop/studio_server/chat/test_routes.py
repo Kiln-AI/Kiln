@@ -3,6 +3,10 @@ from http import HTTPStatus
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
+from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     ChatSnapshot,
 )
@@ -20,8 +24,6 @@ from app.desktop.studio_server.chat.helpers import (
     make_n_round_mock_client,
     sse_text_delta,
 )
-from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
-from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
 
 
 class TestChatStreaming:
@@ -185,6 +187,45 @@ def test_get_chat_session_forwards_to_kiln(mock_asyncio_detailed, client, mock_a
     call_kwargs = mock_asyncio_detailed.call_args[1]
     assert call_kwargs["session_id"] == "trace-abc"
     assert "client" in call_kwargs
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.get_session_v1_chat_sessions_session_id_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+def test_get_chat_session_keeps_tool_error_fields(
+    mock_asyncio_detailed, client, mock_api_key
+):
+    failed_tool_message = {
+        "role": "tool",
+        "tool_call_id": "tc1",
+        "content": "Error: no tool named 'foo'.",
+        "is_error": True,
+        "error_message": "Error: no tool named 'foo'.",
+    }
+    successful_tool_message = {"role": "tool", "tool_call_id": "tc2", "content": "3"}
+    parsed = ChatSnapshot.from_dict(
+        {
+            "id": "trace-abc",
+            "task_run": _make_task_run_dict(
+                trace=[failed_tool_message, successful_tool_message]
+            ),
+        }
+    )
+    mock_asyncio_detailed.return_value = KilnResponse(
+        status_code=HTTPStatus.OK,
+        content=b"{}",
+        headers={"content-type": "application/json"},
+        parsed=parsed,
+    )
+
+    r = client.get("/api/chat/sessions/trace-abc")
+
+    assert r.status_code == 200
+    assert r.json()["task_run"]["trace"] == [
+        failed_tool_message,
+        successful_tool_message,
+    ]
 
 
 @patch(
@@ -810,7 +851,7 @@ class TestMockedFlows:
             sse_text_delta("Tool was denied."),
             _sse_event({"type": "finish", "messageMetadata": {"finishReason": "stop"}}),
         ]
-        mock_client, get_call_count = make_n_round_mock_client(continuation_chunks)
+        mock_client, _get_call_count = make_n_round_mock_client(continuation_chunks)
         mock_class = MagicMock(return_value=mock_client)
 
         body = {
@@ -1125,3 +1166,59 @@ def test_chat_stream_has_no_write_lock(app):
 def test_execute_tools_has_no_write_lock(app):
     endpoint = _find_endpoint_by_path(app, "/api/chat/execute-tools")
     assert getattr(endpoint, "_git_sync_no_write_lock", False) is True
+
+
+# --- GET /api/chat/version_policy proxy ---
+
+PATCH_ROUTES_ASYNC_CLIENT = "app.desktop.studio_server.chat.routes.httpx.AsyncClient"
+
+
+def _mock_version_policy_client(*, json_body=None, status_code=200):
+    """Build a mock httpx.AsyncClient whose async .get() returns a fake response."""
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.json.return_value = json_body
+    http_client = MagicMock()
+    http_client.get = AsyncMock(return_value=resp)
+    http_client.__aenter__ = AsyncMock(return_value=http_client)
+    http_client.__aexit__ = AsyncMock(return_value=None)
+    return MagicMock(return_value=http_client)
+
+
+def test_version_policy_forwards_and_parses(client, mock_api_key):
+    mock_class = _mock_version_policy_client(
+        json_body={"required": False, "upgrade_nudge_version": "1.0.5"}
+    )
+    with patch(PATCH_ROUTES_ASYNC_CLIENT, mock_class):
+        r = client.get("/api/chat/version_policy")
+    assert r.status_code == 200
+    assert r.json() == {"required": False, "upgrade_nudge_version": "1.0.5"}
+
+
+def test_version_policy_degrades_on_non_200(client, mock_api_key):
+    mock_class = _mock_version_policy_client(json_body={}, status_code=503)
+    with patch(PATCH_ROUTES_ASYNC_CLIENT, mock_class):
+        r = client.get("/api/chat/version_policy")
+    assert r.status_code == 200
+    assert r.json() == {"required": False, "upgrade_nudge_version": None}
+
+
+def test_version_policy_degrades_on_invalid_upstream_body(client, mock_api_key):
+    # Pydantic v2 ValidationError is not a ValueError; ensure it's caught and we
+    # degrade to "no banner" rather than 500.
+    mock_class = _mock_version_policy_client(json_body={"required": "not-a-bool"})
+    with patch(PATCH_ROUTES_ASYNC_CLIENT, mock_class):
+        r = client.get("/api/chat/version_policy")
+    assert r.status_code == 200
+    assert r.json() == {"required": False, "upgrade_nudge_version": None}
+
+
+def test_version_policy_degrades_on_transport_error(client, mock_api_key):
+    http_client = MagicMock()
+    http_client.get = AsyncMock(side_effect=httpx.ConnectError("boom"))
+    http_client.__aenter__ = AsyncMock(return_value=http_client)
+    http_client.__aexit__ = AsyncMock(return_value=None)
+    with patch(PATCH_ROUTES_ASYNC_CLIENT, MagicMock(return_value=http_client)):
+        r = client.get("/api/chat/version_policy")
+    assert r.status_code == 200
+    assert r.json() == {"required": False, "upgrade_nudge_version": None}

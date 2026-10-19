@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "212038905177",
+  "created_at": "2026-08-17T21:33:25.482142Z",
+  "created_by": "root",
+  "dataset_id": "267255821357",
+  "task_run_config_id": "140414461876",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"Webhook deliveries silently stopped\", \"body\": \"Our endpoint has not received a webhook since Saturday 02:14 UTC. The delivery log in your dashboard shows no attempts at all — not failures, just nothing. The endpoint is up and responds 200 to a manual POST.\", \"customer_plan\": \"enterprise\"}",
+  "output": "{\"team\": \"technical_support\", \"priority\": \"urgent\", \"needs_human_review\": true, \"summary\": \"Webhook deliveries have silently stopped since Saturday 02:14 UTC with no delivery attempts logged, while the endpoint responds 200 to manual POSTs — investigate why the delivery pipeline halted and whether any webhook events were lost.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output does **not** exhibit the desired behaviour.\n\n- It correctly identifies the ticket as an urgent technical issue and assigns it to technical support.\n- However, the ticket is an outage with no privacy, security, billing-dispute, or legal dimension.\n- Per the desired behaviour, an urgent outage alone should still be `needs_human_review: false`.\n- The model instead set `needs_human_review: true` purely because the ticket was urgent, which matches the listed failure example.\n\n**Result: Fail**",
+    "reasoning": "We need to respond with the required JSON schema. The only property is escalation_flagging, which is enum pass/fail. Based on our reasoning, it fails. We must output exactly JSON."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 0.0
+  },
+  "task_run_usage": {
+    "input_tokens": 955,
+    "output_tokens": 1366,
+    "total_tokens": 2321,
+    "cost": 0.00051618,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 39041
+  },
+  "model_type": "eval_run"
+}

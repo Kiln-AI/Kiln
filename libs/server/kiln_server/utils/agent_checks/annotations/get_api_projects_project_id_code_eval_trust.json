@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/projects/{project_id}/code_eval_trust",
+  "agent_policy": {
+    "permission": "deny",
+    "requires_approval": false
+  }
+}

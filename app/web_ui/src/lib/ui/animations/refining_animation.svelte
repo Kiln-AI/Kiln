@@ -3,7 +3,17 @@
   // Originally written for the spec builder; copy is now parameterized so
   // other flows (e.g. data guide metaprompter refinement) can reuse it.
   export let title: string
-  export let description: string
+  // Single-paragraph description. For multiple paragraphs, pass
+  // `description_paragraphs` instead (each renders as its own balanced <p>).
+  export let description: string = ""
+  export let description_paragraphs: string[] = []
+
+  $: paragraphs =
+    description_paragraphs.length > 0
+      ? description_paragraphs
+      : description
+        ? [description]
+        : []
 </script>
 
 <div class="flex flex-col items-center justify-center my-10">
@@ -119,7 +129,11 @@
     </svg>
   </div>
   <div class="font-medium text-lg text-center mt-2">{title}</div>
-  <div class="font-light text-center text-gray-500 max-w-md mt-2 text-balance">
-    {description}
+  <div
+    class="font-light text-center text-gray-500 max-w-md mt-2 flex flex-col gap-3"
+  >
+    {#each paragraphs as paragraph}
+      <p class="text-balance">{paragraph}</p>
+    {/each}
   </div>
 </div>

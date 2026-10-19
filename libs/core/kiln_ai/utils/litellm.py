@@ -70,7 +70,12 @@ def get_litellm_provider_info(
             litellm_provider_name = "together_ai"
         case ModelProviderName.cerebras:
             litellm_provider_name = "cerebras"
+        case ModelProviderName.featherless_ai:
+            litellm_provider_name = "featherless_ai"
         case ModelProviderName.siliconflow_cn:
+            is_custom = True
+        case ModelProviderName.cloudflare:
+            # LiteLLM's built-in cloudflare/ provider drops most request params and the gateway header
             is_custom = True
         case ModelProviderName.openai_compatible:
             is_custom = True
@@ -78,6 +83,8 @@ def get_litellm_provider_info(
             is_custom = True
         case ModelProviderName.kiln_fine_tune:
             is_custom = True
+        case ModelProviderName.typesafe:
+            raise ValueError("TypeSafe AI models do not run through LiteLLM")
         case _:
             raise_exhaustive_enum_error(model_provider.name)
 

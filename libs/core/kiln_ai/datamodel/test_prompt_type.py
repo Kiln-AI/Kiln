@@ -1,6 +1,6 @@
 import pytest
 
-from kiln_ai.datamodel.prompt_type import prompt_type_label
+from kiln_ai.datamodel.prompt_type import generator_label, prompt_type_label
 
 
 @pytest.mark.parametrize(
@@ -39,3 +39,18 @@ def test_prompt_type_label(
     prompt_id: str, generator_id: str | None, expected: str
 ) -> None:
     assert prompt_type_label(prompt_id, generator_id) == expected
+
+
+@pytest.mark.parametrize(
+    "generator_id,expected",
+    [
+        ("simple_prompt_builder", "Basic (Zero Shot)"),
+        ("few_shot_prompt_builder", "Few-Shot"),
+        ("simple_chain_of_thought_prompt_builder", "Chain of Thought"),
+        ("unknown_generator", None),
+        (None, None),
+        ("", None),
+    ],
+)
+def test_generator_label(generator_id: str | None, expected: str | None) -> None:
+    assert generator_label(generator_id) == expected

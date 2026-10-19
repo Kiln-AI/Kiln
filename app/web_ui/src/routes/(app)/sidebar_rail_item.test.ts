@@ -70,6 +70,19 @@ describe("SidebarRailItem", () => {
     expect(anchor?.className).toContain("hover:bg-base-300/50")
   })
 
+  it("renders a button that fires on_click when no href is given", async () => {
+    let clicked = 0
+    const { container } = render(SidebarRailItem, {
+      props: { on_click: () => (clicked += 1), label: "Jobs" },
+    })
+    expect(container.querySelector("a")).toBeNull()
+    const button = container.querySelector("button") as HTMLElement
+    expect(button).not.toBeNull()
+    expect(button.getAttribute("aria-label")).toBe("Jobs")
+    await fireEvent.click(button)
+    expect(clicked).toBe(1)
+  })
+
   it("keeps the visible tooltip pointer-events-none so clicks do not regress", async () => {
     // Regression guard: pre-portal the tooltip is a DOM descendant of the <a>,
     // so it must remain non-interactive or it could swallow clicks on the link.

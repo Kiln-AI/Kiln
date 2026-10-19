@@ -277,6 +277,19 @@ class TestScanForProjects:
         assert len(results) == 1
         assert results[0]["id"] == ""
 
+    def test_null_fields_become_empty_strings(self, tmp_path: Path):
+        # A project file written without these values set carries an explicit
+        # null rather than omitting the key.
+        project_data = {"name": None, "description": None, "id": None}
+        (tmp_path / "project.kiln").write_text(json.dumps(project_data))
+
+        results = scan_for_projects(tmp_path)
+        assert len(results) == 1
+        assert results[0]["description"] == ""
+        assert results[0]["id"] == ""
+        # A project with no usable name falls back to its path.
+        assert results[0]["name"] == "project.kiln"
+
     def test_results_sorted_by_path(self, tmp_path: Path):
         for name in ["c_proj", "a_proj", "b_proj"]:
             d = tmp_path / name
@@ -320,6 +333,7 @@ class TestTestRemoteAccess:
                 "https://github.com/org/repo.git", pat_token="ghp_token"
             )
             assert success is True
+            assert msg == "Access successful"
             assert mode == "pat_token"
 
     def test_auth_failure(self):
@@ -343,7 +357,7 @@ class TestTestRemoteAccess:
     def test_explicit_auth_mode(self):
         with patch("app.desktop.git_sync.clone._ls_remote_pygit2") as mock:
             mock.return_value = _make_ref_dicts([("HEAD", None)])
-            success, msg, mode = check_remote_access(
+            success, _msg, mode = check_remote_access(
                 "https://github.com/org/repo.git",
                 pat_token="ghp_token",
                 auth_mode="pat_token",
@@ -392,7 +406,7 @@ class TestListRemoteBranches:
         )
         with patch("app.desktop.git_sync.clone._ls_remote_pygit2") as mock:
             mock.return_value = refs
-            branches, default = list_remote_branches("https://github.com/org/repo.git")
+            _branches, default = list_remote_branches("https://github.com/org/repo.git")
             assert default == "main"
 
     def test_no_symref_falls_back_to_master(self):
@@ -404,7 +418,7 @@ class TestListRemoteBranches:
         )
         with patch("app.desktop.git_sync.clone._ls_remote_pygit2") as mock:
             mock.return_value = refs
-            branches, default = list_remote_branches("https://github.com/org/repo.git")
+            _branches, default = list_remote_branches("https://github.com/org/repo.git")
             assert default == "master"
 
     def test_ignores_tags(self):
@@ -483,9 +497,10 @@ class TestTestWriteAccessFreesRepository:
             patch("app.desktop.git_sync.clone.make_credentials"),
             patch("app.desktop.git_sync.clone.make_push_callbacks"),
         ):
-            success, msg = check_write_access(Path("/tmp/clone"))
+            success, _msg, denied = check_write_access(Path("/tmp/clone"))
 
         assert success is True
+        assert denied is False
         mock_repo.free.assert_called_once()
 
     def test_frees_repo_on_git_error(self):
@@ -498,9 +513,10 @@ class TestTestWriteAccessFreesRepository:
             ),
             patch("app.desktop.git_sync.clone.pygit2.Signature"),
         ):
-            success, msg = check_write_access(Path("/tmp/clone"))
+            success, _msg, denied = check_write_access(Path("/tmp/clone"))
 
         assert success is False
+        assert denied is False
         mock_repo.free.assert_called_once()
 
     def test_frees_repo_on_unexpected_error(self):
@@ -513,7 +529,222 @@ class TestTestWriteAccessFreesRepository:
             ),
             patch("app.desktop.git_sync.clone.pygit2.Signature"),
         ):
-            success, msg = check_write_access(Path("/tmp/clone"))
+            success, _msg, denied = check_write_access(Path("/tmp/clone"))
 
         assert success is False
+        assert denied is False
+        mock_repo.free.assert_called_once()
+
+
+class TestWriteAccessDeniedClassification:
+    def _make_mock_repo(self) -> MagicMock:
+        mock_repo = MagicMock()
+        mock_repo.head.target = "abc123"
+        mock_repo.head.name = "refs/heads/main"
+        mock_repo.head.shorthand = "main"
+        mock_repo.index.write_tree.return_value = "tree_oid"
+        mock_repo.create_commit.return_value = "commit_oid"
+        return mock_repo
+
+    def test_push_rejection_sets_write_denied(self):
+        mock_repo = self._make_mock_repo()
+
+        def fake_make_push_callbacks(cred_callbacks, push_errors):
+            push_errors.append("Push rejected for refs/heads/main: permission denied")
+            return MagicMock()
+
+        with (
+            patch(
+                "app.desktop.git_sync.clone.pygit2.Repository",
+                return_value=mock_repo,
+            ),
+            patch("app.desktop.git_sync.clone.pygit2.Signature"),
+            patch("app.desktop.git_sync.clone.make_credentials"),
+            patch(
+                "app.desktop.git_sync.clone.make_push_callbacks",
+                side_effect=fake_make_push_callbacks,
+            ),
+        ):
+            success, msg, denied = check_write_access(Path("/tmp/clone"))
+
+        assert success is False
+        assert denied is True
+        assert "permission denied" in msg.lower()
+        mock_repo.reset.assert_called_once_with("abc123", pygit2.enums.ResetMode.HARD)
+
+    def test_403_git_error_sets_write_denied(self):
+        mock_repo = self._make_mock_repo()
+        mock_repo.index.write_tree.side_effect = pygit2.GitError(
+            "403 Forbidden: write access denied"
+        )
+        with (
+            patch(
+                "app.desktop.git_sync.clone.pygit2.Repository",
+                return_value=mock_repo,
+            ),
+            patch("app.desktop.git_sync.clone.pygit2.Signature"),
+        ):
+            success, msg, denied = check_write_access(Path("/tmp/clone"))
+
+        assert success is False
+        assert denied is True
+        assert "read-only" in msg.lower()
+
+    def test_401_git_error_does_not_set_write_denied(self):
+        mock_repo = self._make_mock_repo()
+        mock_repo.index.write_tree.side_effect = pygit2.GitError("401 Unauthorized")
+        with (
+            patch(
+                "app.desktop.git_sync.clone.pygit2.Repository",
+                return_value=mock_repo,
+            ),
+            patch("app.desktop.git_sync.clone.pygit2.Signature"),
+        ):
+            success, msg, denied = check_write_access(Path("/tmp/clone"))
+
+        assert success is False
+        assert denied is False
+        assert "authentication failed" in msg.lower()
+
+    def test_auth_git_error_does_not_set_write_denied(self):
+        mock_repo = self._make_mock_repo()
+        mock_repo.index.write_tree.side_effect = pygit2.GitError(
+            "authentication required"
+        )
+        with (
+            patch(
+                "app.desktop.git_sync.clone.pygit2.Repository",
+                return_value=mock_repo,
+            ),
+            patch("app.desktop.git_sync.clone.pygit2.Signature"),
+        ):
+            success, msg, denied = check_write_access(Path("/tmp/clone"))
+
+        assert success is False
+        assert denied is False
+        assert "authentication failed" in msg.lower()
+
+    def test_generic_git_error_does_not_set_write_denied(self):
+        mock_repo = self._make_mock_repo()
+        mock_repo.index.write_tree.side_effect = pygit2.GitError("network timeout")
+        with (
+            patch(
+                "app.desktop.git_sync.clone.pygit2.Repository",
+                return_value=mock_repo,
+            ),
+            patch("app.desktop.git_sync.clone.pygit2.Signature"),
+        ):
+            success, msg, denied = check_write_access(Path("/tmp/clone"))
+
+        assert success is False
+        assert denied is False
+        assert "network timeout" in msg
+
+
+class TestWriteAccessRollbackDummyCommit:
+    """Verify the dummy test commit is rolled back on all failure paths."""
+
+    def _make_mock_repo(self) -> MagicMock:
+        mock_repo = MagicMock()
+        mock_repo.head.target = "abc123"
+        mock_repo.head.name = "refs/heads/main"
+        mock_repo.head.shorthand = "main"
+        mock_repo.index.write_tree.return_value = "tree_oid"
+        mock_repo.create_commit.return_value = "commit_oid"
+        return mock_repo
+
+    def test_rollback_on_git_error_during_push(self):
+        mock_repo = self._make_mock_repo()
+        mock_remote = MagicMock()
+        mock_remote.push.side_effect = pygit2.GitError("403 Forbidden")
+        mock_repo.remotes.__getitem__ = MagicMock(return_value=mock_remote)
+
+        with (
+            patch(
+                "app.desktop.git_sync.clone.pygit2.Repository",
+                return_value=mock_repo,
+            ),
+            patch("app.desktop.git_sync.clone.pygit2.Signature"),
+            patch("app.desktop.git_sync.clone.make_credentials"),
+            patch("app.desktop.git_sync.clone.make_push_callbacks"),
+        ):
+            success, _msg, _denied = check_write_access(Path("/tmp/clone"))
+
+        assert success is False
+        mock_repo.reset.assert_called_once_with("abc123", pygit2.enums.ResetMode.HARD)
+
+    def test_rollback_on_unexpected_error_during_push(self):
+        mock_repo = self._make_mock_repo()
+        mock_remote = MagicMock()
+        mock_remote.push.side_effect = RuntimeError("connection lost")
+        mock_repo.remotes.__getitem__ = MagicMock(return_value=mock_remote)
+
+        with (
+            patch(
+                "app.desktop.git_sync.clone.pygit2.Repository",
+                return_value=mock_repo,
+            ),
+            patch("app.desktop.git_sync.clone.pygit2.Signature"),
+            patch("app.desktop.git_sync.clone.make_credentials"),
+            patch("app.desktop.git_sync.clone.make_push_callbacks"),
+        ):
+            success, _msg, _denied = check_write_access(Path("/tmp/clone"))
+
+        assert success is False
+        mock_repo.reset.assert_called_once_with("abc123", pygit2.enums.ResetMode.HARD)
+
+    def test_rollback_on_git_error_before_commit(self):
+        mock_repo = self._make_mock_repo()
+        mock_repo.index.write_tree.side_effect = pygit2.GitError("disk full")
+
+        with (
+            patch(
+                "app.desktop.git_sync.clone.pygit2.Repository",
+                return_value=mock_repo,
+            ),
+            patch("app.desktop.git_sync.clone.pygit2.Signature"),
+        ):
+            success, _msg, _denied = check_write_access(Path("/tmp/clone"))
+
+        assert success is False
+        mock_repo.reset.assert_called_once_with("abc123", pygit2.enums.ResetMode.HARD)
+
+    def test_no_rollback_on_success(self):
+        mock_repo = self._make_mock_repo()
+
+        with (
+            patch(
+                "app.desktop.git_sync.clone.pygit2.Repository",
+                return_value=mock_repo,
+            ),
+            patch("app.desktop.git_sync.clone.pygit2.Signature"),
+            patch("app.desktop.git_sync.clone.make_credentials"),
+            patch("app.desktop.git_sync.clone.make_push_callbacks"),
+        ):
+            success, _msg, _denied = check_write_access(Path("/tmp/clone"))
+
+        assert success is True
+        mock_repo.reset.assert_not_called()
+
+    def test_rollback_failure_does_not_mask_original_error(self):
+        mock_repo = self._make_mock_repo()
+        mock_remote = MagicMock()
+        mock_remote.push.side_effect = pygit2.GitError("network timeout")
+        mock_repo.remotes.__getitem__ = MagicMock(return_value=mock_remote)
+        mock_repo.reset.side_effect = Exception("reset failed too")
+
+        with (
+            patch(
+                "app.desktop.git_sync.clone.pygit2.Repository",
+                return_value=mock_repo,
+            ),
+            patch("app.desktop.git_sync.clone.pygit2.Signature"),
+            patch("app.desktop.git_sync.clone.make_credentials"),
+            patch("app.desktop.git_sync.clone.make_push_callbacks"),
+        ):
+            success, msg, _denied = check_write_access(Path("/tmp/clone"))
+
+        assert success is False
+        assert "network timeout" in msg
+        mock_repo.reset.assert_called_once()
         mock_repo.free.assert_called_once()

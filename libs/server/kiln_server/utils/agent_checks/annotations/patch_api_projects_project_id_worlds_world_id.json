@@ -1,0 +1,9 @@
+{
+  "method": "patch",
+  "path": "/api/projects/{project_id}/worlds/{world_id}",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": true,
+    "approval_description": "Allow agent to update a world? Changing its environment URL changes where evals run in it send their data."
+  }
+}

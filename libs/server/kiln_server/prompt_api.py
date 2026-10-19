@@ -1,18 +1,68 @@
+import logging
 from datetime import datetime
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Path
-from kiln_ai.adapters.prompt_builders import CustomExamplePromptBuilder, PromptExample
-from kiln_ai.datamodel import BasePrompt, Prompt, PromptId
+from kiln_ai.adapters.prompt_builders import (
+    CustomExamplePromptBuilder,
+    PromptExample,
+    prompt_builder_from_id,
+)
+from kiln_ai.datamodel import BasePrompt, Prompt, PromptId, Task
 from kiln_ai.datamodel.prompt_type import prompt_type_label
-from pydantic import BaseModel, Field
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
+from pydantic import BaseModel, Field, field_validator
 
+from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     DENY_AGENT,
     agent_policy_require_approval,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def default_run_config_prompt(task: Task) -> str | None:
+    """Resolve the prompt text from the task's default run config.
+
+    Returns None when the task has no default run config, the config can't be found,
+    it has no prompt_id (e.g. an MCP run config), or the prompt can't be resolved. In
+    those cases callers should fall back to the task instruction.
+    """
+    if not task.default_run_config_id:
+        return None
+
+    run_config = next(
+        (
+            rc
+            for rc in task.run_configs(readonly=True)
+            if rc.id == task.default_run_config_id
+        ),
+        None,
+    )
+    if run_config is None:
+        return None
+
+    prompt_id = getattr(run_config.run_config_properties, "prompt_id", None)
+    if not prompt_id:
+        return None
+
+    try:
+        builder = prompt_builder_from_id(prompt_id, task)
+        return builder.build_prompt(include_json_instructions=False)
+    except Exception:
+        # A misconfigured run config (e.g. a frozen prompt that no longer resolves)
+        # should not break the builder - fall back to the task instruction.
+        logger.warning(
+            "Failed to resolve default run config prompt %s for task %s; "
+            "falling back to task instruction.",
+            prompt_id,
+            task.id,
+            exc_info=True,
+        )
+        return None
 
 
 def editable_prompt_from_id(project_id: str, task_id: str, prompt_id: str) -> Prompt:
@@ -46,6 +96,26 @@ class ApiPrompt(BasePrompt):
     created_by: str | None = Field(
         default=None, description="The user who created the prompt."
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Why this prompt exists and what it was derived from, if recorded.",
+    )
+
+
+def api_prompt_from_prompt(prompt: Prompt) -> ApiPrompt:
+    """Build an ApiPrompt response from a stored Prompt.
+
+    Passes `provenance` as the already-validated instance (never a dict) so a
+    forward/back-compat provenance loaded from disk (unknown origin, over-length
+    notes) is not re-validated in create mode on read — it round-trips as-is.
+    """
+    api_prompt_id = f"id::{prompt.id}"
+    return ApiPrompt(
+        id=api_prompt_id,
+        type=prompt_type_label(api_prompt_id, prompt.generator_id),
+        provenance=prompt.provenance,
+        **prompt.model_dump(exclude={"id", "provenance"}),
+    )
 
 
 class PromptCreateRequest(BaseModel):
@@ -63,6 +133,32 @@ class PromptCreateRequest(BaseModel):
         default=None,
         description="Chain of thought instructions to include in the prompt.",
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description=(
+            "Provenance: why this prompt exists and what it was derived from. "
+            "derived_from_ids accepts a saved prompt's id with or without the "
+            "'id::' prefix; it is stored without the prefix."
+        ),
+    )
+
+    @field_validator("provenance")
+    @classmethod
+    def _store_raw_prompt_ids(
+        cls, provenance: KilnArtifactProvenance | None
+    ) -> KilnArtifactProvenance | None:
+        if provenance is None or not provenance.derived_from_ids:
+            return provenance
+        return KilnArtifactProvenance.model_validate(
+            {
+                **provenance.model_dump(),
+                "derived_from_ids": [
+                    pid.removeprefix("id::")
+                    for pid in provenance.derived_from_ids
+                    if pid is not None
+                ],
+            }
+        )
 
 
 class PromptGenerator(BaseModel):
@@ -141,15 +237,16 @@ def connect_prompt_api(app: FastAPI):
             description=prompt_data.description,
             prompt=prompt_data.prompt,
             chain_of_thought_instructions=prompt_data.chain_of_thought_instructions,
+            provenance=prompt_data.provenance,
+        )
+        validate_provenance_or_400(
+            prompt.provenance,
+            prompt.id,
+            Prompt,
+            parent_task.path,
         )
         prompt.save_to_file()
-        api_prompt_id = f"id::{prompt.id}"
-        properties = prompt.model_dump(exclude={"id"})
-        return ApiPrompt(
-            id=api_prompt_id,
-            type=prompt_type_label(api_prompt_id, prompt.generator_id),
-            **properties,
-        )
+        return api_prompt_from_prompt(prompt)
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/prompts",
@@ -170,15 +267,7 @@ def connect_prompt_api(app: FastAPI):
 
         prompts: list[ApiPrompt] = []
         for prompt in parent_task.prompts():
-            prompt_id = f"id::{prompt.id}"
-            properties = prompt.model_dump(exclude={"id"})
-            prompts.append(
-                ApiPrompt(
-                    id=prompt_id,
-                    type=prompt_type_label(prompt_id, prompt.generator_id),
-                    **properties,
-                )
-            )
+            prompts.append(api_prompt_from_prompt(prompt))
 
         # Add any task run config prompts to the list
         task_run_configs = parent_task.run_configs()
@@ -229,13 +318,7 @@ def connect_prompt_api(app: FastAPI):
         prompt.name = prompt_data.name
         prompt.description = prompt_data.description
         prompt.save_to_file()
-        api_prompt_id = f"id::{prompt.id}"
-        properties = prompt.model_dump(exclude={"id"})
-        return ApiPrompt(
-            id=api_prompt_id,
-            type=prompt_type_label(api_prompt_id, prompt.generator_id),
-            **properties,
-        )
+        return api_prompt_from_prompt(prompt)
 
     @app.delete(
         "/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}",
@@ -274,15 +357,20 @@ def connect_prompt_api(app: FastAPI):
         ],
         request: BuildPromptRequest,
     ) -> BuildPromptResponse:
-        """Build a prompt with task instruction, requirements, and optional custom examples.
+        """Build a prompt with the task's prompt, requirements, and optional custom examples.
 
         Uses the same formatting as the FewShotPromptBuilder but with user-provided examples.
+        When the task has a default run config, that run config's prompt is used as the base
+        (so synthetic data reflects the production prompt) instead of the task instruction.
         """
         task = task_from_id(project_id, task_id)
         examples = [
             PromptExample(input=e.input, output=e.output) for e in request.examples
         ]
-        builder = CustomExamplePromptBuilder(task, examples)
+        base_prompt_override = default_run_config_prompt(task)
+        builder = CustomExamplePromptBuilder(
+            task, examples, base_prompt_override=base_prompt_override
+        )
         prompt = builder.build_prompt(include_json_instructions=False)
         return BuildPromptResponse(prompt=prompt)
 

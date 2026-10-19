@@ -18,6 +18,7 @@ from kiln_ai.adapters.remote_config import (
 )
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.logging import setup_litellm_logging
+from kiln_ai.worlds.session_manager import shutdown_shared_session_manager
 
 from app.desktop.git_sync.background_sync import BackgroundSync
 from app.desktop.git_sync.config import get_git_sync_config
@@ -26,13 +27,19 @@ from app.desktop.git_sync.middleware import GitSyncMiddleware
 from app.desktop.git_sync.registry import GitSyncRegistry
 from app.desktop.log_config import log_config
 from app.desktop.studio_server.agent_api import connect_agent_api
+from app.desktop.studio_server.batch_plan_api import connect_batch_plan_api
 from app.desktop.studio_server.chat import connect_chat_api
+from app.desktop.studio_server.code_tool_api import connect_code_tool_api
 from app.desktop.studio_server.copilot_api import connect_copilot_api
 from app.desktop.studio_server.data_gen_api import connect_data_gen_api
 from app.desktop.studio_server.dev_tools import connect_dev_tools
 from app.desktop.studio_server.eval_api import connect_evals_api
+from app.desktop.studio_server.eval_builder_api import connect_eval_builder_api
 from app.desktop.studio_server.finetune_api import connect_fine_tune_api
 from app.desktop.studio_server.import_api import connect_import_api
+from app.desktop.studio_server.jobs.api import connect_jobs_api
+from app.desktop.studio_server.jobs.registry import job_registry
+from app.desktop.studio_server.multiturn_sdg_api import connect_multiturn_sdg_api
 from app.desktop.studio_server.prompt_api import connect_prompt_api
 from app.desktop.studio_server.prompt_optimization_job_api import (
     connect_prompt_optimization_job_api,
@@ -44,6 +51,9 @@ from app.desktop.studio_server.settings_api import connect_settings
 from app.desktop.studio_server.skill_api import connect_skill_api
 from app.desktop.studio_server.tool_api import connect_tool_servers_api
 from app.desktop.studio_server.webhost import connect_webhost
+from app.desktop.studio_server.world_api import (
+    connect_world_api,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -111,9 +121,17 @@ async def lifespan(app: FastAPI):
         await _start_background_syncs()
         yield
     finally:
+        # End open SSE subscriptions so a UI holding the jobs stream open can't
+        # keep the worker alive (e.g. block a dev-server hot reload). Pure
+        # observer teardown — jobs keep running. Note uvicorn only reaches
+        # lifespan shutdown after its graceful-shutdown wait, so the dev server
+        # also sets timeout_graceful_shutdown to bound that wait.
+        job_registry.events.shutdown()
         try:
             await _stop_background_syncs()
         finally:
+            # Close any world sessions still open.
+            await shutdown_shared_session_manager()
             datamodel_strict_mode.set_strict_mode(original_strict_mode)
 
 
@@ -123,8 +141,12 @@ def make_app(tk_root: tk.Tk | None = None):
     if not should_skip_remote_model_list():
         refresh_model_list_background()
 
-    app = kiln_server.make_app(lifespan=lifespan)
-    app.add_middleware(GitSyncMiddleware)
+    # GitSyncMiddleware must be installed INNER to CORS (via extra_middleware)
+    # so that its short-circuit error responses still pass back out through
+    # CORSMiddleware and receive CORS headers. Adding it here with
+    # app.add_middleware() would make it outermost, bypassing CORS and causing
+    # the browser to block git-sync error responses ("origin not allowed").
+    app = kiln_server.make_app(lifespan=lifespan, extra_middleware=[GitSyncMiddleware])
     connect_provider_api(app)
     connect_prompt_api(app)
     connect_repair_api(app)
@@ -135,13 +157,19 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_run_config_api(app)
     connect_import_api(app, tk_root=tk_root)
     connect_tool_servers_api(app)
+    connect_code_tool_api(app)
+    connect_world_api(app)
     connect_skill_api(app)
     connect_prompt_optimization_job_api(app)
     connect_copilot_api(app)
+    connect_eval_builder_api(app)
+    connect_multiturn_sdg_api(app)
+    connect_batch_plan_api(app)
     connect_git_sync_api(app)
     connect_agent_api(app)
     connect_dev_tools(app)
     connect_chat_api(app)
+    connect_jobs_api(app)
     # Important: webhost must be last, it handles all other URLs
     connect_webhost(app)
     return app
@@ -182,20 +210,3 @@ class ThreadedServer(uvicorn.Server):
 
     def running(self):
         return self.started and not self.stopped
-
-
-def run_studio():
-    from kiln_ai.utils.config import Config
-
-    uvicorn.run(
-        kiln_server.app,
-        host=Config.shared().kiln_local_api_host,
-        port=Config.shared().kiln_local_api_port,
-        log_level="warning",
-    )
-
-
-def run_studio_thread():
-    thread = threading.Thread(target=run_studio)
-    thread.start()
-    return thread

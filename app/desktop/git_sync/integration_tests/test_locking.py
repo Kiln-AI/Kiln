@@ -24,7 +24,7 @@ class TestWriteLockSerialization:
     @pytest.mark.asyncio
     async def test_concurrent_writes_both_succeed(self, write_ctx, git_repos):
         """Two writes started concurrently both succeed (serialized by lock)."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
         pre_count = get_commit_count(local_path)
 
         result1, result2 = await asyncio.gather(
@@ -63,7 +63,7 @@ class TestWriteLockSerialization:
     @pytest.mark.asyncio
     async def test_concurrent_writes_on_remote(self, write_ctx, git_repos):
         """Both commits appear on remote after concurrent writes."""
-        local_path, remote_path = git_repos
+        _local_path, remote_path = git_repos
         pre_count = get_commit_count(remote_path)
 
         await asyncio.gather(
@@ -106,7 +106,7 @@ class TestWriteLockTimeout:
     @pytest.mark.asyncio
     async def test_lock_timeout_no_state_changes(self, manager, git_repos):
         """No commits or state changes when lock times out."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
         pre_head = get_head_sync(local_path)
         pre_count = get_commit_count(local_path)
         manager._WRITE_LOCK_TIMEOUT = 0.1
@@ -140,7 +140,7 @@ class TestWriteLockTimeout:
         """API mode: lock timeout should return 503 'Another save is in progress'."""
         from app.desktop.git_sync.registry import GitSyncRegistry
 
-        client, local_path, remote_path, write_fn_slot = api_client
+        client, local_path, _remote_path, write_fn_slot = api_client
 
         manager = GitSyncRegistry.get_or_create(
             repo_path=local_path, auth_mode="system_keys"
@@ -190,7 +190,6 @@ class TestNonReentrantDeadlockDetection:
         self, manager, git_repos
     ):
         """Outer lock scope remains usable after inner timeout."""
-        local_path, _ = git_repos
         manager._WRITE_LOCK_TIMEOUT = 0.2
 
         async with manager.write_lock():

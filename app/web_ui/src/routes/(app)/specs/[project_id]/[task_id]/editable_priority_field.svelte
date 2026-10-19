@@ -1,29 +1,32 @@
 <script lang="ts">
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
-  import type { Priority, Spec } from "$lib/types"
+  import type { Eval, Priority } from "$lib/types"
   import { formatPriority } from "$lib/utils/formatters"
   import EditableFieldBase from "./editable_field_base.svelte"
 
-  export let spec: Spec
+  // Priority lives on the eval (the server resolves legacy spec-backed evals
+  // on read, so `priority` is always concrete here despite the nullable type).
+  export let evaluator: Eval
   export let options: OptionGroup[]
   export let aria_label: string = "Priority"
-  export let onUpdate: (spec: Spec, value: Priority) => void
+  export let onUpdate: (evaluator: Eval, value: Priority) => void
   export let compact: boolean = false
   export let onOpen: (() => void) | undefined = undefined
 
   let baseComponent: EditableFieldBase<Priority>
-  let currentValue: Priority = spec.priority
-  let lastSyncedSpecValue: Priority = spec.priority
+  let currentValue: Priority = evaluator.priority ?? 1
+  let lastSyncedValue: Priority = currentValue
 
   $: {
-    if (spec.priority !== lastSyncedSpecValue) {
-      lastSyncedSpecValue = spec.priority
-      currentValue = spec.priority
+    const evaluator_priority = evaluator.priority ?? 1
+    if (evaluator_priority !== lastSyncedValue) {
+      lastSyncedValue = evaluator_priority
+      currentValue = evaluator_priority
       baseComponent?.setPendingComplete()
     }
   }
 
-  $: if (currentValue !== lastSyncedSpecValue && baseComponent) {
+  $: if (currentValue !== lastSyncedValue && baseComponent) {
     baseComponent.triggerUpdate()
   }
 
@@ -34,7 +37,7 @@
 
 <EditableFieldBase
   bind:this={baseComponent}
-  {spec}
+  {evaluator}
   bind:currentValue
   {options}
   {aria_label}

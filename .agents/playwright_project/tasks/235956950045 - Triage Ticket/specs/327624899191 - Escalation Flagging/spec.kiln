@@ -1,0 +1,21 @@
+{
+  "v": 1,
+  "id": "327624899191",
+  "created_at": "2026-08-17T21:16:05.352890Z",
+  "created_by": "root",
+  "name": "Escalation Flagging",
+  "definition": "## Desired Behaviour Description\nThe model must set needs_human_review to true whenever the ticket involves a security or privacy incident, exposure of another customer's data, a suspicious or unauthorised login, a billing dispute the customer has escalated, or any threat of legal or regulatory action. For routine requests — how-to questions, ordinary billing questions, password resets, feature requests, and normal bug reports — it must set needs_human_review to false. The flag is about whether a human must read the ticket before a reply is sent, not about how urgent the ticket is: an urgent outage with no privacy or legal dimension is still needs_human_review false.\n\n## Correct Behaviour Examples\n- A ticket reporting that one customer can see another tenant's invoices is flagged needs_human_review: true, team security.\n- A ticket about a suspicious admin login from an unrecognised country is flagged needs_human_review: true.\n- A ticket disputing a charge the customer says they never authorised, threatening a chargeback, is flagged needs_human_review: true.\n- A ticket asking how to export a report to CSV is flagged needs_human_review: false.\n- A ticket reporting that the whole dashboard is down for an enterprise account is flagged needs_human_review: false, priority urgent — urgency alone does not require a human reviewer.\n\n## Incorrect Behaviour Examples\n- A cross-tenant data exposure report is flagged needs_human_review: false because the model treated it as an ordinary bug.\n- A password reset request is flagged needs_human_review: true because the model treated any account-related word as sensitive.\n- A ticket is flagged needs_human_review: true purely because priority came out urgent, with no privacy, security, billing-dispute or legal element in the ticket.",
+  "properties": {
+    "spec_type": "desired_behaviour",
+    "desired_behaviour_description": "The model must set needs_human_review to true whenever the ticket involves a security or privacy incident, exposure of another customer's data, a suspicious or unauthorised login, a billing dispute the customer has escalated, or any threat of legal or regulatory action. For routine requests — how-to questions, ordinary billing questions, password resets, feature requests, and normal bug reports — it must set needs_human_review to false. The flag is about whether a human must read the ticket before a reply is sent, not about how urgent the ticket is: an urgent outage with no privacy or legal dimension is still needs_human_review false.",
+    "correct_behaviour_examples": "- A ticket reporting that one customer can see another tenant's invoices is flagged needs_human_review: true, team security.\n- A ticket about a suspicious admin login from an unrecognised country is flagged needs_human_review: true.\n- A ticket disputing a charge the customer says they never authorised, threatening a chargeback, is flagged needs_human_review: true.\n- A ticket asking how to export a report to CSV is flagged needs_human_review: false.\n- A ticket reporting that the whole dashboard is down for an enterprise account is flagged needs_human_review: false, priority urgent — urgency alone does not require a human reviewer.",
+    "incorrect_behaviour_examples": "- A cross-tenant data exposure report is flagged needs_human_review: false because the model treated it as an ordinary bug.\n- A password reset request is flagged needs_human_review: true because the model treated any account-related word as sensitive.\n- A ticket is flagged needs_human_review: true purely because priority came out urgent, with no privacy, security, billing-dispute or legal element in the ticket."
+  },
+  "priority": 1,
+  "status": "active",
+  "tags": [],
+  "eval_id": "839615031663",
+  "task_sample": null,
+  "synthetic_data_generation_session_config": null,
+  "model_type": "spec"
+}

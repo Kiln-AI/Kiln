@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "315720847833",
+  "created_at": "2026-08-17T21:33:03.918115Z",
+  "created_by": "root",
+  "dataset_id": "281115927207",
+  "task_run_config_id": "140414461876",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"SSO login loop after Okta metadata update\", \"body\": \"Since we rotated our Okta signing certificate this morning, every user who clicks Sign in with SSO gets bounced back to the login page. Local password accounts still work. About 40 people are locked out.\", \"customer_plan\": \"pro\"}",
+  "output": "{\"team\": \"technical_support\", \"priority\": \"high\", \"needs_human_review\": false, \"summary\": \"Update the SSO metadata in the product to match the rotated Okta signing certificate so the login loop is resolved and the 40 affected users can authenticate again.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "Pass. The ticket is a routine authentication bug report (SSO login loop after an Okta certificate rotation), not a security or privacy incident, billing dispute, or legal matter. Urgency alone doesn’t require human review, so `needs_human_review: false` is correct; `priority: high`, `team: technical_support`, and the summary are appropriate.",
+    "reasoning": "We need to respond with final result. The evaluation steps were given. We need to return pass/fail. We already determined pass. Need final answer."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 959,
+    "output_tokens": 614,
+    "total_tokens": 1573,
+    "cost": 0.00030617999999999997,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 13571
+  },
+  "model_type": "eval_run"
+}

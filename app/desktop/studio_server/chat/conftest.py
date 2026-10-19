@@ -1,10 +1,11 @@
 from unittest.mock import patch
 
 import pytest
-from app.desktop.studio_server.chat import connect_chat_api
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_server.custom_errors import connect_custom_errors
+
+from app.desktop.studio_server.chat import connect_chat_api
 
 
 @pytest.fixture

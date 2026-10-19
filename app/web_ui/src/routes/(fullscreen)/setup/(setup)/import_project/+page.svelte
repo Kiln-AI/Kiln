@@ -53,7 +53,7 @@
 <h1 class="text-2xl lg:text-4xl flex-none font-bold text-center">
   Import Project
 </h1>
-<h3 class="text-base font-medium text-center mt-3 max-w-[600px] mx-auto">
+<h3 class="text-base font-medium text-center mt-3 mb-4 max-w-[600px] mx-auto">
   Import an existing Kiln project
 </h3>
 

@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "849995392881",
+  "created_at": "2026-08-17T21:33:22.440891Z",
+  "created_by": "root",
+  "dataset_id": "141021632869",
+  "task_run_config_id": "177167545173",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"Password reset emails never arrive\", \"body\": \"Three of our users have asked for a password reset today and none of them received the email. Not in spam either. Our own SMTP logs show nothing inbound from you. Everything else about the account works.\", \"customer_plan\": \"pro\"}",
+  "output": "{\"team\": \"technical_support\", \"priority\": \"high\", \"needs_human_review\": false, \"summary\": \"Password reset emails are not being delivered to any of three users on a Pro account; customer's SMTP logs show no inbound from us, indicating an outbound email delivery failure that needs investigation.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output passes.\n\n- **Team:** `technical_support` is appropriate for an email-delivery/technical issue.\n- **Priority:** `high` is reasonable because multiple users cannot receive password reset emails, but urgency alone does not require human review.\n- **Needs human review:** `false` is correct. This is a normal bug report about undelivered transactional emails, not a security incident, data exposure, suspicious login, billing dispute, or legal threat.\n- **Summary:** One clear sentence describing the issue and likely cause.\n\nThe model exhibits the desired behaviour.",
+    "reasoning": "We need to answer with pass/fail. The instructions say: \"Considering the above, return a final result.\" We need to provide final result. Since model's output passes, say \"Pass\" maybe with brief reasoning. But the request is just final result. We'll output \"Pass\"."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 237,
+    "output_tokens": 1254,
+    "total_tokens": 1491,
+    "cost": 0.0003843,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 26397
+  },
+  "model_type": "eval_run"
+}

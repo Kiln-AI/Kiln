@@ -1,0 +1,97 @@
+name: Check Release Downloads
+
+# The Kiln downloads page links to fixed "latest release" URLs, one per desktop
+# build. This catches a release that would break those links: one published or
+# edited without all of the expected files, or a deleted or unpublished release
+# that moves "latest" to one that lacks them.
+# The daily run catches files removed from a published release, which fires no release event.
+
+on:
+  release:
+    types: [released, edited, deleted, unpublished]
+  schedule:
+    - cron: "17 14 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # The downloads page hardcodes these filenames. Releases before v0.14 used
+  # other names; they are never edited, so they never reach the release check.
+  EXPECTED_ASSETS: >-
+    Kiln.MacOS.AppleSilicon.M-Processor.dmg
+    Kiln.MacOS.Intel.dmg
+    Kiln.Windows.zip
+    Kiln.Linux.x64.zip
+    Kiln.Linux.ARM.zip
+  LATEST_DOWNLOAD_BASE_URL: https://github.com/Kiln-AI/Kiln/releases/latest/download
+
+jobs:
+  check-downloads:
+    name: Check Release Download URLs
+    if: ${{ github.repository == 'Kiln-AI/Kiln' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check latest download URLs resolve
+        run: |
+          failed=()
+          for name in $EXPECTED_ASSETS; do
+            url="$LATEST_DOWNLOAD_BASE_URL/$name"
+            # The asset host rejects HEAD requests, so request just the first
+            # byte, which answers 206 (or 200 if the range is ignored). curl
+            # reports 000 when no response arrives.
+            status=$(curl -sS -L --range 0-0 --retry 3 --max-time 60 -o /dev/null -w '%{http_code}' "$url" || true)
+            echo "$status $url"
+            if [ "$status" != "200" ] && [ "$status" != "206" ]; then
+              failed+=("| \`$url\` | $status |")
+            fi
+          done
+
+          if [ ${#failed[@]} -ne 0 ]; then
+            {
+              echo "### Broken latest download URLs"
+              echo
+              echo "| URL | HTTP status |"
+              echo "| --- | --- |"
+              printf '%s\n' "${failed[@]}"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "${#failed[@]} latest download URL(s) did not resolve" >&2
+            exit 1
+          fi
+          echo "All latest download URLs resolve" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check release has expected assets
+        # Runs even when the URL check fails, so the summary lists every problem.
+        # Drafts and pre-releases are skipped: they never become "latest".
+        if: >-
+          ${{ !cancelled()
+          && github.event_name == 'release'
+          && (github.event.action == 'released' || github.event.action == 'edited')
+          && !github.event.release.draft
+          && !github.event.release.prerelease }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ github.event.release.id }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          assets=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '.assets[].name')
+
+          missing=()
+          for name in $EXPECTED_ASSETS; do
+            if ! grep -qxF "$name" <<< "$assets"; then
+              missing+=("- \`$name\`")
+            fi
+          done
+
+          if [ ${#missing[@]} -ne 0 ]; then
+            {
+              echo "### Release \`$RELEASE_TAG\` is missing assets"
+              echo
+              printf '%s\n' "${missing[@]}"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "Release $RELEASE_TAG is missing ${#missing[@]} expected asset(s)" >&2
+            exit 1
+          fi
+          echo "Release \`$RELEASE_TAG\` has all expected assets" >> "$GITHUB_STEP_SUMMARY"

@@ -28,6 +28,15 @@ function render_props(properties: UiProperty[]) {
   return render(PropertyList, { props: { properties } })
 }
 
+function render_props_with_options(
+  properties: UiProperty[],
+  open_links_in_new_tab: boolean,
+) {
+  return render(PropertyList, {
+    props: { properties, open_links_in_new_tab },
+  })
+}
+
 describe("PropertyList collapse_badges", () => {
   it("renders all badges when collapse_badges is not set", () => {
     const { container } = render_props([
@@ -108,5 +117,110 @@ describe("PropertyList collapse_badges", () => {
     expect(pills.length).toBe(2)
     expect(pills[1].textContent?.trim()).toBe("beta")
     expect(pills[1].getAttribute("href")).toBe("/tools/b")
+  })
+})
+
+describe("PropertyList open_links_in_new_tab", () => {
+  it("renders a single link in the same tab by default", () => {
+    const { container } = render_props([
+      { name: "Prompt", value: "My Prompt", link: "/prompts/p1" },
+    ])
+    const anchor = container.querySelector("a.link")
+    expect(anchor?.getAttribute("href")).toBe("/prompts/p1")
+    expect(anchor?.getAttribute("target")).toBeNull()
+    expect(anchor?.getAttribute("rel")).toBeNull()
+  })
+
+  it("opens a single link in a new tab when enabled", () => {
+    const { container } = render_props_with_options(
+      [{ name: "Prompt", value: "My Prompt", link: "/prompts/p1" }],
+      true,
+    )
+    const anchor = container.querySelector("a.link")
+    expect(anchor?.getAttribute("href")).toBe("/prompts/p1")
+    expect(anchor?.getAttribute("target")).toBe("_blank")
+    expect(anchor?.getAttribute("rel")).toBe("noopener noreferrer")
+  })
+
+  it("opens badge links in a new tab when enabled", () => {
+    const { container } = render_props_with_options(
+      [
+        {
+          name: "Available Tools",
+          value: ["alpha", "beta"],
+          links: ["/tools/a", "/tools/b"],
+          badge: true,
+        },
+      ],
+      true,
+    )
+    const anchors = container.querySelectorAll("a.badge")
+    expect(anchors.length).toBe(2)
+    anchors.forEach((anchor) => {
+      expect(anchor.getAttribute("target")).toBe("_blank")
+      expect(anchor.getAttribute("rel")).toBe("noopener noreferrer")
+    })
+  })
+
+  it("opens non-badge array links in a new tab when enabled", () => {
+    const { container } = render_props_with_options(
+      [
+        {
+          name: "Evals",
+          value: ["eval one", "eval two"],
+          links: ["/evals/1", "/evals/2"],
+        },
+      ],
+      true,
+    )
+    const anchors = container.querySelectorAll("a.link")
+    expect(anchors.length).toBe(2)
+    anchors.forEach((anchor) => {
+      expect(anchor.getAttribute("target")).toBe("_blank")
+      expect(anchor.getAttribute("rel")).toBe("noopener noreferrer")
+    })
+  })
+
+  it("opens value_with_link in a new tab when enabled", () => {
+    const { container } = render_props_with_options(
+      [
+        {
+          name: "Source",
+          value: "ignored",
+          value_with_link: {
+            prefix: "From ",
+            link_text: "dataset",
+            link: "/dataset/1",
+          },
+        },
+      ],
+      true,
+    )
+    const anchor = container.querySelector("a.link")
+    expect(anchor?.getAttribute("href")).toBe("/dataset/1")
+    expect(anchor?.getAttribute("target")).toBe("_blank")
+    expect(anchor?.getAttribute("rel")).toBe("noopener noreferrer")
+  })
+
+  it("opens links inside the '+N more' modal in a new tab when enabled", async () => {
+    const { container, getByText } = render_props_with_options(
+      [
+        {
+          name: "Available Tools",
+          value: ["alpha", "beta"],
+          links: ["/tools/a", "/tools/b"],
+          badge: true,
+          collapse_badges: true,
+        },
+      ],
+      true,
+    )
+    await fireEvent.click(getByText("+1 more"))
+    const pills = container.querySelectorAll("dialog a.badge.badge-outline")
+    expect(pills.length).toBe(2)
+    pills.forEach((pill) => {
+      expect(pill.getAttribute("target")).toBe("_blank")
+      expect(pill.getAttribute("rel")).toBe("noopener noreferrer")
+    })
   })
 })

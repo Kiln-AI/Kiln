@@ -5,6 +5,7 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...models.unauthorized_response import UnauthorizedResponse
 from ...types import Response
 
 
@@ -18,10 +19,17 @@ def _get_kwargs() -> dict[str, Any]:
     return _kwargs
 
 
-def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> str | None:
+def _parse_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> UnauthorizedResponse | str | None:
     if response.status_code == 200:
         response_200 = response.text
         return response_200
+
+    if response.status_code == 401:
+        response_401 = UnauthorizedResponse.from_dict(response.json())
+
+        return response_401
 
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
@@ -29,7 +37,9 @@ def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Res
         return None
 
 
-def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Response[str]:
+def _build_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> Response[UnauthorizedResponse | str]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -41,7 +51,7 @@ def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Res
 def sync_detailed(
     *,
     client: AuthenticatedClient,
-) -> Response[str]:
+) -> Response[UnauthorizedResponse | str]:
     """Secure Ping
 
      Simple ping endpoint, with auth security.
@@ -51,7 +61,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[str]
+        Response[UnauthorizedResponse | str]
     """
 
     kwargs = _get_kwargs()
@@ -66,7 +76,7 @@ def sync_detailed(
 def sync(
     *,
     client: AuthenticatedClient,
-) -> str | None:
+) -> UnauthorizedResponse | str | None:
     """Secure Ping
 
      Simple ping endpoint, with auth security.
@@ -76,7 +86,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        str
+        UnauthorizedResponse | str
     """
 
     return sync_detailed(
@@ -87,7 +97,7 @@ def sync(
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
-) -> Response[str]:
+) -> Response[UnauthorizedResponse | str]:
     """Secure Ping
 
      Simple ping endpoint, with auth security.
@@ -97,7 +107,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[str]
+        Response[UnauthorizedResponse | str]
     """
 
     kwargs = _get_kwargs()
@@ -110,7 +120,7 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: AuthenticatedClient,
-) -> str | None:
+) -> UnauthorizedResponse | str | None:
     """Secure Ping
 
      Simple ping endpoint, with auth security.
@@ -120,7 +130,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        str
+        UnauthorizedResponse | str
     """
 
     return (

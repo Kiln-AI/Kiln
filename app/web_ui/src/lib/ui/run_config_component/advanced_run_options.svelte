@@ -3,6 +3,7 @@
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import type { StructuredOutputMode, InputTransform } from "$lib/types"
   import { structuredOutputModeToString } from "$lib/utils/formatters"
+  import { THINKING_LEVEL_INFO_DESCRIPTION } from "$lib/utils/run_config_formatters"
   import InputTransformSelector from "./input_transform_selector.svelte"
 
   export let temperature: number
@@ -170,7 +171,7 @@
       inputType="fancy_select"
       bind:value={thinking_level}
       fancy_select_options={thinking_level_options}
-      info_description="Thinking level controls the model’s internal reasoning effort for supported models. Higher effort uses more tokens and is slower; lower effort is faster."
+      info_description={THINKING_LEVEL_INFO_DESCRIPTION}
       optional={true}
     />
   {/if}

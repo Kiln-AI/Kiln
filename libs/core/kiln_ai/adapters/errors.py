@@ -5,7 +5,11 @@ Provides:
 - `KilnRunError`: the exception thrown by the adapter that carries the partial
   conversation trace across the exception boundary so the API layer can return
   it to the client.
+- `StructuredOutputParseError`: on a structured-output task, the model's
+  response wasn't parseable JSON, or parsed to something other than an object.
 - `format_error_message`: maps known exceptions to user-friendly text.
+- `EMPTY_RESPONSE_ERROR_MESSAGE`: the error raised when a model returns an
+  assistant message with no content and no tool calls.
 """
 
 from __future__ import annotations
@@ -16,6 +20,11 @@ from pydantic import BaseModel
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 _GENERIC_FALLBACK_MESSAGE = "An unexpected error occurred."
+
+EMPTY_RESPONSE_ERROR_MESSAGE = (
+    "Model returned an assistant message, but no content or tool calls. "
+    "This is not supported."
+)
 
 
 class ErrorWithTrace(BaseModel):
@@ -50,6 +59,18 @@ class KilnRunError(Exception):
         self.error_type = type(original).__name__
 
 
+class StructuredOutputParseError(ValueError):
+    """Raised when a structured-output task's model response is the wrong
+    shape: not valid JSON, or valid JSON that isn't the object the task needs
+    (a list, number, or null — commonly the object wrapped in a list).
+
+    Subclasses ValueError so existing `except ValueError` handling and the
+    user-facing message are unchanged. The distinct type exists so retry
+    classification can treat wrong-shape output like a schema mismatch: both
+    mean the model flubbed its output shape once, and a retry may fix it.
+    """
+
+
 def _safe_str(exc: Exception) -> str:
     """Return str(exc); fall back to the exception class name if the string
     is empty, and to a generic message only if str() itself misbehaves."""
@@ -81,6 +102,11 @@ def format_error_message(exc: Exception) -> str:
             return "Rate limit exceeded. Wait a moment and try again."
         if isinstance(exc, litellm.AuthenticationError):
             return "Authentication with the model provider failed. Check your API key."
+        # Listed before the connection bucket: litellm.Timeout inherits from
+        # openai's connection error, not litellm's, so it needs its own branch
+        # (and a request that timed out did connect, so that message would lie).
+        if isinstance(exc, litellm.Timeout):
+            return "The model provider took too long to respond. Try again in a moment."
         if isinstance(exc, litellm.APIConnectionError):
             return "Could not connect to the model provider. Check your network connection."
         if isinstance(
@@ -101,9 +127,9 @@ def format_error_message(exc: Exception) -> str:
                 return "The run exceeded the maximum number of turns."
             if msg.startswith("Too many tool calls"):
                 return "The run exceeded the maximum number of tool calls in one turn."
-            # Other RuntimeErrors (tool not found, arg parse/validate failures,
-            # reasoning required) already have user-friendly messages with
-            # useful context (e.g., tool names), so pass them through.
+            # Other RuntimeErrors (reasoning required, task_response mixed with
+            # other tool calls) already have user-friendly messages, so pass
+            # them through.
             return msg
 
         if isinstance(exc, ValueError):

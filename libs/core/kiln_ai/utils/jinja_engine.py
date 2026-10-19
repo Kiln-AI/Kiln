@@ -10,6 +10,7 @@ Both envs share trim_blocks=True and lstrip_blocks=True for prompt-friendly outp
 Public API:
   - compile_template_or_raise(template) -> None
   - compile_expression_or_raise(expression) -> None
+  - expression_variables(expression) -> set[str]
   - render_input_transform(transform, task_input) -> str
   - extract(expression, data) -> Any
 """
@@ -20,11 +21,78 @@ import json
 import types
 from typing import TYPE_CHECKING, Any
 
-from jinja2 import StrictUndefined, TemplateSyntaxError, Undefined
+from jinja2 import StrictUndefined, TemplateSyntaxError, Undefined, UndefinedError
 from jinja2.sandbox import SandboxedEnvironment
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.input_transform import InputTransform
+
+
+class JinjaExtractionError(ValueError):
+    """Raised when a Jinja2 expression encounters missing or invalid data during extraction.
+
+    Covers both filters that reject their input (``fromjson`` on a non-JSON
+    string) and expressions that operate on a value that isn't there (reaching
+    into a missing nested field, indexing past the end of a list). Callers treat
+    it as "this input didn't have what the expression asked for" rather than an
+    unexpected crash.
+    """
+
+
+def _fromjson(value: object) -> Any:
+    """Jinja2 filter: parse a JSON string into a Python object.
+
+    Raises ``JinjaExtractionError`` on non-string input or invalid JSON.
+    """
+    if not isinstance(value, str):
+        raise JinjaExtractionError(
+            f"fromjson filter expected a string, got {type(value).__name__}"
+        )
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as e:
+        raise JinjaExtractionError(f"value is not valid JSON: {e}") from e
+
+
+def _format_trace(value: Any) -> str:
+    """Jinja2 filter: render a conversation trace as the canonical
+    role-labelled transcript (EvalTraceFormatter's format).
+
+    Templates over ``EvalTaskInput`` use ``{{ trace | format_trace }}`` so an
+    LLM sees the same human-readable transcript everywhere the trace is
+    rendered, instead of raw message JSON.
+
+    Raises ``JinjaExtractionError`` when the value isn't a message list.
+    """
+    # Local import: jinja_engine is a low-level util imported by datamodel
+    # modules; importing the formatter at module scope would be circular.
+    from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import (
+        EvalTraceFormatter,
+    )
+
+    if not isinstance(value, list):
+        raise JinjaExtractionError(
+            f"format_trace filter expected a list of messages, got {type(value).__name__}"
+        )
+    for index, message in enumerate(value):
+        if not isinstance(message, dict):
+            # Name the offending member, not the container — "got list" would
+            # hide which message is malformed.
+            raise JinjaExtractionError(
+                f"format_trace filter expected a list of messages, but message "
+                f"{index} is {type(message).__name__}, not a dict"
+            )
+    try:
+        # Loose dicts are the runtime reality for traces; the formatter reads
+        # them like its typed message params.
+        return EvalTraceFormatter.trace_to_formatted_conversation_history(value)
+    except Exception as e:
+        # Traces arrive as loose dicts; a malformed message (e.g. missing
+        # 'role') must surface as an extraction error the evaluator can treat
+        # as a skip, not an unhandled crash mid-render.
+        raise JinjaExtractionError(
+            f"trace is not a renderable message list: {e}"
+        ) from e
 
 
 _template_env = SandboxedEnvironment(
@@ -32,12 +100,16 @@ _template_env = SandboxedEnvironment(
     trim_blocks=True,
     lstrip_blocks=True,
 )
+_template_env.filters["fromjson"] = _fromjson
+_template_env.filters["format_trace"] = _format_trace
 
 _expression_env = SandboxedEnvironment(
     undefined=Undefined,
     trim_blocks=True,
     lstrip_blocks=True,
 )
+_expression_env.filters["fromjson"] = _fromjson
+_expression_env.filters["format_trace"] = _format_trace
 
 
 def compile_template_or_raise(template: str) -> None:
@@ -60,14 +132,29 @@ def compile_expression_or_raise(expression: str) -> None:
         ) from e
 
 
+def expression_variables(expression: str) -> set[str]:
+    """Return the namespace variables a Jinja2 expression reads.
+
+    An expression is not a template -- ``final_message.strip()`` parsed as a
+    template is just literal text with no variables -- so it is wrapped in an
+    output block before the AST walk. Raises ValueError on syntax error.
+    """
+    from jinja2 import meta
+
+    try:
+        ast = _expression_env.parse("{{ " + expression + " }}")
+    except TemplateSyntaxError as e:
+        raise ValueError(
+            f"Invalid Jinja2 expression: {e.message} (line {e.lineno})"
+        ) from e
+    return meta.find_undeclared_variables(ast)
+
+
 def render_input_transform(
     transform: InputTransform,
     task_input: Any,
 ) -> str:
-    """Render the transform against the task input, returning the first-user-message string.
-
-    See specs/projects/templates/functional_spec.md section 5 for the input-handling rules.
-    """
+    """Render the transform against the task input, returning the first-user-message string."""
     from kiln_ai.datamodel.input_transform import JinjaInputTransform
 
     if isinstance(transform, JinjaInputTransform):
@@ -83,6 +170,7 @@ def extract(expression: str, data: dict) -> Any:
     - Missing keys return Undefined (not None, not a raise).
     - Explicit null values return None.
     - Generators are auto-materialized to lists.
+    - Operating on a missing value raises JinjaExtractionError, never UndefinedError.
     """
     try:
         compiled = _expression_env.compile_expression(
@@ -92,14 +180,24 @@ def extract(expression: str, data: dict) -> Any:
         raise ValueError(
             f"Invalid Jinja2 expression: {e.message} (line {e.lineno})"
         ) from e
-    result = compiled(**data)
-    if isinstance(result, types.GeneratorType):
-        result = list(result)
+    try:
+        result = compiled(**data)
+        # Materializing inside the try is load-bearing: map/selectattr/groupby
+        # return lazy generators, so their per-item lookups don't run until
+        # list() does. A missing field there raises here, not above.
+        if isinstance(result, types.GeneratorType):
+            result = list(result)
+    except UndefinedError as e:
+        # A single missing lookup yields Undefined, but any further operation on
+        # it (attribute access, indexing, a filter) raises. That's still just
+        # missing data, so surface it as an extraction error callers handle --
+        # keeping Jinja's message, which names the field that wasn't there.
+        raise JinjaExtractionError(str(e)) from e
     return result
 
 
 def _build_namespace(task_input: Any) -> dict:
-    """Build the rendering namespace per functional_spec section 5.
+    """Build the rendering namespace.
 
     The template always sees a single variable ``input``.
     For plaintext (str) inputs, try json.loads(); fall back to the raw string.

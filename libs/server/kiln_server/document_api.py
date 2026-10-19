@@ -65,6 +65,7 @@ from kiln_ai.datamodel.extraction import (
     get_kind_from_mime_type,
 )
 from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.reranker import (
     CohereCompatibleProperties,
@@ -93,6 +94,7 @@ from pydantic import BaseModel, Field, PositiveInt, model_validator
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
+from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     DENY_AGENT,
@@ -333,6 +335,10 @@ class RagConfigWithSubConfigs(BaseModel):
     tags: list[str] | None = Field(
         default=None, description="Tags for document filtering."
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this RAG config exists and what it was derived from.",
+    )
 
 
 class CreateRagConfigRequest(BaseModel):
@@ -369,6 +375,10 @@ class CreateRagConfigRequest(BaseModel):
     tags: list[str] | None = Field(
         description="List of document tags to filter by. If None, all documents in the project are used.",
         default=None,
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this RAG config exists and what it was derived from.",
     )
 
 
@@ -416,6 +426,10 @@ class CreateChunkerConfigRequest(BaseModel):
             discriminator="chunker_type",
         )
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this chunker config exists and what it was derived from.",
+    )
 
     def get_properties_for_chunker_type(
         self,
@@ -458,6 +472,10 @@ class CreateEmbeddingConfigRequest(BaseModel):
     properties: EmbeddingProperties = Field(
         default_factory=lambda: {},
         description="Properties to be used to execute the embedding config.",
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this embedding config exists and what it was derived from.",
     )
 
     @model_validator(mode="after")
@@ -521,6 +539,10 @@ class CreateVectorStoreConfigRequest(BaseModel):
         | LanceDBConfigHybridPropertiesPublic
     ) = Field(
         description="The properties of the vector store config, specific to the selected store_type."
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this vector store config exists and what it was derived from.",
     )
 
     def get_properties_for_store_type(
@@ -592,6 +614,10 @@ class CreateRerankerConfigRequest(BaseModel):
             type=RerankerType.COHERE_COMPATIBLE,
         ),
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this reranker config exists and what it was derived from.",
+    )
 
     @model_validator(mode="after")
     def validate_properties(self):
@@ -645,6 +671,10 @@ class CreateExtractorConfigRequest(BaseModel):
     )
     properties: LitellmExtractorConfigProperties = Field(
         description="The properties of the extractor config, specific to the selected extractor_type.",
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this extractor config exists and what it was derived from.",
     )
 
     @model_validator(mode="after")
@@ -942,7 +972,12 @@ def get_documents_filtered(
     project: Project,
     exclude_extracted_by_extractor_config_id: str | None = None,
     target_tags: list[str] | None = None,
+    target_document_ids: list[str] | None = None,
 ) -> list[Document]:
+    # An explicit id allow-list scopes the run to specific documents (used when
+    # the caller knows exactly which documents to extract and doesn't want to
+    # tag them just to select them).
+    document_id_set = set(target_document_ids) if target_document_ids else None
     documents: list[Document] = []
     for document in project.documents(readonly=True):
         # no tags target every document
@@ -950,6 +985,9 @@ def get_documents_filtered(
             tag in (document.tags or []) for tag in target_tags
         )
         if not is_target_document:
+            continue
+
+        if document_id_set is not None and document.id not in document_id_set:
             continue
 
         if exclude_extracted_by_extractor_config_id:
@@ -1343,6 +1381,13 @@ def connect_document_api(app: FastAPI):
             extractor_type=properties["extractor_type"],
             properties=request.get_properties(),
             is_archived=False,
+            provenance=request.provenance,
+        )
+        validate_provenance_or_400(
+            extractor_config.provenance,
+            extractor_config.id,
+            ExtractorConfig,
+            project.path,
         )
         extractor_config.save_to_file()
 
@@ -1408,11 +1453,22 @@ def connect_document_api(app: FastAPI):
             str | None,
             Query(description="Comma-separated list of tags to filter documents by."),
         ] = None,
+        document_ids: Annotated[
+            str | None,
+            Query(
+                description="Comma-separated list of document ids to filter by. Combined (AND) with tags when both are set."
+            ),
+        ] = None,
     ) -> StreamingResponse:
         save_context = build_save_context(request)
         target_tags: list[str] | None = None
         if tags:
             target_tags = parse_comma_separated_tags(tags)
+        target_document_ids: list[str] | None = None
+        if document_ids:
+            target_document_ids = [
+                doc_id.strip() for doc_id in document_ids.split(",") if doc_id.strip()
+            ]
         # the extractor may also run as part of a RAG config run, and we cannot have concurrent runs or we risk
         # having duplicate extractions
         async with shared_async_lock_manager.acquire(
@@ -1438,6 +1494,7 @@ def connect_document_api(app: FastAPI):
                 project,
                 exclude_extracted_by_extractor_config_id=extractor_config_id,
                 target_tags=target_tags,
+                target_document_ids=target_document_ids,
             )
 
             extractor_runner = ExtractorRunner(
@@ -1947,6 +2004,13 @@ def connect_document_api(app: FastAPI):
             description=request.description,
             chunker_type=request.chunker_type,
             properties=request.get_properties_for_chunker_type(),
+            provenance=request.provenance,
+        )
+        validate_provenance_or_400(
+            chunker_config.provenance,
+            chunker_config.id,
+            ChunkerConfig,
+            project.path,
         )
         chunker_config.save_to_file()
 
@@ -1990,6 +2054,13 @@ def connect_document_api(app: FastAPI):
             model_provider_name=request.model_provider_name,
             model_name=request.model_name,
             properties=request.properties,
+            provenance=request.provenance,
+        )
+        validate_provenance_or_400(
+            embedding_config.provenance,
+            embedding_config.id,
+            EmbeddingConfig,
+            project.path,
         )
         embedding_config.save_to_file()
 
@@ -2029,6 +2100,13 @@ def connect_document_api(app: FastAPI):
             model_provider_name=request.model_provider_name,
             model_name=request.model_name,
             properties=request.get_reranker_config_properties(),
+            provenance=request.provenance,
+        )
+        validate_provenance_or_400(
+            reranker_config.provenance,
+            reranker_config.id,
+            RerankerConfig,
+            project.path,
         )
         reranker_config.save_to_file()
 
@@ -2090,6 +2168,13 @@ def connect_document_api(app: FastAPI):
             description=request.description,
             store_type=request.store_type,
             properties=request.get_properties_for_store_type(),
+            provenance=request.provenance,
+        )
+        validate_provenance_or_400(
+            vector_store_config.provenance,
+            vector_store_config.id,
+            VectorStoreConfig,
+            project.path,
         )
         vector_store_config.save_to_file()
 
@@ -2207,6 +2292,13 @@ def connect_document_api(app: FastAPI):
             vector_store_config_id=vector_store_config.id,
             reranker_config_id=reranker_config.id if reranker_config else None,
             tags=request.tags,
+            provenance=request.provenance,
+        )
+        validate_provenance_or_400(
+            rag_config.provenance,
+            rag_config.id,
+            RagConfig,
+            project.path,
         )
         rag_config.save_to_file()
 
@@ -2290,6 +2382,7 @@ def connect_document_api(app: FastAPI):
                     embedding_config=embedding_config,
                     vector_store_config=vector_store_config,
                     reranker_config=reranker_config,
+                    provenance=rag_config.provenance,
                 )
             )
 
@@ -2373,6 +2466,7 @@ def connect_document_api(app: FastAPI):
             vector_store_config=vector_store_config,
             reranker_config=reranker_config,
             tags=rag_config.tags,
+            provenance=rag_config.provenance,
         )
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better

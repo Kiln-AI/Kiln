@@ -4,15 +4,18 @@ import logging
 import os
 import shutil
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi import Path as FastAPIPath
 from fastapi.responses import HTMLResponse
-from kiln_ai.utils.config import Config
 from kiln_ai.utils.project_utils import (
     DuplicateProjectError,
     check_duplicate_project_id,
+    remove_project_from_config,
+)
+from kiln_ai.utils.project_utils import (
+    project_from_id as project_from_id_core,
 )
 from kiln_server.project_api import (
     add_project_to_config,
@@ -20,7 +23,7 @@ from kiln_server.project_api import (
     project_from_id,
 )
 from kiln_server.utils.agent_checks import DENY_AGENT
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.desktop.git_sync.clone import (
     clone_repo,
@@ -39,7 +42,6 @@ from app.desktop.git_sync.config import (
     project_path_from_id,
     save_git_sync_config,
 )
-from app.desktop.git_sync.registry import GitSyncRegistry
 from app.desktop.git_sync.oauth import (
     OAuthError,
     OAuthFlowManager,
@@ -50,6 +52,7 @@ from app.desktop.git_sync.oauth import (
     resolve_github_owner_id,
     resolve_github_repo_id,
 )
+from app.desktop.git_sync.registry import GitSyncRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +167,10 @@ class TestAccessResponse(BaseModel):
         default=False,
         description="True when the failure is due to missing authentication.",
     )
+    write_denied: bool = Field(
+        default=False,
+        description="True when the user authenticated but the remote rejected the push due to insufficient write permissions.",
+    )
     auth_method: str | None = Field(
         default=None,
         description="Auth method that succeeded: 'system_keys', 'pat_token', or 'github_oauth'. Null on failure.",
@@ -270,9 +277,19 @@ class ProjectInfo(BaseModel):
     """Metadata about a discovered Kiln project."""
 
     path: str = Field(description="Relative path to the project.kiln file.")
-    name: str = Field(description="Project name from the project file.")
-    description: str = Field(description="Project description from the project file.")
+    name: str = Field(default="", description="Project name from the project file.")
+    description: str = Field(
+        default="", description="Project description from the project file."
+    )
     id: str = Field(default="", description="Unique project identifier.")
+
+    # These three are display-only, and they come from project files we did not
+    # write. A null in any one of them used to fail validation for the whole
+    # scanned list, hiding every valid project in the repo, so treat it as blank.
+    @field_validator("name", "description", "id", mode="before")
+    @classmethod
+    def _blank_if_none(cls, value: Any) -> Any:
+        return "" if value is None else value
 
 
 class ScanProjectsResponse(BaseModel):
@@ -304,6 +321,16 @@ class SaveConfigRequest(BaseModel):
     )
     sync_mode: Literal["auto", "manual"] = Field(
         default="auto", description="Sync mode: 'auto' or 'manual'."
+    )
+    remove_conflicting_id: bool = Field(
+        default=False,
+        description="When true and a duplicate project ID conflict is detected, "
+        "remove the existing project registration before saving.",
+    )
+    trusted: bool = Field(
+        default=False,
+        description="Must be true to confirm trust before importing. "
+        "Kiln projects can contain code that runs on your machine.",
     )
 
 
@@ -411,6 +438,13 @@ def _validate_clone_path(clone_path: str) -> Path:
     return resolved
 
 
+async def _deregister_project(project_path: str) -> None:
+    """Remove a project from config and unregister its git-sync manager."""
+    clone_path = remove_project_from_config(project_path)
+    if clone_path is not None:
+        await GitSyncRegistry.unregister(Path(clone_path))
+
+
 def connect_git_sync_api(app: FastAPI):
     @app.post(
         "/api/git_sync/test_access",
@@ -503,16 +537,19 @@ def connect_git_sync_api(app: FastAPI):
         request: TestWriteAccessRequest,
     ) -> TestAccessResponse:
         _validate_clone_path(request.clone_path)
-        success, message = await asyncio.to_thread(
+        success, message, write_denied = await asyncio.to_thread(
             test_write_access,
             Path(request.clone_path),
             request.pat_token,
             request.auth_mode,
             request.oauth_token,
         )
-        auth_required = not success and "auth" in message.lower()
+        auth_required = not success and not write_denied and "auth" in message.lower()
         return TestAccessResponse(
-            success=success, message=message, auth_required=auth_required
+            success=success,
+            message=message,
+            auth_required=auth_required,
+            write_denied=write_denied,
         )
 
     @app.post(
@@ -584,6 +621,11 @@ def connect_git_sync_api(app: FastAPI):
         openapi_extra=DENY_AGENT,
     )
     async def api_save_config(request: SaveConfigRequest) -> GitSyncConfigResponse:
+        if not request.trusted:
+            raise HTTPException(
+                status_code=400,
+                detail="Import cancelled: you must confirm you trust this project before importing. Kiln projects can contain code that runs on your machine.",
+            )
         _validate_clone_path(request.clone_path)
         if Path(request.project_path).is_absolute():
             raise HTTPException(
@@ -602,7 +644,11 @@ def connect_git_sync_api(app: FastAPI):
         try:
             check_duplicate_project_id(request.project_id, full_project_path)
         except DuplicateProjectError as e:
-            raise HTTPException(status_code=409, detail=str(e))
+            if not request.remove_conflicting_id:
+                raise HTTPException(status_code=409, detail=str(e))
+            conflicting = project_from_id_core(request.project_id)
+            if conflicting is not None:
+                await _deregister_project(str(conflicting.path))
 
         project_config = GitSyncProjectConfig(
             sync_mode=request.sync_mode,
@@ -635,9 +681,9 @@ def connect_git_sync_api(app: FastAPI):
         openapi_extra=DENY_AGENT,
     )
     async def api_get_config(
-        project_id: str = FastAPIPath(
-            description="The unique identifier of the project."
-        ),
+        project_id: Annotated[
+            str, FastAPIPath(description="The unique identifier of the project.")
+        ],
     ) -> GitSyncConfigResponse:
         project_path = project_path_from_id(project_id)
         if project_path is None:
@@ -667,9 +713,9 @@ def connect_git_sync_api(app: FastAPI):
     )
     async def api_update_config(
         request: UpdateConfigRequest,
-        project_id: str = FastAPIPath(
-            description="The unique identifier of the project."
-        ),
+        project_id: Annotated[
+            str, FastAPIPath(description="The unique identifier of the project.")
+        ],
     ) -> GitSyncConfigResponse:
         project_path = project_path_from_id(project_id)
         if project_path is None:
@@ -758,22 +804,28 @@ def connect_git_sync_api(app: FastAPI):
         openapi_extra=DENY_AGENT,
     )
     async def api_oauth_callback(
-        state: str = Query(
-            default="",
-            description="OAuth state parameter linking the callback to a pending flow.",
-        ),
-        code: str = Query(
-            default="",
-            description="Authorization code from GitHub to exchange for an access token.",
-        ),
-        error: str = Query(
-            default="",
-            description="Error code returned by GitHub if authorization was denied.",
-        ),
-        error_description: str = Query(
-            default="",
-            description="Human-readable description of the error from GitHub.",
-        ),
+        state: Annotated[
+            str,
+            Query(
+                description="OAuth state parameter linking the callback to a pending flow."
+            ),
+        ] = "",
+        code: Annotated[
+            str,
+            Query(
+                description="Authorization code from GitHub to exchange for an access token."
+            ),
+        ] = "",
+        error: Annotated[
+            str,
+            Query(
+                description="Error code returned by GitHub if authorization was denied."
+            ),
+        ] = "",
+        error_description: Annotated[
+            str,
+            Query(description="Human-readable description of the error from GitHub."),
+        ] = "",
     ) -> HTMLResponse:
         def error_page(msg: str) -> HTMLResponse:
             return HTMLResponse(render_oauth_error_page(msg), status_code=400)
@@ -824,7 +876,9 @@ def connect_git_sync_api(app: FastAPI):
         openapi_extra=DENY_AGENT,
     )
     async def api_oauth_status(
-        state: str = FastAPIPath(description="The OAuth state parameter to check."),
+        state: Annotated[
+            str, FastAPIPath(description="The OAuth state parameter to check.")
+        ],
     ) -> OAuthStatusResponse:
         flow = oauth_manager.get_flow(state)
         if flow is None:
@@ -857,29 +911,13 @@ def connect_git_sync_api(app: FastAPI):
         openapi_extra=DENY_AGENT,
     )
     async def delete_project(
-        project_id: str = FastAPIPath(
-            description="The unique identifier of the project."
-        ),
+        project_id: Annotated[
+            str, FastAPIPath(description="The unique identifier of the project.")
+        ],
     ) -> dict:
         """Removes the project from Kiln but does not delete the files from disk."""
         project = project_from_id(project_id)
-
-        project_path_str = str(project.path)
-
-        projects_before = Config.shared().projects
-        projects_after = [p for p in projects_before if p != project_path_str]
-        Config.shared().save_setting("projects", projects_after)
-
-        git_sync = Config.shared().git_sync_projects or {}
-        clone_path = None
-        if project_path_str in git_sync:
-            clone_path = git_sync[project_path_str].get("clone_path")
-            git_sync.pop(project_path_str)
-            Config.shared().save_setting("git_sync_projects", git_sync)
-
-        if clone_path is not None:
-            await GitSyncRegistry.unregister(Path(clone_path))
-
+        await _deregister_project(str(project.path))
         return {"message": f"Project removed. ID: {project_id}"}
 
     @app.delete(
@@ -889,9 +927,9 @@ def connect_git_sync_api(app: FastAPI):
         openapi_extra=DENY_AGENT,
     )
     async def api_delete_config(
-        project_id: str = FastAPIPath(
-            description="The unique identifier of the project."
-        ),
+        project_id: Annotated[
+            str, FastAPIPath(description="The unique identifier of the project.")
+        ],
     ) -> DeleteConfigResponse:
         project_path = project_path_from_id(project_id)
         if project_path is None:

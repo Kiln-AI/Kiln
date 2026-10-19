@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "195466462982",
+  "created_at": "2026-08-17T21:33:03.734614Z",
+  "created_by": "root",
+  "dataset_id": "170843774961",
+  "task_run_config_id": "177167545173",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"Deleted a project by mistake — can you restore it?\", \"body\": \"I was cleaning up old workspaces and deleted \\\"Q3 Pipeline\\\" instead of \\\"Q3 Pipeline (old)\\\". It had about eighteen months of records in it. Is there a restore window, or is that data gone? This is the one our board reporting runs off.\", \"customer_plan\": \"enterprise\"}",
+  "output": "{\"team\": \"technical_support\", \"priority\": \"high\", \"needs_human_review\": true, \"summary\": \"Enterprise customer accidentally deleted their 'Q3 Pipeline' project containing 18 months of board reporting data and needs urgent restore assistance — requires human intervention to check restore window and recover data.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output is correct.\n\n1. **Desired behaviour:** The task says to escalate to a human when the ticket mentions data loss, billing disputes, or security concerns. This ticket is about a customer accidentally deleting 18 months of important project data and asking whether it can be restored. That is a data-loss situation, so `needs_human_review: true` is appropriate.\n\n2. **Comparison to correct examples:** It is similar to cases requiring human review because the issue involves potential permanent data loss and a restore action, not a routine how-to or ordinary bug report.\n\n3. **Comparison to incorrect examples:** It is not a case where the model ignored a security issue, over-flagged a routine request, or flagged solely because of urgency. The data-loss escalation is justified by the task instructions.\n\n4. **Verdict:** The model exhibits the desired behaviour and passes.\n\n**Pass.**",
+    "reasoning": "We need to answer with final result. Since pass."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 257,
+    "output_tokens": 163,
+    "total_tokens": 420,
+    "cost": 0.00008162,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 4184
+  },
+  "model_type": "eval_run"
+}

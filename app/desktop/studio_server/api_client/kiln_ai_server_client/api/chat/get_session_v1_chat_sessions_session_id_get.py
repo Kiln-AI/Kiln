@@ -20,6 +20,7 @@ from ...models.get_session_v1_chat_sessions_session_id_get_response_500 import (
     GetSessionV1ChatSessionsSessionIdGetResponse500,
 )
 from ...models.http_validation_error import HTTPValidationError
+from ...models.unauthorized_response import UnauthorizedResponse
 from ...types import Response
 
 
@@ -46,6 +47,7 @@ def _parse_response(
     | GetSessionV1ChatSessionsSessionIdGetResponse426
     | GetSessionV1ChatSessionsSessionIdGetResponse500
     | HTTPValidationError
+    | UnauthorizedResponse
     | None
 ):
     if response.status_code == 200:
@@ -57,6 +59,11 @@ def _parse_response(
         response_400 = GetSessionV1ChatSessionsSessionIdGetResponse400.from_dict(response.json())
 
         return response_400
+
+    if response.status_code == 401:
+        response_401 = UnauthorizedResponse.from_dict(response.json())
+
+        return response_401
 
     if response.status_code == 404:
         response_404 = GetSessionV1ChatSessionsSessionIdGetResponse404.from_dict(response.json())
@@ -93,6 +100,7 @@ def _build_response(
     | GetSessionV1ChatSessionsSessionIdGetResponse426
     | GetSessionV1ChatSessionsSessionIdGetResponse500
     | HTTPValidationError
+    | UnauthorizedResponse
 ]:
     return Response(
         status_code=HTTPStatus(response.status_code),
@@ -113,6 +121,7 @@ def sync_detailed(
     | GetSessionV1ChatSessionsSessionIdGetResponse426
     | GetSessionV1ChatSessionsSessionIdGetResponse500
     | HTTPValidationError
+    | UnauthorizedResponse
 ]:
     """Get Session
 
@@ -124,7 +133,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ChatSnapshot | GetSessionV1ChatSessionsSessionIdGetResponse400 | GetSessionV1ChatSessionsSessionIdGetResponse404 | GetSessionV1ChatSessionsSessionIdGetResponse426 | GetSessionV1ChatSessionsSessionIdGetResponse500 | HTTPValidationError]
+        Response[ChatSnapshot | GetSessionV1ChatSessionsSessionIdGetResponse400 | GetSessionV1ChatSessionsSessionIdGetResponse404 | GetSessionV1ChatSessionsSessionIdGetResponse426 | GetSessionV1ChatSessionsSessionIdGetResponse500 | HTTPValidationError | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -149,6 +158,7 @@ def sync(
     | GetSessionV1ChatSessionsSessionIdGetResponse426
     | GetSessionV1ChatSessionsSessionIdGetResponse500
     | HTTPValidationError
+    | UnauthorizedResponse
     | None
 ):
     """Get Session
@@ -161,7 +171,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ChatSnapshot | GetSessionV1ChatSessionsSessionIdGetResponse400 | GetSessionV1ChatSessionsSessionIdGetResponse404 | GetSessionV1ChatSessionsSessionIdGetResponse426 | GetSessionV1ChatSessionsSessionIdGetResponse500 | HTTPValidationError
+        ChatSnapshot | GetSessionV1ChatSessionsSessionIdGetResponse400 | GetSessionV1ChatSessionsSessionIdGetResponse404 | GetSessionV1ChatSessionsSessionIdGetResponse426 | GetSessionV1ChatSessionsSessionIdGetResponse500 | HTTPValidationError | UnauthorizedResponse
     """
 
     return sync_detailed(
@@ -181,6 +191,7 @@ async def asyncio_detailed(
     | GetSessionV1ChatSessionsSessionIdGetResponse426
     | GetSessionV1ChatSessionsSessionIdGetResponse500
     | HTTPValidationError
+    | UnauthorizedResponse
 ]:
     """Get Session
 
@@ -192,7 +203,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ChatSnapshot | GetSessionV1ChatSessionsSessionIdGetResponse400 | GetSessionV1ChatSessionsSessionIdGetResponse404 | GetSessionV1ChatSessionsSessionIdGetResponse426 | GetSessionV1ChatSessionsSessionIdGetResponse500 | HTTPValidationError]
+        Response[ChatSnapshot | GetSessionV1ChatSessionsSessionIdGetResponse400 | GetSessionV1ChatSessionsSessionIdGetResponse404 | GetSessionV1ChatSessionsSessionIdGetResponse426 | GetSessionV1ChatSessionsSessionIdGetResponse500 | HTTPValidationError | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -215,6 +226,7 @@ async def asyncio(
     | GetSessionV1ChatSessionsSessionIdGetResponse426
     | GetSessionV1ChatSessionsSessionIdGetResponse500
     | HTTPValidationError
+    | UnauthorizedResponse
     | None
 ):
     """Get Session
@@ -227,7 +239,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ChatSnapshot | GetSessionV1ChatSessionsSessionIdGetResponse400 | GetSessionV1ChatSessionsSessionIdGetResponse404 | GetSessionV1ChatSessionsSessionIdGetResponse426 | GetSessionV1ChatSessionsSessionIdGetResponse500 | HTTPValidationError
+        ChatSnapshot | GetSessionV1ChatSessionsSessionIdGetResponse400 | GetSessionV1ChatSessionsSessionIdGetResponse404 | GetSessionV1ChatSessionsSessionIdGetResponse426 | GetSessionV1ChatSessionsSessionIdGetResponse500 | HTTPValidationError | UnauthorizedResponse
     """
 
     return (

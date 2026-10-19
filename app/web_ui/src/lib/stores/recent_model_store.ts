@@ -28,7 +28,6 @@ export function addRecentModel(
   }
 
   recent_model_store.update((current_models) => {
-    // Remove any existing entry with the same model_id and model_provider
     const filtered_models = current_models.filter(
       (model) =>
         !(
@@ -36,13 +35,11 @@ export function addRecentModel(
         ),
     )
 
-    // Add the new model to the front of the list
     const updated_models = [
       { model_id, model_provider, provider_display_name },
       ...filtered_models,
     ]
 
-    // Keep only the first 5 items (most recent)
     return updated_models.slice(0, 5)
   })
 }

@@ -2,10 +2,10 @@ from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
-from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.ml_model_list import (
     default_structured_output_mode_for_model_provider,
 )
+from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.repair.repair_task import RepairTaskRun
 from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
@@ -198,6 +198,5 @@ def connect_repair_api(app: FastAPI):
         updated_run = TaskRun.model_validate(updated_data)
         updated_run.path = run.path
 
-        # Save the updated run
         updated_run.save_to_file()
         return updated_run

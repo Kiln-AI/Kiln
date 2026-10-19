@@ -10,8 +10,10 @@ from litellm.types.utils import (
     Function,
     ModelResponse,
 )
+from litellm.types.utils import Message as LiteLLMMessage
 
 from kiln_ai.adapters.ml_model_list import (
+    KilnModelProvider,
     ModelName,
     ModelProviderName,
     StructuredOutputMode,
@@ -359,8 +361,10 @@ async def test_json_schema_response_format_adds_required_to_nested(config, tmp_p
         (ModelProviderName.huggingface, "huggingface"),
         (ModelProviderName.vertex, "vertex_ai"),
         (ModelProviderName.together_ai, "together_ai"),
+        (ModelProviderName.featherless_ai, "featherless_ai"),
         # for openai-compatible providers, we expect openai as the provider name
         (ModelProviderName.siliconflow_cn, "openai"),
+        (ModelProviderName.cloudflare, "openai"),
     ],
 )
 def test_litellm_model_id_standard_providers(
@@ -450,6 +454,21 @@ def test_litellm_model_id_caching(config, mock_task):
 
     assert model_id == "cached-value"
     mock_model_provider.assert_not_called()
+
+
+def test_litellm_model_id_typesafe_not_supported(config, mock_task):
+    """TypeSafe AI is served by its own adapter, so LiteLLM must refuse to map it."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.typesafe
+    mock_provider.model_id = "jev-1.13.0"
+
+    with patch.object(adapter, "model_provider", return_value=mock_provider):
+        with pytest.raises(
+            ValueError, match="TypeSafe AI models do not run through LiteLLM"
+        ):
+            adapter.litellm_model_id()
 
 
 def test_litellm_model_id_unknown_provider(config, mock_task):
@@ -552,6 +571,62 @@ def test_build_extra_body_thinking_level_openrouter_anthropic(config, mock_task)
 
     assert extra_body.get("reasoning") == {"effort": "high"}
     assert "reasoning_effort" not in extra_body
+
+
+def test_build_extra_body_thinking_level_anthropic_summarized_thinking(
+    config, mock_task
+):
+    """Opus 4.7/4.8 default thinking display to "omitted" (empty thinking text), so
+    anthropic_summarized_thinking adds an adaptive thinking object requesting the summary
+    alongside reasoning_effort (which litellm maps to output_config.effort)."""
+    config.run_config_properties.thinking_level = "high"
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.anthropic
+    mock_provider.model_id = "claude-opus-4-8"
+    mock_provider.available_thinking_levels = {"High": "high"}
+    mock_provider.anthropic_summarized_thinking = True
+    mock_provider.openrouter_reasoning_object = False
+    mock_provider.default_thinking_level = None
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert extra_body.get("reasoning_effort") == "high"
+    assert extra_body.get("thinking") == {"type": "adaptive", "display": "summarized"}
+
+
+def test_build_extra_body_thinking_level_anthropic_none(config, mock_task):
+    """Anthropic's native API has no reasoning_effort="none" (litellm crashes on it),
+    so a "none" thinking level must omit reasoning_effort entirely to disable thinking."""
+    config.run_config_properties.thinking_level = "none"
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.anthropic
+    mock_provider.model_id = "claude-opus-4-8"
+    mock_provider.available_thinking_levels = {"Off/None": "none", "High": "high"}
+    mock_provider.openrouter_reasoning_object = False
+    mock_provider.default_thinking_level = None
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert "reasoning_effort" not in extra_body
+    assert "reasoning" not in extra_body
 
 
 def test_build_extra_body_thinking_level_run_config_override(config, mock_task):
@@ -1070,6 +1145,92 @@ def test_allowed_openai_params_raises_for_non_string_items(config, mock_task):
         adapter._allowed_openai_params_for_completion_kwargs(
             {"allowed_openai_params": ["valid", 123]}
         )
+
+
+def _reasoning_history_messages() -> list:
+    return [
+        {"role": "user", "content": "hi"},
+        LiteLLMMessage(
+            role="assistant",
+            content="hello",
+            reasoning_content="thinking",
+            provider_specific_fields={"reasoning": "thinking", "refusal": None},
+        ),
+        {
+            "role": "assistant",
+            "content": None,
+            "reasoning_content": "thinking",
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "add", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "content": "2", "tool_call_id": "c1"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_strips_reasoning_fields_for_cerebras(
+    config, mock_task
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.cerebras
+    mock_provider.temp_top_p_exclusive = False
+    messages = _reasoning_history_messages()
+    original = copy.deepcopy(messages)
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="cerebras/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    assert kwargs["messages"] == [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "add", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "content": "2", "tool_call_id": "c1"},
+    ]
+    assert messages == original
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_keeps_reasoning_fields_for_other_providers(
+    config, mock_task
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.openrouter
+    mock_provider.temp_top_p_exclusive = False
+    messages = _reasoning_history_messages()
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openrouter/test"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    assert kwargs["messages"][1] is messages[1]
+    assert kwargs["messages"][1].reasoning_content == "thinking"
+    assert kwargs["messages"][2]["reasoning_content"] == "thinking"
 
 
 @pytest.mark.asyncio
@@ -3181,3 +3342,128 @@ class TestUsageTracking:
         assert new_usage.input_tokens == 3
         assert new_usage.output_tokens == 4
         assert new_usage.cost == 0.05
+
+
+class TestEmptyResponseErrors:
+    """Empty-content responses should raise a clear, finish_reason-aware error."""
+
+    @pytest.fixture
+    def adapter(self, config, mock_task):
+        return LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    @pytest.fixture
+    def provider(self):
+        return KilnModelProvider(
+            name=ModelProviderName.openrouter, model_id="test-model"
+        )
+
+    def _empty_response(self, finish_reason):
+        return ModelResponse(
+            model="test-model",
+            choices=[
+                {
+                    "message": {"content": None, "tool_calls": None},
+                    "finish_reason": finish_reason,
+                }
+            ],
+        )
+
+    @pytest.mark.asyncio
+    async def test_content_filter_raises_specific_error(self, adapter, provider):
+        response = self._empty_response("content_filter")
+        with patch.object(adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                adapter,
+                "acompletion_checking_response",
+                return_value=(response, response.choices[0]),
+            ):
+                with pytest.raises(
+                    ValueError, match="content-filter/refusal"
+                ) as exc_info:
+                    await adapter._run_model_turn(
+                        provider, [{"role": "user", "content": "Hi"}], None, False
+                    )
+        # It must NOT be the generic message.
+        assert "no content or tool calls" not in str(exc_info.value)
+        assert "finish_reason='content_filter'" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_refusal_finish_reason_raises_specific_error(self, adapter, provider):
+        response = self._empty_response("refusal")
+        with patch.object(adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                adapter,
+                "acompletion_checking_response",
+                return_value=(response, response.choices[0]),
+            ):
+                with pytest.raises(
+                    ValueError, match="content-filter/refusal"
+                ) as exc_info:
+                    await adapter._run_model_turn(
+                        provider, [{"role": "user", "content": "Hi"}], None, False
+                    )
+        # LiteLLM normalizes a "refusal" stop reason to finish_reason='content_filter'
+        # on a real ModelResponse; the actual (normalized) value is interpolated.
+        assert "finish_reason='content_filter'" in str(exc_info.value)
+        assert "no content or tool calls" not in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_message_refusal_field_raises_specific_error(self, adapter, provider):
+        # OpenAI can signal a refusal via message.refusal while finish_reason='stop'.
+        response = ModelResponse(
+            model="test-model",
+            choices=[
+                {
+                    "message": {
+                        "content": None,
+                        "tool_calls": None,
+                        "refusal": "I cannot help with that request.",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+        )
+        with patch.object(adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                adapter,
+                "acompletion_checking_response",
+                return_value=(response, response.choices[0]),
+            ):
+                with pytest.raises(
+                    ValueError, match="content-filter/refusal"
+                ) as exc_info:
+                    await adapter._run_model_turn(
+                        provider, [{"role": "user", "content": "Hi"}], None, False
+                    )
+        assert "no content or tool calls" not in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_normal_finish_reason_raises_generic_error(self, adapter, provider):
+        response = self._empty_response("stop")
+        with patch.object(adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                adapter,
+                "acompletion_checking_response",
+                return_value=(response, response.choices[0]),
+            ):
+                with pytest.raises(
+                    ValueError, match="no content or tool calls"
+                ) as exc_info:
+                    await adapter._run_model_turn(
+                        provider, [{"role": "user", "content": "Hi"}], None, False
+                    )
+        assert "content-filter/refusal" not in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_missing_finish_reason_raises_generic_error(self, adapter, provider):
+        response = self._empty_response(None)
+        with patch.object(adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                adapter,
+                "acompletion_checking_response",
+                return_value=(response, response.choices[0]),
+            ):
+                with pytest.raises(ValueError, match="no content or tool calls"):
+                    await adapter._run_model_turn(
+                        provider, [{"role": "user", "content": "Hi"}], None, False
+                    )

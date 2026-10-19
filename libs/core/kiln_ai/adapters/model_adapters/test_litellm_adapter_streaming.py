@@ -6,8 +6,13 @@ from unittest.mock import AsyncMock, patch
 
 import litellm
 import pytest
-from litellm.types.utils import ChatCompletionDeltaToolCall
+from litellm.types.utils import (
+    ChatCompletionDeltaToolCall,
+    ChatCompletionMessageToolCall,
+    Function,
+)
 
+from kiln_ai.adapters.litellm_utils.tool_calls import MISSING_TOOL_NAME_ERROR
 from kiln_ai.adapters.ml_model_list import ModelProviderName, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
@@ -16,14 +21,18 @@ from kiln_ai.adapters.model_adapters.stream_events import (
     AiSdkEventType,
     AiSdkStreamEvent,
     FinishEvent,
+    ToolInputAvailableEvent,
+    ToolOutputAvailableEvent,
+    ToolOutputErrorEvent,
 )
 from kiln_ai.adapters.model_adapters.test_adapter_stream import (
     FakeStreamingCompletion,
     _make_model_response,
+    _make_raw_tool_call,
     _make_streaming_chunk,
     _make_tool_call,
 )
-from kiln_ai.datamodel import Project, PromptGenerators, Task
+from kiln_ai.datamodel import Project, PromptGenerators, Task, TaskRun
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.pytest_test_output import make_test_output_dir
@@ -177,6 +186,7 @@ def adapter_factory(
 
 
 @pytest.mark.paid
+@pytest.mark.prerelease
 @pytest.mark.parametrize("model_id,provider_name,thinking_level", STREAMING_MODELS)
 async def test_invoke_openai_stream_chunks(
     request: pytest.FixtureRequest,
@@ -243,6 +253,7 @@ async def test_invoke_openai_stream_chunks(
 
 
 @pytest.mark.paid
+@pytest.mark.prerelease
 @pytest.mark.parametrize("model_id,provider_name,thinking_level", STREAMING_MODELS)
 async def test_invoke_ai_sdk_stream(
     request: pytest.FixtureRequest,
@@ -829,7 +840,9 @@ async def test_invoke_structured_output_with_return_on_tool_call_and_resume(
 # ── Mocked variants (CI-friendly, no real API calls) ──────────────────────────
 
 
-def _make_mocked_adapter(task: Task, structured: bool = False) -> LiteLlmAdapter:
+def _make_mocked_adapter(
+    task: Task, structured: bool = False, return_on_tool_call: bool = True
+) -> LiteLlmAdapter:
     """Create a LiteLlmAdapter backed by openai_compatible for use with mocked API calls."""
     return LiteLlmAdapter(
         kiln_task=task,
@@ -854,7 +867,7 @@ def _make_mocked_adapter(task: Task, structured: bool = False) -> LiteLlmAdapter
                 ),
             ),
         ),
-        base_adapter_config=AdapterConfig(return_on_tool_call=True),
+        base_adapter_config=AdapterConfig(return_on_tool_call=return_on_tool_call),
     )
 
 
@@ -1016,3 +1029,213 @@ async def test_mocked_invoke_structured_output_with_return_on_tool_call_and_resu
     assert "sentence" in output
 
     _assert_completed_tool_trace(task_run2.trace, ["call_mock_multiply"])
+
+
+async def test_mocked_ai_sdk_stream_failing_tool_call_is_non_fatal(task: Task):
+    """A tool that raises becomes a tool-output-error event; the other call in the
+    turn keeps its result and the run continues to a final answer."""
+    adapter = _make_mocked_adapter(task, return_on_tool_call=False)
+
+    tool_call_response = _make_model_response(
+        content=None,
+        tool_calls=[
+            _make_tool_call(
+                call_id="call_multiply", name="multiply", arguments={"a": 3, "b": 7}
+            ),
+            _make_tool_call(
+                call_id="call_divide", name="divide", arguments={"a": 1, "b": 0}
+            ),
+        ],
+    )
+    final_content = "3 times 7 is 21, and 1 divided by 0 is undefined."
+    streams = iter(
+        [
+            FakeStreamingCompletion(
+                tool_call_response, [_make_streaming_chunk(finish_reason="tool_calls")]
+            ),
+            FakeStreamingCompletion(_make_model_response(content=final_content)),
+        ]
+    )
+
+    with patch(
+        "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+        side_effect=lambda **kw: next(streams),
+    ):
+        stream = adapter.invoke_ai_sdk_stream(input="3 * 7 and 1 / 0")
+        events = [event async for event in stream]
+
+    divide_error = (
+        "Error: tool 'divide' failed unexpectedly and couldn't complete this call."
+    )
+    outputs = [
+        e
+        for e in events
+        if isinstance(e, (ToolOutputAvailableEvent, ToolOutputErrorEvent))
+    ]
+    assert outputs == [
+        ToolOutputAvailableEvent(toolCallId="call_multiply", output="21"),
+        ToolOutputErrorEvent(toolCallId="call_divide", errorText=divide_error),
+    ]
+
+    task_run = stream.task_run
+    assert task_run.output.output == final_content
+    assert task_run.trace is not None
+    assert [m for m in task_run.trace if m["role"] == "tool"] == [
+        {
+            "role": "tool",
+            "tool_call_id": "call_multiply",
+            "content": "21",
+            "kiln_task_tool_data": None,
+            "is_error": None,
+            "error_message": None,
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call_divide",
+            "content": divide_error,
+            "is_error": True,
+            "error_message": divide_error,
+        },
+    ]
+
+
+@pytest.mark.parametrize(
+    "arguments, expected_reason",
+    [
+        pytest.param("[1, 2]", "[1, 2] is not of type 'object'", id="list"),
+        pytest.param(
+            '"{\\"a\\": 1, \\"b\\": 1}"',
+            "'{\"a\": 1, \"b\": 1}' is not of type 'object'",
+            id="double_encoded_string",
+        ),
+    ],
+)
+async def test_mocked_ai_sdk_stream_non_object_arguments_are_non_fatal(
+    task: Task, arguments: str, expected_reason: str
+):
+    """Valid JSON that isn't an object becomes a tool-output-error, and the
+    stream continues to a final answer."""
+    adapter = _make_mocked_adapter(task, return_on_tool_call=False)
+
+    tool_call = ChatCompletionMessageToolCall(
+        id="call_multiply",
+        type="function",
+        function=Function(name="multiply", arguments=arguments),
+    )
+    tool_call_response = _make_model_response(content=None, tool_calls=[tool_call])
+    final_content = "3 times 7 is 21."
+    streams = iter(
+        [
+            FakeStreamingCompletion(
+                tool_call_response, [_make_streaming_chunk(finish_reason="tool_calls")]
+            ),
+            FakeStreamingCompletion(_make_model_response(content=final_content)),
+        ]
+    )
+
+    with patch(
+        "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+        side_effect=lambda **kw: next(streams),
+    ):
+        stream = adapter.invoke_ai_sdk_stream(input="3 * 7 = ?")
+        events = [event async for event in stream]
+
+    input_events = [e for e in events if isinstance(e, ToolInputAvailableEvent)]
+    assert [(e.toolCallId, e.input) for e in input_events] == [("call_multiply", {})]
+    assert [e for e in events if isinstance(e, ToolOutputErrorEvent)] == [
+        ToolOutputErrorEvent(
+            toolCallId="call_multiply",
+            errorText=f"Error: arguments for 'multiply' don't match its schema: {expected_reason}. Call it again with corrected arguments.",
+        )
+    ]
+    assert stream.task_run.output.output == final_content
+
+
+@pytest.mark.parametrize(
+    "arguments", [pytest.param(None, id="null"), pytest.param("", id="empty")]
+)
+async def test_mocked_ai_sdk_stream_null_or_empty_arguments_become_empty_object_and_run_saves(
+    task: Task, arguments: str | None
+):
+    """Null or empty arguments are stored and sent back to the model as "{}",
+    and get the schema error. The stream continues to a final answer, and the
+    saved run reloads."""
+    adapter = _make_mocked_adapter(task, return_on_tool_call=False)
+
+    tool_call_response = _make_model_response(
+        content=None,
+        tool_calls=[_make_raw_tool_call("call_multiply", "multiply", arguments)],
+    )
+    final_content = "3 times 7 is 21."
+    streams = iter(
+        [
+            FakeStreamingCompletion(
+                tool_call_response, [_make_streaming_chunk(finish_reason="tool_calls")]
+            ),
+            FakeStreamingCompletion(_make_model_response(content=final_content)),
+        ]
+    )
+
+    with patch(
+        "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+        side_effect=lambda **kw: next(streams),
+    ) as streaming_completion:
+        stream = adapter.invoke_ai_sdk_stream(input="3 * 7 = ?")
+        events = [event async for event in stream]
+
+    second_call_messages = streaming_completion.call_args_list[1].kwargs["messages"]
+    replayed_tool_call = second_call_messages[-2].tool_calls[0]
+    assert replayed_tool_call.function.arguments == "{}"
+
+    assert [e for e in events if isinstance(e, ToolOutputErrorEvent)] == [
+        ToolOutputErrorEvent(
+            toolCallId="call_multiply",
+            errorText="Error: arguments for 'multiply' don't match its schema: 'a' is a required property. Call it again with corrected arguments.",
+        )
+    ]
+    task_run = stream.task_run
+    assert task_run.output.output == final_content
+    assert task_run.trace is not None
+    assert task_run.trace[2].get("tool_calls") == [
+        {
+            "id": "call_multiply",
+            "type": "function",
+            "function": {"name": "multiply", "arguments": "{}"},
+        }
+    ]
+    assert task_run.path is not None
+    assert TaskRun.load_from_file(task_run.path).trace == task_run.trace
+
+
+async def test_mocked_ai_sdk_stream_tool_call_without_name_fails_before_any_tool_runs(
+    task: Task,
+):
+    adapter = _make_mocked_adapter(task, return_on_tool_call=False)
+
+    tool_call_response = _make_model_response(
+        content=None,
+        tool_calls=[
+            _make_raw_tool_call("call_multiply", "multiply", '{"a": 3, "b": 7}'),
+            _make_raw_tool_call("call_nameless", None, '{"a": 3, "b": 7}'),
+        ],
+    )
+
+    with (
+        patch(
+            "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+            return_value=FakeStreamingCompletion(
+                tool_call_response, [_make_streaming_chunk(finish_reason="tool_calls")]
+            ),
+        ) as streaming_completion,
+        patch.object(
+            adapter, "process_tool_calls", wraps=adapter.process_tool_calls
+        ) as process_tool_calls,
+    ):
+        stream = adapter.invoke_ai_sdk_stream(input="3 * 7 = ?")
+        with pytest.raises(ValueError) as exc_info:
+            async for _ in stream:
+                pass
+
+    assert str(exc_info.value) == MISSING_TOOL_NAME_ERROR
+    assert streaming_completion.call_count == 1
+    process_tool_calls.assert_not_called()

@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -7,6 +7,7 @@ from kiln_ai.utils.project_utils import (
     DuplicateProjectError,
     check_duplicate_project_id,
     project_from_id,
+    remove_project_from_config,
 )
 
 
@@ -122,3 +123,69 @@ class TestCheckDuplicateProjectId:
         with patch("kiln_ai.utils.project_utils.Config.shared") as mock_config:
             mock_config.return_value.projects = []
             check_duplicate_project_id("proj-1", "/path/project.kiln")
+
+
+class TestRemoveProjectFromConfig:
+    def test_removes_project_and_git_sync(self):
+        with patch("kiln_ai.utils.project_utils.Config.shared") as mock_config:
+            mock_config.return_value.projects = [
+                "/path/to/project.kiln",
+                "/path/to/other.kiln",
+            ]
+            mock_config.return_value.git_sync_projects = {
+                "/path/to/project.kiln": {
+                    "clone_path": "/clones/repo",
+                    "branch": "main",
+                },
+                "/path/to/other.kiln": {
+                    "clone_path": "/clones/other",
+                    "branch": "dev",
+                },
+            }
+            mock_config.return_value.save_setting = MagicMock()
+
+            result = remove_project_from_config("/path/to/project.kiln")
+
+        assert result == "/clones/repo"
+        mock_config.return_value.save_setting.assert_any_call(
+            "projects", ["/path/to/other.kiln"]
+        )
+        mock_config.return_value.save_setting.assert_any_call(
+            "git_sync_projects",
+            {"/path/to/other.kiln": {"clone_path": "/clones/other", "branch": "dev"}},
+        )
+
+    def test_non_git_synced_project(self):
+        with patch("kiln_ai.utils.project_utils.Config.shared") as mock_config:
+            mock_config.return_value.projects = ["/path/to/project.kiln"]
+            mock_config.return_value.git_sync_projects = {}
+            mock_config.return_value.save_setting = MagicMock()
+
+            result = remove_project_from_config("/path/to/project.kiln")
+
+        assert result is None
+        mock_config.return_value.save_setting.assert_called_once_with("projects", [])
+
+    def test_missing_project_is_idempotent(self):
+        with patch("kiln_ai.utils.project_utils.Config.shared") as mock_config:
+            mock_config.return_value.projects = ["/path/to/other.kiln"]
+            mock_config.return_value.git_sync_projects = {}
+            mock_config.return_value.save_setting = MagicMock()
+
+            result = remove_project_from_config("/nonexistent/project.kiln")
+
+        assert result is None
+        mock_config.return_value.save_setting.assert_called_once_with(
+            "projects", ["/path/to/other.kiln"]
+        )
+
+    def test_none_projects_list(self):
+        with patch("kiln_ai.utils.project_utils.Config.shared") as mock_config:
+            mock_config.return_value.projects = None
+            mock_config.return_value.git_sync_projects = None
+            mock_config.return_value.save_setting = MagicMock()
+
+            result = remove_project_from_config("/path/to/project.kiln")
+
+        assert result is None
+        mock_config.return_value.save_setting.assert_called_once_with("projects", [])

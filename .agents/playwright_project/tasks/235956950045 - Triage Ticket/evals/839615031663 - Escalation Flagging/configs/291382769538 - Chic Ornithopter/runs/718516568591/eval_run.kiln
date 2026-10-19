@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "718516568591",
+  "created_at": "2026-08-17T21:33:05.461489Z",
+  "created_by": "root",
+  "dataset_id": "267255821357",
+  "task_run_config_id": "293284619675",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"Webhook deliveries silently stopped\", \"body\": \"Our endpoint has not received a webhook since Saturday 02:14 UTC. The delivery log in your dashboard shows no attempts at all — not failures, just nothing. The endpoint is up and responds 200 to a manual POST.\", \"customer_plan\": \"enterprise\"}",
+  "output": "{\"team\": \"technical_support\", \"priority\": \"high\", \"needs_human_review\": false, \"summary\": \"Investigate why webhook deliveries to this enterprise customer's endpoint stopped with zero attempts logged since Saturday 02:14 UTC, despite the endpoint returning 200 to manual POSTs.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output passes.\n\n- The ticket is a normal bug/outage report: webhook deliveries stopped with no attempts logged.\n- It does not involve a security/privacy incident, cross-tenant exposure, suspicious login, billing dispute, legal threat, or customer data loss/deletion.\n- Therefore `needs_human_review: false` is correct, even though the issue is urgent.\n- `team: technical_support` and `priority: high` are reasonable.\n- The summary is one sentence and clearly tells the next agent what to investigate.",
+    "reasoning": "We need to provide final result. The question asks: \"Considering the above, return a final result.\" We need to decide pass/fail. We already reasoned it passes. We should provide concise final answer."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 912,
+    "output_tokens": 623,
+    "total_tokens": 1535,
+    "cost": 0.00030212,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 16145
+  },
+  "model_type": "eval_run"
+}

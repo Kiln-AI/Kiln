@@ -155,12 +155,19 @@ test.describe("Create extractor page", () => {
       page.getByRole("heading", { name: "Create Document Extractor" }),
     ).toBeVisible()
 
-    const advancedToggle = page.getByText("Advanced Options")
-    await expect(advancedToggle).toBeVisible()
-    await advancedToggle
-      .locator("xpath=ancestor::div[contains(@class,'collapse')]")
-      .locator("input[type='checkbox']")
-      .check({ force: true })
+    await expect(page.getByText("Advanced Options")).toBeVisible()
+
+    // Toggle the DaisyUI collapse by clicking its overlay checkbox. Use a normal
+    // (actionability-checked) click rather than `check({ force: true })`: the
+    // app's global loading overlay (+layout.svelte, z-[1000]) can still be
+    // covering the page here, and `force` clicks straight through it onto the
+    // overlay, so the checkbox never toggles ("did not change its state"). A
+    // normal click auto-waits for that overlay to clear before hitting the
+    // checkbox.
+    await page
+      .locator(".collapse", { hasText: "Advanced Options" })
+      .locator('input[type="checkbox"]')
+      .click()
 
     await expect(page.getByText("Document Extraction Prompt")).toBeVisible()
     await expect(page.getByText("Image Extraction Prompt")).toBeVisible()

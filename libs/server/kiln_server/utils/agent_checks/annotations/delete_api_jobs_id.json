@@ -1,0 +1,9 @@
+{
+  "method": "delete",
+  "path": "/api/jobs/{id}",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": true,
+    "approval_description": "Allow agent to control background jobs (pause, resume, cancel, delete)?"
+  }
+}

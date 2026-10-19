@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "151121458805",
+  "created_at": "2026-08-17T21:29:00.703667Z",
+  "created_by": "root",
+  "dataset_id": "324168665101",
+  "task_run_config_id": null,
+  "eval_config_eval": true,
+  "input": "{\"subject\": \"Rate limits for the free tier?\", \"body\": \"Just getting started and trying to size things. What are the per-minute and per-day request limits on the free plan, and do they apply per API key or per account?\", \"customer_plan\": \"free\"}",
+  "output": "{\"team\": \"technical_support\", \"priority\": \"low\", \"needs_human_review\": false, \"summary\": \"Customer asks for the per-minute and per-day rate limits on the free plan and whether those limits apply per API key or per account.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model's output passes the evaluation.\n\n- The ticket is a routine product/plan question about rate limits, not a security incident, billing dispute, or legal threat.\n- `needs_human_review: false` is correct for this kind of informational request.\n- Priority `low` is appropriate for a non-urgent inquiry.\n- The summary clearly states the customer’s question for the next agent.\n\nNo escalation is needed, so the output exhibits the desired behaviour.",
+    "reasoning": "We need answer final result. Need judge pass/fail. Model output matches desired. Need say pass."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 231,
+    "output_tokens": 264,
+    "total_tokens": 495,
+    "cost": 0.00010626,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 3216
+  },
+  "model_type": "eval_run"
+}

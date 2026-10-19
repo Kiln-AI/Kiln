@@ -3,6 +3,14 @@ from datetime import datetime
 from http import HTTPStatus
 from typing import Annotated, Any, NoReturn
 
+import httpx
+from fastapi import FastAPI, HTTPException, Path, Query
+from fastapi.responses import StreamingResponse
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
+from kiln_server.git_sync_decorators import no_write_lock
+from kiln_server.utils.agent_checks.policy import DENY_AGENT
+from pydantic import BaseModel, ConfigDict, ValidationError
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.chat import (
     delete_session_v1_chat_sessions_session_id_delete,
     get_session_v1_chat_sessions_session_id_get,
@@ -25,12 +33,6 @@ from app.desktop.studio_server.chat.stream_session import (
     execute_tool_batch,
 )
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
-from fastapi import FastAPI, HTTPException, Path, Query
-from fastapi.responses import StreamingResponse
-from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
-from kiln_server.git_sync_decorators import no_write_lock
-from kiln_server.utils.agent_checks.policy import DENY_AGENT
-from pydantic import BaseModel, ConfigDict
 
 
 def _build_upstream_headers(api_key: str) -> dict[str, str]:
@@ -64,6 +66,13 @@ class ChatSessionListItem(BaseModel):
     updated_at: datetime | None = None
 
 
+class ClientVersionPolicy(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    required: bool = False
+    upgrade_nudge_version: str | None = None
+
+
 class TraceToolCallFunction(BaseModel):
     name: str
     arguments: str
@@ -83,6 +92,8 @@ class TraceMessage(BaseModel):
     tool_calls: list[TraceToolCall] | None = None
     tool_call_id: str | None = None
     reasoning_content: str | None = None
+    is_error: bool | None = None
+    error_message: str | None = None
 
 
 class TaskRunSnapshot(BaseModel):
@@ -164,6 +175,37 @@ def connect_chat_api(app: FastAPI) -> None:
             content=generate(),
             media_type="text/event-stream",
         )
+
+    @app.get(
+        "/api/chat/version_policy",
+        summary="Client version policy",
+        tags=["Copilot"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def chat_version_policy() -> ClientVersionPolicy:
+        """Proxy to Kiln Copilot ``GET /v1/chat/version_policy``.
+
+        Lets the assistant page show the upgrade banners on load. Forwards the
+        desktop version header so the server can compute the verdict; on any
+        upstream/transport failure we degrade to "no banner" rather than error.
+        """
+        api_key = get_copilot_api_key()
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    f"{_get_base_url()}/v1/chat/version_policy",
+                    headers=_build_upstream_headers(api_key),
+                )
+        except httpx.HTTPError:
+            return ClientVersionPolicy()
+        if resp.status_code != HTTPStatus.OK:
+            return ClientVersionPolicy()
+        try:
+            return ClientVersionPolicy.model_validate(resp.json())
+        except (json.JSONDecodeError, ValidationError):
+            # Pydantic v2 ValidationError is not a ValueError, so catch it
+            # explicitly — a malformed upstream body degrades to "no banner".
+            return ClientVersionPolicy()
 
     @app.get(
         "/api/chat/sessions",

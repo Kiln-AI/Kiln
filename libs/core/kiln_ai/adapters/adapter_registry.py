@@ -1,10 +1,12 @@
 from kiln_ai import datamodel
-from kiln_ai.adapters.ml_model_list import ModelProviderName
+from kiln_ai.adapters.ml_model_list import ModelAdapterId, ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterConfig,
     BaseAdapter,
     SkillsDict,
+    assemble_unique_agent_tools,
 )
+from kiln_ai.adapters.model_adapters.jev_adapter import JevAdapter
 from kiln_ai.adapters.model_adapters.litellm_adapter import (
     LiteLlmAdapter,
     LiteLlmConfig,
@@ -13,6 +15,7 @@ from kiln_ai.adapters.model_adapters.mcp_adapter import MCPAdapter
 from kiln_ai.adapters.provider_tools import (
     core_provider,
     find_user_model,
+    kiln_model_provider_from,
     lite_llm_core_config_for_provider,
 )
 from kiln_ai.datamodel.run_config import (
@@ -29,11 +32,13 @@ from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 def load_skills_from_tool_ids(
     task: datamodel.Task,
     tool_ids: list[str],
+    require_all: bool = False,
 ) -> SkillsDict:
     """Load Skill objects for any skill tool IDs in the given list.
 
     Performs a single directory scan of the parent project to resolve all
-    referenced skills at once.
+    referenced skills at once. Unresolvable skill IDs are silently dropped
+    unless require_all is set, in which case they raise ValueError.
     """
     skill_ids = {
         skill_id_from_tool_id(tid)
@@ -43,9 +48,19 @@ def load_skills_from_tool_ids(
     if not skill_ids:
         return {}
     project = task.parent_project()
-    if project is None:
-        return {}
-    return Skill.from_ids_and_parent_path(skill_ids, project.path)
+    skills = (
+        Skill.from_ids_and_parent_path(skill_ids, project.path)
+        if project is not None
+        else {}
+    )
+    if require_all:
+        missing_skill_ids = sorted(skill_ids - set(skills.keys()))
+        if missing_skill_ids:
+            raise ValueError(
+                "Skill(s) referenced in run config not found in the project: "
+                f"{', '.join(missing_skill_ids)}"
+            )
+    return skills
 
 
 def load_skills_for_task(
@@ -63,6 +78,27 @@ def load_skills_for_task(
     if tool_config is None or tool_config.tools is None:
         return {}
     return load_skills_from_tool_ids(task, tool_config.tools)
+
+
+async def validate_run_config_tool_names(
+    task: datamodel.Task,
+    run_config_properties: RunConfigProperties,
+) -> None:
+    """Reject a run config whose tools would fail at runtime.
+
+    Resolves every attached tool and skill, raising ValueError when a
+    referenced skill does not exist or two tools share a name (see
+    assemble_unique_agent_tools). Catches collisions at selection time; the
+    runtime check remains the backstop for tools renamed after the run config
+    was created.
+    """
+    if run_config_properties.type != "kiln_agent":
+        return
+    tools_config = as_kiln_agent_run_config(run_config_properties).tools_config
+    if tools_config is None or not tools_config.tools:
+        return
+    skills = load_skills_from_tool_ids(task, tools_config.tools, require_all=True)
+    await assemble_unique_agent_tools(task, tools_config.tools, list(skills.values()))
 
 
 def litellm_core_provider_config(
@@ -134,12 +170,26 @@ def adapter_for_task(
         case "kiln_agent":
             if not isinstance(run_config_properties, KilnAgentRunConfigProperties):
                 raise ValueError(
-                    "KilnAgentRunConfigProperties is required for LiteLlmAdapter"
+                    "KilnAgentRunConfigProperties is required for kiln_agent adapters"
                 )
-            return LiteLlmAdapter(
-                kiln_task=kiln_task,
-                config=litellm_core_provider_config(run_config_properties),
-                base_adapter_config=base_adapter_config,
+            model_provider = kiln_model_provider_from(
+                run_config_properties.model_name,
+                run_config_properties.model_provider_name,
             )
+            match model_provider.adapter:
+                case ModelAdapterId.jev:
+                    return JevAdapter(
+                        kiln_task=kiln_task,
+                        run_config=run_config_properties,
+                        base_adapter_config=base_adapter_config,
+                    )
+                case ModelAdapterId.litellm:
+                    return LiteLlmAdapter(
+                        kiln_task=kiln_task,
+                        config=litellm_core_provider_config(run_config_properties),
+                        base_adapter_config=base_adapter_config,
+                    )
+                case _:
+                    raise_exhaustive_enum_error(model_provider.adapter)
         case _:
             raise_exhaustive_enum_error(run_config_properties.type)

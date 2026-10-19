@@ -17,7 +17,10 @@ Tool IDs can be one of:
 - A remote MCP tool: mcp::remote::<server_id>::<tool_name>
 - A local MCP tool: mcp::local::<server_id>::<tool_name>
 - A Kiln task tool: kiln_task::<server_id>
+- An assistant-memory tool: kiln_tool::memory::<operation> (project-bound)
 - An SDK / adapter-injected unmanaged tool: kiln_unmanaged::<id> (single slug, not from the registry)
+- A world tool: kiln_tool::world::<world_id>::<tool_name>, a tool the world's OpenEnv
+  environment serves, usable only while an episode of that world is active
 - More coming soon like kiln_project_tool::rag::RAG_CONFIG_ID
 """
 
@@ -30,6 +33,8 @@ class KilnBuiltInToolId(str, Enum):
     MULTIPLY_NUMBERS = "kiln_tool::multiply_numbers"
     DIVIDE_NUMBERS = "kiln_tool::divide_numbers"
     CALL_KILN_API = "kiln_tool::call_kiln_api"
+    LLM = "kiln_tool::llm"
+    LLM_JUDGE = "kiln_tool::llm_judge"
 
 
 MCP_REMOTE_TOOL_ID_PREFIX = "mcp::remote::"
@@ -37,7 +42,13 @@ RAG_TOOL_ID_PREFIX = "kiln_tool::rag::"
 MCP_LOCAL_TOOL_ID_PREFIX = "mcp::local::"
 KILN_TASK_TOOL_ID_PREFIX = "kiln_task::"
 SKILL_TOOL_ID_PREFIX = "kiln_tool::skill::"
+MEMORY_TOOL_ID_PREFIX = "kiln_tool::memory::"
 KILN_UNMANAGED_TOOL_ID_PREFIX = "kiln_unmanaged::"
+CODE_TOOL_ID_PREFIX = "kiln_tool::code::"
+WORLD_TOOL_ID_PREFIX = "kiln_tool::world::"
+
+# The six assistant-memory operations, project-bound (see kiln_ai.tools.memory_tools).
+MEMORY_TOOL_OPERATIONS = ("save", "list", "get", "update", "delete", "summary")
 
 
 def kiln_unmanaged_tool_slug_from_id(id: str) -> str:
@@ -124,12 +135,54 @@ def _check_tool_id(id: str) -> str:
             )
         return id
 
+    # Code tools must have format: kiln_tool::code::<code_tool_id>
+    if id.startswith(CODE_TOOL_ID_PREFIX):
+        # Raises ValueError on malformed IDs; the extracted ID isn't needed here.
+        code_tool_id_from_tool_id(id)
+        return id
+
+    # Memory tools must have format: kiln_tool::memory::<operation>
+    if id.startswith(MEMORY_TOOL_ID_PREFIX):
+        memory_operation_from_tool_id(id)
+        return id
+
     # SDK / AdapterConfig.unmanaged_tools — not resolved by tool_from_id
     if id.startswith(KILN_UNMANAGED_TOOL_ID_PREFIX):
         kiln_unmanaged_tool_slug_from_id(id)
         return id
 
+    # World tools must have format: kiln_tool::world::<world_id>::<tool_name>
+    if id.startswith(WORLD_TOOL_ID_PREFIX):
+        world_and_tool_name_from_id(id)
+        return id
+
     raise ValueError(f"Invalid tool ID: {id}")
+
+
+def memory_operation_from_tool_id(id: str) -> str:
+    """Parse ``kiln_tool::memory::<operation>`` and return the operation."""
+    parts = id.split("::")
+    if (
+        not id.startswith(MEMORY_TOOL_ID_PREFIX)
+        or len(parts) != 3
+        or parts[2] not in MEMORY_TOOL_OPERATIONS
+    ):
+        raise ValueError(
+            f"Invalid memory tool ID: {id}. Expected format: "
+            f"'kiln_tool::memory::<operation>' where operation is one of "
+            f"{', '.join(MEMORY_TOOL_OPERATIONS)}."
+        )
+    return parts[2]
+
+
+def build_memory_tool_id(operation: str) -> str:
+    """Construct the tool ID for an assistant-memory operation."""
+    if operation not in MEMORY_TOOL_OPERATIONS:
+        raise ValueError(
+            f"Unknown memory operation: {operation}. Expected one of "
+            f"{', '.join(MEMORY_TOOL_OPERATIONS)}."
+        )
+    return f"{MEMORY_TOOL_ID_PREFIX}{operation}"
 
 
 def mcp_server_and_tool_name_from_id(id: str) -> tuple[str, str]:
@@ -192,6 +245,46 @@ def build_skill_tool_id(skill_id: str) -> str:
     return f"{SKILL_TOOL_ID_PREFIX}{skill_id}"
 
 
+def build_code_tool_id(code_tool_id: ID_TYPE) -> str:
+    """Construct the tool ID for a code tool."""
+    return f"{CODE_TOOL_ID_PREFIX}{code_tool_id}"
+
+
+def code_tool_id_from_tool_id(tool_id: str) -> str:
+    """Extract the code tool ID from a code tool tool ID."""
+    parts = tool_id.split("::")
+    if not tool_id.startswith(CODE_TOOL_ID_PREFIX) or len(parts) != 3 or not parts[2]:
+        raise ValueError(
+            f"Invalid code tool ID: {tool_id}. Expected format: 'kiln_tool::code::<code_tool_id>'."
+        )
+    return parts[2]
+
+
+def build_world_tool_id(world_id: ID_TYPE, tool_name: str) -> str:
+    """Construct the tool ID for a tool a world's environment serves."""
+    return f"{WORLD_TOOL_ID_PREFIX}{world_id}::{tool_name}"
+
+
+def world_and_tool_name_from_id(tool_id: str) -> tuple[str, str]:
+    """Extract ``(world_id, tool_name)`` from a world tool ID.
+
+    Four segments, unlike every other ``kiln_tool::`` form, because a world tool
+    is only meaningful inside the world that serves it.
+    """
+    parts = tool_id.split("::")
+    if (
+        not tool_id.startswith(WORLD_TOOL_ID_PREFIX)
+        or len(parts) != 4
+        or not parts[2]
+        or not parts[3]
+    ):
+        raise ValueError(
+            f"Invalid world tool ID: {tool_id}. Expected format: "
+            "'kiln_tool::world::<world_id>::<tool_name>'."
+        )
+    return parts[2], parts[3]
+
+
 def kiln_task_server_id_from_tool_id(tool_id: str) -> str:
     """
     Get the server ID from the tool ID.
@@ -215,3 +308,41 @@ def kiln_task_server_id_from_tool_id(tool_id: str) -> str:
         )
 
     return parts[0]  # server_id
+
+
+def validate_tool_allowlist(
+    tool_allowlist: list[ToolId],
+    *,
+    caller: str,
+    self_tool_id: ToolId | None = None,
+) -> None:
+    """Validate a sandboxed-code tool allowlist, raising ValueError on the first problem.
+
+    Shared by every model that carries one (code tools, code evals) so the rules
+    cannot drift apart: the sandbox bridge resolves them all through the same path,
+    so what one accepts the other must too.
+
+    ``caller`` names the owner in error messages ("code tools", "code evals").
+    ``self_tool_id`` is the owner's own tool id, when it has one, to reject
+    self-reference.
+    """
+    seen: set[str] = set()
+    for tool_id in tool_allowlist:
+        if tool_id.startswith(SKILL_TOOL_ID_PREFIX):
+            raise ValueError(
+                f"Skill tool IDs cannot be used in tool_allowlist: {tool_id}. "
+                f"Skills are adapter-resolved and not callable from {caller}."
+            )
+        if tool_id.startswith(KILN_UNMANAGED_TOOL_ID_PREFIX):
+            raise ValueError(
+                f"Unmanaged tool IDs cannot be used in tool_allowlist: {tool_id}. "
+                "Unmanaged tools are SDK-injected and not resolvable by the registry."
+            )
+        if tool_id in seen:
+            raise ValueError(f"Duplicate tool ID in tool_allowlist: {tool_id}")
+        seen.add(tool_id)
+
+    # Only code tools are themselves tools, so only they can self-reference; the
+    # wording stays concrete rather than being generated from `caller`.
+    if self_tool_id is not None and self_tool_id in seen:
+        raise ValueError("A code tool cannot reference itself in tool_allowlist.")

@@ -26,6 +26,18 @@ class TestEventParser:
         assert result.chat_trace_id is None
         assert any(b"finish" in line for line in result.lines_to_forward)
 
+    def test_forwards_upgrade_nudge_event_unchanged(self):
+        # The non-blocking upgrade nudge is an opaque event to the proxy: it has
+        # no special handling here but must still pass through to the web UI.
+        raw = b'data: {"type":"kiln_client_upgrade_nudge","preferred_version":"1.2.3"}\n\n'
+        result = EventParser().parse(raw)
+        assert result.has_error_event is False
+        assert result.chat_trace_id is None
+        assert result.text_delta == ""
+        assert any(
+            b"kiln_client_upgrade_nudge" in line for line in result.lines_to_forward
+        )
+
     def test_handles_empty_input(self):
         result = EventParser().parse(b"")
         assert result.finish_tool_calls is False

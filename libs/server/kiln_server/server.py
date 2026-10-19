@@ -11,6 +11,7 @@ from kiln_ai.utils.config import Config
 from .custom_errors import connect_custom_errors
 from .document_api import connect_document_api
 from .feedback_api import connect_feedback_api
+from .memory_api import connect_memory_api
 from .project_api import connect_project_api
 from .prompt_api import connect_prompt_api
 from .run_api import connect_run_api
@@ -21,7 +22,6 @@ from .utils.agent_checks.policy import ALLOW_AGENT
 
 
 def _get_version() -> str:
-    """Get the version of the kiln-server package."""
     try:
         return version("kiln-server")
     except Exception:
@@ -54,6 +54,10 @@ tags_metadata = [
         "description": "Create and list feedback on task runs.",
     },
     {
+        "name": "Memory",
+        "description": "The Kiln assistant's durable memory for a project (save, list, get, update, delete, summary).",
+    },
+    {
         "name": "Run Configs",
         "description": "Manage run configurations for tasks and evals.",
     },
@@ -66,12 +70,24 @@ tags_metadata = [
         "description": "Create and run evaluations for tasks.",
     },
     {
+        "name": "Eval Inputs",
+        "description": "Author and manage eval input datasets for tasks.",
+    },
+    {
         "name": "Statistics",
         "description": "Confidence intervals and significance tests on eval metrics.",
     },
     {
         "name": "Synthetic Data",
         "description": "Generate synthetic data for evals and fine-tuning.",
+    },
+    {
+        "name": "Multiturn SDG",
+        "description": "Generate multi-turn synthetic-user conversation datasets for eval.",
+    },
+    {
+        "name": "Eval Builder",
+        "description": "Eval builder V2 review pipeline: judge and claim/evidence generation over alignment traces.",
     },
     {
         "name": "Fine-tuning",
@@ -88,6 +104,14 @@ tags_metadata = [
     {
         "name": "Copilot",
         "description": "AI copilot for spec generation, refinement, and data generation.",
+    },
+    {
+        "name": "Code Tools",
+        "description": "Create, test, and manage user-authored Python code tools.",
+    },
+    {
+        "name": "Worlds",
+        "description": "Manage worlds: pointers to running OpenEnv environments that play an agent's tool set, and the tools they serve.",
     },
     {
         "name": "Tools & MCP",
@@ -109,10 +133,14 @@ tags_metadata = [
         "name": "Settings & Utilities",
         "description": "Server settings, connectivity checks, and utility endpoints.",
     },
+    {
+        "name": "Jobs",
+        "description": "Run, monitor, and control background jobs, and stream their events.",
+    },
 ]
 
 
-def make_app(lifespan=None):
+def make_app(lifespan=None, extra_middleware: list[type] | None = None):
     app = FastAPI(
         title="Kiln AI API",
         summary="A REST API for Kiln AI.",
@@ -138,6 +166,7 @@ def make_app(lifespan=None):
     connect_spec_api(app)
     connect_run_api(app)
     connect_feedback_api(app)
+    connect_memory_api(app)
     connect_document_api(app)
     connect_statistics_api(app)
     connect_custom_errors(app)
@@ -149,6 +178,16 @@ def make_app(lifespan=None):
         f"https://localhost:{frontend_port}",
         f"https://127.0.0.1:{frontend_port}",
     ]
+
+    # Install any caller-provided middleware BEFORE CORS so it ends up inner to
+    # CORS. CORS must remain the outermost middleware: Starlette makes the
+    # last-added middleware outermost, and CORS only adds its headers to
+    # responses that pass back out through it. Inner middleware that
+    # short-circuits a response (e.g. GitSyncMiddleware returning a git-sync
+    # error) would otherwise bypass CORS entirely, and the browser would block
+    # the response with "origin not allowed".
+    for middleware_class in extra_middleware or []:
+        app.add_middleware(middleware_class)
 
     app.add_middleware(
         # Type issue https://github.com/astral-sh/ty/issues/1635
