@@ -20,6 +20,15 @@ export type ChatMessagePart =
       output?: unknown
     }
 
+/** The output a tool part holds after a ``tool-output-error`` event. */
+export interface ToolOutputError {
+  error: string | undefined
+}
+
+export function isToolOutputError(output: unknown): output is ToolOutputError {
+  return typeof output === "object" && output !== null && "error" in output
+}
+
 export interface ChatMessage {
   id: string
   role: "user" | "assistant" | "system" | "error"
@@ -412,7 +421,8 @@ class StreamEventProcessor {
     if (!event.toolCallId) return
     const entry = this.toolMap.get(event.toolCallId)
     if (entry) {
-      entry.output = { error: event.errorText }
+      const output: ToolOutputError = { error: event.errorText }
+      entry.output = output
       this.flushAssistant()
     }
   }
