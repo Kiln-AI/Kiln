@@ -435,6 +435,7 @@
     const evalCategories: Record<string, Set<string>> = {}
     const hasDefaultEvalConfig: Record<string, boolean> = {}
     const evalNames: Record<string, string> = {}
+    const scoreDisplayNames: Record<string, Record<string, string>> = {}
     const specIds: Record<string, string | null> = {}
 
     // Collect all evals and their scores from selected models
@@ -446,6 +447,7 @@
         const evalId = evalResult.eval_id || ""
         hasDefaultEvalConfig[evalId] = !evalResult.missing_default_eval_config
         evalNames[evalId] = evalResult.eval_name
+        scoreDisplayNames[evalId] = evalResult.score_display_names || {}
         specIds[evalId] = evalResult.spec_id || null
 
         if (!evalCategories[evalId]) {
@@ -463,9 +465,9 @@
     // Convert to comparison features format
     Object.entries(evalCategories).forEach(([evalId, scoreKeys]) => {
       const items = Array.from(scoreKeys).map((scoreKey) => ({
-        label: scoreKey
-          .replace(/_/g, " ")
-          .replace(/\b\w/g, (l) => l.toUpperCase()),
+        label:
+          scoreDisplayNames[evalId]?.[scoreKey] ||
+          scoreKey.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
         key: `${evalId}::${scoreKey}`,
       }))
 

@@ -15,7 +15,7 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import Dialog from "$lib/ui/dialog.svelte"
-import {
+  import {
     eval_config_to_detailed_ui_name,
     score_display_name,
   } from "$lib/utils/formatters"

@@ -11825,6 +11825,13 @@ export interface components {
              * @description The associated spec ID, if any.
              */
             spec_id?: string | null;
+            /**
+             * Score Display Names
+             * @description The user-facing name of each of the eval's output scores, keyed by the score's JSON key (the keys of eval_config_result.results). The score's display_name when set, otherwise its name.
+             */
+            score_display_names?: {
+                [key: string]: string;
+            };
         };
         /**
          * RunConfigEvalScoresSummary

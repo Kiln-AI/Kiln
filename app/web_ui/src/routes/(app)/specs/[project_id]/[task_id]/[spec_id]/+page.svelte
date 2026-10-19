@@ -118,21 +118,26 @@
     value: string
     input_type: "input"
     description: string
+    placeholder: string
     max_length: number
+    validator: (value: unknown) => string | null
     custom_setter: (value: string) => Promise<void>
   }
   $: output_score_fields = (evaluator?.output_scores || []).map(
     (score, index): ScoreEditField => ({
-      label:
-        (evaluator?.output_scores?.length || 0) > 1
-          ? `Score Name: ${score.name}`
-          : "Score Name",
+      label: `Score Display Name: ${score.name}`,
       api_name: `output_score_display_name_${index}`,
       value: score.display_name || score.name,
       input_type: "input",
       description:
-        "The name of the eval score, shown when comparing run configurations.",
+        "The name shown for this score across Kiln. Existing eval results are not changed.",
+      placeholder: "Score Display Name",
       max_length: 32,
+      // Custom message so the empty state doesn't echo the full label (with the score name).
+      validator: (value) =>
+        typeof value === "string" && value.trim().length > 0
+          ? null
+          : "Score display name is required",
       custom_setter: save_output_score_display_names,
     }),
   )

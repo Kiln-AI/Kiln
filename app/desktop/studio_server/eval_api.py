@@ -1089,6 +1089,18 @@ class RunConfigEvalResult(BaseModel):
     spec_id: ID_TYPE | None = Field(
         default=None, description="The associated spec ID, if any."
     )
+    score_display_names: Dict[str, str] = Field(
+        default_factory=dict,
+        description="The user-facing name of each of the eval's output scores, keyed by the score's JSON key (the keys of eval_config_result.results). The score's display_name when set, otherwise its name.",
+    )
+
+
+def score_display_names(eval: Eval) -> Dict[str, str]:
+    """Map each output score's JSON key to the name the UI should show for it."""
+    return {
+        score.json_key(): score.display_name or score.name
+        for score in eval.output_scores
+    }
 
 
 class RunConfigEvalScoresSummary(BaseModel):
@@ -3307,6 +3319,7 @@ def connect_evals_api(app: FastAPI):
                         eval_config_result=None,
                         missing_default_eval_config=True,
                         spec_id=associated_spec.id if associated_spec else None,
+                        score_display_names=score_display_names(eval),
                     )
                 )
                 continue
@@ -3402,6 +3415,7 @@ def connect_evals_api(app: FastAPI):
                     dataset_size=dataset_size,
                     missing_default_eval_config=False,
                     spec_id=associated_spec.id if associated_spec else None,
+                    score_display_names=score_display_names(eval),
                     eval_config_result=EvalConfigResult(
                         eval_config_id=eval_config.id,
                         results=results,

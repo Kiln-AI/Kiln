@@ -5504,6 +5504,44 @@ async def test_get_run_config_eval_scores_inline_aggregation(
     assert ecr["results"]["overall_rating"]["n_excluded"] == 1
     assert ecr["results"]["overall_rating"]["mean_score"] == 4.0
     assert ecr["percent_complete"] == pytest.approx(2.0 / 3.0)
+    assert er["score_display_names"] == {
+        "score1": "score1",
+        "overall_rating": "overall_rating",
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_run_config_eval_scores_uses_score_display_names(
+    client, mock_task, mock_eval, mock_run_config
+):
+    """score_display_names maps each score's unchanged JSON key to its display name, even without a default eval config."""
+    mock_eval.output_scores[1].display_name = "Quality"
+    mock_eval.save_to_file()
+
+    mock_task_api = MagicMock()
+    mock_task_api.runs.return_value = []
+    mock_task_api.evals.return_value = [mock_eval]
+    mock_task_api.specs.return_value = []
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as p_task,
+        patch("app.desktop.studio_server.eval_api.task_run_config_from_id") as p_rc,
+        patch_resolve_split(test=stub_split([])),
+    ):
+        p_task.return_value = mock_task_api
+        p_rc.return_value = mock_run_config
+
+        response = client.get(
+            f"/api/projects/project1/tasks/task1/run_configs/{mock_run_config.id}/eval_scores"
+        )
+
+    assert response.status_code == 200
+    er = response.json()["eval_results"][0]
+    assert er["missing_default_eval_config"] is True
+    assert er["score_display_names"] == {
+        "score1": "score1",
+        "overall_rating": "Quality",
+    }
 
 
 @pytest.mark.asyncio

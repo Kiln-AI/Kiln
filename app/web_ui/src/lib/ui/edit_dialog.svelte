@@ -28,6 +28,8 @@
     placeholder?: string
     optional?: boolean
     max_length?: number
+    // Optional custom validator. Falls back to FormElement's default ("<label>" is required).
+    validator?: (value: unknown) => string | null
     // When set, this field is excluded from the main PATCH body and persisted via this
     // callback instead (e.g. fields that target a different endpoint).
     custom_setter?: (value: string) => Promise<void>
@@ -151,6 +153,7 @@
           placeholder={field.placeholder}
           optional={field.optional}
           max_length={field.max_length}
+          validator={field.validator}
         />
       {/each}
     </FormContainer>
