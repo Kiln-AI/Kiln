@@ -6,6 +6,7 @@
   import { available_models } from "$lib/stores"
   import Collapse from "$lib/ui/collapse.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
+  import type { RadioOption } from "$lib/utils/form_element.svelte"
   import FormList from "$lib/utils/form_list.svelte"
   import JudgePromptFields from "$lib/components/eval_types/judge_prompt_fields.svelte"
   import {
@@ -144,26 +145,22 @@
     }
   }
 
-  const evaluator_algorithms: {
-    id: JudgeAlgorithm
-    name: string
-    description: string
-  }[] = [
+  const evaluator_algorithms: (RadioOption & { value: JudgeAlgorithm })[] = [
     {
-      id: "llm_as_judge",
-      name: "LLM as Judge",
+      value: "llm_as_judge",
+      label: "LLM as Judge",
       description:
         "The model selected above will be asked to judge task outputs.",
     },
     {
-      id: "g_eval",
-      name: "G-Eval Judge",
+      value: "g_eval",
+      label: "G-Eval Judge",
       description:
         "A more advanced LLM-as-Judge method which considers token probabilities for more precise scores.",
     },
     {
-      id: "agentic_judge",
-      name: "Agentic Judge",
+      value: "agentic_judge",
+      label: "Agentic Judge",
       description:
         "Reads the trace with tools, only the parts it needs. Best for long agent traces.",
     },
@@ -172,8 +169,8 @@
   $: suggested_models = build_suggested_models($available_models || [], "evals")
   let force_select_dropdown = false
 
-  // The card the user picked. Only a pick survives a model change; an automatic
-  // default is recomputed for each model.
+  // The algorithm the user picked. Only a pick survives a model change; an
+  // automatic default is recomputed for each model.
   let chosen_algo: JudgeAlgorithm | undefined = undefined
 
   $: unsupported_algos = update_unsupported_algos_and_selected_algo(
@@ -211,13 +208,13 @@
   }
 
   $: available_algorithms = evaluator_algorithms.filter(
-    (algo) => !unsupported_algos[algo.id],
+    (algo) => !unsupported_algos[algo.value],
   )
   $: show_algorithm_section = model_name && available_algorithms.length > 1
 
-  function select_evaluator(algo: JudgeAlgorithm) {
-    chosen_algo = algo
-    selected_algo = algo
+  // Runs after the radio's bind:value has already updated selected_algo.
+  function remember_chosen_algo() {
+    chosen_algo = selected_algo
   }
 </script>
 
@@ -294,36 +291,16 @@
   {#if show_algorithm_section}
     <div data-testid="algorithm-section">
       <div class="text-xl font-bold mb-2">Select Judge Algorithm</div>
-
-      <div class="form-control flex flex-row gap-4 flex-wrap">
-        {#each evaluator_algorithms as algo}
-          {@const is_unsupported = !!unsupported_algos[algo.id]}
-          {#if !is_unsupported}
-            <label class="label cursor-pointer">
-              <div
-                class="card card-bordered border-base-300 shadow-md flex flex-col gap-2 p-6 hover:shadow-lg hover:border-primary/50 transition-all duration-200 w-[260px] aspect-[5/6]"
-              >
-                <div class="flex flex-col gap-2 text-center items-center">
-                  <input
-                    type="radio"
-                    name="radio-evaluator"
-                    class="radio checked:bg-primary mx-auto my-8"
-                    checked={selected_algo === algo.id}
-                    disabled={is_unsupported}
-                    on:change={() => select_evaluator(algo.id)}
-                  />
-                  <div class="font-medium text-lg">
-                    {algo.name}
-                  </div>
-                  <div class="text-sm font-light text-gray-500">
-                    {algo.description}
-                  </div>
-                </div>
-              </div>
-            </label>
-          {/if}
-        {/each}
-      </div>
+      <!-- Not required here: the builder shows Save only once an algorithm is selected. -->
+      <FormElement
+        id="judge_algorithm"
+        aria_label="Judge Algorithm"
+        inputType="radio"
+        radio_options={available_algorithms}
+        optional={true}
+        bind:value={selected_algo}
+        on_radio_change={remember_chosen_algo}
+      />
     </div>
   {/if}
 

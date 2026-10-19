@@ -262,9 +262,20 @@ describe("LlmJudgeForm", () => {
     })
   })
 
-  describe("E19: algorithm card sizing (reverted to pre-Phase-6)", () => {
-    it("algorithm cards use w-[260px] and aspect-[5/6]", async () => {
-      setModels([logprobsProvider])
+  describe("judge algorithm radio list", () => {
+    const allAlgorithmsProvider: AvailableModels = {
+      provider_name: "OpenAI",
+      provider_id: "openai",
+      models: [
+        makeModel("gpt-4o", "GPT-4o", {
+          supports_logprobs: true,
+          supports_function_calling: true,
+        }),
+      ],
+    }
+
+    it("renders one radio row per algorithm, title then description, in a single radio group", async () => {
+      setModels([allAlgorithmsProvider])
       const { container } = render(LlmJudgeForm, {
         props: {
           task_id: "task1",
@@ -277,63 +288,25 @@ describe("LlmJudgeForm", () => {
       })
       await tick()
 
-      const algoCards = container.querySelectorAll(
-        '[data-testid="algorithm-section"] .card.card-bordered',
-      )
-      expect(algoCards.length).toBeGreaterThan(0)
-      for (const card of algoCards) {
-        expect(card.classList.contains("w-[260px]")).toBe(true)
-        expect(card.classList.contains("aspect-[5/6]")).toBe(true)
-        expect(card.classList.contains("p-6")).toBe(true)
-      }
-    })
+      const section = container.querySelector(
+        '[data-testid="algorithm-section"]',
+      )!
+      const groups = section.querySelectorAll('[role="radiogroup"]')
+      expect(groups.length).toBe(1)
+      expect(groups[0].getAttribute("aria-label")).toBe("Judge Algorithm")
 
-    it("algorithm cards do NOT use the shrunken Phase-6 sizes", async () => {
-      setModels([logprobsProvider])
-      const { container } = render(LlmJudgeForm, {
-        props: {
-          task_id: "task1",
-          project_id: "proj1",
-          eval_id: "eval1",
-          model_name: "gpt-4o",
-          provider_name: "openai",
-          combined_model_name: "openai/gpt-4o",
-        },
-      })
-      await tick()
-
-      const algoCards = container.querySelectorAll(
-        '[data-testid="algorithm-section"] .card.card-bordered',
-      )
-      expect(algoCards.length).toBeGreaterThan(0)
-      for (const card of algoCards) {
-        expect(card.classList.contains("w-[156px]")).toBe(false)
-        expect(card.classList.contains("p-4")).toBe(false)
-      }
-    })
-
-    it("radio buttons use my-8 spacing (pre-Phase-6)", async () => {
-      setModels([logprobsProvider])
-      const { container } = render(LlmJudgeForm, {
-        props: {
-          task_id: "task1",
-          project_id: "proj1",
-          eval_id: "eval1",
-          model_name: "gpt-4o",
-          provider_name: "openai",
-          combined_model_name: "openai/gpt-4o",
-        },
-      })
-      await tick()
-
-      const radios = container.querySelectorAll(
-        '[data-testid="algorithm-section"] input[type="radio"]',
-      )
-      expect(radios.length).toBeGreaterThan(0)
-      for (const radio of radios) {
-        expect(radio.classList.contains("my-8")).toBe(true)
-        expect(radio.classList.contains("my-4")).toBe(false)
-      }
+      const rows = Array.from(groups[0].querySelectorAll("label"))
+      expect(
+        rows.map((row) => row.querySelectorAll('input[type="radio"]').length),
+      ).toEqual([1, 1, 1])
+      expect(
+        rows.map((row) => row.textContent?.replace(/\s+/g, " ").trim()),
+      ).toEqual([
+        "LLM as Judge The model selected above will be asked to judge task outputs.",
+        "G-Eval Judge A more advanced LLM-as-Judge method which considers token probabilities for more precise scores.",
+        "Agentic Judge Reads the trace with tools, only the parts it needs. Best for long agent traces.",
+      ])
+      expect(section.querySelector(".card")).toBeNull()
     })
   })
 
@@ -698,7 +671,7 @@ describe("Agentic Judge algorithm", () => {
     return JSON.parse(text.slice(text.indexOf("settings=") + 9, -1).trim())
   }
 
-  it("shows the card with its copy for a model with tool calling", async () => {
+  it("shows the option with its copy for a model with tool calling", async () => {
     const { container } = await renderWithModel("all")
     expect(algorithmRadio(container, "Agentic Judge")).not.toBeNull()
     expect(container.textContent).toContain(
@@ -706,7 +679,7 @@ describe("Agentic Judge algorithm", () => {
     )
   })
 
-  it("hides the card for a model without tool calling", async () => {
+  it("hides the option for a model without tool calling", async () => {
     const { container } = await renderWithModel("logprobs")
     expect(
       container.querySelector('[data-testid="algorithm-section"]'),
@@ -741,6 +714,28 @@ describe("Agentic Judge algorithm", () => {
     },
   )
 
+  it("binds the picked algorithm out to the builder", async () => {
+    setModels([provider])
+    const { container } = render(LlmJudgeFormHarness, {
+      props: {
+        model_name: "tools",
+        provider_name: "openai",
+        combined_model_name: "openai/tools",
+      },
+    })
+    await flush()
+    const boundAlgo = () =>
+      container.querySelector('[data-testid="harness-selected-algo"]')
+        ?.textContent
+    expect(boundAlgo()).toBe("llm_as_judge")
+
+    await selectAlgorithm(container, "Agentic Judge")
+    expect(boundAlgo()).toBe("agentic_judge")
+
+    await selectAlgorithm(container, "LLM as Judge")
+    expect(boundAlgo()).toBe("llm_as_judge")
+  })
+
   it("asks the model picker for tool support only while Agentic Judge is selected", async () => {
     const { container } = await renderWithModel("tools")
     expect(dropdownSettings(container).requires_tool_support).toBe(false)
@@ -766,7 +761,7 @@ describe("Agentic Judge algorithm", () => {
     expect(algorithmRadio(container, "Agentic Judge")!.checked).toBe(true)
   })
 
-  it("recomputes the default on a model change when no card was picked", async () => {
+  it("recomputes the default on a model change when no option was picked", async () => {
     const { container, component } = await renderWithModel("tools")
     expect(algorithmRadio(container, "LLM as Judge")!.checked).toBe(true)
 
@@ -776,7 +771,7 @@ describe("Agentic Judge algorithm", () => {
     expect(algorithmRadio(container, "G-Eval Judge")!.checked).toBe(true)
   })
 
-  it("keeps a picked card the new model still supports", async () => {
+  it("keeps a picked option the new model still supports", async () => {
     const { container, component } = await renderWithModel("all")
     await selectAlgorithm(container, "LLM as Judge")
 
