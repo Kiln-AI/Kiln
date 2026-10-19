@@ -44,6 +44,8 @@
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import RunEval from "$lib/components/run_eval.svelte"
   import FloatingMenu from "$lib/ui/floating_menu.svelte"
+  import EditIcon from "$lib/ui/icons/edit_icon.svelte"
+  import ScoreDisplayNameDialog from "$lib/components/score_display_name_dialog.svelte"
   import type { FloatingMenuItem } from "$lib/ui/floating_menu_types"
 
   import { agentInfo } from "$lib/agent"
@@ -421,13 +423,37 @@
     })
   }
 
+  let score_display_name_dialog: ScoreDisplayNameDialog | null = null
+
+  // Applies a renamed score to every cached summary, so labels update without refetching.
+  function apply_score_display_name(
+    event: CustomEvent<{
+      eval_id: string
+      score_key: string
+      display_name: string
+    }>,
+  ) {
+    const { eval_id, score_key, display_name } = event.detail
+    for (const summary of Object.values(eval_scores_cache)) {
+      for (const eval_result of summary.eval_results) {
+        if (eval_result.eval_id === eval_id) {
+          eval_result.score_display_names = {
+            ...eval_result.score_display_names,
+            [score_key]: display_name,
+          }
+        }
+      }
+    }
+    eval_scores_cache = eval_scores_cache
+  }
+
   function generateComparisonFeatures(
     models: (string | null)[],
     scores_cache: Record<string, RunConfigEvalScoresSummary>,
   ) {
     const features: {
       category: string
-      items: { label: string; key: string }[]
+      items: { label: string; key: string; score_key?: string }[]
       has_default_eval_config: boolean | undefined
       eval_id: string
       spec_id: string | null
@@ -469,6 +495,7 @@
           scoreDisplayNames[evalId]?.[scoreKey] ||
           scoreKey.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
         key: `${evalId}::${scoreKey}`,
+        score_key: scoreKey,
       }))
 
       features.push({
@@ -1047,6 +1074,21 @@
                       class="px-6 py-4 bg-gray-50 font-medium text-gray-700 flex items-center border-b border-gray-100"
                     >
                       {item.label}
+                      {#if item.score_key}
+                        <button
+                          class="ml-1.5 w-4 h-4 shrink-0 text-gray-400 hover:text-gray-700"
+                          aria-label="Rename score"
+                          title="Rename score"
+                          on:click={() =>
+                            item.score_key &&
+                            score_display_name_dialog?.show(
+                              section.eval_id,
+                              item.score_key,
+                            )}
+                        >
+                          <EditIcon />
+                        </button>
+                      {/if}
                     </div>
 
                     <!-- Model Values -->
@@ -1293,6 +1335,13 @@
     </div>
   {/if}
 </AppPage>
+
+<ScoreDisplayNameDialog
+  bind:this={score_display_name_dialog}
+  {project_id}
+  {task_id}
+  on:saved={apply_score_display_name}
+/>
 
 <CreateNewRunConfigDialog
   bind:this={create_new_run_config_dialog}

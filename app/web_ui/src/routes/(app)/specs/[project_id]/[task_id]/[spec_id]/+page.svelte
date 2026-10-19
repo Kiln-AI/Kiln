@@ -109,73 +109,6 @@
   let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null
   let edit_dialog: EditDialog | null = null
 
-  // Score display names are cosmetic: they persist to the eval endpoint (not the spec
-  // endpoint) and never change the score name, JSON key, or stored eval runs.
-  type ScoreEditField = {
-    label: string
-    api_name: string
-    value: string
-    input_type: "input"
-    description: string
-    placeholder: string
-    optional: true
-    max_length: number
-    custom_setter: (values: Record<string, string>) => Promise<void>
-  }
-  $: output_score_fields = (evaluator?.output_scores || []).map(
-    (score): ScoreEditField => ({
-      label: `Score Display Name: ${score.name}`,
-      api_name: score_display_name_field_id(score.name),
-      value: score.display_name || "",
-      input_type: "input",
-      description:
-        "Shown in place of the score name in eval results and comparisons. Leave blank to use the original name. Stored results and the judge are unchanged.",
-      placeholder: score.name,
-      optional: true,
-      max_length: 32,
-      custom_setter: save_output_score_display_names,
-    }),
-  )
-
-  function score_display_name_field_id(score_name: string): string {
-    return `output_score_display_name_${string_to_json_key(score_name)}`
-  }
-
-  async function save_output_score_display_names(
-    values: Record<string, string>,
-  ): Promise<void> {
-    const eval_id = spec?.eval_id
-    if (!eval_id || !evaluator) {
-      throw new Error("This spec has no eval to save score display names to.")
-    }
-    const changed: Record<string, string | null> = {}
-    for (const score of evaluator.output_scores) {
-      const field_id = score_display_name_field_id(score.name)
-      if (!(field_id in values)) {
-        continue
-      }
-      const display_name = values[field_id].trim() || null
-      if (display_name !== (score.display_name || null)) {
-        changed[string_to_json_key(score.name)] = display_name
-      }
-    }
-    if (Object.keys(changed).length === 0) {
-      return
-    }
-    const { error: patch_error } = await client.PATCH(
-      "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
-      {
-        params: {
-          path: { project_id, task_id, eval_id },
-        },
-        body: { output_score_display_names: changed },
-      },
-    )
-    if (patch_error) {
-      throw patch_error
-    }
-  }
-
   $: current_task_run_configs =
     $run_configs_by_task_composite_id[
       get_task_composite_id(project_id, task_id)
@@ -834,7 +767,6 @@
       input_type: "input",
       max_length: 120,
     },
-    ...output_score_fields,
   ]}
 />
 

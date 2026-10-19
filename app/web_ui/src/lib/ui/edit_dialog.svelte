@@ -28,10 +28,6 @@
     placeholder?: string
     optional?: boolean
     max_length?: number
-    // When set, this field is excluded from the main PATCH body and persisted via this
-    // callback instead (e.g. fields that target a different endpoint). Fields sharing a
-    // setter are saved in one call, with their values keyed by api_name.
-    custom_setter?: (values: Record<string, string>) => Promise<void>
   }
   export let fields: EditField[]
 
@@ -42,48 +38,28 @@
   async function save() {
     loading = true
     try {
-      // Custom setters run first: if one fails, the main PATCH hasn't been sent yet.
-      const custom_setter_values = new Map<
-        (values: Record<string, string>) => Promise<void>,
-        Record<string, string>
-      >()
-      for (const field of fields) {
-        if (field.custom_setter) {
-          const values = custom_setter_values.get(field.custom_setter) || {}
-          values[field.api_name] = field.value
-          custom_setter_values.set(field.custom_setter, values)
-        }
-      }
-      for (const [custom_setter, values] of custom_setter_values) {
-        await custom_setter(values)
-      }
-
       const body = fields.reduce(
         (acc, field) => {
-          if (!field.custom_setter) {
-            acc[field.api_name] = field.value
-          }
+          acc[field.api_name] = field.value
           return acc
         },
         {} as Record<string, string>,
       )
-      if (Object.keys(body).length > 0) {
-        const response = await fetch(base_url + patch_url, {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(body),
-        })
-        if (!response.ok) {
-          let error_body: unknown
-          try {
-            error_body = await response.json()
-          } catch (_) {
-            throw new Error("Failed to save edit. Invalid JSON response.")
-          }
-          throw createKilnError(error_body)
+      const response = await fetch(base_url + patch_url, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      })
+      if (!response.ok) {
+        let error_body: unknown
+        try {
+          error_body = await response.json()
+        } catch (_) {
+          throw new Error("Failed to save edit. Invalid JSON response.")
         }
+        throw createKilnError(error_body)
       }
       after_save()
       saved = true
