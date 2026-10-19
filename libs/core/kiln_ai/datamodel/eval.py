@@ -49,6 +49,10 @@ from kiln_ai.datamodel.world import (
     WorldReset,
 )
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.open_ai_types import (
+    ChatCompletionMessageParam,
+    materialize_lazy_content,
+)
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.spec import Spec
@@ -580,6 +584,18 @@ class V2EvalResult(BaseModel):
         default=None,
         description="What the judgment itself cost, if it called a model. None for the deterministic eval types, which call none. Stored on the resulting EvalRun as eval_usage.",
     )
+    judge_trace: list[ChatCompletionMessageParam] | None = Field(
+        default=None,
+        description="The judge's full conversation in OpenAI format: the system prompt, the rendered judge prompt, and every reply. None for evals that call no model (e.g. code evals). Stored on the resulting EvalRun as judge_trace.",
+    )
+
+    @model_validator(mode="after")
+    def materialize_judge_trace_content(self) -> Self:
+        # Pydantic validates the trace's Iterable-typed `content` into a lazy, single-use
+        # iterator that serializes as [] and cannot be deepcopied.
+        if self.judge_trace is not None:
+            materialize_lazy_content(self.judge_trace)
+        return self
 
 
 class UserMessage(BaseModel):
@@ -1012,6 +1028,10 @@ class EvalRun(KilnParentedModel):
         default=None,
         description="The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field.",
     )
+    judge_trace: list[ChatCompletionMessageParam] | None = Field(
+        default=None,
+        description="The judge's full conversation in OpenAI format: the system prompt, the rendered judge prompt, and every reply. Structured messages, unlike the deprecated JSON-string task_run_trace. None for V1 evals, for evals that call no model (e.g. code evals), and for records that predate this field. Distinct from the evaluated task run's trace.",
+    )
 
     eval_input_id: ID_TYPE | None = Field(
         default=None,
@@ -1041,12 +1061,22 @@ class EvalRun(KilnParentedModel):
         return self
 
     @model_validator(mode="after")
+    def materialize_judge_trace_content(self) -> Self:
+        # Pydantic validates the trace's Iterable-typed `content` into a lazy, single-use
+        # iterator that serializes as [] and cannot be deepcopied.
+        if self.judge_trace is not None:
+            materialize_lazy_content(self.judge_trace)
+        return self
+
+    @model_validator(mode="after")
     def validate_record_mode(self) -> Self:
         """Keep the three record states (pointer / skipped / legacy inline) exclusive.
 
         The forbidding half of the pointer rule is the one that earns its keep: a record
         that points at a TaskRun must never also carry a second copy of what it scored,
-        which nothing would keep in sync.
+        which nothing would keep in sync. `judge_trace` is allowed alongside it: it is
+        the judge's own record of what it was sent, fixed at scoring time, not a copy of
+        the scored trace.
         """
         inline_set = [f for f in LEGACY_TRACE_FIELDS if getattr(self, f) is not None]
 

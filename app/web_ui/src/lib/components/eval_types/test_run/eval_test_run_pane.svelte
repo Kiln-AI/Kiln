@@ -8,6 +8,7 @@
   import ReferenceDataField from "./reference_data_field.svelte"
   import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import JudgeTraceLink from "../judge_trace_link.svelte"
   import ToolCallLogTable from "$lib/components/tool_calls/tool_call_log_table.svelte"
   import {
     referenceDataUsageMode,
@@ -208,6 +209,12 @@
             </div>
           {/each}
         </div>
+      </div>
+    {/if}
+
+    {#if test_result.judge_trace?.length}
+      <div data-testid="judge-trace-link">
+        <JudgeTraceLink trace={test_result.judge_trace} />
       </div>
     {/if}
 
