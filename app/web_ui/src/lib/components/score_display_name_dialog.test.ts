@@ -133,4 +133,33 @@ describe("ScoreDisplayNameDialog", () => {
     )
     expect(saved).not.toHaveBeenCalled()
   })
+
+  it("ignores a load from an earlier opening that finishes last", async () => {
+    let resolve_first: (value: unknown) => void = () => {}
+    mock_get
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (resolve_first = resolve)),
+      )
+      .mockResolvedValueOnce({ data: eval_with_scores(null) })
+    const { component, container } = render(ScoreDisplayNameDialog, {
+      props: { project_id: "p1", task_id: "t1" },
+    })
+
+    const first = component.show("eval0", "tone_check")
+    await component.show("eval1", "accuracy")
+    resolve_first({
+      data: {
+        id: "eval0",
+        output_scores: [
+          { name: "Tone Check", display_name: "Stale", type: "pass_fail" },
+        ],
+      },
+    })
+    await first
+
+    const input = container.querySelector(
+      "#score_display_name",
+    ) as HTMLInputElement
+    await waitFor(() => expect(input.value).toBe("accuracy"))
+  })
 })

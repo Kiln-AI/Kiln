@@ -24,8 +24,11 @@
   let loading = false
   let error: KilnError | null = null
   let submitting = false
+  // Each show() bumps this; a response from an earlier opening is ignored.
+  let load_id = 0
 
   export async function show(target_eval_id: string, target_score_key: string) {
+    const this_load_id = ++load_id
     eval_id = target_eval_id
     score_key = target_score_key
     score = null
@@ -39,6 +42,9 @@
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
         { params: { path: { project_id, task_id, eval_id: target_eval_id } } },
       )
+      if (this_load_id !== load_id) {
+        return
+      }
       if (get_error) {
         throw get_error
       }
@@ -51,9 +57,13 @@
       }
       display_name = score_display_name(score)
     } catch (e) {
-      error = createKilnError(e)
+      if (this_load_id === load_id) {
+        error = createKilnError(e)
+      }
     } finally {
-      loading = false
+      if (this_load_id === load_id) {
+        loading = false
+      }
     }
   }
 

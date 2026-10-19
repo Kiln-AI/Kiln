@@ -588,6 +588,47 @@ def test_get_rating_options_duplicate_requirements(client, project_and_task):
     assert set(option["show_for_tags"]) == {"golden_set1", "golden_set2"}
 
 
+def test_get_rating_options_merged_score_uses_first_display_name(
+    client, project_and_task
+):
+    """A score merged into an existing option takes the first display name set."""
+    project, task = project_and_task
+
+    def eval_with_score(tag: str, display_name: str | None) -> MagicMock:
+        score = MagicMock()
+        score.name = "Shared Score"
+        score.display_name = display_name
+        score.instruction = "instruction"
+        score.type = "five_star"
+        eval = MagicMock()
+        eval.eval_configs_filter_id = f"tag::{tag}"
+        eval.output_scores = [score]
+        return eval
+
+    evals = [
+        eval_with_score("golden_set1", None),
+        eval_with_score("golden_set2", "Quality"),
+        eval_with_score("golden_set3", "Other"),
+    ]
+
+    with (
+        patch("kiln_server.task_api.project_from_id") as mock_project_from_id,
+        patch("kiln_ai.datamodel.Task.evals") as mock_evals,
+    ):
+        mock_project_from_id.return_value = project
+        mock_evals.return_value = evals
+
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/rating_options"
+        )
+
+    assert response.status_code == 200
+    options = response.json()["options"]
+    assert len(options) == 1
+    assert options[0]["requirement"]["name"] == "Shared Score"
+    assert options[0]["display_name"] == "Quality"
+
+
 def test_delete_task_success(client, project_and_task):
     project, task = project_and_task
 

@@ -296,6 +296,10 @@ def connect_task_api(app: FastAPI):
                             existing_req.requirement.type,
                         )
 
+                    # First display name wins when evals share a score name.
+                    if existing_req.display_name is None:
+                        existing_req.display_name = output_score.display_name
+
                     if golden_set_tag not in existing_req.show_for_tags:
                         # Add the golden set tag to the existing requirement instead of creating a new one (unless that tag is already there)
                         existing_req.show_for_tags.append(golden_set_tag)

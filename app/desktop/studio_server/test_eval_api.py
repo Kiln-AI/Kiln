@@ -466,6 +466,26 @@ async def test_create_evaluator(
 
 
 @pytest.mark.asyncio
+async def test_create_evaluator_duplicate_display_names_is_client_error(
+    client, mock_task_from_id, valid_evaluator_request, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+    body = valid_evaluator_request.model_dump(mode="json")
+    body["output_scores"] = [
+        {"name": "score_a", "display_name": "Quality", "type": "pass_fail"},
+        {"name": "score_b", "display_name": "quality", "type": "pass_fail"},
+    ]
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator", json=body
+    )
+
+    assert response.status_code == 422
+    assert "unique display names" in response.json()["message"]
+    assert mock_task.evals() == []
+
+
+@pytest.mark.asyncio
 async def test_create_evaluator_with_direction(
     client, mock_task_from_id, valid_evaluator_request, mock_task
 ):
