@@ -166,12 +166,15 @@ def _tool_arguments_bind_error(
 ) -> str | None:
     """Why the tool's ``run`` can't take ``arguments`` (extra keys, or a key
     named "context"), or None if it can. The schema check allows these, since
-    schemas don't forbid additional properties by default."""
+    schemas don't forbid additional properties by default.
+
+    "context" is rejected for every tool, because the adapter always passes
+    the call context to ``run`` under that name."""
+    if "context" in arguments:
+        return "'context' is a reserved argument name"
     try:
         inspect.signature(tool.run).bind(None, **arguments)
     except TypeError as e:
-        if "context" in arguments:
-            return "'context' is a reserved argument name"
         return _truncate_for_model(str(e))
     return None
 

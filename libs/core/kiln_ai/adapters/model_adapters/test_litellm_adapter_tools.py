@@ -852,6 +852,13 @@ class MockExplicitArgsTool(MockTool):
         return ToolCallResult(output=str(a + b))
 
 
+class MockVarArgsTool(MockTool):
+    """A tool whose run takes *args and **kwargs, like an undecorated wrapper."""
+
+    async def run(self, *args, **kwargs) -> ToolCallResult:
+        return ToolCallResult(output=self._return_value)
+
+
 class MockKilnTaskTool:
     """Mock tool class that returns KilnTaskToolResult for testing"""
 
@@ -1257,6 +1264,17 @@ UNEXPECTED_ADD_FAILURE = (
                 )
             ],
             id="context_argument",
+        ),
+        pytest.param(
+            [MockVarArgsTool("add")],
+            [("call_1", "add", '{"a": 2, "b": 2, "context": "x"}')],
+            [
+                _tool_error(
+                    "call_1",
+                    "Error: 'add' doesn't accept these arguments: 'context' is a reserved argument name. Call it again with only the arguments in its schema.",
+                )
+            ],
+            id="context_argument_with_var_args_run",
         ),
         pytest.param(
             [MockNoArgsTool("ping", return_value="pong")],
