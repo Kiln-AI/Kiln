@@ -1624,15 +1624,10 @@ _ORDER_LOOKUP_TRACE = [
     {"role": "assistant", "content": _ORDER_LOOKUP_ANSWER},
 ]
 
-# Cheap judges from five vendor families. Between them they cover each structured
+# Cheap judges from four vendor families. Between them they cover each structured
 # output mode the judge sends alongside its tools: json_schema,
 # json_instruction_and_object and json_instructions.
 _AGENTIC_JUDGE_LIVE_MODELS = [
-    # TODO: fails until the adapter sends tool definitions with "strict": false, a
-    # separate fix. Without it OpenRouter makes OpenAI models fill every optional tool
-    # argument, so read_messages is always refused and the judge loops until the tool
-    # round limit.
-    "gpt_6_luna",
     "claude_haiku_5_5",
     "gemini_3_8_flash",
     "qwen_3p8_flash",
