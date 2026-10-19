@@ -575,7 +575,7 @@
             properties={spec.properties}
           />
         </div>
-        <div class="flex flex-col gap-4">
+        <div class="w-full lg:w-72 2xl:w-96 flex flex-col gap-4">
           <PropertyList
             title="Properties"
             properties={[
