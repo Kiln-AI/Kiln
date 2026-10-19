@@ -10,12 +10,16 @@
 # prints the traceback and waits for a file change instead of this process
 # exiting non-zero. Fix the import and it reloads on its own.
 import os
+from pathlib import Path
 
 import uvicorn
 from kiln_ai.utils.config import Config
 
 from app.desktop.dev_env import set_dev_env_vars
+from app.desktop.dev_reload import reload_excludes
 from app.desktop.util.resource_limits import setup_resource_limits
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Set here as well as in dev_app.py so that reload workers inherit them.
 set_dev_env_vars()
@@ -41,6 +45,7 @@ if __name__ == "__main__":
         host=Config.shared().kiln_local_api_host,
         port=Config.shared().kiln_local_api_port,
         reload=True,
+        reload_excludes=reload_excludes(REPO_ROOT),
         # Debounce when changing many files (changing branch)
         reload_delay=0.1,
         # Bound the graceful-shutdown wait on reload. The UI holds the jobs SSE
