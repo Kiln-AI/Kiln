@@ -14052,6 +14052,10 @@ export interface components {
             tool_call_id?: string | null;
             /** Reasoning Content */
             reasoning_content?: string | null;
+            /** Is Error */
+            is_error?: boolean | null;
+            /** Error Message */
+            error_message?: string | null;
         } & {
             [key: string]: unknown;
         };

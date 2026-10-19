@@ -43,13 +43,19 @@ def test_function_tool_calls_rejects_custom_tool_call():
 @pytest.mark.parametrize(
     "arguments, expected",
     [
-        pytest.param(None, "", id="null"),
-        pytest.param("", "", id="empty"),
+        pytest.param(None, "{}", id="null"),
+        pytest.param("", "{}", id="empty"),
+        pytest.param("   ", "{}", id="spaces"),
+        pytest.param("\n\t", "{}", id="newline_and_tab"),
+        pytest.param("{}", "{}", id="empty_object"),
         pytest.param('{"a": 1}', '{"a": 1}', id="json"),
-        pytest.param("not json", "not json", id="invalid_json"),
+        pytest.param(' {"a": 1} ', ' {"a": 1} ', id="json_with_padding"),
+        pytest.param("{", "{", id="invalid_json"),
     ],
 )
-def test_response_function_tool_calls_normalizes_null_arguments(arguments, expected):
+def test_response_function_tool_calls_normalizes_null_and_blank_arguments(
+    arguments, expected
+):
     call = _function_call()
     call.function.arguments = arguments
 
