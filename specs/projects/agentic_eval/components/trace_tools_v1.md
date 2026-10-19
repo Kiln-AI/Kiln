@@ -359,7 +359,9 @@ The refusal is returned as `ToolCallResult(is_error=True)`.
 3. **Set a deadline** of `monotonic() + timeout_seconds`.
 4. **Scan.** For each message in `start..end` with role in `roles`, then for each part in the order `reasoning`, `content`, `tool_calls` (if in `parts` and non-empty):
    - if `deadline - monotonic() ≤ 0`, raise E8;
-   - otherwise run `pattern.finditer(text, timeout=deadline - monotonic(), concurrent=True)`. `concurrent=True` releases the GIL while matching, so a slow search in a worker thread doesn't stall the event loop;
+   - otherwise run `pattern.finditer(text, timeout=deadline - monotonic(), concurrent=regex)`. `concurrent` decides whether matching releases the GIL:
+     - `regex=true` releases it (`concurrent=True`), so a slow, backtracking search in a worker thread doesn't stall the event loop. Each step of the iterator then gives up the GIL and takes it back, one handoff per match and per part, so regex searches that run at once slow each other down sharply.
+     - `regex=false` keeps it (`concurrent=False`), so literal searches that run at once don't pay those handoffs: four parallel searches for `compute` on the 20 MB benchmark trace take about 1.4 s, against 47 s with the GIL released and the timeout raised; at the 30 s timeout all four fail with E8. Python still switches threads between matches, so on real text the event loop waits no more than about 15 ms, even on a single 20M-char part. The worst case is a pattern that ends in a long run of one character, searched in text with a long run of that character: the scan takes time proportional to the text length times the length of the pattern's run, holds the GIL throughout, and the timeout doesn't stop it.
    - record `(number, part, m.start(), m.end())` for every match with `m.end() > m.start()`.
    - A `TimeoutError` raises E8.
 5. **Totals:** `M` is the number of matches, `K` the number of distinct messages.
@@ -465,7 +467,7 @@ Tests live in `v1/test_view.py`, `test_render.py`, `test_search.py`, `test_patte
 | `test_search_zero_length_matches_skipped` | e.g. `regex=true`, `pattern="x*"`. |
 | `test_search_invalid_regex` / `test_search_timeout` | E7; E8 with `timeout_seconds=0.01` and a catastrophic pattern. |
 | `test_search_timeout_across_many_small_parts` | E8 when the deadline passes between parts that each finish quickly. |
-| `test_search_releases_the_gil_while_matching` | The event loop keeps running while a slow search runs in a worker thread. |
+| `test_regex_search_releases_the_gil_while_matching` | The event loop keeps running while a slow regex search runs in a worker thread. |
 | `test_pattern_elements` / `test_large_counted_repeats_rejected_quickly` / `test_ordinary_patterns_accepted` / `test_unsupported_inline_flags_rejected` / `test_verbose_flag_check_is_linear` | The element estimate in §6 step 1, including empty groups and branches; E12 returned in well under a second for `a{100000000}`, `(){100000000}`, `(|){100000000}` and similar; E13 for `x` and `f`. |
 | `test_search_does_not_cache_compiled_patterns` | Both compile calls pass `cache_pattern=False`. |
 | `test_search_deeply_nested_groups_are_invalid` | E7 for groups nested thousands deep. |
@@ -475,3 +477,4 @@ Tests live in `v1/test_view.py`, `test_render.py`, `test_search.py`, `test_patte
 | `test_golden_cases` | Every case in `golden/cases.json` matches its expected output exactly. |
 | `test_golden_definitions` | Tool names, descriptions and schemas match the saved JSON. |
 | `test_bench_build_view_20mb` / `test_bench_search_20mb` | The performance bounds in [architecture §6](../architecture.md#6-performance) (benchmark tests). |
+| `test_bench_parallel_literal_searches_20mb` | Four literal searches with hundreds of thousands of matches each run at once and finish well under the timeout (§6 step 4). |

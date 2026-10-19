@@ -102,9 +102,12 @@ def search_trace(
             if remaining <= 0:
                 raise _timed_out(timeout_seconds)
             try:
-                # concurrent=True releases the GIL while matching, so a slow
-                # search in a worker thread doesn't stall the event loop.
-                matches = pattern.finditer(text, timeout=remaining, concurrent=True)
+                # concurrent=True releases the GIL so a slow regex can't stall the event
+                # loop, at the cost of a handoff per match and part that slows parallel
+                # searches sharply. Literal scans of real text are quick, so keep it.
+                matches = pattern.finditer(
+                    text, timeout=remaining, concurrent=args.regex
+                )
                 for match in matches:
                     match_start, match_end = match.span()
                     if match_end <= match_start:

@@ -8,6 +8,7 @@ itself off under xdist.
 
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
@@ -21,6 +22,8 @@ from kiln_ai.adapters.eval.trace_tools.v1.view import TraceView, build_view
 BUILD_VIEW_SECONDS = 2.0
 TOOL_SECONDS = 0.2
 SEARCH_SECONDS = 2.0
+PARALLEL_SEARCHES = 4
+PARALLEL_SEARCH_SECONDS = 10.0
 
 
 @pytest.fixture(scope="module")
@@ -77,3 +80,24 @@ def test_bench_search_20mb(benchmark, large_view):
     )
     assert output.split()[1] == "matches"
     assert seconds < SEARCH_SECONDS
+
+
+@pytest.mark.benchmark
+def test_bench_parallel_literal_searches_20mb(benchmark, large_view):
+    # A judge's parallel tool calls run their searches in threads at once.
+    # "compute" matches hundreds of thousands of times in this trace, and a
+    # search that releases the GIL while matching hands it off once per match.
+    args = SearchArgs(pattern="compute")
+
+    def search_in_parallel() -> list[str]:
+        with ThreadPoolExecutor(max_workers=PARALLEL_SEARCHES) as pool:
+            searches = [
+                pool.submit(search_trace, large_view, args)
+                for _ in range(PARALLEL_SEARCHES)
+            ]
+            return [search.result() for search in searches]
+
+    outputs, seconds = _fastest_seconds(benchmark, search_in_parallel)
+    assert outputs[0].split()[1] == "matches"
+    assert outputs == [search_trace(large_view, args)] * PARALLEL_SEARCHES
+    assert seconds < PARALLEL_SEARCH_SECONDS

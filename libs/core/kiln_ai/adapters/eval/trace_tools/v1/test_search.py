@@ -179,7 +179,7 @@ def test_search_timeout_across_many_small_parts():
         )
 
 
-async def test_search_releases_the_gil_while_matching():
+async def test_regex_search_releases_the_gil_while_matching():
     view = _view("a" * 40 + "b")
     ticks = 0
 
