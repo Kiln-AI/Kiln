@@ -220,14 +220,16 @@
     {/if}
 
     {#if test_result.judge_trace}
-      <button
-        type="button"
-        class="btn btn-sm w-full"
-        on:click={() => judge_trace_dialog?.show()}
-        data-testid="judge-trace-btn"
-      >
-        Judge Trace
-      </button>
+      <div class="flex justify-end">
+        <button
+          type="button"
+          class="link underline text-xs text-gray-500"
+          on:click={() => judge_trace_dialog?.show()}
+          data-testid="judge-trace-btn"
+        >
+          Judge Trace
+        </button>
+      </div>
     {/if}
 
     <ToolCallLogTable

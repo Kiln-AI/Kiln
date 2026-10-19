@@ -770,7 +770,7 @@ describe("EvalTestRunPane", () => {
         })
       }
 
-      it("shows a grey Judge Trace button after the scores", () => {
+      it("shows a right-aligned Judge Trace link after the scores", () => {
         const { container } = renderResult(judge_trace)
 
         const button = container.querySelector(
@@ -778,7 +778,8 @@ describe("EvalTestRunPane", () => {
         ) as HTMLButtonElement
         expect(button).not.toBeNull()
         expect(button.textContent?.trim()).toBe("Judge Trace")
-        expect(button.className).toBe("btn btn-sm w-full")
+        expect(button.className).toBe("link underline text-xs text-gray-500")
+        expect(button.parentElement!.className).toBe("flex justify-end")
 
         const scores = container.querySelector('[data-testid="scores-section"]')
         expect(
@@ -809,7 +810,7 @@ describe("EvalTestRunPane", () => {
       })
 
       it.each([null, undefined])(
-        "shows neither the button nor the dialog when judge_trace is %s",
+        "shows neither the link nor the dialog when judge_trace is %s",
         (result_judge_trace) => {
           const { container } = renderResult(result_judge_trace)
 

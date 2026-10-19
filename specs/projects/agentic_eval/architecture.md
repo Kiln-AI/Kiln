@@ -305,7 +305,7 @@ These handlers stay thin: parse, call one core function, map the result (convent
 Specified in [ui_design.md](ui_design.md):
 
 - **Judge form:** an "Agentic Judge" option in the judge algorithm radio list.
-- **Test pane:** a "Judge Trace" button.
+- **Test pane:** a "Judge Trace" link.
 - **Results:** a "Judge trace" link.
 - **Judge details:** "Method: Agentic Judge".
 
