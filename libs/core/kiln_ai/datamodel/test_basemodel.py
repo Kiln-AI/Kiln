@@ -1531,16 +1531,22 @@ def test_aware_datetime_preserved_on_load(tmp_path):
     assert loaded.created_at.hour == 9
 
 
-@pytest.fixture
-def project_with_tasks(tmp_path) -> Project:
-    project = Project(name="Parent", path=tmp_path / Project.base_filename())
+def _project_with_tasks(folder: Path, task_count: int = 2) -> Project:
+    project = Project(name="Parent", path=folder / Project.base_filename())
     project.save_to_file()
-    for name in ["Task1", "Task2"]:
-        Task(name=name, instruction="Do it", parent=project).save_to_file()
+    for i in range(task_count):
+        Task(name=f"Task{i}", instruction="Do it", parent=project).save_to_file()
     return project
 
 
-def test_child_method_attaches_loaded_parent(project_with_tasks):
+@pytest.fixture
+def project_with_tasks(tmp_path) -> Project:
+    return _project_with_tasks(tmp_path)
+
+
+def test_child_method_attaches_a_mutable_parent_to_mutable_children(
+    project_with_tasks,
+):
     parent = Project.load_from_file(project_with_tasks.path)
     tasks = parent.tasks()
 
@@ -1548,23 +1554,23 @@ def test_child_method_attaches_loaded_parent(project_with_tasks):
     assert all(task.cached_parent() is parent for task in tasks)
 
 
-def test_child_method_readonly_children_of_mutable_parent_attach_it(
-    project_with_tasks,
+@pytest.mark.parametrize("parent_readonly", [False, True])
+def test_child_method_gives_readonly_children_the_cached_readonly_parent(
+    project_with_tasks, parent_readonly
 ):
-    parent = Project.load_from_file(project_with_tasks.path)
+    parent = Project.load_from_file(project_with_tasks.path, readonly=parent_readonly)
     tasks = parent.tasks(readonly=True)
 
     assert len(tasks) == 2
-    assert all(task.cached_parent() is parent for task in tasks)
-
-
-def test_child_method_readonly_children_of_readonly_parent_attach_it(
-    project_with_tasks,
-):
-    parent = Project.load_from_file(project_with_tasks.path, readonly=True)
-    tasks = parent.tasks(readonly=True)
-
-    assert all(task.cached_parent() is parent for task in tasks)
+    for task in tasks:
+        attached = task.cached_parent()
+        assert attached is not None
+        assert attached._readonly
+        assert attached is Project.load_from_file(
+            project_with_tasks.path, readonly=True
+        )
+        if not parent_readonly:
+            assert attached is not parent
 
 
 def test_child_method_mutable_children_of_readonly_parent_get_own_parent(
@@ -1580,3 +1586,26 @@ def test_child_method_mutable_children_of_readonly_parent_get_own_parent(
         assert loaded_parent is not None
         assert loaded_parent is not parent
         assert not loaded_parent._readonly
+
+
+def test_mutable_load_of_a_cached_child_has_an_editable_parent(project_with_tasks):
+    readonly_parent = Project.load_from_file(project_with_tasks.path, readonly=True)
+    cached_task = readonly_parent.tasks(readonly=True)[0]
+    assert cached_task.path is not None
+
+    task = Task.load_from_file(cached_task.path)
+
+    assert task.parent is not None
+    assert not task.parent._readonly
+    task.parent.name = "Edited"
+
+
+def test_mutable_listing_after_a_readonly_listing_attaches_the_callers_parent(
+    project_with_tasks,
+):
+    Project.load_from_file(project_with_tasks.path, readonly=True).tasks(readonly=True)
+    parent = Project.load_from_file(project_with_tasks.path)
+
+    tasks = parent.tasks()
+
+    assert all(task.cached_parent() is parent for task in tasks)

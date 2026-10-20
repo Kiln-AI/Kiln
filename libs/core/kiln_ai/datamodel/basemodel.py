@@ -411,14 +411,14 @@ class KilnBaseModel(BaseModel):
         cls: Type[T],
         path: Path | str,
         readonly: bool = False,
-        parent: "KilnParentModel | None" = None,
+        parent: "KilnBaseModel | None" = None,
     ) -> T:
         """Load a model instance from a specific file path.
 
         Args:
             path (Path): Path to the model file
             readonly (bool): If True, the model will be returned in readonly mode (cached instance, not a copy, not safe to mutate)
-            parent (KilnParentModel | None): The already-loaded parent of this model, if the caller has it. Only for parented models. Attached before validators that read `self.parent` run, so they don't reload the parent from disk once per child.
+            parent (KilnBaseModel | None): The already-loaded parent of this model, if the caller has it. Only for parented models. Attached before validators that read `self.parent` run, so they don't reload the parent from disk once per child.
 
         Returns:
             T: Instance of the model
@@ -431,6 +431,10 @@ class KilnBaseModel(BaseModel):
             path = Path(path)
         cached_model = ModelCache.shared().get_model(path, cls, readonly=readonly)
         if cached_model is not None:
+            # A readonly hit is the shared cached instance and keeps the parent it was
+            # cached with. A mutable hit is a fresh copy, so it can take the caller's.
+            if parent is not None and not readonly:
+                cached_model.parent = parent  # type: ignore[attr-defined]
             return cached_model
         with open(path, "r", encoding="utf-8") as file:
             # modified time of file for cache invalidation. From file descriptor so it's atomic w read.
@@ -577,6 +581,12 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
     def cached_parent(self) -> Optional[KilnBaseModel]:
         return object.__getattribute__(self, "parent")
 
+    def mutable_copy(self) -> Self:
+        # A cached model's parent is shared by every reader of the cache, and may be
+        # readonly. The copy drops it and lazy-loads its own when `parent` is read.
+        detached: Self = self.model_copy(update={"parent": None})
+        return KilnBaseModel.mutable_copy(detached)
+
     def load_parent(self) -> Optional[KilnBaseModel]:
         """Get the parent model instance, loading it from disk if necessary.
 
@@ -679,7 +689,7 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         else:
             parent_folder = parent_path
 
-        parent = cls.parent_type().load_from_file(parent_path)
+        parent = cls.parent_type().load_from_file(parent_path, readonly=True)
         if parent is None:
             raise ValueError("Parent must be set to load children")
 
@@ -710,11 +720,14 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         parent_path: Path | None,
         readonly: bool,
         error_on_first: bool,
-        parent: "KilnParentModel | None" = None,
+        parent: "KilnBaseModel | None" = None,
     ) -> tuple[list[PT], list[ChildLoadError]]:
-        # A mutable child must not get a readonly parent, so callers can still edit
-        # and save `child.parent`. It lazy-loads its own mutable parent instead.
-        if parent is not None and parent._readonly and not readonly:
+        # Readonly children are cached and shared by every reader, so they get the
+        # cached readonly parent, never the caller's object. Mutable children get the
+        # caller's parent only when it is mutable, so `child.parent` stays editable.
+        if readonly and parent_path is not None and parent_path.is_file():
+            parent = cls.parent_type().load_from_file(parent_path, readonly=True)
+        elif parent is not None and parent._readonly:
             parent = None
         children: list[PT] = []
         errors: list[ChildLoadError] = []
@@ -734,7 +747,7 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         cls: Type[PT],
         parent_path: Path | None,
         readonly: bool = False,
-        parent: "KilnParentModel | None" = None,
+        parent: "KilnBaseModel | None" = None,
     ) -> list[PT]:
         """Load every child of a parent, raising on the first child that fails to load.
 
