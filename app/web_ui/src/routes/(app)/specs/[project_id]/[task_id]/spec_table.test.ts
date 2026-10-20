@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import type { Eval, Spec } from "$lib/types"
-import { compute_table, resolved_priority, resolved_status } from "./spec_table"
+import { compute_table, resolved_priority } from "./spec_table"
+import { resolved_status } from "$lib/utils/spec_status"
 
 function make_spec(overrides: Partial<Spec> = {}): Spec {
   return {

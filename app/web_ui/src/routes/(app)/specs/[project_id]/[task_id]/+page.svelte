@@ -31,10 +31,10 @@
   } from "./spec_utils"
   import {
     compute_table,
-    resolved_status,
     type SortableColumn,
     type TableRow,
   } from "./spec_table"
+  import { resolved_status } from "$lib/utils/spec_status"
   import { kilnCopilotConnected } from "$lib/stores/copilot_connection_store"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
