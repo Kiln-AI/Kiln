@@ -15,7 +15,7 @@ Implements [functional_spec.md](functional_spec.md). The exact behavior of trace
 | How `trace_overview` reaches templates | `utils/jinja_engine` registers a **placeholder** filter; the LLM judge renders through an **overlay environment** that binds the real, version-specific filter | `utils/` must not import `adapters/` (layering rule). Templates still compile everywhere (Jinja rejects unknown filters at compile time). |
 | Judge trace storage | New field `EvalRun.judge_trace`, typed like `TaskRun.trace` | User decision: the judge trace belongs to the score record. Storage cost accepted. |
 | Judge trace in results | Not in the result rows. Each row's `eval_run` comes without its `judge_trace` and the row carries `has_judge_trace`. The results page fetches one run's trace from a separate judge-trace endpoint when the user opens it (§3.10) | Judge traces can be large (an agentic judge's can approach its context window), and the page shows one at a time. |
-| Tool errors | Handled in the model adapter by a **separate task**: argument mistakes and exceptions raised by tools become error results returned to the model | A general adapter bug, not specific to this project. Every tool benefits, and the trace tools can simply raise. Must merge first (§4). |
+| Tool errors | Handled in the model adapter by a **separate change**: argument mistakes and exceptions raised by tools become error results returned to the model | A general adapter bug, not specific to this project. Every tool benefits, and the trace tools can simply raise. This project depends on it (§4). |
 | Structured output with tools | Keep the LLM judge's current mode selection, and send it only on a separate, final scores-only turn (§3.7) | User decision, after real-provider runs (§7.8) showed models writing prose around their JSON when the tools and the score format share one turn. |
 | Eval builder | No support in v1 | User decision. |
 | CPU-heavy work | `asyncio.to_thread` | Parsing and searching a 20 MB trace must not block the event loop, which runs up to 25 judgments at once. |
@@ -317,12 +317,12 @@ No new pages, and no shared-control changes.
 
 ## 4. Prerequisite: Non-Fatal Tool Errors in the Adapter
 
-This is a separate task, already queued. It changes `LiteLlmAdapter.process_tool_calls` (and the streaming path) in two ways:
+This is a separate change, on main, outside this project. `LiteLlmAdapter.process_tool_calls` (and the streaming path) handle tool errors in two ways:
 
 - **Model mistakes become error results.** An unknown tool, arguments that aren't JSON, or arguments that fail the schema go back to the model as error tool messages, instead of failing the run.
-- **Exceptions raised by a tool become error results.** It adds `ToolCallError` to `tools/base_tool.py` for expected, model-facing errors: the adapter returns the message without logging a stack trace. Any other `Exception` is logged with its stack trace and returned as an error. `BaseException`, including cancellation, still propagates.
+- **Exceptions raised by a tool become error results.** `ToolCallError` in `tools/base_tool.py` marks expected, model-facing errors: the adapter returns the message without logging a stack trace. Any other `Exception` is logged with its stack trace and returned as an error. `BaseException`, including cancellation, still propagates.
 
-**It must merge before this project's implementation starts.** The trace tools subclass `ToolCallError`, and rely on the adapter to deliver their errors.
+This project depends on it: the trace tools subclass `ToolCallError`, and rely on the adapter to deliver their errors.
 
 ## 5. Error Handling
 
@@ -450,6 +450,6 @@ This is the check for the structured-output-with-tools question in §1.
 | Risk | Mitigation |
 |------|------------|
 | Providers or litellm force the structured-output answer when tools are present (e.g. litellm's Anthropic path for models without native structured output), so the judge answers without reading | Checked by §7.8 on five OpenRouter models: every judge called a trace tool before answering, and no provider rejected the score format alongside tools. Qwen and GLM wrote prose around their JSON when both shared a turn, which the separate final scores-only turn (§3.7) fixed. |
-| Tool schema bounds (`minimum`/`maximum`) rejected by some providers in tool definitions | Checked by §7.8: all five OpenRouter provider paths accepted the bounds. Separately, OpenRouter makes OpenAI models' tool calls strict, so they fill every optional argument and `read_messages` refuses every call; a separate adapter task sends `"strict": false` on tool definitions. |
+| Tool schema bounds (`minimum`/`maximum`) rejected by some providers in tool definitions | Checked by §7.8: all five OpenRouter provider paths accepted the bounds. Separately, OpenRouter makes OpenAI models' tool calls strict, so they fill every optional argument and `read_messages` refuses every call. The adapter sends `"strict": false` on every tool definition that doesn't set `strict`, the trace tools included (`_non_strict_unless_set` in `litellm_adapter.py`). |
 | Judge trace storage grows git-synced projects | Accepted (user decision). |
 | Overlay environment accidentally mutating the shared filters dict | A new dict is assigned (§3.6), and a test asserts the base env's filter is still the placeholder after a judge render. |
