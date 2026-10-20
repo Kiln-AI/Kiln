@@ -2523,7 +2523,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/run_configs_eval_scores": {
+    "/api/projects/{project_id}/tasks/{task_id}/run_configs/eval_scores": {
         parameters: {
             query?: never;
             header?: never;
@@ -2531,8 +2531,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Eval Scores For All Run Configs
-         * @description Every run config's eval scores, keyed by run config id. One request instead of one per run config.
+         * List Eval Scores For All Run Configs
+         * @description Eval scores for every run config of the task, keyed by run config id. Each value matches the per-run-config eval_scores endpoint.
          */
         get: operations["get_all_run_configs_eval_scores_api_projects__project_id__tasks__task_id__run_configs_eval_scores_get"];
         put?: never;

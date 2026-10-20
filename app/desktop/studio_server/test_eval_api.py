@@ -9496,7 +9496,7 @@ def test_all_run_configs_eval_scores_match_the_per_run_config_endpoint(
         ),
         patch_resolve_split(test=stub_split(item_ids)),
     ):
-        batch = client.get("/api/projects/project1/tasks/task1/run_configs_eval_scores")
+        batch = client.get("/api/projects/project1/tasks/task1/run_configs/eval_scores")
         singles = {
             rc.id: client.get(
                 f"/api/projects/project1/tasks/task1/run_configs/{rc.id}/eval_scores"
@@ -9535,11 +9535,36 @@ def test_run_config_eval_scores_reads_eval_runs_once_for_any_number_of_run_confi
             run_config_eval_scores(mock_task, run_config_ids)
         return runs.call_count
 
-    assert eval_run_reads(["rc_a", "rc_b"]) == eval_run_reads(["rc_a"])
+    single_reads = eval_run_reads(["rc_a"])
+    assert single_reads > 0
+    assert eval_run_reads(["rc_a", "rc_b"]) == single_reads
 
 
-def test_run_config_eval_scores_with_no_run_configs_is_empty(mock_task, mock_eval):
-    assert run_config_eval_scores(mock_task, []) == {}
+def test_all_run_configs_eval_scores_with_no_run_configs_is_empty(
+    client, mock_task_from_id, mock_task, mock_eval
+):
+    with patch(
+        "app.desktop.studio_server.eval_api.get_all_run_configs", return_value=[]
+    ):
+        response = client.get(
+            "/api/projects/project1/tasks/task1/run_configs/eval_scores"
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {}
+
+
+def test_run_config_eval_scores_ignores_repeated_run_config_ids(
+    mock_task, mock_eval, mock_eval_config, data_source
+):
+    _, item_ids = _two_run_configs_with_scores(
+        mock_task, mock_eval, mock_eval_config, data_source
+    )
+    with patch_resolve_split(test=stub_split(item_ids)):
+        repeated = run_config_eval_scores(mock_task, ["rc_a", "rc_a"])
+        single = run_config_eval_scores(mock_task, ["rc_a"])
+
+    assert repeated == single
 
 
 def test_get_eval_default_judge_types(

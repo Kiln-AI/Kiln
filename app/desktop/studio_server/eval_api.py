@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 from collections import defaultdict
@@ -92,6 +91,7 @@ from kiln_ai.utils.open_ai_types import (
     ChatCompletionMessageParam,
     serialize_trace,
 )
+from kiln_ai.utils.torn_read import to_thread_retrying_torn_read
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
@@ -1313,7 +1313,9 @@ class _EvalScoreTally:
     n_excluded: int = 0
     n_partial: int = 0
 
-    def result(self, eval: Eval, eval_config_id: ID_TYPE, dataset_size: int):
+    def result(
+        self, eval: Eval, eval_config_id: ID_TYPE, dataset_size: int
+    ) -> EvalConfigResult:
         results: Dict[str, ScoreSummary | None] = {}
         for output_score in eval.output_scores:
             score_key = output_score.json_key()
@@ -1355,6 +1357,7 @@ def run_config_eval_scores(
         != EvalStatus.archived
     ]
 
+    run_config_ids = list(dict.fromkeys(run_config_ids))
     # The usage reported is the evaluated task's, which lives on the scored TaskRun
     # for every record that has a `scored_run_id`.
     usage_by_scored_run_id = scored_trace_usage_for_run_configs(
@@ -2255,9 +2258,10 @@ def connect_evals_api(app: FastAPI):
         Evals with no default judge are omitted. Used by the evals list to
         display each eval's type without fetching every config.
         """
-        task = task_from_id(project_id, task_id)
         # A first, uncached read of every eval's configs takes seconds on a large task.
-        return await asyncio.to_thread(default_judge_types, task)
+        return await to_thread_retrying_torn_read(
+            lambda: default_judge_types(task_from_id(project_id, task_id))
+        )
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/eval_inputs",
@@ -3479,17 +3483,17 @@ def connect_evals_api(app: FastAPI):
             str, Path(description="The unique identifier of the run configuration.")
         ],
     ) -> RunConfigEvalScoresSummary:
-        task = task_from_id(project_id, task_id)
+        def read() -> RunConfigEvalScoresSummary:
+            task = task_from_id(project_id, task_id)
+            # Called for its 404 when the run config doesn't exist.
+            task_run_config_from_id(project_id, task_id, run_config_id)
+            return run_config_eval_scores(task, [run_config_id])[run_config_id]
 
-        # Called for its 404 when the run config doesn't exist.
-        task_run_config_from_id(project_id, task_id, run_config_id)
-
-        scores = await asyncio.to_thread(run_config_eval_scores, task, [run_config_id])
-        return scores[run_config_id]
+        return await to_thread_retrying_torn_read(read)
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/run_configs_eval_scores",
-        summary="Get Eval Scores For All Run Configs",
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/eval_scores",
+        summary="List Eval Scores For All Run Configs",
         tags=["Run Configs"],
         openapi_extra=ALLOW_AGENT,
     )
@@ -3502,14 +3506,18 @@ def connect_evals_api(app: FastAPI):
             Path(description="The unique identifier of the task within the project."),
         ],
     ) -> Dict[str, RunConfigEvalScoresSummary]:
-        """Every run config's eval scores, keyed by run config id. One request instead of one per run config."""
-        task = task_from_id(project_id, task_id)
-        run_config_ids = [
-            run_config.id
-            for run_config in get_all_run_configs(project_id, task_id)
-            if run_config.id is not None
-        ]
-        return await asyncio.to_thread(run_config_eval_scores, task, run_config_ids)
+        """Eval scores for every run config of the task, keyed by run config id. Each value matches the per-run-config eval_scores endpoint."""
+
+        def read() -> Dict[str, RunConfigEvalScoresSummary]:
+            task = task_from_id(project_id, task_id)
+            run_config_ids = [
+                run_config.id
+                for run_config in get_all_run_configs(project_id, task_id)
+                if run_config.id is not None
+            ]
+            return run_config_eval_scores(task, run_config_ids)
+
+        return await to_thread_retrying_torn_read(read)
 
     @app.post(
         "/api/projects/{project_id}/add_code_trust",

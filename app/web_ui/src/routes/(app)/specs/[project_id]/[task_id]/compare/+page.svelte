@@ -79,10 +79,11 @@
   let eval_scores_loading: Record<string, boolean> = {}
   let eval_scores_errors: Record<string, string> = {}
   // Every run config's scores load in one request when the page opens. The
-  // per-run-config fetches below wait for it, and only pick up run configs
-  // created after it.
-  let all_eval_scores_requested = false
+  // per-run-config fetches below wait for it, then pick up run configs it
+  // missed: ones created later, or all of them if the request failed.
+  let all_eval_scores_requested_for_task: string | null = null
   let all_eval_scores_loading = false
+  $: all_eval_scores_requested = all_eval_scores_requested_for_task === task_id
 
   // Eval data cache (full eval objects, keyed by eval_id)
   let eval_data_cache: Record<string, Eval> = {}
@@ -230,14 +231,17 @@
   }
 
   async function fetch_all_eval_scores(run_config_ids: string[]) {
-    all_eval_scores_requested = true
+    all_eval_scores_requested_for_task = task_id
+    if (run_config_ids.length === 0) {
+      return
+    }
     all_eval_scores_loading = true
     for (const id of run_config_ids) {
       eval_scores_loading[id] = true
     }
     try {
       const { data, error: fetch_error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/run_configs_eval_scores",
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/eval_scores",
         { params: { path: { project_id, task_id } } },
       )
       if (fetch_error) {
@@ -245,11 +249,9 @@
       }
       eval_scores_cache = { ...eval_scores_cache, ...data }
     } catch (err) {
-      const message =
-        createKilnError(err).getMessage() || "Failed to fetch eval scores"
-      for (const id of run_config_ids) {
-        eval_scores_errors[id] = message
-      }
+      // Left out of the cache, so the per-run-config fetches retry each one
+      // and report errors per run config.
+      console.error("Failed to fetch eval scores for all run configs", err)
     } finally {
       for (const id of run_config_ids) {
         eval_scores_loading[id] = false
