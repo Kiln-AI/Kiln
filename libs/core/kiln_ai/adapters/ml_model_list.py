@@ -326,7 +326,6 @@ class ModelName(str, Enum):
     hunyuan_hy3 = "hunyuan_hy3"
     hunyuan_a13b = "hunyuan_a13b"
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
-    minimax_m3_1_flash = "minimax_m3_1_flash"
     minimax_m3 = "minimax_m3"
     minimax_m2_7 = "minimax_m2_7"
     minimax_m2_5 = "minimax_m2_5"
@@ -10932,40 +10931,6 @@ built_in_models: List[KilnModel] = [
                 reasoning_optional_for_structured_output=True,
                 supports_data_gen=False,
                 supports_function_calling=False,
-            ),
-        ],
-    ),
-    # Minimax M3.1 Flash
-    KilnModel(
-        family=ModelFamily.minimax,
-        name=ModelName.minimax_m3_1_flash,
-        friendly_name="Minimax M3.1 Flash",
-        editorial_notes="MiniMax's faster M3.1 variant. 1M context, native image and video input, built for agentic tasks.",
-        providers=[
-            # OpenRouter serves this model only on its free tier, which MiniMax hosts.
-            # Unlike M3, it does not always return reasoning on OpenRouter, so the R1
-            # parser and required reasoning are off.
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="minimax/minimax-m3.1-flash:free",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                supports_data_gen=True,
-                multimodal_capable=True,
-                supports_vision=True,
-                supports_doc_extraction=True,
-                multimodal_requires_pdf_as_image=True,
-                multimodal_mime_types=[
-                    # images
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
-                    # documents (via PDF-as-image)
-                    KilnMimeType.PDF,
-                    KilnMimeType.TXT,
-                    KilnMimeType.MD,
-                    # video
-                    KilnMimeType.MP4,
-                    KilnMimeType.MOV,
-                ],
             ),
         ],
     ),
