@@ -1,17 +1,12 @@
 import { writable, get } from "svelte/store"
 import { client } from "$lib/api_client"
 import type { Eval, Spec } from "$lib/types"
-import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 import { resolved_status } from "$lib/utils/spec_status"
 import type { TagCounts } from "./tag_store"
 
 export const eval_tag_store_by_task_id = writable<Record<string, TagCounts>>({})
 
 const loading_eval_tags = writable<Record<string, boolean>>({})
-
-export const eval_tags_errors_by_task_id = writable<Record<string, KilnError>>(
-  {},
-)
 
 /** How many of the task's evals use each tag. Archived evals are left out. */
 export function count_eval_tags(specs: Spec[], evals: Eval[]): TagCounts {
@@ -26,6 +21,20 @@ export function count_eval_tags(specs: Spec[], evals: Eval[]): TagCounts {
     }
   }
   return counts
+}
+
+/** Replace a task's counts with ones computed from specs and evals the caller already loaded. */
+export function set_eval_tags(task_id: string, specs: Spec[], evals: Eval[]) {
+  eval_tag_store_by_task_id.set({
+    ...get(eval_tag_store_by_task_id),
+    [task_id]: count_eval_tags(specs, evals),
+  })
+}
+
+/** Drop a task's counts, so the next load_eval_tags fetches them again. */
+export function invalidate_eval_tags(task_id: string) {
+  const { [task_id]: _, ...rest } = get(eval_tag_store_by_task_id)
+  eval_tag_store_by_task_id.set(rest)
 }
 
 export async function load_eval_tags(
@@ -52,21 +61,11 @@ export async function load_eval_tags(
     if (evals_response.error) {
       throw evals_response.error
     }
-    const counts = count_eval_tags(
-      specs_response.data,
-      evals_response.data.evals,
-    )
-    eval_tag_store_by_task_id.set({
-      ...get(eval_tag_store_by_task_id),
-      [task_id]: counts,
-    })
-    return counts
+    set_eval_tags(task_id, specs_response.data, evals_response.data.evals)
+    return get(eval_tag_store_by_task_id)[task_id] ?? {}
   } catch (error: unknown) {
+    // Suggestions are optional: the picker still accepts typed tags without them.
     console.error("Error loading eval tags", error)
-    eval_tags_errors_by_task_id.set({
-      ...get(eval_tags_errors_by_task_id),
-      [task_id]: createKilnError(error),
-    })
     return {}
   } finally {
     loading_eval_tags.set({ ...get(loading_eval_tags), [task_id]: false })

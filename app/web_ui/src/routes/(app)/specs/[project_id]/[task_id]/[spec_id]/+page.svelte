@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { invalidate_eval_tags } from "$lib/stores/eval_tag_store"
   import PropertyList from "$lib/ui/property_list.svelte"
   import AppPage from "../../../../app_page.svelte"
   import { page } from "$app/stores"
@@ -481,6 +482,7 @@
       }
       spec = data
       current_tags = spec.tags || []
+      invalidate_eval_tags(task_id)
       posthog.capture("update_spec_tags", {
         num_tags: tags.length,
       })

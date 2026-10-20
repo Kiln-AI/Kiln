@@ -35,6 +35,7 @@
     type TableRow,
   } from "./spec_table"
   import { resolved_status } from "$lib/utils/spec_status"
+  import { set_eval_tags } from "$lib/stores/eval_tag_store"
   import { kilnCopilotConnected } from "$lib/stores/copilot_connection_store"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
@@ -55,6 +56,8 @@
   let specs_error: KilnError | null = null
   let specs_loading = true
   let evals: Eval[] | null = null
+  // The Add Tags dialog suggests from these, so they track this page's reloads.
+  $: if (specs && evals) set_eval_tags(task_id, specs, evals)
   let evals_error: KilnError | null = null
   let evals_loading = true
   let eval_load_error_count = 0

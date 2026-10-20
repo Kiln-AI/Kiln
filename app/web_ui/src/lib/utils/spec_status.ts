@@ -1,6 +1,6 @@
 import type { Eval, Spec, SpecStatus } from "$lib/types"
 
-// Status lives on the eval, falling back to the spec for evals created before that.
+// An eval holds its own status. Older evals have none, and their spec holds it.
 export function resolved_status(
   spec: Spec,
   by_id: Map<string, Eval>,

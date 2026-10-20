@@ -1,6 +1,18 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
+import { get } from "svelte/store"
 import type { Eval, Spec } from "$lib/types"
-import { count_eval_tags } from "./eval_tag_store"
+
+const { mock_get } = vi.hoisted(() => ({ mock_get: vi.fn() }))
+vi.mock("$lib/api_client", () => ({ client: { GET: mock_get } }))
+
+import {
+  count_eval_tags,
+  eval_tag_store_by_task_id,
+  increment_eval_tag,
+  invalidate_eval_tags,
+  load_eval_tags,
+  set_eval_tags,
+} from "./eval_tag_store"
 
 function make_spec(overrides: Partial<Spec> = {}): Spec {
   return {
@@ -67,5 +79,69 @@ describe("count_eval_tags", () => {
     const evals = [make_eval({ id: "e1", status: undefined })]
 
     expect(count_eval_tags(specs, evals)).toEqual({})
+  })
+})
+
+describe("eval tag store", () => {
+  beforeEach(() => {
+    eval_tag_store_by_task_id.set({})
+    mock_get.mockReset()
+  })
+
+  function answer_with(specs: Spec[], evals: Eval[]) {
+    mock_get.mockImplementation((path: string) =>
+      Promise.resolve(
+        path.endsWith("/specs")
+          ? { data: specs, error: undefined }
+          : { data: { evals, load_error_count: 0 }, error: undefined },
+      ),
+    )
+  }
+
+  it("loads counts once per task and reuses them", async () => {
+    answer_with(
+      [make_spec({ id: "s1", eval_id: "e1", tags: ["v3"] })],
+      [make_eval({ id: "e1" })],
+    )
+
+    expect(await load_eval_tags("p1", "t1")).toEqual({ v3: 1 })
+    expect(await load_eval_tags("p1", "t1")).toEqual({ v3: 1 })
+    expect(mock_get).toHaveBeenCalledTimes(2)
+  })
+
+  it("fetches again after the task's counts are invalidated", async () => {
+    answer_with([make_spec({ tags: ["old"] })], [make_eval()])
+    await load_eval_tags("p1", "t1")
+
+    invalidate_eval_tags("t1")
+    answer_with([make_spec({ tags: ["new"] })], [make_eval()])
+
+    expect(await load_eval_tags("p1", "t1")).toEqual({ new: 1 })
+  })
+
+  it("returns no suggestions when a request fails", async () => {
+    mock_get.mockResolvedValue({ data: undefined, error: { detail: "boom" } })
+
+    expect(await load_eval_tags("p1", "t1")).toEqual({})
+    expect(get(eval_tag_store_by_task_id)["t1"]).toBeUndefined()
+  })
+
+  it("uses counts the page set without fetching", async () => {
+    set_eval_tags("t1", [make_spec({ tags: ["seeded"] })], [make_eval()])
+
+    expect(await load_eval_tags("p1", "t1")).toEqual({ seeded: 1 })
+    expect(mock_get).not.toHaveBeenCalled()
+  })
+
+  it("increments a loaded task's count and ignores an unloaded task", () => {
+    set_eval_tags("t1", [make_spec({ tags: ["v3"] })], [make_eval()])
+
+    increment_eval_tag("t1", "v3")
+    increment_eval_tag("t1", "fresh")
+    increment_eval_tag("t2", "ignored")
+
+    expect(get(eval_tag_store_by_task_id)).toEqual({
+      t1: { v3: 2, fresh: 1 },
+    })
   })
 })
