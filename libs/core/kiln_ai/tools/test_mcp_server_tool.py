@@ -16,6 +16,7 @@ from kiln_ai.datamodel.external_tool_server import (
 )
 from kiln_ai.datamodel.tool_id import MCP_REMOTE_TOOL_ID_PREFIX
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
+from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 
 
 def _configure_ephemeral_mcp_client_mock(
@@ -566,23 +567,38 @@ class TestMCPServerTool:
 class TestMCPServerToolIntegration:
     """Integration tests for MCPServerTool using real services."""
 
-    external_tool_server = ExternalToolServer(
-        name="postman_echo",
-        type=ToolServerType.remote_mcp,
-        description="Postman Echo MCP Server for testing",
-        properties={
-            "server_url": "https://postman-echo-mcp.fly.dev/",
-            "is_archived": False,
-        },
-    )
+    @pytest.fixture
+    def echo_server(self, mcp_echo_http_url):
+        """An echo server reachable over streamable HTTP."""
+        return ExternalToolServer(
+            name="echo_http",
+            type=ToolServerType.remote_mcp,
+            description="Echo MCP server over streamable HTTP",
+            properties={
+                "server_url": mcp_echo_http_url,
+                "is_archived": False,
+            },
+        )
 
-    @pytest.mark.skip(
-        reason="Skipping integration test since it requires calling a real MCP server"
-    )
-    async def test_call_tool_success(self):
+    @pytest.fixture
+    async def agent_run_context(self):
+        """A tool call needs an agent run context, so set one for the test.
+
+        A tool call opens a session that the manager caches against the run id,
+        so the session needs an explicit cleanup. Without it the session outlives
+        the test and its transport fails to close with the event loop.
+        """
+        from kiln_ai.run_context import clear_agent_run_id, set_agent_run_id
+
+        session_id = "test_run_mcp_integration"
+        set_agent_run_id(session_id)
+        yield session_id
+        await MCPSessionManager.shared().cleanup_session(session_id)
+        clear_agent_run_id()
+
+    async def test_call_tool_success(self, echo_server, agent_run_context):
         """Test successful call_tool execution."""
-        # Create MCP server using Postman Echo MCP server with 'echo' tool
-        tool = MCPServerTool(self.external_tool_server, "echo")
+        tool = MCPServerTool(echo_server, "echo")
 
         test_message = "Hello, world!"
         result = await tool._call_tool(message=test_message)
@@ -595,21 +611,16 @@ class TestMCPServerToolIntegration:
             text_content.text == "Tool echo: " + test_message
         )  # 'Tool echo: Hello, world!'
 
-    @pytest.mark.skip(
-        reason="Skipping integration test since it requires calling a real MCP server"
-    )
-    def test_tool_run(self):
-        tool = MCPServerTool(self.external_tool_server, "echo")
+    async def test_tool_run(self, echo_server, agent_run_context):
+        tool = MCPServerTool(echo_server, "echo")
         test_message = "Hello, world!"
 
-        run_result = tool.run(message=test_message)
-        assert run_result == "Tool echo: " + test_message
+        run_result = await tool.run(message=test_message)
+        assert run_result.output == "Tool echo: " + test_message
+        assert run_result.is_error is False
 
-    @pytest.mark.skip(
-        reason="Skipping integration test since it requires calling a real MCP server"
-    )
-    async def test_get_tool(self):
-        tool = MCPServerTool(self.external_tool_server, "echo")
+    async def test_get_tool(self, echo_server):
+        tool = MCPServerTool(echo_server, "echo")
         mcp_tool = await tool._get_tool("echo")
         assert mcp_tool.name == "echo"
 
