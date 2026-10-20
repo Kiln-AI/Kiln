@@ -1503,6 +1503,11 @@ class TestMCPSessionManager:
                 pass
 
 
+def _text_blocks(result) -> list[str]:
+    """The text of a tool result, which is what these tests assert on."""
+    return [b.text for b in result.content if isinstance(b, TextContent)]
+
+
 class TestMCPServerIntegration:
     """Integration tests for MCPServer using real services."""
 
@@ -1559,9 +1564,7 @@ class TestMCPServerIntegration:
         ) as session:
             result = await session.call_tool("echo", {"message": "over stdio"})
 
-        assert [
-            block.text for block in result.content if isinstance(block, TextContent)
-        ] == ["Tool echo: over stdio"]
+        assert _text_blocks(result) == ["Tool echo: over stdio"]
 
     async def test_env_vars_reach_real_local_mcp_server(self, mcp_echo_stdio_command):
         """Test that the env vars the caller sets arrive in the server process.
@@ -1576,20 +1579,24 @@ class TestMCPServerIntegration:
             description="Echo MCP server over stdio",
             properties={
                 **mcp_echo_stdio_command,
-                "env_vars": {"KILN_TEST_ECHO_VALUE": "arrived"},
+                "env_vars": {"KILN_TEST_PLAIN_VALUE": "plain"},
+                "secret_env_var_keys": ["KILN_TEST_SECRET_VALUE"],
             },
         )
+        external_tool_server._unsaved_secrets = {"KILN_TEST_SECRET_VALUE": "secret"}
 
         async with MCPSessionManager.shared().mcp_client(
             external_tool_server
         ) as session:
-            result = await session.call_tool(
-                "echo_env", {"name": "KILN_TEST_ECHO_VALUE"}
+            plain = await session.call_tool(
+                "echo_env", {"name": "KILN_TEST_PLAIN_VALUE"}
+            )
+            secret = await session.call_tool(
+                "echo_env", {"name": "KILN_TEST_SECRET_VALUE"}
             )
 
-        assert [
-            block.text for block in result.content if isinstance(block, TextContent)
-        ] == ["arrived"]
+        assert _text_blocks(plain) == ["plain"]
+        assert _text_blocks(secret) == ["secret"]
 
     async def test_local_mcp_nonexistent_command_raises_kiln_mcp_error(self):
         """Real integration test (no mocks): confirms that spawning a local MCP server
