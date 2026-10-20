@@ -1113,7 +1113,7 @@
     : "Add Tags to Eval"}
   {project_id}
   {task_id}
-  tag_type="task_run"
+  tag_type="eval"
   bind:add_tags
   onTagsChanged={handle_tags_changed}
   onAddTags={add_selected_tags}

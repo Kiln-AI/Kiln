@@ -695,7 +695,7 @@
           {/if}
           <TagPicker
             tags={current_tags}
-            tag_type="task_run"
+            tag_type="eval"
             {project_id}
             {task_id}
             on:tags_changed={(event) => {
