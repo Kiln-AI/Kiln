@@ -1151,16 +1151,20 @@ async def test_mocked_ai_sdk_stream_non_object_arguments_are_non_fatal(
     assert stream.task_run.output.output == final_content
 
 
-async def test_mocked_ai_sdk_stream_null_arguments_are_non_fatal_and_run_saves(
-    task: Task,
+@pytest.mark.parametrize(
+    "arguments", [pytest.param(None, id="null"), pytest.param("", id="empty")]
+)
+async def test_mocked_ai_sdk_stream_null_or_empty_arguments_become_empty_object_and_run_saves(
+    task: Task, arguments: str | None
 ):
-    """Null arguments are stored as "" and get the invalid-JSON error. The stream
-    continues to a final answer, and the saved run reloads."""
+    """Null or empty arguments are stored and sent back to the model as "{}",
+    and get the schema error. The stream continues to a final answer, and the
+    saved run reloads."""
     adapter = _make_mocked_adapter(task, return_on_tool_call=False)
 
     tool_call_response = _make_model_response(
         content=None,
-        tool_calls=[_make_raw_tool_call("call_multiply", "multiply", None)],
+        tool_calls=[_make_raw_tool_call("call_multiply", "multiply", arguments)],
     )
     final_content = "3 times 7 is 21."
     streams = iter(
@@ -1175,14 +1179,18 @@ async def test_mocked_ai_sdk_stream_null_arguments_are_non_fatal_and_run_saves(
     with patch(
         "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
         side_effect=lambda **kw: next(streams),
-    ):
+    ) as streaming_completion:
         stream = adapter.invoke_ai_sdk_stream(input="3 * 7 = ?")
         events = [event async for event in stream]
+
+    second_call_messages = streaming_completion.call_args_list[1].kwargs["messages"]
+    replayed_tool_call = second_call_messages[-2].tool_calls[0]
+    assert replayed_tool_call.function.arguments == "{}"
 
     assert [e for e in events if isinstance(e, ToolOutputErrorEvent)] == [
         ToolOutputErrorEvent(
             toolCallId="call_multiply",
-            errorText="Error: arguments for 'multiply' are not valid JSON: . Call it again with a JSON object.",
+            errorText="Error: arguments for 'multiply' don't match its schema: 'a' is a required property. Call it again with corrected arguments.",
         )
     ]
     task_run = stream.task_run
@@ -1192,7 +1200,7 @@ async def test_mocked_ai_sdk_stream_null_arguments_are_non_fatal_and_run_saves(
         {
             "id": "call_multiply",
             "type": "function",
-            "function": {"name": "multiply", "arguments": ""},
+            "function": {"name": "multiply", "arguments": "{}"},
         }
     ]
     assert task_run.path is not None

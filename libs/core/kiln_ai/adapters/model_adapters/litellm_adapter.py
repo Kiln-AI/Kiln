@@ -219,6 +219,17 @@ def _is_json_object(arguments: Any) -> bool:
         return False
 
 
+def _non_strict_unless_set(definition: ToolCallDefinition) -> ToolCallDefinition:
+    # OpenAI's Responses API (OpenAI models on OpenRouter, Responses-only models on
+    # OpenAI) treats a function tool as strict unless told otherwise, and strict mode
+    # makes every optional argument required, so the model invents values for them.
+    function = copy.copy(definition["function"])
+    function.setdefault("strict", False)
+    tool = copy.copy(definition)
+    tool["function"] = function
+    return tool
+
+
 def _validate_unmanaged_tools(tools: list[KilnToolInterface]) -> None:
     for i, tool in enumerate(tools):
         if not isinstance(tool, KilnToolInterface):
@@ -1003,7 +1014,7 @@ class LiteLlmAdapter(BaseAdapter):
                 )
             seen_names.add(name)
 
-        return merged
+        return [_non_strict_unless_set(d) for d in merged]
 
     async def process_tool_calls(
         self, tool_calls: list[ChatCompletionMessageToolCall] | None

@@ -610,13 +610,13 @@ class V2EvalResult(BaseModel):
     )
     judge_trace: list[ChatCompletionMessageParam] | None = Field(
         default=None,
-        description="The judge model's conversation, if the judgment called a model. None for the deterministic eval types, which call none. Stored on the resulting EvalRun as judge_trace.",
+        description="The judge's full conversation in OpenAI format: the system prompt, the rendered judge prompt, and every reply. None for evals that call no model (e.g. code evals). Stored on the resulting EvalRun as judge_trace.",
     )
 
     @model_validator(mode="after")
     def materialize_judge_trace_content(self) -> Self:
-        # Same reason as TaskRun.materialize_trace_content: lazily validated list
-        # `content` would otherwise serialize as [].
+        # Pydantic validates the trace's Iterable-typed `content` into a lazy, single-use
+        # iterator that serializes as [] and cannot be deepcopied.
         if self.judge_trace is not None:
             materialize_lazy_content(self.judge_trace)
         return self
@@ -1054,7 +1054,7 @@ class EvalRun(KilnParentedModel):
     )
     judge_trace: list[ChatCompletionMessageParam] | None = Field(
         default=None,
-        description="The evaluation model's (judge's) conversation in OpenAI format: the system prompt, the rendered judge prompt, and the judge's reply. Distinct from the evaluated task run's trace. None for non-LLM evals (e.g. code evals) and for records that predate this field.",
+        description="The judge's full conversation in OpenAI format: the system prompt, the rendered judge prompt, and every reply. Structured messages, unlike the deprecated JSON-string task_run_trace. None for V1 evals, for evals that call no model (e.g. code evals), and for records that predate this field. Distinct from the evaluated task run's trace.",
     )
 
     eval_input_id: ID_TYPE | None = Field(
@@ -1076,14 +1076,6 @@ class EvalRun(KilnParentedModel):
         return self.parent  # type: ignore
 
     @model_validator(mode="after")
-    def materialize_judge_trace_content(self) -> Self:
-        # Same reason as TaskRun.materialize_trace_content: lazily validated list
-        # `content` would otherwise serialize as [].
-        if self.judge_trace is not None:
-            materialize_lazy_content(self.judge_trace)
-        return self
-
-    @model_validator(mode="after")
     def validate_input_source(self) -> Self:
         if (self.dataset_id is None) == (self.eval_input_id is None):
             raise ValueError(
@@ -1093,12 +1085,22 @@ class EvalRun(KilnParentedModel):
         return self
 
     @model_validator(mode="after")
+    def materialize_judge_trace_content(self) -> Self:
+        # Pydantic validates the trace's Iterable-typed `content` into a lazy, single-use
+        # iterator that serializes as [] and cannot be deepcopied.
+        if self.judge_trace is not None:
+            materialize_lazy_content(self.judge_trace)
+        return self
+
+    @model_validator(mode="after")
     def validate_record_mode(self) -> Self:
         """Keep the three record states (pointer / skipped / legacy inline) exclusive.
 
         The forbidding half of the pointer rule is the one that earns its keep: a record
         that points at a TaskRun must never also carry a second copy of what it scored,
-        which nothing would keep in sync.
+        which nothing would keep in sync. `judge_trace` is allowed alongside it: it is
+        the judge's own record of what it was sent, fixed at scoring time, not a copy of
+        the scored trace.
         """
         inline_set = [f for f in LEGACY_TRACE_FIELDS if getattr(self, f) is not None]
 

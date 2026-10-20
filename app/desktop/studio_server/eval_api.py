@@ -500,13 +500,13 @@ class TestV2EvalResponse(BaseModel):
     )
     judge_trace: list[ChatCompletionMessageParam] | None = Field(
         default=None,
-        description="The judge model's conversation, for LLM judges: system prompt, rendered judge prompt, any trace tool calls and results, and final answer.",
+        description="The judge's full conversation in OpenAI format: the system prompt, the rendered judge prompt, and every reply. None for evals that call no model.",
     )
 
     @model_validator(mode="after")
     def materialize_judge_trace_content(self) -> Self:
-        # Same reason as TaskRun.materialize_trace_content: lazily validated list
-        # `content` would otherwise serialize as [].
+        # Pydantic validates the trace's Iterable-typed `content` into a lazy, single-use
+        # iterator that serializes as [] and cannot be deepcopied.
         if self.judge_trace is not None:
             materialize_lazy_content(self.judge_trace)
         return self
@@ -689,6 +689,14 @@ class MeanUsage(BaseModel):
     )
 
 
+def _split_judge_trace(eval_run: EvalRun) -> dict[str, Any]:
+    """`eval_run` with its judge_trace dropped, and whether it had a non-empty one."""
+    return {
+        "eval_run": eval_run.model_copy(update={"judge_trace": None}),
+        "has_judge_trace": bool(eval_run.judge_trace),
+    }
+
+
 class EvalRunWithTrace(BaseModel):
     """An eval's scores for one item, plus the trace those scores were computed over.
 
@@ -699,7 +707,14 @@ class EvalRunWithTrace(BaseModel):
     itself has none - so callers see one shape regardless of which it is.
     """
 
-    eval_run: EvalRun = Field(description="The score record itself.")
+    eval_run: EvalRun = Field(
+        description="The score record itself, without its judge_trace, which can be "
+        "large. Fetch it from the eval run's judge_trace endpoint when has_judge_trace "
+        "is true."
+    )
+    has_judge_trace: bool = Field(
+        description="Whether the score record saved a non-empty judge_trace."
+    )
     input: str | None = Field(
         description="The input the task was run on. From the scored TaskRun, from the "
         "EvalRun itself for legacy records, or from the dataset item whenever neither "
@@ -730,7 +745,7 @@ class EvalRunWithTrace(BaseModel):
         the dataset item afterwards.
         """
         return cls(
-            eval_run=eval_run,
+            **_split_judge_trace(eval_run),
             input=eval_run.input,
             output=eval_run.output,
             task_run_trace=eval_run.task_run_trace,
@@ -747,7 +762,7 @@ class EvalRunWithTrace(BaseModel):
         and still aggregates, only the drill-through is unavailable.
         """
         return cls(
-            eval_run=eval_run,
+            **_split_judge_trace(eval_run),
             input=trace.input if trace is not None else None,
             # Never repaired_output: a repair can happen after scoring, so it is not
             # what the score was computed over.
@@ -2889,6 +2904,38 @@ def connect_evals_api(app: FastAPI):
             eval_config=eval_config,
             run_config=run_config,
         )
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/eval_run/{eval_run_id}/judge_trace",
+        summary="Get Eval Run Judge Trace",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_eval_run_judge_trace(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+        eval_config_id: Annotated[
+            str, Path(description="The unique identifier of the eval configuration.")
+        ],
+        eval_run_id: Annotated[
+            str, Path(description="The unique identifier of the eval run.")
+        ],
+    ) -> list[ChatCompletionMessageParam] | None:
+        """The judge's full conversation for one eval run: the system prompt, the rendered judge prompt, and every reply. Null for runs whose judge called no model, and for runs recorded before judge traces were saved."""
+        eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
+        eval_run = EvalRun.from_id_and_parent_path(eval_run_id, eval_config.path)
+        if eval_run is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Eval run not found. ID: {eval_run_id}",
+            )
+        return eval_run.judge_trace
 
     # Overview of the eval progress
     @app.get(

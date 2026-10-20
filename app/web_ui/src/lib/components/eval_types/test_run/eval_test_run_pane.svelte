@@ -7,8 +7,8 @@
   import TestRunBrowseDialog from "./test_run_browse_dialog.svelte"
   import ReferenceDataField from "./reference_data_field.svelte"
   import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
-  import JudgeTraceDialog from "../judge_trace_dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import JudgeTraceLink from "../judge_trace_link.svelte"
   import ToolCallLogTable from "$lib/components/tool_calls/tool_call_log_table.svelte"
   import {
     referenceDataUsageMode,
@@ -66,7 +66,6 @@
 
   let browse_dialog: TestRunBrowseDialog
   let see_all_dialog: SeeAllDialog
-  let judge_trace_dialog: JudgeTraceDialog | null = null
 
   $: has_runs = available_runs.length > 0
 
@@ -218,16 +217,9 @@
       </div>
     {/if}
 
-    {#if test_result.judge_trace}
-      <div class="flex justify-end">
-        <button
-          type="button"
-          class="link underline text-xs text-gray-500"
-          on:click={() => judge_trace_dialog?.show()}
-          data-testid="judge-trace-btn"
-        >
-          Judge Trace
-        </button>
+    {#if test_result.judge_trace?.length}
+      <div data-testid="judge-trace-link">
+        <JudgeTraceLink trace={test_result.judge_trace} />
       </div>
     {/if}
 
@@ -324,10 +316,3 @@
 />
 
 <SeeAllDialog bind:this={see_all_dialog} />
-
-{#if test_result?.judge_trace}
-  <JudgeTraceDialog
-    bind:this={judge_trace_dialog}
-    judge_trace={test_result.judge_trace}
-  />
-{/if}

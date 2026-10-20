@@ -1,6 +1,6 @@
 import copy
 import json
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import ANY, AsyncMock, Mock, patch
 
 import litellm
 import pytest
@@ -2516,6 +2516,101 @@ async def test_litellm_tools_unmanaged_toolcall_definitions_are_fresh_each_call(
     assert second[0]["function"]["name"] == "lookup_weather"
 
 
+async def _completion_kwargs_with_registry_tools(
+    adapter: LiteLlmAdapter, registry_tools: list
+) -> dict:
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    with (
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "available_tools", return_value=registry_tools),
+    ):
+        return await adapter.build_completion_kwargs(
+            mock_provider, [{"role": "user", "content": "Hello"}], None
+        )
+
+
+@pytest.mark.asyncio
+async def test_user_tools_are_sent_non_strict(mock_task, config, mock_math_tools):
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(
+            return_on_tool_call=True,
+            unmanaged_tools=[_lookup_weather_unmanaged_tool()],
+        ),
+    )
+
+    kwargs = await _completion_kwargs_with_registry_tools(adapter, mock_math_tools)
+
+    assert [t["function"]["name"] for t in kwargs["tools"]] == [
+        "add",
+        "subtract",
+        "multiply",
+        "divide",
+        "lookup_weather",
+    ]
+    assert all(t["function"]["strict"] is False for t in kwargs["tools"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "tool_function_extras,expected_strict",
+    [({}, False), ({"strict": True}, True)],
+)
+async def test_litellm_tools_defaults_strict_false_without_mutating_tool_definition(
+    mock_task, config, tool_function_extras, expected_strict
+):
+    definition = {
+        "type": "function",
+        "function": {
+            "name": "lookup",
+            "description": "Look something up",
+            "parameters": {"type": "object", "properties": {}},
+            **tool_function_extras,
+        },
+    }
+    original_definition = copy.deepcopy(definition)
+    tool = Mock()
+    tool.toolcall_definition = AsyncMock(return_value=definition)
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    with patch.object(adapter, "available_tools", return_value=[tool]):
+        tools = await adapter.litellm_tools()
+
+    assert tools[0]["function"]["strict"] is expected_strict
+    assert definition == original_definition
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mode,expected_strict_entry",
+    [
+        (StructuredOutputMode.function_calling, {"strict": True}),
+        (StructuredOutputMode.function_calling_weak, {}),
+    ],
+)
+async def test_task_response_tool_keeps_its_own_strict_setting(
+    mock_task, config, mode, expected_strict_entry
+):
+    config.run_config_properties.structured_output_mode = mode
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    kwargs = await _completion_kwargs_with_registry_tools(adapter, [])
+
+    assert kwargs["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "task_response",
+                "parameters": ANY,
+                **expected_strict_entry,
+            },
+        }
+    ]
+
+
 @pytest.mark.asyncio
 async def test_build_completion_kwargs_json_schema_allows_unmanaged_with_registry_tools(
     mock_task, config, mock_math_tools
@@ -2551,7 +2646,14 @@ async def test_build_completion_kwargs_json_schema_allows_unmanaged_with_registr
         "divide",
         "client_only_tool",
     }
-    assert "response_format" in kwargs
+    assert all(t["function"]["strict"] is False for t in kwargs["tools"])
+    assert kwargs["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "task_response",
+            "schema": close_object_schemas(mock_task.output_schema(), strict=True),
+        },
+    }
 
 
 @pytest.mark.asyncio

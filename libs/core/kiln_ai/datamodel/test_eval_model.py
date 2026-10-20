@@ -3618,6 +3618,7 @@ class TestV1EvalRunCoexistence:
         loaded = loaded_runs[0]
         assert loaded.scored_run_id is None
         assert loaded.eval_usage is None
+        assert loaded.judge_trace is None
         assert loaded.input == "legacy input"
         assert loaded.output == "legacy output"
         assert loaded.task_run_usage is not None
@@ -4167,6 +4168,15 @@ class TestV2EvalResult:
         result = V2EvalResult(scores={"quality": 5.0}, judge_trace=_LIST_CONTENT_TRACE)
         for _ in range(2):
             assert result.model_dump(mode="json")["judge_trace"] == _LIST_CONTENT_TRACE
+
+    def test_judge_trace_list_content_can_be_copied(self):
+        parts = [{"type": "text", "text": "rendered judge prompt"}]
+        result = V2EvalResult(judge_trace=[{"role": "user", "content": parts}])
+
+        copied = result.model_copy(deep=True)
+        assert copied.judge_trace is not None
+        assert copied.judge_trace[0]["content"] == parts
+        assert result.model_dump()["judge_trace"][0]["content"] == parts
 
 
 class TestLlmJudgeTraceToolset:
@@ -5804,6 +5814,52 @@ def test_eval_usage_defaults_to_none_and_round_trips(v2_eval_config):
     assert loaded.eval_usage.cost == 0.002
 
 
+def test_judge_trace_defaults_to_none_and_round_trips_reasoning(v2_eval_config):
+    run = EvalRun(parent=v2_eval_config, **pointer_run_data())
+    assert run.judge_trace is None
+
+    run.judge_trace = [
+        {"role": "system", "content": "Score the output."},
+        {"role": "user", "content": "rendered judge prompt"},
+        {
+            "role": "assistant",
+            "content": '{"accuracy": "pass"}',
+            "reasoning_content": "The answer matches the reference.",
+        },
+    ]
+    run.save_to_file()
+
+    loaded = EvalRun.load_from_file(str(run.path))
+    assert loaded.judge_trace == run.judge_trace
+
+
+def test_judge_trace_list_content_survives_save_load_and_copy(v2_eval_config):
+    """Pydantic validates list-of-parts `content` into a single-use iterator, which
+    serializes as [] and cannot be deepcopied unless the model materializes it."""
+    parts = [
+        {"type": "text", "text": "rendered judge prompt"},
+        {"type": "text", "text": "scored output"},
+    ]
+    run = EvalRun(
+        parent=v2_eval_config,
+        **pointer_run_data(
+            judge_trace=[
+                {"role": "user", "content": parts},
+                {"role": "assistant", "content": '{"accuracy": "pass"}'},
+            ]
+        ),
+    )
+    run.save_to_file()
+
+    loaded = EvalRun.load_from_file(str(run.path))
+    assert loaded.judge_trace is not None
+    assert loaded.judge_trace[0]["content"] == parts
+
+    copied = loaded.mutable_copy()
+    assert copied.judge_trace is not None
+    assert copied.judge_trace[0]["content"] == parts
+
+
 @pytest.mark.parametrize("field_name", ["input", *LEGACY_TRACE_FIELDS])
 def test_legacy_trace_fields_are_marked_deprecated(field_name):
     """Two signals, for two audiences: the description prefix for a human reading the
@@ -5838,7 +5894,13 @@ def test_reading_a_deprecated_field_does_not_warn():
 def test_live_eval_run_fields_are_not_marked_deprecated():
     """The flag has to be per-field, not smeared across the model."""
     schema_properties = EvalRun.model_json_schema()["properties"]
-    for field_name in ("scored_run_id", "eval_usage", "scores", "intermediate_outputs"):
+    for field_name in (
+        "scored_run_id",
+        "eval_usage",
+        "judge_trace",
+        "scores",
+        "intermediate_outputs",
+    ):
         assert "deprecated" not in schema_properties[field_name], field_name
 
 

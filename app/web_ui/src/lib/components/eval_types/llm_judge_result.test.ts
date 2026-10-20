@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest"
-import { render, fireEvent } from "@testing-library/svelte"
+import { render, fireEvent, waitFor } from "@testing-library/svelte"
 import type { EvalConfig } from "$lib/types"
 
 vi.mock("$lib/stores", async () => {
@@ -221,15 +221,31 @@ describe("LlmJudgeResult", () => {
     expect(container.textContent).toContain("View reasoning")
   })
 
-  it("does not render the judge trace dialog when judge_trace is null", () => {
+  it("shows no Judge trace link when the run saved no trace", () => {
     const { container } = render(LlmJudgeResult, {
       props: {
         scores: { quality: 0.8 },
         eval_config: makeConfig(),
-        judge_trace: null,
+        load_judge_trace: null,
       },
     })
+    expect(container.textContent).not.toContain("Judge trace")
     expect(container.querySelector('[data-title="Judge Trace"]')).toBeFalsy()
+  })
+
+  it("keeps View reasoning when there is reasoning but no judge trace", () => {
+    const { container } = render(LlmJudgeResult, {
+      props: {
+        scores: { quality: 0.8 },
+        eval_config: makeConfig(),
+        intermediate_outputs: { reasoning: "The model output was good." },
+        load_judge_trace: null,
+      },
+    })
+    const links = container.querySelectorAll("button.link")
+    expect(links.length).toBe(1)
+    expect(links[0].textContent).toContain("View reasoning")
+    expect(container.textContent).not.toContain("Judge trace")
   })
 
   it("shows only the Judge trace link when both trace and reasoning exist", () => {
@@ -238,14 +254,7 @@ describe("LlmJudgeResult", () => {
         scores: { quality: 0.8 },
         eval_config: makeConfig(),
         intermediate_outputs: { reasoning: "The model output was good." },
-        judge_trace: [
-          { role: "user", content: "Rendered judge prompt" },
-          {
-            role: "assistant",
-            content: '{"quality": "4"}',
-            reasoning_content: "The model output was good.",
-          },
-        ],
+        load_judge_trace: vi.fn(),
       },
     })
     const links = container.querySelectorAll("button.link")
@@ -253,33 +262,30 @@ describe("LlmJudgeResult", () => {
     expect(links[0].textContent).toContain("Judge trace")
   })
 
-  it("shows the judge trace in a dialog, built only once it opens", async () => {
+  it("fetches and shows the judge trace when the link is clicked", async () => {
+    const load_judge_trace = vi.fn().mockResolvedValue([
+      { role: "system", content: "Score the output." },
+      { role: "user", content: "Rendered judge prompt with variables" },
+      { role: "assistant", content: '{"quality": "4"}' },
+    ])
     const { container } = render(LlmJudgeResult, {
       props: {
         scores: { quality: 0.8 },
         eval_config: null,
-        judge_trace: [
-          { role: "system", content: "Score the output." },
-          { role: "user", content: "Rendered judge prompt with variables" },
-          { role: "assistant", content: '{"quality": "4"}' },
-        ],
+        load_judge_trace,
       },
     })
-    expect(container.textContent).not.toContain("View reasoning")
-    const dialog = container.querySelector('[data-title="Judge Trace"]')
-    expect(dialog).toBeTruthy()
-    expect(dialog!.getAttribute("data-width")).toBe("wide")
-    expect(dialog!.querySelector(".collapse")).toBeNull()
-    expect(dialog!.textContent).not.toContain(
-      "Rendered judge prompt with variables",
-    )
+    expect(load_judge_trace).not.toHaveBeenCalled()
 
-    const link = container.querySelector("button.link")
-    expect(link!.textContent).toContain("Judge trace")
-    await fireEvent.click(link!)
+    const link = container.querySelector("button.link") as HTMLButtonElement
+    expect(link.textContent).toContain("Judge trace")
+    await fireEvent.click(link)
 
-    expect(dialog!.textContent).toContain(
-      "Rendered judge prompt with variables",
+    expect(load_judge_trace).toHaveBeenCalledTimes(1)
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-title="Judge Trace"]')!.textContent,
+      ).toContain("Rendered judge prompt with variables"),
     )
   })
 })

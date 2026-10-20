@@ -1,5 +1,6 @@
 import { client } from "$lib/api_client"
 import type { components } from "$lib/api_schema"
+import type { Trace } from "$lib/types"
 
 /**
  * Extract a human-readable message from an openapi-fetch error object.
@@ -298,6 +299,37 @@ export async function addCodeTrust(
   )
   if (error) {
     throw new Error(`add_code_trust failed: ${extractErrorMessage(error)}`)
+  }
+  return data
+}
+
+/**
+ * The judge's full conversation for one saved eval run, or null when the run
+ * saved none.
+ */
+export async function getEvalRunJudgeTrace(
+  projectId: string,
+  taskId: string,
+  evalId: string,
+  evalConfigId: string,
+  evalRunId: string,
+): Promise<Trace | null> {
+  const { data, error } = await client.GET(
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/eval_run/{eval_run_id}/judge_trace",
+    {
+      params: {
+        path: {
+          project_id: projectId,
+          task_id: taskId,
+          eval_id: evalId,
+          eval_config_id: evalConfigId,
+          eval_run_id: evalRunId,
+        },
+      },
+    },
+  )
+  if (error) {
+    throw new Error(`judge_trace failed: ${extractErrorMessage(error)}`)
   }
   return data
 }

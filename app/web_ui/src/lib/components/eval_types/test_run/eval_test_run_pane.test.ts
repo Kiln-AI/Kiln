@@ -38,12 +38,9 @@ const ManualExampleDialog = (await import("./manual_example_dialog.svelte"))
   .default
 const ReferenceDataField = (await import("./reference_data_field.svelte"))
   .default
-const {
-  actionButtonsByTitle,
-  resetActionButtons,
-  shownTitles,
-  resetShownTitles,
-} = await import("../__tests__/dialog_stub.svelte")
+const { actionButtonsByTitle, resetActionButtons } = await import(
+  "../__tests__/dialog_stub.svelte"
+)
 const { ALL_V2_EVAL_TYPES } = await import("$lib/utils/eval_types/registry")
 
 // ---------------------------------------------------------------------------
@@ -540,6 +537,60 @@ describe("EvalTestRunPane", () => {
       expect(container.textContent).toContain("not saved")
     })
 
+    it("offers the judge trace from the test result, collapsed until opened", async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: {
+          available_runs: [run1],
+          selected_run: run1,
+          test_result: {
+            scores: { accuracy: 0.95 },
+            judge_trace: [
+              { role: "system", content: "Score the output." },
+              { role: "user", content: "Rendered judge prompt" },
+              { role: "assistant", content: '{"accuracy": 0.95}' },
+            ],
+          },
+          test_has_valid_run: true,
+        },
+      })
+
+      const link = container.querySelector(
+        '[data-testid="judge-trace-link"] button',
+      ) as HTMLButtonElement
+      expect(link.textContent?.trim()).toBe("Judge trace")
+      const dialog = container.querySelector('[data-title="Judge Trace"]')!
+      expect(dialog.getAttribute("data-width")).toBe("extra_wide")
+      expect(dialog.textContent).not.toContain("Rendered judge prompt")
+
+      await fireEvent.click(link)
+
+      expect(dialog.textContent).toContain("Rendered judge prompt")
+      const toggles = Array.from(
+        dialog.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+      )
+      expect(toggles).toHaveLength(3)
+      expect(toggles.every((toggle) => !toggle.checked)).toBe(true)
+    })
+
+    it.each([null, []])(
+      "hides the judge trace link when the result has none (%j)",
+      (judge_trace) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { container } = render(EvalTestRunPane as any, {
+          props: {
+            available_runs: [run1],
+            selected_run: run1,
+            test_result: { scores: { accuracy: 0.95 }, judge_trace },
+            test_has_valid_run: true,
+          },
+        })
+        expect(
+          container.querySelector('[data-testid="judge-trace-link"]'),
+        ).toBeNull()
+      },
+    )
+
     it("lists the tool calls a code judge made", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { container } = render(EvalTestRunPane as any, {
@@ -743,97 +794,6 @@ describe("EvalTestRunPane", () => {
         '[data-testid="score-range-warning"]',
       )
       expect(rangeWarning).toBeNull()
-    })
-
-    describe("Judge Trace", () => {
-      const judge_trace = [
-        { role: "system" as const, content: "You are an evaluator." },
-        { role: "user" as const, content: "Rendered judge prompt" },
-        { role: "assistant" as const, content: '{"accuracy": 1.0}' },
-      ]
-
-      function renderResult(result_judge_trace: unknown) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return render(EvalTestRunPane as any, {
-          props: {
-            available_runs: [run1],
-            selected_run: run1,
-            runs_loading: false,
-            is_llm_judge: true,
-            test_result: {
-              scores: { accuracy: 1.0 },
-              skipped_reason: null,
-              judge_trace: result_judge_trace,
-            },
-            test_has_valid_run: true,
-          },
-        })
-      }
-
-      it("shows a right-aligned Judge Trace link after the scores", () => {
-        const { container } = renderResult(judge_trace)
-
-        const button = container.querySelector(
-          '[data-testid="judge-trace-btn"]',
-        ) as HTMLButtonElement
-        expect(button).not.toBeNull()
-        expect(button.textContent?.trim()).toBe("Judge Trace")
-        expect(button.className).toBe("link underline text-xs text-gray-500")
-        expect(button.parentElement!.className).toBe("flex justify-end")
-
-        const scores = container.querySelector('[data-testid="scores-section"]')
-        expect(
-          scores!.compareDocumentPosition(button) &
-            Node.DOCUMENT_POSITION_FOLLOWING,
-        ).toBeTruthy()
-      })
-
-      it("opens the Judge Trace dialog on click", async () => {
-        resetShownTitles()
-        const { container } = renderResult(judge_trace)
-
-        await fireEvent.click(
-          container.querySelector('[data-testid="judge-trace-btn"]')!,
-        )
-
-        expect(shownTitles).toEqual(["Judge Trace"])
-      })
-
-      it("builds no trace in the wide Judge Trace dialog until it opens", () => {
-        const { container } = renderResult(judge_trace)
-
-        const dialog = container.querySelector('[data-title="Judge Trace"]')
-        expect(dialog).not.toBeNull()
-        expect(dialog!.getAttribute("data-width")).toBe("wide")
-        expect(dialog!.querySelector(".collapse")).toBeNull()
-        expect(dialog!.textContent).not.toContain("Rendered judge prompt")
-      })
-
-      it("shows the judge trace once the Judge Trace dialog opens", async () => {
-        const { container } = renderResult(judge_trace)
-
-        await fireEvent.click(
-          container.querySelector('[data-testid="judge-trace-btn"]')!,
-        )
-
-        const dialog = container.querySelector('[data-title="Judge Trace"]')
-        expect(dialog!.textContent).toContain("Rendered judge prompt")
-        expect(dialog!.textContent).toContain("You are an evaluator.")
-      })
-
-      it.each([null, undefined])(
-        "shows neither the link nor the dialog when judge_trace is %s",
-        (result_judge_trace) => {
-          const { container } = renderResult(result_judge_trace)
-
-          expect(
-            container.querySelector('[data-testid="judge-trace-btn"]'),
-          ).toBeNull()
-          expect(
-            container.querySelector('[data-title="Judge Trace"]'),
-          ).toBeNull()
-        },
-      )
     })
 
     it("dispatches runAgain event on Run again click", async () => {

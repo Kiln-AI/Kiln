@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -29,6 +31,7 @@ from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel import PromptId
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.task_output import TASK_OUTPUT_SCHEMA_ERROR_PREFIX
 from kiln_ai.datamodel.tool_id import ToolId
 from kiln_ai.tools.base_tool import (
     ToolCallContext,
@@ -844,6 +847,11 @@ class MockExplicitArgsTool(MockTool):
         return ToolCallResult(output=str(a + b))
 
 
+class MockNoArgumentsTool(MockTool):
+    async def toolcall_definition(self) -> dict:
+        return {"function": {"parameters": {"type": "object", "properties": {}}}}
+
+
 class MockKilnTaskTool:
     """Mock tool class that returns KilnTaskToolResult for testing"""
 
@@ -1138,22 +1146,46 @@ def _tool_call_response(*calls: tuple[str, str, str]) -> ModelResponse:
     )
 
 
-@pytest.fixture
-def tools_adapter(tmp_path):
+@contextmanager
+def _offline_tools_adapter(
+    task: datamodel.Task, structured_output_mode: StructuredOutputMode
+) -> Iterator[LiteLlmAdapter]:
     adapter = LiteLlmAdapter(
         config=LiteLlmConfig(
             run_config_properties=KilnAgentRunConfigProperties(
-                structured_output_mode=StructuredOutputMode.json_schema,
+                structured_output_mode=structured_output_mode,
                 model_name="gpt_4_1_mini",
                 model_provider_name=ModelProviderName.openai,
                 prompt_id="simple_prompt_builder",
             )
         ),
-        kiln_task=build_test_task(tmp_path),
+        kiln_task=task,
         base_adapter_config=AdapterConfig(allow_saving=False),
     )
     provider = KilnModelProvider(name=ModelProviderName.openai, model_id="gpt_4_1_mini")
     with patch.object(adapter, "model_provider", return_value=provider):
+        yield adapter
+
+
+@pytest.fixture
+def tools_adapter(tmp_path):
+    with _offline_tools_adapter(
+        build_test_task(tmp_path), StructuredOutputMode.json_schema
+    ) as adapter:
+        yield adapter
+
+
+@pytest.fixture
+def structured_tools_adapter(tmp_path):
+    task = build_test_task(tmp_path)
+    task.output_json_schema = json.dumps(
+        {
+            "type": "object",
+            "properties": {"answer": {"type": "number"}},
+            "required": ["answer"],
+        }
+    )
+    with _offline_tools_adapter(task, StructuredOutputMode.function_calling) as adapter:
         yield adapter
 
 
@@ -1495,20 +1527,41 @@ async def test_run_ending_tool_error_fails_run(tools_adapter, error):
     assert model_call.call_count == 1
 
 
-async def test_null_tool_arguments_return_invalid_json_error_and_run_saves(
-    tools_adapter,
+@pytest.mark.parametrize(
+    "tool, expected_tool_message",
+    [
+        pytest.param(
+            MockTool("add"),
+            _tool_error(
+                "call_1",
+                "Error: arguments for 'add' don't match its schema: 'a' is a required property. Call it again with corrected arguments.",
+            ),
+            id="tool_with_required_arguments",
+        ),
+        pytest.param(
+            MockNoArgumentsTool("add"),
+            _tool_success("call_1", "test_result"),
+            id="tool_without_arguments",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "arguments", [pytest.param(None, id="null"), pytest.param("", id="empty")]
+)
+async def test_null_or_empty_tool_arguments_become_empty_object_and_run_saves(
+    tools_adapter, tool, expected_tool_message, arguments
 ):
     tool_call_response = _make_model_response(
-        content=None, tool_calls=[_make_raw_tool_call("call_1", "add", None)]
+        content=None, tool_calls=[_make_raw_tool_call("call_1", "add", arguments)]
     )
     final_response = _make_model_response(content="The answer is [4]")
     tools_adapter.base_adapter_config.allow_saving = True
 
     with (
+        patch.object(tools_adapter, "cached_available_tools", return_value=[tool]),
         patch.object(
-            tools_adapter, "cached_available_tools", return_value=[MockTool("add")]
-        ),
-        patch.object(tools_adapter, "build_completion_kwargs", return_value={}),
+            tools_adapter, "build_completion_kwargs", return_value={}
+        ) as build_completion_kwargs,
         patch.object(
             tools_adapter,
             "acompletion_checking_response",
@@ -1520,19 +1573,20 @@ async def test_null_tool_arguments_return_invalid_json_error_and_run_saves(
     ):
         run = await tools_adapter.invoke("what is 2+2")
 
+    second_call_messages = build_completion_kwargs.call_args_list[1].args[1]
+    replayed_tool_call = second_call_messages[-2].tool_calls[0]
+    assert replayed_tool_call.function.arguments == "{}"
+
     assert run.output.output == "The answer is [4]"
     assert run.trace is not None
     assert run.trace[2].get("tool_calls") == [
         {
             "id": "call_1",
             "type": "function",
-            "function": {"name": "add", "arguments": ""},
+            "function": {"name": "add", "arguments": "{}"},
         }
     ]
-    assert run.trace[3] == _tool_error(
-        "call_1",
-        "Error: arguments for 'add' are not valid JSON: . Call it again with a JSON object.",
-    )
+    assert run.trace[3] == expected_tool_message
     assert run.path is not None
     assert datamodel.TaskRun.load_from_file(run.path).trace == run.trace
 
@@ -1571,31 +1625,39 @@ async def test_tool_call_without_name_fails_run_before_any_tool_runs(tools_adapt
 
 
 @pytest.mark.parametrize("content", [None, "some text"])
-async def test_task_response_with_null_arguments_fails_after_one_model_call(
-    tools_adapter, content
+@pytest.mark.parametrize(
+    "arguments", [pytest.param(None, id="null"), pytest.param("", id="empty")]
+)
+async def test_task_response_with_null_or_empty_arguments_is_checked_against_output_schema(
+    structured_tools_adapter, content, arguments
 ):
     tool_call_response = _make_model_response(
         content=content,
-        tool_calls=[_make_raw_tool_call("call_1", "task_response", None)],
+        tool_calls=[_make_raw_tool_call("call_1", "task_response", arguments)],
     )
 
     with (
         patch.object(
-            tools_adapter, "cached_available_tools", return_value=[MockTool("add")]
+            structured_tools_adapter,
+            "cached_available_tools",
+            return_value=[MockTool("add")],
         ),
-        patch.object(tools_adapter, "build_completion_kwargs", return_value={}),
         patch.object(
-            tools_adapter,
+            structured_tools_adapter, "build_completion_kwargs", return_value={}
+        ),
+        patch.object(
+            structured_tools_adapter,
             "acompletion_checking_response",
             side_effect=[(tool_call_response, tool_call_response.choices[0])],
         ) as model_call,
     ):
         with pytest.raises(KilnRunError) as exc_info:
-            await tools_adapter.invoke("what is 2+2")
+            await structured_tools_adapter.invoke("what is 2+2")
 
     original = unwrap_kiln_run_error(exc_info.value)
-    assert isinstance(original, RuntimeError)
-    assert str(original) == "No assistant message/output returned from model"
+    assert isinstance(original, ValueError)
+    assert str(original).startswith(TASK_OUTPUT_SCHEMA_ERROR_PREFIX)
+    assert "'answer' is a required property" in str(original)
     assert model_call.call_count == 1
 
 
