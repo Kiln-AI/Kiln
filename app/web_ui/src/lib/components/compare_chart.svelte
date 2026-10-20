@@ -14,7 +14,7 @@
     getRunConfigInputTransformSummaryLabel,
   } from "$lib/utils/run_config_formatters"
   import ChartNoData from "./chart_no_data.svelte"
-  import { formatLatency } from "$lib/utils/formatters"
+  import { escape_html, formatLatency } from "$lib/utils/formatters"
 
   // Type for comparison features (same as parent page)
   type ComparisonFeature = {
@@ -196,8 +196,8 @@
             seriesName: string
             value: (number | string)[]
           }) {
-            const xLabel = getAxisLabel(xAxis)
-            const yLabel = getAxisLabel(yAxis)
+            const xLabel = escape_html(getAxisLabel(xAxis))
+            const yLabel = escape_html(getAxisLabel(yAxis))
             const configId = params.value[2] as string
             const config = getRunConfigById(configId)
 

@@ -106,6 +106,12 @@ class OpenEnvRejectedError(OpenEnvError):
     step, so it stays usable."""
 
 
+def tool_call_error_ends_session(error: BaseException) -> bool:
+    """True when an error from `call_tool` ends the episode's session. Only a
+    rejection keeps it: the environment answered, so the session is still in step."""
+    return not isinstance(error, OpenEnvRejectedError)
+
+
 def read_observation_error(error: Any) -> tuple[str | None, str | None, Any]:
     """An observation's `error` as `(message, code, details)`.
 
@@ -307,14 +313,13 @@ class OpenEnvSessionManager:
                     },
                     "observation",
                 )
-            except OpenEnvRejectedError:
-                raise
-            except BaseException:
-                # A late answer to this call would be read as the answer to the next
-                # one: OpenEnv responses carry no request id. The session is dropped
-                # so nothing reads from it again.
-                self._sessions.pop(episode.episode_id, None)
-                await self._close_quietly(session.ws)
+            except BaseException as e:
+                if tool_call_error_ends_session(e):
+                    # A late answer to this call would be read as the answer to the
+                    # next one: OpenEnv responses carry no request id. The session is
+                    # dropped so nothing reads from it again.
+                    self._sessions.pop(episode.episode_id, None)
+                    await self._close_quietly(session.ws)
                 raise
         reward = data.get("reward")
         observation = data.get("observation") or {}

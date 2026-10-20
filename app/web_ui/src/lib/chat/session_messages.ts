@@ -3,6 +3,7 @@ import {
   chatGenerateId,
   type ChatMessage,
   type ChatMessagePart,
+  type ToolOutputError,
 } from "./streaming_chat"
 
 type TraceMessage = components["schemas"]["TraceMessage"]
@@ -40,6 +41,13 @@ function traceToolCallToPart(tc: TraceToolCall): ChatMessagePart {
     toolName: tc.function.name,
     input,
   }
+}
+
+/** The same output shape the live stream gives a failed or successful tool call. */
+function toolMessageOutput(msg: TraceMessage): string | ToolOutputError {
+  const content = extractTextContent(msg.content)
+  if (!msg.is_error) return content
+  return { error: msg.error_message || content }
 }
 
 function buildAssistantParts(msg: TraceMessage): ChatMessagePart[] {
@@ -93,7 +101,7 @@ export function hydrateSessionFromSnapshot(snapshot: ChatSessionSnapshot): {
       }
       case "tool": {
         if (!msg.tool_call_id) break
-        const output = extractTextContent(msg.content)
+        const output = toolMessageOutput(msg)
         for (let i = messages.length - 1; i >= 0; i--) {
           const prev = messages[i]
           if (prev.role !== "assistant" || !prev.parts) continue
