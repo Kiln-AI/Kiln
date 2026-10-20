@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import inspect
 import json
 import logging
 import time
@@ -51,7 +52,7 @@ from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.json_schema import (
     close_object_schemas,
     strip_numeric_bounds,
-    validate_schema,
+    validate_tool_parameters_schema,
 )
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
@@ -135,8 +136,9 @@ async def _tool_arguments_schema_error(
     """
     try:
         definition = await tool.toolcall_definition()
-        schema = json.dumps(definition["function"]["parameters"], ensure_ascii=False)
-        validate_schema(arguments, schema)
+        schema = definition["function"]["parameters"]
+        validate_tool_parameters_schema(schema)
+        jsonschema.Draft202012Validator(schema).validate(arguments)
     except jsonschema.ValidationError as e:
         if e.json_path == "$":
             return _truncate_for_model(e.message)
@@ -157,6 +159,78 @@ def _non_strict_unless_set(definition: ToolCallDefinition) -> ToolCallDefinition
     tool = copy.copy(definition)
     tool["function"] = function
     return tool
+
+
+def _tool_arguments_bind_error(
+    tool: KilnToolInterface, arguments: dict[str, Any]
+) -> str | None:
+    """Why the tool's ``run`` can't take ``arguments`` (extra keys, or a key
+    named "context"), or None if it can. The schema check allows these, since
+    schemas don't forbid additional properties by default.
+
+    "context" is rejected for every tool, because the adapter always passes
+    the call context to ``run`` under that name."""
+    if "context" in arguments:
+        return "'context' is a reserved argument name"
+    try:
+        inspect.signature(tool.run).bind(None, **arguments)
+    except TypeError as e:
+        return _truncate_for_model(str(e))
+    return None
+
+
+def replace_unparseable_tool_arguments(messages: Iterable[Any]) -> list[Any]:
+    """Return a copy of ``messages`` where assistant tool calls whose arguments
+    aren't a JSON object have ``"{}"`` instead.
+
+    The model is told about a call it made with unparseable arguments, and the
+    trace keeps them, but some providers (e.g. Anthropic, Gemini) need every
+    tool call in the history to be a JSON object and fail the next request
+    otherwise. LiteLLM ``Message`` objects are only converted to dicts when one
+    of their calls is replaced."""
+    replaced: list[Any] = []
+    for message in messages:
+        if isinstance(message, LiteLLMMessage):
+            dumped = message.model_dump(exclude_none=True)
+            fixed = _with_object_tool_arguments(dumped)
+            replaced.append(message if fixed is dumped else fixed)
+        elif isinstance(message, dict):
+            replaced.append(_with_object_tool_arguments(message))
+        else:
+            replaced.append(message)
+    return replaced
+
+
+def _with_object_tool_arguments(message: dict[str, Any]) -> dict[str, Any]:
+    tool_calls = message.get("tool_calls")
+    if message.get("role") != "assistant" or not tool_calls:
+        return message
+    if all(_is_json_object(_call_arguments(call)) for call in tool_calls):
+        return message
+    fixed_calls = []
+    for call in tool_calls:
+        if isinstance(call, dict) and not _is_json_object(_call_arguments(call)):
+            call = {**call, "function": {**call.get("function", {}), "arguments": "{}"}}
+        fixed_calls.append(call)
+    return {**message, "tool_calls": fixed_calls}
+
+
+def _call_arguments(call: Any) -> Any:
+    if not isinstance(call, dict):
+        return "{}"
+    function = call.get("function")
+    if not isinstance(function, dict):
+        return "{}"
+    return function.get("arguments")
+
+
+def _is_json_object(arguments: Any) -> bool:
+    if not isinstance(arguments, str):
+        return False
+    try:
+        return isinstance(json.loads(arguments), dict)
+    except json.JSONDecodeError:
+        return False
 
 
 def _validate_unmanaged_tools(tools: list[KilnToolInterface]) -> None:
@@ -865,7 +939,9 @@ class LiteLlmAdapter(BaseAdapter):
         if len(allowed_openai_params) > 0:
             completion_kwargs["allowed_openai_params"] = allowed_openai_params
 
-        provider_messages = sanitize_messages_for_provider(messages)
+        provider_messages = replace_unparseable_tool_arguments(
+            sanitize_messages_for_provider(messages)
+        )
         if provider.name == ModelProviderName.cerebras:
             provider_messages = strip_assistant_fields_for_cerebras(provider_messages)
         completion_kwargs["messages"] = provider_messages
@@ -1029,6 +1105,14 @@ class LiteLlmAdapter(BaseAdapter):
                 tool_call.id,
                 f"Error: arguments for '{tool_name}' don't match its schema: "
                 f"{schema_error}. Call it again with corrected arguments.",
+            )
+
+        bind_error = _tool_arguments_bind_error(tool, parsed_args)
+        if bind_error is not None:
+            return _tool_error_message(
+                tool_call.id,
+                f"Error: '{tool_name}' doesn't accept these arguments: "
+                f"{bind_error}. Call it again with only the arguments in its schema.",
             )
 
         context = ToolCallContext(allow_saving=self.base_adapter_config.allow_saving)
