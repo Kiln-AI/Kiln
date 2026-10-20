@@ -67,9 +67,26 @@
     }
   }
 
+  const max_length = 32
+
+  // Replaces FormElement's default check, which treats whitespace-only as filled in.
+  function validate_display_name(value: unknown): string | null {
+    if (typeof value !== "string" || value.trim().length === 0) {
+      return "Score name is required."
+    }
+    if (value.length > max_length) {
+      return `Score name is too long. Max length is ${max_length} characters.`
+    }
+    return null
+  }
+
   async function save() {
     if (!eval_id || !score_key) {
       return
+    }
+    const validation_error = validate_display_name(display_name)
+    if (validation_error) {
+      throw new Error(validation_error)
     }
     const { data, error: patch_error } = await client.PATCH(
       "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
@@ -124,7 +141,8 @@
         label="Score Name"
         description="Shown wherever this score appears."
         inputType="input"
-        max_length={32}
+        {max_length}
+        validator={validate_display_name}
         bind:value={display_name}
       />
     </FormContainer>

@@ -108,15 +108,42 @@ describe("ScoreDisplayNameDialog", () => {
     })
   })
 
-  it("requires a name", async () => {
+  it("blocks saving a blank name", async () => {
     const { container, input, saved } = await open_dialog("Politeness")
 
     await fireEvent.input(input, { target: { value: "" } })
     await submit(container)
 
-    await waitFor(() => expect(container.textContent).toMatch(/required/i))
+    await waitFor(() =>
+      expect(input.classList.contains("input-error")).toBe(true),
+    )
     expect(mock_patch).not.toHaveBeenCalled()
     expect(saved).not.toHaveBeenCalled()
+  })
+
+  it("rejects a whitespace-only name", async () => {
+    const { container, input, saved } = await open_dialog("Politeness")
+
+    await fireEvent.input(input, { target: { value: "   " } })
+    await submit(container)
+
+    await waitFor(() =>
+      expect(container.textContent).toContain("Score name is required."),
+    )
+    expect(mock_patch).not.toHaveBeenCalled()
+    expect(saved).not.toHaveBeenCalled()
+  })
+
+  it("blocks saving a name over 32 characters", async () => {
+    const { container, input } = await open_dialog(null)
+
+    await fireEvent.input(input, { target: { value: "x".repeat(33) } })
+    await submit(container)
+
+    await waitFor(() =>
+      expect(input.classList.contains("input-error")).toBe(true),
+    )
+    expect(mock_patch).not.toHaveBeenCalled()
   })
 
   it("shows the server error and doesn't report a save when the PATCH fails", async () => {
