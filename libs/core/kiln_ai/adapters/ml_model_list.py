@@ -50,6 +50,7 @@ class ModelFamily(str, Enum):
     elorian = "elorian"
     xingchen = "xingchen"
     ling = "ling"
+    inception = "inception"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -355,6 +356,7 @@ class ModelName(str, Enum):
     glimpse = "glimpse"
     xing_4_0_29b_a4b = "xing_4_0_29b_a4b"
     ling_3_1_flash = "ling_3_1_flash"
+    mercury_3 = "mercury_3"
 
 
 class ModelParserID(str, Enum):
@@ -11783,6 +11785,21 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="inclusionai/ling-3.1-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+            ),
+        ],
+    ),
+    # Mercury 3
+    KilnModel(
+        family=ModelFamily.inception,
+        name=ModelName.mercury_3,
+        friendly_name="Mercury 3",
+        editorial_notes="Inception's diffusion-based language model, built for low-latency agentic workflows. Text only, 1M context.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="inception/mercury-3",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
