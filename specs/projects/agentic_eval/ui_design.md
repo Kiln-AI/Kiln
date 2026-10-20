@@ -55,7 +55,7 @@ Files: `run_result/+page.svelte` and `lib/components/eval_types/llm_judge_result
 - **The link.** When the row's `has_judge_trace` is true, `llm_judge_result.svelte` shows a **Judge trace** link (`JudgeTraceLink`) in place of its "View reasoning" link, styled the same. Rows without a judge trace keep the reasoning link.
 - **Loading on demand.** Result rows don't carry the judge trace. The link's first click fetches it from the judge-trace endpoint (`getEvalRunJudgeTrace` in `v2_eval_api.ts`). The dialog shows a spinner while it loads and an error `Warning` if the fetch fails. A run whose fetch returns no trace shows "No judge trace was saved for this run."
 - **The dialog.** The same `JudgeTraceLink` dialog as the test pane (§2): titled "Judge Trace", `width="extra_wide"`, every message collapsed, with `TraceView` mounted only after the first open.
-- **New prop.** The results page passes `load_judge_trace` to the result renderer, alongside the props it already passes (`scores`, skip fields, `eval_config`, `intermediate_outputs`). It fetches the row's judge trace, and is null when `has_judge_trace` is false. Other renderers ignore it.
+- **New prop.** The results page passes `load_judge_trace` to the result renderer, alongside the props it already passes (`scores`, `score_labels`, skip fields, `eval_config`, `intermediate_outputs`). It fetches the row's judge trace, and is null when `has_judge_trace` is false. Other renderers ignore it.
 - **Badge.** Next to where the renderer shows the "G-Eval" badge line, an Agentic Judge shows an "Agentic Judge" badge with the caption "Reads the trace with tools", in the same markup as G-Eval's "Chain-of-thought scoring" line.
 
 ## 4. Judge Details
