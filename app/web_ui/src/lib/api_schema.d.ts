@@ -2523,6 +2523,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/run_configs_eval_scores": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Eval Scores For All Run Configs
+         * @description Every run config's eval scores, keyed by run config id. One request instead of one per run config.
+         */
+        get: operations["get_all_run_configs_eval_scores_api_projects__project_id__tasks__task_id__run_configs_eval_scores_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/add_code_trust": {
         parameters: {
             query?: never;
@@ -20672,6 +20692,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunConfigEvalScoresSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_all_run_configs_eval_scores_api_projects__project_id__tasks__task_id__run_configs_eval_scores_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["RunConfigEvalScoresSummary"];
+                    };
                 };
             };
             /** @description Validation Error */

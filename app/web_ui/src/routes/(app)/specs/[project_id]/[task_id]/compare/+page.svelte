@@ -78,6 +78,11 @@
   let eval_scores_cache: Record<string, RunConfigEvalScoresSummary> = {}
   let eval_scores_loading: Record<string, boolean> = {}
   let eval_scores_errors: Record<string, string> = {}
+  // Every run config's scores load in one request when the page opens. The
+  // per-run-config fetches below wait for it, and only pick up run configs
+  // created after it.
+  let all_eval_scores_requested = false
+  let all_eval_scores_loading = false
 
   // Eval data cache (full eval objects, keyed by eval_id)
   let eval_data_cache: Record<string, Eval> = {}
@@ -224,6 +229,35 @@
     }
   }
 
+  async function fetch_all_eval_scores(run_config_ids: string[]) {
+    all_eval_scores_requested = true
+    all_eval_scores_loading = true
+    for (const id of run_config_ids) {
+      eval_scores_loading[id] = true
+    }
+    try {
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs_eval_scores",
+        { params: { path: { project_id, task_id } } },
+      )
+      if (fetch_error) {
+        throw fetch_error
+      }
+      eval_scores_cache = { ...eval_scores_cache, ...data }
+    } catch (err) {
+      const message =
+        createKilnError(err).getMessage() || "Failed to fetch eval scores"
+      for (const id of run_config_ids) {
+        eval_scores_errors[id] = message
+      }
+    } finally {
+      for (const id of run_config_ids) {
+        eval_scores_loading[id] = false
+      }
+      all_eval_scores_loading = false
+    }
+  }
+
   async function fetch_eval_scores(run_config_id: string) {
     if (
       eval_scores_cache[run_config_id] ||
@@ -262,7 +296,7 @@
   }
 
   // Reactively fetch eval scores when models are selected (for table)
-  $: {
+  $: if (all_eval_scores_requested && !all_eval_scores_loading) {
     selectedModels.forEach((modelId) => {
       if (
         modelId &&
@@ -277,7 +311,13 @@
   }
 
   // Fetch eval scores for ALL run configs (for chart)
-  $: if (current_task_run_configs) {
+  $: if (current_task_run_configs && !all_eval_scores_requested) {
+    fetch_all_eval_scores(
+      current_task_run_configs.flatMap((config) =>
+        config.id ? [config.id] : [],
+      ),
+    )
+  } else if (current_task_run_configs && !all_eval_scores_loading) {
     current_task_run_configs.forEach((config) => {
       if (
         config.id &&

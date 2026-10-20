@@ -1007,14 +1007,18 @@ def connect_run_api(app: FastAPI):
             Path(description="The unique identifier of the task within the project."),
         ],
     ) -> dict[str, int]:
-        tags_count = {}
         task = task_from_id(project_id, task_id)
-        # Not particularly efficient, but tasks are memory cached after first load so re-compute is fairly cheap
-        # We also cache the result client side
-        for run in task.runs(readonly=True):
-            for tag in run.tags:
-                tags_count[tag] = tags_count.get(tag, 0) + 1
-        return tags_count
+        # A first, uncached read of a large task's runs takes seconds. Off the event
+        # loop, it doesn't hold up every other request the page makes meanwhile.
+        return await asyncio.to_thread(count_run_tags, task)
+
+
+def count_run_tags(task: Task) -> dict[str, int]:
+    tags_count: dict[str, int] = {}
+    for run in task.runs(readonly=True):
+        for tag in run.tags:
+            tags_count[tag] = tags_count.get(tag, 0) + 1
+    return tags_count
 
 
 async def update_run_util(

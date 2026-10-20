@@ -80,9 +80,10 @@ from app.desktop.studio_server.eval_api import (
     resolve_eval_run_traces,
     resolved_split_or_422,
     reusable_frozen_prompt_id,
+    run_config_eval_scores,
     score_summary_from_values,
     scored_trace_usage,
-    scored_trace_usage_for_run_config,
+    scored_trace_usage_for_run_configs,
     split_size,
     summary_eval_config,
     task_run_config_from_id,
@@ -2796,8 +2797,8 @@ class TestResolveEvalRunTraces:
         with patch.object(
             TaskRun, "from_ids_and_parent_path", wraps=TaskRun.from_ids_and_parent_path
         ) as bulk_load:
-            usage_by_id = scored_trace_usage_for_run_config(
-                mock_task, [mock_eval, second_eval], "run_config1"
+            usage_by_id = scored_trace_usage_for_run_configs(
+                mock_task, [mock_eval, second_eval], {"run_config1"}
             )
 
         assert bulk_load.call_count == 1
@@ -2830,8 +2831,8 @@ class TestResolveEvalRunTraces:
             skipped_reason="missing_reference_key",
         )
 
-        usage_by_id = scored_trace_usage_for_run_config(
-            mock_task, [mock_eval], "run_config1"
+        usage_by_id = scored_trace_usage_for_run_configs(
+            mock_task, [mock_eval], {"run_config1"}
         )
 
         assert set(usage_by_id) == {scored_trace.id}
@@ -2868,8 +2869,8 @@ class TestScoredTraceUsage:
         )
         _pointer_scored(mock_eval_config, trace.id, dataset_id=item.id)
 
-        usage_by_id = scored_trace_usage_for_run_config(
-            mock_task, [mock_eval], "run_config1"
+        usage_by_id = scored_trace_usage_for_run_configs(
+            mock_task, [mock_eval], {"run_config1"}
         )
 
         usage = usage_by_id[trace.id]
@@ -9416,3 +9417,147 @@ async def test_create_task_run_config_rejects_missing_skill(
     assert response.status_code == 422
     assert "not found in the project: missing_id" in response.text
     assert len(mock_task.run_configs()) == 0
+
+
+def _two_run_configs_with_scores(mock_task, mock_eval, mock_eval_config, data_source):
+    """Two run configs that scored different values on the same two items, plus a
+    skipped run on one of them. Returns the run configs and the ids of the items."""
+    mock_eval.current_config_id = mock_eval_config.id
+    mock_eval.save_to_file()
+    run_configs = []
+    for run_config_id in ["rc_a", "rc_b"]:
+        run_config = TaskRunConfig(
+            parent=mock_task,
+            id=run_config_id,
+            name=run_config_id,
+            run_config_properties=KilnAgentRunConfigProperties(
+                model_name="gpt-4",
+                model_provider_name=ModelProviderName.openai,
+                prompt_id="simple_prompt_builder",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        )
+        run_config.save_to_file()
+        run_configs.append(run_config)
+
+    items = [
+        TaskRun(
+            input=f"input {i}",
+            input_source=data_source,
+            output=TaskOutput(output=f"output {i}"),
+            parent=mock_task,
+        )
+        for i in range(3)
+    ]
+    for item in items:
+        item.save_to_file()
+
+    for offset, run_config in enumerate(run_configs):
+        for i, item in enumerate(items[:2]):
+            score = 2.0 + offset + i
+            EvalRun(
+                task_run_config_id=run_config.id,
+                scores={"score1": score, "overall_rating": score},
+                input=item.input,
+                output="out",
+                dataset_id=item.id,
+                task_run_usage=Usage(input_tokens=10 * (offset + 1), cost=0.01),
+                parent=mock_eval_config,
+            ).save_to_file()
+    EvalRun(
+        task_run_config_id="rc_b",
+        scores={},
+        input=items[2].input,
+        output="out",
+        dataset_id=items[2].id,
+        skipped_reason="missing_reference_key",
+        parent=mock_eval_config,
+    ).save_to_file()
+    return run_configs, {item.id for item in items}
+
+
+def test_all_run_configs_eval_scores_match_the_per_run_config_endpoint(
+    client, mock_task_from_id, mock_task, mock_eval, mock_eval_config, data_source
+):
+    run_configs, item_ids = _two_run_configs_with_scores(
+        mock_task, mock_eval, mock_eval_config, data_source
+    )
+
+    with (
+        patch(
+            "app.desktop.studio_server.eval_api.task_run_config_from_id",
+            side_effect=lambda project_id, task_id, run_config_id: next(
+                rc for rc in run_configs if rc.id == run_config_id
+            ),
+        ),
+        patch(
+            "app.desktop.studio_server.eval_api.get_all_run_configs",
+            return_value=run_configs,
+        ),
+        patch_resolve_split(test=stub_split(item_ids)),
+    ):
+        batch = client.get("/api/projects/project1/tasks/task1/run_configs_eval_scores")
+        singles = {
+            rc.id: client.get(
+                f"/api/projects/project1/tasks/task1/run_configs/{rc.id}/eval_scores"
+            )
+            for rc in run_configs
+        }
+
+    assert batch.status_code == 200
+    assert set(batch.json()) == {"rc_a", "rc_b"}
+    for run_config_id, single in singles.items():
+        assert single.status_code == 200
+        assert batch.json()[run_config_id] == single.json()
+
+    rc_b = batch.json()["rc_b"]["eval_results"][0]["eval_config_result"]
+    assert rc_b["n_excluded"] == 1
+    assert rc_b["results"]["score1"]["mean_score"] == pytest.approx(3.5)
+    rc_a_usage = batch.json()["rc_a"]["mean_usage"]
+    assert rc_a_usage["mean_input_tokens"] == pytest.approx(10)
+    assert rc_a_usage["mean_output_tokens"] is None
+
+
+def test_run_config_eval_scores_reads_eval_runs_once_for_any_number_of_run_configs(
+    mock_task, mock_eval, mock_eval_config, data_source
+):
+    _, item_ids = _two_run_configs_with_scores(
+        mock_task, mock_eval, mock_eval_config, data_source
+    )
+
+    def eval_run_reads(run_config_ids):
+        with (
+            patch_resolve_split(test=stub_split(item_ids)),
+            patch.object(
+                EvalConfig, "runs", autospec=True, side_effect=EvalConfig.runs
+            ) as runs,
+        ):
+            run_config_eval_scores(mock_task, run_config_ids)
+        return runs.call_count
+
+    assert eval_run_reads(["rc_a", "rc_b"]) == eval_run_reads(["rc_a"])
+
+
+def test_run_config_eval_scores_with_no_run_configs_is_empty(mock_task, mock_eval):
+    assert run_config_eval_scores(mock_task, []) == {}
+
+
+def test_get_eval_default_judge_types(
+    client, mock_task_from_id, mock_task, mock_eval, mock_eval_config
+):
+    Eval(
+        id="eval_without_default",
+        name="No Default",
+        template=EvalTemplateId.bias,
+        output_scores=mock_eval.output_scores,
+        eval_set_filter_id="tag::eval_set",
+        eval_configs_filter_id="tag::golden",
+        parent=mock_task,
+    ).save_to_file()
+    mock_eval.current_config_id = mock_eval_config.id
+    mock_eval.save_to_file()
+
+    response = client.get("/api/projects/project1/tasks/task1/eval_default_judge_types")
+
+    assert response.status_code == 200
+    assert response.json() == {"eval1": "g_eval"}
