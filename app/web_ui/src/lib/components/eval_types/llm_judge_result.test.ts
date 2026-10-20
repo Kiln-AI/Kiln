@@ -253,7 +253,7 @@ describe("LlmJudgeResult", () => {
     expect(links[0].textContent).toContain("Judge trace")
   })
 
-  it("shows the judge trace in a dialog when judge_trace is present", () => {
+  it("shows the judge trace in a dialog, built only once it opens", async () => {
     const { container } = render(LlmJudgeResult, {
       props: {
         scores: { quality: 0.8 },
@@ -265,10 +265,19 @@ describe("LlmJudgeResult", () => {
         ],
       },
     })
-    expect(container.textContent).toContain("Judge trace")
     expect(container.textContent).not.toContain("View reasoning")
     const dialog = container.querySelector('[data-title="Judge Trace"]')
     expect(dialog).toBeTruthy()
+    expect(dialog!.getAttribute("data-width")).toBe("wide")
+    expect(dialog!.querySelector(".collapse")).toBeNull()
+    expect(dialog!.textContent).not.toContain(
+      "Rendered judge prompt with variables",
+    )
+
+    const link = container.querySelector("button.link")
+    expect(link!.textContent).toContain("Judge trace")
+    await fireEvent.click(link!)
+
     expect(dialog!.textContent).toContain(
       "Rendered judge prompt with variables",
     )

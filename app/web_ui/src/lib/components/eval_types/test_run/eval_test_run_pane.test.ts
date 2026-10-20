@@ -799,12 +799,24 @@ describe("EvalTestRunPane", () => {
         expect(shownTitles).toEqual(["Judge Trace"])
       })
 
-      it("holds the judge trace in a wide Judge Trace dialog", () => {
+      it("builds no trace in the wide Judge Trace dialog until it opens", () => {
         const { container } = renderResult(judge_trace)
 
         const dialog = container.querySelector('[data-title="Judge Trace"]')
         expect(dialog).not.toBeNull()
         expect(dialog!.getAttribute("data-width")).toBe("wide")
+        expect(dialog!.querySelector(".collapse")).toBeNull()
+        expect(dialog!.textContent).not.toContain("Rendered judge prompt")
+      })
+
+      it("shows the judge trace once the Judge Trace dialog opens", async () => {
+        const { container } = renderResult(judge_trace)
+
+        await fireEvent.click(
+          container.querySelector('[data-testid="judge-trace-btn"]')!,
+        )
+
+        const dialog = container.querySelector('[data-title="Judge Trace"]')
         expect(dialog!.textContent).toContain("Rendered judge prompt")
         expect(dialog!.textContent).toContain("You are an evaluator.")
       })

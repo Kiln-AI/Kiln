@@ -16,6 +16,10 @@
 </script>
 
 <script lang="ts">
+  import { createEventDispatcher } from "svelte"
+
+  const dispatch = createEventDispatcher()
+
   export let title: string = ""
   export let subtitle: string = ""
   export let sub_subtitle: string = ""
@@ -26,6 +30,7 @@
 
   export function show() {
     shownTitles.push(title)
+    dispatch("show")
   }
   export function close() {}
 </script>

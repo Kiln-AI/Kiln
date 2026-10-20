@@ -44,7 +44,7 @@ The form's **Select Judge Algorithm** step is a radio list: one row per algorith
 File: `app/web_ui/src/lib/components/eval_types/test_run/eval_test_run_pane.svelte`.
 
 - **The link.** When a test result has `judge_trace`, a right-aligned **Judge Trace** link (`link underline text-xs text-gray-500`, the same style as the Change link on the selected run card) appears after the scores. The link stays out of the Scores header, which shows "Preview only · not saved" on its right.
-- **The dialog.** The link opens a `Dialog` titled "Judge Trace" (`width="wide"`) that renders the judge trace with `TraceView` (`lib/ui/trace/trace.svelte`), every message expanded. It is the same dialog as on the results page (§3).
+- **The dialog.** The link opens a `Dialog` titled "Judge Trace" (`width="wide"`) that renders the judge trace with `TraceView` (`lib/ui/trace/trace.svelte`), every message expanded. It is the same dialog as on the results page (§3): `lib/components/eval_types/judge_trace_dialog.svelte`. It builds the trace only while it is open, because a closed `Dialog` still renders its content and a fully expanded trace can be hundreds of KB.
 - **Which judges.** This applies to every LLM judge, classic and G-Eval included. The spec builder's draft test uses the same pane, so it shows the link too.
 - **Loading text.** While an Agentic Judge test runs, the pane's existing loading state reads: "The judge is reading the trace. This can take a minute."
 
@@ -53,7 +53,7 @@ File: `app/web_ui/src/lib/components/eval_types/test_run/eval_test_run_pane.svel
 Files: `run_result/+page.svelte` and `lib/components/eval_types/llm_judge_result.svelte`.
 
 - **The link.** When the row's `eval_run.judge_trace` is present, `llm_judge_result.svelte` shows a **Judge trace** link in place of its "View reasoning" link, styled the same. Rows without a judge trace keep the reasoning link.
-- **The dialog.** It opens a `Dialog` titled "Judge Trace" (`width="wide"`) with `TraceView` (`lib/ui/trace/trace.svelte`), every message expanded.
+- **The dialog.** It opens a `Dialog` titled "Judge Trace" (`width="wide"`) with `TraceView` (`lib/ui/trace/trace.svelte`), every message expanded. It is the same `judge_trace_dialog.svelte` as the test pane (§2), so each row builds its trace only while its dialog is open.
 - **New prop.** The results page passes `judge_trace` to the result renderer, alongside the props it already passes (`scores`, skip fields, `eval_config`, `intermediate_outputs`). Other renderers ignore it.
 - **Badge.** Next to where the renderer shows the "G-Eval" badge line, an Agentic Judge shows an "Agentic Judge" badge with the caption "Reads the trace with tools", in the same markup as G-Eval's "Chain-of-thought scoring" line.
 

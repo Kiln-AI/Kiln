@@ -1,7 +1,7 @@
 <script lang="ts">
   import EvalResultScores from "./eval_result_scores.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
-  import TraceView from "$lib/ui/trace/trace.svelte"
+  import JudgeTraceDialog from "./judge_trace_dialog.svelte"
   import type { EvalConfig, Trace } from "$lib/types"
   import { model_info, model_name } from "$lib/stores"
   import { extractV2Props } from "$lib/utils/eval_types/registry"
@@ -20,7 +20,7 @@
     null
 
   let reasoning_dialog: Dialog | null = null
-  let judge_trace_dialog: Dialog | null = null
+  let judge_trace_dialog: JudgeTraceDialog | null = null
 </script>
 
 <div class="flex flex-col gap-2">
@@ -75,10 +75,5 @@
 </Dialog>
 
 {#if judge_trace}
-  <Dialog bind:this={judge_trace_dialog} title="Judge Trace" width="wide">
-    <TraceView
-      trace={judge_trace}
-      auto_expand_indices={judge_trace.map((_, index) => index)}
-    />
-  </Dialog>
+  <JudgeTraceDialog bind:this={judge_trace_dialog} {judge_trace} />
 {/if}
