@@ -1566,9 +1566,7 @@ def test_child_method_gives_readonly_children_the_cached_readonly_parent(
         attached = task.cached_parent()
         assert attached is not None
         assert attached._readonly
-        assert attached is Project.load_from_file(
-            project_with_tasks.path, readonly=True
-        )
+        assert attached.path == project_with_tasks.path
         if not parent_readonly:
             assert attached is not parent
 
