@@ -1070,26 +1070,31 @@
                 >
                   {#each section.items as item, item_index}
                     <!-- Feature Label -->
-                    <div
-                      class="px-6 py-4 bg-gray-50 font-medium text-gray-700 flex items-center border-b border-gray-100"
-                    >
-                      {item.label}
-                      {#if item.score_key}
-                        <button
-                          class="ml-1.5 w-4 h-4 shrink-0 text-gray-400 hover:text-gray-700"
-                          aria-label="Rename score"
-                          title="Rename score"
-                          on:click={() =>
-                            item.score_key &&
-                            score_display_name_dialog?.show(
-                              section.eval_id,
-                              item.score_key,
-                            )}
+                    {#if item.score_key}
+                      {@const score_key = item.score_key}
+                      <button
+                        class="group px-6 py-4 bg-gray-50 hover:bg-gray-100 font-medium text-gray-700 flex items-center text-left border-b border-gray-100 transition-colors"
+                        aria-label={`Rename score ${item.label}`}
+                        on:click={() =>
+                          score_display_name_dialog?.show(
+                            section.eval_id,
+                            score_key,
+                          )}
+                      >
+                        {item.label}
+                        <span
+                          class="ml-1.5 w-4 h-4 shrink-0 text-gray-500 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity"
                         >
                           <EditIcon />
-                        </button>
-                      {/if}
-                    </div>
+                        </span>
+                      </button>
+                    {:else}
+                      <div
+                        class="px-6 py-4 bg-gray-50 font-medium text-gray-700 flex items-center border-b border-gray-100"
+                      >
+                        {item.label}
+                      </div>
+                    {/if}
 
                     <!-- Model Values -->
                     {#each Array(columns) as _, i}
