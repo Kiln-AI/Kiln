@@ -75,7 +75,7 @@
           increment_eval_tag(task_id, tag)
         } else {
           console.error(
-            "Attempted to increment a tag set for evals, but not task_id provided",
+            "Attempted to increment a tag set for evals, but no task_id was provided",
           )
         }
         break
