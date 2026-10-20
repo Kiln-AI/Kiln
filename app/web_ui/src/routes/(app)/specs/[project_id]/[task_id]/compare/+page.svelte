@@ -83,7 +83,6 @@
   // missed: ones created later, or all of them if the request failed.
   let all_eval_scores_requested_for_task: string | null = null
   let all_eval_scores_loading = false
-  $: all_eval_scores_requested = all_eval_scores_requested_for_task === task_id
 
   // Eval data cache (full eval objects, keyed by eval_id)
   let eval_data_cache: Record<string, Eval> = {}
@@ -298,7 +297,12 @@
   }
 
   // Reactively fetch eval scores when models are selected (for table)
-  $: if (all_eval_scores_requested && !all_eval_scores_loading) {
+  // Compares the task id directly: this block starts the batch request, and a
+  // reactive copy of the flag would not update within the same flush.
+  $: if (
+    all_eval_scores_requested_for_task === task_id &&
+    !all_eval_scores_loading
+  ) {
     selectedModels.forEach((modelId) => {
       if (
         modelId &&
@@ -313,7 +317,10 @@
   }
 
   // Fetch eval scores for ALL run configs (for chart)
-  $: if (current_task_run_configs && !all_eval_scores_requested) {
+  $: if (
+    current_task_run_configs &&
+    all_eval_scores_requested_for_task !== task_id
+  ) {
     fetch_all_eval_scores(
       current_task_run_configs.flatMap((config) =>
         config.id ? [config.id] : [],
