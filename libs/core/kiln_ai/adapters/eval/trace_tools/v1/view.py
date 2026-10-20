@@ -45,7 +45,7 @@ class ToolCallRef:
     """Canonical: valid JSON is re-serialized on one line; anything else is kept as stored."""
     call_id: str | None
     result_number: int | None
-    """The message number of the first tool result for this call, if any."""
+    """The message number of the tool result that answers this call, if any."""
 
 
 @dataclass(frozen=True)
@@ -128,6 +128,14 @@ class _DraftMessage:
     is_error: bool
 
 
+@dataclass(frozen=True)
+class _ResultLinks:
+    result_numbers: Mapping[tuple[int, int], int]
+    """Keyed by (message number, index in its calls) of each answered call."""
+    tool_names: Mapping[int, str]
+    """Keyed by the message number of each tool result that answers a call."""
+
+
 def build_view(trace: Sequence[Mapping[str, Any]]) -> TraceView:
     """Parse a trace (Kiln's OpenAI-style message dicts) into its canonical form.
 
@@ -135,42 +143,53 @@ def build_view(trace: Sequence[Mapping[str, Any]]) -> TraceView:
     the trace size; call it off the event loop for large traces.
     """
     drafts = [_draft_message(raw) for raw in trace]
-
-    call_names: dict[str, str] = {}
-    for draft in drafts:
-        for call in draft.calls:
-            if call.call_id is not None:
-                call_names.setdefault(call.call_id, call.name)
-
-    result_numbers: dict[str, int] = {}
-    for number, draft in enumerate(drafts, start=1):
-        if draft.role == "tool" and draft.tool_call_id is not None:
-            result_numbers.setdefault(draft.tool_call_id, number)
-
+    links = _link_results(drafts)
     return TraceView(
         messages=tuple(
-            _message_view(number, draft, call_names, result_numbers)
+            _message_view(number, draft, links)
             for number, draft in enumerate(drafts, start=1)
         )
     )
 
 
+def _link_results(drafts: Sequence[_DraftMessage]) -> _ResultLinks:
+    """Pair each tool result with the call it answers, in one pass in trace order.
+
+    A result answers an earlier call with the same id that has no result yet,
+    from the latest message that has one, taking that message's calls in order.
+    Providers don't keep ids unique: some reuse them on every turn, and some
+    give parallel calls in one message the same id.
+    """
+    unanswered: dict[str, list[tuple[int, int]]] = {}
+    result_numbers: dict[tuple[int, int], int] = {}
+    tool_names: dict[int, str] = {}
+    for number, draft in enumerate(drafts, start=1):
+        if draft.role == "tool" and draft.tool_call_id is not None:
+            waiting = unanswered.get(draft.tool_call_id)
+            if waiting:
+                call_number, call_index = waiting.pop()
+                result_numbers[(call_number, call_index)] = number
+                tool_names[number] = drafts[call_number - 1].calls[call_index].name
+        # Pushed last call first, so a message's calls that share an id are
+        # answered in call order.
+        for call_index in reversed(range(len(draft.calls))):
+            call_id = draft.calls[call_index].call_id
+            if call_id is not None:
+                unanswered.setdefault(call_id, []).append((number, call_index))
+    return _ResultLinks(result_numbers=result_numbers, tool_names=tool_names)
+
+
 def _message_view(
-    number: int,
-    draft: _DraftMessage,
-    call_names: Mapping[str, str],
-    result_numbers: Mapping[str, int],
+    number: int, draft: _DraftMessage, links: _ResultLinks
 ) -> MessageView:
     tool_calls = tuple(
         ToolCallRef(
             name=call.name,
             arguments=call.arguments,
             call_id=call.call_id,
-            result_number=None
-            if call.call_id is None
-            else result_numbers.get(call.call_id),
+            result_number=links.result_numbers.get((number, call_index)),
         )
-        for call in draft.calls
+        for call_index, call in enumerate(draft.calls)
     )
     return MessageView(
         number=number,
@@ -181,17 +200,15 @@ def _message_view(
             f"{call.name} {call.arguments}" for call in tool_calls
         ),
         tool_calls=tool_calls,
-        tool_name=_tool_name(draft, call_names) if draft.role == "tool" else None,
+        tool_name=_tool_name(number, draft, links) if draft.role == "tool" else None,
         is_error=draft.is_error,
     )
 
 
-def _tool_name(draft: _DraftMessage, call_names: Mapping[str, str]) -> str:
+def _tool_name(number: int, draft: _DraftMessage, links: _ResultLinks) -> str:
     if draft.legacy_function_name is not None:
         return draft.legacy_function_name
-    if draft.tool_call_id is None:
-        return UNKNOWN_TOOL
-    return call_names.get(draft.tool_call_id, UNKNOWN_TOOL)
+    return links.tool_names.get(number, UNKNOWN_TOOL)
 
 
 def _draft_message(raw: Any) -> _DraftMessage:

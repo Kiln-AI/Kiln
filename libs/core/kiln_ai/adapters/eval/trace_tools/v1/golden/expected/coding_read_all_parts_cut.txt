@@ -2,6 +2,7 @@
 [reasoning]
 The user wants invoices built from line items. First I need 
 <truncated: 90 more chars; read_message_text(number=3, part=reasoning, offset=60)>
+[content]
 I'll start by reading the billing module.
 [call] read_file {"path": "billing/invoice.py"} → #4 ok, 1,353 chars
 [call] grep {"pattern": "def total", "path": "billing/legacy"} → #5 ERROR, 33 chars

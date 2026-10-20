@@ -60,10 +60,10 @@ def test_search_offsets_match_read_message_text(coding_view):
     hits = _hits(output)
     assert len(hits) > 10
     for hit in hits:
-        match = re.fullmatch(r"#(\d+) .* (content|reasoning|tool_calls) @([\d,]+)", hit)
+        match = re.fullmatch(r"#(\d+) .* (content|reasoning|tool_calls) @(\d+)", hit)
         assert match is not None
         number, part = int(match.group(1)), match.group(2)
-        offset = int(match.group(3).replace(",", ""))
+        offset = int(match.group(3))
         window = read_message_text(
             coding_view,
             TextArgs(number=number, part=part, offset=offset, max_chars=7),  # type: ignore[arg-type]
@@ -123,6 +123,16 @@ def test_search_paging_count_offset():
     with pytest.raises(TraceToolUsageError) as e:
         search_trace(view, SearchArgs(pattern="x", offset=6))
     assert str(e.value) == "offset 6 is past the last match (6 matches)."
+
+
+def test_search_positions_and_offsets_are_plain_integers():
+    view = _view("x" * 1_500 + "needle")
+    assert _hits(search_trace(view, SearchArgs(pattern="needle"))) == [
+        "#1 user content @1500"
+    ]
+    with pytest.raises(TraceToolUsageError) as e:
+        search_trace(view, SearchArgs(pattern="needle", offset=1_000))
+    assert str(e.value) == "offset 1000 is past the last match (1 match)."
 
 
 def test_search_singular_counts():

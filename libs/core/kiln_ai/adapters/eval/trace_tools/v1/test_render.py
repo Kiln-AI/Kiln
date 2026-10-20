@@ -382,11 +382,44 @@ def test_read_header_sizes_and_body_order(coding_view):
     with_reasoning = read_messages(
         coding_view, ReadArgs(numbers=(3,), parts=("content", "reasoning"))
     )
-    assert with_reasoning.splitlines()[1:4] == [
+    assert with_reasoning.splitlines()[1:5] == [
         "[reasoning]",
         coding_view.message(3).reasoning,
+        "[content]",
         "I'll start by reading the billing module.",
     ]
+
+
+@pytest.mark.parametrize(
+    "parts, max_chars, body",
+    [
+        (("content",), 1_000, ["Answer."]),
+        (("reasoning",), 1_000, ["[reasoning]", "Thinking."]),
+        (
+            ("content", "reasoning"),
+            1_000,
+            ["[reasoning]", "Thinking.", "[content]", "Answer."],
+        ),
+        (
+            ("content", "reasoning"),
+            5,
+            [
+                "[reasoning]",
+                "Think",
+                "<truncated: 4 more chars; read_message_text(number=1, part=reasoning, offset=5)>",
+                "[content]",
+                "Answe",
+                "<truncated: 2 more chars; read_message_text(number=1, part=content, offset=5)>",
+            ],
+        ),
+    ],
+)
+def test_read_content_label_only_after_reasoning(parts, max_chars, body):
+    view = build_view(
+        [{"role": "assistant", "content": "Answer.", "reasoning_content": "Thinking."}]
+    )
+    output = read_messages(view, ReadArgs(parts=parts, max_chars=max_chars))
+    assert output.splitlines()[1:] == body
 
 
 def test_read_call_result_pointers(coding_view, edge_view):
@@ -478,7 +511,7 @@ def test_text_window_and_continuation(coding_view):
         ),
         (
             TextArgs(number=4, offset=5_000),
-            "offset 5,000 is past the end of #4 content (1,353 chars).",
+            "offset 5000 is past the end of #4 content (1,353 chars).",
         ),
         (
             TextArgs(number=0),

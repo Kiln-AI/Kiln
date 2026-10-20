@@ -4,7 +4,7 @@
 #4 tool lookup_task 64: "{\"output\": \"The chart shows revenue by month.\", \"run_id\": \"123\"}"
 #5 tool broken_args 53 ERROR: "Error: arguments for 'broken_args' are not valid JSON"
 #6 tool dict_args 3: "a=1"
-#7 tool dict_args 20: "second result for t3"
+#7 tool unknown tool 20: "second result for t3"
 #8 tool unknown tool 13: "orphan result"
 #9 tool unknown tool 24: "a result with no call id"
 #10 tool unknown 13: "{\"output\": 5}"
@@ -21,7 +21,7 @@
 #21 assistant 78: "Final answer: the chart shows revenue by month.\nTabs\there, and unicode: café ✓"
 #22 assistant 0, calls a_tool_name_from_a_third_party_server_that_goes_on_well_past… (80)
 #23 tool a_tool_name_from_a_third_party_server_that_goes_on_well_past… 40: "{\"output\": \"kept whole\", \"exit_code\": 1}"
-#24 tool a_tool_name_from_a_third_party_server_that_goes_on_well_past… 22: "only key, so extracted"
+#24 tool unknown tool 22: "only key, so extracted"
 #25 reviewer_a 9: "Review a."
 #26 reviewer_b 9: "Review b."
 #27 reviewer_c 9: "Review c."

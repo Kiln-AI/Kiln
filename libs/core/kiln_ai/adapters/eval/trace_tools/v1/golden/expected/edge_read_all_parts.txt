@@ -22,7 +22,7 @@ Let me check.
 Error: arguments for 'broken_args' are not valid JSON
 === #6 tool result from dict_args (content 3) ===
 a=1
-=== #7 tool result from dict_args (content 20) ===
+=== #7 tool result from unknown tool (content 20) ===
 second result for t3
 === #8 tool result from unknown tool (content 13) ===
 orphan result
@@ -41,6 +41,7 @@ legacy result
 === #15 assistant (content 37; reasoning 36) ===
 [reasoning]
 Thinking about which answer to give.
+[content]
 The answer follows.
 
 {"answer": "43"}
@@ -57,7 +58,7 @@ Tabs	here, and unicode: café ✓
 [call] a_tool_name_from_a_third_party_server_that_goes_on_well_past_sixty_characters {} → #23 ok, 40 chars
 === #23 tool result from a_tool_name_from_a_third_party_server_that_goes_on_well_past… (content 40) ===
 {"output": "kept whole", "exit_code": 1}
-=== #24 tool result from a_tool_name_from_a_third_party_server_that_goes_on_well_past… (content 22) ===
+=== #24 tool result from unknown tool (content 22) ===
 only key, so extracted
 === #25 reviewer_a (content 9) ===
 Review a.

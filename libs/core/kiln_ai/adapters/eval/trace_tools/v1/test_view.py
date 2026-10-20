@@ -202,7 +202,7 @@ def test_view_tool_name_resolution():
     )
     assert [view.message(n).tool_name for n in range(2, 8)] == [
         "read",
-        "read",
+        UNKNOWN_TOOL,
         UNKNOWN_TOOL,
         UNKNOWN_TOOL,
         "legacy",
@@ -211,6 +211,76 @@ def test_view_tool_name_resolution():
     assert [call.result_number for call in view.message(1).tool_calls] == [2, 7, None]
     assert view.message(1).tool_name is None
     assert view.message(7).is_error
+
+
+def _assistant(*calls):
+    return {"role": "assistant", "tool_calls": list(calls)}
+
+
+def _result(call_id):
+    return {"role": "tool", "tool_call_id": call_id, "content": "x"}
+
+
+@pytest.mark.parametrize(
+    "trace, tool_names, result_numbers",
+    [
+        pytest.param(
+            [
+                _assistant(_call("a", "read"), _call("b", "grep")),
+                _result("b"),
+                _result("a"),
+            ],
+            [None, "grep", "read"],
+            [[3, 2], [], []],
+            id="unique_ids",
+        ),
+        pytest.param(
+            [
+                _assistant(_call("call_0", "read")),
+                _result("call_0"),
+                _assistant(_call("call_0", "grep")),
+                _result("call_0"),
+            ],
+            [None, "read", None, "grep"],
+            [[2], [], [4], []],
+            id="id_reused_across_turns",
+        ),
+        pytest.param(
+            [_result("a"), _assistant(_call("a", "read")), _result("zzz")],
+            [UNKNOWN_TOOL, None, UNKNOWN_TOOL],
+            [[], [None], []],
+            id="result_with_no_earlier_call",
+        ),
+        pytest.param(
+            [
+                _assistant(_call("a", "read"), _call("a", "grep")),
+                _result("a"),
+                _result("a"),
+            ],
+            [None, "read", "grep"],
+            [[2, 3], [], []],
+            id="parallel_calls_share_an_id",
+        ),
+        pytest.param(
+            [
+                _assistant(_call("a", "read")),
+                _assistant(_call("a", "grep")),
+                _result("a"),
+            ],
+            [None, None, "grep"],
+            [[None], [3], []],
+            id="latest_unanswered_call_wins",
+        ),
+    ],
+)
+def test_view_links_each_result_to_the_call_it_answers(
+    trace, tool_names, result_numbers
+):
+    view = build_view(trace)
+    assert [m.tool_name for m in view.messages] == tool_names
+    assert [[c.result_number for c in m.tool_calls] for m in view.messages] == (
+        result_numbers
+    )
 
 
 @pytest.mark.parametrize("is_error", ["yes", 1, None])

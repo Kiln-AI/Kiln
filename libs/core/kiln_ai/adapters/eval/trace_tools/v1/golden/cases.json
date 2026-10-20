@@ -725,5 +725,11 @@
       "context_chars": 2000
     },
     "raises": true
+  },
+  {
+    "id": "reused_ids_read_default",
+    "trace": "reused_ids",
+    "tool": "read_messages",
+    "args": {}
   }
 ]

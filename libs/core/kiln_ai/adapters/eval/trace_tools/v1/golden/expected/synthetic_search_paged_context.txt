@@ -2,6 +2,6 @@
 #64 tool run_tests content @859: <truncated> "   value_14 = compute(item_27\nFAILED tests/test_module.py::test_case_24 " <truncated>
 #136 tool run_tests content @157: <truncated> "6\n00091    value_91 = compute\nFAILED tests/test_module.py::test_case_51 " <truncated>
 #201 tool run_tests content @578: <truncated> "e(item_20, limit=4)  # step 0\nFAILED tests/test_module.py::test_case_76 " <truncated>
-#248 tool run_tests content @1,046: <truncated> "_96 = compute(item_3, limit=5\nFAILED tests/test_module.py::test_case_94 " <truncated>
-#286 tool run_tests content @1,014: <truncated> "tep 0\n00274    value_80 = com\nFAILED tests/test_module.py::test_case_109" <truncated>
+#248 tool run_tests content @1046: <truncated> "_96 = compute(item_3, limit=5\nFAILED tests/test_module.py::test_case_94 " <truncated>
+#286 tool run_tests content @1014: <truncated> "tep 0\n00274    value_80 = com\nFAILED tests/test_module.py::test_case_109" <truncated>
 Use offset=8 for more.

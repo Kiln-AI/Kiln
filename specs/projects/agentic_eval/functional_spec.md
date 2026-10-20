@@ -150,13 +150,13 @@ An existing judge's rendered prompt must not change when a new toolset version s
 | `reasoning` | The assistant's reasoning (`reasoning_content`). |
 | `tool_calls` | One line per call the assistant made: `name {arguments}`, with arguments as stored. Excludes `task_response`. |
 
-- **Sizes, offsets and search positions** always refer to characters in a part's canonical text. A search hit at `#88 content @12,044` can be read with `read_message_text(number=88, offset=12044)`.
+- **Sizes, offsets and search positions** always refer to characters in a part's canonical text. A search hit at `#88 content @12044` can be read with `read_message_text(number=88, offset=12044)`.
 - **Tool results** carry two extra facts, shown wherever the message is listed: the name of the tool that was called (found through the call id; `unknown tool` if not found) and an `ERROR` flag when the result is marked as an error.
 - **Tool calls** show where their result is: `→ #4 ok, 36,450 chars`, `→ #5 ERROR, 98 chars`, or `→ no result`.
 
 ### 7.3 Output conventions
 
-- Numbers use thousands separators (`36,450`).
+- Sizes and counts use thousands separators (`36,450`). Character positions the judge can pass back as an `offset` don't (`@12044`).
 - **Previews** (short excerpts on one line) are quoted strings with JSON-style escaping (`\n`, `\t`, `\"`, `\\`). When cut, the marker `<truncated>` follows the closing quote. Ellipses are never added inside a quote.
 - **Full text** (in `read_messages` and `read_message_text`) is shown raw, not escaped. When cut by `max_chars`, it is followed on its own line by `<truncated: N more chars; read_message_text(number=X, part=Y, offset=Z)>`.
 - Reasoning is never shown unless asked for. Its size is always shown.
@@ -244,7 +244,7 @@ from decimal import Decimal
 - **A message is included only if it has at least one of the requested parts.** So `read_messages(roles=[assistant], parts=[content])` returns assistant messages that contain text, and skips ones that only call tools.
 - When `numbers` names a message that the filters exclude, a footer lists it: `Not shown: #7 (no requested parts)`.
 - `max_chars` (1 to 40,000) applies to each part separately.
-- Requested parts appear in the order reasoning, content, tool calls. Reasoning is shown under a `[reasoning]` label.
+- Requested parts appear in the order reasoning, content, tool calls. Reasoning is shown under a `[reasoning]` label, and content shown after it under a `[content]` label.
 
 Examples of common reads:
 
@@ -275,15 +275,15 @@ Examples of common reads:
 
 ```
 43 matches in 12 messages. Showing matches 1–43.
-#88 tool run_tests content @12,044
-#88 tool run_tests content @12,890
+#88 tool run_tests content @12044
+#88 tool run_tests content @12890
 #1102 assistant content @310
 ```
 
 With `context_chars=60`:
 
 ```
-#88 tool run_tests content @12,044: <truncated> "collected 212 items\n\nFAILED tests/test_invoice.py::test_total - AssertionError" <truncated>
+#88 tool run_tests content @12044: <truncated> "collected 212 items\n\nFAILED tests/test_invoice.py::test_total - AssertionError" <truncated>
 ```
 
 - Plain-text search by default. `regex=true` uses Python regular expression syntax, with a 30-second time limit.

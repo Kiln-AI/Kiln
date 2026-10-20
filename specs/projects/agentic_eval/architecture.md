@@ -162,7 +162,7 @@ class TraceView:
     def part_text(self, number: int, part: Part) -> str: ...
 ```
 
-- **Two passes, O(total chars).** Pass 1 canonicalizes every message and indexes calls by `id`. Pass 2 resolves each tool result's name and sets the matching call's `result_number`; the first result for a call id wins.
+- **Two passes, O(total chars).** Pass 1 canonicalizes every message. Pass 2 walks the messages in order and links each tool result to an earlier call with the same `id` that has no result yet, which gives the result its tool name and the call its `result_number`. Ids can repeat across turns, so the link is never by id alone ([component doc §2.5](components/trace_tools_v1.md#25-tool-result-metadata-role-tool)).
 - This replaces the O(n²) name lookup in `EvalTraceFormatter`.
 - **Accepts loose dicts.** `EvalTaskInput.trace` is `list[dict]`, so the view accepts loose dicts and never raises on odd shapes. A missing role becomes `"unknown"`. Non-string content falls back to the component doc's rules.
 - Canonicalization rules are in the [component doc §2](components/trace_tools_v1.md#2-canonical-text).

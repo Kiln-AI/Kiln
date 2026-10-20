@@ -21,7 +21,6 @@ from kiln_ai.adapters.eval.trace_tools.v1.render import (
     assemble,
     check_filters,
     fmt_count,
-    fmt_number,
     resolve_range,
     role_selected,
     short_label,
@@ -178,7 +177,7 @@ def _timed_out(timeout_seconds: float) -> TraceToolUsageError:
 def _match_line(match: _Match, context_chars: int) -> str:
     line = (
         f"#{match.message.number} {short_label(match.message)} {match.part} "
-        f"@{fmt_number(match.start)}"
+        f"@{match.start}"
     )
     if context_chars <= 0:
         return line

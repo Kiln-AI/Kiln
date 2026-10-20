@@ -519,6 +519,7 @@ def _read_block(
     )
     error = " ERROR" if message.is_error else ""
     lines = [f"=== #{message.number} {long_label(message)} ({sizes}){error} ==="]
+    shows_reasoning = "reasoning" in parts and bool(message.reasoning)
     for part in BODY_PART_ORDER:
         if part not in parts or not message.part(part):
             continue
@@ -527,6 +528,8 @@ def _read_block(
             continue
         if part == "reasoning":
             lines.append("[reasoning]")
+        elif shows_reasoning:
+            lines.append("[content]")
         lines.extend(_cut_part(message, part, max_chars))
     return "\n".join(lines)
 
@@ -580,7 +583,7 @@ def read_message_text(view: TraceView, args: TextArgs) -> str:
         raise TraceToolUsageError(_missing_part_message(message, args.part))
     if args.offset >= len(text):
         raise TraceToolUsageError(
-            f"offset {fmt_number(args.offset)} is past the end of #{message.number} "
+            f"offset {args.offset} is past the end of #{message.number} "
             f"{args.part} ({fmt_number(len(text))} chars)."
         )
 
