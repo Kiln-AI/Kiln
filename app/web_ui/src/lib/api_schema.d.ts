@@ -4468,6 +4468,11 @@ export interface components {
         AgentOverviewOutputScore: {
             /** Name */
             name: string;
+            /**
+             * Display Name
+             * @description What the user sees this score called in the UI, if it differs from name. name stays the identifier.
+             */
+            display_name?: string | null;
             /** Type */
             type: string;
         };
@@ -7556,6 +7561,11 @@ export interface components {
              * @description The name of the score. Will be provided to the model so use a descriptive name. Should align to the model's TaskRequirement name if you want to use human evals to evaluate the evaluator's performance.
              */
             name: string;
+            /**
+             * Display Name
+             * @description An optional, user-facing display name for the score, shown throughout the UI in place of 'name'. Purely cosmetic: it does not affect the JSON key, stored eval run scores, or the name provided to models. Falls back to 'name' when not set. Surrounding whitespace is stripped; blank values, or a value equal to 'name', are stored as None.
+             */
+            display_name?: string | null;
             /**
              * Instruction
              * @description A description of the score, used to help the model understand the goal of the score. Will be provided to evaluator models, so should be written for the model, not the team/user.
@@ -11408,6 +11418,11 @@ export interface components {
              * @description Tags for which this rating option is shown.
              */
             show_for_tags: string[];
+            /**
+             * Display Name
+             * @description The user-facing label for this rating, when it differs from requirement.name (an eval score's display name). requirement.name stays the identifier.
+             */
+            display_name?: string | null;
         };
         /**
          * RatingOptionResponse
@@ -11850,6 +11865,13 @@ export interface components {
              * @description The associated spec ID, if any.
              */
             spec_id?: string | null;
+            /**
+             * Score Display Names
+             * @description The user-facing name of each of the eval's output scores, keyed by the score's JSON key (the keys of eval_config_result.results). The score's display_name when set, otherwise its name.
+             */
+            score_display_names: {
+                [key: string]: string;
+            };
         };
         /**
          * RunConfigEvalScoresSummary
@@ -14208,6 +14230,13 @@ export interface components {
              * @description The updated train set filter ID.
              */
             train_set_filter_id?: string | null;
+            /**
+             * Output Score Display Names
+             * @description Updated user-facing display names for the eval's output scores, keyed by each score's JSON key (as in eval run scores). Scores not included keep their current display name; null or blank clears it, as does a value equal to the score's name. Max 32 characters, unique across the eval's scores. Display names are cosmetic only: they do not change the score name, JSON key, or any stored eval run.
+             */
+            output_score_display_names?: {
+                [key: string]: string | null;
+            } | null;
         };
         /**
          * UpdateFinetuneRequest

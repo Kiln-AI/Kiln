@@ -466,6 +466,26 @@ async def test_create_evaluator(
 
 
 @pytest.mark.asyncio
+async def test_create_evaluator_duplicate_display_names_is_client_error(
+    client, mock_task_from_id, valid_evaluator_request, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+    body = valid_evaluator_request.model_dump(mode="json")
+    body["output_scores"] = [
+        {"name": "score_a", "display_name": "Quality", "type": "pass_fail"},
+        {"name": "score_b", "display_name": "quality", "type": "pass_fail"},
+    ]
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator", json=body
+    )
+
+    assert response.status_code == 422
+    assert "unique display names" in response.json()["message"]
+    assert mock_task.evals() == []
+
+
+@pytest.mark.asyncio
 async def test_create_evaluator_with_direction(
     client, mock_task_from_id, valid_evaluator_request, mock_task
 ):
@@ -4100,6 +4120,186 @@ def test_update_eval_rejects_invalid_train_set_filter_id(
     assert response.status_code == 422
 
 
+@pytest.fixture
+def mock_eval_runs(mock_eval_config):
+    """Two eval runs with scores keyed by the json_key of each output score."""
+    runs = []
+    for i in range(2):
+        run = EvalRun(
+            id=f"eval_run{i}",
+            parent=mock_eval_config,
+            dataset_id=f"dataset{i}",
+            task_run_config_id=None,
+            eval_config_eval=True,
+            input="input",
+            output="output",
+            scores={"score1": 4.0, "overall_rating": 3.0},
+        )
+        run.save_to_file()
+        runs.append(run)
+    return runs
+
+
+def _reload_eval(mock_task) -> Eval:
+    from kiln_ai.datamodel.model_cache import ModelCache
+
+    ModelCache.shared().clear()
+    return mock_task.evals()[0]
+
+
+def test_update_eval_set_display_names(
+    client, mock_task_from_id, mock_eval, mock_task, mock_eval_runs
+):
+    """Setting display names updates only the eval; score names, keys, and runs are untouched."""
+    run_files = {
+        run.path: run.path.read_bytes()
+        for config in mock_eval.configs()
+        for run in config.runs()
+    }
+    assert len(run_files) == 2
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/evals/eval1",
+            json={"output_score_display_names": {"score1": "Quality Check"}},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["output_scores"][0]["display_name"] == "Quality Check"
+    assert body["output_scores"][1]["display_name"] is None
+
+    eval_from_disk = _reload_eval(mock_task)
+    # Underlying names and keys are unchanged
+    assert eval_from_disk.output_scores[0].name == "score1"
+    assert eval_from_disk.output_scores[0].json_key() == "score1"
+    assert eval_from_disk.output_scores[0].display_name == "Quality Check"
+
+    # Run files are byte-for-byte unchanged (no migration, clean git history)
+    for config in eval_from_disk.configs():
+        for run in config.runs():
+            assert "score1" in run.scores
+            assert run.path in run_files
+            assert run.path.read_bytes() == run_files[run.path]
+
+
+def test_update_eval_display_names_partial_update(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    """Scores left out of the request keep their current display name."""
+    mock_eval.set_output_score_display_names({"overall_rating": "Overall"})
+    mock_eval.save_to_file()
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/evals/eval1",
+            json={"output_score_display_names": {"score1": "Quality Check"}},
+        )
+
+    assert response.status_code == 200
+    eval_from_disk = _reload_eval(mock_task)
+    assert eval_from_disk.output_scores[0].display_name == "Quality Check"
+    assert eval_from_disk.output_scores[1].display_name == "Overall"
+
+
+@pytest.mark.parametrize("cleared_value", ["   ", None, "score1"])
+def test_update_eval_clear_display_name(
+    client, mock_task_from_id, mock_eval, mock_task, cleared_value
+):
+    """Blank, null, or the score's own name clears the display name back to None."""
+    mock_eval.set_output_score_display_names({"score1": "Existing"})
+    mock_eval.save_to_file()
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/evals/eval1",
+            json={"output_score_display_names": {"score1": cleared_value}},
+        )
+
+    assert response.status_code == 200
+    eval_from_disk = _reload_eval(mock_task)
+    assert eval_from_disk.output_scores[0].display_name is None
+
+
+def test_update_eval_display_name_with_eval_name_change(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    """Eval name and score display names can be updated in the same request."""
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/evals/eval1",
+            json={
+                "name": "Renamed Eval",
+                "output_score_display_names": {
+                    "score1": "Quality Check",
+                    "overall_rating": "Overall",
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    eval_from_disk = _reload_eval(mock_task)
+    assert eval_from_disk.name == "Renamed Eval"
+    assert eval_from_disk.output_scores[0].display_name == "Quality Check"
+    assert eval_from_disk.output_scores[1].display_name == "Overall"
+
+
+def test_update_eval_display_name_exactly_max_length(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    """32 characters is allowed, and surrounding whitespace doesn't count toward it."""
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/evals/eval1",
+            json={"output_score_display_names": {"score1": "  " + "x" * 32 + "  "}},
+        )
+
+    assert response.status_code == 200
+    assert _reload_eval(mock_task).output_scores[0].display_name == "x" * 32
+
+
+@pytest.mark.parametrize(
+    "display_names, expected_message",
+    [
+        ({"not_a_score": "Quality"}, "Unknown output score keys"),
+        ({"score1": "x" * 33}, "at most 32 characters"),
+        ({"score1": "Overall", "overall_rating": "overall"}, "unique display names"),
+        ({"score1": "Overall_Rating"}, "unique display names"),
+        ({"score1": "Quality", "overall_rating": "x" * 33}, "at most 32 characters"),
+    ],
+)
+def test_update_eval_invalid_display_names_saves_nothing(
+    client, mock_task_from_id, mock_eval, mock_task, display_names, expected_message
+):
+    """A rejected request returns 400 and leaves the eval file unchanged, including other fields in the same request."""
+    eval_bytes = mock_eval.path.read_bytes()
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/evals/eval1",
+            json={
+                "name": "Renamed Eval",
+                "output_score_display_names": display_names,
+            },
+        )
+
+    assert response.status_code == 400
+    assert expected_message in response.json()["message"]
+    assert mock_eval.path.read_bytes() == eval_bytes
+
+
 def test_runs_in_filter():
     # Create a mock task with runs
     mock_task = Mock(spec=Task)
@@ -5449,6 +5649,44 @@ async def test_get_run_config_eval_scores_inline_aggregation(
     assert ecr["results"]["overall_rating"]["n_excluded"] == 1
     assert ecr["results"]["overall_rating"]["mean_score"] == 4.0
     assert ecr["percent_complete"] == pytest.approx(2.0 / 3.0)
+    assert er["score_display_names"] == {
+        "score1": "score1",
+        "overall_rating": "overall_rating",
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_run_config_eval_scores_uses_score_display_names(
+    client, mock_task, mock_eval, mock_run_config
+):
+    """score_display_names maps each score's unchanged JSON key to its display name, even without a default eval config."""
+    mock_eval.output_scores[1].display_name = "Quality"
+    mock_eval.save_to_file()
+
+    mock_task_api = MagicMock()
+    mock_task_api.runs.return_value = []
+    mock_task_api.evals.return_value = [mock_eval]
+    mock_task_api.specs.return_value = []
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as p_task,
+        patch("app.desktop.studio_server.eval_api.task_run_config_from_id") as p_rc,
+        patch_resolve_split(test=stub_split([])),
+    ):
+        p_task.return_value = mock_task_api
+        p_rc.return_value = mock_run_config
+
+        response = client.get(
+            f"/api/projects/project1/tasks/task1/run_configs/{mock_run_config.id}/eval_scores"
+        )
+
+    assert response.status_code == 200
+    er = response.json()["eval_results"][0]
+    assert er["missing_default_eval_config"] is True
+    assert er["score_display_names"] == {
+        "score1": "score1",
+        "overall_rating": "Quality",
+    }
 
 
 @pytest.mark.asyncio

@@ -583,6 +583,149 @@ def test_eval_output_score_name_validation():
     assert max_length_score.name == "a" * 32
 
 
+def _display_name_eval() -> Eval:
+    return Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="Tone Check", type=TaskOutputRatingType.pass_fail),
+            EvalOutputScore(name="accuracy", type=TaskOutputRatingType.five_star),
+        ],
+    )
+
+
+def test_eval_output_score_display_name_defaults_to_none():
+    score = EvalOutputScore(name="accuracy", type=TaskOutputRatingType.five_star)
+    assert score.display_name is None
+    assert score.resolved_display_name() == "accuracy"
+
+
+@pytest.mark.parametrize(
+    "display_name, expected",
+    [
+        ("  Accuracy  ", "Accuracy"),
+        ("", None),
+        ("   ", None),
+        (None, None),
+        ("accuracy", None),
+        ("x" * 32, "x" * 32),
+    ],
+)
+def test_eval_output_score_display_name_normalized(display_name, expected):
+    score = EvalOutputScore(
+        name="accuracy",
+        display_name=display_name,
+        type=TaskOutputRatingType.five_star,
+    )
+    assert score.display_name == expected
+    assert score.resolved_display_name() == (expected or "accuracy")
+
+
+def test_eval_output_score_display_name_too_long():
+    with pytest.raises(ValidationError, match="at most 32 characters"):
+        EvalOutputScore(
+            name="accuracy",
+            display_name="x" * 33,
+            type=TaskOutputRatingType.five_star,
+        )
+
+
+def test_eval_output_score_display_name_does_not_change_json_key():
+    score = EvalOutputScore(
+        name="Tone Check",
+        display_name="Politeness",
+        type=TaskOutputRatingType.pass_fail,
+    )
+    assert score.json_key() == "tone_check"
+
+
+def test_eval_output_score_display_name_legacy_dict():
+    """Serialized scores that predate display_name must still parse."""
+    score = EvalOutputScore.model_validate({"name": "accuracy", "type": "five_star"})
+    assert score.display_name is None
+
+
+@pytest.mark.parametrize(
+    "display_names",
+    [
+        ["Quality", "quality"],
+        ["Accuracy", None],
+    ],
+)
+def test_eval_rejects_duplicate_display_names(display_names):
+    """Display names must be unique (case-insensitive), including against other scores' names."""
+    with pytest.raises(ValueError, match="unique display names"):
+        Eval(
+            name="Test Eval",
+            eval_set_filter_id="tag::tag1",
+            eval_configs_filter_id="tag::tag2",
+            output_scores=[
+                EvalOutputScore(
+                    name="Tone Check",
+                    display_name=display_names[0],
+                    type=TaskOutputRatingType.pass_fail,
+                ),
+                EvalOutputScore(
+                    name="accuracy",
+                    display_name=display_names[1],
+                    type=TaskOutputRatingType.five_star,
+                ),
+            ],
+        )
+
+
+def test_eval_set_output_score_display_names():
+    eval = _display_name_eval()
+    eval.set_output_score_display_names({"tone_check": "  Politeness "})
+    assert eval.output_scores[0].display_name == "Politeness"
+    assert eval.output_scores[0].name == "Tone Check"
+    assert eval.output_scores[1].display_name is None
+
+    eval.set_output_score_display_names({"accuracy": "Correctness"})
+    assert eval.output_scores[0].display_name == "Politeness"
+    assert eval.output_scores[1].display_name == "Correctness"
+
+    eval.set_output_score_display_names({"tone_check": None})
+    assert eval.output_scores[0].display_name is None
+
+
+def test_eval_set_output_score_display_names_persists(mock_task, tmp_path):
+    mock_task.path = tmp_path / "task.kiln"
+    eval = _display_name_eval()
+    eval.parent = mock_task
+    eval.set_output_score_display_names({"tone_check": "Politeness"})
+    eval.save_to_file()
+
+    loaded = Eval.load_from_file(eval.path)
+    assert loaded.output_scores[0].display_name == "Politeness"
+    assert loaded.output_scores[0].json_key() == "tone_check"
+
+
+@pytest.mark.parametrize(
+    "display_names, expected_message",
+    [
+        ({"unknown": "Quality"}, "Unknown output score keys"),
+        ({"tone_check": "x" * 33}, "at most 32 characters"),
+        ({"tone_check": "Accuracy"}, "unique display names"),
+    ],
+)
+def test_eval_set_output_score_display_names_invalid(display_names, expected_message):
+    """Invalid updates raise and leave every score unchanged."""
+    eval = _display_name_eval()
+    with pytest.raises(ValueError, match=expected_message):
+        eval.set_output_score_display_names(display_names)
+    assert [score.display_name for score in eval.output_scores] == [None, None]
+
+
+def test_eval_set_output_score_display_names_readonly():
+    eval = _display_name_eval()
+    eval.mark_as_readonly()
+    with pytest.raises(ReadOnlyMutationError):
+        eval.set_output_score_display_names({"tone_check": "Politeness"})
+    assert eval.output_scores[0].display_name is None
+
+
 def test_eval_output_score_direction_default():
     score = EvalOutputScore(
         name="accuracy",

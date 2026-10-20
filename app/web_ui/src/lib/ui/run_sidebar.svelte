@@ -47,6 +47,12 @@
   }
 
   // Dynamic rating requirements based on tags
+  $: rating_labels = Object.fromEntries(
+    (task_rating_options?.options || []).map((option) => [
+      option.requirement.id,
+      option.display_name || option.requirement.name,
+    ]),
+  )
   $: rating_requirements = rating_options_for_sample(
     task_rating_options,
     run?.tags || [],
@@ -642,7 +648,7 @@
     {#if rating_requirements}
       {#each rating_requirements as requirement, index}
         <div class="flex items-center">
-          {requirement.name}:
+          {rating_labels[requirement.id ?? ""] || requirement.name}:
           <InfoTooltip
             tooltip_text={`Requirement #${index + 1} - ${requirement.instruction || "No instruction provided"}${requirement.type === "pass_fail_critical" ? " Use 'critical' rating for responses which are never tolerable, beyond a typical failure." : ""}`}
           />

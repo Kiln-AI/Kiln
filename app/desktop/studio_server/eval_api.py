@@ -782,6 +782,10 @@ class UpdateEvalRequest(BaseModel):
     train_set_filter_id: DatasetFilterId | None = Field(
         default=None, description="The updated train set filter ID."
     )
+    output_score_display_names: Dict[str, str | None] | None = Field(
+        default=None,
+        description="Updated user-facing display names for the eval's output scores, keyed by each score's JSON key (as in eval run scores). Scores not included keep their current display name; null or blank clears it, as does a value equal to the score's name. Max 32 characters, unique across the eval's scores. Display names are cosmetic only: they do not change the score name, JSON key, or any stored eval run.",
+    )
 
 
 def eval_input_tags_must_be_filterable(tags: list[str] | None) -> list[str] | None:
@@ -1078,6 +1082,16 @@ class RunConfigEvalResult(BaseModel):
     spec_id: ID_TYPE | None = Field(
         default=None, description="The associated spec ID, if any."
     )
+    score_display_names: Dict[str, str] = Field(
+        description="The user-facing name of each of the eval's output scores, keyed by the score's JSON key (the keys of eval_config_result.results). The score's display_name when set, otherwise its name.",
+    )
+
+
+def score_display_names(eval: Eval) -> Dict[str, str]:
+    """Map each output score's JSON key to the name the UI should show for it."""
+    return {
+        score.json_key(): score.resolved_display_name() for score in eval.output_scores
+    }
 
 
 class RunConfigEvalScoresSummary(BaseModel):
@@ -1962,6 +1976,12 @@ def connect_evals_api(app: FastAPI):
             # set_split, not a direct splits write: it refuses to mutate a readonly
             # (cached) eval, which a direct `eval.splits[...] = ...` would do silently.
             eval.set_split("train", TaskRunSplit(filter_id=request.train_set_filter_id))
+
+        if request.output_score_display_names is not None:
+            try:
+                eval.set_output_score_display_names(request.output_score_display_names)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
 
         eval.save_to_file()
         return resolve_eval_display_fields(eval)
@@ -3323,6 +3343,7 @@ def connect_evals_api(app: FastAPI):
                         eval_config_result=None,
                         missing_default_eval_config=True,
                         spec_id=associated_spec.id if associated_spec else None,
+                        score_display_names=score_display_names(eval),
                     )
                 )
                 continue
@@ -3418,6 +3439,7 @@ def connect_evals_api(app: FastAPI):
                     dataset_size=dataset_size,
                     missing_default_eval_config=False,
                     spec_id=associated_spec.id if associated_spec else None,
+                    score_display_names=score_display_names(eval),
                     eval_config_result=EvalConfigResult(
                         eval_config_id=eval_config.id,
                         results=results,

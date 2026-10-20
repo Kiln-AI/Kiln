@@ -876,6 +876,11 @@ class EvalOutputScore(BaseModel):
     name: FilenameStringShort = Field(
         description="The name of the score. Will be provided to the model so use a descriptive name. Should align to the model's TaskRequirement name if you want to use human evals to evaluate the evaluator's performance."
     )
+    display_name: str | None = Field(
+        default=None,
+        max_length=32,
+        description="An optional, user-facing display name for the score, shown throughout the UI in place of 'name'. Purely cosmetic: it does not affect the JSON key, stored eval run scores, or the name provided to models. Falls back to 'name' when not set. Surrounding whitespace is stripped; blank values, or a value equal to 'name', are stored as None.",
+    )
     instruction: str | None = Field(
         default=None,
         description="A description of the score, used to help the model understand the goal of the score. Will be provided to evaluator models, so should be written for the model, not the team/user.",
@@ -893,8 +898,30 @@ class EvalOutputScore(BaseModel):
         The JSON key for the score, used when running the evaluator with a LLM and we need JSON output.
 
         For example, "Overall Rating" -> "overall_rating"
+
+        Always derived from 'name' (not 'display_name'), so renaming for display never changes the
+        key used by stored eval runs.
         """
         return string_to_json_key(self.name)
+
+    def resolved_display_name(self) -> str:
+        """The name to show users for this score: display_name when set, otherwise name."""
+        return self.display_name or self.name
+
+    @field_validator("display_name", mode="before")
+    @classmethod
+    def normalize_display_name(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
+    @model_validator(mode="after")
+    def clear_display_name_matching_name(self) -> Self:
+        # Keeps "no display name" distinct from "display name set to the name", so the
+        # score keeps following its name.
+        if self.display_name == self.name:
+            self.display_name = None
+        return self
 
     @model_validator(mode="after")
     def validate_type(self) -> Self:
@@ -946,6 +973,15 @@ Three ways to mark a pydantic field deprecated; these fields use two of them:
    permanent way to render a legacy record, so it would be a warning storm. Not used.
    Do not "fix" this to (3) without silencing that first; (2) already provides the
    tooling signal (3) would be reached for."""
+
+
+def validate_unique_display_names(output_scores: List[EvalOutputScore]) -> None:
+    """Display names stand in for names in the UI, so they must not collide (ignoring case)."""
+    resolved_names = [score.resolved_display_name() for score in output_scores]
+    if len({name.lower() for name in resolved_names}) != len(resolved_names):
+        raise ValueError(
+            f"output_scores must have unique display names. Got: [{', '.join(resolved_names)}]"
+        )
 
 
 class EvalRun(KilnParentedModel):
@@ -1549,6 +1585,40 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         # built by model_construct, where nothing did.
         self.__pydantic_fields_set__.add("splits")
 
+    def set_output_score_display_names(
+        self, display_names: Dict[str, str | None]
+    ) -> None:
+        """Set the display names of output scores, keyed by each score's JSON key.
+
+        Scores not in display_names keep their current display name; None or blank clears
+        it. Display names are cosmetic, so no score name, JSON key or stored eval run
+        changes. Raises ValueError for an unknown key, or a display name that is too long
+        or collides with another score's.
+        """
+        scores_by_key = {score.json_key(): score for score in self.output_scores}
+        unknown_keys = [key for key in display_names if key not in scores_by_key]
+        if unknown_keys:
+            raise ValueError(
+                f"Unknown output score keys: [{', '.join(unknown_keys)}]. Expected keys from: [{', '.join(scores_by_key)}]"
+            )
+
+        # Rebuilt and assigned (not mutated in place) so the readonly guard runs. Fully
+        # validated before assigning: a failed assignment validator would leave the new
+        # value in place.
+        updated_scores = [
+            EvalOutputScore.model_validate(
+                {
+                    **score.model_dump(),
+                    "display_name": display_names[score.json_key()],
+                }
+            )
+            if score.json_key() in display_names
+            else score
+            for score in self.output_scores
+        ]
+        validate_unique_display_names(updated_scores)
+        self.output_scores = updated_scores
+
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:
         if self.parent is not None and self.parent.__class__.__name__ != "Task":
@@ -1675,6 +1745,8 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
             raise ValueError(
                 f"output_scores must have unique names (once transformed to JSON keys). Got: [{', '.join(output_score_keys)}]"
             )
+
+        validate_unique_display_names(self.output_scores)
         return self
 
     @model_validator(mode="after")
