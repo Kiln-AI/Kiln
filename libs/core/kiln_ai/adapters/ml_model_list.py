@@ -11771,6 +11771,13 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
             ),
+            # OpenRouter serves this model only on its free tier.
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="xingchen-agi/xing4.0-29b-a4b:free",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+            ),
         ],
     ),
     # Ling 3.1 Flash
