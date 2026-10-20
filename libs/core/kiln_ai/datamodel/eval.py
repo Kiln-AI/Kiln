@@ -172,7 +172,7 @@ class LlmJudgeProperties(BaseModel):
     # as before.
     run_config: LlmJudgeRunConfig | None = None
     # An int, not an enum, so a config written by a newer Kiln with a newer version
-    # still loads here; the judge then skips with an "update Kiln" message.
+    # still loads here; building the judge then fails with an "update Kiln" message.
     trace_toolset_version: int | None = Field(
         default=None,
         ge=1,

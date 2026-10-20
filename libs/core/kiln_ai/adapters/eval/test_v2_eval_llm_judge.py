@@ -1367,19 +1367,19 @@ class TestLlmJudgeTraceTools:
         rendered = mock_adapter.invoke_returning_run_output.call_args[0][0]
         assert rendered == expected_overview
 
-    @pytest.mark.asyncio
-    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
-    async def test_unsupported_trace_toolset_version_skips(self, mock_adapter_for_task):
+    def test_unsupported_trace_toolset_version_refuses_to_build(self):
+        """Fails when the judge is built, not as a skip from evaluate(): a skip is
+        saved as a final result, and the item would never run after an update."""
         cfg = _make_config(_make_props(trace_toolset_version=99))
 
-        result = await LlmJudgeEval(cfg).evaluate(_inp(trace=_JUDGED_TRACE))
+        with pytest.raises(ValueError) as e:
+            LlmJudgeEval(cfg)
 
-        assert result.skipped_reason == SkippedReason.type_not_available
-        assert result.skipped_detail == (
+        assert str(e.value) == (
             "This judge uses trace tools version 99, which this version of Kiln "
             "doesn't support. Update Kiln to run it."
         )
-        mock_adapter_for_task.assert_not_called()
+        assert not is_retryable_error(e.value)
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("trace_toolset_version", [1, None])

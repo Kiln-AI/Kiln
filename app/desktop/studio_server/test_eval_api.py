@@ -7094,6 +7094,43 @@ class TestTestV2Eval:
         assert response.status_code == 422
         assert response.json()["message"] == str(JudgeContextExceededError(3))
 
+    def test_judge_from_a_newer_kiln_returns_the_update_message(
+        self, client, mock_v2_eval
+    ):
+        payload = {
+            "properties": {
+                "type": "llm_judge",
+                "model_name": "gpt-4o",
+                "model_provider": "openai",
+                "prompt_template": "Judge the trace.",
+                "trace_toolset_version": 99,
+            },
+            "eval_input": {
+                "final_message": "Frank Herbert.",
+                "trace": [
+                    {"role": "user", "content": "Who wrote Dune?"},
+                    {"role": "assistant", "content": "Frank Herbert."},
+                ],
+            },
+        }
+        with (
+            patch(
+                "app.desktop.studio_server.eval_api.eval_from_id",
+                return_value=mock_v2_eval,
+            ),
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task"
+            ) as mock_adapter_for_task,
+        ):
+            response = client.post(self._url(), json=payload)
+
+        assert response.status_code == 400
+        assert response.json()["message"] == (
+            "This judge uses trace tools version 99, which this version of Kiln "
+            "doesn't support. Update Kiln to run it."
+        )
+        mock_adapter_for_task.assert_not_called()
+
     def test_400_when_no_properties_or_builder_input(self, client, mock_v2_eval):
         payload = {
             "eval_input": {

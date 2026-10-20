@@ -45,6 +45,7 @@ from kiln_ai.adapters.eval.eval_utils.scoring_utils import (
 )
 from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import check_reference_key
 from kiln_ai.adapters.eval.trace_tools import (
+    TraceToolset,
     UnsupportedTraceToolsetVersion,
     judge_template_env,
     trace_toolset,
@@ -147,6 +148,9 @@ class LlmJudgeEval(BaseV2EvalBridge):
 
     Uses LlmJudgeProperties from the eval config to configure the judge:
     model, prompt template, scoring mode, etc.
+
+    Raises ``ValueError`` for a config it can't run, including one whose
+    trace_toolset_version this build of Kiln doesn't have.
     """
 
     def __init__(
@@ -164,6 +168,21 @@ class LlmJudgeEval(BaseV2EvalBridge):
             raise ValueError(
                 f"Invalid model provider: {self.properties.model_provider}"
             )
+        trace_tools_version = self.properties.trace_toolset_version
+        # Must raise, not return a skip: the runner saves a skip as a final result, so
+        # the items would stay unscored after Kiln is updated. Raising here also fails
+        # each job before the runner generates its trace.
+        try:
+            self._toolset: TraceToolset = trace_toolset(
+                trace_tools_version
+                if trace_tools_version is not None
+                else TRACE_OVERVIEW_VERSION_WITHOUT_TOOLS
+            )
+        except UnsupportedTraceToolsetVersion as e:
+            raise ValueError(
+                f"This judge uses trace tools version {e.version}, which this "
+                "version of Kiln doesn't support. Update Kiln to run it."
+            ) from e
 
     async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
         props = self.properties
@@ -189,28 +208,13 @@ class LlmJudgeEval(BaseV2EvalBridge):
                     skipped_detail=skip_detail,
                 )
 
-        trace_tools_version = props.trace_toolset_version
-        trace_tools_on = trace_tools_version is not None
+        trace_tools_on = props.trace_toolset_version is not None
         if trace_tools_on and not eval_input.trace:
             return V2EvalResult(
                 skipped_reason=SkippedReason.missing_trace,
                 skipped_detail=(
                     "This judge reads the trace with trace tools, but this run has "
                     "no trace."
-                ),
-            )
-        try:
-            toolset = trace_toolset(
-                trace_tools_version
-                if trace_tools_version is not None
-                else TRACE_OVERVIEW_VERSION_WITHOUT_TOOLS
-            )
-        except UnsupportedTraceToolsetVersion as e:
-            return V2EvalResult(
-                skipped_reason=SkippedReason.type_not_available,
-                skipped_detail=(
-                    f"This judge uses trace tools version {e.version}, which this "
-                    "version of Kiln doesn't support. Update Kiln to run it."
                 ),
             )
 
@@ -229,11 +233,11 @@ class LlmJudgeEval(BaseV2EvalBridge):
         # template rendered off the event loop. A judge with trace tools off that
         # uses trace_overview builds its view during the render.
         trace_view = (
-            await asyncio.to_thread(toolset.build_view, namespace["trace"])
+            await asyncio.to_thread(self._toolset.build_view, namespace["trace"])
             if trace_tools_on
             else None
         )
-        template_env = judge_template_env(toolset, namespace["trace"], trace_view)
+        template_env = judge_template_env(self._toolset, namespace["trace"], trace_view)
         try:
             rendered_prompt = await asyncio.to_thread(
                 _render_prompt, template_env, props.prompt_template, namespace
@@ -269,7 +273,7 @@ class LlmJudgeEval(BaseV2EvalBridge):
         judge_task = _LlmJudgeTask(
             system_prompt=system_prompt,
             output_json_schema=output_json_schema,
-            thinking_instruction=toolset.judge_thinking_instruction
+            thinking_instruction=self._toolset.judge_thinking_instruction
             if trace_tools_on
             else None,
         )
@@ -327,7 +331,7 @@ class LlmJudgeEval(BaseV2EvalBridge):
             base_adapter_config=AdapterConfig(
                 allow_saving=False,
                 top_logprobs=top_logprobs,
-                unmanaged_tools=toolset.build_tools(trace_view)
+                unmanaged_tools=self._toolset.build_tools(trace_view)
                 if trace_view is not None
                 else None,
                 # A trace tool loop resends a growing prefix on every round.

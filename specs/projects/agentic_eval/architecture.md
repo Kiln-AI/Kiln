@@ -43,7 +43,7 @@ trace_toolset_version: int | None = Field(
 ```
 
 - **Why one field.** One field means "off" and "on at version N" can't disagree, and judges saved before this field load as "off" with no migration.
-- **Why an int and not an enum.** Older Kiln builds must still load configs written by newer ones. An enum would reject an unknown version and break loading the whole eval. An int loads fine, and the judge skips with a clear message at evaluation time (§3.7).
+- **Why an int and not an enum.** Older Kiln builds must still load configs written by newer ones. An enum would reject an unknown version and break loading the whole eval. An int loads fine, and building the judge fails with a clear message (§3.7).
 - **The `trace_overview` lock for tools-off judges.** A judge with tools off always renders the v1 overview (`TRACE_OVERVIEW_VERSION_WITHOUT_TOOLS`). That keeps its prompt stable (functional spec §5.4) without storing anything. The trade-off: tools-off judges never get later overview formats.
 - **New model validator:** `g_eval and trace_toolset_version is not None` raises `ValueError(G_EVAL_WITH_TRACE_TOOLS_ERROR)`, whose text is "G-Eval scoring can't be combined with trace tools."
 - **`EvalConfig.validate_v2_templates_and_expressions`:** the "must reference `final_message`, `trace` or `task_input`" rule applies only when `trace_toolset_version is None`.
@@ -237,12 +237,14 @@ def assemble(units, header, footer, refusal: RefusalContext) -> str  # raises Tr
 
 ### 3.7 `LlmJudgeEval.evaluate` (`adapters/eval/v2_eval_llm_judge.py`)
 
+**When the judge is built** (`LlmJudgeEval.__init__`): `self._toolset = trace_toolset(props.trace_toolset_version if tools_on else TRACE_OVERVIEW_VERSION_WITHOUT_TOOLS)`. `UnsupportedTraceToolsetVersion` raises `ValueError("This judge uses trace tools version {n}, which this version of Kiln doesn't support. Update Kiln to run it.")`. It is not a skip, because the runner saves a skip as a final result and counts it as done, so the items would stay unscored after the update. The runner builds the judge before it generates the trace, so each job fails before any model call and saves nothing, and the test endpoints return the message as a 400.
+
 New flow (unchanged steps elided):
 
 1. Reference-key checks: unchanged.
 2. `tools_on = props.trace_toolset_version is not None`.
 3. **If `tools_on` and `eval_input.trace` is empty or None:** return a `missing_trace` skip.
-4. `toolset = trace_toolset(props.trace_toolset_version if tools_on else TRACE_OVERVIEW_VERSION_WITHOUT_TOOLS)`. `UnsupportedTraceToolsetVersion` returns a `type_not_available` skip: `"This judge uses trace tools version {n}, which this version of Kiln doesn't support. Update Kiln to run it."`
+4. `toolset = self._toolset`, the toolset resolved when the judge was built.
 5. `namespace = eval_input.model_dump()` plus `judge_instructions`: unchanged.
 6. **If `tools_on`:** `view = await asyncio.to_thread(toolset.build_view, namespace["trace"])`. Otherwise `view = None`.
 7. Render with `judge_template_env(toolset, namespace["trace"], view)` in `asyncio.to_thread`, with the existing error-to-skip mapping. The thread matters for tools-off judges too: a template that uses `trace_overview` builds its view during the render, and `format_trace` walks the whole trace. `_unknown_template_variables` keeps parsing with `_template_env`.
@@ -329,6 +331,7 @@ This is a separate task, already queued. It changes `LiteLlmAdapter.process_tool
 | Response over 40k | `render.assemble` raises `TraceToolUsageError` | Refusal tool result with the fitting range. |
 | Regex invalid or timed out | `search.py` raises `TraceToolUsageError` | Error tool result. |
 | Unexpected exception inside a tool | Adapter (§4) | Logged with stack trace, then an error tool result. |
+| Trace toolset version newer than this build | `LlmJudgeEval.__init__` (§3.7) | `ValueError` with the update-Kiln message. Not retried. Each runner job fails before generating its trace and saves nothing. The test endpoints return 400. |
 | Missing or empty trace with tools on | `LlmJudgeEval.evaluate` | `missing_trace` skip. |
 | Template render problems, including the `trace_overview` misuse | Existing mapping | `extraction_failed` or `missing_reference_key` skip. |
 | Judge context overflow | `LlmJudgeEval.evaluate` | `JudgeContextExceededError`. Not retried. Nothing saved. |
@@ -407,7 +410,7 @@ Read `python_test_guide.md` before writing tests. Everything is pytest, and the 
   - `trace_overview` in a tools-off template renders the overview;
   - the placeholder filter outside judges raises.
 - **Version lock:** the filter output follows `trace_toolset_version`, by registering a fake v2 in the test only. A tools-off judge always renders the v1 overview.
-- **Unknown version:** `trace_toolset_version=99` gives a `type_not_available` skip with the update-Kiln message.
+- **Unknown version:** building a judge with `trace_toolset_version=99` raises `ValueError` with the update-Kiln message, and it is not retryable.
 - **Errors:** `ContextWindowExceededError` wrapped in `KilnRunError` gives `JudgeContextExceededError`, and it is not retryable.
 
 ### 7.5 Datamodel
@@ -419,7 +422,8 @@ Read `python_test_guide.md` before writing tests. Everything is pytest, and the 
 
 ### 7.6 Runner
 
-`judge_trace` is saved on the EvalRun for scored judgments, and absent for skips.
+- `judge_trace` is saved on the EvalRun for scored judgments, and absent for skips.
+- A judge with an unknown trace toolset version fails each item with the update-Kiln message, generates no trace and saves no record, so the item is still collected on the next run.
 
 ### 7.7 API
 
@@ -428,6 +432,7 @@ Read `python_test_guide.md` before writing tests. Everything is pytest, and the 
 - **Judge traces:** result rows include `eval_run.judge_trace` for new judgments, and `null` for older ones.
 - **Prompt optimization:** rejects an LLM judge with trace tools on.
 - **Context overflow:** a test run returns 422 with the message.
+- **Unknown trace toolset version:** a test run returns 400 with the update-Kiln message.
 
 ### 7.8 Real providers (late phase, paid)
 

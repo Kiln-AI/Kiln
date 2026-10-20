@@ -4222,7 +4222,7 @@ class TestLlmJudgeTraceToolset:
         [
             # Configs written before trace tools existed have no such key.
             (None, None),
-            # A newer Kiln's version still loads; the judge skips at evaluation time.
+            # A newer Kiln's version still loads; only building the judge refuses it.
             (99, 99),
         ],
     )
