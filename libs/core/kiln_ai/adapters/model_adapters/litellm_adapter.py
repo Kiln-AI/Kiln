@@ -150,17 +150,31 @@ async def _tool_arguments_schema_error(
     return None
 
 
+def _non_strict_unless_set(definition: ToolCallDefinition) -> ToolCallDefinition:
+    # OpenAI's Responses API (OpenAI models on OpenRouter, Responses-only models on
+    # OpenAI) treats a function tool as strict unless told otherwise, and strict mode
+    # makes every optional argument required, so the model invents values for them.
+    function = copy.copy(definition["function"])
+    function.setdefault("strict", False)
+    tool = copy.copy(definition)
+    tool["function"] = function
+    return tool
+
+
 def _tool_arguments_bind_error(
     tool: KilnToolInterface, arguments: dict[str, Any]
 ) -> str | None:
     """Why the tool's ``run`` can't take ``arguments`` (extra keys, or a key
     named "context"), or None if it can. The schema check allows these, since
-    schemas don't forbid additional properties by default."""
+    schemas don't forbid additional properties by default.
+
+    "context" is rejected for every tool, because the adapter always passes
+    the call context to ``run`` under that name."""
+    if "context" in arguments:
+        return "'context' is a reserved argument name"
     try:
         inspect.signature(tool.run).bind(None, **arguments)
     except TypeError as e:
-        if "context" in arguments:
-            return "'context' is a reserved argument name"
         return _truncate_for_model(str(e))
     return None
 
@@ -217,17 +231,6 @@ def _is_json_object(arguments: Any) -> bool:
         return isinstance(json.loads(arguments), dict)
     except json.JSONDecodeError:
         return False
-
-
-def _non_strict_unless_set(definition: ToolCallDefinition) -> ToolCallDefinition:
-    # OpenAI's Responses API (OpenAI models on OpenRouter, Responses-only models on
-    # OpenAI) treats a function tool as strict unless told otherwise, and strict mode
-    # makes every optional argument required, so the model invents values for them.
-    function = copy.copy(definition["function"])
-    function.setdefault("strict", False)
-    tool = copy.copy(definition)
-    tool["function"] = function
-    return tool
 
 
 def _validate_unmanaged_tools(tools: list[KilnToolInterface]) -> None:
