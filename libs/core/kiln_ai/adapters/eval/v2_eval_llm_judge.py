@@ -283,4 +283,5 @@ class LlmJudgeEval(BaseV2EvalBridge):
             # `usage`, not `cumulative_usage`: it already accumulates every call this
             # judgment made, and it is the one that carries latency.
             usage=judge_run.usage,
+            judge_trace=judge_run.trace,
         )

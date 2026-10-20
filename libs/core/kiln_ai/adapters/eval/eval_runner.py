@@ -31,6 +31,7 @@ from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.adapters.provider_tools import kiln_model_provider_from
 from kiln_ai.adapters.retry_classification import (
     is_retryable_error,
+    is_transient_environment_error,
     unwrap_kiln_run_error,
 )
 from kiln_ai.datamodel.basemodel import ID_TYPE, generate_model_id
@@ -1118,11 +1119,10 @@ class EvalRunner:
         try:
             trace, _ = await self._trace_index.get_or_create(generation.key, generate)
         except Exception as e:
-            # A tool call's environment failure reaches here wrapped by the model
-            # adapter, so classify the underlying error.
-            cause = unwrap_kiln_run_error(e)
-            if isinstance(cause, OpenEnvTransientError):
-                raise RetryableError(str(cause)) from e
+            # The model adapter lets a tool call's transient environment failure
+            # propagate, wrapped in KilnRunError, so classify the underlying error.
+            if is_transient_environment_error(e):
+                raise RetryableError(str(unwrap_kiln_run_error(e))) from e
             raise
         eval_task_input = EvalTaskInput.from_trace(trace, job.item)
         result = await evaluator.evaluate(eval_task_input)
@@ -1254,6 +1254,7 @@ class EvalRunner:
         skipped_detail: str | None = None,
         intermediate_outputs: Dict[str, str] | None = None,
         eval_usage: Usage | None = None,
+        judge_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> bool:
         """Write one V2 score record.
 
@@ -1277,6 +1278,7 @@ class EvalRunner:
                 skipped_detail=skipped_detail,
                 intermediate_outputs=intermediate_outputs,
                 eval_usage=eval_usage,
+                judge_trace=judge_trace,
             ).save_to_file()
         return True
 
@@ -1323,6 +1325,7 @@ class EvalRunner:
             skipped_detail=result.skipped_detail,
             intermediate_outputs=result.intermediate_outputs,
             eval_usage=result.usage,
+            judge_trace=result.judge_trace,
         )
 
     def _multi_turn_generation(

@@ -13,6 +13,7 @@
   import ChatTrace from "$lib/ui/trace/chat_trace.svelte"
   import { isKilnAgentRunConfig } from "$lib/types"
   import { client } from "$lib/api_client"
+  import { getEvalRunJudgeTrace } from "$lib/api/v2_eval_api"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
@@ -21,6 +22,7 @@
   import {
     eval_config_to_ui_name,
     eval_config_to_detailed_ui_name,
+    score_display_name,
   } from "$lib/utils/formatters"
   import {
     getV2TypeFromEvalConfig,
@@ -342,6 +344,30 @@
 
   $: is_v2_config = results?.eval_config?.config_type === "v2"
 
+  function judge_trace_loader(
+    result: EvalRunWithTrace,
+  ): (() => Promise<Trace | null>) | null {
+    const eval_run_id = result.eval_run.id
+    if (!result.has_judge_trace || !eval_run_id) {
+      return null
+    }
+    return () =>
+      getEvalRunJudgeTrace(
+        project_id,
+        task_id,
+        eval_id,
+        eval_config_id,
+        eval_run_id,
+      )
+  }
+
+  $: score_labels = Object.fromEntries(
+    (results?.eval.output_scores || []).map((score) => [
+      string_to_json_key(score.name),
+      score_display_name(score),
+    ]),
+  )
+
   $: v2_result_component = (() => {
     if (!results?.eval_config) return null
     const v2type = getV2TypeFromEvalConfig(results.eval_config)
@@ -428,7 +454,7 @@
             {:else}
               {#each results.eval.output_scores as score}
                 <th class="text-center">
-                  {score.name}
+                  {score_display_name(score)}
                   {#if score.type}
                     <OutputTypeTablePreview output_score_type={score.type} />
                   {/if}
@@ -547,11 +573,13 @@
                   <svelte:component
                     this={v2_result_component}
                     scores={result.eval_run.scores}
+                    {score_labels}
                     skipped_reason={result.eval_run.skipped_reason ?? null}
                     skipped_detail={result.eval_run.skipped_detail ?? null}
                     eval_config={results.eval_config}
                     intermediate_outputs={result.eval_run
                       .intermediate_outputs ?? null}
+                    load_judge_trace={judge_trace_loader(result)}
                   />
                 </td>
               {:else}
