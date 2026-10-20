@@ -1,0 +1,52 @@
+[
+  {
+    "role": "user",
+    "content": "Echo both smiles back."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "call_0",
+        "type": "function",
+        "function": {
+          "name": "echo",
+          "arguments": "{\"text\":  \"smile \\ud83d done\"}"
+        }
+      },
+      {
+        "id": "call_1",
+        "type": "function",
+        "function": {
+          "name": "echo",
+          "arguments": "{\"text\":  \"smile \\ud83d\\ude00 done\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "call_0",
+    "content": "{\"output\":  \"smile \\ud83d done\"}"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "call_1",
+    "content": "{\"output\":  \"smile \\ud83d\\ude00 done\"}"
+  },
+  {
+    "role": "assistant",
+    "content": "One smile was cut in half.",
+    "tool_calls": [
+      {
+        "id": "call_2",
+        "type": "function",
+        "function": {
+          "name": "task_response",
+          "arguments": "{\"answer\":  \"smile \\ude00 done\"}"
+        }
+      }
+    ]
+  }
+]

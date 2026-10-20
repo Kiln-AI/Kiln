@@ -731,5 +731,11 @@
     "trace": "reused_ids",
     "tool": "read_messages",
     "args": {}
+  },
+  {
+    "id": "lone_surrogates_read_default",
+    "trace": "lone_surrogates",
+    "tool": "read_messages",
+    "args": {}
   }
 ]

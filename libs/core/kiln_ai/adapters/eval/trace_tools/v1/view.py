@@ -42,7 +42,8 @@ class ToolCallRef:
 
     name: str
     arguments: str
-    """Canonical: valid JSON is re-serialized on one line; anything else is kept as stored."""
+    """Canonical: valid JSON is re-serialized on one line, unless the result
+    can't be encoded as UTF-8; anything else is kept as stored."""
     call_id: str | None
     result_number: int | None
     """The message number of the tool result that answers this call, if any."""
@@ -285,7 +286,8 @@ def _content_item_text(entry: Any) -> str | None:
 def _task_tool_output(text: str) -> str | None:
     """The task's output, when ``text`` is a Kiln task tool result stored as a
     JSON object whose only key is a string ``output``. Results with other keys
-    are kept whole, so no field is hidden from the judge."""
+    are kept whole, so no field is hidden from the judge, and so are results
+    whose output can't be encoded as UTF-8."""
     if not _JSON_OBJECT_START.match(text):
         return None
     try:
@@ -296,9 +298,21 @@ def _task_tool_output(text: str) -> str | None:
         isinstance(parsed, dict)
         and parsed.keys() == {"output"}
         and isinstance(parsed["output"], str)
+        and _encodes_as_utf8(parsed["output"])
     ):
         return parsed["output"]
     return None
+
+
+def _encodes_as_utf8(text: str) -> bool:
+    """False if ``text`` holds a lone surrogate. JSON can escape one
+    (``"\\ud83d"``), but once decoded it can't be encoded as UTF-8, so a judgment
+    quoting it couldn't be saved, and some providers reject it."""
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def _calls(message: Mapping[str, Any]) -> tuple[tuple[_DraftCall, ...], str | None]:
@@ -348,9 +362,10 @@ def _canonical_arguments(function: Mapping[str, Any]) -> str:
     arguments = function["arguments"]
     if isinstance(arguments, str):
         try:
-            return json.dumps(json.loads(arguments), ensure_ascii=False)
+            canonical = json.dumps(json.loads(arguments), ensure_ascii=False)
         except (ValueError, RecursionError):
             return arguments
+        return canonical if _encodes_as_utf8(canonical) else arguments
     try:
         return json.dumps(arguments, ensure_ascii=False, default=str)
     except (ValueError, TypeError, RecursionError):

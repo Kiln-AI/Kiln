@@ -87,10 +87,21 @@ def test_view_non_text_content_is_empty(content):
         ("tool", "{not json", "{not json"),
         ("tool", "plain text", "plain text"),
         ("user", '{"output": "kept"}', '{"output": "kept"}'),
+        ("tool", '{"output": "smile \\ud83d\\ude00"}', "smile \U0001f600"),
     ],
 )
 def test_view_kiln_task_tool_output_extracted(role, content, expected):
     assert _only({"role": role, "content": content}).content == expected
+
+
+@pytest.mark.parametrize(
+    "content",
+    ['{"output":  "smile \\ud83d done"}', '{"output": "\\ude00 then \\ud83d"}'],
+)
+def test_view_task_tool_output_with_lone_surrogate_kept_as_stored(content):
+    message = _only({"role": "tool", "content": content})
+    message.content.encode("utf-8")
+    assert message.content == content
 
 
 def test_view_kiln_task_tool_output_from_list_content():
@@ -144,6 +155,10 @@ def test_view_assistant_refusal_appended():
     [
         ({"name": "f", "arguments": '{"b":  1,\n "a": "é"}'}, 'f {"b": 1, "a": "é"}'),
         ({"name": "f", "arguments": "{not json"}, "f {not json"),
+        (
+            {"name": "f", "arguments": '{"a": "\\ud83d\\ude00"}'},
+            'f {"a": "\U0001f600"}',
+        ),
         ({"name": "f", "arguments": {"a": [1, 2]}}, 'f {"a": [1, 2]}'),
         ({"name": "f", "arguments": None}, "f null"),
         ({"name": "f"}, "f "),
@@ -163,6 +178,26 @@ def test_view_unserializable_arguments_fall_back_to_str():
         "tool_calls": [{"id": "a", "function": {"name": "f", "arguments": arguments}}],
     }
     assert _only(message).tool_calls_text == f"f {arguments}"
+
+
+@pytest.mark.parametrize(
+    "arguments", ['{"text":  "smile \\ud83d done"}', '["\\ude00 then \\ud83d"]']
+)
+def test_view_tool_args_with_lone_surrogate_kept_as_stored(arguments):
+    message = _only(
+        {
+            "role": "assistant",
+            "tool_calls": [
+                _call("a", "f", arguments),
+                _call("b", "task_response", arguments),
+            ],
+            "function_call": {"name": "g", "arguments": arguments},
+        }
+    )
+    message.tool_calls_text.encode("utf-8")
+    message.content.encode("utf-8")
+    assert [call.arguments for call in message.tool_calls] == [arguments, arguments]
+    assert message.content == arguments
 
 
 def test_view_tool_calls_text_one_line_per_call():

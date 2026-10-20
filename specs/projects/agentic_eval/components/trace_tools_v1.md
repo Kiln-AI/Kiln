@@ -42,7 +42,7 @@ Built in this order, with non-empty pieces joined by a blank line (`"\n\n"`):
      - any other dict with a string `type` becomes `[<type>]`;
      - anything else is skipped.
    - `None` or anything else gives `""`.
-2. **Kiln task-tool results**, for role `tool` only. If the text from step 1 parses as a JSON object whose only key is `"output"`, with a string value, it is replaced by that value. An object with any other key is kept whole, so no field is hidden from the judge.
+2. **Kiln task-tool results**, for role `tool` only. If the text from step 1 parses as a JSON object whose only key is `"output"`, with a string value, it is replaced by that value. An object with any other key is kept whole, so no field is hidden from the judge. The object is also kept whole when the value can't be encoded as UTF-8: JSON can escape a lone surrogate (`\ud83d`), and once decoded it would stop the judgment from being saved.
 3. **Assistant refusals.** If `refusal` is a non-empty string, append `[refusal] <refusal>`.
 4. **Structured answers.** For each assistant `tool_calls` entry named `task_response`, take its `function.arguments`; the last one wins. If one is found, append it, canonicalized as in §2.4.
 
@@ -58,7 +58,7 @@ Built in this order, with non-empty pieces joined by a blank line (`"\n\n"`):
   - `call_id`: `id`, or `None`.
   - `arguments`:
     - if `function.arguments` is a string that parses as JSON, it is re-serialized with `json.dumps(value, ensure_ascii=False)`, giving one line with default separators;
-    - a string that doesn't parse is kept as-is;
+    - a string that doesn't parse is kept as-is, and so is one whose re-serialized text can't be encoded as UTF-8 (an escaped lone surrogate, as in §2.2 step 2);
     - a non-string is passed through `json.dumps(value, ensure_ascii=False, default=str)`, or `str(value)` if that fails, so `build_view` never raises;
     - a missing value becomes `""`.
 - **The part's text** is one line per call, `f"{name} {arguments}"`, joined with `"\n"`.
@@ -447,6 +447,7 @@ Tests live in `v1/test_view.py`, `test_render.py`, `test_search.py`, `test_patte
 | `test_view_numbers_from_one_including_system` | Message numbers and role mapping (§2.1). |
 | `test_view_content_list_parts` | Text joined with newlines; `[image]`, `[audio]`, `[file]`, `[refusal]` and unknown part types. |
 | `test_view_kiln_task_tool_output_extracted` | §2.2 step 2: only an object whose only key is `output` is replaced; other objects and non-JSON tool content are kept as-is. |
+| `test_view_task_tool_output_with_lone_surrogate_kept_as_stored` / `test_view_tool_args_with_lone_surrogate_kept_as_stored` | §2.2 step 2 and §2.4: an escaped lone surrogate keeps the stored text, which encodes as UTF-8, in task-tool results, call arguments and structured answers. |
 | `test_view_task_response_is_content_not_call` | The last `task_response` is appended to content and excluded from `tool_calls`. |
 | `test_view_tool_args_canonicalized` | JSON args re-serialized; non-JSON kept; non-string dumped. |
 | `test_view_tool_name_resolution` | Matched, unmatched (`unknown tool`), legacy `function`, and two results for one call id (the second is `unknown tool`). |

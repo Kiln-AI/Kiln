@@ -1,0 +1,13 @@
+=== #1 user (content 22) ===
+Echo both smiles back.
+=== #2 assistant (tool_calls 65) ===
+[call] echo {"text":  "smile \ud83d done"} → #3 ok, 32 chars
+[call] echo {"text": "smile 😀 done"} → #4 ok, 12 chars
+=== #3 tool result from echo (content 32) ===
+{"output":  "smile \ud83d done"}
+=== #4 tool result from echo (content 12) ===
+smile 😀 done
+=== #5 assistant (content 60) ===
+One smile was cut in half.
+
+{"answer":  "smile \ude00 done"}
