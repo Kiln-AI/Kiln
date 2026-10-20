@@ -1529,3 +1529,54 @@ def test_aware_datetime_preserved_on_load(tmp_path):
     assert loaded.created_at.tzinfo is not None
     assert loaded.created_at.utcoffset().total_seconds() == -4 * 3600
     assert loaded.created_at.hour == 9
+
+
+@pytest.fixture
+def project_with_tasks(tmp_path) -> Project:
+    project = Project(name="Parent", path=tmp_path / Project.base_filename())
+    project.save_to_file()
+    for name in ["Task1", "Task2"]:
+        Task(name=name, instruction="Do it", parent=project).save_to_file()
+    return project
+
+
+def test_child_method_attaches_loaded_parent(project_with_tasks):
+    parent = Project.load_from_file(project_with_tasks.path)
+    tasks = parent.tasks()
+
+    assert len(tasks) == 2
+    assert all(task.cached_parent() is parent for task in tasks)
+
+
+def test_child_method_readonly_children_of_mutable_parent_attach_it(
+    project_with_tasks,
+):
+    parent = Project.load_from_file(project_with_tasks.path)
+    tasks = parent.tasks(readonly=True)
+
+    assert len(tasks) == 2
+    assert all(task.cached_parent() is parent for task in tasks)
+
+
+def test_child_method_readonly_children_of_readonly_parent_attach_it(
+    project_with_tasks,
+):
+    parent = Project.load_from_file(project_with_tasks.path, readonly=True)
+    tasks = parent.tasks(readonly=True)
+
+    assert all(task.cached_parent() is parent for task in tasks)
+
+
+def test_child_method_mutable_children_of_readonly_parent_get_own_parent(
+    project_with_tasks,
+):
+    parent = Project.load_from_file(project_with_tasks.path, readonly=True)
+    tasks = parent.tasks()
+
+    assert len(tasks) == 2
+    for task in tasks:
+        assert task.cached_parent() is None
+        loaded_parent = task.parent
+        assert loaded_parent is not None
+        assert loaded_parent is not parent
+        assert not loaded_parent._readonly

@@ -407,12 +407,18 @@ class KilnBaseModel(BaseModel):
         return cls.load_from_file(path)
 
     @classmethod
-    def load_from_file(cls: Type[T], path: Path | str, readonly: bool = False) -> T:
+    def load_from_file(
+        cls: Type[T],
+        path: Path | str,
+        readonly: bool = False,
+        parent: "KilnParentModel | None" = None,
+    ) -> T:
         """Load a model instance from a specific file path.
 
         Args:
             path (Path): Path to the model file
             readonly (bool): If True, the model will be returned in readonly mode (cached instance, not a copy, not safe to mutate)
+            parent (KilnParentModel | None): The already-loaded parent of this model, if the caller has it. Only for parented models. Attached before validators that read `self.parent` run, so they don't reload the parent from disk once per child.
 
         Returns:
             T: Instance of the model
@@ -439,6 +445,11 @@ class KilnBaseModel(BaseModel):
                 raise ValueError(f"Loaded model is not of type {cls.__name__}")
             m._loaded_from_file = True
             file_data = None
+        # Assigning `path` re-runs model validators (validate_assignment), and some
+        # read `self.parent`. Without a parent attached, each one would load the
+        # parent file from disk and fully validate it.
+        if parent is not None:
+            m.parent = parent  # type: ignore[attr-defined]
         m.path = path
         if m.v > m.max_schema_version():
             raise ValueError(
@@ -699,12 +710,19 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         parent_path: Path | None,
         readonly: bool,
         error_on_first: bool,
+        parent: "KilnParentModel | None" = None,
     ) -> tuple[list[PT], list[ChildLoadError]]:
+        # A mutable child must not get a readonly parent, so callers can still edit
+        # and save `child.parent`. It lazy-loads its own mutable parent instead.
+        if parent is not None and parent._readonly and not readonly:
+            parent = None
         children: list[PT] = []
         errors: list[ChildLoadError] = []
         for child_path in cls.iterate_children_paths_of_parent_path(parent_path):
             try:
-                children.append(cls.load_from_file(child_path, readonly=readonly))
+                children.append(
+                    cls.load_from_file(child_path, readonly=readonly, parent=parent)
+                )
             except Exception as e:
                 if error_on_first:
                     raise
@@ -713,7 +731,10 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
 
     @classmethod
     def all_children_of_parent_path(
-        cls: Type[PT], parent_path: Path | None, readonly: bool = False
+        cls: Type[PT],
+        parent_path: Path | None,
+        readonly: bool = False,
+        parent: "KilnParentModel | None" = None,
     ) -> list[PT]:
         """Load every child of a parent, raising on the first child that fails to load.
 
@@ -721,7 +742,7 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         Use ``all_children_of_parent_path_with_errors`` when partial results are useful.
         """
         children, _ = cls._load_children_of_parent_path(
-            parent_path, readonly=readonly, error_on_first=True
+            parent_path, readonly=readonly, error_on_first=True, parent=parent
         )
         return children
 
@@ -838,7 +859,9 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
         child_class: Type[KilnParentedModel],
     ):
         def child_method(self, readonly: bool = False) -> list[child_class]:  # type: ignore[invalid-type-form]
-            return child_class.all_children_of_parent_path(self.path, readonly=readonly)
+            return child_class.all_children_of_parent_path(
+                self.path, readonly=readonly, parent=self
+            )
 
         child_method.__name__ = python_name
         child_method.__annotations__ = {"return": List[child_class]}  # type: ignore[invalid-type-form]
