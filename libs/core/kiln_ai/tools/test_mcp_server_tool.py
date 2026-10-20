@@ -592,9 +592,13 @@ class TestMCPServerToolIntegration:
 
         session_id = "test_run_mcp_integration"
         set_agent_run_id(session_id)
-        yield session_id
-        await MCPSessionManager.shared().cleanup_session(session_id)
-        clear_agent_run_id()
+        try:
+            yield session_id
+        finally:
+            try:
+                await MCPSessionManager.shared().cleanup_session(session_id)
+            finally:
+                clear_agent_run_id()
 
     async def test_call_tool_success(self, echo_server, agent_run_context):
         """Test successful call_tool execution."""
