@@ -23,6 +23,16 @@ def echo(message: str) -> str:
     return f"Tool echo: {message}"
 
 
+@mcp.tool(structured_output=False)
+def echo_env(name: str) -> str:
+    """Return an environment variable, so a caller can assert it arrived.
+
+    A local server reaches its credentials through the environment, so a test
+    needs to see that the variables the caller set reach this process.
+    """
+    return os.environ.get(name, "<unset>")
+
+
 def main() -> None:
     transport = sys.argv[1] if len(sys.argv) > 1 else "stdio"
     if transport == "http":
