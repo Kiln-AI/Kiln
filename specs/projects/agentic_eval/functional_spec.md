@@ -329,7 +329,7 @@ Applies to **every LLM-based V2 judge**: the existing LLM judge (including G-Eva
 - Judgments that are skipped before the judge model is called (e.g. missing reference data) have no judge trace.
 - Judgments that fail with an error save nothing, as today.
 - Results saved before this project have no judge trace. The UI shows no judge trace link for them.
-- **Storage.** Judge traces can be large: an agentic judge's trace can approach its context window (several hundred KB). This is accepted for v1. The results page receives judge traces with the rest of its data, the same way it already receives each judged trace.
+- **Storage.** Judge traces can be large: an agentic judge's trace can approach its context window (several hundred KB). This is accepted for v1. The results page doesn't receive judge traces with the rest of its data: it loads one judgment's judge trace when the user opens it.
 
 ## 10. Errors and Skips
 
@@ -352,7 +352,7 @@ Functional level only. Layout and details come in the UI design step.
   - The model picker only offers models that support trace tools.
   - The prompt starts from the default agentic template ([§5.3](#53-default-template-for-agentic-judges)).
   - The toolset version is not a choice. It is always the latest.
-- **Test run.** Testing a draft or saved agentic judge on an item shows the scores, the reasoning, and the judge trace.
+- **Test run.** Testing a draft or saved agentic judge on an item shows the scores and the judge trace, which holds the judge's reasoning.
 - **Judge details.** Wherever a judge's configuration is shown, an agentic judge shows "Method: Agentic Judge". The toolset version is not shown.
 - **Results.** For each scored item, the user can open the judge trace, next to the existing view of the judged trace. Applies to both LLM judges and agentic judges.
 
@@ -361,7 +361,7 @@ Functional level only. Layout and details come in the UI design step.
 - Create an agentic judge, with the same inputs as creating an LLM judge, minus G-Eval.
 - Get the default agentic judge prompt for an eval (mirrors the existing default LLM judge prompt endpoint).
 - Test runs (saved and draft judges) return the judge trace.
-- Results include each judgment's judge trace.
+- Results say whether each judgment saved a judge trace. A separate endpoint returns one judgment's judge trace.
 - Judge configs returned by the API include the toolset version.
 
 ## 13. Out of Scope

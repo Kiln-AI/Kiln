@@ -8,18 +8,9 @@
       delete actionButtonsByTitle[key]
     }
   }
-  // Titles of the dialogs whose show() was called, in call order.
-  export const shownTitles: string[] = []
-  export function resetShownTitles() {
-    shownTitles.length = 0
-  }
 </script>
 
 <script lang="ts">
-  import { createEventDispatcher } from "svelte"
-
-  const dispatch = createEventDispatcher()
-
   export let title: string = ""
   export let subtitle: string = ""
   export let sub_subtitle: string = ""
@@ -28,10 +19,7 @@
 
   $: actionButtonsByTitle[title] = action_buttons
 
-  export function show() {
-    shownTitles.push(title)
-    dispatch("show")
-  }
+  export function show() {}
   export function close() {}
 </script>
 
