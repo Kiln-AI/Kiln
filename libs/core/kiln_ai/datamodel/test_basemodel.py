@@ -1544,6 +1544,13 @@ def project_with_tasks(tmp_path) -> Project:
     return _project_with_tasks(tmp_path)
 
 
+@pytest.fixture
+def model_cache_enabled(monkeypatch):
+    """The cache turns itself off on file systems with coarse timestamps (CI
+    runners among them). Tests of warm-cache behaviour turn it on regardless."""
+    monkeypatch.setattr(ModelCache.shared(), "_enabled", True)
+
+
 def test_child_method_attaches_a_mutable_parent_to_mutable_children(
     project_with_tasks,
 ):
@@ -1586,7 +1593,9 @@ def test_child_method_mutable_children_of_readonly_parent_get_own_parent(
         assert not loaded_parent._readonly
 
 
-def test_mutable_load_of_a_cached_child_has_an_editable_parent(project_with_tasks):
+def test_mutable_load_of_a_cached_child_has_an_editable_parent(
+    project_with_tasks, model_cache_enabled
+):
     readonly_parent = Project.load_from_file(project_with_tasks.path, readonly=True)
     cached_task = readonly_parent.tasks(readonly=True)[0]
     assert cached_task.path is not None
@@ -1599,7 +1608,7 @@ def test_mutable_load_of_a_cached_child_has_an_editable_parent(project_with_task
 
 
 def test_mutable_listing_after_a_readonly_listing_attaches_the_callers_parent(
-    project_with_tasks,
+    project_with_tasks, model_cache_enabled
 ):
     Project.load_from_file(project_with_tasks.path, readonly=True).tasks(readonly=True)
     parent = Project.load_from_file(project_with_tasks.path)

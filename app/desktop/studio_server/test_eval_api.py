@@ -9586,3 +9586,75 @@ def test_get_eval_default_judge_types(
 
     assert response.status_code == 200
     assert response.json() == {"eval1": "g_eval"}
+
+
+def test_get_eval_default_judge_types_reports_the_default_of_each_eval(
+    client, mock_task_from_id, mock_task, mock_eval, mock_eval_config, mock_v2_eval
+):
+    for config_id in ["v2_default", "v2_other"]:
+        EvalConfig(
+            id=config_id,
+            name=config_id,
+            config_type=EvalConfigType.v2,
+            properties={"type": "exact_match", "expected_value": "hello"},
+            parent=mock_v2_eval,
+        ).save_to_file()
+    mock_v2_eval.current_config_id = "v2_default"
+    mock_v2_eval.save_to_file()
+    # The legacy eval names a default judge that no longer exists.
+    mock_eval.current_config_id = "deleted_config"
+    mock_eval.save_to_file()
+
+    response = client.get("/api/projects/project1/tasks/task1/eval_default_judge_types")
+
+    assert response.status_code == 200
+    assert response.json() == {"eval_v2": "exact_match"}
+
+
+def test_run_config_eval_scores_skips_evals_without_a_test_split(
+    mock_task, mock_eval, mock_eval_config, data_source
+):
+    _two_run_configs_with_scores(mock_task, mock_eval, mock_eval_config, data_source)
+
+    with patch_resolve_split():
+        scores = run_config_eval_scores(mock_task, ["rc_a"])
+
+    assert scores["rc_a"].eval_results == []
+
+
+def test_run_config_eval_scores_counts_a_run_missing_a_score_as_incomplete(
+    mock_task, mock_eval, mock_eval_config, data_source
+):
+    mock_eval.current_config_id = mock_eval_config.id
+    mock_eval.save_to_file()
+    item = TaskRun(
+        input="input",
+        input_source=data_source,
+        output=TaskOutput(output="output"),
+        parent=mock_task,
+    )
+    item.save_to_file()
+    run = EvalRun(
+        task_run_config_id="rc_a",
+        scores={"score1": 4.0, "overall_rating": 5.0},
+        input=item.input,
+        output="out",
+        dataset_id=item.id,
+        parent=mock_eval_config,
+    )
+    # Validation rejects a run missing a score, so one can only reach the scorer
+    # from data written outside it. Set the scores directly to stand in for that.
+    run.__dict__["scores"] = {"score1": 4.0}
+
+    with (
+        patch_resolve_split(test=stub_split({item.id})),
+        patch.object(EvalConfig, "runs", return_value=[run]),
+    ):
+        scores = run_config_eval_scores(mock_task, ["rc_a"])
+
+    result = scores["rc_a"].eval_results[0].eval_config_result
+    assert result is not None
+    assert result.percent_complete == 0.0
+    assert result.results["score1"] is not None
+    assert result.results["score1"].mean_score == 4.0
+    assert result.results["overall_rating"] is None
