@@ -6437,6 +6437,19 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_function_calling=False,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                model_id="@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+            ),
         ],
     ),
     # DeepSeek V4.1 Flash
@@ -6512,6 +6525,12 @@ built_in_models: List[KilnModel] = [
                 model_id="deepseek-ai/DeepSeek-V4.1-Flash",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_function_calling=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="deepseek-ai/DeepSeek-V4.1-Flash",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
             ),
         ],
     ),

@@ -608,6 +608,7 @@ plumbing PR must not skip them.
 
 ### OpenRouter (general)
 - Slugs: `vendor/model-name`
+- Never add a `:free` slug. Free tiers have low rate limits and are temporary. If OpenRouter serves a model only as `:free`, wait for a paid slug.
 - Reasoning models: may need `require_openrouter_reasoning=True`
 - Some models: `openrouter_skip_required_parameters=True`
 - Logprobs: `logprobs_openrouter_options=True` if supported
