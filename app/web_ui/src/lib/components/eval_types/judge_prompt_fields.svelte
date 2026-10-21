@@ -23,30 +23,26 @@
   </p>
   <ul class="text-xs text-gray-500 list-disc list-inside mb-2 indent-2">
     <li>
-      <span class="font-mono font-bold">{"{{ trace }}"}</span> The entire
-      conversation, including the system prompt, as a raw list of message
-      objects.
+      <span class="font-mono font-bold">{"{{ trace }}"}</span> The entire raw
+      trace.
       <ul class="list-[circle] list-inside ml-4">
         <li>
-          Add the <span class="font-mono font-bold">format_trace</span> filter
-          (e.g.
           <span class="font-mono font-bold">{"{{ trace | format_trace }}"}</span
-          >) to render the trace as a readable transcript instead of raw data.
+          > Renders the trace as a readable transcript.
         </li>
       </ul>
     </li>
     <li>
-      <span class="font-mono font-bold">{"{{ system_prompt }}"}</span> The system
-      prompt of the model being evaluated, taken from its trace (empty if none was
-      recorded). Not the judge's system prompt below.
+      <span class="font-mono font-bold">{"{{ task_system_prompt }}"}</span> The system
+      prompt the task was run with.
     </li>
     <li>
       <span class="font-mono font-bold">{"{{ task_input }}"}</span> The input to
       the task.
     </li>
     <li>
-      <span class="font-mono font-bold">{"{{ final_message }}"}</span> The final
-      message from the model.
+      <span class="font-mono font-bold">{"{{ final_message }}"}</span> The task's
+      final message.
     </li>
     {#if show_judge_instructions_variable}
       <li>

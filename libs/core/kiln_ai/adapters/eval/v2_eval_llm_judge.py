@@ -166,7 +166,7 @@ class LlmJudgeEval(BaseV2EvalBridge):
         )
         # Bound for hand-written templates that judge a single turn's
         # final_message against the system prompt without the full trace.
-        namespace["system_prompt"] = EvalTraceFormatter.system_prompt_from_trace(
+        namespace["task_system_prompt"] = EvalTraceFormatter.system_prompt_from_trace(
             namespace["trace"]
         )
         try:

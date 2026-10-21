@@ -11,12 +11,6 @@ from openai.types.chat import ChatCompletionMessageToolCallParam
 
 logger = logging.getLogger(__name__)
 
-_CONTENT_PART_PLACEHOLDERS = {
-    "image_url": "[image]",
-    "input_audio": "[audio]",
-    "file": "[file]",
-}
-
 
 class EvalTraceFormatter:
     @dataclass
@@ -145,9 +139,8 @@ class EvalTraceFormatter:
     def content_from_message(message: ChatCompletionMessageParam) -> str | None:
         """Get the content of a message.
 
-        A list of content parts is joined by blank lines in order: text parts
-        keep their text, and other parts (images, audio, files) become a short
-        placeholder so the judge knows they were there.
+        A list of content parts is reduced to its text parts, joined by blank
+        lines in order. Other parts (images, audio, files) are left out.
         """
         content = message.get("content")
         if isinstance(content, list):
@@ -174,13 +167,10 @@ class EvalTraceFormatter:
 
     @staticmethod
     def _content_part_text(part: dict) -> str | None:
-        part_type = part.get("type")
-        if part_type == "text":
-            text = part.get("text")
-            return text if isinstance(text, str) else None
-        if not isinstance(part_type, str):
+        if part.get("type") != "text":
             return None
-        return _CONTENT_PART_PLACEHOLDERS.get(part_type, f"[{part_type}]")
+        text = part.get("text")
+        return text if isinstance(text, str) else None
 
     @staticmethod
     def system_prompt_from_trace(trace: list[dict[str, Any]] | None) -> str:

@@ -44,30 +44,18 @@ class TestEvalTraceFormatter:
                 {"type": "text", "text": "second"},
             ],
         }  # type: ignore
-        assert (
-            EvalTraceFormatter.content_from_message(message)
-            == "first\n\n[image]\n\nsecond"
-        )
-
-    def test_content_from_message_list_of_only_non_text_parts(self):
-        """A message of only images still shows up in the transcript."""
-        message: ChatCompletionMessageParam = {
-            "role": "user",
-            "content": [
-                {"type": "image_url", "image_url": {"url": "https://x"}},
-                {"type": "input_audio", "input_audio": {"data": "", "format": "wav"}},
-                {"type": "file", "file": {"file_id": "f"}},
-                {"type": "something_new"},
-            ],
-        }  # type: ignore
-        assert EvalTraceFormatter.content_from_message(message) == (
-            "[image]\n\n[audio]\n\n[file]\n\n[something_new]"
-        )
+        assert EvalTraceFormatter.content_from_message(message) == "first\n\nsecond"
 
     @pytest.mark.parametrize(
         "content",
-        [[], ["bare string"], [{"type": "text", "text": 3}], [{"no_type": True}]],
-        ids=["empty", "non-dict-part", "non-string-text", "untyped-part"],
+        [
+            [],
+            ["bare string"],
+            [{"type": "text", "text": 3}],
+            [{"no_type": True}],
+            [{"type": "image_url", "image_url": {"url": "https://x"}}],
+        ],
+        ids=["empty", "non-dict-part", "non-string-text", "untyped-part", "only-image"],
     )
     def test_content_from_message_list_with_nothing_readable(self, content):
         message: ChatCompletionMessageParam = {"role": "user", "content": content}  # type: ignore

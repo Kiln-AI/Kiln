@@ -267,7 +267,9 @@ class TestLlmJudgeEvalLlmAsJudge:
         ids=["system-message", "no-system-message", "no-trace"],
     )
     @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
-    async def test_system_prompt_variable(self, mock_adapter_for_task, trace, expected):
+    async def test_task_system_prompt_variable(
+        self, mock_adapter_for_task, trace, expected
+    ):
         mock_adapter = AsyncMock()
         mock_adapter.invoke_returning_run_output.return_value = (
             _judge_run(),
@@ -276,7 +278,7 @@ class TestLlmJudgeEvalLlmAsJudge:
         mock_adapter_for_task.return_value = mock_adapter
 
         props = _make_props(
-            prompt_template="System: [{{ system_prompt }}] Output: {{ final_message }}"
+            prompt_template="System: [{{ task_system_prompt }}] Output: {{ final_message }}"
         )
         result = await LlmJudgeEval(_make_config(props)).evaluate(_inp(trace=trace))
 
