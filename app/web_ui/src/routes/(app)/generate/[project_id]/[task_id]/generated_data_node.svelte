@@ -16,6 +16,7 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import Output from "$lib/ui/output.svelte"
 
   let custom_topic_mode: boolean = false
 
@@ -542,9 +543,14 @@
   <tr on:click={() => toggleExpand(index)} class="cursor-pointer">
     <td style="padding-left: {depth * 25 + 20}px" class="py-2">
       {#if expandedSamples[index]}
-        <pre class="whitespace-pre-wrap break-words">{formatExpandedSample(
-            sample.input,
-          )}</pre>
+        {@const formatted_input = formatExpandedSample(sample.input)}
+        <Output
+          raw_output={formatted_input}
+          background_color="transparent"
+          no_padding
+        >
+          <pre class="whitespace-pre-wrap break-words">{formatted_input}</pre>
+        </Output>
       {:else}
         <div class="truncate w-0 min-w-full">{sample.input}</div>
       {/if}
@@ -553,7 +559,13 @@
       {#if !formatted_output}
         {output_status}
       {:else if expandedSamples[index]}
-        <pre class="whitespace-pre-wrap break-words">{formatted_output}</pre>
+        <Output
+          raw_output={formatted_output}
+          background_color="transparent"
+          no_padding
+        >
+          <pre class="whitespace-pre-wrap break-words">{formatted_output}</pre>
+        </Output>
       {:else}
         <div class="truncate w-0 min-w-full">
           {formatted_output}
