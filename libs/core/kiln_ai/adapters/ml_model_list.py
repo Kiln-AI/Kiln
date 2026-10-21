@@ -326,6 +326,7 @@ class ModelName(str, Enum):
     hunyuan_hy3 = "hunyuan_hy3"
     hunyuan_a13b = "hunyuan_a13b"
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
+    minimax_m3_1_flash = "minimax_m3_1_flash"
     minimax_m3 = "minimax_m3"
     minimax_m2_7 = "minimax_m2_7"
     minimax_m2_5 = "minimax_m2_5"
@@ -10912,6 +10913,20 @@ built_in_models: List[KilnModel] = [
                 reasoning_optional_for_structured_output=True,
                 supports_data_gen=False,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Minimax M3.1 Flash
+    KilnModel(
+        family=ModelFamily.minimax,
+        name=ModelName.minimax_m3_1_flash,
+        friendly_name="Minimax M3.1 Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/minimax-m3p1-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
             ),
         ],
     ),
