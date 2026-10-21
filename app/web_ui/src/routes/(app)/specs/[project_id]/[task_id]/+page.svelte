@@ -56,8 +56,18 @@
   let specs_error: KilnError | null = null
   let specs_loading = true
   let evals: Eval[] | null = null
+  // The task each list was loaded for. Both lists keep the previous task's data
+  // while a new task loads, and a failed load leaves them on it.
+  let specs_task_id: string | null = null
+  let evals_task_id: string | null = null
   // The Add Tags dialog suggests from these, so they track this page's reloads.
-  $: if (specs && evals) set_eval_tags(task_id, specs, evals)
+  $: if (
+    specs &&
+    evals &&
+    specs_task_id === task_id &&
+    evals_task_id === task_id
+  )
+    set_eval_tags(task_id, specs, evals)
   let evals_error: KilnError | null = null
   let evals_loading = true
   let eval_load_error_count = 0
@@ -271,6 +281,7 @@
         throw error
       }
       specs = data
+      specs_task_id = req_task_id
     } catch (error) {
       if (req_project_id !== project_id || req_task_id !== task_id) return
       specs_error = createKilnError(error)
@@ -299,6 +310,7 @@
         throw error
       }
       evals = data.evals
+      evals_task_id = req_task_id
       eval_load_error_count = data.load_error_count
     } catch (error) {
       if (req_project_id !== project_id || req_task_id !== task_id) return
