@@ -22,12 +22,15 @@ export type Principle = {
   weight?: number
   /** What follows the number on the Weight line, e.g. "severity 2 × frequency 3". */
   weight_note?: string
+  /** The "Title: ..." trailer, a short label for the principle, when there is one. */
+  title?: string
 }
 
 const HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/
 const ITEM = /^\s*(\d+)[.)]\s+(.*)$/
 const FAILS_WHEN = /^\s*fails when:\s*/i
 const WEIGHT = /^\s*weight:\s*/i
+const TITLE = /^\s*title:\s*/i
 const HARD_LINE = /\(hard line\)/i
 
 type Section = { level: number; heading: string; items: Principle[] }
@@ -45,18 +48,27 @@ function sections(description: string): Section[] {
   let current: Section = { level: 0, heading: "", items: [] }
   out.push(current)
   let lastItem: Principle | null = null
+  // The item a blank line closed: a "Title:" trailer after the blank belongs to it.
+  let prevItem: Principle | null = null
   for (const raw of description.split(/\r?\n/)) {
     const heading = raw.match(HEADING)
     if (heading) {
       current = { level: heading[1].length, heading: heading[2], items: [] }
       out.push(current)
       lastItem = null
+      prevItem = null
       continue
     }
     const item = raw.match(ITEM)
     if (item) {
       lastItem = { n: Number(item[1]), text: item[2] }
+      prevItem = lastItem
       current.items.push(lastItem)
+      continue
+    }
+    if (raw.trim() !== "" && /^\s+/.test(raw) && TITLE.test(raw)) {
+      const owner = lastItem ?? prevItem
+      if (owner) owner.title = cleanText(raw.trim().replace(TITLE, ""))
       continue
     }
     if (lastItem && raw.trim() !== "" && /^\s+/.test(raw)) {
@@ -203,15 +215,21 @@ export type Ruling = {
   topic?: string
   source?: string
   supersedes?: string
+  /** The constitution section the ruling bears on, when named. */
+  section?: string
 }
 
 export type Amendment = {
   version: string
   date?: string
+  /** The ruling ids the version carried into the text, as written. */
   trigger?: string
   summary?: string
   principles?: number[]
   supersedes?: string
+  by?: string
+  /** Where the full change log lives, as written. */
+  record?: string
 }
 
 const LEDGER_HEADING = /ruling|amendment/i
@@ -334,6 +352,7 @@ function rulingFrom(item: RawItem): Ruling | null {
     "topic",
     "source",
     "supersedes",
+    "section",
   ] as const) {
     const v = f.get(key)
     if (v) r[key] = cleanText(v)
@@ -352,7 +371,13 @@ function amendmentFrom(item: RawItem): Amendment | null {
   if (date && ISO_DAY.test(date)) a.date = date
   const principles = parseNumbers(f.get("principles") ?? f.get("principle"))
   if (principles !== undefined) a.principles = principles
-  for (const key of ["trigger", "summary", "supersedes"] as const) {
+  for (const key of [
+    "trigger",
+    "summary",
+    "supersedes",
+    "by",
+    "record",
+  ] as const) {
     const v = f.get(key)
     if (v) a[key] = cleanText(v)
   }
@@ -423,4 +448,29 @@ export function constitutionVersion(
     return { version: `v${m[1]}`, ...(date ? { date: date[0] } : {}) }
   }
   return null
+}
+
+export type Constitution = {
+  /** The version and day in the title, when the title has one. */
+  version: { version: string; date?: string } | null
+  principles: Principle[]
+  /** In date order. */
+  rulings: Ruling[]
+  amendments: Amendment[]
+  /** Ruling ids per principle number, in date order. */
+  rulings_for: Map<number, string[]>
+}
+
+/** Everything the coverage chart reads from a task description, in one call. */
+export function parseConstitution(
+  description: string | null | undefined,
+): Constitution {
+  const rulings = parseRulings(description)
+  return {
+    version: constitutionVersion(description),
+    principles: parsePrinciples(description),
+    rulings,
+    amendments: parseAmendments(description),
+    rulings_for: rulingsByPrinciple(rulings),
+  }
 }

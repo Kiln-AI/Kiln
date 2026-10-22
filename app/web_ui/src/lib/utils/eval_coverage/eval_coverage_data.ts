@@ -17,12 +17,8 @@
 import type { Eval, Priority, Spec, SpecStatus } from "$lib/types"
 import type { components } from "$lib/api_schema"
 import {
-  constitutionVersion,
-  parseAmendments,
-  parsePrinciples,
-  parseRulings,
+  parseConstitution,
   principleWeights,
-  rulingsByPrinciple,
   type Amendment,
   type Principle,
   type Ruling,
@@ -154,13 +150,13 @@ function lowest(nodes: CoverageNode[]): CoverageNode | null {
 export function buildCoverageData(input: CoverageInput): CoverageData {
   const { specs, evals, project_id, task_id } = input
   const by_id = new Map(evals.map((e) => [e.id ?? "", e]))
-  const principles = parsePrinciples(input.task_description)
-  const rulings = parseRulings(input.task_description)
+  const constitution = parseConstitution(input.task_description)
+  const principles = constitution.principles
   const ledger = {
-    rulings,
-    amendments: parseAmendments(input.task_description),
-    rulings_for: rulingsByPrinciple(rulings),
-    constitution_version: constitutionVersion(input.task_description),
+    rulings: constitution.rulings,
+    amendments: constitution.amendments,
+    rulings_for: constitution.rulings_for,
+    constitution_version: constitution.version,
   }
 
   type Draft = Omit<CoverageNode, "weight">
@@ -272,7 +268,7 @@ export function buildCoverageData(input: CoverageInput): CoverageData {
     if ((planned_for.get(p.n)?.length ?? 0) > 0) continue
     nodes.push({
       id: `gap-${p.n}`,
-      name: p.text,
+      name: p.title ?? p.text,
       kind: "gap",
       href: builder_href(project_id, task_id, p),
       weight: model.shares.get(p.n) ?? 0,

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   constitutionVersion,
   parseAmendments,
+  parseConstitution,
   parsePrinciples,
   parseRulings,
   rulingsByPrinciple,
@@ -150,8 +151,13 @@ const LEDGER = `# Nova constitution v11 (2026-10-21)
 
 1. Exact records.
    Weight: 3
+
+   Why: because the tool says so.
+
+   Title: Exactly the records asked
 2. Wait before delete.
    Weight: 1
+   Title: A yes before any delete
 
 ## 10. Sources
 
@@ -175,6 +181,7 @@ const LEDGER = `# Nova constitution v11 (2026-10-21)
 - C-015 · deferred · 2026-09-28
   - Raised by: Spencer
   - Ruled by: Spencer
+  - Section: 9
   - Question: Bulk update of 200?
   - Ruling: Not graded yet.
 - C-020 · 2026-10-01 · open
@@ -192,11 +199,18 @@ const LEDGER = `# Nova constitution v11 (2026-10-21)
 - v5 · 2026-10-16
   - Principles: none
   - Summary: Weights added.
+  - By: Mike
+  - Record: reports/v5/
 `
 
 describe("parseRulings", () => {
-  it("leaves the principles alone", () => {
-    expect(parsePrinciples(LEDGER).map((p) => p.n)).toEqual([1, 2])
+  it("leaves the principles alone, and reads their Title trailers", () => {
+    const p = parsePrinciples(LEDGER)
+    expect(p.map((x) => x.n)).toEqual([1, 2])
+    expect(p[0].text).toBe("Exact records.")
+    expect(p[0].title).toBe("Exactly the records asked")
+    expect(p[1].text).toBe("Wait before delete.")
+    expect(p[1].title).toBe("A yes before any delete")
   })
 
   it("reads the ledger in date order with its fields", () => {
@@ -231,6 +245,7 @@ describe("parseRulings", () => {
     expect(deferred.status).toBe("deferred")
     expect(deferred.date).toBe("2026-09-28")
     expect(deferred.principles).toBeUndefined()
+    expect(deferred.section).toBe("9")
     const open = r.find((x) => x.id === "C-020")!
     expect(open.status).toBe("open")
     expect(open.principles).toEqual([1, 2])
@@ -268,6 +283,31 @@ describe("parseAmendments", () => {
       summary: "Delete needs a yes.",
     })
     expect(a[1].principles).toEqual([])
+    expect(a[1]).toMatchObject({ by: "Mike", record: "reports/v5/" })
+  })
+})
+
+describe("parseConstitution", () => {
+  it("reads everything in one call", () => {
+    const c = parseConstitution(LEDGER)
+    expect(c.version).toEqual({ version: "v11", date: "2026-10-21" })
+    expect(c.principles).toHaveLength(2)
+    expect(c.rulings.map((r) => r.id)).toEqual([
+      "C-001",
+      "C-010",
+      "C-015",
+      "C-020",
+    ])
+    expect(c.amendments.map((a) => a.version)).toEqual(["v4", "v5"])
+    expect(c.rulings_for.get(2)).toEqual(["C-010", "C-020"])
+  })
+
+  it("is empty for empty text", () => {
+    const c = parseConstitution(null)
+    expect(c.version).toBeNull()
+    expect(c.principles).toEqual([])
+    expect(c.rulings).toEqual([])
+    expect(c.rulings_for.size).toBe(0)
   })
 })
 

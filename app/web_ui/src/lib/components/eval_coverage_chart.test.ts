@@ -48,6 +48,7 @@ function fixture(): CoverageData {
       n,
       text: `Principle text ${n}`,
       group: n <= 2 ? "Careful" : "Honest",
+      ...(n === 1 ? { title: "Exactly the records" } : {}),
     })),
     covered: 0.5,
     coverers: new Map([
@@ -160,7 +161,7 @@ describe("EvalCoverageChart", () => {
     const { container } = render(EvalCoverageChart, { data: fixture() })
     const arcs = container.querySelectorAll('svg g[role="button"]')
     await fireEvent.mouseEnter(arcs[0])
-    expect(container.textContent).toContain("Principle 1")
+    expect(container.textContent).toContain("Principle 1: Exactly the records")
     expect(container.textContent).toContain("from Exact Record Modification")
     await fireEvent.mouseEnter(arcs[3])
     expect(container.textContent).toMatch(/no eval covers this principle/i)

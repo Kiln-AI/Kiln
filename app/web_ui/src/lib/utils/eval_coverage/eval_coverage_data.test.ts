@@ -198,3 +198,22 @@ describe("buildCoverageData rulings", () => {
     expect(data.rulings_for.size).toBe(0)
   })
 })
+
+describe("buildCoverageData titles", () => {
+  it("names a gap by the principle's Title when it has one", () => {
+    const data = buildCoverageData({
+      specs: [make_spec({ tags: ["principle_2"] })],
+      evals: [make_eval()],
+      task_description:
+        "## 6. Principles\n1. Exact records, and nothing else.\n   Title: Exact records\n2. Wait before delete.\n",
+      eval_scores: null,
+      project_id: "p",
+      task_id: "t",
+    })
+    const gap = data.nodes.find((n) => n.id === "gap-1")!
+    expect(gap.name).toBe("Exact records")
+    expect(gap.href).toContain(
+      encodeURIComponent("Exact records, and nothing else."),
+    )
+  })
+})

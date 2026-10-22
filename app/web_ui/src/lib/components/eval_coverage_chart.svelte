@@ -899,7 +899,11 @@
               {/if}
             {/if}
           {:else if hovered_principle}
-            <span class="font-medium">Principle {hovered_principle.n}</span>
+            <span class="font-medium"
+              >Principle {hovered_principle.n}{hovered_principle.title
+                ? `: ${hovered_principle.title}`
+                : ""}</span
+            >
             {#if hovered_principle.group}
               <span class="text-gray-500">· {hovered_principle.group}</span>
             {/if}
@@ -969,7 +973,9 @@
         {/if}
       {:else if hovered_principle}
         <div class="font-medium">
-          Principle {hovered_principle.n}
+          Principle {hovered_principle.n}{hovered_principle.title
+            ? `: ${hovered_principle.title}`
+            : ""}
           {#if hovered_principle.group}
             <span class="font-normal text-gray-500"
               >· {hovered_principle.group}</span
