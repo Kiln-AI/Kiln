@@ -78,6 +78,8 @@ Run this check on **every invocation** of the skill, regardless of whether you'r
 
 3. **If a lagging provider now supports a recently-added model that isn't yet in its `KilnModel` entry**, flag it to the user and propose either bundling the provider addition into the current change or opening a separate PR. Do not silently add it.
 
+4. **Run the Cloudflare thinking-level checker** (see [Cloudflare thinking levels](#cloudflare-thinking-levels)). It checks every Cloudflare entry, not only the recent ones, because Cloudflare edits the effort lists of models Kiln already ships. Treat each ❌ finding like a backfill: fix the entry in the current change or propose a separate PR.
+
 ---
 
 ## Phase 2 – Gather Context
@@ -455,6 +457,7 @@ Replace the `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `
 - [ ] Flags inherited from predecessor and adjusted for quirks
 - [ ] `reasoning_capable` defaulted to `False` for adaptive-reasoning models (only `True` for always-emits-reasoning models — see [Reasoning Capable Default](#reasoning-capable-default))
 - [ ] Thinking levels configured if model supports reasoning effort (see [Thinking Levels Reference](#thinking-levels-reference))
+- [ ] Cloudflare: `check_cloudflare_thinking_levels.py` reports no ❌ finding (see [Cloudflare thinking levels](#cloudflare-thinking-levels))
 - [ ] Every `suggested_for_evals` entry with thinking levels defaults to `"medium"` (or `"low"`), never `"none"` (see [Judge Models Must Reason by Default](#judge-models-must-reason-by-default))
 - [ ] Preserve existing comments from predecessor (e.g. reasoning notes, MIME type groupings)
 - [ ] Zero-sum applied if model is suggested for evals/data gen
@@ -652,10 +655,25 @@ Runs through LiteLLM's generic `openai/` route against Cloudflare's OpenAI-compa
   | `function_calling: "true"` | leave `supports_function_calling` at its default; set `False` if the tool tests fail |
   | `vision: "true"` | `supports_vision`, `multimodal_capable`, MIME types TXT/MD/JPG/PNG; start broad, narrow on 400s. Don't set `supports_doc_extraction`: the document extractor doesn't send the AI Gateway header, so extraction would bypass the user's gateway |
   | `reasoning: "true"` | keep `reasoning_capable=False` (see [Reasoning Capable Default](#reasoning-capable-default)); LiteLLM already reads `reasoning_content` |
-  | `reasoning_effort.supported_efforts` | source for `available_thinking_levels` if you add them; `mandatory: true` means reasoning cannot be turned off. Cloudflare edits these, so re-read on every run |
+  | `reasoning_effort.supported_efforts` present | **required:** set `available_thinking_levels` to exactly these values, and `default_thinking_level` to `default_effort`. See [Cloudflare thinking levels](#cloudflare-thinking-levels) |
+  | `reasoning_effort` without `supported_efforts` | no thinking levels; the catalog does not say which values work |
   | `require_workers_paid: "true"` | no Kiln field. Free-plan users get 403 / code 5035. Mention it in the PR |
   | `planned_deprecation_date` present | do **not** add the model |
 
+- <a id="cloudflare-thinking-levels"></a>**Thinking levels come from the catalog, and only from the catalog.** Kiln sends the level as `reasoning_effort`. For each model, `reasoning_effort` in the catalog lists `supported_efforts`, a `default_effort`, and `normalizes_to`: the values that Cloudflare silently changes to another effort. A remapped value returns HTTP 200, so a live call or a paid test cannot find it. Example: GLM 5.3 maps `medium` to `max`, so a "Medium" option runs the most expensive effort.
+  - Offer each value in `supported_efforts`, and no other value. Do not copy the levels of the same model on another provider.
+  - Labels: `none` → `"Off"`, `low` → `"Low"`, `medium` → `"Medium"`, `high` → `"High"`, `xhigh` → `"Extra High"`, `max` → `"Max"`. List them from least to most effort.
+  - `default_thinking_level` is `default_effort`, unless the entry is suggested for evals (see [Judge Models Must Reason by Default](#judge-models-must-reason-by-default)).
+  - `mandatory: true` means `none` is not in the list; do not add an Off level.
+  - Reuse a constant when the values match exactly; else name a new one `{MODEL}_CLOUDFLARE_THINKING_LEVELS`.
+  - Cloudflare edits these lists. After every change to a Cloudflare entry, and on every run of this skill, run the checker below. It must report no ❌ finding:
+
+    ```bash
+    uv run python .agents/skills/claude-maintain-models/scripts/check_cloudflare_thinking_levels.py
+    ```
+
+    It compares every Cloudflare entry in this checkout with the catalog, and exits 1 on a missing level list, a level or default outside `supported_efforts`, or levels on a model whose catalog lists none. A `note:` line (`not_offered`) is information only.
+  - Then run the paid `test_thinking_level_reasoning_content` for each new level. If `-k "<model_enum>"` collects no `cloudflare/...` case, `cloudflare` is missing from the provider list in `libs/core/kiln_ai/adapters/model_adapters/test_thinking_level_paid.py`; add it.
 - **Structured output:** these models take the OpenAI `response_format` envelope, so start from `json_schema` and fall back only on test failures. Cloudflare's JSON mode doesn't support streaming.
 - **Don't send `max_tokens`.** Live tests showed no truncation on the OpenAI-format models without it.
 - **Workers Paid:** many of the newer models need the Workers Paid plan. Paid tests need an account on it.
@@ -673,7 +691,7 @@ Runs through LiteLLM's generic `openai/` route against Cloudflare's OpenAI-compa
 
 ## Thinking Levels Reference
 
-No API provides the available thinking levels programmatically — they must be manually sourced. Use this lookup chain in priority order:
+No API provides the available thinking levels programmatically — they must be manually sourced. Use this lookup chain in priority order. **Cloudflare is the exception:** its catalog lists the levels per model, and it is the only source for a `cloudflare` entry. See [Cloudflare thinking levels](#cloudflare-thinking-levels).
 
 ### Lookup Chain
 
