@@ -436,6 +436,63 @@ async def test_write_lock_serialization(manager):
     assert order[3] == "b_end"
 
 
+@pytest.mark.asyncio
+async def test_write_lock_released_when_waiter_cancelled(manager):
+    manager._WRITE_LOCK_TIMEOUT = 2
+    holding, release = asyncio.Event(), asyncio.Event()
+
+    async def first_save():
+        async with manager.write_lock():
+            holding.set()
+            await release.wait()
+
+    async def second_save():
+        async with manager.write_lock():
+            pass
+
+    first = asyncio.create_task(first_save())
+    await holding.wait()
+    second = asyncio.create_task(second_save())
+    await asyncio.sleep(0.2)
+    second.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await second
+    release.set()
+    await first
+    await asyncio.sleep(0.5)
+
+    async with manager.write_lock():
+        pass
+
+
+@pytest.mark.asyncio
+async def test_write_lock_cancelled_waiter_timing_out_leaves_lock_held(
+    manager, monkeypatch
+):
+    manager._WRITE_LOCK_TIMEOUT = 0.3
+    callback_ran = asyncio.Event()
+    real_release_if_acquired = manager._release_if_acquired
+
+    def release_if_acquired(acquire_task):
+        real_release_if_acquired(acquire_task)
+        callback_ran.set()
+
+    monkeypatch.setattr(manager, "_release_if_acquired", release_if_acquired)
+
+    async def waiting_save():
+        async with manager.write_lock():
+            pass
+
+    async with manager.write_lock():
+        waiter = asyncio.create_task(waiting_save())
+        await asyncio.sleep(0.1)
+        waiter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiter
+        await asyncio.wait_for(callback_ran.wait(), timeout=2)
+        assert manager._write_lock.locked()
+
+
 # --- has_new_remote_commits ---
 
 
