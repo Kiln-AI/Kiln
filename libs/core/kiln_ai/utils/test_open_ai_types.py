@@ -22,6 +22,7 @@ from kiln_ai.utils.open_ai_types import (
     ChatCompletionToolMessageParamWrapper,
     sanitize_messages_for_provider,
     serialize_trace,
+    single_turn_trace,
     trace_has_pending_client_tool_calls,
 )
 from kiln_ai.utils.open_ai_types import (
@@ -592,3 +593,19 @@ class TestSerializeTrace:
         assert serialized["content"] == [{"text": "hi", "type": "text"}]
         assert serialized["usage"]["input_tokens"] == 4
         assert serialized["usage"]["cost"] == 0.01
+
+
+@pytest.mark.parametrize(
+    ("input", "output", "expected_input", "expected_output"),
+    [
+        ("hi", "hello", "hi", "hello"),
+        ({"q": "é"}, {"a": 1}, '{"q": "é"}', '{"a": 1}'),
+        (["x"], "done", '["x"]', "done"),
+    ],
+    ids=["plain", "structured", "list-input"],
+)
+def test_single_turn_trace(input, output, expected_input, expected_output):
+    assert single_turn_trace(input, output) == [
+        {"role": "user", "content": expected_input},
+        {"role": "assistant", "content": expected_output},
+    ]

@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
     from kiln_ai.datamodel.task import RunConfigProperties
 
+from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import EvalTraceFormatter
 from kiln_ai.adapters.eval.eval_utils.scoring_utils import (
     build_g_eval_score,
     build_llm_as_judge_score,
@@ -51,11 +52,30 @@ from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, Task
 from kiln_ai.utils.jinja_engine import JinjaExtractionError, _template_env
+from kiln_ai.utils.open_ai_types import single_turn_trace
 
 _DEFAULT_SYSTEM_PROMPT = (
     "Your job is to evaluate a model's performance on a task. "
     "Score the output according to the criteria provided."
 )
+
+
+def _judge_trace(eval_input: EvalTaskInput) -> list[dict[str, Any]] | None:
+    """The trace the judge's template sees.
+
+    A run saved without a trace (a single-turn CSV import, or one recorded before
+    traces existed) gets a minimal one from its input and output, so trace-based
+    templates such as the default can still judge it. Only the judge sees this:
+    evaluators that need the real messages still skip a run with no trace.
+    """
+    if eval_input.trace is not None or eval_input.task_input is None:
+        return eval_input.trace
+    return [
+        dict(message)
+        for message in single_turn_trace(
+            eval_input.task_input, eval_input.final_message
+        )
+    ]
 
 
 def _unknown_template_variables(template: str, namespace: dict[str, Any]) -> set[str]:
@@ -138,10 +158,16 @@ class LlmJudgeEval(BaseV2EvalBridge):
                 )
 
         namespace = eval_input.model_dump()
+        namespace["trace"] = _judge_trace(eval_input)
         # Always bound (even when unset) so templates referencing it never hit
         # StrictUndefined; blank steps render as an empty <steps> body.
         namespace["judge_instructions"] = format_judge_instructions(
             props.judge_instructions
+        )
+        # Bound for hand-written templates that judge a single turn's
+        # final_message against the system prompt without the full trace.
+        namespace["task_system_prompt"] = EvalTraceFormatter.system_prompt_from_trace(
+            namespace["trace"]
         )
         try:
             rendered_prompt = _template_env.from_string(props.prompt_template).render(

@@ -7478,8 +7478,7 @@ class TestCreateLlmJudgeConfig:
         assert props["model_name"] == "gpt-4o"
         assert props["model_provider"] == "openai"
         assert props["g_eval"] is False
-        assert "{{ task_input }}" in props["prompt_template"]
-        assert "{{ final_message }}" in props["prompt_template"]
+        assert "{{ trace | format_trace }}" in props["prompt_template"]
         assert props["system_prompt"] is not None
         assert props["thinking_instruction"] is not None
         assert props["reference_keys"] == []
@@ -7856,8 +7855,7 @@ class TestDefaultLlmJudgePrompt:
         assert "judge_prompt" in body
         assert "system_prompt" in body
         assert body["system_prompt"] == "You are an evaluator."
-        assert "{{ task_input }}" in body["judge_prompt"]
-        assert "{{ final_message }}" in body["judge_prompt"]
+        assert "{{ trace | format_trace }}" in body["judge_prompt"]
         # No spec or derivable template: the steps section defers to the
         # judge_instructions binding instead of baking score instructions.
         assert "{{ judge_instructions }}" in body["judge_prompt"]

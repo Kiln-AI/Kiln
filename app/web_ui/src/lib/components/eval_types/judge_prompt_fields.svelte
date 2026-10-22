@@ -23,15 +23,26 @@
   </p>
   <ul class="text-xs text-gray-500 list-disc list-inside mb-2 indent-2">
     <li>
+      <span class="font-mono font-bold">{"{{ trace }}"}</span> The entire raw
+      trace.
+      <ul class="list-[circle] list-inside ml-4">
+        <li>
+          <span class="font-mono font-bold">{"{{ trace | format_trace }}"}</span
+          > Renders the trace as a readable transcript.
+        </li>
+      </ul>
+    </li>
+    <li>
+      <span class="font-mono font-bold">{"{{ task_system_prompt }}"}</span> The system
+      prompt the task was run with.
+    </li>
+    <li>
       <span class="font-mono font-bold">{"{{ task_input }}"}</span> The input to
       the task.
     </li>
     <li>
-      <span class="font-mono font-bold">{"{{ final_message }}"}</span> The final
-      message from the model.
-    </li>
-    <li>
-      <span class="font-mono font-bold">{"{{ trace }}"}</span> The entire trace.
+      <span class="font-mono font-bold">{"{{ final_message }}"}</span> The task's
+      final message.
     </li>
     {#if show_judge_instructions_variable}
       <li>
