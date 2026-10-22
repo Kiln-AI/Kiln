@@ -437,9 +437,17 @@ async def test_write_lock_serialization(manager):
 
 
 @pytest.mark.asyncio
-async def test_write_lock_released_when_waiter_cancelled(manager):
+async def test_write_lock_released_when_waiter_cancelled(manager, monkeypatch):
     manager._WRITE_LOCK_TIMEOUT = 2
     holding, release = asyncio.Event(), asyncio.Event()
+    callback_ran = asyncio.Event()
+    real_release_if_acquired = manager._release_if_acquired
+
+    def release_if_acquired(acquire_task):
+        real_release_if_acquired(acquire_task)
+        callback_ran.set()
+
+    monkeypatch.setattr(manager, "_release_if_acquired", release_if_acquired)
 
     async def first_save():
         async with manager.write_lock():
@@ -459,7 +467,8 @@ async def test_write_lock_released_when_waiter_cancelled(manager):
         await second
     release.set()
     await first
-    await asyncio.sleep(0.5)
+    await asyncio.wait_for(callback_ran.wait(), timeout=2)
+    assert not manager._write_lock.locked()
 
     async with manager.write_lock():
         pass
