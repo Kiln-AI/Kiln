@@ -250,6 +250,43 @@ class TestLlmJudgeEvalLlmAsJudge:
         assert "Output: answer" in rendered
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "trace, expected",
+        [
+            (
+                [
+                    {"role": "system", "content": "Be terse."},
+                    {"role": "user", "content": "hi"},
+                    {"role": "assistant", "content": "Hello world"},
+                ],
+                "System: [Be terse.]",
+            ),
+            ([{"role": "user", "content": "hi"}], "System: []"),
+            (None, "System: []"),
+        ],
+        ids=["system-message", "no-system-message", "no-trace"],
+    )
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_task_system_prompt_variable(
+        self, mock_adapter_for_task, trace, expected
+    ):
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.return_value = (
+            _judge_run(),
+            RunOutput(output={"quality": "3"}, intermediate_outputs=None),
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+
+        props = _make_props(
+            prompt_template="System: [{{ task_system_prompt }}] Output: {{ final_message }}"
+        )
+        result = await LlmJudgeEval(_make_config(props)).evaluate(_inp(trace=trace))
+
+        assert result.skipped_reason is None
+        rendered = mock_adapter.invoke_returning_run_output.call_args[0][0]
+        assert rendered.startswith(expected)
+
+    @pytest.mark.asyncio
     @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
     async def test_custom_system_prompt(self, mock_adapter_for_task):
         mock_adapter = AsyncMock()
@@ -745,6 +782,10 @@ class TestBackendBakedReferenceAnswerJudge:
             _inp(
                 final_message="Herbert, 1965.",
                 task_input="Who wrote Dune?",
+                trace=[
+                    {"role": "user", "content": "Who wrote Dune?"},
+                    {"role": "assistant", "content": "Herbert, 1965."},
+                ],
                 reference_data={"reference_answer": "Frank Herbert."},
             )
         )
@@ -752,6 +793,59 @@ class TestBackendBakedReferenceAnswerJudge:
         assert result.skipped_reason is None
         rendered = mock_adapter.invoke_returning_run_output.call_args[0][0]
         assert "<reference_answer>\nFrank Herbert.\n</reference_answer>" in rendered
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_item_without_a_trace_is_judged_on_its_input_and_output(
+        self, mock_adapter_for_task
+    ):
+        """A run saved without a trace (e.g. a single-turn CSV import used as a
+        calibration golden set) is still judged, from its input and output."""
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.return_value = (
+            _judge_run(),
+            RunOutput(output={"quality": "5"}, intermediate_outputs=None),
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+        cfg = _make_config(self._baked_props())
+
+        result = await LlmJudgeEval(cfg).evaluate(
+            _inp(
+                final_message="Herbert, 1965.",
+                task_input="Who wrote Dune?",
+                trace=None,
+                reference_data={"reference_answer": "Frank Herbert."},
+            )
+        )
+
+        assert result.skipped_reason is None
+        rendered = mock_adapter.invoke_returning_run_output.call_args[0][0]
+        assert (
+            "<trace>\n"
+            "user:\n<user_message>\nWho wrote Dune?\n</user_message>\n\n"
+            "assistant:\n<assistant_message>\nHerbert, 1965.\n</assistant_message>\n"
+            "</trace>"
+        ) in rendered
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_item_without_a_trace_or_input_skips_before_the_model_call(
+        self, mock_adapter_for_task
+    ):
+        """With neither a trace nor an input there is no conversation to rebuild,
+        so the item is skipped rather than scored blind."""
+        cfg = _make_config(self._baked_props())
+
+        result = await LlmJudgeEval(cfg).evaluate(
+            _inp(
+                trace=None,
+                task_input=None,
+                reference_data={"reference_answer": "Frank Herbert."},
+            )
+        )
+
+        assert result.skipped_reason == SkippedReason.extraction_failed
+        mock_adapter_for_task.assert_not_called()
 
 
 class TestLlmJudgeEvalNoParentEval:

@@ -5943,3 +5943,47 @@ def test_eval_config_eval_requires_a_dataset_item():
             output="out",
             scores={"accuracy": 1.0},
         )
+
+
+@pytest.mark.parametrize("readonly", [False, True])
+def test_listing_eval_runs_does_not_reload_the_config_per_run(
+    valid_eval_config_data, tmp_path, readonly
+):
+    """EvalRun validators read their parent config; listing runs must hand it to
+    them rather than each run reloading and re-validating the config file."""
+
+    def config_loads(run_count: int) -> int:
+        folder = tmp_path / f"{run_count}_{readonly}"
+        folder.mkdir()
+        task = Task(name="Test Task", instruction="Test", path=folder / "task.kiln")
+        task.save_to_file()
+        eval = Eval(
+            name="Test Eval",
+            parent=task,
+            eval_set_filter_id="tag::tag1",
+            eval_configs_filter_id="tag::tag2",
+            output_scores=[
+                EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail)
+            ],
+        )
+        eval.save_to_file()
+        config = EvalConfig(parent=eval, **valid_eval_config_data)
+        config.save_to_file()
+        for i in range(run_count):
+            EvalRun(
+                parent=config,
+                dataset_id=f"dataset{i}",
+                task_run_config_id="config456",
+                input="in",
+                output="out",
+                scores={"accuracy": 1.0},
+            ).save_to_file()
+
+        loaded_config = EvalConfig.load_from_file(config.path)
+        with patch.object(
+            EvalConfig, "load_from_file", wraps=EvalConfig.load_from_file
+        ) as load:
+            assert len(loaded_config.runs(readonly=readonly)) == run_count
+        return load.call_count
+
+    assert config_loads(4) == config_loads(1)

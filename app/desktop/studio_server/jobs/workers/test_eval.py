@@ -922,11 +922,11 @@ def torn_eval_run_reads(monkeypatch):
     remaining = [0]
     original = EvalRun.load_from_file
 
-    def load_from_file(cls, path, readonly=False):
+    def load_from_file(cls, path, readonly=False, parent=None):
         if remaining[0] > 0:
             remaining[0] -= 1
             raise json.JSONDecodeError("Expecting value", "", 0)
-        return original(path, readonly=readonly)
+        return original(path, readonly=readonly, parent=parent)
 
     monkeypatch.setattr(EvalRun, "load_from_file", classmethod(load_from_file))
     return remaining

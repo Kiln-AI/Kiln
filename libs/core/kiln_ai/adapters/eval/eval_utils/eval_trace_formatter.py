@@ -1,6 +1,7 @@
 import json
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from kiln_ai.utils.open_ai_types import (
     TASK_RESPONSE_TOOL_NAME,
@@ -136,25 +137,51 @@ class EvalTraceFormatter:
 
     @staticmethod
     def content_from_message(message: ChatCompletionMessageParam) -> str | None:
-        """Get the content of a message."""
-        if (
-            "content" not in message
-            or message["content"] is None
-            or not isinstance(message["content"], str)
-        ):
+        """Get the content of a message.
+
+        A list of content parts is reduced to its text parts, joined by blank
+        lines in order. Other parts (images, audio, files) are left out.
+        """
+        content = message.get("content")
+        if isinstance(content, list):
+            parts = [
+                EvalTraceFormatter._content_part_text(part)
+                for part in content
+                if isinstance(part, dict)
+            ]
+            content = "\n\n".join(part for part in parts if part) or None
+        if not isinstance(content, str):
             return None
 
         # For Kiln task tools, extract just the output field from the JSON response
         if message["role"] == "tool":
             try:
-                parsed = json.loads(message["content"])
+                parsed = json.loads(content)
                 if parsed and isinstance(parsed, dict) and "output" in parsed:
                     return parsed["output"]
             except Exception:
                 # Content is not JSON, we will return as-is
                 pass
 
-        return message["content"]
+        return content
+
+    @staticmethod
+    def _content_part_text(part: dict) -> str | None:
+        if part.get("type") != "text":
+            return None
+        text = part.get("text")
+        return text if isinstance(text, str) else None
+
+    @staticmethod
+    def system_prompt_from_trace(trace: list[dict[str, Any]] | None) -> str:
+        """The system prompt the evaluated model was given: the first system
+        message in its trace, or an empty string when there is none."""
+        for message in trace or []:
+            if message.get("role") == "system":
+                # Loose dicts are the runtime reality for traces; read them like
+                # the typed message params.
+                return EvalTraceFormatter.content_from_message(message) or ""  # type: ignore[arg-type]
+        return ""
 
     @staticmethod
     def reasoning_content_from_message(
