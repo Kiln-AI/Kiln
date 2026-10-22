@@ -483,6 +483,28 @@ describe("EvalTestRunPane", () => {
       ) as HTMLButtonElement
       expect(changeBtn?.disabled).toBe(true)
     })
+
+    it("tells the user an agentic judge can take a while", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: {
+          available_runs: [run1],
+          selected_run: run1,
+          test_loading: true,
+          runs_loading: false,
+          is_llm_judge: true,
+          agentic_judge: true,
+        },
+      })
+
+      const runningState = container.querySelector(
+        '[data-testid="running-state"]',
+      )
+      expect(runningState?.textContent).toContain(
+        "The judge is reading the trace. This can take a minute.",
+      )
+      expect(runningState?.textContent).not.toContain("Executing the scorer")
+    })
   })
 
   describe("State 4: Results", () => {

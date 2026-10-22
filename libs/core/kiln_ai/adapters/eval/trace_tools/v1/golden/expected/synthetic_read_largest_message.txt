@@ -1,0 +1,21 @@
+=== #248 tool result from run_tests (content 1,104) ===
+   value_78 = compute(item_16, limit=0)  # step 1
+00079    value_79 = compute(item_17, limit=1)  # step 2
+00080    value_80 = compute(item_18, limit=2)  # step 3
+00081    value_81 = compute(item_19, limit=3)  # step 4
+00082    value_82 = compute(item_20, limit=4)  # step 5
+00083    value_83 = compute(item_21, limit=5)  # step 6
+00084    value_84 = compute(item_22, limit=6)  # step 0
+00085    value_85 = compute(item_23, limit=7)  # step 1
+00086    value_86 = compute(item_24, limit=8)  # step 2
+00087    value_87 = compute(item_25, limit=9)  # step 3
+00088    value_88 = compute(item_26, limit=10)  # step 4
+00089    value_89 = compute(item_27, limit=11)  # step 5
+00090    value_90 = compute(item_28, limit=12)  # step 6
+00091    value_91 = compute(item_29, limit=0)  # step 0
+00092    value_92 = compute(item_30, limit=1)  # step 1
+00093    value_93 = compute(item_0, limit=2)  # step 2
+00094    value_94 = compute(item_1, limit=3)  # step 3
+00095    value_95 = compute(item_2, limit=4)  # step 4
+00096    value_96 = compute(item_3, limit=5
+FAILED tests/test_module.py::test_case_94 - AssertionError

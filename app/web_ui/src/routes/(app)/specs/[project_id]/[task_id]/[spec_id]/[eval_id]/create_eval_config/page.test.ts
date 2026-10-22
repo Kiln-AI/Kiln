@@ -244,9 +244,11 @@ const { ALL_V2_EVAL_TYPES, getV2EvalTypeMetadata } = await import(
 const { setInitialCode, resetInitialCode } = await import(
   "./__tests__/v2_form_stub.svelte"
 )
-const { setInitialLlmJudgeValues, resetInitialLlmJudgeValues } = await import(
-  "./__tests__/llm_judge_form_stub.svelte"
-)
+const {
+  setInitialLlmJudgeValues,
+  resetInitialLlmJudgeValues,
+  simulatePromptReplaced,
+} = await import("./__tests__/llm_judge_form_stub.svelte")
 const { CREATE_EVAL_LAYOUT_KEY } = await import("./context")
 
 // ---------------------------------------------------------------------------
@@ -2297,6 +2299,138 @@ describe("Save flow — handle_submit logic", () => {
 
     expect(mockCreateLlmJudgeConfig).toHaveBeenCalledTimes(1)
     expect(showCalls).not.toContain("Save Without Testing?")
+  })
+
+  describe("llm_judge algorithm in requests", () => {
+    afterEach(() => {
+      resetInitialLlmJudgeValues()
+    })
+
+    async function renderWithAlgorithm(
+      selected_algo: "llm_as_judge" | "g_eval" | "agentic_judge",
+    ) {
+      setInitialLlmJudgeValues({
+        selected_algo,
+        combined_model_name: "openai:gpt-4o",
+        model_name: "gpt-4o",
+        provider_name: "openai",
+        judge_prompt: "Score the output for quality.",
+      })
+      const rendered = await renderBuilder("llm_judge")
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+      return rendered
+    }
+
+    async function click(container: HTMLElement, testid: string) {
+      const button = container.querySelector(
+        `[data-testid="${testid}"]`,
+      ) as HTMLButtonElement
+      expect(button).not.toBeNull()
+      await fireEvent.click(button)
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+    }
+
+    it.each([
+      ["llm_as_judge", { g_eval: false, trace_tools: false }],
+      ["g_eval", { g_eval: true, trace_tools: false }],
+      ["agentic_judge", { g_eval: false, trace_tools: true }],
+    ] as const)(
+      "%s: test and save send %o",
+      async (selected_algo, expected_flags) => {
+        const { container } = await renderWithAlgorithm(selected_algo)
+
+        mockTestV2EvalLlmJudge.mockResolvedValueOnce({
+          scores: { quality: 4.0 },
+          skipped_reason: null,
+          skipped_detail: null,
+        })
+        await click(container, "run-test-btn")
+        expect(mockTestV2EvalLlmJudge).toHaveBeenCalledTimes(1)
+        expect(mockTestV2EvalLlmJudge.mock.calls[0][3]).toMatchObject(
+          expected_flags,
+        )
+
+        mockCreateLlmJudgeConfig.mockResolvedValueOnce({
+          id: "config_llm",
+          type: "v2",
+          properties: { type: "llm_judge" },
+        })
+        await click(container, "column-save-button")
+        expect(mockCreateLlmJudgeConfig).toHaveBeenCalledTimes(1)
+        expect(mockCreateLlmJudgeConfig.mock.calls[0][3]).toMatchObject(
+          expected_flags,
+        )
+      },
+    )
+
+    it.each([
+      [true, true],
+      [false, false],
+    ])(
+      "a prompt swapped in code while a test runs (%s) makes Save ask first: %s",
+      async (prompt_replaced, asks_before_saving) => {
+        const { container } = await renderWithAlgorithm("agentic_judge")
+        let resolve_test: (value: unknown) => void = () => {}
+        mockTestV2EvalLlmJudge.mockImplementationOnce(
+          () => new Promise((resolve) => (resolve_test = resolve)),
+        )
+
+        await click(container, "run-test-btn")
+        if (prompt_replaced) {
+          simulatePromptReplaced()
+        }
+        resolve_test({
+          scores: { quality: 4.0 },
+          skipped_reason: null,
+          skipped_detail: null,
+        })
+        await tick()
+        await new Promise((r) => setTimeout(r, 0))
+        await tick()
+
+        resetCalls()
+        mockCreateLlmJudgeConfig.mockResolvedValueOnce({
+          id: "config_llm",
+          type: "v2",
+          properties: { type: "llm_judge" },
+        })
+        await click(container, "column-save-button")
+
+        expect(showCalls.includes("Save Without Testing?")).toBe(
+          asks_before_saving,
+        )
+        expect(mockCreateLlmJudgeConfig).toHaveBeenCalledTimes(
+          asks_before_saving ? 0 : 1,
+        )
+      },
+    )
+
+    it.each([
+      ["agentic_judge", true],
+      ["llm_as_judge", false],
+    ] as const)(
+      "%s: the running state says the judge is reading the trace: %s",
+      async (selected_algo, shows_agentic_text) => {
+        const { container } = await renderWithAlgorithm(selected_algo)
+        mockTestV2EvalLlmJudge.mockImplementationOnce(
+          () => new Promise(() => {}),
+        )
+
+        await click(container, "run-test-btn")
+
+        const running = container.querySelector('[data-testid="running-state"]')
+        expect(running).not.toBeNull()
+        expect(
+          running!.textContent!.includes(
+            "The judge is reading the trace. This can take a minute.",
+          ),
+        ).toBe(shows_agentic_text)
+      },
+    )
   })
 
   it("contains: save without test shows confirm dialog and Save Anyway calls createEvalConfig", async () => {

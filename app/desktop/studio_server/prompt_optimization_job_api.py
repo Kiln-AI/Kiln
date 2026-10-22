@@ -110,6 +110,14 @@ def optimization_unsupported_reason(eval: Eval, config: EvalConfig) -> str | Non
             f"Eval '{eval.name}' uses eval type '{props.type.value}', which "
             "prompt optimization does not support yet."
         )
+    if (
+        isinstance(props, LlmJudgeProperties)
+        and props.trace_toolset_version is not None
+    ):
+        return (
+            f"Eval '{eval.name}' uses an LLM judge with trace tools, which "
+            "prompt optimization does not support yet."
+        )
     if props.type in _DETERMINISTIC_EVAL_TYPES and any(
         score.type != TaskOutputRatingType.pass_fail for score in eval.output_scores
     ):

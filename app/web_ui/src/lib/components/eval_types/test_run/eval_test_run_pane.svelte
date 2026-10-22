@@ -34,6 +34,7 @@
   export let test_score_range_warning: string | null = null
   export let test_has_valid_run: boolean = false
   export let is_llm_judge: boolean = false
+  export let agentic_judge: boolean = false
   export let can_submit_llm: boolean = false
   export let manual_example_supported: boolean = true
   /**
@@ -139,7 +140,11 @@
     >
       <span class="loading loading-spinner loading-md text-primary"></span>
       <div class="text-sm font-medium">Running...</div>
-      <p class="text-xs text-gray-500">Executing the scorer on your input</p>
+      <p class="text-xs text-gray-500 text-center">
+        {agentic_judge
+          ? "The judge is reading the trace. This can take a minute."
+          : "Executing the scorer on your input"}
+      </p>
       <button
         type="button"
         class="btn btn-sm btn-outline mt-1"

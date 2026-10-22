@@ -2,7 +2,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import { page } from "$app/stores"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import type { Eval, Task, EvalConfigType, TaskRunOutput } from "$lib/types"
+  import type { Eval, Task, TaskRunOutput } from "$lib/types"
   import type { components } from "$lib/api_schema"
   import { goto } from "$app/navigation"
   import posthog from "posthog-js"
@@ -27,6 +27,10 @@
     type TestV2EvalResponse,
   } from "$lib/api/v2_eval_api"
   import { validate_result_shape } from "$lib/utils/eval_types/test_run_shape"
+  import {
+    judge_algorithm_request_flags,
+    type JudgeAlgorithm,
+  } from "$lib/utils/eval_types/judge_algorithm"
   import { select_default_test_run } from "$lib/utils/eval_types/test_run_selection"
   import {
     parse_reference_data,
@@ -57,7 +61,7 @@
   let llm_model_name: string | undefined = undefined
   let llm_provider_name: string | undefined = undefined
   let llm_combined_model_name: string | undefined = undefined
-  let llm_selected_algo: EvalConfigType | undefined = undefined
+  let llm_selected_algo: JudgeAlgorithm | undefined = undefined
   let llm_judge_prompt: string | undefined = undefined
   let llm_system_prompt: string | undefined = undefined
   // The Evaluation Instructions steps for evals with no derivable prompt.
@@ -302,7 +306,6 @@
       let result: TestV2EvalResponse
 
       if (is_llm_judge) {
-        const g_eval = llm_selected_algo === "g_eval"
         result = await testV2EvalLlmJudge(
           project_id,
           task_id,
@@ -311,7 +314,7 @@
             model_name: llm_model_name!,
             provider:
               llm_provider_name! as components["schemas"]["ModelProviderName"],
-            g_eval,
+            ...judge_algorithm_request_flags(llm_selected_algo!),
             judge_prompt: llm_judge_prompt ?? null,
             system_prompt: llm_system_prompt ?? null,
             judge_instructions: cleaned_judge_instructions(),
@@ -461,12 +464,11 @@
         if (!llm_model_name || !llm_provider_name || !llm_selected_algo) {
           throw new Error("No model or algorithm selected")
         }
-        const g_eval = llm_selected_algo === "g_eval"
         data = await createLlmJudgeConfig(project_id, task_id, eval_id, {
           model_name: llm_model_name,
           provider:
             llm_provider_name as components["schemas"]["ModelProviderName"],
-          g_eval,
+          ...judge_algorithm_request_flags(llm_selected_algo),
           judge_prompt: llm_judge_prompt ?? null,
           system_prompt: llm_system_prompt ?? null,
           judge_instructions: cleaned_judge_instructions(),
@@ -613,6 +615,7 @@
             bind:judge_instructions={llm_judge_instructions}
             bind:default_reference_keys={llm_server_reference_keys}
             bind:default_prompt_unavailable={llm_default_prompt_unavailable}
+            on:prompt_replaced={on_config_edit}
           />
         {:else}
           <JudgeConfigFields
@@ -664,6 +667,7 @@
       {test_score_range_warning}
       test_has_valid_run={test_valid_for_current_config}
       {is_llm_judge}
+      agentic_judge={is_llm_judge && llm_selected_algo === "agentic_judge"}
       {can_submit_llm}
       {judge_reference_signals}
       manual_example_supported={manual_example_support.supported}

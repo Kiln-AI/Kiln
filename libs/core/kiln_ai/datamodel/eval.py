@@ -143,6 +143,17 @@ class LlmJudgeRunConfig(BaseModel):
         return normalized
 
 
+LATEST_TRACE_TOOLSET_VERSION = 1
+"""The trace toolset version new judges with trace tools are created with."""
+
+TRACE_OVERVIEW_VERSION_WITHOUT_TOOLS = 1
+"""The ``trace_overview`` output a judge with trace tools off renders. Fixed forever,
+so those judges' rendered prompts never change."""
+
+G_EVAL_WITH_TRACE_TOOLS_ERROR = "G-Eval scoring can't be combined with trace tools."
+"""Validation error message for an LLM judge that sets both g_eval and trace_toolset_version."""
+
+
 class LlmJudgeProperties(BaseModel):
     type: Literal[V2EvalType.llm_judge] = V2EvalType.llm_judge
     model_name: str
@@ -160,6 +171,19 @@ class LlmJudgeProperties(BaseModel):
     # None, or any unset field inside it, keeps the default, so older configs behave
     # as before.
     run_config: LlmJudgeRunConfig | None = None
+    # An int, not an enum, so a config written by a newer Kiln with a newer version
+    # still loads here; building the judge then fails with an "update Kiln" message.
+    trace_toolset_version: int | None = Field(
+        default=None,
+        ge=1,
+        description="Trace tools for the judge model: read-only tools for reading the judged trace. None: off. A version number: on, with that version's tools and trace_overview output, locked for the life of the judge.",
+    )
+
+    @model_validator(mode="after")
+    def validate_trace_tools_scoring(self) -> Self:
+        if self.g_eval and self.trace_toolset_version is not None:
+            raise ValueError(G_EVAL_WITH_TRACE_TOOLS_ERROR)
+        return self
 
 
 class ExactMatchProperties(BaseModel):
@@ -1360,7 +1384,9 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
                 _template_env.parse(props.prompt_template)
             )
             meaningful = {"final_message", "trace", "task_input"}
-            if not (referenced & meaningful):
+            # A judge with trace tools reads the trace through them, so its
+            # template may reference none of these.
+            if props.trace_toolset_version is None and not (referenced & meaningful):
                 raise ValueError(
                     "prompt_template never references the model output. "
                     "A template that uses only reference_data (or no variables) "

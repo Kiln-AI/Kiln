@@ -1,0 +1,5 @@
+16 matches in 10 messages. Showing matches 3–5.
+#3 assistant tool_calls @20
+#3 assistant tool_calls @80
+#5 tool grep content @19
+Use offset=5 for more.

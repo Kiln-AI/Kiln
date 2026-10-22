@@ -202,12 +202,16 @@ class TwoMessageCotFormatter(ChatFormatter):
         system_message: str,
         user_input: InputType,
         thinking_instructions: str | None,
+        wrap_user_input: bool = True,
     ) -> None:
+        """With ``wrap_user_input=False`` the input is sent as is, not inside
+        ``<user_input>`` tags, for an input that is a complete prompt in itself."""
         super().__init__(system_message, user_input, thinking_instructions)
         if self.thinking_instructions is None:
             raise ValueError(
                 "thinking_instructions are required when strategy is final_and_intermediate"
             )
+        self.wrap_user_input = wrap_user_input
 
     def next_turn(self, previous_output: str | None = None) -> Optional[ChatTurn]:
         if self._state == "start":
@@ -215,7 +219,10 @@ class TwoMessageCotFormatter(ChatFormatter):
             formatted_user_message = format_user_message(self.user_input)
 
             # If the input contains conversation_history, it's a full_trace evaluation description and formatted_user_message contains more than a single turn of user_input and shouldn't be wrapped in <user_input> tags to avoid confusing the judge models.
-            if "<conversation_history>" in formatted_user_message:
+            if (
+                not self.wrap_user_input
+                or "<conversation_history>" in formatted_user_message
+            ):
                 user_message = (
                     f"{formatted_user_message}\n\n{self.thinking_instructions}"
                 )
@@ -389,7 +396,9 @@ def chat_strategy_for_run(
     Separate from formatter construction so callers that only need the *shape* of the
     conversation (how many messages a turn costs, whether thinking is its own call) can
     ask without building a formatter — and so there is only one copy of the branching to
-    keep correct.
+    keep correct. One exception isn't reflected here: ``BaseAdapter.build_chat_formatter``
+    always uses two-message chain of thought when ``AdapterConfig.separate_final_answer_turn``
+    is set, which changes the conversation.
     """
     # Nothing to separate without thinking instructions, so one message per turn. True
     # even when a tuned strategy is set: those are either single turn already, or need

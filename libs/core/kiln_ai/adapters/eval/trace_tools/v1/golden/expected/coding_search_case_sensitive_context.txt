@@ -1,0 +1,2 @@
+1 match in 1 message. Showing matches 1–1.
+#11 tool run_tests content @661: <truncated> "mmary info ============================\nFAILED tests/test_invoice.py::test_total - Ass" <truncated>

@@ -4,13 +4,21 @@ Supports two scoring modes:
 - LLM-as-Judge (g_eval=False): uses structured output directly.
 - G-Eval (g_eval=True): uses logprob-weighted scoring.
 
+With trace_toolset_version set, the judge also gets the trace tools: read-only
+tools for reading the judged trace, at that locked toolset version. It can't be
+combined with G-Eval. Such a judge answers in two turns: it reads the trace with
+the tools and describes its decision, then gives its scores in a final turn that
+alone carries the structured output format.
+
 The prompt_template is rendered with Jinja2 using the EvalTaskInput fields
 as the template namespace.
 """
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 
-from jinja2 import UndefinedError, meta
+import litellm
+from jinja2 import Environment, UndefinedError, meta
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.eval.base_eval import (
@@ -24,6 +32,9 @@ if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
     from kiln_ai.datamodel.task import RunConfigProperties
 
+from kiln_ai.adapters.errors import KilnRunError
+from kiln_ai.adapters.eval.eval_utils.errors import JudgeContextExceededError
+from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import EvalTraceFormatter
 from kiln_ai.adapters.eval.eval_utils.scoring_utils import (
     build_g_eval_score,
     build_llm_as_judge_score,
@@ -33,13 +44,21 @@ from kiln_ai.adapters.eval.eval_utils.scoring_utils import (
     score_from_token_string,
 )
 from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import check_reference_key
+from kiln_ai.adapters.eval.trace_tools import (
+    TraceToolset,
+    UnsupportedTraceToolsetVersion,
+    judge_template_env,
+    trace_toolset,
+)
 from kiln_ai.adapters.ml_model_list import (
     ModelProviderName,
     built_in_models_from_provider,
     default_structured_output_mode_for_model_provider,
 )
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
+from kiln_ai.adapters.retry_classification import unwrap_kiln_run_error
 from kiln_ai.datamodel.eval import (
+    TRACE_OVERVIEW_VERSION_WITHOUT_TOOLS,
     EvalConfig,
     EvalTaskInput,
     LlmJudgeProperties,
@@ -58,6 +77,21 @@ _DEFAULT_SYSTEM_PROMPT = (
 )
 
 
+def system_prompt_from_trace(trace: list[dict[str, Any]] | None) -> str:
+    """The system prompt the evaluated model was given: the first system
+    message in its trace, or an empty string when there is none."""
+    for message in trace or []:
+        if message.get("role") == "system":
+            # Loose dicts are the runtime reality for traces; the formatter reads
+            # them like its typed message params.
+            return EvalTraceFormatter.content_from_message(message) or ""  # type: ignore[arg-type]
+    return ""
+
+
+def _render_prompt(env: Environment, template: str, namespace: dict[str, Any]) -> str:
+    return env.from_string(template).render(**namespace)
+
+
 def _unknown_template_variables(template: str, namespace: dict[str, Any]) -> set[str]:
     """Top-level variables the template uses that aren't EvalTaskInput fields.
 
@@ -69,17 +103,35 @@ def _unknown_template_variables(template: str, namespace: dict[str, Any]) -> set
     return meta.find_undeclared_variables(ast) - set(namespace)
 
 
+def _judge_intermediate_outputs(
+    intermediate_outputs: dict[str, str] | None, trace_tools_on: bool
+) -> dict[str, str] | None:
+    """The intermediate outputs a judgment reports.
+
+    A trace tools judge's reasoning is its first-turn findings, reported as
+    ``chain_of_thought``. Its final turn only formats the scores, so that turn's own
+    ``reasoning`` is left out here; it stays in the judge trace.
+    """
+    if not trace_tools_on or intermediate_outputs is None:
+        return intermediate_outputs
+    return {
+        key: value for key, value in intermediate_outputs.items() if key != "reasoning"
+    }
+
+
 class _LlmJudgeTask(Task, parent_of={}):
     """Ephemeral Task for invoking an LLM judge via adapter_for_task().
 
-    Creates a temporary Project/Task with the system prompt and output
-    JSON schema.
+    Creates a temporary Project/Task with the system prompt, output JSON
+    schema and, for a judge that thinks in a turn of its own, the thinking
+    instruction.
     """
 
     def __init__(
         self,
         system_prompt: str,
         output_json_schema: str,
+        thinking_instruction: str | None = None,
     ):
         tmp_project = Project(name="LlmJudge")
         super().__init__(
@@ -87,6 +139,7 @@ class _LlmJudgeTask(Task, parent_of={}):
             parent=tmp_project,
             instruction=system_prompt,
             output_json_schema=output_json_schema,
+            thinking_instruction=thinking_instruction,
         )
 
 
@@ -95,6 +148,9 @@ class LlmJudgeEval(BaseV2EvalBridge):
 
     Uses LlmJudgeProperties from the eval config to configure the judge:
     model, prompt template, scoring mode, etc.
+
+    Raises ``ValueError`` for a config it can't run, including one whose
+    trace_toolset_version this build of Kiln doesn't have.
     """
 
     def __init__(
@@ -112,6 +168,21 @@ class LlmJudgeEval(BaseV2EvalBridge):
             raise ValueError(
                 f"Invalid model provider: {self.properties.model_provider}"
             )
+        trace_tools_version = self.properties.trace_toolset_version
+        # Must raise, not return a skip: the runner saves a skip as a final result, so
+        # the items would stay unscored after Kiln is updated. Raising here also fails
+        # each job before the runner generates its trace.
+        try:
+            self._toolset: TraceToolset = trace_toolset(
+                trace_tools_version
+                if trace_tools_version is not None
+                else TRACE_OVERVIEW_VERSION_WITHOUT_TOOLS
+            )
+        except UnsupportedTraceToolsetVersion as e:
+            raise ValueError(
+                f"This judge uses trace tools version {e.version}, which this "
+                "version of Kiln doesn't support. Update Kiln to run it."
+            ) from e
 
     async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
         props = self.properties
@@ -137,15 +208,39 @@ class LlmJudgeEval(BaseV2EvalBridge):
                     skipped_detail=skip_detail,
                 )
 
+        trace_tools_on = props.trace_toolset_version is not None
+        if trace_tools_on and not eval_input.trace:
+            return V2EvalResult(
+                skipped_reason=SkippedReason.missing_trace,
+                skipped_detail=(
+                    "This judge reads the trace with trace tools, but this run has "
+                    "no trace."
+                ),
+            )
+
         namespace = eval_input.model_dump()
         # Always bound (even when unset) so templates referencing it never hit
         # StrictUndefined; blank steps render as an empty <steps> body.
         namespace["judge_instructions"] = format_judge_instructions(
             props.judge_instructions
         )
+        # Bound for hand-written templates that judge a single turn's
+        # final_message against the system prompt without the full trace, and
+        # for the default trace tools prompt.
+        namespace["system_prompt"] = system_prompt_from_trace(eval_input.trace)
+
+        # Parsing a large trace is CPU-bound, so the view is built and the
+        # template rendered off the event loop. A judge with trace tools off that
+        # uses trace_overview builds its view during the render.
+        trace_view = (
+            await asyncio.to_thread(self._toolset.build_view, namespace["trace"])
+            if trace_tools_on
+            else None
+        )
+        template_env = judge_template_env(self._toolset, namespace["trace"], trace_view)
         try:
-            rendered_prompt = _template_env.from_string(props.prompt_template).render(
-                **namespace
+            rendered_prompt = await asyncio.to_thread(
+                _render_prompt, template_env, props.prompt_template, namespace
             )
         except JinjaExtractionError as e:
             return V2EvalResult(
@@ -178,6 +273,9 @@ class LlmJudgeEval(BaseV2EvalBridge):
         judge_task = _LlmJudgeTask(
             system_prompt=system_prompt,
             output_json_schema=output_json_schema,
+            thinking_instruction=self._toolset.judge_thinking_instruction
+            if trace_tools_on
+            else None,
         )
 
         model_name = props.model_name
@@ -220,7 +318,9 @@ class LlmJudgeEval(BaseV2EvalBridge):
         run_config_properties = KilnAgentRunConfigProperties(
             model_name=model_name,
             model_provider_name=provider,
-            prompt_id=PromptGenerators.SIMPLE,
+            prompt_id=PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT
+            if trace_tools_on
+            else PromptGenerators.SIMPLE,
             structured_output_mode=structured_output_mode,
             **overrides,
         )
@@ -231,12 +331,25 @@ class LlmJudgeEval(BaseV2EvalBridge):
             base_adapter_config=AdapterConfig(
                 allow_saving=False,
                 top_logprobs=top_logprobs,
+                unmanaged_tools=self._toolset.build_tools(trace_view)
+                if trace_view is not None
+                else None,
+                # A trace tool loop resends a growing prefix on every round.
+                automatic_prompt_caching=trace_tools_on,
+                # Models asked to read with tools and answer in the score format in one
+                # turn tend to wrap the JSON in prose.
+                separate_final_answer_turn=trace_tools_on,
             ),
         )
 
-        judge_run, run_output = await adapter.invoke_returning_run_output(
-            rendered_prompt
-        )
+        try:
+            judge_run, run_output = await adapter.invoke_returning_run_output(
+                rendered_prompt
+            )
+        except KilnRunError as e:
+            if isinstance(unwrap_kiln_run_error(e), litellm.ContextWindowExceededError):
+                raise JudgeContextExceededError.from_run_error(e) from e
+            raise
 
         if props.g_eval:
             scores = build_g_eval_score(
@@ -253,7 +366,9 @@ class LlmJudgeEval(BaseV2EvalBridge):
 
         return V2EvalResult(
             scores=scores,
-            intermediate_outputs=run_output.intermediate_outputs,
+            intermediate_outputs=_judge_intermediate_outputs(
+                run_output.intermediate_outputs, trace_tools_on
+            ),
             # `usage`, not `cumulative_usage`: it already accumulates every call this
             # judgment made, and it is the one that carries latency.
             usage=judge_run.usage,

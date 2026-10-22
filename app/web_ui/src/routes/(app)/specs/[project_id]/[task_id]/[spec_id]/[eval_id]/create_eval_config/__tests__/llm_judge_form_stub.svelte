@@ -1,7 +1,7 @@
 <script lang="ts" context="module">
-  import type { EvalConfigType } from "$lib/types"
+  import type { JudgeAlgorithm } from "$lib/utils/eval_types/judge_algorithm"
 
-  let _initial_selected_algo: EvalConfigType | undefined = undefined
+  let _initial_selected_algo: JudgeAlgorithm | undefined = undefined
   let _initial_combined_model_name: string | undefined = undefined
   let _initial_model_name: string | undefined = undefined
   let _initial_provider_name: string | undefined = undefined
@@ -11,7 +11,7 @@
   let _initial_default_prompt_unavailable: boolean | undefined = undefined
 
   export function setInitialLlmJudgeValues(values: {
-    selected_algo?: EvalConfigType
+    selected_algo?: JudgeAlgorithm
     combined_model_name?: string
     model_name?: string
     provider_name?: string
@@ -28,6 +28,13 @@
     _initial_default_prompt_unavailable = values.default_prompt_unavailable
   }
 
+  // Fires `prompt_replaced` from the most recently created stub, the way the real
+  // form does when a default-prompt fetch swaps a prompt in code.
+  let _dispatch_prompt_replaced: (() => void) | null = null
+  export function simulatePromptReplaced() {
+    _dispatch_prompt_replaced?.()
+  }
+
   export function resetInitialLlmJudgeValues() {
     _initial_selected_algo = undefined
     _initial_combined_model_name = undefined
@@ -40,6 +47,11 @@
 </script>
 
 <script lang="ts">
+  import { createEventDispatcher } from "svelte"
+
+  const dispatch = createEventDispatcher<{ prompt_replaced: void }>()
+  _dispatch_prompt_replaced = () => dispatch("prompt_replaced")
+
   export let task_id: string = ""
   export let project_id: string = ""
   export let eval_id: string = ""
@@ -47,7 +59,7 @@
   export let provider_name: string | undefined = _initial_provider_name
   export let combined_model_name: string | undefined =
     _initial_combined_model_name
-  export let selected_algo: EvalConfigType | undefined = _initial_selected_algo
+  export let selected_algo: JudgeAlgorithm | undefined = _initial_selected_algo
   export let judge_prompt: string | undefined = _initial_judge_prompt
   export let system_prompt: string | undefined = undefined
   export let default_reference_keys: string[] =

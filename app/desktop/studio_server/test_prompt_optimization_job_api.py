@@ -1968,6 +1968,20 @@ UNSUPPORTED_EVAL_CASES = [
         None,
     ),
     (
+        "llm_judge_with_trace_tools",
+        lambda: {
+            "config_type": EvalConfigType.v2,
+            "properties": LlmJudgeProperties(
+                model_name="gpt-4o",
+                model_provider="openai",
+                prompt_template="Judge the trace.",
+                trace_toolset_version=1,
+            ),
+        },
+        400,
+        "uses an LLM judge with trace tools",
+    ),
+    (
         "legacy_g_eval",
         lambda: {
             "config_type": EvalConfigType.g_eval,

@@ -202,12 +202,14 @@ export async function testV2EvalLlmJudge(
 }
 
 /**
- * Fetch the default (server-assembled) LLM judge prompt for an eval.
+ * Fetch the default (server-assembled) LLM judge prompt for an eval. With
+ * `traceTools`, the default for an agentic judge, which reads the trace with tools.
  */
 export async function getDefaultLlmJudgePrompt(
   projectId: string,
   taskId: string,
   evalId: string,
+  traceTools: boolean,
 ): Promise<DefaultLlmJudgePromptResponse> {
   const { data, error } = await client.GET(
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/default_llm_judge_prompt",
@@ -218,6 +220,7 @@ export async function getDefaultLlmJudgePrompt(
           task_id: taskId,
           eval_id: evalId,
         },
+        query: { trace_tools: traceTools },
       },
     },
   )

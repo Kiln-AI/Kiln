@@ -1,0 +1,3 @@
+=== #6 assistant — tool_calls chars 60–160 of 685 ===
+ dataclasses import dataclass\nfrom decimal import Decimal\n\n\n@dataclass(frozen=True)\nclass LineI
+<truncated: 525 more chars; read_message_text(number=6, part=tool_calls, offset=160)>

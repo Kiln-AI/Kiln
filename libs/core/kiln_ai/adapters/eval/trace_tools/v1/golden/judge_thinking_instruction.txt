@@ -1,0 +1,1 @@
+First, investigate the trace: use the trace tools to read the parts of it you need. Then describe your evaluation and the decision you reach for each score. Don't give your scores in their final format yet: after this, you'll be asked for the formal, formatted version.

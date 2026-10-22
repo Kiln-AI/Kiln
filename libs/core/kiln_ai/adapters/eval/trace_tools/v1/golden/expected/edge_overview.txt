@@ -1,0 +1,15 @@
+Trace: 29 messages, 956 chars (~239 tokens)
+  developer  1  18 chars
+  user       2 159 chars
+  assistant  7 395 chars (+36 reasoning), 8 tool calls
+  tool      10 265 chars, 1 error
+  critic     1  16 chars
+  reviewer_a  1   9 chars
+  reviewer_b  1   9 chars
+  reviewer_c  1   9 chars
+  reviewer_d  1   9 chars
+  +2 more roles
+Tool calls: unknown ×2, a_tool_name_from_a_third_party_server_that_goes_on_well_past… ×1, broken_args ×1, dict_args ×1, legacy_fn ×1, lookup_task ×1, never_answered ×1
+Largest messages: #3 assistant 133 · #2 user 114 · #22 assistant 80 · #21 assistant 78 · #15 assistant 73
+First user message (#2, 114 chars): "Look at this chart\n[image]\n[audio]\n[file]\n[refusal] a refusal part\n[video]\nand tell me \"what\" it shows \\ in\tdetail"
+Last assistant message with text (#21, 78 chars): "Final answer: the chart shows revenue by month.\nTabs\there, and unicode: café ✓"

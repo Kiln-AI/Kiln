@@ -1,0 +1,4 @@
+=== #4 tool result from read_file — content chars 1,300–1,353 of 1,353 ===
+$", "").replace(",", "")
+    return Decimal(cleaned)
+

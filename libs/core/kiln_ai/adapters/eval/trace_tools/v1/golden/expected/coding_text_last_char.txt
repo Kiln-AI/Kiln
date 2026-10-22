@@ -1,0 +1,2 @@
+=== #5 tool result from grep — content chars 32–33 of 33 ===
+y

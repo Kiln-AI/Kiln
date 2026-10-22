@@ -1,0 +1,13 @@
+#1291 assistant 0, calls grep (33)
+#1293 assistant 29, calls read_file (37)
+#1295 assistant 0, calls read_file (37)
+#1297 assistant 0, calls edit_file (38)
+#1299 assistant 0, calls list_dir (36)
+#1301 assistant 0, calls grep, list_dir (71)
+#1304 assistant 0 (+211 reasoning), calls read_file, web_fetch (77)
+#1307 assistant 0, calls web_fetch, list_dir (75)
+#1310 assistant 0, calls web_fetch, read_file (77)
+#1313 assistant 0, calls grep, run_tests (70)
+#1316 assistant 29, calls read_file ×2 (77)
+#1319 assistant 0, calls edit_file, grep (72)
+#1322 assistant 65

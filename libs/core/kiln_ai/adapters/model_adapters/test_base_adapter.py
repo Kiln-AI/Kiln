@@ -10,6 +10,7 @@ from litellm.types.utils import (
     StreamingChoices,
 )
 
+from kiln_ai.adapters.chat.chat_formatter import COT_FINAL_ANSWER_PROMPT
 from kiln_ai.adapters.errors import StructuredOutputParseError
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import (
@@ -443,7 +444,13 @@ def test_build_chat_formatter(
     mock_prompt_builder.chain_of_thought_prompt.assert_called_once()
 
 
-def test_build_chat_formatter_with_prior_trace_returns_multiturn_formatter(adapter):
+@pytest.mark.parametrize("separate_final_answer_turn", [False, True])
+def test_build_chat_formatter_with_prior_trace_returns_multiturn_formatter(
+    adapter, separate_final_answer_turn
+):
+    adapter.base_adapter_config = AdapterConfig(
+        separate_final_answer_turn=separate_final_answer_turn
+    )
     prior_trace = [
         {"role": "user", "content": "hi"},
         {"role": "assistant", "content": "hello"},
@@ -451,6 +458,97 @@ def test_build_chat_formatter_with_prior_trace_returns_multiturn_formatter(adapt
     formatter = adapter.build_chat_formatter("new input", prior_trace=prior_trace)
     assert formatter.__class__.__name__ == "MultiturnFormatter"
     assert formatter.initial_messages() == prior_trace
+
+
+@pytest.mark.parametrize(
+    "tuned_strategy,reasoning_capable",
+    [
+        (None, False),
+        (None, True),
+        (ChatStrategy.single_turn_r1_thinking, False),
+    ],
+)
+def test_build_chat_formatter_separate_final_answer_turn(
+    adapter, tuned_strategy, reasoning_capable
+):
+    """Two turns on every model, with the input sent as is before the thinking
+    instructions, and the structured output format only on the final turn."""
+    mock_prompt_builder = MagicMock()
+    mock_prompt_builder.chain_of_thought_prompt.return_value = "investigate"
+    mock_prompt_builder.build_prompt.return_value = "system message"
+    adapter.prompt_builder = mock_prompt_builder
+    mock_provider = MagicMock()
+    mock_provider.tuned_chat_strategy = tuned_strategy
+    mock_provider.reasoning_capable = reasoning_capable
+    adapter.model_provider = MagicMock(return_value=mock_provider)
+    adapter.base_adapter_config = AdapterConfig(separate_final_answer_turn=True)
+
+    formatter = adapter.build_chat_formatter("judge this")
+
+    first = formatter.next_turn()
+    assert first is not None and not first.final_call
+    assert [(m.role, m.content) for m in first.messages] == [
+        ("system", "system message"),
+        ("user", "judge this\n\ninvestigate"),
+    ]
+    final = formatter.next_turn("findings")
+    assert final is not None and final.final_call
+    assert [(m.role, m.content) for m in final.messages] == [
+        ("user", COT_FINAL_ANSWER_PROMPT)
+    ]
+
+
+def test_build_chat_formatter_separate_final_answer_turn_needs_thinking_instructions(
+    adapter,
+):
+    mock_prompt_builder = MagicMock()
+    mock_prompt_builder.chain_of_thought_prompt.return_value = None
+    mock_prompt_builder.build_prompt.return_value = "system message"
+    adapter.prompt_builder = mock_prompt_builder
+    adapter.base_adapter_config = AdapterConfig(separate_final_answer_turn=True)
+
+    with pytest.raises(ValueError, match="requires a prompt with thinking"):
+        adapter.build_chat_formatter("judge this")
+
+
+@pytest.mark.parametrize(
+    "separate_final_answer_turn, first_turn_reasoning, raises",
+    [
+        (True, "I read the trace.", False),
+        (True, None, True),
+        (False, "I read the trace.", True),
+    ],
+)
+def test_required_reasoning_from_an_earlier_turn(
+    adapter, separate_final_answer_turn, first_turn_reasoning, raises
+):
+    """With a separate final answer turn, reasoning from the first turn satisfies a
+    reasoning model; otherwise only the final call's reasoning counts."""
+    provider = MagicMock()
+    provider.reasoning_capable = True
+    provider.reasoning_optional_for_structured_output = False
+    adapter.base_adapter_config = AdapterConfig(
+        separate_final_answer_turn=separate_final_answer_turn
+    )
+    findings: dict = {"role": "assistant", "content": "Findings."}
+    if first_turn_reasoning is not None:
+        findings["reasoning_content"] = first_turn_reasoning
+    run_output = RunOutput(
+        output="answer",
+        intermediate_outputs={"chain_of_thought": "Findings."},
+        trace=[
+            {"role": "user", "content": "Judge this."},
+            findings,
+            {"role": "user", "content": COT_FINAL_ANSWER_PROMPT},
+            {"role": "assistant", "content": "answer"},
+        ],
+    )
+
+    if raises:
+        with pytest.raises(RuntimeError, match="Reasoning is required"):
+            adapter._raise_if_required_reasoning_missing(provider, run_output)
+    else:
+        adapter._raise_if_required_reasoning_missing(provider, run_output)
 
 
 def test_build_chat_formatter_empty_prior_trace_matches_none(adapter):

@@ -45,6 +45,7 @@ from kiln_ai.datamodel.eval import (
     EvalSplitName,
     EvalTaskInput,
     ExactMatchProperties,
+    LlmJudgeProperties,
     MultiTurnDriveConfig,
     MultiTurnSyntheticEvalInputData,
     SingleTurnEvalInputData,
@@ -2465,6 +2466,55 @@ class TestV2FreshGeneration:
         assert len(generator.calls) == 1
         (saved,) = mock_v2_task_run_eval_config.runs(readonly=True)
         assert saved.scored_run_id == traces[0].id
+
+    @pytest.mark.asyncio
+    async def test_judge_from_a_newer_kiln_fails_each_item_and_saves_nothing(
+        self, mock_v2_task_run_eval, mock_run_config, data_source
+    ):
+        """A judge whose trace toolset version this build lacks fails before its trace
+        is generated, and leaves no record, so the item still runs after an update."""
+        judge = EvalConfig(
+            name="newer judge",
+            config_type=EvalConfigType.v2,
+            properties=LlmJudgeProperties(
+                model_name="gpt-4o",
+                model_provider="openai",
+                prompt_template="Judge the trace.",
+                trace_toolset_version=99,
+            ),
+            parent=mock_v2_task_run_eval,
+        )
+        judge.save_to_file()
+        task = mock_v2_task_run_eval.parent_task()
+        assert task is not None
+        item = TaskRun(
+            input="test input",
+            output=TaskOutput(output="stale output", source=data_source),
+            parent=task,
+        )
+        item.save_to_file()
+        runner = build_task_run_eval_runner([judge], [mock_run_config])
+        failures: list[Exception] = []
+
+        class Recorder(AsyncJobRunnerObserver[EvalJob]):
+            async def on_error(self, job: EvalJob, error: Exception):
+                failures.append(error)
+
+        generator = TraceGenerator(task)
+        with patch.object(BaseV2EvalBridge, "run_task", new=generator):
+            progress = [
+                p async for p in runner.run(observers=[Recorder()], retry_delay=0)
+            ]
+
+        assert progress[-1].errors == 1
+        assert [str(error) for error in failures] == [
+            "This judge uses trace tools version 99, which this version of Kiln "
+            "doesn't support. Update Kiln to run it."
+        ]
+        assert generator.calls == []
+        assert eval_traces(task) == []
+        assert judge.runs(readonly=True) == []
+        assert [job.item.id for job in runner.collect_tasks()] == [item.id]
 
 
 # -------------------------------------------------------------------

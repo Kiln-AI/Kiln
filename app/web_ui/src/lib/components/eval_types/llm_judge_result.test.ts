@@ -96,6 +96,35 @@ describe("LlmJudgeResult", () => {
     expect(container.textContent).not.toContain("Chain-of-thought scoring")
   })
 
+  it("shows the Agentic Judge badge for a judge with trace tools", () => {
+    const { container } = render(LlmJudgeResult, {
+      props: {
+        scores: { quality: 0.9 },
+        eval_config: makeConfig({ trace_toolset_version: 1 }),
+      },
+    })
+    const badge = container.querySelector(".badge-outline")
+    expect(badge?.textContent).toBe("Agentic Judge")
+    expect(badge!.className).toBe("badge badge-outline badge-xs")
+    expect(container.textContent).toContain("Reads the trace with tools")
+    expect(container.textContent).not.toContain("G-Eval")
+  })
+
+  it.each([
+    ["classic", { g_eval: false }],
+    ["G-Eval", { g_eval: true }],
+    ["trace tools unset", { trace_toolset_version: null }],
+  ])("does not show the Agentic Judge badge for a %s judge", (_, overrides) => {
+    const { container } = render(LlmJudgeResult, {
+      props: {
+        scores: { quality: 0.9 },
+        eval_config: makeConfig(overrides),
+      },
+    })
+    expect(container.textContent).not.toContain("Agentic Judge")
+    expect(container.textContent).not.toContain("Reads the trace with tools")
+  })
+
   it("shows scores via EvalResultScores", () => {
     const { container } = render(LlmJudgeResult, {
       props: { scores: { quality: 0.85 } },

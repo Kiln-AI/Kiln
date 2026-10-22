@@ -1,0 +1,3 @@
+2 matches in 2 messages. Showing matches 1–2.
+#4 tool read_file content @704: <truncated> "ntize(Decimal(\"0.01\"))\n\n    def to" <truncated>
+#12 assistant tool_calls @287: <truncated> "tize(Decimal(\\\"0.01\\\"))\\n\"}"

@@ -1,0 +1,10 @@
+=== #2 user (content 202) ===
+Refactor the billing module so invoices are generated from line items. Keep the public API the same and make sure all existing tests still pass. The legacy folder can be deleted once nothing imports it.
+=== #3 assistant (content 41; reasoning 150 not shown; tool_calls 96 not shown) ===
+I'll start by reading the billing module.
+=== #10 assistant (content 23; tool_calls 27 not shown) ===
+Now I'll run the tests.
+=== #12 assistant (content 86; reasoning 86 not shown; tool_calls 299 not shown) ===
+One test fails: tax isn't rounded to cents any more. Fixing the rounding in totals.py.
+=== #16 assistant (content 204) ===
+Done. I split billing into three modules: invoice.py, line_items.py and totals.py. The public Invoice API is unchanged, and all 212 tests pass. billing/legacy didn't exist, so there was nothing to delete.

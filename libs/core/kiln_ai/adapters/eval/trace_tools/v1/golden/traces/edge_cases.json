@@ -1,0 +1,271 @@
+[
+  {
+    "role": "developer",
+    "content": "Answer in English."
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "Look at this chart"
+      },
+      {
+        "type": "image_url",
+        "image_url": {
+          "url": "data:image/png;base64,AAAA"
+        }
+      },
+      {
+        "type": "input_audio",
+        "input_audio": {
+          "data": "AAAA",
+          "format": "wav"
+        }
+      },
+      {
+        "type": "file",
+        "file": {
+          "file_id": "file_1"
+        }
+      },
+      {
+        "type": "refusal",
+        "refusal": "a refusal part"
+      },
+      {
+        "type": "video"
+      },
+      "a stray string",
+      {
+        "text": "a part with no type"
+      },
+      {
+        "type": "text",
+        "text": "and tell me \"what\" it shows \\ in\tdetail"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Let me check."
+      }
+    ],
+    "tool_calls": [
+      {
+        "id": "t1",
+        "type": "function",
+        "function": {
+          "name": "lookup_task",
+          "arguments": "{\"q\":   \"chart\"}"
+        }
+      },
+      {
+        "id": "t2",
+        "type": "function",
+        "function": {
+          "name": "broken_args",
+          "arguments": "{not json"
+        }
+      },
+      {
+        "id": "t3",
+        "type": "function",
+        "function": {
+          "name": "dict_args",
+          "arguments": {
+            "a": 1,
+            "café": "ü"
+          }
+        }
+      },
+      {
+        "id": "t4",
+        "type": "function",
+        "function": {
+          "name": "never_answered",
+          "arguments": "{}"
+        }
+      },
+      "not a dict",
+      {
+        "id": "t5",
+        "type": "function",
+        "function": "not a dict either"
+      },
+      {
+        "id": "t6",
+        "type": "function",
+        "function": {
+          "arguments": null
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "t1",
+    "content": "{\"output\": \"The chart shows revenue by month.\", \"run_id\": \"123\"}",
+    "kiln_task_tool_data": "p:::t:::k:::r"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "t2",
+    "content": "Error: arguments for 'broken_args' are not valid JSON",
+    "is_error": true
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "t3",
+    "content": [
+      {
+        "type": "text",
+        "text": "a=1"
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "t3",
+    "content": "second result for t3",
+    "is_error": "yes"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "missing_id",
+    "content": "orphan result"
+  },
+  {
+    "role": "tool",
+    "content": "a result with no call id"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "t5",
+    "content": "{\"output\": 5}"
+  },
+  {
+    "role": "function",
+    "name": "legacy_fn",
+    "content": "legacy result"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "function_call": {
+      "name": "legacy_fn",
+      "arguments": "{\"x\":1}"
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "",
+    "refusal": "I can't help with that."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "tr",
+        "type": "function",
+        "function": {
+          "name": "task_response",
+          "arguments": "{\"answer\":  \"42\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": "The answer follows.",
+    "reasoning_content": "Thinking about which answer to give.",
+    "tool_calls": [
+      {
+        "id": "tr1",
+        "type": "function",
+        "function": {
+          "name": "task_response",
+          "arguments": "{\"answer\": \"41\"}"
+        }
+      },
+      {
+        "id": "tr2",
+        "type": "function",
+        "function": {
+          "name": "task_response",
+          "arguments": "{\"answer\": \"43\"}"
+        }
+      }
+    ]
+  },
+  {
+    "content": "a message with no role"
+  },
+  {
+    "role": 7,
+    "content": 12,
+    "reasoning_content": 3,
+    "tool_calls": "nope"
+  },
+  {
+    "role": "critic",
+    "content": "An unusual role."
+  },
+  {
+    "role": "user",
+    "content": "{\"output\": \"a user message, so kept as JSON\"}"
+  },
+  "not a message at all",
+  {
+    "role": "assistant",
+    "content": "Final answer: the chart shows revenue by month.\nTabs\there, and unicode: café ✓"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "long",
+        "type": "function",
+        "function": {
+          "name": "a_tool_name_from_a_third_party_server_that_goes_on_well_past_sixty_characters",
+          "arguments": "{}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "long",
+    "content": "{\"output\": \"kept whole\", \"exit_code\": 1}"
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "long",
+    "content": "{\"output\": \"only key, so extracted\"}"
+  },
+  {
+    "role": "reviewer_a",
+    "content": "Review a."
+  },
+  {
+    "role": "reviewer_b",
+    "content": "Review b."
+  },
+  {
+    "role": "reviewer_c",
+    "content": "Review c."
+  },
+  {
+    "role": "reviewer_d",
+    "content": "Review d."
+  },
+  {
+    "role": "reviewer_e",
+    "content": "Review e."
+  }
+]

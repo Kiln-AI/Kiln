@@ -6180,6 +6180,12 @@ export interface components {
              */
             g_eval: boolean;
             /**
+             * Trace Tools
+             * @description Give the judge read-only tools for reading the judged trace (an agentic judge), at the latest toolset version. If judge_prompt is unset, the default prompt for trace tools is used. Can't be combined with g_eval.
+             * @default false
+             */
+            trace_tools: boolean;
+            /**
              * Judge Prompt
              * @description Override the judge prompt template. If unset, the server assembles a rich default from the eval's task and spec.
              */
@@ -9786,7 +9792,7 @@ export interface components {
         };
         /**
          * LlmJudgeBuilderInput
-         * @description Shared fields for llm_judge: model, provider, g_eval.
+         * @description Shared fields for llm_judge: model, provider, scoring mode.
          */
         LlmJudgeBuilderInput: {
             /**
@@ -9801,6 +9807,12 @@ export interface components {
              * @description Whether to use G-Eval logprob scoring.
              */
             g_eval: boolean;
+            /**
+             * Trace Tools
+             * @description Give the judge read-only tools for reading the judged trace (an agentic judge), at the latest toolset version. If judge_prompt is unset, the default prompt for trace tools is used. Can't be combined with g_eval.
+             * @default false
+             */
+            trace_tools: boolean;
             /**
              * Judge Prompt
              * @description Override the judge prompt template. If unset, the server assembles a rich default from the eval's task and spec.
@@ -9849,6 +9861,11 @@ export interface components {
             /** Judge Instructions */
             judge_instructions?: string[] | null;
             run_config?: components["schemas"]["LlmJudgeRunConfig"] | null;
+            /**
+             * Trace Toolset Version
+             * @description Trace tools for the judge model: read-only tools for reading the judged trace. None: off. A version number: on, with that version's tools and trace_overview output, locked for the life of the judge.
+             */
+            trace_toolset_version?: number | null;
         };
         /**
          * LlmJudgeRunConfig
@@ -20193,7 +20210,10 @@ export interface operations {
     };
     get_default_llm_judge_prompt_api_projects__project_id__tasks__task_id__evals__eval_id__default_llm_judge_prompt_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Return the default prompt for a judge with trace tools (an agentic judge): the run's system prompt and a trace overview instead of the full trace. */
+                trace_tools?: boolean;
+            };
             header?: never;
             path: {
                 /** @description The unique identifier of the project. */

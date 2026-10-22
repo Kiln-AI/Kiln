@@ -1,0 +1,1 @@
+Verbose mode (?x) and full case folding (?f) aren't supported in search patterns. Write the pattern without them.

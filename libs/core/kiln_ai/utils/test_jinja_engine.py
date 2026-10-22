@@ -1,15 +1,17 @@
 import pytest
-from jinja2 import Undefined, UndefinedError
-from jinja2.sandbox import SecurityError
+from jinja2 import TemplateAssertionError, Undefined, UndefinedError
+from jinja2.sandbox import SandboxedEnvironment, SecurityError
 
 from kiln_ai.datamodel.input_transform import JinjaInputTransform
 from kiln_ai.utils.jinja_engine import (
     JinjaExtractionError,
+    _template_env,
     compile_expression_or_raise,
     compile_template_or_raise,
     expression_variables,
     extract,
     render_input_transform,
+    template_env_with_filters,
 )
 
 
@@ -27,6 +29,15 @@ class TestCompileTemplateOrRaise:
     def test_unclosed_block_raises_value_error(self):
         with pytest.raises(ValueError, match="Invalid Jinja2 template"):
             compile_template_or_raise("{% for x in items %}")
+
+
+class TestTraceOverviewPlaceholder:
+    def test_compiles_outside_judges(self):
+        compile_template_or_raise("{{ trace | trace_overview }}")
+
+    def test_rendering_outside_judges_raises(self):
+        with pytest.raises(JinjaExtractionError, match="only available in LLM judge"):
+            _template_env.from_string("{{ trace | trace_overview }}").render(trace=[])
 
 
 class TestCompileExpressionOrRaise:
@@ -520,3 +531,34 @@ class TestFormatTraceFilter:
             "Inventory says 4.\n</assistant_reasoning_message>\n\n"
             "assistant:\n<assistant_message>\nYes — 4 units in stock.\n</assistant_message>"
         )
+
+
+class TestTemplateEnvWithFilters:
+    def test_adds_and_replaces_filters_without_mutating_base(self):
+        base_filters = dict(_template_env.filters)
+        env = template_env_with_filters(
+            {"shout": lambda value: value.upper(), "fromjson": lambda value: "replaced"}
+        )
+
+        assert env.from_string("{{ 'hi' | shout }}").render() == "HI"
+        assert env.from_string("{{ '{}' | fromjson }}").render() == "replaced"
+        assert env.from_string("{{ x | format_trace }}").render(x=[]) == ""
+        assert dict(_template_env.filters) == base_filters
+        with pytest.raises(TemplateAssertionError):
+            _template_env.from_string("{{ 'hi' | shout }}")
+
+    def test_binding_trace_overview_keeps_the_base_placeholder(self):
+        env = template_env_with_filters({"trace_overview": lambda value: "overview"})
+
+        assert env.from_string("{{ x | trace_overview }}").render(x=[]) == "overview"
+        with pytest.raises(JinjaExtractionError, match="only available in LLM judge"):
+            _template_env.from_string("{{ x | trace_overview }}").render(x=[])
+
+    def test_keeps_template_env_settings(self):
+        env = template_env_with_filters({})
+
+        assert isinstance(env, SandboxedEnvironment)
+        with pytest.raises(UndefinedError):
+            env.from_string("{{ missing }}").render()
+        with pytest.raises(SecurityError):
+            env.from_string("{{ ''.__class__.__mro__ }}").render()

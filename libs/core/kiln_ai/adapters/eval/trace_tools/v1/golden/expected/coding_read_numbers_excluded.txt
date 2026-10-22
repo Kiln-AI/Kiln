@@ -1,0 +1,3 @@
+=== #2 user (content 202) ===
+Refactor the billing module so invoices are generated from line items. Keep the public API the same and make sure all existing tests still pass. The legacy folder can be deleted once nothing imports it.
+Not shown: #1 (role not in roles), #6 (no requested parts), #14 (no requested parts)

@@ -111,6 +111,28 @@ describe("EvalConfigInstruction", () => {
       expect(methodLine!.textContent).toContain("G-Eval")
     })
 
+    it("shows Method: Agentic Judge for V2 llm_judge with trace tools, without the version", () => {
+      const config = makeV2Config("llm_judge", {
+        model_name: "gpt-4",
+        model_provider: "openai",
+        prompt_template: "Evaluate.",
+        reference_keys: [],
+        g_eval: false,
+        trace_toolset_version: 7,
+      })
+      const { container } = render(EvalConfigInstruction, {
+        props: { eval_config: config },
+      })
+      const methodLine = container.querySelector(
+        '[data-testid="judge-method-line"]',
+      )
+      expect(methodLine).not.toBeNull()
+      expect(methodLine!.textContent!.replace(/\s+/g, " ").trim()).toBe(
+        "Method: Agentic Judge",
+      )
+      expect(container.textContent).not.toContain("7")
+    })
+
     it("does not show Method line for vanilla V2 llm_judge", () => {
       const config = makeV2Config("llm_judge", {
         model_name: "gpt-4",
