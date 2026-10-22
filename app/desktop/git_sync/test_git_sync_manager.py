@@ -441,9 +441,12 @@ async def test_write_lock_released_when_waiter_cancelled(manager, monkeypatch):
     manager._WRITE_LOCK_TIMEOUT = 2
     holding, release = asyncio.Event(), asyncio.Event()
     callback_ran = asyncio.Event()
+    cancelled_waiter_acquired = False
     real_release_if_acquired = manager._release_if_acquired
 
     def release_if_acquired(acquire_task):
+        nonlocal cancelled_waiter_acquired
+        cancelled_waiter_acquired = acquire_task.result()
         real_release_if_acquired(acquire_task)
         callback_ran.set()
 
@@ -468,6 +471,7 @@ async def test_write_lock_released_when_waiter_cancelled(manager, monkeypatch):
     release.set()
     await first
     await asyncio.wait_for(callback_ran.wait(), timeout=2)
+    assert cancelled_waiter_acquired
     assert not manager._write_lock.locked()
 
     async with manager.write_lock():
