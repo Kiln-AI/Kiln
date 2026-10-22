@@ -6,6 +6,11 @@
     increment_tag as increment_task_tag,
   } from "$lib/stores/tag_store"
   import {
+    load_eval_tags,
+    eval_tag_store_by_task_id,
+    increment_eval_tag,
+  } from "$lib/stores/eval_tag_store"
+  import {
     load_document_tags,
     document_tag_store_by_project_id,
     increment_document_tag,
@@ -17,7 +22,7 @@
   export let on_select: (tag: string) => void = () => {}
   export let on_escape: () => void = () => {}
   export let focus_on_mount: boolean = false
-  type ExampleTagSet = "task_run" | "doc"
+  type ExampleTagSet = "task_run" | "doc" | "eval"
   export let example_tag_set: ExampleTagSet = "task_run"
   let error: string | null = null
   let id = crypto.randomUUID()
@@ -65,6 +70,16 @@
         }
         break
       }
+      case "eval": {
+        if (task_id) {
+          increment_eval_tag(task_id, tag)
+        } else {
+          console.error(
+            "Attempted to increment a tag set for evals, but no task_id was provided",
+          )
+        }
+        break
+      }
       default: {
         // Check we don't miss a new case
         const _: never = example_tag_set
@@ -98,6 +113,16 @@
         }
         break
       }
+      case "eval": {
+        if (!project_id || !task_id) {
+          console.error(
+            "Requested to load eval tags, without setting project ID and task ID",
+          )
+        } else {
+          await load_eval_tags(project_id, task_id)
+        }
+        break
+      }
       default: {
         // typecheck error if we miss a case
         const _: never = example_tag_set
@@ -115,6 +140,7 @@
 
   $: task_tag_counts = $tag_store_by_task_id
   $: document_tag_counts = $document_tag_store_by_project_id
+  $: eval_tag_counts = $eval_tag_store_by_task_id
 
   $: sorted_tag_counts = (() => {
     let current_tag_counts: Record<string, number> = {}
@@ -135,6 +161,12 @@
           current_tag_counts = task_tag_counts?.[task_id] ?? {}
         }
         default_tags = DEFAULT_TASK_TAGS
+        break
+      }
+      case "eval": {
+        if (task_id !== null) {
+          current_tag_counts = eval_tag_counts?.[task_id] ?? {}
+        }
         break
       }
       default: {

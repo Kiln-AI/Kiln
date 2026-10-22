@@ -78,6 +78,11 @@
   let eval_scores_cache: Record<string, RunConfigEvalScoresSummary> = {}
   let eval_scores_loading: Record<string, boolean> = {}
   let eval_scores_errors: Record<string, string> = {}
+  // Every run config's scores load in one request when the page opens. The
+  // per-run-config fetches below wait for it, then pick up run configs it
+  // missed: ones created later, or all of them if the request failed.
+  let all_eval_scores_requested_for_task: string | null = null
+  let all_eval_scores_loading = false
 
   // Eval data cache (full eval objects, keyed by eval_id)
   let eval_data_cache: Record<string, Eval> = {}
@@ -224,6 +229,36 @@
     }
   }
 
+  async function fetch_all_eval_scores(run_config_ids: string[]) {
+    all_eval_scores_requested_for_task = task_id
+    if (run_config_ids.length === 0) {
+      return
+    }
+    all_eval_scores_loading = true
+    for (const id of run_config_ids) {
+      eval_scores_loading[id] = true
+    }
+    try {
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/eval_scores",
+        { params: { path: { project_id, task_id } } },
+      )
+      if (fetch_error) {
+        throw fetch_error
+      }
+      eval_scores_cache = { ...eval_scores_cache, ...data }
+    } catch (err) {
+      // Left out of the cache, so the per-run-config fetches retry each one
+      // and report errors per run config.
+      console.error("Failed to fetch eval scores for all run configs", err)
+    } finally {
+      for (const id of run_config_ids) {
+        eval_scores_loading[id] = false
+      }
+      all_eval_scores_loading = false
+    }
+  }
+
   async function fetch_eval_scores(run_config_id: string) {
     if (
       eval_scores_cache[run_config_id] ||
@@ -262,7 +297,12 @@
   }
 
   // Reactively fetch eval scores when models are selected (for table)
-  $: {
+  // Compares the task id directly: this block starts the batch request, and a
+  // reactive copy of the flag would not update within the same flush.
+  $: if (
+    all_eval_scores_requested_for_task === task_id &&
+    !all_eval_scores_loading
+  ) {
     selectedModels.forEach((modelId) => {
       if (
         modelId &&
@@ -277,7 +317,16 @@
   }
 
   // Fetch eval scores for ALL run configs (for chart)
-  $: if (current_task_run_configs) {
+  $: if (
+    current_task_run_configs &&
+    all_eval_scores_requested_for_task !== task_id
+  ) {
+    fetch_all_eval_scores(
+      current_task_run_configs.flatMap((config) =>
+        config.id ? [config.id] : [],
+      ),
+    )
+  } else if (current_task_run_configs && !all_eval_scores_loading) {
     current_task_run_configs.forEach((config) => {
       if (
         config.id &&
