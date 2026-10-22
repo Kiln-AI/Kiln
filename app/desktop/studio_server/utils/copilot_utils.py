@@ -675,10 +675,10 @@ def delete_multi_turn_batch_chains(task: Task, batch_tag: str) -> int:
     turns carry no tags, no turn has a rating, a repaired output or Feedback,
     and no run outside the chain continues from any turn. Anything else means
     a person or some other flow (an eval save, a manual rating, a continued
-    conversation) claimed the chain — it is no longer an abandoned drive
-    artifact, so every turn is left alone. The exact-set match fails CLOSED:
-    if the runner's tag scheme ever grows, batches get skipped (orphaned)
-    rather than risking deletion of claimed chains.
+    conversation) claimed the chain, so every turn is left alone. The
+    exact-set match fails CLOSED: if the runner's tag scheme ever grows,
+    batches get skipped (orphaned) rather than risking deletion of claimed
+    chains.
     """
     # include_intermediate_runs: the ancestor walk needs the complete on-disk
     # set, not the default leaves-only view. One corpus load serves the leaf
@@ -769,11 +769,11 @@ def delete_single_turn_batch_runs(task: Task, batch_tag: str) -> int:
     Safety mirrors delete_multi_turn_batch_chains: a run is only deleted when
     it carries EXACTLY the pipeline's own tags and has no rating, repaired
     output or Feedback. Anything else means a person or another flow (an eval
-    save, a manual rating) claimed it — no longer an abandoned drive artifact,
-    so it is left alone. The exact-set match fails CLOSED: if the tag scheme
-    ever grows, batches get skipped (orphaned) rather than risking deletion of
-    claimed runs. No descendant check is needed — single-turn tasks reject
-    chained runs at the datamodel level.
+    save, a manual rating) claimed it, so it is left alone. The exact-set
+    match fails CLOSED: if the tag scheme ever grows, batches get skipped
+    (orphaned) rather than risking deletion of claimed runs. No descendant
+    check is needed — single-turn tasks reject chained runs at the datamodel
+    level.
     """
     target_tag = f"{_TAG_PREFIX_SINGLE_TURN_DRIVE_BATCH}{batch_tag}"
     pipeline_tags = {_TAG_SINGLE_TURN_DRIVE, target_tag}
