@@ -771,6 +771,7 @@ def test_cloudflare_thinking_levels(model_id, expected_levels, expected_default)
         for p in model.providers
         if p.name == ModelProviderName.cloudflare and p.model_id == model_id
     )
-    assert provider.reasoning_capable
+    # Adaptive-reasoning models stay False: a run with no reasoning would otherwise fail.
+    assert not provider.reasoning_capable
     assert provider.available_thinking_levels == expected_levels
     assert provider.default_thinking_level == expected_default
