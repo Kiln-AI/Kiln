@@ -457,7 +457,7 @@ Replace the `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `
 - [ ] Flags inherited from predecessor and adjusted for quirks
 - [ ] `reasoning_capable` defaulted to `False` for adaptive-reasoning models (only `True` for always-emits-reasoning models — see [Reasoning Capable Default](#reasoning-capable-default))
 - [ ] Thinking levels configured if model supports reasoning effort (see [Thinking Levels Reference](#thinking-levels-reference))
-- [ ] Cloudflare: `check_cloudflare_thinking_levels.py` reports no ❌ finding (see [Cloudflare thinking levels](#cloudflare-thinking-levels))
+- [ ] Cloudflare and OpenRouter: `check_thinking_levels.py` reports no ❌ finding (see [Cloudflare thinking levels](#cloudflare-thinking-levels) and [OpenRouter (general)](#openrouter-general))
 - [ ] Every `suggested_for_evals` entry with thinking levels defaults to `"medium"` (or `"low"`), never `"none"` (see [Judge Models Must Reason by Default](#judge-models-must-reason-by-default))
 - [ ] Preserve existing comments from predecessor (e.g. reasoning notes, MIME type groupings)
 - [ ] Zero-sum applied if model is suggested for evals/data gen
@@ -574,7 +574,7 @@ model.
   where it publishes the values each model accepts. Add a quirks section
   that names that source and says thinking levels are required wherever
   it lists values. If the provider silently remaps unsupported values,
-  add a checker like `check_cloudflare_thinking_levels.py`, because a
+  add the provider to `check_thinking_levels.py`, because a
   paid test cannot see a remap.
 - `model_adapters/test_thinking_level_paid.py` — add the provider to the
   provider list of `test_thinking_level_reasoning_content`, so each of its
@@ -625,6 +625,7 @@ plumbing PR must not skip them.
 - Some models: `openrouter_skip_required_parameters=True`
 - Logprobs: `logprobs_openrouter_options=True` if supported
 - Always `multimodal_requires_pdf_as_image=True` (OpenRouter's PDF routing breaks LiteLLM)
+- Thinking levels: offer only values in the model's `reasoning.supported_efforts` (see [Thinking Levels Reference](#thinking-levels-reference)). OpenRouter maps an unlisted effort to a listed one, so an extra level silently runs a different effort. When the model has no `reasoning.supported_efforts`, OpenRouter turns the effort into a thinking-token budget for Claude, so `CLAUDE_OPENROUTER_THINKING_LEVELS` (with Minimal) fits only those Claude models. `check_thinking_levels.py` checks every OpenRouter entry; a missing level list on OpenRouter is a note, because Kiln leaves levels off some models on purpose.
 
 ### Featherless AI
 
@@ -678,10 +679,10 @@ Runs through LiteLLM's generic `openai/` route against Cloudflare's OpenAI-compa
   - Cloudflare edits these lists. After every change to a Cloudflare entry, and on every run of this skill, run the checker below. It must report no ❌ finding:
 
     ```bash
-    uv run python .agents/skills/claude-maintain-models/scripts/check_cloudflare_thinking_levels.py
+    uv run python .agents/skills/claude-maintain-models/scripts/check_thinking_levels.py
     ```
 
-    It compares every Cloudflare entry in this checkout with the catalog, and exits 1 on a missing level list, a level or default outside `supported_efforts`, or levels on a model whose catalog lists none. A `note:` line (`not_offered`) is information only.
+    It compares every Cloudflare and OpenRouter entry in this checkout with the provider's catalog, and exits 1 on a level or default outside `supported_efforts`. For Cloudflare it also exits 1 on a missing level list, or levels on a model whose catalog lists none. `--provider cloudflare` or `--provider openrouter` checks one provider. A `note:` line is information only.
   - Then run the paid `test_thinking_level_reasoning_content` for each new level. If `-k "<model_enum>"` collects no `cloudflare/...` case, `cloudflare` is missing from the provider list in `libs/core/kiln_ai/adapters/model_adapters/test_thinking_level_paid.py`; add it.
 - **Structured output:** these models take the OpenAI `response_format` envelope, so start from `json_schema` and fall back only on test failures. Cloudflare's JSON mode doesn't support streaming.
 - **Don't send `max_tokens`.** Live tests showed no truncation on the OpenAI-format models without it.

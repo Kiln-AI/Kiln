@@ -155,12 +155,16 @@ def get_api_key(env_var: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+def fetch_openrouter_models() -> list[dict]:
+    """Returns OpenRouter's raw model records. No auth required."""
+    return fetch_json("https://openrouter.ai/api/v1/models")["data"]
+
+
 def fetch_openrouter() -> tuple[set[str], dict[str, str]]:
     """Returns (model_ids, expiring_dict) from OpenRouter. No auth required."""
-    data = fetch_json("https://openrouter.ai/api/v1/models")
     ids: set[str] = set()
     expiring: dict[str, str] = {}
-    for m in data["data"]:
+    for m in fetch_openrouter_models():
         ids.add(m["id"])
         if m.get("expiration_date"):
             expiring[m["id"]] = m["expiration_date"]
