@@ -1425,10 +1425,13 @@ def test_backwards_compatibility_with_v0_19(tmp_path):
         current_json_path,
     )
 
-    # Test script using uv inline script metadata to install v0.19
+    # Test script using uv inline script metadata to install v0.19.
+    # kiln-ai 0.19 does not pin together; together 3.0 removed the
+    # together.types.files module that 0.19 imports.
     test_script = f'''# /// script
 # dependencies = [
 #   "kiln-ai==0.19.0",
+#   "together<3",
 #   "pandas",
 # ]
 # ///
