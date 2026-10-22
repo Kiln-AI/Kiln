@@ -670,7 +670,7 @@ Runs through LiteLLM's generic `openai/` route against Cloudflare's OpenAI-compa
   | `planned_deprecation_date` present | do **not** add the model |
 
 - <a id="cloudflare-thinking-levels"></a>**Thinking levels come from the catalog, and only from the catalog.** Kiln sends the level as `reasoning_effort`. For each model, `reasoning_effort` in the catalog lists `supported_efforts`, a `default_effort`, and `normalizes_to`: the values that Cloudflare silently changes to another effort. A remapped value returns HTTP 200, so a live call or a paid test cannot find it. Example: GLM 5.3 maps `medium` to `max`, so a "Medium" option runs the most expensive effort.
-  - Offer each value in `supported_efforts`, and no other value. Do not copy the levels of the same model on another provider.
+  - Offer only values in `supported_efforts`, and each of them unless its paid test fails. The list is not always right: on DeepSeek V4 Pro 0813, DeepSeek V4 Flash 0731 and GLM 5.2, `none` still returns reasoning, so those entries have no Off level. Do not copy the levels of the same model on another provider.
   - Labels: `none` → `"Off"`, `low` → `"Low"`, `medium` → `"Medium"`, `high` → `"High"`, `xhigh` → `"Extra High"`, `max` → `"Max"`. List them from least to most effort.
   - `default_thinking_level` is `default_effort`, unless the entry is suggested for evals (see [Judge Models Must Reason by Default](#judge-models-must-reason-by-default)).
   - `mandatory: true` means `none` is not in the list; do not add an Off level.
@@ -716,11 +716,11 @@ No API provides the available thinking levels programmatically — they must be 
 
 3. **Inherit from predecessor** — if the same family/tier model has a `_THINKING_LEVELS` dict, the new model very likely uses the same or a superset.
 
-4. **OpenRouter `supported_parameters`** — check if `reasoning` is present:
+4. **OpenRouter `reasoning`** — most models list their efforts:
    ```bash
-   curl -s https://openrouter.ai/api/v1/models | jq '.data[] | select(.id == "SLUG") | .supported_parameters'
+   curl -s https://openrouter.ai/api/v1/models | jq '.data[] | select(.id == "SLUG") | {reasoning, supported_parameters}'
    ```
-   If `reasoning` is absent, the model does not support effort levels — skip thinking levels entirely.
+   `reasoning.supported_efforts` lists the efforts (highest first) and `reasoning.default_effort` the default. If `reasoning` is absent and `supported_parameters` has no `reasoning`, the model does not support effort levels — skip thinking levels entirely. OpenRouter documents that it maps an unsupported effort to the nearest supported one for some models, so an extra level may silently run a different effort.
 
 5. **Smoke test** — as a last resort, send a request with an invalid effort level and check the error message, which often enumerates the valid values.
 
@@ -760,7 +760,6 @@ Reuse when levels match exactly. Create a new constant only if levels differ. Th
 ### Sources That Do NOT Work
 
 These were investigated and confirmed to lack thinking level data:
-- **OpenRouter API** — only boolean `reasoning` in `supported_parameters`
 - **LiteLLM catalog** — only `supports_reasoning: true/false`
 - **Google Gemini models API** — only `thinking: true/false`
 - **OpenAI `/v1/models` endpoint** — minimal object with no capability fields

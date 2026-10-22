@@ -794,11 +794,40 @@ QWEN_3P8_GROQ_THINKING_LEVELS = {
     "Medium": "medium",
 }
 
-# Cloudflare Workers AI takes `reasoning_effort` low/medium/high for DeepSeek V4.1
-# Flash 1017 and GLM 5.3.
-CLOUDFLARE_LOW_MEDIUM_HIGH_THINKING_LEVELS = {
+# Cloudflare levels mirror `reasoning_effort.supported_efforts` in Cloudflare's
+# model catalog. Cloudflare silently remaps any other value (`normalizes_to`),
+# so an extra level would run a different effort than its label says.
+DEEPSEEK_V4_1_FLASH_CLOUDFLARE_THINKING_LEVELS = {
+    "Off": "none",
     "Low": "low",
-    "Medium": "medium",
+    "High": "high",
+    "Max": "max",
+}
+
+# The catalog lists `none` for DeepSeek V4 Pro 0813 and V4 Flash 0731, but both
+# still return reasoning with it, so there is no Off level.
+DEEPSEEK_V4_CLOUDFLARE_THINKING_LEVELS = {
+    "Low": "low",
+    "High": "high",
+    "Max": "max",
+}
+
+# Reasoning is mandatory on GLM 5.3 and GLM 5.3 Flash, so there is no Off level.
+GLM_5_3_CLOUDFLARE_THINKING_LEVELS = {
+    "Low": "low",
+    "High": "high",
+    "Max": "max",
+}
+
+# The catalog lists `none` for GLM 5.2, but the model still returns reasoning
+# with it, so there is no Off level.
+GLM_5_2_CLOUDFLARE_THINKING_LEVELS = {
+    "High": "high",
+    "Max": "max",
+}
+
+KIMI_K2_6_CLOUDFLARE_THINKING_LEVELS = {
+    "Off": "none",
     "High": "high",
 }
 
@@ -6457,7 +6486,7 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/deepseek-ai/deepseek-v4.1-flash-1017",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=CLOUDFLARE_LOW_MEDIUM_HIGH_THINKING_LEVELS,
+                available_thinking_levels=DEEPSEEK_V4_1_FLASH_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="high",
                 supports_vision=True,
                 multimodal_capable=True,
@@ -6627,6 +6656,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/deepseek-ai/deepseek-v4-pro-0813",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=DEEPSEEK_V4_CLOUDFLARE_THINKING_LEVELS,
+                default_thinking_level="high",
             ),
         ],
     ),
@@ -6666,6 +6697,8 @@ built_in_models: List[KilnModel] = [
                 suggested_for_synthetic_user=True,
                 model_id="@cf/deepseek-ai/deepseek-v4-flash-0731",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=DEEPSEEK_V4_CLOUDFLARE_THINKING_LEVELS,
+                default_thinking_level="high",
             ),
             KilnModelProvider(
                 name=ModelProviderName.featherless_ai,
@@ -9837,8 +9870,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/zai-org/glm-5.3",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=CLOUDFLARE_LOW_MEDIUM_HIGH_THINKING_LEVELS,
-                default_thinking_level="high",
+                available_thinking_levels=GLM_5_3_CLOUDFLARE_THINKING_LEVELS,
+                default_thinking_level="max",
             ),
         ],
     ),
@@ -9968,6 +10001,8 @@ built_in_models: List[KilnModel] = [
                 suggested_for_synthetic_user=True,
                 model_id="@cf/zai-org/glm-5.3-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GLM_5_3_CLOUDFLARE_THINKING_LEVELS,
+                default_thinking_level="max",
                 supports_vision=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
@@ -10050,6 +10085,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/zai-org/glm-5.2",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GLM_5_2_CLOUDFLARE_THINKING_LEVELS,
+                default_thinking_level="max",
             ),
         ],
     ),
@@ -10669,6 +10706,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/moonshotai/kimi-k2.6",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=KIMI_K2_6_CLOUDFLARE_THINKING_LEVELS,
+                default_thinking_level="high",
                 supports_vision=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
