@@ -74,7 +74,40 @@ function fixture(): CoverageData {
     ]),
     floor: null as CoverageData["floor"],
     active_count: 1,
+    rulings: [],
+    amendments: [],
+    rulings_for: new Map(),
+    constitution_version: null,
   }
+}
+
+function fixture_with_rulings(): CoverageData {
+  const data = fixture()
+  data.rulings = [
+    {
+      id: "C-1",
+      date: "2026-09-01",
+      status: "adopted",
+      version: "v4",
+      principles: [1],
+      raised_by: "Sam",
+      ruled_by: "Spencer",
+      side: "UpKeep",
+      question: "Does a delete need a yes?",
+      ruling: "Yes.",
+    },
+    {
+      id: "C-2",
+      date: "2026-10-01",
+      status: "open",
+      principles: [],
+      question: "Method?",
+      ruling: "Pending.",
+    },
+  ]
+  data.rulings_for = new Map([[1, ["C-1"]]])
+  data.constitution_version = { version: "v11", date: "2026-10-21" }
+  return data
 }
 
 function fixture_with_floor(): CoverageData {
@@ -131,6 +164,35 @@ describe("EvalCoverageChart", () => {
     expect(container.textContent).toContain("from Exact Record Modification")
     await fireEvent.mouseEnter(arcs[3])
     expect(container.textContent).toMatch(/no eval covers this principle/i)
+  })
+
+  it("draws the rulings ring and links a ruling to its principle and evals", async () => {
+    const { container } = render(EvalCoverageChart, {
+      data: fixture_with_rulings(),
+    })
+    // 4 arcs + 2 ruling dots
+    expect(container.querySelectorAll('svg g[role="button"]')).toHaveLength(6)
+    // one tick: C-1 on principle 1
+    expect(container.querySelectorAll('svg[role="group"] line')).toHaveLength(1)
+    expect(container.textContent).toContain("Rulings")
+    expect(container.textContent).toContain("1 on a principle · 1 open")
+    expect(container.textContent).toContain("v11, 2026-10-21")
+    const dot = container.querySelector('svg g[aria-label^="C-1"]')!
+    await fireEvent.mouseEnter(dot)
+    expect(container.textContent).toContain("Does a delete need a yes?")
+    expect(container.textContent).toContain("Spencer ruled")
+    expect(container.textContent).toContain(
+      "tested by Exact Record Modification",
+    )
+    // one hover line, from the dot to the arc
+    expect(
+      container.querySelectorAll('svg[role="group"] path[stroke-linecap]'),
+    ).toHaveLength(1)
+    await fireEvent.mouseLeave(dot)
+    // the principle lists its rulings
+    const arcs = container.querySelectorAll('svg g[role="button"]')
+    await fireEvent.mouseEnter(arcs[0])
+    expect(container.textContent).toContain("Rulings (1): C-1 (Sep 1)")
   })
 
   it("falls back to a count when there is no constitution", () => {

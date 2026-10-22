@@ -4,7 +4,11 @@
     CoverageNode,
   } from "$lib/utils/eval_coverage/eval_coverage_data"
   import { packWeighted } from "$lib/utils/eval_coverage/circle_pack"
-  import { principleGroups } from "$lib/utils/eval_coverage/constitution"
+  import {
+    principleGroups,
+    sortRulings,
+    type Ruling,
+  } from "$lib/utils/eval_coverage/constitution"
   import { formatPriority } from "$lib/utils/formatters"
   import SettingsHeader from "$lib/ui/settings_header.svelte"
 
@@ -17,8 +21,11 @@
    * are principles with no eval, and open the eval builder. The ring around
    * the outside has one arc per principle of the constitution, grouped by
    * the value each serves; an arc's length is the principle's importance
-   * and its tint is the pass rate of the evals that judge it. Hovering
-   * links the ring and the circles.
+   * and its tint is the pass rate of the evals that judge it. When the
+   * constitution carries the court's rulings, a third ring of dots shows
+   * them in date order outside, each principle's arc gets one tick per
+   * ruling on it, and hovering draws the line from a ruling to its arc.
+   * Hovering links all three: ruling, principle, evals.
    */
 
   export let data: CoverageData
@@ -34,10 +41,22 @@
   const FILL = 0.8 // target share of the boundary area the circles fill
   const RING_GAP_DEG = 2.2
   const GROUP_GAP_DEG = 7
+  // The rulings ring: ticks on the arcs, a bus ring the hover lines follow
+  // (so they never cross the circles), the dots and their date labels.
+  const TICK_IN = 114.3
+  const TICK_OUT = 117.6
+  const BUS_R = 139.5
+  const DOT_R = 151.5
+  const DOT_SZ = 2.3
+  const METHOD_SZ = 1.5
+  const DATE_R = 158.6
+  // Who ruled: up to two sides get a colour of their own (primary, secondary).
+  const SIDE_COLOURS = ["#415CF5", "#131517"]
 
   type Hover =
     | { kind: "node"; id: string }
     | { kind: "principle"; n: number }
+    | { kind: "ruling"; id: string }
     | null
 
   let hover: Hover = null
@@ -59,11 +78,67 @@
   $: principles = data.principles
   $: groups = principleGroups(principles)
   $: has_groups = groups.length > 1 || (groups[0]?.name ?? "") !== ""
-  $: VIEW = has_groups ? 160 : 130
-  // The labels reach about 140 units out; the box is trimmed below that so
-  // the chart wastes no height, and capped to the viewport so the text under
-  // it stays on screen.
-  $: VIEW_Y = has_groups ? 146 : 130
+  $: rulings = data.rulings
+  $: has_rulings = rulings.length > 0
+  $: rulings_by_id = new Map(rulings.map((r) => [r.id, r]))
+  $: VIEW = has_rulings ? 170 : has_groups ? 160 : 130
+  // Without rulings the labels reach about 140 units out; the box is trimmed
+  // below that so the chart wastes no height, and capped to the viewport so
+  // the text under it stays on screen. With rulings the dots go all round.
+  $: VIEW_Y = has_rulings ? 166 : has_groups ? 146 : 130
+  $: sides = (() => {
+    const out: string[] = []
+    for (const r of rulings)
+      if (r.side && !out.includes(r.side)) out.push(r.side)
+    return out.slice(0, SIDE_COLOURS.length)
+  })()
+  // The dots: date order, clockwise from the top, with a gap at the top.
+  $: dots = rulings.map((r, i) => {
+    const angle =
+      rulings.length === 1 ? -90 : -83 + (i * 346) / (rulings.length - 1)
+    const pos = polar(DOT_R, angle)
+    const method = (r.principles ?? []).length === 0
+    return {
+      r,
+      angle,
+      x: pos.x,
+      y: pos.y,
+      size: method ? METHOD_SZ : DOT_SZ,
+      method,
+      hollow: !method && r.status !== "adopted",
+    }
+  })
+  $: dot_angle = new Map(dots.map((d) => [d.r.id, d.angle]))
+  // A date label where the month changes, and on a day with six or more rulings.
+  $: date_labels = (() => {
+    const count = new Map<string, number>()
+    for (const r of rulings) count.set(r.date, (count.get(r.date) ?? 0) + 1)
+    const out: { x: number; y: number; anchor: string; text: string }[] = []
+    let last_month = ""
+    let last_date = ""
+    for (const d of dots) {
+      const date = d.r.date
+      if (!date || date === last_date) continue
+      const month = date.slice(0, 7)
+      if (month !== last_month || (count.get(date) ?? 0) >= 6) {
+        const pos = polar(DATE_R, d.angle)
+        const c = Math.cos((d.angle * Math.PI) / 180)
+        out.push({
+          x: pos.x,
+          y: pos.y,
+          anchor: c > 0.3 ? "start" : c < -0.3 ? "end" : "middle",
+          text: short_date(date),
+        })
+      }
+      last_month = month
+      last_date = date
+    }
+    return out
+  })()
+  $: rulings_on_principle = rulings.filter(
+    (r) => (r.principles ?? []).length > 0,
+  ).length
+  $: rulings_open = rulings.filter((r) => r.status === "open").length
 
   function share_of(n: number): number {
     const s = data.shares.get(n)
@@ -78,7 +153,7 @@
   // a label per group.
   $: ring = (() => {
     const n = principles.length
-    if (n === 0) return { arcs: [], labels: [] }
+    if (n === 0) return { arcs: [], labels: [], ticks: [] }
     const group_gaps = has_groups && groups.length > 1 ? groups.length : 0
     const avail = 360 - n * RING_GAP_DEG - group_gaps * GROUP_GAP_DEG
     let angle = -90 + (group_gaps > 0 ? GROUP_GAP_DEG / 2 : 0)
@@ -97,6 +172,18 @@
       y: number
       anchor: "start" | "middle" | "end"
     }[] = []
+    // One tick per ruling on a principle, spread along its arc in date order.
+    const ticks: {
+      key: string
+      rid: string
+      n: number
+      angle: number
+      x1: number
+      y1: number
+      x2: number
+      y2: number
+      adopted: boolean
+    }[] = []
     for (const g of groups) {
       const g_start = angle
       for (const p of g.principles) {
@@ -114,6 +201,23 @@
           state: covered ? "covered" : planned ? "planned" : "open",
           health: health_of(p.n),
         })
+        const ids = data.rulings_for.get(p.n) ?? []
+        ids.forEach((rid, i) => {
+          const t_angle = a0 + ((i + 0.5) * (a1 - a0)) / ids.length
+          const s = polar(TICK_IN, t_angle)
+          const e = polar(TICK_OUT, t_angle)
+          ticks.push({
+            key: `${rid}|${p.n}`,
+            rid,
+            n: p.n,
+            angle: t_angle,
+            x1: s.x,
+            y1: s.y,
+            x2: e.x,
+            y2: e.y,
+            adopted: rulings_by_id.get(rid)?.status === "adopted",
+          })
+        })
         angle = a1 + RING_GAP_DEG / 2
       }
       if (group_gaps > 0 && g.name) {
@@ -129,8 +233,9 @@
       }
       if (group_gaps > 0) angle += GROUP_GAP_DEG
     }
-    return { arcs, labels }
+    return { arcs, labels, ticks }
   })()
+  $: tick_angle = new Map(ring.ticks.map((t) => [t.key, t.angle]))
 
   $: hovered_node = hover?.kind === "node" ? nodes_by_id.get(hover.id) : null
   $: hovered_principle_n = hover?.kind === "principle" ? hover.n : null
@@ -138,12 +243,16 @@
     hovered_principle_n === null
       ? null
       : principles.find((p) => p.n === hovered_principle_n) ?? null
+  $: hovered_ruling =
+    hover?.kind === "ruling" ? rulings_by_id.get(hover.id) ?? null : null
   $: lit_principles = new Set<number>(
     hovered_node
       ? hovered_node.principles
       : hovered_principle
         ? [hovered_principle.n]
-        : [],
+        : hovered_ruling
+          ? hovered_ruling.principles ?? []
+          : [],
   )
   $: lit_nodes = new Set<string>(
     hovered_principle
@@ -152,8 +261,31 @@
           .map((n) => n.id)
       : hovered_node
         ? [hovered_node.id]
-        : [],
+        : hovered_ruling
+          ? data.nodes
+              .filter((n) => n.principles.some((k) => lit_principles.has(k)))
+              .map((n) => n.id)
+          : [],
   )
+  // The rulings that light, as (ruling, principle) pairs: one line each.
+  $: chords = (() => {
+    const out: [string, number][] = []
+    if (hovered_principle) {
+      for (const rid of data.rulings_for.get(hovered_principle.n) ?? [])
+        out.push([rid, hovered_principle.n])
+    } else if (hovered_ruling) {
+      for (const n of hovered_ruling.principles ?? [])
+        out.push([hovered_ruling.id, n])
+    } else if (hovered_node) {
+      for (const n of hovered_node.principles)
+        for (const rid of data.rulings_for.get(n) ?? []) out.push([rid, n])
+    }
+    return out
+  })()
+  $: lit_rulings = new Set<string>(chords.map((c) => c[0]))
+  $: chord_paths = chords
+    .map(([rid, n]) => chord_path(dot_angle, tick_angle, rid, n))
+    .filter((d): d is string => d !== null)
   $: principle_nodes = hovered_principle
     ? data.nodes.filter(
         (n) => n.kind !== "gap" && n.principles.includes(hovered_principle.n),
@@ -312,6 +444,74 @@
     }`
   }
 
+  /** The hover line: from the dot in to the bus ring, along it, then in to the tick. */
+  function chord_path(
+    dot_angles: Map<string, number>,
+    tick_angles: Map<string, number>,
+    rid: string,
+    n: number,
+  ): string | null {
+    const ar = dot_angles.get(rid)
+    const ap = tick_angles.get(`${rid}|${n}`)
+    if (ar === undefined || ap === undefined) return null
+    let d = ap - ar
+    while (d > 180) d -= 360
+    while (d < -180) d += 360
+    const sweep = d > 0 ? 1 : 0
+    const pt = (q: { x: number; y: number }) =>
+      `${q.x.toFixed(2)} ${q.y.toFixed(2)}`
+    const p0 = polar(DOT_R - DOT_SZ, ar)
+    const p1 = polar(BUS_R, ar)
+    const p2 = polar(BUS_R, ar + d)
+    const p3 = polar(TICK_OUT, ap)
+    return `M ${pt(p0)} L ${pt(p1)} A ${BUS_R} ${BUS_R} 0 0 ${sweep} ${pt(p2)} L ${pt(p3)}`
+  }
+  function dot_colour(r: Ruling): string {
+    const i = r.side ? sides.indexOf(r.side) : -1
+    return SIDE_COLOURS[i > 0 ? i : 0]
+  }
+  const MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ")
+  function short_date(date: string): string {
+    const m = MONTHS[Number(date.slice(5, 7)) - 1]
+    return m ? `${m} ${Number(date.slice(8, 10))}` : date
+  }
+  function who(r: Ruling): string {
+    const parts: string[] = []
+    if (r.raised_by) parts.push(`${r.raised_by} asked`)
+    if (r.ruled_by) parts.push(`${r.ruled_by} ruled`)
+    return parts.join(", ")
+  }
+  function ruling_label(r: Ruling): string {
+    return `${r.id} ${r.date}${r.ruled_by ? ` ${r.ruled_by}` : ""}: ${r.question ?? ""}`
+  }
+  function rulings_of_principle(n: number): Ruling[] {
+    return (data.rulings_for.get(n) ?? [])
+      .map((id) => rulings_by_id.get(id))
+      .filter((r): r is Ruling => r !== undefined)
+  }
+  function rulings_of_node(node: CoverageNode): Ruling[] {
+    const seen = new Set<string>()
+    const out: Ruling[] = []
+    for (const n of node.principles) {
+      for (const r of rulings_of_principle(n)) {
+        if (seen.has(r.id)) continue
+        seen.add(r.id)
+        out.push(r)
+      }
+    }
+    return sortRulings(out)
+  }
+  function ruling_list(rs: Ruling[], max: number): string {
+    const latest = rs.slice().reverse().slice(0, max)
+    const text = latest
+      .map(
+        (r) =>
+          `${r.id} (${short_date(r.date)}${r.status !== "adopted" ? `, ${r.status}` : ""})${r.question ? ` ${r.question}` : ""}`,
+      )
+      .join(" · ")
+    return rs.length > max ? `${text} · and ${rs.length - max} more` : text
+  }
+
   function set_hover(h: Hover) {
     hover = h
   }
@@ -324,6 +524,12 @@
       hover.kind === "principle" &&
       h.kind === "principle" &&
       hover.n === h.n
+    ) {
+      hover = null
+    } else if (
+      hover.kind === "ruling" &&
+      h.kind === "ruling" &&
+      hover.id === h.id
     ) {
       hover = null
     }
@@ -391,6 +597,39 @@
         </svg>
         no eval yet
       </div>
+      {#if has_rulings}
+        <!-- the rulings legend starts on its own line -->
+        <span class="basis-full h-0" aria-hidden="true"></span>
+        <span>Outer dots = rulings in date order from the top:</span>
+        {#each sides as side, i (side)}
+          <div class="flex items-center gap-1">
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <circle cx="6" cy="6" r="4" fill={SIDE_COLOURS[i]} />
+            </svg>
+            {side}
+          </div>
+        {/each}
+        <div class="flex items-center gap-1">
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <circle
+              cx="6"
+              cy="6"
+              r="4"
+              fill="none"
+              stroke={SIDE_COLOURS[0]}
+              stroke-width="1.5"
+            />
+          </svg>
+          not adopted
+        </div>
+        <div class="flex items-center gap-1">
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <circle cx="6" cy="6" r="3" fill="#bebebe" />
+          </svg>
+          on method, no principle
+        </div>
+        <span>· a tick on an arc = one ruling on that principle</span>
+      {/if}
     </div>
 
     <div class="relative" bind:this={chart_box}>
@@ -411,6 +650,28 @@
           stroke="#bebebe"
           stroke-width="0.8"
         />
+        {#if has_rulings}
+          <!-- The rulings ring, and its start mark -->
+          <circle
+            cx="0"
+            cy="0"
+            r={DOT_R}
+            fill="none"
+            stroke="#e7e5e4"
+            stroke-width="0.6"
+          />
+          <text
+            x="0"
+            y="-163.5"
+            text-anchor="middle"
+            dominant-baseline="middle"
+            font-size="5.4"
+            fill="#6b6b6b"
+            pointer-events="none"
+          >
+            date order ↻
+          </text>
+        {/if}
 
         <!-- The constitution: one arc per principle, as long as its weight,
            grouped by value, tinted by the pass rate of its evals -->
@@ -470,6 +731,21 @@
               </text>
             {/if}
           </g>
+        {/each}
+        <!-- One tick per ruling on a principle -->
+        {#each ring.ticks as t (t.key)}
+          {@const lit = lit_rulings.has(t.rid) && lit_principles.has(t.n)}
+          <line
+            x1={t.x1}
+            y1={t.y1}
+            x2={t.x2}
+            y2={t.y2}
+            stroke={lit ? "#131517" : t.adopted ? "#6b6b6b" : "#9ca3af"}
+            stroke-width={lit ? 1.5 : 0.8}
+            stroke-dasharray={!t.adopted && !lit ? "0.6 0.6" : undefined}
+            opacity={hover !== null && !lit ? 0.3 : 1}
+            pointer-events="none"
+          />
         {/each}
 
         <!-- The evals -->
@@ -539,8 +815,65 @@
             {/if}
           </svelte:element>
         {/each}
+
+        <!-- The rulings: a line from each lit ruling to the arc it touched,
+           then the dots in date order and their date labels -->
+        {#each chord_paths as d (d)}
+          <path
+            {d}
+            fill="none"
+            stroke="#131517"
+            stroke-width="0.9"
+            stroke-linecap="round"
+            opacity="0.9"
+            pointer-events="none"
+          />
+        {/each}
+        {#each dots as d (d.r.id)}
+          {@const lit = lit_rulings.has(d.r.id)}
+          {@const dim = hover !== null && !lit}
+          <g
+            class="cursor-default"
+            role="button"
+            tabindex="0"
+            aria-label={ruling_label(d.r)}
+            on:mouseenter={() => set_hover({ kind: "ruling", id: d.r.id })}
+            on:mouseleave={() => clear_hover({ kind: "ruling", id: d.r.id })}
+            on:focus={() => set_hover({ kind: "ruling", id: d.r.id })}
+            on:blur={() => clear_hover({ kind: "ruling", id: d.r.id })}
+          >
+            <circle cx={d.x} cy={d.y} r="4.2" fill="transparent" />
+            <circle
+              cx={d.x}
+              cy={d.y}
+              r={d.size}
+              fill={d.method
+                ? "#bebebe"
+                : d.hollow
+                  ? "#ffffff"
+                  : dot_colour(d.r)}
+              stroke={lit ? "#131517" : d.hollow ? dot_colour(d.r) : "#ffffff"}
+              stroke-width={lit ? 1.6 : 1.1}
+              opacity={dim ? 0.35 : 1}
+              class="transition-opacity duration-150"
+            />
+          </g>
+        {/each}
+        {#each date_labels as l (l.text + l.x)}
+          <text
+            x={l.x}
+            y={l.y}
+            text-anchor={l.anchor}
+            dominant-baseline="middle"
+            font-size="5.4"
+            fill="#6b6b6b"
+            pointer-events="none"
+          >
+            {l.text}
+          </text>
+        {/each}
       </svg>
-      {#if hovered_node || hovered_principle}
+      {#if hovered_node || hovered_principle || hovered_ruling}
         <div
           class="pointer-events-none absolute z-10 w-max max-w-[260px] rounded-md border bg-base-100 px-2 py-1 text-xs shadow-md"
           style={`left:${tip_x}px; top:${tip_y}px; transform: translate(${tip_flip ? "calc(-100% - 12px)" : "12px"}, 12px);`}
@@ -572,6 +905,15 @@
             {/if}
             <span class="text-gray-500"
               >· {pct(health_of(hovered_principle.n))}</span
+            >
+          {:else if hovered_ruling}
+            <span class="font-medium">{hovered_ruling.id}</span>
+            <span class="text-gray-500"
+              >· {hovered_ruling.date}{hovered_ruling.ruled_by
+                ? ` · ${hovered_ruling.ruled_by}`
+                : ""}{hovered_ruling.status !== "adopted"
+                ? ` · ${hovered_ruling.status}`
+                : ""}</span
             >
           {/if}
         </div>
@@ -614,6 +956,17 @@
             {/if}
           </div>
         {/if}
+        {#if has_rulings && hovered_node.kind !== "gap"}
+          {@const rs = rulings_of_node(hovered_node)}
+          {@const open = rs.filter((r) => r.status === "open").length}
+          <div class="mt-1 text-gray-500">
+            {rs.length}
+            {rs.length === 1 ? "ruling" : "rulings"} on these principles{open >
+            0
+              ? `, ${open} open`
+              : ""}.
+          </div>
+        {/if}
       {:else if hovered_principle}
         <div class="font-medium">
           Principle {hovered_principle.n}
@@ -644,6 +997,50 @@
             Pass rate {pct(health_of(hovered_principle.n))} from {principle_nodes
               .map((n) => n.name)
               .join(", ")}
+          {/if}
+        </div>
+        {#if has_rulings}
+          {@const rs = rulings_of_principle(hovered_principle.n)}
+          <div class="mt-1 text-gray-500">
+            {#if rs.length === 0}
+              No rulings on this principle yet.
+            {:else}
+              Rulings ({rs.length}): {ruling_list(rs, 4)}
+            {/if}
+          </div>
+        {/if}
+      {:else if hovered_ruling}
+        <div class="font-medium">
+          {hovered_ruling.id}
+          <span class="font-normal text-gray-500"
+            >· {hovered_ruling.date}{who(hovered_ruling)
+              ? ` · ${who(hovered_ruling)}`
+              : ""} · {hovered_ruling.status}{hovered_ruling.version
+              ? ` in ${hovered_ruling.version}`
+              : ""}</span
+          >
+        </div>
+        {#if hovered_ruling.question}
+          <div class="mt-1 font-medium">{hovered_ruling.question}</div>
+        {/if}
+        {#if hovered_ruling.ruling}
+          <div class="mt-1">{hovered_ruling.ruling}</div>
+        {/if}
+        <div class="mt-1 text-gray-500">
+          {#if hovered_ruling.principles === undefined}
+            Principles not named.
+          {:else if hovered_ruling.principles.length === 0}
+            A ruling on method, not on conduct: no principle.
+          {:else}
+            Principles {hovered_ruling.principles.join(", ")}
+            {#if lit_nodes.size === 0}
+              · no eval tests them yet
+            {:else}
+              · tested by {data.nodes
+                .filter((n) => n.kind === "eval" && lit_nodes.has(n.id))
+                .map((n) => n.name)
+                .join(", ") || "no active eval"}
+            {/if}
           {/if}
         </div>
       {:else}
@@ -688,15 +1085,34 @@
             <div class="text-sm text-gray-500">{data.floor.name}</div>
           </div>
         {/if}
+        {#if has_rulings}
+          <div>
+            <div class="text-2xl font-medium">{rulings.length}</div>
+            <div class="text-sm">Rulings</div>
+            <div class="text-sm text-gray-500">
+              {rulings_on_principle} on a principle · {rulings_open} open{data
+                .amendments.length > 0
+                ? ` · ${data.amendments.length} amendments`
+                : ""}
+            </div>
+          </div>
+        {/if}
       </div>
       <div class="text-sm text-gray-500">
-        The ring is the constitution, one arc per principle: length is
-        importance (severity × frequency, set in the constitution), colour is
-        the pass rate of the evals that test it. Circles are evals, sized by how
-        much of the constitution they test. Dotted circles have no eval yet. The {top3.k}
+        The ring is the constitution{data.constitution_version
+          ? ` (${data.constitution_version.version}${data.constitution_version.date ? `, ${data.constitution_version.date}` : ""})`
+          : ""}, one arc per principle: length is importance (severity ×
+        frequency, set in the constitution), colour is the pass rate of the
+        evals that test it. Circles are evals, sized by how much of the
+        constitution they test. Dotted circles have no eval yet. The {top3.k}
         largest evals test {Math.round(top3.share * 100)}% of the constitution; {principles.length -
           open_count} of {principles.length}
         principles have an eval.
+        {#if has_rulings}
+          Each tick on an arc is one ruling on that principle; the outer dots
+          are the {rulings.length} rulings in date order. Hover one to see the principle
+          it changed and the evals that test it.
+        {/if}
       </div>
     {:else}
       <div>

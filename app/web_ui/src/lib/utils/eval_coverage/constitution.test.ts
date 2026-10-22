@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { parsePrinciples } from "./constitution"
+import {
+  constitutionVersion,
+  parseAmendments,
+  parsePrinciples,
+  parseRulings,
+  rulingsByPrinciple,
+} from "./constitution"
 
 const NOVA = `
 Nova, as a multi-turn chat.
@@ -135,5 +141,143 @@ describe("parsePrinciples with weight lines", () => {
     expect(isHardLine(p[0])).toBe(true)
     expect(isHardLine(p[1])).toBe(false)
     expect([...principleWeights(p).values()]).toEqual([3, 1.5, 1])
+  })
+})
+
+const LEDGER = `# Nova constitution v11 (2026-10-21)
+
+## 6. Principles
+
+1. Exact records.
+   Weight: 3
+2. Wait before delete.
+   Weight: 1
+
+## 10. Sources
+
+- a source
+
+## Rulings
+
+- C-001 · 2026-07-09 · adopted · none
+  - Principles: none
+  - Raised by: Steve
+  - Ruled by: Steve
+  - Topic: scope
+  - Question: How to divide the work?
+  - Ruling: Mike on the evals.
+- C-010 · 2026-09-24 · adopted · v4
+  - Principles: 2
+  - Raised by: Sam (Kiln)
+  - Ruled by: Spencer (UpKeep)
+  - Question: Does a delete need a human yes?
+  - Ruling: Yes. **Production** shows a confirm card.
+- C-015 · deferred · 2026-09-28
+  - Raised by: Spencer
+  - Ruled by: Spencer
+  - Question: Bulk update of 200?
+  - Ruling: Not graded yet.
+- C-020 · 2026-10-01 · open
+  - Principles: 1, 2, 2
+  - Question: Something
+  - Ruling: Pending
+- Not a ruling, just prose that mentions rulings.
+
+## Amendments
+
+- v4 · 2026-10-14
+  - Trigger: C-010, C-012
+  - Principles: 2
+  - Summary: Delete needs a yes.
+- v5 · 2026-10-16
+  - Principles: none
+  - Summary: Weights added.
+`
+
+describe("parseRulings", () => {
+  it("leaves the principles alone", () => {
+    expect(parsePrinciples(LEDGER).map((p) => p.n)).toEqual([1, 2])
+  })
+
+  it("reads the ledger in date order with its fields", () => {
+    const r = parseRulings(LEDGER)
+    expect(r.map((x) => x.id)).toEqual(["C-001", "C-010", "C-015", "C-020"])
+    expect(r[0]).toMatchObject({
+      id: "C-001",
+      date: "2026-07-09",
+      status: "adopted",
+      principles: [],
+      raised_by: "Steve",
+      ruled_by: "Steve",
+      topic: "scope",
+    })
+    expect(r[0].version).toBeUndefined()
+    expect(r[1]).toMatchObject({
+      date: "2026-09-24",
+      status: "adopted",
+      version: "v4",
+      principles: [2],
+      raised_by: "Sam",
+      ruled_by: "Spencer",
+      side: "UpKeep",
+      question: "Does a delete need a human yes?",
+      ruling: "Yes. Production shows a confirm card.",
+    })
+  })
+
+  it("keeps 'none' apart from 'not named' and tolerates token order", () => {
+    const r = parseRulings(LEDGER)
+    const deferred = r.find((x) => x.id === "C-015")!
+    expect(deferred.status).toBe("deferred")
+    expect(deferred.date).toBe("2026-09-28")
+    expect(deferred.principles).toBeUndefined()
+    const open = r.find((x) => x.id === "C-020")!
+    expect(open.status).toBe("open")
+    expect(open.principles).toEqual([1, 2])
+  })
+
+  it("accepts numbered items with plain indented fields", () => {
+    const r = parseRulings(
+      "## Rulings\n1. R-1 · 2026-01-01\n   Principles: 3\n",
+    )
+    expect(r).toHaveLength(1)
+    expect(r[0]).toMatchObject({ id: "R-1", principles: [3] })
+  })
+
+  it("returns nothing without a ledger", () => {
+    expect(parseRulings(null)).toEqual([])
+    expect(parseRulings("# Title\n\n## 6. Principles\n1. one\n")).toEqual([])
+  })
+
+  it("indexes rulings per principle in date order", () => {
+    const by = rulingsByPrinciple(parseRulings(LEDGER))
+    expect(by.get(2)).toEqual(["C-010", "C-020"])
+    expect(by.get(1)).toEqual(["C-020"])
+    expect(by.get(3)).toBeUndefined()
+  })
+})
+
+describe("parseAmendments", () => {
+  it("reads versions, dates and principles", () => {
+    const a = parseAmendments(LEDGER)
+    expect(a.map((x) => x.version)).toEqual(["v4", "v5"])
+    expect(a[0]).toMatchObject({
+      date: "2026-10-14",
+      trigger: "C-010, C-012",
+      principles: [2],
+      summary: "Delete needs a yes.",
+    })
+    expect(a[1].principles).toEqual([])
+  })
+})
+
+describe("constitutionVersion", () => {
+  it("reads the version and day from the title", () => {
+    expect(constitutionVersion(LEDGER)).toEqual({
+      version: "v11",
+      date: "2026-10-21",
+    })
+    expect(constitutionVersion("# Title\n")).toBeNull()
+    expect(constitutionVersion(null)).toBeNull()
   })
 })

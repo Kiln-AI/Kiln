@@ -17,9 +17,15 @@
 import type { Eval, Priority, Spec, SpecStatus } from "$lib/types"
 import type { components } from "$lib/api_schema"
 import {
+  constitutionVersion,
+  parseAmendments,
   parsePrinciples,
+  parseRulings,
   principleWeights,
+  rulingsByPrinciple,
+  type Amendment,
   type Principle,
+  type Ruling,
 } from "./constitution"
 import { buildCoverageModel, principlesFromTags } from "./coverage_model"
 
@@ -58,6 +64,13 @@ export type CoverageData = {
   /** The active eval with the lowest pass rate, when any has one. */
   floor: CoverageNode | null
   active_count: number
+  /** The court's rulings in the task description, in date order; empty when it has none. */
+  rulings: Ruling[]
+  amendments: Amendment[]
+  /** Ruling ids per principle number, in date order. */
+  rulings_for: Map<number, string[]>
+  /** The version in the constitution's title, when it has one. */
+  constitution_version: { version: string; date?: string } | null
 }
 
 export type CoverageInput = {
@@ -142,6 +155,13 @@ export function buildCoverageData(input: CoverageInput): CoverageData {
   const { specs, evals, project_id, task_id } = input
   const by_id = new Map(evals.map((e) => [e.id ?? "", e]))
   const principles = parsePrinciples(input.task_description)
+  const rulings = parseRulings(input.task_description)
+  const ledger = {
+    rulings,
+    amendments: parseAmendments(input.task_description),
+    rulings_for: rulingsByPrinciple(rulings),
+    constitution_version: constitutionVersion(input.task_description),
+  }
 
   type Draft = Omit<CoverageNode, "weight">
   const active: Draft[] = []
@@ -215,6 +235,7 @@ export function buildCoverageData(input: CoverageInput): CoverageData {
       health: new Map(),
       floor: lowest(nodes),
       active_count: active.length,
+      ...ledger,
     }
   }
 
@@ -288,5 +309,6 @@ export function buildCoverageData(input: CoverageInput): CoverageData {
     health,
     floor: lowest(nodes),
     active_count: active.length,
+    ...ledger,
   }
 }

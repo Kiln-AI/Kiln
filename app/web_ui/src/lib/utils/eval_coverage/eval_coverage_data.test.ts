@@ -163,3 +163,38 @@ describe("buildCoverageData", () => {
     expect(data.nodes.filter((n) => n.kind === "gap")).toHaveLength(4)
   })
 })
+
+describe("buildCoverageData rulings", () => {
+  const LEDGER =
+    CONSTITUTION +
+    "\n## Rulings\n- C-1 · 2026-01-02 · adopted\n  - Principles: 2\n- C-2 · 2026-01-01 · open\n  - Principles: 2, 4\n\n## Amendments\n- v2 · 2026-01-03\n  - Principles: 2\n"
+
+  it("carries the ledger and its per-principle index", () => {
+    const data = buildCoverageData({
+      specs: [make_spec({ tags: ["principle_1"] })],
+      evals: [make_eval()],
+      task_description: LEDGER,
+      eval_scores: SCORES,
+      project_id: "p",
+      task_id: "t",
+    })
+    expect(data.rulings.map((r) => r.id)).toEqual(["C-2", "C-1"])
+    expect(data.rulings_for.get(2)).toEqual(["C-2", "C-1"])
+    expect(data.rulings_for.get(4)).toEqual(["C-2"])
+    expect(data.amendments.map((a) => a.version)).toEqual(["v2"])
+    expect(data.constitution_version).toBeNull()
+  })
+
+  it("is empty without a ledger", () => {
+    const data = buildCoverageData({
+      specs: [make_spec()],
+      evals: [make_eval()],
+      task_description: CONSTITUTION,
+      eval_scores: null,
+      project_id: "p",
+      task_id: "t",
+    })
+    expect(data.rulings).toEqual([])
+    expect(data.rulings_for.size).toBe(0)
+  })
+})
