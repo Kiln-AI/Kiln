@@ -1,5 +1,5 @@
 import logging
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -38,14 +38,13 @@ def test_log_pre_api_call_skips_formatting_when_info_disabled(model_calls_logger
     # The request is formatted into f-strings before the logger checks its level, so a
     # disabled level must return before any of it is built.
     model_calls_logger.setLevel(logging.WARNING)
+    kwargs = MagicMock()
 
-    with (
-        patch("kiln_ai.utils.logging.Logging") as litellm_logging,
-        patch("kiln_ai.utils.logging.json.dumps") as dumps,
-    ):
+    with patch("kiln_ai.utils.logging.Logging") as litellm_logging:
         CustomLiteLLMLogger(model_calls_logger).log_pre_api_call(
-            "m", [{"role": "user", "content": "hi"}], _kwargs()
+            "m", [{"role": "user", "content": "hi"}], kwargs
         )
 
+    # The request is never read, so nothing is formatted.
+    kwargs.get.assert_not_called()
     litellm_logging.assert_not_called()
-    dumps.assert_not_called()

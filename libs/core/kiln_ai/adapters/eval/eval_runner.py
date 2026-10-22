@@ -562,12 +562,19 @@ class EvalRunner:
 
     @property
     def _trace_index(self) -> TraceIndex:
+        # `run()` has already seeded it. Seeding here is only for a caller that runs a
+        # job without `run()`, and it blocks the calling thread for the whole read.
+        return self._seed_trace_index()
+
+    def _seed_trace_index(self) -> TraceIndex:
+        """Build the trace index if it is not built yet. Blocking: it reads every
+        TaskRun of the task."""
         if self._trace_index_instance is None:
             self._trace_index_instance = TraceIndex(self.task)
         return self._trace_index_instance
 
     def _collect_tasks_and_seed_trace_index(self) -> List[EvalJob]:
-        self._trace_index  # builds the index, reading runs/ once
+        self._seed_trace_index()
         return self.collect_tasks()
 
     def collect_tasks(self) -> List[EvalJob]:
