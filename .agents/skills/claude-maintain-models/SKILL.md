@@ -627,6 +627,10 @@ plumbing PR must not skip them.
 - Always `multimodal_requires_pdf_as_image=True` (OpenRouter's PDF routing breaks LiteLLM)
 - Thinking levels: offer only values in the model's `reasoning.supported_efforts` (see [Thinking Levels Reference](#thinking-levels-reference)). OpenRouter maps an unlisted effort to a listed one, so an extra level silently runs a different effort. When the model has no `reasoning.supported_efforts`, OpenRouter turns the effort into a thinking-token budget for Claude, so `CLAUDE_OPENROUTER_THINKING_LEVELS` (with Minimal) fits only those Claude models. `check_thinking_levels.py` checks every OpenRouter entry; a missing level list on OpenRouter is a note, because Kiln leaves levels off some models on purpose.
 
+### Fireworks AI and Together AI: thinking levels
+
+Neither publishes the efforts each model accepts, and both can accept an unsupported effort without an error. Fireworks takes `xhigh`, `max` and `minimal` on GLM 5.3 with HTTP 200. Together took a made-up effort on Nemotron 3.5, but Muse Spark Open's chat template rejects one. A paid test cannot see this. Add thinking levels on these providers only when the vendor documents the levels for that model (the model card or its chat template), and name that source in the PR. OpenAI and Anthropic return a 400 that names the supported levels, so their paid per-level test catches a wrong level.
+
 ### Featherless AI
 
 Serverless host for HuggingFace-hosted open weights. Several hard constraints — read before adding any model:
