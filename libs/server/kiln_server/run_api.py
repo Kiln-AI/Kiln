@@ -24,6 +24,7 @@ from kiln_ai.utils.dataset_import import (
     ImportConfig,
     KilnInvalidImportFormat,
 )
+from kiln_ai.utils.torn_read import to_thread_retrying_torn_read
 from pydantic import BaseModel, ConfigDict, Field
 
 from kiln_server.task_api import task_from_id
@@ -1007,14 +1008,20 @@ def connect_run_api(app: FastAPI):
             Path(description="The unique identifier of the task within the project."),
         ],
     ) -> dict[str, int]:
-        tags_count = {}
-        task = task_from_id(project_id, task_id)
-        # Not particularly efficient, but tasks are memory cached after first load so re-compute is fairly cheap
-        # We also cache the result client side
-        for run in task.runs(readonly=True):
-            for tag in run.tags:
-                tags_count[tag] = tags_count.get(tag, 0) + 1
-        return tags_count
+        # A first, uncached read of a large task's runs takes seconds. Off the event
+        # loop, it doesn't hold up every other request the page makes meanwhile.
+        return await to_thread_retrying_torn_read(
+            lambda: count_run_tags(task_from_id(project_id, task_id))
+        )
+
+
+def count_run_tags(task: Task) -> dict[str, int]:
+    """How many of the task's dataset runs carry each tag. Leaf runs only, as task.runs() returns them."""
+    tags_count: dict[str, int] = {}
+    for run in task.runs(readonly=True):
+        for tag in run.tags:
+            tags_count[tag] = tags_count.get(tag, 0) + 1
+    return tags_count
 
 
 async def update_run_util(
