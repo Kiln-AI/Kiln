@@ -17,6 +17,7 @@ Public API:
 
 from __future__ import annotations
 
+import functools
 import json
 import types
 from typing import TYPE_CHECKING, Any
@@ -120,6 +121,22 @@ def compile_template_or_raise(template: str) -> None:
         raise ValueError(
             f"Invalid Jinja2 template: {e.message} (line {e.lineno})"
         ) from e
+
+
+@functools.lru_cache(maxsize=256)
+def checked_template_variables(template: str) -> frozenset[str]:
+    """Compile the template and return the variables it reads, cached per template.
+
+    Raises ValueError on a syntax error (not cached, so a bad template raises every
+    time). The result depends only on the template text, and compiling a judge
+    prompt of tens of kilobytes costs tens of milliseconds. EvalConfig runs this
+    check every time the config is validated, which is several times per EvalRun
+    loaded from disk.
+    """
+    from jinja2 import meta
+
+    compile_template_or_raise(template)
+    return frozenset(meta.find_undeclared_variables(_template_env.parse(template)))
 
 
 def compile_expression_or_raise(expression: str) -> None:

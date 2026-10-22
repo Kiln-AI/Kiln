@@ -547,7 +547,11 @@ class EvalRunner:
         # Live, not precomputed like `already_run`: a trace persisted by one job has to be
         # visible to the next, whether that next job is running concurrently under a
         # different eval config or is this job's own retry.
-        self._trace_index = TraceIndex(self.task)
+        #
+        # Built on first use, not here: seeding reads every TaskRun of the task, and a
+        # runner is also constructed only to validate a request (validate_*_readiness),
+        # which never looks a trace up. `run()` builds it in a thread before any job.
+        self._trace_index_instance: TraceIndex | None = None
         # A session manager passed in replaces the process-wide OpenEnv session manager
         # (tests pass their own).
         self._world_session_manager_override = world_session_manager
@@ -555,6 +559,16 @@ class EvalRunner:
         # metadata, and every later job keys its traces by that same version.
         self._world_targets: dict[str, _WorldTarget | Exception] = {}
         self._world_target_locks = AsyncLockManager()
+
+    @property
+    def _trace_index(self) -> TraceIndex:
+        if self._trace_index_instance is None:
+            self._trace_index_instance = TraceIndex(self.task)
+        return self._trace_index_instance
+
+    def _collect_tasks_and_seed_trace_index(self) -> List[EvalJob]:
+        self._trace_index  # builds the index, reading runs/ once
+        return self.collect_tasks()
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":
@@ -859,7 +873,10 @@ class EvalRunner:
             concurrency = DEFAULT_EVAL_CONCURRENCY
         # Collecting reads every existing EvalRun of each eval config off disk, in a
         # thread, while another runner can be saving one.
-        jobs = await to_thread_retrying_torn_read(self.collect_tasks)
+        # The trace index is seeded in the same thread: it reads every TaskRun.
+        jobs = await to_thread_retrying_torn_read(
+            self._collect_tasks_and_seed_trace_index
+        )
 
         runner = AsyncJobRunner(
             concurrency=concurrency,

@@ -3,8 +3,10 @@ from jinja2 import Undefined, UndefinedError
 from jinja2.sandbox import SecurityError
 
 from kiln_ai.datamodel.input_transform import JinjaInputTransform
+from kiln_ai.utils import jinja_engine
 from kiln_ai.utils.jinja_engine import (
     JinjaExtractionError,
+    checked_template_variables,
     compile_expression_or_raise,
     compile_template_or_raise,
     expression_variables,
@@ -27,6 +29,41 @@ class TestCompileTemplateOrRaise:
     def test_unclosed_block_raises_value_error(self):
         with pytest.raises(ValueError, match="Invalid Jinja2 template"):
             compile_template_or_raise("{% for x in items %}")
+
+
+class TestCheckedTemplateVariables:
+    def test_returns_undeclared_variables(self):
+        assert checked_template_variables(
+            "{% for m in trace %}{{ m.content }}{% endfor %}{{ final_message }}"
+        ) == frozenset({"trace", "final_message"})
+
+    def test_result_is_cached_per_template(self, monkeypatch):
+        checked_template_variables.cache_clear()
+        parses = 0
+        real_parse = jinja_engine._template_env.parse
+
+        def counting_parse(source):
+            nonlocal parses
+            parses += 1
+            return real_parse(source)
+
+        monkeypatch.setattr(jinja_engine._template_env, "parse", counting_parse)
+
+        for _ in range(3):
+            assert checked_template_variables("{{ a }}") == frozenset({"a"})
+        assert parses == 1
+
+        # The template text is the whole key: different text is parsed again.
+        assert checked_template_variables("{{ b }}") == frozenset({"b"})
+        assert parses == 2
+
+    def test_syntax_error_raises_every_time(self):
+        checked_template_variables.cache_clear()
+        for _ in range(3):
+            with pytest.raises(ValueError, match="Invalid Jinja2 template"):
+                checked_template_variables("Hello {{ broken")
+        # A failure is not cached.
+        assert checked_template_variables.cache_info().currsize == 0
 
 
 class TestCompileExpressionOrRaise:
