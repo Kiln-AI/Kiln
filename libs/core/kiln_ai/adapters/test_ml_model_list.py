@@ -741,3 +741,36 @@ def test_cloudflare_model_ids_are_workers_ai_ids():
     for provider in cloudflare_providers:
         assert provider.model_id is not None
         assert provider.model_id.startswith("@cf/"), provider.model_id
+
+
+@pytest.mark.parametrize(
+    "model_id,expected_levels,expected_default",
+    [
+        (
+            "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+            {"Low": "low", "Medium": "medium", "High": "high"},
+            "high",
+        ),
+        (
+            "@cf/zai-org/glm-5.3",
+            {"Low": "low", "Medium": "medium", "High": "high"},
+            "high",
+        ),
+        # Cloudflare rejects "high" for this model; it accepts low, medium and xhigh.
+        (
+            "@cf/qwen/qwen3.8-27b",
+            {"Low": "low", "Medium": "medium", "Extra High": "xhigh"},
+            "xhigh",
+        ),
+    ],
+)
+def test_cloudflare_thinking_levels(model_id, expected_levels, expected_default):
+    provider = next(
+        p
+        for model in built_in_models
+        for p in model.providers
+        if p.name == ModelProviderName.cloudflare and p.model_id == model_id
+    )
+    assert provider.reasoning_capable
+    assert provider.available_thinking_levels == expected_levels
+    assert provider.default_thinking_level == expected_default
