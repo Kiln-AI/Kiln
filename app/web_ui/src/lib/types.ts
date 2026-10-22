@@ -162,12 +162,7 @@ export type Feedback = components["schemas"]["Feedback"]
 export type FeedbackSource = components["schemas"]["FeedbackSource"]
 
 // Copilot API types
-export type SyntheticDataGenerationStepConfigApi =
-  components["schemas"]["SyntheticDataGenerationStepConfigApi"]
-export type SyntheticDataGenerationSessionConfigApi =
-  components["schemas"]["SyntheticDataGenerationSessionConfigApi"]
 export type TaskMetadataApi = components["schemas"]["TaskMetadataApi"]
-export type ReviewedExample = components["schemas"]["ReviewedExample"]
 export type SampleApi = components["schemas"]["SampleApi"]
 export type SubsampleBatchOutputItemApi =
   components["schemas"]["SubsampleBatchOutputItemApi"]
@@ -191,7 +186,6 @@ export type SpecProperties =
   | components["schemas"]["JailbreakProperties"]
   | components["schemas"]["PromptLeakageProperties"]
 export type SpecType = SpecProperties["spec_type"]
-export type SubmitAnswersRequest = components["schemas"]["SubmitAnswersRequest"]
 export type SpecificationInput = components["schemas"]["SpecificationInput"]
 export type QuestionSet = components["schemas"]["QuestionSet"]
 export type QuestionWithAnswer = components["schemas"]["QuestionWithAnswer"]
