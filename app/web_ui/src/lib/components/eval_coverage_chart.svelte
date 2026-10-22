@@ -238,6 +238,16 @@
   $: tick_angle = new Map(ring.ticks.map((t) => [t.key, t.angle]))
 
   $: hovered_node = hover?.kind === "node" ? nodes_by_id.get(hover.id) : null
+  // A large circle prints its own name and pass rate; the pointer tooltip
+  // would only cover a neighbour.
+  $: tooltip_node =
+    hovered_node &&
+    !(
+      hovered_node.kind === "eval" &&
+      (circles.find((c) => c.id === hovered_node?.id)?.r ?? 0) >= 24
+    )
+      ? hovered_node
+      : null
   $: hovered_principle_n = hover?.kind === "principle" ? hover.n : null
   $: hovered_principle =
     hovered_principle_n === null
@@ -671,6 +681,19 @@
           >
             date order ↻
           </text>
+          <!-- The hover lines, from a lit ruling to the arc it touched. Drawn
+             first so the labels above knock them out where they cross. -->
+          {#each chord_paths as d (d)}
+            <path
+              {d}
+              fill="none"
+              stroke="#131517"
+              stroke-width="0.9"
+              stroke-linecap="round"
+              opacity="0.9"
+              pointer-events="none"
+            />
+          {/each}
         {/if}
 
         <!-- The constitution: one arc per principle, as long as its weight,
@@ -684,6 +707,10 @@
             font-size="7.5"
             font-weight="600"
             fill="#6b6b6b"
+            paint-order="stroke"
+            stroke="#ffffff"
+            stroke-width="2.4"
+            stroke-linejoin="round"
             pointer-events="none"
           >
             {label.name}
@@ -726,6 +753,11 @@
                 font-size="6.5"
                 fill={lit ? "#161616" : "#6b6b6b"}
                 font-weight={lit ? "600" : "400"}
+                paint-order="stroke"
+                stroke="#ffffff"
+                stroke-width="2"
+                stroke-linejoin="round"
+                pointer-events="none"
               >
                 {arc.n}
               </text>
@@ -816,19 +848,7 @@
           </svelte:element>
         {/each}
 
-        <!-- The rulings: a line from each lit ruling to the arc it touched,
-           then the dots in date order and their date labels -->
-        {#each chord_paths as d (d)}
-          <path
-            {d}
-            fill="none"
-            stroke="#131517"
-            stroke-width="0.9"
-            stroke-linecap="round"
-            opacity="0.9"
-            pointer-events="none"
-          />
-        {/each}
+        <!-- The rulings: the dots in date order and their date labels -->
         {#each dots as d (d.r.id)}
           {@const lit = lit_rulings.has(d.r.id)}
           {@const dim = hover !== null && !lit}
@@ -867,31 +887,35 @@
             dominant-baseline="middle"
             font-size="5.4"
             fill="#6b6b6b"
+            paint-order="stroke"
+            stroke="#ffffff"
+            stroke-width="2"
+            stroke-linejoin="round"
             pointer-events="none"
           >
             {l.text}
           </text>
         {/each}
       </svg>
-      {#if hovered_node || hovered_principle || hovered_ruling}
+      {#if tooltip_node || hovered_principle || hovered_ruling}
         <div
           class="pointer-events-none absolute z-10 w-max max-w-[260px] rounded-md border bg-base-100 px-2 py-1 text-xs shadow-md"
           style={`left:${tip_x}px; top:${tip_y}px; transform: translate(${tip_flip ? "calc(-100% - 12px)" : "12px"}, 12px);`}
           role="tooltip"
         >
-          {#if hovered_node}
-            {#if hovered_node.kind === "gap"}
+          {#if tooltip_node}
+            {#if tooltip_node.kind === "gap"}
               <span class="font-medium"
-                >Principle {hovered_node.principles[0]}</span
+                >Principle {tooltip_node.principles[0]}</span
               >
               <span class="text-gray-500">· not covered</span>
             {:else}
-              <span class="font-medium">{hovered_node.name}</span>
-              {#if hovered_node.kind === "eval"}
+              <span class="font-medium">{tooltip_node.name}</span>
+              {#if tooltip_node.kind === "eval"}
                 <span class="text-gray-500"
-                  >· {pct(hovered_node.pass_rate)}{hovered_node.dataset_size !==
+                  >· {pct(tooltip_node.pass_rate)}{tooltip_node.dataset_size !==
                   null
-                    ? ` of ${hovered_node.dataset_size}`
+                    ? ` of ${tooltip_node.dataset_size}`
                     : ""}</span
                 >
               {:else}
