@@ -570,6 +570,15 @@ model.
   parametrized cases
 - `.agents/scripts/provider_utils.py` — add the provider's model-catalog
   endpoint so agent tooling can enumerate its models
+- Thinking levels — find out how the provider takes reasoning effort, and
+  where it publishes the values each model accepts. Add a quirks section
+  that names that source and says thinking levels are required wherever
+  it lists values. If the provider silently remaps unsupported values,
+  add a checker like `check_cloudflare_thinking_levels.py`, because a
+  paid test cannot see a remap.
+- `model_adapters/test_thinking_level_paid.py` — add the provider to the
+  provider list of `test_thinking_level_reasoning_content`, so each of its
+  thinking levels gets a paid test case
 
 **Known gap:** the generated Copilot API client
 (`app/desktop/studio_server/api_client/`) mirrors the remote Copilot service's
