@@ -775,3 +775,30 @@ def test_cloudflare_thinking_levels(model_id, expected_levels, expected_default)
     assert not provider.reasoning_capable
     assert provider.available_thinking_levels == expected_levels
     assert provider.default_thinking_level == expected_default
+
+
+@pytest.mark.parametrize(
+    "model_id,expected_levels,expected_default",
+    [
+        (
+            "accounts/fireworks/models/muse-spark-open",
+            {"Low": "low", "Medium": "medium", "High": "high", "Extra High": "xhigh"},
+            "medium",
+        ),
+        # Thinking-only: Fireworks rejects "none", and no effort reasons as long as "max".
+        (
+            "accounts/fireworks/models/glm-5p3-flash",
+            {"Low": "low", "Medium": "medium", "High": "high", "Max": "max"},
+            "max",
+        ),
+    ],
+)
+def test_fireworks_thinking_levels(model_id, expected_levels, expected_default):
+    provider = next(
+        p
+        for model in built_in_models
+        for p in model.providers
+        if p.name == ModelProviderName.fireworks_ai and p.model_id == model_id
+    )
+    assert provider.available_thinking_levels == expected_levels
+    assert provider.default_thinking_level == expected_default
