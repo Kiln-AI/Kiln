@@ -122,16 +122,24 @@ def check_entry(entry: KilnEntry, effort: CatalogEffort | None) -> list[Finding]
             ]
         return []
 
+    findings: list[Finding] = []
+    if entry.default_level is not None and entry.default_level not in supported:
+        findings.append(
+            finding(
+                "unsupported_default",
+                f"default {entry.default_level!r} is not in supported_efforts {supported}",
+            )
+        )
     if not offered:
-        return [
+        findings.append(
             finding(
                 "missing_levels",
                 f"catalog supports {supported} (default {effort.default!r}); "
                 "entry has no thinking levels",
             )
-        ]
+        )
+        return findings
 
-    findings: list[Finding] = []
     remaps = effort.remaps or {}
     for value in offered:
         if value not in supported:
@@ -143,13 +151,6 @@ def check_entry(entry: KilnEntry, effort: CatalogEffort | None) -> list[Finding]
                     f"{value!r} is not in supported_efforts {supported}{target}",
                 )
             )
-    if entry.default_level is not None and entry.default_level not in supported:
-        findings.append(
-            finding(
-                "unsupported_default",
-                f"default {entry.default_level!r} is not in supported_efforts {supported}",
-            )
-        )
     not_offered = [value for value in supported if value not in offered]
     if not_offered:
         findings.append(

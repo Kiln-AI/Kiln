@@ -114,7 +114,9 @@ def test_cloudflare_efforts_parses_dicts_and_json_strings():
             "properties": [
                 {
                     "property_id": "reasoning_effort",
-                    "value": json.dumps({"supported_efforts": ["low"]}),
+                    "value": json.dumps(
+                        {"supported_efforts": ["low"]}, ensure_ascii=False
+                    ),
                 }
             ],
         },
@@ -147,3 +149,10 @@ def test_check_all_strips_openrouter_virtual_suffix():
 
     missing = entry(None, provider="openrouter", model_id="z-ai/unknown")
     assert kinds(check_all([missing], efforts)) == ["not_in_catalog"]
+
+
+def test_unsupported_default_is_reported_when_levels_are_missing():
+    findings = check_entry(entry(None, "medium", provider="openrouter"), GLM_5_3)
+    assert kinds(findings) == ["unsupported_default", "missing_levels"]
+    assert findings[0].is_error
+    assert not findings[1].is_error

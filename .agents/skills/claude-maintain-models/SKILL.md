@@ -675,7 +675,7 @@ Runs through LiteLLM's generic `openai/` route against Cloudflare's OpenAI-compa
   | `planned_deprecation_date` present | do **not** add the model |
 
 - <a id="cloudflare-thinking-levels"></a>**Thinking levels come from the catalog, and only from the catalog.** Kiln sends the level as `reasoning_effort`. For each model, `reasoning_effort` in the catalog lists `supported_efforts`, a `default_effort`, and `normalizes_to`: the values that Cloudflare silently changes to another effort. A remapped value returns HTTP 200, so a live call or a paid test cannot find it. Example: GLM 5.3 maps `medium` to `max`, so a "Medium" option runs the most expensive effort.
-  - Offer only values in `supported_efforts`, and each of them unless its paid test fails. The list is not always right: on DeepSeek V4 Pro 0813, DeepSeek V4 Flash 0731 and GLM 5.2, `none` still returns reasoning, so those entries have no Off level. Do not copy the levels of the same model on another provider.
+  - Offer only values in `supported_efforts`, and each of them unless a completed paid test shows that the level does not work. The list is not always right: on DeepSeek V4 Pro 0813, DeepSeek V4 Flash 0731 and GLM 5.2, `none` still returns reasoning, so those entries have no Off level. A timeout, a rate limit or a credential error proves nothing about the level: keep the level and report it as untested. Do not copy the levels of the same model on another provider.
   - Labels: `none` → `"Off"`, `low` → `"Low"`, `medium` → `"Medium"`, `high` → `"High"`, `xhigh` → `"Extra High"`, `max` → `"Max"`. List them from least to most effort.
   - `default_thinking_level` is `default_effort`, unless the entry is suggested for evals (see [Judge Models Must Reason by Default](#judge-models-must-reason-by-default)).
   - `mandatory: true` means `none` is not in the list; do not add an Off level.
@@ -705,7 +705,7 @@ Runs through LiteLLM's generic `openai/` route against Cloudflare's OpenAI-compa
 
 ## Thinking Levels Reference
 
-No API provides the available thinking levels programmatically — they must be manually sourced. Use this lookup chain in priority order. **Cloudflare is the exception:** its catalog lists the levels per model, and it is the only source for a `cloudflare` entry. See [Cloudflare thinking levels](#cloudflare-thinking-levels).
+Two providers publish the thinking levels per model, and their list is the only source for their entries: Cloudflare (see [Cloudflare thinking levels](#cloudflare-thinking-levels)) and OpenRouter (`reasoning.supported_efforts` in its models API, see [OpenRouter (general)](#openrouter-general)). For every other provider the levels must be sourced by hand. Use this lookup chain in priority order.
 
 ### Lookup Chain
 
