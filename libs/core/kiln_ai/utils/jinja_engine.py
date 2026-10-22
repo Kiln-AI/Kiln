@@ -130,13 +130,7 @@ def compile_template_or_raise(template: str) -> None:
 def checked_template_variables(template: str) -> frozenset[str]:
     """Compile the template and return the variables it reads, cached per template.
 
-    Raises ValueError on a syntax error (not cached, so a bad template raises every
-    time). The result depends only on the template text, and compiling a judge
-    prompt of tens of kilobytes costs tens of milliseconds. EvalConfig runs this
-    check every time the config is validated, which is several times per EvalRun
-    loaded from disk.
-
-    Parses once: the variables are read from the tree that is then compiled.
+    Raises ValueError on a syntax error, every time: a failure is not cached.
     """
     try:
         ast = _template_env.parse(template)

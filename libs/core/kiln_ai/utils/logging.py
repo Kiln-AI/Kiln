@@ -34,8 +34,8 @@ class CustomLiteLLMLogger(CustomLogger):
         self.logger = logger
 
     def log_pre_api_call(self, model, messages, kwargs):
-        # The messages below are f-strings over the whole request, formatted before the
-        # logger checks its level: milliseconds per call on a large request.
+        # Formatting a large request costs milliseconds per call; skip it when INFO is
+        # disabled.
         if not self.logger.isEnabledFor(logging.INFO):
             return
 

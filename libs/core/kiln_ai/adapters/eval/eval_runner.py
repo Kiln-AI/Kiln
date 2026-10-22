@@ -1,4 +1,5 @@
 import logging
+import threading
 from dataclasses import dataclass
 from typing import (
     Any,
@@ -548,10 +549,10 @@ class EvalRunner:
         # visible to the next, whether that next job is running concurrently under a
         # different eval config or is this job's own retry.
         #
-        # Built on first use, not here: seeding reads every TaskRun of the task, and a
-        # runner is also constructed only to validate a request (validate_*_readiness),
-        # which never looks a trace up. `run()` builds it in a thread before any job.
+        # Seeded by `run()`, in a worker thread: seeding reads every TaskRun of the
+        # task, and a runner built only to validate a request never looks a trace up.
         self._trace_index_instance: TraceIndex | None = None
+        self._trace_index_lock = threading.Lock()
         # A session manager passed in replaces the process-wide OpenEnv session manager
         # (tests pass their own).
         self._world_session_manager_override = world_session_manager
@@ -567,11 +568,15 @@ class EvalRunner:
         return self._seed_trace_index()
 
     def _seed_trace_index(self) -> TraceIndex:
-        """Build the trace index if it is not built yet. Blocking: it reads every
-        TaskRun of the task."""
-        if self._trace_index_instance is None:
-            self._trace_index_instance = TraceIndex(self.task)
-        return self._trace_index_instance
+        """Build the trace index if it is not built yet, and return it. Blocking: it
+        reads every TaskRun of the task. Threads that call it at once share one index."""
+        index = self._trace_index_instance
+        if index is None:
+            with self._trace_index_lock:
+                index = self._trace_index_instance
+                if index is None:
+                    index = self._trace_index_instance = TraceIndex(self.task)
+        return index
 
     def _collect_tasks_and_seed_trace_index(self) -> List[EvalJob]:
         self._seed_trace_index()

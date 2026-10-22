@@ -396,7 +396,6 @@ async def test_run_seeds_trace_index_once_in_a_thread_before_jobs(
 
     async def run_job(job):
         events.append("job")
-        # A job reads the index the seed built; it does not seed again.
         assert mock_eval_runner._trace_index is seeded[0]
         return True
 
@@ -406,6 +405,39 @@ async def test_run_seeds_trace_index_once_in_a_thread_before_jobs(
 
     assert events == ["seed", "job", "job", "job"]
     assert seed_threads != [threading.get_ident()]
+
+
+def test_concurrent_seeds_build_one_trace_index(mock_eval_runner, monkeypatch):
+    seeding = threading.Event()
+    release = threading.Event()
+    seeds: list[int] = []
+    real_seed = TraceIndex._seed
+
+    def slow_seed(self):
+        seeds.append(1)
+        seeding.set()
+        release.wait(timeout=5)
+        real_seed(self)
+
+    monkeypatch.setattr(TraceIndex, "_seed", slow_seed)
+    indexes: list[TraceIndex] = []
+
+    def seed():
+        indexes.append(mock_eval_runner._seed_trace_index())
+
+    first = threading.Thread(target=seed)
+    first.start()
+    assert seeding.wait(timeout=5)
+    # The second caller arrives while the first is still reading the runs.
+    second = threading.Thread(target=seed)
+    second.start()
+    release.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert seeds == [1]
+    assert len(indexes) == 2
+    assert indexes[0] is indexes[1]
 
 
 def test_collect_tasks_filtering(

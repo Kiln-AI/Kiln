@@ -35,8 +35,6 @@ def test_log_pre_api_call_logs_at_info(model_calls_logger, caplog):
 
 
 def test_log_pre_api_call_skips_formatting_when_info_disabled(model_calls_logger):
-    # The request is formatted into f-strings before the logger checks its level, so a
-    # disabled level must return before any of it is built.
     model_calls_logger.setLevel(logging.WARNING)
     kwargs = MagicMock()
 

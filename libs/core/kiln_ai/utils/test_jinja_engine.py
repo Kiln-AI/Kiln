@@ -62,7 +62,6 @@ class TestCheckedTemplateVariables:
         for _ in range(3):
             with pytest.raises(ValueError, match="Invalid Jinja2 template"):
                 checked_template_variables("Hello {{ broken")
-        # A failure is not cached.
         assert checked_template_variables.cache_info().currsize == 0
 
 
