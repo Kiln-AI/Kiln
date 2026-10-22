@@ -262,7 +262,7 @@ def fetch_vertex_with_aliases(project_id: str) -> set[str]:
     return with_aliases
 
 
-def _cloudflare_property(model: dict, property_id: str) -> Any:
+def cloudflare_property(model: dict, property_id: str) -> Any:
     for prop in model.get("properties") or []:
         if prop.get("property_id") == property_id:
             return prop.get("value")
@@ -331,7 +331,7 @@ def cloudflare_availability(
         if task.get("name") != CLOUDFLARE_TEXT_GENERATION_TASK:
             continue
         name = model["name"]
-        planned = _cloudflare_property(model, "planned_deprecation_date")
+        planned = cloudflare_property(model, "planned_deprecation_date")
         if planned:
             deprecation_dates[name] = str(planned)
             try:
@@ -343,19 +343,23 @@ def cloudflare_availability(
     return available, deprecation_dates
 
 
-def fetch_cloudflare(
-    api_key: str | None, account_id: str | None
-) -> tuple[set[str], dict[str, str]]:
-    """Returns (model_ids, deprecation_dates) for Cloudflare Workers AI.
+def fetch_cloudflare_models(api_key: str | None, account_id: str | None) -> list[dict]:
+    """Returns Cloudflare's raw model records, with their properties.
 
     Uses the authenticated models-search API when both credentials are set,
     otherwise the public catalog JSON. Never use LiteLLM's Cloudflare catalog:
     it is months stale.
     """
     if api_key and account_id:
-        models = _fetch_cloudflare_search(api_key, account_id)
-    else:
-        models = _fetch_cloudflare_public()
+        return _fetch_cloudflare_search(api_key, account_id)
+    return _fetch_cloudflare_public()
+
+
+def fetch_cloudflare(
+    api_key: str | None, account_id: str | None
+) -> tuple[set[str], dict[str, str]]:
+    """Returns (model_ids, deprecation_dates) for Cloudflare Workers AI."""
+    models = fetch_cloudflare_models(api_key, account_id)
     return cloudflare_availability(models, date.today())
 
 
