@@ -794,6 +794,15 @@ QWEN_3P8_GROQ_THINKING_LEVELS = {
     "Medium": "medium",
 }
 
+# Fireworks: GLM 5.3 Flash is thinking-only ("none" is rejected). With no
+# reasoning_effort it reasons as long as with "max", so "max" is the default.
+GLM_5P3_FLASH_FIREWORKS_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Max": "max",
+}
+
 # Cloudflare Workers AI takes `reasoning_effort` low/medium/high for DeepSeek V4.1
 # Flash 1017 and GLM 5.3.
 CLOUDFLARE_LOW_MEDIUM_HIGH_THINKING_LEVELS = {
@@ -5549,8 +5558,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/muse-spark-open",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                # Fireworks streams nothing when reasoning_effort is set on this
-                # model (request hangs until timeout), so no thinking levels here.
+                available_thinking_levels=MUSE_SPARK_OPEN_THINKING_LEVELS,
+                default_thinking_level="medium",
                 supports_data_gen=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -9934,6 +9943,8 @@ built_in_models: List[KilnModel] = [
                 model_id="accounts/fireworks/models/glm-5p3-flash",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=False,
+                available_thinking_levels=GLM_5P3_FLASH_FIREWORKS_THINKING_LEVELS,
+                default_thinking_level="max",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
