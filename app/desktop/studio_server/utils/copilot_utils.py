@@ -33,6 +33,7 @@ from kiln_ai.datamodel.task_output import (
     TaskOutputRating,
 )
 from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX
+from kiln_ai.synthetic_user.models import TAG_SU_ENDED_CONVERSATION
 from kiln_ai.synthetic_user.parser import (
     SyntheticUserInfoParseError,
     parse_synthetic_user_info,
@@ -651,6 +652,15 @@ def find_multi_turn_chain_leaves(task: Task, batch_tag: str) -> list[TaskRun]:
     return [run for run in task.runs() if target_tag in (run.tags or [])]
 
 
+def _is_annotated(run: TaskRun) -> bool:
+    """Whether someone added their own work to this run, which a cleanup must keep."""
+    return (
+        run.output.rating is not None
+        or run.repaired_output is not None
+        or bool(run.feedback(readonly=True))
+    )
+
+
 def delete_multi_turn_batch_chains(task: Task, batch_tag: str) -> int:
     """Delete every chain TaskRun of an abandoned synthetic-user batch.
 
@@ -661,12 +671,14 @@ def delete_multi_turn_batch_chains(task: Task, batch_tag: str) -> int:
     batch on disk. Returns the number of TaskRuns deleted.
 
     Safety: a chain is only deleted when its leaf carries EXACTLY the
-    runner's own tags, no rating, and no descendants. Any extra tag, a
-    rating, or a child run means some other flow (an eval save, a manual
-    rating, a continued conversation) claimed the chain — it is no longer an
-    abandoned drive artifact, so it is left alone. The exact-set match fails
-    CLOSED: if the runner's tag scheme ever grows, batches get skipped
-    (orphaned) rather than risking deletion of claimed chains.
+    runner's tags (plus TAG_SU_ENDED_CONVERSATION when present), its earlier
+    turns carry no tags, no turn has a rating, a repaired output or Feedback,
+    and no run outside the chain continues from any turn. Anything else means
+    a person or some other flow (an eval save, a manual rating, a continued
+    conversation) claimed the chain — it is no longer an abandoned drive
+    artifact, so every turn is left alone. The exact-set match fails CLOSED:
+    if the runner's tag scheme ever grows, batches get skipped (orphaned)
+    rather than risking deletion of claimed chains.
     """
     # include_intermediate_runs: the ancestor walk needs the complete on-disk
     # set, not the default leaves-only view. One corpus load serves the leaf
@@ -689,8 +701,7 @@ def delete_multi_turn_batch_chains(task: Task, batch_tag: str) -> int:
     deleted = 0
     for leaf in (run for run in all_runs if target_tag in (run.tags or [])):
         if (
-            set(leaf.tags or []) != runner_tags
-            or leaf.output.rating is not None
+            set(leaf.tags or []) - {TAG_SU_ENDED_CONVERSATION} != runner_tags
             or str(leaf.id) in parent_ids
         ):
             logger.info(
@@ -716,6 +727,15 @@ def delete_multi_turn_batch_chains(task: Task, batch_tag: str) -> int:
             logger.info(
                 "Skipping delete of chain leaf %s: a conversation outside "
                 "the batch forks from this chain",
+                leaf.id,
+            )
+            continue
+        if any(run.tags for run in chain[1:]) or any(
+            _is_annotated(run) for run in chain
+        ):
+            logger.info(
+                "Skipping delete of chain leaf %s: an earlier turn is tagged, "
+                "or a turn is rated, repaired or has Feedback",
                 leaf.id,
             )
             continue
@@ -747,19 +767,19 @@ def delete_single_turn_batch_runs(task: Task, batch_tag: str) -> int:
     the only batch on disk. Returns the number of TaskRuns deleted.
 
     Safety mirrors delete_multi_turn_batch_chains: a run is only deleted when
-    it carries EXACTLY the pipeline's own tags and no rating. Any extra tag
-    or a rating means another flow (an eval save, a manual rating) claimed
-    it — no longer an abandoned drive artifact, so it is left alone. The
-    exact-set match fails CLOSED: if the tag scheme ever grows, batches get
-    skipped (orphaned) rather than risking deletion of claimed runs. No
-    descendant check is needed — single-turn tasks reject chained runs at the
-    datamodel level.
+    it carries EXACTLY the pipeline's own tags and has no rating, repaired
+    output or Feedback. Anything else means a person or another flow (an eval
+    save, a manual rating) claimed it — no longer an abandoned drive artifact,
+    so it is left alone. The exact-set match fails CLOSED: if the tag scheme
+    ever grows, batches get skipped (orphaned) rather than risking deletion of
+    claimed runs. No descendant check is needed — single-turn tasks reject
+    chained runs at the datamodel level.
     """
     target_tag = f"{_TAG_PREFIX_SINGLE_TURN_DRIVE_BATCH}{batch_tag}"
     pipeline_tags = {_TAG_SINGLE_TURN_DRIVE, target_tag}
     deleted = 0
     for run in find_single_turn_batch_runs(task, batch_tag):
-        if set(run.tags or []) != pipeline_tags or run.output.rating is not None:
+        if set(run.tags or []) != pipeline_tags or _is_annotated(run):
             logger.info(
                 "Skipping delete of single-turn run %s: claimed by another flow",
                 run.id,
