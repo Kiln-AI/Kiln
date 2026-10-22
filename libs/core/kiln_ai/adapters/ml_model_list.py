@@ -794,6 +794,22 @@ QWEN_3P8_GROQ_THINKING_LEVELS = {
     "Medium": "medium",
 }
 
+# Cloudflare Workers AI takes `reasoning_effort` low/medium/high for DeepSeek V4.1
+# Flash 1017 and GLM 5.3.
+CLOUDFLARE_LOW_MEDIUM_HIGH_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+}
+
+# Cloudflare rejects `high` for Qwen 3.8 27B: "Supported types are xhigh
+# (default), medium, and low."
+QWEN_3P8_CLOUDFLARE_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "Extra High": "xhigh",
+}
+
 
 built_in_models: List[KilnModel] = [
     # GPT 6.1 Sol Pro
@@ -6441,6 +6457,9 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/deepseek-ai/deepseek-v4.1-flash-1017",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                available_thinking_levels=CLOUDFLARE_LOW_MEDIUM_HIGH_THINKING_LEVELS,
+                default_thinking_level="high",
                 supports_vision=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
@@ -7639,6 +7658,9 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/qwen/qwen3.8-27b",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                available_thinking_levels=QWEN_3P8_CLOUDFLARE_THINKING_LEVELS,
+                default_thinking_level="xhigh",
                 supports_vision=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
@@ -9817,6 +9839,9 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/zai-org/glm-5.3",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                available_thinking_levels=CLOUDFLARE_LOW_MEDIUM_HIGH_THINKING_LEVELS,
+                default_thinking_level="high",
             ),
         ],
     ),
