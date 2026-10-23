@@ -178,19 +178,13 @@ class AvailableSpecName(NamedTuple):
 def resolve_available_spec_name(
     candidate: str, existing_names: list[str]
 ) -> AvailableSpecName:
-    """Resolve `candidate` to a spec name that is actually available.
+    """Return `candidate` if no existing name derives the same eval tags, else
+    the first free variant.
 
-    Collision is judged by the DERIVED EVAL TAGS, not the raw string — two
-    names differing only by case or spacing share a tag namespace (and so
-    each other's datasets), which is the same comparison the save guard
-    enforces. On a collision, suffix ` 2`, ` 3`, … — trimming the base to
-    keep the result inside the short-name limit, and trimming trailing
-    spaces and underscores so the join can't fabricate a forbidden double
-    space or a `_ ` seam.
+    Variants add ` 2` through ` 99`, trimming the base and any trailing spaces
+    or underscores so the result stays within 32 characters.
 
-    Raises SpecNameConflictError if no variant is free within the search
-    bound (a task with ~100 same-named specs — pathological; refusing beats
-    looping forever).
+    Raises SpecNameConflictError if every variant is taken.
     """
     taken = {generate_spec_eval_tags(name).test_tag for name in existing_names}
     if generate_spec_eval_tags(candidate).test_tag not in taken:
