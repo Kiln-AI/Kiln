@@ -11022,7 +11022,6 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Minimax M3.1 Flash
     KilnModel(
         family=ModelFamily.minimax,
         name=ModelName.minimax_m3_1_flash,
@@ -11041,14 +11040,12 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 multimodal_requires_pdf_as_image=True,
                 multimodal_mime_types=[
-                    # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                     # documents (via PDF-as-image)
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
-                    # video
                     KilnMimeType.MP4,
                     KilnMimeType.MOV,
                 ],
@@ -11938,7 +11935,6 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Mercury 3
     KilnModel(
         family=ModelFamily.inception,
         name=ModelName.mercury_3,
