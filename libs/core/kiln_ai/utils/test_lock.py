@@ -207,7 +207,8 @@ async def _assert_waiter_keeps_exclusion(locks: AsyncLockManager, holder_task) -
 
     waiter_task = asyncio.create_task(waiter())
     await asyncio.sleep(0.01)
-    with pytest.raises((asyncio.CancelledError, TimeoutError)):
+    # asyncio.TimeoutError, not the builtin: they are one class only from Python 3.11.
+    with pytest.raises((asyncio.CancelledError, asyncio.TimeoutError)):
         await holder_task
     await asyncio.wait_for(waiter_holds.wait(), timeout=1)
 
