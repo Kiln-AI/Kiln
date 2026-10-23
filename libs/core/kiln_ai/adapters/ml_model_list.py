@@ -51,6 +51,7 @@ class ModelFamily(str, Enum):
     xingchen = "xingchen"
     ling = "ling"
     inception = "inception"
+    moondream = "moondream"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -358,6 +359,7 @@ class ModelName(str, Enum):
     xing_4_0_29b_a4b = "xing_4_0_29b_a4b"
     ling_3_1_flash = "ling_3_1_flash"
     mercury_3 = "mercury_3"
+    moondream_3_1 = "moondream_3_1"
 
 
 class ModelParserID(str, Enum):
@@ -11948,6 +11950,34 @@ built_in_models: List[KilnModel] = [
                 model_id="inception/mercury-3",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
+            ),
+        ],
+    ),
+    # Moondream 3.1
+    KilnModel(
+        family=ModelFamily.moondream,
+        name=ModelName.moondream_3_1,
+        friendly_name="Moondream 3.1",
+        editorial_notes="Moondream's small vision-language MoE model (9B total, 2B active) for visual question answering, captioning and OCR. 32K context.",
+        providers=[
+            # OpenRouter lists no response_format or tools for this model.
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="moondream/moondream3.1-9b-a2b",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                supports_function_calling=False,
+                multimodal_capable=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
             ),
         ],
     ),
