@@ -1,6 +1,9 @@
 import asyncio
 import logging
 import os
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Awaitable, Callable
 
 import pytest
@@ -262,6 +265,60 @@ async def test_seed_duplicate_keys_first_wins(task):
     assert was_generated is False
     assert trace.id == expected.id
     assert generate.calls == 0
+
+
+def test_concurrent_seeds_of_one_task_read_it_one_at_a_time(task, monkeypatch):
+    """Eval jobs that start together each seed an index. On a cold cache, each reader of
+    the task parses its own copy of every TaskRun, so the reads must not overlap."""
+    save_trace(task)
+    real_runs = Task.runs
+    active = 0
+    most_active = 0
+    counter_lock = threading.Lock()
+
+    def counting_runs(self, *args, **kwargs):
+        nonlocal active, most_active
+        with counter_lock:
+            active += 1
+            most_active = max(most_active, active)
+        try:
+            time.sleep(0.05)
+            return real_runs(self, *args, **kwargs)
+        finally:
+            with counter_lock:
+                active -= 1
+
+    monkeypatch.setattr(Task, "runs", counting_runs)
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        indexes = list(pool.map(lambda _: TraceIndex(task), range(4)))
+
+    assert most_active == 1
+    assert all(KEY in index._paths for index in indexes)
+
+
+def test_seeds_of_different_tasks_do_not_wait_for_each_other(
+    task, tmp_path, monkeypatch
+):
+    other = Task(
+        name="other",
+        description="other",
+        instruction="do the other thing",
+        path=tmp_path / "other" / "task.kiln",
+    )
+    other.save_to_file()
+    real_runs = Task.runs
+    # Each seed waits here for the other: a lock shared across tasks breaks the barrier.
+    both_reading = threading.Barrier(2, timeout=5)
+
+    def meeting_runs(self, *args, **kwargs):
+        both_reading.wait()
+        return real_runs(self, *args, **kwargs)
+
+    monkeypatch.setattr(Task, "runs", meeting_runs)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(TraceIndex, [task, other]))
 
 
 @pytest.mark.asyncio

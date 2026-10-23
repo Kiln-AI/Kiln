@@ -16,6 +16,7 @@ what makes a retry after a scoring failure re-score rather than regenerate.
 import hashlib
 import json
 import logging
+import threading
 from pathlib import Path
 from typing import Awaitable, Callable, Dict, Tuple
 
@@ -29,6 +30,20 @@ from kiln_ai.datamodel.world import WorldReset
 from kiln_ai.utils.lock import AsyncLockManager
 
 logger = logging.getLogger(__name__)
+
+# One lock per task directory, for the whole process. Seeding reads every TaskRun of the
+# task, and on a cold ModelCache each concurrent reader parses its own copy of every file,
+# so eval jobs that start together on a large task each held the whole task in memory.
+# Under the lock the first seed parses and fills the cache, and a seed that waited behind
+# it gets the cached objects back.
+_seed_locks: Dict[Path | None, threading.Lock] = {}
+_seed_locks_guard = threading.Lock()
+
+
+def _seed_lock(task: Task) -> threading.Lock:
+    with _seed_locks_guard:
+        return _seed_locks.setdefault(task.path, threading.Lock())
+
 
 TraceKey = Tuple[ItemSource, str, str, str]
 """What identifies a reusable eval trace: `(source_type, source_id, run_config_id, world)`.
@@ -133,7 +148,9 @@ class TraceIndex:
         # generating at all). Nothing may ever chain a child onto an eval trace
         # without revisiting this seed — the parent would turn invisible here, and
         # the eval would silently regenerate its trace on every run.
-        for run in self._task.runs(readonly=True, include_eval_generated=True):
+        with _seed_lock(self._task):
+            runs = self._task.runs(readonly=True, include_eval_generated=True)
+        for run in runs:
             if run.path is None:
                 continue
             key = _stored_trace_key(run)
