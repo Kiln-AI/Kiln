@@ -17,6 +17,7 @@ from kiln_ai.adapters.ml_model_list import (
     ModelName,
     ModelProviderName,
     StructuredOutputMode,
+    built_in_models,
     built_in_models_from_provider,
 )
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
@@ -1036,6 +1037,100 @@ def test_usage_from_response(config, mock_task, litellm_usage, cost, expected_us
 
     # Verify the response was queried correctly
     response.get.assert_called_once_with("usage", None)
+
+
+def _cloudflare_adapter(mock_task, model_name: str) -> LiteLlmAdapter:
+    config = LiteLlmConfig(
+        base_url="https://api.test.com",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name=model_name,
+            model_provider_name="cloudflare",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+    )
+    return LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+
+def _response(usage, cost):
+    response = Mock(spec=ModelResponse)
+    response.get.return_value = usage
+    response._hidden_params = {"response_cost": cost}
+    return response
+
+
+def test_usage_from_response_prices_tokens_when_litellm_has_no_cost(mock_task):
+    # Cloudflare DeepSeek V4.1 Flash 1017: $0.30 input, $0.006 cached input, $1.20 output per million.
+    adapter = _cloudflare_adapter(mock_task, "deepseek_4_1_flash_1017")
+    usage = litellm.types.utils.Usage(
+        prompt_tokens=1_000_000,
+        completion_tokens=100_000,
+        total_tokens=1_100_000,
+        prompt_tokens_details=litellm.types.utils.PromptTokensDetailsWrapper(
+            cached_tokens=900_000
+        ),
+    )
+    result = adapter.usage_from_response(_response(usage, None))
+    assert result.cost == pytest.approx(
+        100_000 * 0.30 / 1e6 + 900_000 * 0.006 / 1e6 + 100_000 * 1.20 / 1e6
+    )
+
+
+def test_usage_from_response_without_a_cached_price_bills_cached_tokens_as_input(
+    mock_task,
+):
+    # Cloudflare Qwen 3.8 27B has no cached-input price: $0.45 input, $3.20 output per million.
+    adapter = _cloudflare_adapter(mock_task, "qwen_3p8_27b")
+    usage = litellm.types.utils.Usage(
+        prompt_tokens=1_000_000,
+        completion_tokens=0,
+        total_tokens=1_000_000,
+        prompt_tokens_details=litellm.types.utils.PromptTokensDetailsWrapper(
+            cached_tokens=500_000
+        ),
+    )
+    assert adapter.usage_from_response(_response(usage, None)).cost == pytest.approx(
+        0.45
+    )
+
+
+def test_usage_from_response_keeps_the_litellm_cost(mock_task):
+    adapter = _cloudflare_adapter(mock_task, "deepseek_4_1_flash_1017")
+    usage = litellm.types.utils.Usage(
+        prompt_tokens=1000, completion_tokens=10, total_tokens=1010
+    )
+    assert adapter.usage_from_response(_response(usage, 0.25)).cost == 0.25
+
+
+def test_usage_from_response_has_no_cost_for_a_model_without_prices(config, mock_task):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    usage = litellm.types.utils.Usage(
+        prompt_tokens=1000, completion_tokens=10, total_tokens=1010
+    )
+    assert adapter.usage_from_response(_response(usage, None)).cost is None
+
+
+def test_cloudflare_token_prices_are_set():
+    prices = {
+        (model.name, provider.name): provider.token_prices
+        for model in built_in_models
+        for provider in model.providers
+        if provider.name == ModelProviderName.cloudflare
+        and provider.token_prices is not None
+    }
+    assert (
+        prices[
+            ("deepseek_4_1_flash_1017", ModelProviderName.cloudflare)
+        ].output_per_mtok
+        == 1.20
+    )
+    assert (
+        prices[("glm_5_3", ModelProviderName.cloudflare)].cached_input_per_mtok == 0.26
+    )
+    assert (
+        prices[("qwen_3p8_27b", ModelProviderName.cloudflare)].cached_input_per_mtok
+        is None
+    )
 
 
 def test_usage_from_response_prompt_details_without_cached_tokens(config, mock_task):
