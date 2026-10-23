@@ -1651,6 +1651,27 @@ def test_available_spec_name_route_rejects_invalid_candidate(client, project_and
     assert response.status_code == 422
 
 
+def test_available_spec_name_route_returns_409_when_no_variant_is_free(
+    client, project_and_task
+):
+    project, task = project_and_task
+    url = f"/api/projects/{project.id}/tasks/{task.id}/available_spec_name"
+
+    with (
+        patch("kiln_server.spec_api.task_from_id", return_value=task),
+        patch(
+            "kiln_server.spec_api.resolve_available_spec_name",
+            side_effect=SpecNameConflictError(
+                "No available variant of 'name' was found."
+            ),
+        ),
+    ):
+        response = client.get(url, params={"name": "name"})
+
+    assert response.status_code == 409
+    assert response.json()["message"] == "No available variant of 'name' was found."
+
+
 def test_available_spec_name_route_task_not_found(client):
     response = client.get(
         "/api/projects/p/tasks/t/available_spec_name",
