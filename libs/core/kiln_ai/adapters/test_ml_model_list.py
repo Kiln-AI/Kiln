@@ -808,9 +808,10 @@ def test_cloudflare_thinking_levels(model_id, expected_levels, expected_default)
     "model_id,expected_levels,expected_default,expected_allowed_params",
     [
         # Not in LiteLLM's bundled model map, so reasoning_effort must be whitelisted.
+        # No Extra High: Fireworks accepts "xhigh" but reasons no longer than "high".
         (
             "accounts/fireworks/models/muse-spark-open",
-            {"Low": "low", "Medium": "medium", "High": "high", "Extra High": "xhigh"},
+            {"Low": "low", "Medium": "medium", "High": "high"},
             "medium",
             ["reasoning_effort"],
         ),

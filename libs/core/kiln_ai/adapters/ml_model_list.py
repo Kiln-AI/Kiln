@@ -822,6 +822,14 @@ QWEN_3P8_GROQ_THINKING_LEVELS = {
     "Medium": "medium",
 }
 
+# Fireworks: Muse Spark Open accepts "xhigh" but reasons no longer than with "high",
+# so Extra High is left out here.
+MUSE_SPARK_OPEN_FIREWORKS_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+}
+
 # Fireworks: GLM 5.3 Flash is thinking-only ("none" is rejected). With no
 # reasoning_effort it reasons as long as with "max", so "max" is the default.
 GLM_5P3_FLASH_FIREWORKS_THINKING_LEVELS = {
@@ -5617,7 +5625,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 # Not in LiteLLM's bundled model map, so it would drop reasoning_effort
                 litellm_allowed_openai_params=["reasoning_effort"],
-                available_thinking_levels=MUSE_SPARK_OPEN_THINKING_LEVELS,
+                available_thinking_levels=MUSE_SPARK_OPEN_FIREWORKS_THINKING_LEVELS,
                 default_thinking_level="medium",
                 supports_data_gen=True,
                 supports_vision=True,
