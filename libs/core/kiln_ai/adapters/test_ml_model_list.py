@@ -816,9 +816,10 @@ def test_cloudflare_thinking_levels(model_id, expected_levels, expected_default)
             ["reasoning_effort"],
         ),
         # Thinking-only: Fireworks rejects "none", and no effort reasons as long as "max".
+        # No Medium: Fireworks accepts "medium" but it reasons the same as "high".
         (
             "accounts/fireworks/models/glm-5p3-flash",
-            {"Low": "low", "Medium": "medium", "High": "high", "Max": "max"},
+            {"Low": "low", "High": "high", "Max": "max"},
             "max",
             None,
         ),

@@ -832,9 +832,10 @@ MUSE_SPARK_OPEN_FIREWORKS_THINKING_LEVELS = {
 
 # Fireworks: GLM 5.3 Flash is thinking-only ("none" is rejected). With no
 # reasoning_effort it reasons as long as with "max", so "max" is the default.
+# Fireworks does not document its levels for this model. It accepts "medium", but
+# measured on Fireworks "medium" reasons the same as "high", so Medium is left out.
 GLM_5P3_FLASH_FIREWORKS_THINKING_LEVELS = {
     "Low": "low",
-    "Medium": "medium",
     "High": "high",
     "Max": "max",
 }
