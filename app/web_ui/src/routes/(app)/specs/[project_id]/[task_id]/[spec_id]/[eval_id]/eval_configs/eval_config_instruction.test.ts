@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest"
 import { render } from "@testing-library/svelte"
-import EvalConfigInstruction from "./eval_config_instruction.svelte"
+import EvalConfigInstruction from "$lib/components/eval_config_instruction.svelte"
 import type { EvalConfig } from "$lib/types"
 import { ALL_V2_EVAL_TYPES } from "$lib/utils/eval_types/registry"
 

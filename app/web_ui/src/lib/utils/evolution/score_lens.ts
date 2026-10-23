@@ -1,0 +1,558 @@
+import type { components } from "$lib/api_schema"
+import type { Eval } from "$lib/types"
+import { score_key_label, score_type_range } from "$lib/utils/formatters"
+import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
+
+type EvalResultsSummaryResponse =
+  components["schemas"]["EvalResultsSummaryResponse"]
+type ScoreType = components["schemas"]["TaskOutputRatingType"]
+type ScoreDirection = components["schemas"]["ScoreDirection"]
+
+// What a node card puts its one number to.
+//
+// "none" is the default, and it is a position rather than an absence: a run
+// config has no single score, and the aggregate that used to sit here invented
+// one by averaging every eval's normalized mean at equal weight. Nothing about
+// a task says a destructive-write check and a tone judge are worth the same,
+// so that number moved with the eval set rather than with the work. The card
+// keeps what is actually true of a config without a choice being made for the
+// reader - how many runs are behind it, and which scores moved against its
+// parent - and a lens is picked when there is a question that needs one.
+export type Lens =
+  | { kind: "none" }
+  | { kind: "aggregate" }
+  | { kind: "single"; evalId: string; scoreKey: string }
+
+export type StripCellSign = -1 | 0 | 1 | null
+
+// How a strip cell is painted:
+// - "delta":    the node and its parent both have a score, so the cell carries
+//               the better/worse/neutral color of the delta.
+// - "absolute": the node has a score but there is no parent baseline to compare
+//               against, so the cell shows the node's own lens bin color,
+//               muted. A completed eval always leaves a tick this way.
+// - "empty":    no score for this key at all.
+export type StripCellMode = "delta" | "absolute" | "empty"
+
+export interface StripCell {
+  evalId: string
+  scoreKey: string
+  /** Sign of the delta vs the parent baseline; null unless mode is "delta" */
+  sign: StripCellSign
+  mode: StripCellMode
+  /** Resolved fill color for the cell */
+  color: string
+  /** Hover text for the cell */
+  title: string
+}
+
+export interface ScoreKeyMeta {
+  evalId: string
+  evalName: string
+  scoreKey: string
+  type: ScoreType | null
+  direction: ScoreDirection
+}
+
+export interface LensData {
+  keyMetas: ScoreKeyMeta[]
+  /** Raw mean score per run config id, keyed `${evalId}::${scoreKey}` */
+  raw: Map<string, Map<string, number>>
+  /** Direction-corrected normalized (0..1) score, same keying as `raw` */
+  normalized: Map<string, Map<string, number>>
+  /**
+   * Runs behind each mean, same keying as `raw`. What separates a score from an
+   * estimate of one: without it nothing downstream can put an interval on a
+   * mean. Absent for older payloads that predate the field.
+   */
+  counts: Map<string, Map<string, number>>
+  /** percent_complete per run config id, keyed by eval id */
+  percentComplete: Map<string, Map<string, number>>
+}
+
+// What the node card renders under the current lens; computed once per node
+// by the page and shared by the canvas and the unlinked grid.
+export interface NodeDisplay {
+  lens_color: string
+  lens_value: string | null
+  /** Eval runs behind this config under the current split - see run_count */
+  runs: number
+  strip: StripCell[]
+  subtitle: string
+  best: boolean
+  dimmed: boolean
+}
+
+export const NO_SCORE_COLOR = "#d1d5db"
+export const SCORE_BIN_COLORS = [
+  "#9dabfa",
+  "#7d8ff8",
+  "#5a72f6",
+  "#3a50d9",
+  "#2438b8",
+]
+
+export const STRIP_EPSILON = 0.02
+export const STRIP_BETTER_COLOR = "#3a50d9"
+export const STRIP_WORSE_COLOR = "#d03b3b"
+export const STRIP_NEUTRAL_COLOR = "#e5e7eb"
+// Cells with no score at all: present (so the strip stays aligned) but almost
+// invisible, so they never read as a result.
+export const STRIP_EMPTY_COLOR = "#f3f4f6"
+
+export function score_key_id(evalId: string, scoreKey: string): string {
+  return `${evalId}::${scoreKey}`
+}
+
+/**
+ * Whether an eval's score keys are metrics rather than criteria.
+ *
+ * The test is the score TYPE, because that is the structural difference the
+ * page's two tracks are built on rather than a naming convention. A criterion
+ * is graded on a bounded scale the type itself defines - pass/fail is 0..1,
+ * five star is 1..5 - which is what lets it be plotted against an absolute
+ * axis and averaged with its peers. A metric is `custom`: unbounded, with no
+ * maximum cost or latency to normalize against, so the only scale it has is
+ * position among the run configs being compared.
+ *
+ * So: an eval whose scores are ALL custom is a metrics eval. One with any
+ * bounded score is a criterion eval, and every key on it - including a custom
+ * one sitting beside the graded ones - is a criterion key.
+ *
+ * Deliberately not the direction. Routing on direction was the bug: it holds
+ * only while every metric is better small, and `cache_hit_rate` is not.
+ *
+ * Lives HERE, beside ScoreKeyMeta, rather than in metric_axes where it was
+ * first written, because the aggregate lens needs it too and a rule this
+ * consequential must have exactly one definition. metric_axes re-exports it.
+ */
+export function is_metric_eval(evalKeyMetas: ScoreKeyMeta[]): boolean {
+  return (
+    evalKeyMetas.length > 0 &&
+    evalKeyMetas.every((meta) => meta.type === "custom")
+  )
+}
+
+/** The ids of the evals that report metrics rather than grade criteria */
+export function metric_eval_ids(keyMetas: ScoreKeyMeta[]): Set<string> {
+  const by_eval = new Map<string, ScoreKeyMeta[]>()
+  for (const meta of keyMetas) {
+    const group = by_eval.get(meta.evalId) ?? []
+    group.push(meta)
+    by_eval.set(meta.evalId, group)
+  }
+  const ids = new Set<string>()
+  for (const [evalId, metas] of by_eval) {
+    if (is_metric_eval(metas)) ids.add(evalId)
+  }
+  return ids
+}
+
+export function lens_key(lens: Lens): string {
+  switch (lens.kind) {
+    case "none":
+      return "none"
+    case "aggregate":
+      return "aggregate"
+    default:
+      return score_key_id(lens.evalId, lens.scoreKey)
+  }
+}
+
+// An unset or unparseable key is the default lens, not the aggregate: a URL
+// written before "none" existed carried `lens=aggregate` explicitly whenever
+// the aggregate was what the reader chose, so falling back to "none" here
+// changes the default without overriding anybody's saved view.
+export function parse_lens_key(key: string | null): Lens {
+  if (!key || key === "none") {
+    return { kind: "none" }
+  }
+  if (key === "aggregate") {
+    return { kind: "aggregate" }
+  }
+  const separator = key.indexOf("::")
+  if (separator <= 0 || separator + 2 >= key.length) {
+    return { kind: "none" }
+  }
+  return {
+    kind: "single",
+    evalId: key.slice(0, separator),
+    scoreKey: key.slice(separator + 2),
+  }
+}
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value))
+}
+
+export function build_lens_data(
+  summary: EvalResultsSummaryResponse | null,
+  evals: Eval[] | null,
+): LensData {
+  const keyMetas: ScoreKeyMeta[] = []
+  const raw = new Map<string, Map<string, number>>()
+  const normalized = new Map<string, Map<string, number>>()
+  const counts = new Map<string, Map<string, number>>()
+  const percentComplete = new Map<string, Map<string, number>>()
+  if (!summary) {
+    return { keyMetas, raw, normalized, counts, percentComplete }
+  }
+
+  // Score key metadata: eval_results_summary reports JSON score keys; match
+  // them back to the eval's output_scores via the same name -> JSON key
+  // mapping the server uses.
+  const evals_by_id = new Map<string, Eval>()
+  for (const evaluator of evals ?? []) {
+    if (evaluator.id) {
+      evals_by_id.set(evaluator.id, evaluator)
+    }
+  }
+  for (const [eval_id, eval_info] of Object.entries(summary.evals_by_id)) {
+    const evaluator = evals_by_id.get(eval_id)
+    for (const score_key of eval_info.output_score_keys) {
+      const output_score = evaluator?.output_scores.find(
+        (score) => string_to_json_key(score.name) === score_key,
+      )
+      keyMetas.push({
+        evalId: eval_id,
+        evalName: eval_info.name,
+        scoreKey: score_key,
+        type: output_score?.type ?? null,
+        direction: output_score?.direction ?? "higher_is_better",
+      })
+    }
+  }
+
+  // Raw mean scores and per-eval completion
+  for (const [run_config_id, cells] of Object.entries(
+    summary.scores_by_run_config_by_eval,
+  )) {
+    const raw_scores = new Map<string, number>()
+    const sample_sizes = new Map<string, number>()
+    const completion = new Map<string, number>()
+    for (const [eval_id, cell] of Object.entries(cells)) {
+      completion.set(eval_id, cell.percent_complete)
+      for (const [score_key, value] of Object.entries(cell.mean_scores)) {
+        if (typeof value === "number" && Number.isFinite(value)) {
+          raw_scores.set(score_key_id(eval_id, score_key), value)
+        }
+      }
+      for (const [score_key, n] of Object.entries(
+        cell.n_used_by_score_key ?? {},
+      )) {
+        if (typeof n === "number" && Number.isFinite(n) && n > 0) {
+          sample_sizes.set(score_key_id(eval_id, score_key), n)
+        }
+      }
+    }
+    raw.set(run_config_id, raw_scores)
+    normalized.set(run_config_id, new Map())
+    counts.set(run_config_id, sample_sizes)
+    percentComplete.set(run_config_id, completion)
+  }
+
+  // Normalize per key (direction-corrected 0..1). Custom/unknown types are
+  // min-max scaled across the run configs that have the key.
+  for (const meta of keyMetas) {
+    const key = score_key_id(meta.evalId, meta.scoreKey)
+    let min = Infinity
+    let max = -Infinity
+    for (const raw_scores of raw.values()) {
+      const value = raw_scores.get(key)
+      if (value !== undefined) {
+        min = Math.min(min, value)
+        max = Math.max(max, value)
+      }
+    }
+    for (const [run_config_id, raw_scores] of raw) {
+      const value = raw_scores.get(key)
+      if (value === undefined) {
+        continue
+      }
+      // Known score types scale against their own full range; custom or
+      // unknown ones are min-max scaled across the run configs that have the
+      // key (all equal -> 0.5).
+      const range = score_type_range(meta.type)
+      let scaled = range
+        ? clamp01((value - range.min) / (range.max - range.min))
+        : max > min
+          ? (value - min) / (max - min)
+          : 0.5
+      if (meta.direction === "lower_is_better") {
+        scaled = 1 - scaled
+      }
+      normalized.get(run_config_id)?.set(key, scaled)
+    }
+  }
+
+  return { keyMetas, raw, normalized, counts, percentComplete }
+}
+
+/** Runs behind one config's mean for one score key; null when unknown. */
+export function sample_size(
+  lens_data: LensData,
+  runConfigId: string,
+  evalId: string,
+  scoreKey: string,
+): number | null {
+  return (
+    lens_data.counts.get(runConfigId)?.get(score_key_id(evalId, scoreKey)) ??
+    null
+  )
+}
+
+/**
+ * How many eval runs are behind a run config, across every eval on the page.
+ *
+ * Per eval it is the largest per-score-key count, not their sum: one run
+ * produces one value for each of its eval's score keys, so summing the keys
+ * would multiply a 25-run eval by however many things it scores. Summing
+ * ACROSS evals is right for the same reason - those are different runs of the
+ * task. Scoped by whatever split the page is reading, since that is what the
+ * summary behind it was scoped to.
+ *
+ * This is the number the graph shows on every card, whatever the lens: it is
+ * the one quantity about a run config that needs no weighting decision, and
+ * without it a mean over 3 runs and a mean over 300 look identical.
+ */
+export function run_count(data: LensData, runConfigId: string): number {
+  const counts = data.counts.get(runConfigId)
+  if (!counts || counts.size === 0) {
+    return 0
+  }
+  const per_eval = new Map<string, number>()
+  for (const [key, n] of counts) {
+    const separator = key.indexOf("::")
+    const evalId = separator > 0 ? key.slice(0, separator) : key
+    per_eval.set(evalId, Math.max(per_eval.get(evalId) ?? 0, n))
+  }
+  let total = 0
+  for (const n of per_eval.values()) {
+    total += n
+  }
+  return total
+}
+
+export function raw_score(
+  data: LensData,
+  runConfigId: string,
+  evalId: string,
+  scoreKey: string,
+): number | null {
+  return data.raw.get(runConfigId)?.get(score_key_id(evalId, scoreKey)) ?? null
+}
+
+export function normalized_score(
+  data: LensData,
+  runConfigId: string,
+  evalId: string,
+  scoreKey: string,
+): number | null {
+  return (
+    data.normalized.get(runConfigId)?.get(score_key_id(evalId, scoreKey)) ??
+    null
+  )
+}
+
+export function percent_complete(
+  data: LensData,
+  runConfigId: string,
+  evalId: string,
+): number | null {
+  return data.percentComplete.get(runConfigId)?.get(evalId) ?? null
+}
+
+/**
+ * The keys an aggregate is over: the criteria, minus the ones that declare no
+ * better direction.
+ *
+ * METRIC EVALS ARE EXCLUDED, and that is a correction rather than a choice. A
+ * metrics eval's keys are `custom`, so they have no scale of their own and are
+ * min-max scaled across the run configs in the summary - which turns "this
+ * config was the cheapest of the thirteen ever run here" into a number
+ * indistinguishable from a pass rate, and then averages it with the pass
+ * rates. Measured on one task, that put 11 metric keys against 6 quality keys
+ * in the "quality" aggregate: two thirds of it, uncorrelated with the quality
+ * block (r = 0.03), compressing the spread by ~45% and inverting the order of
+ * two configs. The cheap arm read as higher quality BECAUSE it was cheap, and
+ * the number gating a price chart had cost inside it.
+ *
+ * Same partition the two radars use (is_metric_eval), so "aggregate" means the
+ * same thing everywhere it is shown: the DAG cards, the delta strips' baseline,
+ * and the price/latency gate.
+ */
+export function aggregate_key_metas(keyMetas: ScoreKeyMeta[]): ScoreKeyMeta[] {
+  const metric_evals = metric_eval_ids(keyMetas)
+  return keyMetas.filter(
+    (meta) =>
+      meta.direction !== "informational" && !metric_evals.has(meta.evalId),
+  )
+}
+
+// Normalized value under a lens. Aggregate = unweighted mean of the run
+// config's normalized criterion keys - see aggregate_key_metas for what is in
+// and what is not.
+export function normalized_lens_value(
+  data: LensData,
+  runConfigId: string,
+  lens: Lens,
+): number | null {
+  if (lens.kind === "none") {
+    return null
+  }
+  if (lens.kind === "single") {
+    return normalized_score(data, runConfigId, lens.evalId, lens.scoreKey)
+  }
+  let total = 0
+  let count = 0
+  for (const meta of aggregate_key_metas(data.keyMetas)) {
+    const value = normalized_score(
+      data,
+      runConfigId,
+      meta.evalId,
+      meta.scoreKey,
+    )
+    if (value !== null) {
+      total += value
+      count++
+    }
+  }
+  return count > 0 ? total / count : null
+}
+
+// Raw display value under a lens. For the aggregate lens there is no raw
+// scale, so the normalized mean is the displayed value.
+export function raw_lens_value(
+  data: LensData,
+  runConfigId: string,
+  lens: Lens,
+): number | null {
+  if (lens.kind === "single") {
+    return raw_score(data, runConfigId, lens.evalId, lens.scoreKey)
+  }
+  return normalized_lens_value(data, runConfigId, lens)
+}
+
+// Bins on normalized [0,1]; darkest = best. No score -> gray.
+export function lens_color(normalized_value: number | null): string {
+  if (normalized_value === null || Number.isNaN(normalized_value)) {
+    return NO_SCORE_COLOR
+  }
+  if (normalized_value < 0.4) {
+    return SCORE_BIN_COLORS[0]
+  }
+  if (normalized_value < 0.6) {
+    return SCORE_BIN_COLORS[1]
+  }
+  if (normalized_value < 0.75) {
+    return SCORE_BIN_COLORS[2]
+  }
+  if (normalized_value < 0.9) {
+    return SCORE_BIN_COLORS[3]
+  }
+  return SCORE_BIN_COLORS[4]
+}
+
+// Delta in normalized units vs the (primary) parent under a lens.
+export function delta_vs_parent(
+  data: LensData,
+  runConfigId: string,
+  parentId: string | null,
+  lens: Lens,
+): number | null {
+  if (!parentId) {
+    return null
+  }
+  const child = normalized_lens_value(data, runConfigId, lens)
+  const parent = normalized_lens_value(data, parentId, lens)
+  if (child === null || parent === null) {
+    return null
+  }
+  return child - parent
+}
+
+function format_delta(delta: number): string {
+  if (Math.abs(delta) <= STRIP_EPSILON) {
+    return "±0.00"
+  }
+  return `${delta > 0 ? "+" : "−"}${Math.abs(delta).toFixed(2)}`
+}
+
+// One strip cell per (eval, scoreKey), always the same set in the same order so
+// every card's strip lines up.
+//
+// A cell is a delta vs the primary parent when both sides have a score: sign of
+// the direction-corrected normalized delta, with a +/-0.02 dead zone. When the
+// node is scored but there is no baseline to compare against (no parent, a
+// parent with no results for that key, or an informational key, which carries
+// no better/worse direction) the cell falls back to the node's own absolute
+// lens color so a finished eval still shows a tick. Unscored keys stay blank.
+export function strip_cells(
+  data: LensData,
+  runConfigId: string,
+  parentId: string | null,
+): StripCell[] {
+  return data.keyMetas.map((meta) => {
+    const label = `${meta.evalName} · ${score_key_label(meta.scoreKey)}`
+    const child = normalized_score(
+      data,
+      runConfigId,
+      meta.evalId,
+      meta.scoreKey,
+    )
+    if (child === null) {
+      return {
+        evalId: meta.evalId,
+        scoreKey: meta.scoreKey,
+        sign: null,
+        mode: "empty" as const,
+        color: STRIP_EMPTY_COLOR,
+        title: `${label}: not scored`,
+      }
+    }
+
+    const raw = raw_score(data, runConfigId, meta.evalId, meta.scoreKey)
+    const value_text = (raw ?? child).toFixed(2)
+    const parent =
+      parentId && meta.direction !== "informational"
+        ? normalized_score(data, parentId, meta.evalId, meta.scoreKey)
+        : null
+
+    if (parent !== null) {
+      const delta = child - parent
+      const sign: StripCellSign =
+        delta > STRIP_EPSILON ? 1 : delta < -STRIP_EPSILON ? -1 : 0
+      return {
+        evalId: meta.evalId,
+        scoreKey: meta.scoreKey,
+        sign,
+        mode: "delta" as const,
+        color: strip_cell_color(sign),
+        title: `${label}: ${value_text} · ${format_delta(delta)} vs parent`,
+      }
+    }
+
+    return {
+      evalId: meta.evalId,
+      scoreKey: meta.scoreKey,
+      sign: null,
+      mode: "absolute" as const,
+      color: lens_color(child),
+      title: `${label}: ${value_text}${
+        meta.direction === "informational"
+          ? " · informational"
+          : " · no parent baseline"
+      }`,
+    }
+  })
+}
+
+export function strip_cell_color(sign: StripCellSign): string {
+  if (sign === 1) {
+    return STRIP_BETTER_COLOR
+  }
+  if (sign === -1) {
+    return STRIP_WORSE_COLOR
+  }
+  return STRIP_NEUTRAL_COLOR
+}

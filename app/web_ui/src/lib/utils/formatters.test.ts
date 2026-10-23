@@ -6,6 +6,9 @@ import {
   capitalize,
   escape_html,
   score_display_name,
+  score_key_label,
+  score_type_max,
+  score_type_range,
 } from "./formatters"
 
 import type { StructuredOutputMode } from "$lib/types"
@@ -498,5 +501,31 @@ describe("escape_html", () => {
 
   it("leaves plain text unchanged", () => {
     expect(escape_html("Overall Rating")).toBe("Overall Rating")
+  })
+})
+
+describe("score_key_label", () => {
+  it("title-cases a JSON score key", () => {
+    expect(score_key_label("false_done_claim")).toBe("False Done Claim")
+  })
+
+  it("keeps known acronyms upper case", () => {
+    expect(score_key_label("llm_calls")).toBe("LLM Calls")
+    expect(score_key_label("api_error_ids")).toBe("API Error IDs")
+  })
+})
+
+describe("score_type_range and score_type_max", () => {
+  it("gives the full range of bounded score types", () => {
+    expect(score_type_range("five_star")).toEqual({ min: 1, max: 5 })
+    expect(score_type_range("pass_fail")).toEqual({ min: 0, max: 1 })
+    expect(score_type_range("pass_fail_critical")).toEqual({ min: -1, max: 1 })
+    expect(score_type_max("five_star")).toBe(5)
+  })
+
+  it("has no range for unbounded or unknown score types", () => {
+    expect(score_type_range("custom")).toBeNull()
+    expect(score_type_range(undefined)).toBeNull()
+    expect(score_type_max("custom")).toBeNull()
   })
 })
