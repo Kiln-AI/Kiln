@@ -119,11 +119,11 @@ class _TaskTraces:
         # early in a long eval never serves a stale object, and it stays correct across
         # cache invalidation. Cheap, because the reload is usually a cache hit.
         self.paths: Dict[TraceKey, Path] = {}
-        # Already the two-level locking this needs: a manager mutex held only long enough
-        # to create an entry, and a per-key lock held across generation, so jobs on
-        # different keys never wait on each other. It also reclaims idle entries, which
-        # matters over an eval with thousands of keys. Shared, so a job waits on another
-        # runner's generation of its key and then reuses it. The locks are asyncio locks:
+        # A per-key lock held across generation, so jobs on different keys never wait on
+        # each other. It also reclaims idle entries, which matters over an eval with
+        # thousands of keys. Shared, so a job waits on another runner's generation of its
+        # key and then reuses it. A job cancelled mid-generation only releases its key,
+        # and the next waiter takes it over. The locks are asyncio locks:
         # every runner sharing them must run on the one event loop, which the studio
         # server's job runner does.
         self.locks = AsyncLockManager()
