@@ -805,6 +805,7 @@ async def test_build_completion_kwargs_custom_temperature_top_p(config, mock_tas
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
     messages = [{"role": "user", "content": "Hello"}]
 
     with (
@@ -847,6 +848,7 @@ async def test_build_completion_kwargs(
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
     messages = [{"role": "user", "content": "Hello"}]
 
     with (
@@ -893,6 +895,7 @@ async def test_build_completion_kwargs_strips_kiln_only_fields(config, mock_task
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
     messages = [
         {"role": "user", "content": "hi"},
         {
@@ -1181,6 +1184,7 @@ async def test_build_completion_kwargs_strips_reasoning_fields_for_cerebras(
     mock_provider = Mock()
     mock_provider.name = ModelProviderName.cerebras
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
     messages = _reasoning_history_messages()
     original = copy.deepcopy(messages)
 
@@ -1219,6 +1223,7 @@ async def test_build_completion_kwargs_keeps_reasoning_fields_for_other_provider
     mock_provider = Mock()
     mock_provider.name = ModelProviderName.openrouter
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
     messages = _reasoning_history_messages()
 
     with (
@@ -1344,6 +1349,7 @@ async def test_build_completion_kwargs_replaces_unparseable_tool_arguments(
     mock_provider = Mock()
     mock_provider.name = ModelProviderName.anthropic
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
     messages = [
         {"role": "user", "content": "hi"},
         _assistant_tool_calls("{nope"),
@@ -1381,6 +1387,7 @@ async def test_build_completion_kwargs_includes_tools(
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
     messages = [{"role": "user", "content": "Hello"}]
 
     with (
@@ -1414,6 +1421,7 @@ async def test_build_completion_kwargs_omits_allowed_openai_params_without_tools
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
     messages = [{"role": "user", "content": "Hello"}]
 
     with (
@@ -1439,6 +1447,7 @@ async def test_build_completion_kwargs_merges_allowed_openai_params(
     }
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
     messages = [{"role": "user", "content": "Hello"}]
 
     with (
@@ -1468,6 +1477,7 @@ async def test_build_completion_kwargs_preserves_existing_allowed_openai_params_
     }
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
     messages = [{"role": "user", "content": "Hello"}]
 
     with (
@@ -1480,6 +1490,82 @@ async def test_build_completion_kwargs_preserves_existing_allowed_openai_params_
         kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
 
     assert kwargs["allowed_openai_params"] == ["custom_param"]
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_adds_provider_allowed_openai_params(
+    config, mock_task, mock_math_tools
+):
+    """Test that the provider's litellm_allowed_openai_params are merged with the tool params."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = ["reasoning_effort", "tools"]
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=mock_math_tools),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    assert sorted(kwargs["allowed_openai_params"]) == [
+        "reasoning_effort",
+        "tool_choice",
+        "tools",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_fireworks_muse_spark_open_keeps_reasoning_effort(config, mock_task):
+    """LiteLLM's bundled model map has no entry for this model, so with drop_params it
+    drops reasoning_effort unless the provider whitelists it."""
+    provider = built_in_models_from_provider(
+        ModelProviderName.fireworks_ai, ModelName.muse_spark_open
+    )
+    assert provider is not None
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=provider),
+        patch.object(
+            adapter,
+            "litellm_model_id",
+            return_value="fireworks_ai/accounts/fireworks/models/muse-spark-open",
+        ),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=[]),
+    ):
+        kwargs = await adapter.build_completion_kwargs(provider, messages, None)
+    assert kwargs["reasoning_effort"] == "medium"
+
+    # Simulate a model map without the model: LiteLLM does not list reasoning_effort.
+    original = litellm.FireworksAIConfig.get_supported_openai_params
+
+    def without_reasoning(self, model):
+        return [p for p in original(self, model) if p != "reasoning_effort"]
+
+    def optional_params(allowed_openai_params):
+        return litellm.utils.get_optional_params(
+            model="accounts/fireworks/models/muse-spark-open",
+            custom_llm_provider="fireworks_ai",
+            reasoning_effort=kwargs["reasoning_effort"],
+            drop_params=True,
+            allowed_openai_params=allowed_openai_params,
+        )
+
+    with patch.object(
+        litellm.FireworksAIConfig, "get_supported_openai_params", without_reasoning
+    ):
+        assert "reasoning_effort" not in optional_params(None)
+        assert (
+            optional_params(kwargs["allowed_openai_params"])["reasoning_effort"]
+            == "medium"
+        )
 
 
 @pytest.mark.asyncio
@@ -1512,6 +1598,7 @@ async def test_build_completion_kwargs_raises_error_with_tools_conflict(
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
     messages = [{"role": "user", "content": "Hello"}]
 
     with (
@@ -1853,6 +1940,7 @@ async def test_build_completion_kwargs_temp_top_p_exclusive(
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = True
+    mock_provider.litellm_allowed_openai_params = None
     messages = [{"role": "user", "content": "Hello"}]
 
     with (
@@ -1892,6 +1980,7 @@ async def test_build_completion_kwargs_temp_top_p_not_exclusive(config, mock_tas
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
     messages = [{"role": "user", "content": "Hello"}]
 
     with (
@@ -2460,6 +2549,7 @@ async def test_build_completion_kwargs_includes_unmanaged_tools(mock_task, confi
     )
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
     messages = [{"role": "user", "content": "Hello"}]
 
     with (
@@ -2521,6 +2611,7 @@ async def _completion_kwargs_with_registry_tools(
 ) -> dict:
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
     with (
         patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
         patch.object(adapter, "build_extra_body", return_value={}),
@@ -2628,6 +2719,7 @@ async def test_build_completion_kwargs_json_schema_allows_unmanaged_with_registr
     )
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
     messages = [{"role": "user", "content": "Hello"}]
 
     with (
@@ -2756,6 +2848,7 @@ async def test_build_completion_kwargs_no_caching_by_default(config, mock_task):
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
     messages = [{"role": "user", "content": "Hello"}]
 
     with (
@@ -2779,6 +2872,7 @@ async def test_build_completion_kwargs_with_automatic_prompt_caching(config, moc
     )
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
     messages = [{"role": "user", "content": "Hello"}]
 
     with (
@@ -2962,6 +3056,7 @@ async def test_invoke_multiturn_preserves_kiln_fields_on_prior_trace(
 
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
     mock_provider.reasoning_capable = False
     mock_provider.parser = None
     mock_provider.formatter = None
@@ -3050,6 +3145,7 @@ async def test_invoke_multiturn_resume_preserves_kiln_fields_on_tool_results(
 
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
     mock_provider.reasoning_capable = False
     mock_provider.parser = None
     mock_provider.formatter = None

@@ -445,6 +445,12 @@ class KilnModelProvider(BaseModel):
     # When true, send `reasoning: {effort: <level>}` instead of `reasoning_effort`.
     # Use only for OpenRouter models that require the reasoning-object format.
     openrouter_reasoning_object: bool = False
+    # We call LiteLLM with drop_params=True, so it drops OpenAI params it thinks the model
+    # does not support. It decides from its model cost map, which can be missing a model
+    # (or be the older bundled copy when the remote map can't be fetched). List params
+    # this provider is known to accept here, and they are sent regardless. Not for providers
+    # where LiteLLM translates the param (eg Anthropic, Gemini): it would send both forms.
+    litellm_allowed_openai_params: List[str] | None = None
     available_thinking_levels: dict[str, str] | None = None
     default_thinking_level: str | None = None
     ollama_model_aliases: List[str] | None = None
@@ -5609,6 +5615,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/muse-spark-open",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                # Not in LiteLLM's bundled model map, so it would drop reasoning_effort
+                litellm_allowed_openai_params=["reasoning_effort"],
                 available_thinking_levels=MUSE_SPARK_OPEN_THINKING_LEVELS,
                 default_thinking_level="medium",
                 supports_data_gen=True,
