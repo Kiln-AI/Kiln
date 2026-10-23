@@ -11949,7 +11949,6 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Moondream 3.1
     KilnModel(
         family=ModelFamily.moondream,
         name=ModelName.moondream_3_1,
