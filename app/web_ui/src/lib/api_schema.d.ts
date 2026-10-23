@@ -2418,6 +2418,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/eval_run/{eval_run_id}/judge_trace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Eval Run Judge Trace
+         * @description The judge's full conversation for one eval run: the system prompt, the rendered judge prompt, and every reply. Null for runs whose judge called no model, and for runs recorded before judge traces were saved.
+         */
+        get: operations["get_eval_run_judge_trace_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__eval_run__eval_run_id__judge_trace_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/progress": {
         parameters: {
             query?: never;
@@ -2495,6 +2515,26 @@ export interface paths {
         };
         /** Get Run Config Eval Scores */
         get: operations["get_run_config_eval_scores_api_projects__project_id__tasks__task_id__run_configs__run_config_id__eval_scores_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/run_configs/eval_scores": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Eval Scores For All Run Configs
+         * @description Eval scores for every run config of the task, keyed by run config id. Each value matches the per-run-config eval_scores endpoint.
+         */
+        get: operations["get_all_run_configs_eval_scores_api_projects__project_id__tasks__task_id__run_configs_eval_scores_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4448,6 +4488,11 @@ export interface components {
         AgentOverviewOutputScore: {
             /** Name */
             name: string;
+            /**
+             * Display Name
+             * @description What the user sees this score called in the UI, if it differs from name. name stays the identifier.
+             */
+            display_name?: string | null;
             /** Type */
             type: string;
         };
@@ -4957,7 +5002,6 @@ export interface components {
         Body_bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post: {
             /**
              * File
-             * Format: binary
              * @description The CSV file containing run data to import.
              */
             file: string;
@@ -5025,7 +5069,6 @@ export interface components {
         Body_parse_import_file_api_projects__project_id__tasks__task_id__copilot_parse_import_file_post: {
             /**
              * File
-             * Format: binary
              * @description The file of input examples to parse and validate.
              */
             file: string;
@@ -7537,6 +7580,11 @@ export interface components {
              */
             name: string;
             /**
+             * Display Name
+             * @description An optional, user-facing display name for the score, shown throughout the UI in place of 'name'. Purely cosmetic: it does not affect the JSON key, stored eval run scores, or the name provided to models. Falls back to 'name' when not set. Surrounding whitespace is stripped; blank values, or a value equal to 'name', are stored as None.
+             */
+            display_name?: string | null;
+            /**
              * Instruction
              * @description A description of the score, used to help the model understand the goal of the score. Will be provided to evaluator models, so should be written for the model, not the team/user.
              */
@@ -7826,6 +7874,11 @@ export interface components {
             /** @description The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field. */
             eval_usage?: components["schemas"]["Usage"] | null;
             /**
+             * Judge Trace
+             * @description The judge's full conversation in OpenAI format: the system prompt, the rendered judge prompt, and every reply. Structured messages, unlike the deprecated JSON-string task_run_trace. None for V1 evals, for evals that call no model (e.g. code evals), and for records that predate this field. Distinct from the evaluated task run's trace.
+             */
+            judge_trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            /**
              * Eval Input Id
              * @description ID of the EvalInput used for this run (V2 evals). Mutually exclusive with dataset_id.
              */
@@ -7871,8 +7924,13 @@ export interface components {
          *     itself has none - so callers see one shape regardless of which it is.
          */
         EvalRunWithTrace: {
-            /** @description The score record itself. */
+            /** @description The score record itself, without its judge_trace, which can be large. Fetch it from the eval run's judge_trace endpoint when has_judge_trace is true. */
             eval_run: components["schemas"]["EvalRun"];
+            /**
+             * Has Judge Trace
+             * @description Whether the score record saved a non-empty judge_trace.
+             */
+            has_judge_trace: boolean;
             /**
              * Input
              * @description The input the task was run on. From the scored TaskRun, from the EvalRun itself for legacy records, or from the dataset item whenever neither of those has it (pre-generation skips, and pointer records whose trace is missing).
@@ -9476,7 +9534,7 @@ export interface components {
          *         created_at (datetime): Timestamp when the model was created
          *         created_by (str): User ID of the creator
          */
-        KilnBaseModel: {
+        "KilnBaseModel-Input": {
             /**
              * V
              * @description Schema version for migration support.
@@ -9504,6 +9562,48 @@ export interface components {
              * @description User ID of the creator.
              */
             created_by?: string;
+        };
+        /**
+         * KilnBaseModel
+         * @description Base model for all Kiln data models with common functionality for persistence and versioning.
+         *
+         *     Attributes:
+         *         v (int): Schema version number for migration support
+         *         id (str): Unique identifier for the model instance
+         *         path (Path): File system path where the model is stored
+         *         created_at (datetime): Timestamp when the model was created
+         *         created_by (str): User ID of the creator
+         */
+        "KilnBaseModel-Output": {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /** Model Type */
+            readonly model_type: string;
         };
         /** KilnFileResponse */
         KilnFileResponse: {
@@ -11378,6 +11478,11 @@ export interface components {
              * @description Tags for which this rating option is shown.
              */
             show_for_tags: string[];
+            /**
+             * Display Name
+             * @description The user-facing label for this rating, when it differs from requirement.name (an eval score's display name). requirement.name stays the identifier.
+             */
+            display_name?: string | null;
         };
         /**
          * RatingOptionResponse
@@ -11820,6 +11925,13 @@ export interface components {
              * @description The associated spec ID, if any.
              */
             spec_id?: string | null;
+            /**
+             * Score Display Names
+             * @description The user-facing name of each of the eval's output scores, keyed by the score's JSON key (the keys of eval_config_result.results). The score's display_name when set, otherwise its name.
+             */
+            score_display_names: {
+                [key: string]: string;
+            };
         };
         /**
          * RunConfigEvalScoresSummary
@@ -13345,7 +13457,7 @@ export interface components {
              * @description User ID of the creator.
              */
             created_by?: string;
-            parent?: components["schemas"]["KilnBaseModel"] | null;
+            parent?: components["schemas"]["KilnBaseModel-Input"] | null;
             /**
              * Input
              * @description The inputs to the task. JSON formatted for structured input, plaintext for unstructured input.
@@ -13852,6 +13964,11 @@ export interface components {
              * @description Tools the scorer code called, in call order. Code evals only.
              */
             tool_call_log?: components["schemas"]["ToolCallLogEntryResponse"][];
+            /**
+             * Judge Trace
+             * @description The judge's full conversation in OpenAI format: the system prompt, the rendered judge prompt, and every reply. None for evals that call no model.
+             */
+            judge_trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
         };
         /**
          * TestWriteAccessRequest
@@ -14173,6 +14290,13 @@ export interface components {
              * @description The updated train set filter ID.
              */
             train_set_filter_id?: string | null;
+            /**
+             * Output Score Display Names
+             * @description Updated user-facing display names for the eval's output scores, keyed by each score's JSON key (as in eval run scores). Scores not included keep their current display name; null or blank clears it, as does a value equal to the score's name. Max 32 characters, unique across the eval's scores. Display names are cosmetic only: they do not change the score name, JSON key, or any stored eval run.
+             */
+            output_score_display_names?: {
+                [key: string]: string | null;
+            } | null;
         };
         /**
          * UpdateFinetuneRequest
@@ -14404,6 +14528,10 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
         /**
          * VectorStoreConfig
@@ -20401,6 +20529,46 @@ export interface operations {
             };
         };
     };
+    get_eval_run_judge_trace_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__eval_run__eval_run_id__judge_trace_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the eval. */
+                eval_id: string;
+                /** @description The unique identifier of the eval configuration. */
+                eval_config_id: string;
+                /** @description The unique identifier of the eval run. */
+                eval_run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_eval_progress_api_projects__project_id__tasks__task_id__evals__eval_id__progress_get: {
         parameters: {
             query?: never;
@@ -20568,6 +20736,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunConfigEvalScoresSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_all_run_configs_eval_scores_api_projects__project_id__tasks__task_id__run_configs_eval_scores_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["RunConfigEvalScoresSummary"];
+                    };
                 };
             };
             /** @description Validation Error */

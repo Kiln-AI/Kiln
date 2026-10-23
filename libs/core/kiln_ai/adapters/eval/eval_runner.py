@@ -1254,6 +1254,7 @@ class EvalRunner:
         skipped_detail: str | None = None,
         intermediate_outputs: Dict[str, str] | None = None,
         eval_usage: Usage | None = None,
+        judge_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> bool:
         """Write one V2 score record.
 
@@ -1277,6 +1278,7 @@ class EvalRunner:
                 skipped_detail=skipped_detail,
                 intermediate_outputs=intermediate_outputs,
                 eval_usage=eval_usage,
+                judge_trace=judge_trace,
             ).save_to_file()
         return True
 
@@ -1323,6 +1325,7 @@ class EvalRunner:
             skipped_detail=result.skipped_detail,
             intermediate_outputs=result.intermediate_outputs,
             eval_usage=result.usage,
+            judge_trace=result.judge_trace,
         )
 
     def _multi_turn_generation(

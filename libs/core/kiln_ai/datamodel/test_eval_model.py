@@ -583,6 +583,149 @@ def test_eval_output_score_name_validation():
     assert max_length_score.name == "a" * 32
 
 
+def _display_name_eval() -> Eval:
+    return Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="Tone Check", type=TaskOutputRatingType.pass_fail),
+            EvalOutputScore(name="accuracy", type=TaskOutputRatingType.five_star),
+        ],
+    )
+
+
+def test_eval_output_score_display_name_defaults_to_none():
+    score = EvalOutputScore(name="accuracy", type=TaskOutputRatingType.five_star)
+    assert score.display_name is None
+    assert score.resolved_display_name() == "accuracy"
+
+
+@pytest.mark.parametrize(
+    "display_name, expected",
+    [
+        ("  Accuracy  ", "Accuracy"),
+        ("", None),
+        ("   ", None),
+        (None, None),
+        ("accuracy", None),
+        ("x" * 32, "x" * 32),
+    ],
+)
+def test_eval_output_score_display_name_normalized(display_name, expected):
+    score = EvalOutputScore(
+        name="accuracy",
+        display_name=display_name,
+        type=TaskOutputRatingType.five_star,
+    )
+    assert score.display_name == expected
+    assert score.resolved_display_name() == (expected or "accuracy")
+
+
+def test_eval_output_score_display_name_too_long():
+    with pytest.raises(ValidationError, match="at most 32 characters"):
+        EvalOutputScore(
+            name="accuracy",
+            display_name="x" * 33,
+            type=TaskOutputRatingType.five_star,
+        )
+
+
+def test_eval_output_score_display_name_does_not_change_json_key():
+    score = EvalOutputScore(
+        name="Tone Check",
+        display_name="Politeness",
+        type=TaskOutputRatingType.pass_fail,
+    )
+    assert score.json_key() == "tone_check"
+
+
+def test_eval_output_score_display_name_legacy_dict():
+    """Serialized scores that predate display_name must still parse."""
+    score = EvalOutputScore.model_validate({"name": "accuracy", "type": "five_star"})
+    assert score.display_name is None
+
+
+@pytest.mark.parametrize(
+    "display_names",
+    [
+        ["Quality", "quality"],
+        ["Accuracy", None],
+    ],
+)
+def test_eval_rejects_duplicate_display_names(display_names):
+    """Display names must be unique (case-insensitive), including against other scores' names."""
+    with pytest.raises(ValueError, match="unique display names"):
+        Eval(
+            name="Test Eval",
+            eval_set_filter_id="tag::tag1",
+            eval_configs_filter_id="tag::tag2",
+            output_scores=[
+                EvalOutputScore(
+                    name="Tone Check",
+                    display_name=display_names[0],
+                    type=TaskOutputRatingType.pass_fail,
+                ),
+                EvalOutputScore(
+                    name="accuracy",
+                    display_name=display_names[1],
+                    type=TaskOutputRatingType.five_star,
+                ),
+            ],
+        )
+
+
+def test_eval_set_output_score_display_names():
+    eval = _display_name_eval()
+    eval.set_output_score_display_names({"tone_check": "  Politeness "})
+    assert eval.output_scores[0].display_name == "Politeness"
+    assert eval.output_scores[0].name == "Tone Check"
+    assert eval.output_scores[1].display_name is None
+
+    eval.set_output_score_display_names({"accuracy": "Correctness"})
+    assert eval.output_scores[0].display_name == "Politeness"
+    assert eval.output_scores[1].display_name == "Correctness"
+
+    eval.set_output_score_display_names({"tone_check": None})
+    assert eval.output_scores[0].display_name is None
+
+
+def test_eval_set_output_score_display_names_persists(mock_task, tmp_path):
+    mock_task.path = tmp_path / "task.kiln"
+    eval = _display_name_eval()
+    eval.parent = mock_task
+    eval.set_output_score_display_names({"tone_check": "Politeness"})
+    eval.save_to_file()
+
+    loaded = Eval.load_from_file(eval.path)
+    assert loaded.output_scores[0].display_name == "Politeness"
+    assert loaded.output_scores[0].json_key() == "tone_check"
+
+
+@pytest.mark.parametrize(
+    "display_names, expected_message",
+    [
+        ({"unknown": "Quality"}, "Unknown output score keys"),
+        ({"tone_check": "x" * 33}, "at most 32 characters"),
+        ({"tone_check": "Accuracy"}, "unique display names"),
+    ],
+)
+def test_eval_set_output_score_display_names_invalid(display_names, expected_message):
+    """Invalid updates raise and leave every score unchanged."""
+    eval = _display_name_eval()
+    with pytest.raises(ValueError, match=expected_message):
+        eval.set_output_score_display_names(display_names)
+    assert [score.display_name for score in eval.output_scores] == [None, None]
+
+
+def test_eval_set_output_score_display_names_readonly():
+    eval = _display_name_eval()
+    eval.mark_as_readonly()
+    with pytest.raises(ReadOnlyMutationError):
+        eval.set_output_score_display_names({"tone_check": "Politeness"})
+    assert eval.output_scores[0].display_name is None
+
+
 def test_eval_output_score_direction_default():
     score = EvalOutputScore(
         name="accuracy",
@@ -3582,6 +3725,7 @@ class TestV1EvalRunCoexistence:
         loaded = loaded_runs[0]
         assert loaded.scored_run_id is None
         assert loaded.eval_usage is None
+        assert loaded.judge_trace is None
         assert loaded.input == "legacy input"
         assert loaded.output == "legacy output"
         assert loaded.task_run_usage is not None
@@ -4126,6 +4270,15 @@ class TestV2EvalResult:
             intermediate_outputs={"chain_of_thought": "reasoning text"},
         )
         assert result.intermediate_outputs == {"chain_of_thought": "reasoning text"}
+
+    def test_judge_trace_list_content_can_be_copied(self):
+        parts = [{"type": "text", "text": "rendered judge prompt"}]
+        result = V2EvalResult(judge_trace=[{"role": "user", "content": parts}])
+
+        copied = result.model_copy(deep=True)
+        assert copied.judge_trace is not None
+        assert copied.judge_trace[0]["content"] == parts
+        assert result.model_dump()["judge_trace"][0]["content"] == parts
 
 
 # ---------------------------------------------------------------------------
@@ -5664,6 +5817,52 @@ def test_eval_usage_defaults_to_none_and_round_trips(v2_eval_config):
     assert loaded.eval_usage.cost == 0.002
 
 
+def test_judge_trace_defaults_to_none_and_round_trips_reasoning(v2_eval_config):
+    run = EvalRun(parent=v2_eval_config, **pointer_run_data())
+    assert run.judge_trace is None
+
+    run.judge_trace = [
+        {"role": "system", "content": "Score the output."},
+        {"role": "user", "content": "rendered judge prompt"},
+        {
+            "role": "assistant",
+            "content": '{"accuracy": "pass"}',
+            "reasoning_content": "The answer matches the reference.",
+        },
+    ]
+    run.save_to_file()
+
+    loaded = EvalRun.load_from_file(str(run.path))
+    assert loaded.judge_trace == run.judge_trace
+
+
+def test_judge_trace_list_content_survives_save_load_and_copy(v2_eval_config):
+    """Pydantic validates list-of-parts `content` into a single-use iterator, which
+    serializes as [] and cannot be deepcopied unless the model materializes it."""
+    parts = [
+        {"type": "text", "text": "rendered judge prompt"},
+        {"type": "text", "text": "scored output"},
+    ]
+    run = EvalRun(
+        parent=v2_eval_config,
+        **pointer_run_data(
+            judge_trace=[
+                {"role": "user", "content": parts},
+                {"role": "assistant", "content": '{"accuracy": "pass"}'},
+            ]
+        ),
+    )
+    run.save_to_file()
+
+    loaded = EvalRun.load_from_file(str(run.path))
+    assert loaded.judge_trace is not None
+    assert loaded.judge_trace[0]["content"] == parts
+
+    copied = loaded.mutable_copy()
+    assert copied.judge_trace is not None
+    assert copied.judge_trace[0]["content"] == parts
+
+
 @pytest.mark.parametrize("field_name", ["input", *LEGACY_TRACE_FIELDS])
 def test_legacy_trace_fields_are_marked_deprecated(field_name):
     """Two signals, for two audiences: the description prefix for a human reading the
@@ -5698,7 +5897,13 @@ def test_reading_a_deprecated_field_does_not_warn():
 def test_live_eval_run_fields_are_not_marked_deprecated():
     """The flag has to be per-field, not smeared across the model."""
     schema_properties = EvalRun.model_json_schema()["properties"]
-    for field_name in ("scored_run_id", "eval_usage", "scores", "intermediate_outputs"):
+    for field_name in (
+        "scored_run_id",
+        "eval_usage",
+        "judge_trace",
+        "scores",
+        "intermediate_outputs",
+    ):
         assert "deprecated" not in schema_properties[field_name], field_name
 
 
@@ -5718,3 +5923,47 @@ def test_eval_config_eval_requires_a_dataset_item():
             output="out",
             scores={"accuracy": 1.0},
         )
+
+
+@pytest.mark.parametrize("readonly", [False, True])
+def test_listing_eval_runs_does_not_reload_the_config_per_run(
+    valid_eval_config_data, tmp_path, readonly
+):
+    """EvalRun validators read their parent config; listing runs must hand it to
+    them rather than each run reloading and re-validating the config file."""
+
+    def config_loads(run_count: int) -> int:
+        folder = tmp_path / f"{run_count}_{readonly}"
+        folder.mkdir()
+        task = Task(name="Test Task", instruction="Test", path=folder / "task.kiln")
+        task.save_to_file()
+        eval = Eval(
+            name="Test Eval",
+            parent=task,
+            eval_set_filter_id="tag::tag1",
+            eval_configs_filter_id="tag::tag2",
+            output_scores=[
+                EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail)
+            ],
+        )
+        eval.save_to_file()
+        config = EvalConfig(parent=eval, **valid_eval_config_data)
+        config.save_to_file()
+        for i in range(run_count):
+            EvalRun(
+                parent=config,
+                dataset_id=f"dataset{i}",
+                task_run_config_id="config456",
+                input="in",
+                output="out",
+                scores={"accuracy": 1.0},
+            ).save_to_file()
+
+        loaded_config = EvalConfig.load_from_file(config.path)
+        with patch.object(
+            EvalConfig, "load_from_file", wraps=EvalConfig.load_from_file
+        ) as load:
+            assert len(loaded_config.runs(readonly=readonly)) == run_count
+        return load.call_count
+
+    assert config_loads(4) == config_loads(1)

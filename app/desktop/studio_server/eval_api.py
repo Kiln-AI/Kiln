@@ -1,7 +1,7 @@
 import json
 import logging
 from collections import defaultdict
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from typing import Annotated, Any, Dict, List, Set, Tuple, Type, TypeVar
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
@@ -87,7 +87,11 @@ from kiln_ai.datamodel.world import World, WorldReset
 from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.name_generator import generate_memorable_name
-from kiln_ai.utils.open_ai_types import serialize_trace
+from kiln_ai.utils.open_ai_types import (
+    ChatCompletionMessageParam,
+    serialize_trace,
+)
+from kiln_ai.utils.torn_read import to_thread_retrying_torn_read
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
@@ -480,6 +484,10 @@ class TestV2EvalResponse(BaseModel):
         default_factory=list,
         description="Tools the scorer code called, in call order. Code evals only.",
     )
+    judge_trace: list[ChatCompletionMessageParam] | None = Field(
+        default=None,
+        description="The judge's full conversation in OpenAI format: the system prompt, the rendered judge prompt, and every reply. None for evals that call no model.",
+    )
 
 
 class TestV2EvalDraftRequest(BaseModel):
@@ -549,6 +557,7 @@ async def run_v2_eval_test(
         score_range_errors=score_range_errors,
         intermediate_outputs=result.intermediate_outputs,
         tool_call_log=ToolCallLogEntryResponse.from_log(tool_call_log),
+        judge_trace=result.judge_trace,
     )
 
 
@@ -655,6 +664,14 @@ class MeanUsage(BaseModel):
     )
 
 
+def _split_judge_trace(eval_run: EvalRun) -> dict[str, Any]:
+    """`eval_run` with its judge_trace dropped, and whether it had a non-empty one."""
+    return {
+        "eval_run": eval_run.model_copy(update={"judge_trace": None}),
+        "has_judge_trace": bool(eval_run.judge_trace),
+    }
+
+
 class EvalRunWithTrace(BaseModel):
     """An eval's scores for one item, plus the trace those scores were computed over.
 
@@ -665,7 +682,14 @@ class EvalRunWithTrace(BaseModel):
     itself has none - so callers see one shape regardless of which it is.
     """
 
-    eval_run: EvalRun = Field(description="The score record itself.")
+    eval_run: EvalRun = Field(
+        description="The score record itself, without its judge_trace, which can be "
+        "large. Fetch it from the eval run's judge_trace endpoint when has_judge_trace "
+        "is true."
+    )
+    has_judge_trace: bool = Field(
+        description="Whether the score record saved a non-empty judge_trace."
+    )
     input: str | None = Field(
         description="The input the task was run on. From the scored TaskRun, from the "
         "EvalRun itself for legacy records, or from the dataset item whenever neither "
@@ -696,7 +720,7 @@ class EvalRunWithTrace(BaseModel):
         the dataset item afterwards.
         """
         return cls(
-            eval_run=eval_run,
+            **_split_judge_trace(eval_run),
             input=eval_run.input,
             output=eval_run.output,
             task_run_trace=eval_run.task_run_trace,
@@ -713,7 +737,7 @@ class EvalRunWithTrace(BaseModel):
         and still aggregates, only the drill-through is unavailable.
         """
         return cls(
-            eval_run=eval_run,
+            **_split_judge_trace(eval_run),
             input=trace.input if trace is not None else None,
             # Never repaired_output: a repair can happen after scoring, so it is not
             # what the score was computed over.
@@ -758,6 +782,10 @@ class UpdateEvalRequest(BaseModel):
     # when TaskRunSplit rejects it inside the handler.
     train_set_filter_id: DatasetFilterId | None = Field(
         default=None, description="The updated train set filter ID."
+    )
+    output_score_display_names: Dict[str, str | None] | None = Field(
+        default=None,
+        description="Updated user-facing display names for the eval's output scores, keyed by each score's JSON key (as in eval run scores). Scores not included keep their current display name; null or blank clears it, as does a value equal to the score's name. Max 32 characters, unique across the eval's scores. Display names are cosmetic only: they do not change the score name, JSON key, or any stored eval run.",
     )
 
 
@@ -1055,6 +1083,16 @@ class RunConfigEvalResult(BaseModel):
     spec_id: ID_TYPE | None = Field(
         default=None, description="The associated spec ID, if any."
     )
+    score_display_names: Dict[str, str] = Field(
+        description="The user-facing name of each of the eval's output scores, keyed by the score's JSON key (the keys of eval_config_result.results). The score's display_name when set, otherwise its name.",
+    )
+
+
+def score_display_names(eval: Eval) -> Dict[str, str]:
+    """Map each output score's JSON key to the name the UI should show for it."""
+    return {
+        score.json_key(): score.resolved_display_name() for score in eval.output_scores
+    }
 
 
 class RunConfigEvalScoresSummary(BaseModel):
@@ -1097,6 +1135,24 @@ def load_task_children_by_id(
     return model_type.from_ids_and_parent_path(ids, task.path, readonly=True)
 
 
+def default_judge_types(task: Task) -> dict[str, str]:
+    """Map of eval ID to its default judge's type discriminator. See get_eval_default_judge_types."""
+    result: dict[str, str] = {}
+    for eval in task.evals(readonly=True):
+        if not eval.id or not eval.current_config_id:
+            continue
+        for config in eval.configs(readonly=True):
+            if config.id != eval.current_config_id:
+                continue
+            properties = config.properties
+            if properties is None or isinstance(properties, dict):
+                result[eval.id] = config.config_type.value
+            else:
+                result[eval.id] = properties.type.value
+            break
+    return result
+
+
 def summary_eval_config(eval: Eval) -> EvalConfig | None:
     """The eval config a summary reports on: the only one, or the one explicitly chosen.
 
@@ -1114,10 +1170,10 @@ def summary_eval_config(eval: Eval) -> EvalConfig | None:
     return None
 
 
-def scored_trace_usage_for_run_config(
-    task: Task, evals: List[Eval], run_config_id: str
+def scored_trace_usage_for_run_configs(
+    task: Task, evals: List[Eval], run_config_ids: Set[str]
 ) -> Dict[str, Usage | None]:
-    """Usage per scored TaskRun, for the traces this run config's summary will report on.
+    """Usage per scored TaskRun, for the traces these run configs' summaries will report on.
 
     Loaded in one pass for the whole request rather than per eval: each bulk load scans
     the task's `runs/` directory, which holds every eval trace as well as the dataset
@@ -1136,7 +1192,7 @@ def scored_trace_usage_for_run_config(
             continue
         for eval_run in eval_config.runs(readonly=True):
             if (
-                eval_run.task_run_config_id == run_config_id
+                eval_run.task_run_config_id in run_config_ids
                 and eval_run.scored_run_id is not None
                 and eval_run.skipped_reason is None
             ):
@@ -1198,6 +1254,204 @@ def eval_run_task_usage(
     if eval_run.scored_run_id is None:
         return eval_run.task_run_usage
     return usage_by_scored_run_id.get(eval_run.scored_run_id)
+
+
+_USAGE_FIELDS = (
+    "input_tokens",
+    "output_tokens",
+    "total_tokens",
+    "cost",
+    "total_llm_latency_ms",
+)
+
+
+@dataclass
+class _UsageTotals:
+    """One run config's usage across the eval runs its summary counts.
+
+    Each field is averaged over the runs that reported it, and only reported when at
+    least half of the counted runs did: a mean over a small minority would misstate
+    the typical run.
+    """
+
+    n_runs: int = 0
+    sums: Dict[str, float] = field(default_factory=lambda: defaultdict(float))
+    counts: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
+
+    def add(self, usage: Usage | None) -> None:
+        self.n_runs += 1
+        if usage is None:
+            return
+        for name in _USAGE_FIELDS:
+            value = getattr(usage, name)
+            if value is not None:
+                self.sums[name] += value
+                self.counts[name] += 1
+
+    def mean(self) -> MeanUsage | None:
+        if self.n_runs == 0:
+            return None
+        threshold = self.n_runs * 0.5
+        return MeanUsage(
+            **{
+                f"mean_{name}": self.sums[name] / self.counts[name]
+                if self.counts[name] > 0 and self.counts[name] >= threshold
+                else None
+                for name in _USAGE_FIELDS
+            }
+        )
+
+
+@dataclass
+class _EvalScoreTally:
+    """One run config's scores on one eval config, over the eval's test split."""
+
+    remaining_items: Set[ItemKey]
+    score_values: Dict[str, list[float]] = field(
+        default_factory=lambda: defaultdict(list)
+    )
+    n_excluded: int = 0
+    n_partial: int = 0
+
+    def result(
+        self, eval: Eval, eval_config_id: ID_TYPE, dataset_size: int
+    ) -> EvalConfigResult:
+        results: Dict[str, ScoreSummary | None] = {}
+        for output_score in eval.output_scores:
+            score_key = output_score.json_key()
+            values = self.score_values.get(score_key, [])
+            if len(values) > 0 or self.n_excluded > 0:
+                results[score_key] = score_summary_from_values(values, self.n_excluded)
+            else:
+                results[score_key] = None
+
+        incomplete_count = self.n_partial + len(self.remaining_items)
+        percent_complete = (
+            1 - incomplete_count / dataset_size if dataset_size > 0 else 0.0
+        )
+        return EvalConfigResult(
+            eval_config_id=eval_config_id,
+            results=results,
+            percent_complete=percent_complete,
+            n_excluded=self.n_excluded,
+        )
+
+
+def run_config_eval_scores(
+    task: Task, run_config_ids: List[str]
+) -> Dict[str, RunConfigEvalScoresSummary]:
+    """Each run config's scores on every non-archived eval of the task, keyed by run config id.
+
+    Reads each eval's runs once for all the requested run configs. A task with many
+    evals and run configs holds thousands of eval runs, so a pass per run config
+    multiplies that read by the number of run configs.
+    """
+    # Status lives on the eval, falling back to its spec for evals created before that.
+    eval_id_to_spec: Dict[str, Spec] = {
+        spec.eval_id: spec for spec in task.specs() if spec.eval_id and spec.id
+    }
+    evals = [
+        eval
+        for eval in task.evals()
+        if eval.resolved_status(eval_id_to_spec.get(eval.id) if eval.id else None)
+        != EvalStatus.archived
+    ]
+
+    run_config_ids = list(dict.fromkeys(run_config_ids))
+    # The usage reported is the evaluated task's, which lives on the scored TaskRun
+    # for every record that has a `scored_run_id`.
+    usage_by_scored_run_id = scored_trace_usage_for_run_configs(
+        task, evals, set(run_config_ids)
+    )
+    usage_totals = {run_config_id: _UsageTotals() for run_config_id in run_config_ids}
+    eval_results: Dict[str, List[RunConfigEvalResult]] = {
+        run_config_id: [] for run_config_id in run_config_ids
+    }
+
+    for eval in evals:
+        associated_spec = eval_id_to_spec.get(eval.id) if eval.id else None
+        spec_id = associated_spec.id if associated_spec else None
+
+        # None is unreachable for an eval that loaded (Eval validates a test split);
+        # skipping keeps one corrupt file from emptying the whole table.
+        test_split = resolve_split(task, eval, "test")
+        if test_split is None:
+            continue
+        dataset_size = len(test_split)
+
+        eval_config = summary_eval_config(eval)
+        if eval_config is None:
+            # Still reported, so the UI can say the eval needs a default judge.
+            for run_config_id in run_config_ids:
+                eval_results[run_config_id].append(
+                    RunConfigEvalResult(
+                        eval_id=eval.id,
+                        eval_name=eval.name,
+                        dataset_size=dataset_size,
+                        eval_config_result=None,
+                        missing_default_eval_config=True,
+                        spec_id=spec_id,
+                        score_display_names=score_display_names(eval),
+                    )
+                )
+            continue
+
+        # Keyed on (source, id) so an EvalInput's score can't be credited to a TaskRun.
+        split_items = test_split.item_keys()
+        tallies = {
+            run_config_id: _EvalScoreTally(remaining_items=set(split_items))
+            for run_config_id in run_config_ids
+        }
+
+        for eval_run in eval_config.runs(readonly=True):
+            if eval_run.task_run_config_id not in tallies:
+                continue
+            run_config_id = eval_run.task_run_config_id
+            tally = tallies[run_config_id]
+
+            item_key = eval_run_item_key(eval_run)
+            if item_key not in tally.remaining_items:
+                continue
+            tally.remaining_items.remove(item_key)
+
+            if eval_run.skipped_reason is not None:
+                tally.n_excluded += 1
+                continue
+
+            usage_totals[run_config_id].add(
+                eval_run_task_usage(eval_run, usage_by_scored_run_id)
+            )
+
+            incomplete = False
+            for output_score in eval.output_scores:
+                score_key = output_score.json_key()
+                if score_key in eval_run.scores:
+                    tally.score_values[score_key].append(eval_run.scores[score_key])
+                else:
+                    incomplete = True
+            if incomplete:
+                tally.n_partial += 1
+
+        for run_config_id, tally in tallies.items():
+            eval_results[run_config_id].append(
+                RunConfigEvalResult(
+                    eval_id=eval.id,
+                    eval_name=eval.name,
+                    dataset_size=dataset_size,
+                    missing_default_eval_config=False,
+                    spec_id=spec_id,
+                    score_display_names=score_display_names(eval),
+                    eval_config_result=tally.result(eval, eval_config.id, dataset_size),
+                )
+            )
+
+    return {
+        run_config_id: RunConfigEvalScoresSummary(
+            eval_results=eval_results[run_config_id],
+            mean_usage=usage_totals[run_config_id].mean(),
+        )
+        for run_config_id in run_config_ids
+    }
 
 
 def eval_item_input_text(item: TaskRun | EvalInput) -> str | None:
@@ -1940,6 +2194,12 @@ def connect_evals_api(app: FastAPI):
             # (cached) eval, which a direct `eval.splits[...] = ...` would do silently.
             eval.set_split("train", TaskRunSplit(filter_id=request.train_set_filter_id))
 
+        if request.output_score_display_names is not None:
+            try:
+                eval.set_output_score_display_names(request.output_score_display_names)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
+
         eval.save_to_file()
         return resolve_eval_display_fields(eval)
 
@@ -1998,21 +2258,10 @@ def connect_evals_api(app: FastAPI):
         Evals with no default judge are omitted. Used by the evals list to
         display each eval's type without fetching every config.
         """
-        task = task_from_id(project_id, task_id)
-        result: dict[str, str] = {}
-        for eval in task.evals(readonly=True):
-            if not eval.id or not eval.current_config_id:
-                continue
-            for config in eval.configs(readonly=True):
-                if config.id != eval.current_config_id:
-                    continue
-                properties = config.properties
-                if properties is None or isinstance(properties, dict):
-                    result[eval.id] = config.config_type.value
-                else:
-                    result[eval.id] = properties.type.value
-                break
-        return result
+        # A first, uncached read of every eval's configs takes seconds on a large task.
+        return await to_thread_retrying_torn_read(
+            lambda: default_judge_types(task_from_id(project_id, task_id))
+        )
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/eval_inputs",
@@ -2848,6 +3097,38 @@ def connect_evals_api(app: FastAPI):
             run_config=run_config,
         )
 
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/eval_run/{eval_run_id}/judge_trace",
+        summary="Get Eval Run Judge Trace",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_eval_run_judge_trace(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+        eval_config_id: Annotated[
+            str, Path(description="The unique identifier of the eval configuration.")
+        ],
+        eval_run_id: Annotated[
+            str, Path(description="The unique identifier of the eval run.")
+        ],
+    ) -> list[ChatCompletionMessageParam] | None:
+        """The judge's full conversation for one eval run: the system prompt, the rendered judge prompt, and every reply. Null for runs whose judge called no model, and for runs recorded before judge traces were saved."""
+        eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
+        eval_run = EvalRun.from_id_and_parent_path(eval_run_id, eval_config.path)
+        if eval_run is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Eval run not found. ID: {eval_run_id}",
+            )
+        return eval_run.judge_trace
+
     # Overview of the eval progress
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/progress",
@@ -3202,200 +3483,41 @@ def connect_evals_api(app: FastAPI):
             str, Path(description="The unique identifier of the run configuration.")
         ],
     ) -> RunConfigEvalScoresSummary:
-        task = task_from_id(project_id, task_id)
+        def read() -> RunConfigEvalScoresSummary:
+            task = task_from_id(project_id, task_id)
+            # Called for its 404 when the run config doesn't exist.
+            task_run_config_from_id(project_id, task_id, run_config_id)
+            return run_config_eval_scores(task, [run_config_id])[run_config_id]
 
-        # Called for its 404 when the run config doesn't exist.
-        task_run_config_from_id(project_id, task_id, run_config_id)
+        return await to_thread_retrying_torn_read(read)
 
-        # Build a mapping from eval_id to spec for evals that are associated with
-        # specs. Used to attach spec ids to results and to resolve each eval's
-        # status (status lives on the eval, falling back to the spec for legacy files).
-        specs = task.specs()
-        eval_id_to_spec: Dict[str, Spec] = {}
-        for spec in specs:
-            if spec.eval_id and spec.id:
-                eval_id_to_spec[spec.eval_id] = spec
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/eval_scores",
+        summary="List Eval Scores For All Run Configs",
+        tags=["Run Configs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_all_run_configs_eval_scores(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> Dict[str, RunConfigEvalScoresSummary]:
+        """Eval scores for every run config of the task, keyed by run config id. Each value matches the per-run-config eval_scores endpoint."""
 
-        # Archived evals are not reported at all, so they are filtered out once here
-        # rather than skipped inside each pass over them. Status lives on the eval,
-        # falling back to its spec for evals created before that.
-        evals = [
-            eval
-            for eval in task.evals()
-            if eval.resolved_status(eval_id_to_spec.get(eval.id) if eval.id else None)
-            != EvalStatus.archived
-        ]
-        eval_results: List[RunConfigEvalResult] = []
+        def read() -> Dict[str, RunConfigEvalScoresSummary]:
+            task = task_from_id(project_id, task_id)
+            run_config_ids = [
+                run_config.id
+                for run_config in get_all_run_configs(project_id, task_id)
+                if run_config.id is not None
+            ]
+            return run_config_eval_scores(task, run_config_ids)
 
-        # The usage reported below is the evaluated task's, which lives on the scored
-        # TaskRun for every record that has a `scored_run_id`.
-        usage_by_scored_run_id = scored_trace_usage_for_run_config(
-            task, evals, run_config_id
-        )
-
-        # Usage tracking across all eval configs for this run config
-        total_input_tokens = 0.0
-        total_output_tokens = 0.0
-        total_total_tokens = 0.0
-        total_cost = 0.0
-        total_llm_latency_ms_sum = 0.0
-        input_tokens_count = 0
-        output_tokens_count = 0
-        total_tokens_count = 0
-        cost_count = 0
-        latency_ms_count = 0
-        total_eval_runs = 0
-
-        for eval in evals:
-            associated_spec = eval_id_to_spec.get(eval.id) if eval.id else None
-
-            # Get the dataset size for this eval, from whichever store backs its test
-            # split. None is unreachable for an eval that loaded (Eval validates a test
-            # split); skipping keeps one corrupt file from emptying the whole table.
-            test_split = resolve_split(task, eval, "test")
-            if test_split is None:
-                continue
-            dataset_size = len(test_split)
-
-            default_eval_config = summary_eval_config(eval)
-            if not default_eval_config:
-                # No default eval config set, so we can't process this eval. Still return it so UI can show an error
-                eval_results.append(
-                    RunConfigEvalResult(
-                        eval_id=eval.id,
-                        eval_name=eval.name,
-                        dataset_size=dataset_size,
-                        eval_config_result=None,
-                        missing_default_eval_config=True,
-                        spec_id=associated_spec.id if associated_spec else None,
-                    )
-                )
-                continue
-
-            eval_config = default_eval_config
-            # Track which split items we've seen for this eval_config, keyed on
-            # (source, id) so an EvalInput's score can't be credited to a TaskRun.
-            remaining_expected_items = test_split.item_keys()
-            partial_incomplete_count = 0
-            eval_config_n_excluded = 0
-
-            # output_score_json_key -> the individual scores, for the mean and
-            # the percentile summary (see score_summary_from_values)
-            score_values: Dict[str, list[float]] = {}
-
-            for eval_run in eval_config.runs(readonly=True):
-                # Only include eval_runs for our specific run_config
-                if eval_run.task_run_config_id != run_config_id:
-                    continue
-
-                # Check if this item is expected for this eval
-                item_key = eval_run_item_key(eval_run)
-                if item_key not in remaining_expected_items:
-                    continue
-                else:
-                    remaining_expected_items.remove(item_key)
-
-                if eval_run.skipped_reason is not None:
-                    eval_config_n_excluded += 1
-                    continue
-
-                total_eval_runs += 1
-
-                # The evaluated task's usage: on the scored TaskRun for pointer records
-                # (as scored_trace_usage reports it - synthetic-user spend blended in for
-                # driven traces), inline on legacy ones.
-                usage = eval_run_task_usage(eval_run, usage_by_scored_run_id)
-                if usage:
-                    if usage.input_tokens is not None:
-                        total_input_tokens += usage.input_tokens
-                        input_tokens_count += 1
-                    if usage.output_tokens is not None:
-                        total_output_tokens += usage.output_tokens
-                        output_tokens_count += 1
-                    if usage.total_tokens is not None:
-                        total_total_tokens += usage.total_tokens
-                        total_tokens_count += 1
-                    if usage.cost is not None:
-                        total_cost += usage.cost
-                        cost_count += 1
-                    if usage.total_llm_latency_ms is not None:
-                        total_llm_latency_ms_sum += usage.total_llm_latency_ms
-                        latency_ms_count += 1
-
-                incomplete = False
-                for output_score in eval.output_scores:
-                    score_key = output_score.json_key()
-                    if score_key not in score_values:
-                        score_values[score_key] = []
-
-                    if score_key in eval_run.scores:
-                        score_values[score_key].append(eval_run.scores[score_key])
-                    else:
-                        # We're missing a required score, so this eval_run is incomplete
-                        incomplete = True
-
-                if incomplete:
-                    partial_incomplete_count += 1
-
-            results: Dict[str, ScoreSummary | None] = {}
-            for output_score in eval.output_scores:
-                score_key = output_score.json_key()
-                values = score_values.get(score_key, [])
-                if len(values) > 0 or eval_config_n_excluded > 0:
-                    results[score_key] = score_summary_from_values(
-                        values, eval_config_n_excluded
-                    )
-                else:
-                    results[score_key] = None
-
-            # Calculate the percent of the dataset that has been processed
-            incomplete_count = partial_incomplete_count + len(remaining_expected_items)
-            if dataset_size > 0:
-                percent_incomplete = incomplete_count / dataset_size
-                percent_complete = 1 - percent_incomplete
-            else:
-                percent_complete = 0.0
-
-            eval_results.append(
-                RunConfigEvalResult(
-                    eval_id=eval.id,
-                    eval_name=eval.name,
-                    dataset_size=dataset_size,
-                    missing_default_eval_config=False,
-                    spec_id=associated_spec.id if associated_spec else None,
-                    eval_config_result=EvalConfigResult(
-                        eval_config_id=eval_config.id,
-                        results=results,
-                        percent_complete=percent_complete,
-                        n_excluded=eval_config_n_excluded,
-                    ),
-                )
-            )
-
-        # Calculate mean usage across all eval runs for this run config (only include values where >= 50% of samples have data)
-        mean_usage = None
-        if total_eval_runs > 0:
-            threshold = total_eval_runs * 0.5
-            mean_usage = MeanUsage(
-                mean_input_tokens=total_input_tokens / input_tokens_count
-                if input_tokens_count >= threshold
-                else None,
-                mean_output_tokens=total_output_tokens / output_tokens_count
-                if output_tokens_count >= threshold
-                else None,
-                mean_total_tokens=total_total_tokens / total_tokens_count
-                if total_tokens_count >= threshold
-                else None,
-                mean_cost=total_cost / cost_count if cost_count >= threshold else None,
-                mean_total_llm_latency_ms=total_llm_latency_ms_sum / latency_ms_count
-                if latency_ms_count >= threshold
-                else None,
-            )
-
-        return RunConfigEvalScoresSummary(
-            eval_results=eval_results,
-            mean_usage=mean_usage,
-        )
+        return await to_thread_retrying_torn_read(read)
 
     @app.post(
         "/api/projects/{project_id}/add_code_trust",

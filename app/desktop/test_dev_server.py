@@ -5,9 +5,11 @@ import subprocess
 import sys
 import types
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
+import uvicorn
+from uvicorn.supervisors.watchfilesreload import FileFilter
 
 from app.desktop.dev_env import set_dev_env_vars
 
@@ -133,10 +135,34 @@ def test_uvicorn_run_options(run_dev_server_main):
         "host": "127.0.0.1",
         "port": 8757,
         "reload": True,
+        "reload_excludes": ANY,
         "reload_delay": 0.1,
         "timeout_graceful_shutdown": 1,
     }
     mock_setup_resource_limits.assert_called_once()
+
+
+def test_reload_skips_the_venv_and_worktrees_folders(run_dev_server_main):
+    mock_uvicorn_run, _ = run_dev_server_main()
+    reload_excludes = mock_uvicorn_run.call_args.kwargs["reload_excludes"]
+
+    assert reload_excludes == [
+        str(REPO_ROOT / folder)
+        for folder in (".venv", ".worktrees")
+        if (REPO_ROOT / folder).is_dir()
+    ]
+    # uvicorn.Config raises if an absolute exclude doesn't exist.
+    config = uvicorn.Config(
+        "app.desktop.dev_app:dev_app",
+        reload=True,
+        reload_excludes=reload_excludes,
+        log_config=None,
+    )
+    watch_filter = FileFilter(config)
+
+    for folder in reload_excludes:
+        assert not watch_filter(Path(folder) / "lib/site-packages/litellm/main.py")
+    assert watch_filter(REPO_ROOT / "app/desktop/dev_server.py")
 
 
 def test_kiln_port_is_exported_for_reload_workers(run_dev_server_main):
