@@ -802,3 +802,38 @@ def test_cloudflare_thinking_levels(model_id, expected_levels, expected_default)
     assert not provider.reasoning_capable
     assert provider.available_thinking_levels == expected_levels
     assert provider.default_thinking_level == expected_default
+
+
+@pytest.mark.parametrize(
+    "model_id,expected_levels,expected_default,expected_allowed_params",
+    [
+        # Not in LiteLLM's bundled model map, so reasoning_effort must be whitelisted.
+        # No Extra High: Fireworks accepts "xhigh" but reasons no longer than "high".
+        (
+            "accounts/fireworks/models/muse-spark-open",
+            {"Low": "low", "Medium": "medium", "High": "high"},
+            "medium",
+            ["reasoning_effort"],
+        ),
+        # Thinking-only: Fireworks rejects "none", and no effort reasons as long as "max".
+        # No Medium: Fireworks accepts "medium" but it reasons the same as "high".
+        (
+            "accounts/fireworks/models/glm-5p3-flash",
+            {"Low": "low", "High": "high", "Max": "max"},
+            "max",
+            None,
+        ),
+    ],
+)
+def test_fireworks_thinking_levels(
+    model_id, expected_levels, expected_default, expected_allowed_params
+):
+    provider = next(
+        p
+        for model in built_in_models
+        for p in model.providers
+        if p.name == ModelProviderName.fireworks_ai and p.model_id == model_id
+    )
+    assert provider.available_thinking_levels == expected_levels
+    assert provider.default_thinking_level == expected_default
+    assert provider.litellm_allowed_openai_params == expected_allowed_params
