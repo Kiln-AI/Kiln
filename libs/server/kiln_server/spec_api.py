@@ -15,7 +15,12 @@ from kiln_server.utils.agent_checks.policy import (
     DENY_AGENT,
     agent_policy_require_approval,
 )
-from kiln_server.utils.spec_utils import build_spec_eval, generate_spec_eval_tags
+from kiln_server.utils.spec_utils import (
+    SpecNameConflictError,
+    build_spec_eval,
+    ensure_spec_name_available,
+    resolve_available_spec_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,39 +94,6 @@ class AvailableSpecNameResponse(BaseModel):
     )
 
 
-def resolve_available_spec_name(
-    candidate: FilenameStringShort, existing_names: list[str]
-) -> AvailableSpecNameResponse:
-    """Resolve `candidate` to a spec name that is actually available.
-
-    Collision is judged by the DERIVED EVAL TAGS, not the raw string — two
-    names differing only by case or spacing share a tag namespace (and so
-    each other's datasets), which is the same comparison the save guard
-    enforces. On a collision, suffix ` 2`, ` 3`, … — trimming the base to
-    keep the result inside the short-name limit, and trimming trailing
-    spaces and underscores so the join can't fabricate a forbidden double
-    space or a `_ ` seam.
-
-    Raises HTTPException(409) if no variant is free within the search bound
-    (a task with ~100 same-named specs — pathological; refusing beats
-    looping forever).
-    """
-    taken = {generate_spec_eval_tags(name).test_tag for name in existing_names}
-    if generate_spec_eval_tags(candidate).test_tag not in taken:
-        return AvailableSpecNameResponse(name=candidate, was_taken=False)
-    max_length = 32  # FilenameStringShort's cap; validated on the way in
-    for i in range(2, 100):
-        suffix = f" {i}"
-        base = candidate[: max_length - len(suffix)].rstrip("_ ")
-        variant = f"{base}{suffix}"
-        if generate_spec_eval_tags(variant).test_tag not in taken:
-            return AvailableSpecNameResponse(name=variant, was_taken=True)
-    raise HTTPException(
-        status_code=409,
-        detail=f"No available variant of '{candidate}' was found.",
-    )
-
-
 def connect_spec_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/available_spec_name",
@@ -155,8 +127,14 @@ def connect_spec_api(app: FastAPI):
         review.
         """
         task = task_from_id(project_id, task_id)
-        return resolve_available_spec_name(
-            name, [spec.name for spec in task.specs(readonly=True)]
+        try:
+            available = resolve_available_spec_name(
+                name, [spec.name for spec in task.specs(readonly=True)]
+            )
+        except SpecNameConflictError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        return AvailableSpecNameResponse(
+            name=available.name, was_taken=available.was_taken
         )
 
     @app.post(
@@ -176,6 +154,11 @@ def connect_spec_api(app: FastAPI):
         spec_data: SpecCreationRequest,
     ) -> Spec:
         task = task_from_id(project_id, task_id)
+
+        try:
+            ensure_spec_name_available(task, spec_data.name)
+        except SpecNameConflictError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
 
         spec_type = spec_data.properties["spec_type"]
 
