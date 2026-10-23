@@ -634,6 +634,8 @@ GPT_5_OPENAI_THINKING_LEVELS = {
 }
 
 
+# For Claude models without an effort list on OpenRouter, OpenRouter turns the
+# effort into a thinking-token budget, so "minimal" is a real level here.
 CLAUDE_OPENROUTER_THINKING_LEVELS = {
     "Off/None": "none",
     "Minimal": "minimal",
@@ -641,6 +643,21 @@ CLAUDE_OPENROUTER_THINKING_LEVELS = {
     "Medium": "medium",
     "High": "high",
     "Extra High": "xhigh",
+}
+
+CLAUDE_EFFORT_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+}
+
+CLAUDE_4_6_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
 }
 
 CLAUDE_ANTHROPIC_EFFORT_THINKING_LEVELS = {
@@ -661,7 +678,6 @@ CLAUDE_SONNET_5_ANTHROPIC_THINKING_LEVELS = {
 
 CLAUDE_SONNET_5_OPENROUTER_THINKING_LEVELS = {
     "Off/None": "none",
-    "Minimal": "minimal",
     "Low": "low",
     "Medium": "medium",
     "High": "high",
@@ -672,7 +688,6 @@ CLAUDE_SONNET_5_OPENROUTER_THINKING_LEVELS = {
 # Fable 5 requires reasoning and cannot disable it, so "none" is omitted (unlike
 # the standard Claude OpenRouter levels which default to "none").
 CLAUDE_FABLE_5_OPENROUTER_THINKING_LEVELS = {
-    "Minimal": "minimal",
     "Low": "low",
     "Medium": "medium",
     "High": "high",
@@ -728,10 +743,17 @@ CLAUDE_FABLE_5_ANTHROPIC_THINKING_LEVELS = {
     "Max": "max",
 }
 
+# OpenRouter levels follow `reasoning.supported_efforts` in its model list.
+# OpenRouter maps an unlisted effort to a listed one, so an extra level would
+# run a different effort than its label says.
 DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS = {
     "Off/None": "none",
     "Low": "low",
-    "Medium": "medium",
+    "High": "high",
+}
+
+DEEPSEEK_V4_PRO_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
     "High": "high",
     "Extra High": "xhigh",
 }
@@ -803,11 +825,40 @@ GLM_5P3_FLASH_FIREWORKS_THINKING_LEVELS = {
     "Max": "max",
 }
 
-# Cloudflare Workers AI takes `reasoning_effort` low/medium/high for DeepSeek V4.1
-# Flash 1017 and GLM 5.3.
-CLOUDFLARE_LOW_MEDIUM_HIGH_THINKING_LEVELS = {
+# Cloudflare levels mirror `reasoning_effort.supported_efforts` in Cloudflare's
+# model catalog. Cloudflare silently remaps any other value (`normalizes_to`),
+# so an extra level would run a different effort than its label says.
+DEEPSEEK_V4_1_FLASH_CLOUDFLARE_THINKING_LEVELS = {
+    "Off": "none",
     "Low": "low",
-    "Medium": "medium",
+    "High": "high",
+    "Max": "max",
+}
+
+# The catalog lists `none` for DeepSeek V4 Pro 0813 and V4 Flash 0731, but both
+# still return reasoning with it, so there is no Off level.
+DEEPSEEK_V4_CLOUDFLARE_THINKING_LEVELS = {
+    "Low": "low",
+    "High": "high",
+    "Max": "max",
+}
+
+# Reasoning is mandatory on GLM 5.3 and GLM 5.3 Flash, so there is no Off level.
+GLM_5_3_CLOUDFLARE_THINKING_LEVELS = {
+    "Low": "low",
+    "High": "high",
+    "Max": "max",
+}
+
+# The catalog lists `none` for GLM 5.2, but the model still returns reasoning
+# with it, so there is no Off level.
+GLM_5_2_CLOUDFLARE_THINKING_LEVELS = {
+    "High": "high",
+    "Max": "max",
+}
+
+KIMI_K2_6_CLOUDFLARE_THINKING_LEVELS = {
+    "Off": "none",
     "High": "high",
 }
 
@@ -2726,7 +2777,7 @@ built_in_models: List[KilnModel] = [
                 model_id="anthropic/claude-opus-5",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 openrouter_reasoning_object=True,
-                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
+                available_thinking_levels=CLAUDE_EFFORT_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="none",
                 supports_doc_extraction=True,
                 supports_vision=True,
@@ -2772,7 +2823,7 @@ built_in_models: List[KilnModel] = [
                 model_id="anthropic/claude-opus-4.8",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 openrouter_reasoning_object=True,
-                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
+                available_thinking_levels=CLAUDE_EFFORT_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="none",
                 supports_doc_extraction=True,
                 supports_vision=True,
@@ -2818,7 +2869,7 @@ built_in_models: List[KilnModel] = [
                 model_id="anthropic/claude-opus-4.7",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 openrouter_reasoning_object=True,
-                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
+                available_thinking_levels=CLAUDE_EFFORT_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="none",
                 supports_doc_extraction=True,
                 supports_vision=True,
@@ -2864,7 +2915,7 @@ built_in_models: List[KilnModel] = [
                 model_id="anthropic/claude-opus-4.6",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 openrouter_reasoning_object=True,
-                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
+                available_thinking_levels=CLAUDE_4_6_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="none",
                 supports_doc_extraction=True,
                 supports_vision=True,
@@ -3091,7 +3142,7 @@ built_in_models: List[KilnModel] = [
                 model_id="anthropic/claude-sonnet-4.6",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 openrouter_reasoning_object=True,
-                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
+                available_thinking_levels=CLAUDE_4_6_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="none",
                 supports_doc_extraction=True,
                 supports_vision=True,
@@ -6466,7 +6517,7 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/deepseek-ai/deepseek-v4.1-flash-1017",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=CLOUDFLARE_LOW_MEDIUM_HIGH_THINKING_LEVELS,
+                available_thinking_levels=DEEPSEEK_V4_1_FLASH_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="high",
                 supports_vision=True,
                 multimodal_capable=True,
@@ -6601,7 +6652,7 @@ built_in_models: List[KilnModel] = [
                 model_id="deepseek/deepseek-v4-pro",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
-                available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
+                available_thinking_levels=DEEPSEEK_V4_PRO_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="high",
                 openrouter_reasoning_object=True,
             ),
@@ -6636,6 +6687,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/deepseek-ai/deepseek-v4-pro-0813",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=DEEPSEEK_V4_CLOUDFLARE_THINKING_LEVELS,
+                default_thinking_level="high",
             ),
         ],
     ),
@@ -6675,6 +6728,8 @@ built_in_models: List[KilnModel] = [
                 suggested_for_synthetic_user=True,
                 model_id="@cf/deepseek-ai/deepseek-v4-flash-0731",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=DEEPSEEK_V4_CLOUDFLARE_THINKING_LEVELS,
+                default_thinking_level="high",
             ),
             KilnModelProvider(
                 name=ModelProviderName.featherless_ai,
@@ -9846,8 +9901,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/zai-org/glm-5.3",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=CLOUDFLARE_LOW_MEDIUM_HIGH_THINKING_LEVELS,
-                default_thinking_level="high",
+                available_thinking_levels=GLM_5_3_CLOUDFLARE_THINKING_LEVELS,
+                default_thinking_level="max",
             ),
         ],
     ),
@@ -9979,6 +10034,8 @@ built_in_models: List[KilnModel] = [
                 suggested_for_synthetic_user=True,
                 model_id="@cf/zai-org/glm-5.3-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GLM_5_3_CLOUDFLARE_THINKING_LEVELS,
+                default_thinking_level="max",
                 supports_vision=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
@@ -10061,6 +10118,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/zai-org/glm-5.2",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GLM_5_2_CLOUDFLARE_THINKING_LEVELS,
+                default_thinking_level="max",
             ),
         ],
     ),
@@ -10680,6 +10739,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/moonshotai/kimi-k2.6",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=KIMI_K2_6_CLOUDFLARE_THINKING_LEVELS,
+                default_thinking_level="high",
                 supports_vision=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[

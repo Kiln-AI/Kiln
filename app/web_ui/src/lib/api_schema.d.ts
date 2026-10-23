@@ -5002,7 +5002,6 @@ export interface components {
         Body_bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post: {
             /**
              * File
-             * Format: binary
              * @description The CSV file containing run data to import.
              */
             file: string;
@@ -5070,7 +5069,6 @@ export interface components {
         Body_parse_import_file_api_projects__project_id__tasks__task_id__copilot_parse_import_file_post: {
             /**
              * File
-             * Format: binary
              * @description The file of input examples to parse and validate.
              */
             file: string;
@@ -9536,7 +9534,7 @@ export interface components {
          *         created_at (datetime): Timestamp when the model was created
          *         created_by (str): User ID of the creator
          */
-        KilnBaseModel: {
+        "KilnBaseModel-Input": {
             /**
              * V
              * @description Schema version for migration support.
@@ -9564,6 +9562,48 @@ export interface components {
              * @description User ID of the creator.
              */
             created_by?: string;
+        };
+        /**
+         * KilnBaseModel
+         * @description Base model for all Kiln data models with common functionality for persistence and versioning.
+         *
+         *     Attributes:
+         *         v (int): Schema version number for migration support
+         *         id (str): Unique identifier for the model instance
+         *         path (Path): File system path where the model is stored
+         *         created_at (datetime): Timestamp when the model was created
+         *         created_by (str): User ID of the creator
+         */
+        "KilnBaseModel-Output": {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /** Model Type */
+            readonly model_type: string;
         };
         /** KilnFileResponse */
         KilnFileResponse: {
@@ -13417,7 +13457,7 @@ export interface components {
              * @description User ID of the creator.
              */
             created_by?: string;
-            parent?: components["schemas"]["KilnBaseModel"] | null;
+            parent?: components["schemas"]["KilnBaseModel-Input"] | null;
             /**
              * Input
              * @description The inputs to the task. JSON formatted for structured input, plaintext for unstructured input.
@@ -14488,6 +14528,10 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
         /**
          * VectorStoreConfig

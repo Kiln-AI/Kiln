@@ -746,17 +746,44 @@ def test_cloudflare_model_ids_are_workers_ai_ids():
 @pytest.mark.parametrize(
     "model_id,expected_levels,expected_default",
     [
+        # Each set is drawn from the model's `supported_efforts` in Cloudflare's
+        # catalog; Cloudflare silently remaps any other value. `none` is left out
+        # where the model still returns reasoning with it.
         (
             "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
-            {"Low": "low", "Medium": "medium", "High": "high"},
+            {"Off": "none", "Low": "low", "High": "high", "Max": "max"},
+            "high",
+        ),
+        (
+            "@cf/deepseek-ai/deepseek-v4-pro-0813",
+            {"Low": "low", "High": "high", "Max": "max"},
+            "high",
+        ),
+        (
+            "@cf/deepseek-ai/deepseek-v4-flash-0731",
+            {"Low": "low", "High": "high", "Max": "max"},
             "high",
         ),
         (
             "@cf/zai-org/glm-5.3",
-            {"Low": "low", "Medium": "medium", "High": "high"},
+            {"Low": "low", "High": "high", "Max": "max"},
+            "max",
+        ),
+        (
+            "@cf/zai-org/glm-5.3-flash",
+            {"Low": "low", "High": "high", "Max": "max"},
+            "max",
+        ),
+        (
+            "@cf/zai-org/glm-5.2",
+            {"High": "high", "Max": "max"},
+            "max",
+        ),
+        (
+            "@cf/moonshotai/kimi-k2.6",
+            {"Off": "none", "High": "high"},
             "high",
         ),
-        # Cloudflare rejects "high" for this model; it accepts low, medium and xhigh.
         (
             "@cf/qwen/qwen3.8-27b",
             {"Low": "low", "Medium": "medium", "Extra High": "xhigh"},
