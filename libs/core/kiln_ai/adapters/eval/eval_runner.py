@@ -1,4 +1,5 @@
 import logging
+import threading
 from dataclasses import dataclass
 from typing import (
     Any,
@@ -547,7 +548,11 @@ class EvalRunner:
         # Live, not precomputed like `already_run`: a trace persisted by one job has to be
         # visible to the next, whether that next job is running concurrently under a
         # different eval config or is this job's own retry.
-        self._trace_index = TraceIndex(self.task)
+        #
+        # Seeded by `run()`, in a worker thread: seeding reads every TaskRun of the
+        # task, and a runner built only to validate a request never looks a trace up.
+        self._trace_index_instance: TraceIndex | None = None
+        self._trace_index_lock = threading.Lock()
         # A session manager passed in replaces the process-wide OpenEnv session manager
         # (tests pass their own).
         self._world_session_manager_override = world_session_manager
@@ -555,6 +560,27 @@ class EvalRunner:
         # metadata, and every later job keys its traces by that same version.
         self._world_targets: dict[str, _WorldTarget | Exception] = {}
         self._world_target_locks = AsyncLockManager()
+
+    @property
+    def _trace_index(self) -> TraceIndex:
+        # `run()` has already seeded it. Seeding here is only for a caller that runs a
+        # job without `run()`, and it blocks the calling thread for the whole read.
+        return self._seed_trace_index()
+
+    def _seed_trace_index(self) -> TraceIndex:
+        """Build the trace index if it is not built yet, and return it. Blocking: it
+        reads every TaskRun of the task. Threads that call it at once share one index."""
+        index = self._trace_index_instance
+        if index is None:
+            with self._trace_index_lock:
+                index = self._trace_index_instance
+                if index is None:
+                    index = self._trace_index_instance = TraceIndex(self.task)
+        return index
+
+    def _collect_tasks_and_seed_trace_index(self) -> List[EvalJob]:
+        self._seed_trace_index()
+        return self.collect_tasks()
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":
@@ -859,7 +885,10 @@ class EvalRunner:
             concurrency = DEFAULT_EVAL_CONCURRENCY
         # Collecting reads every existing EvalRun of each eval config off disk, in a
         # thread, while another runner can be saving one.
-        jobs = await to_thread_retrying_torn_read(self.collect_tasks)
+        # The trace index is seeded in the same thread: it reads every TaskRun.
+        jobs = await to_thread_retrying_torn_read(
+            self._collect_tasks_and_seed_trace_index
+        )
 
         runner = AsyncJobRunner(
             concurrency=concurrency,

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, contextmanager
 from typing import ClassVar, Dict
@@ -19,6 +20,7 @@ from kiln_ai.adapters.eval.eval_runner import (
     _conversation_usage,
     conversation_health_problem,
 )
+from kiln_ai.adapters.eval.trace_index import TraceIndex
 from kiln_ai.adapters.jev import JevApiError
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.retry_classification import is_retryable_error
@@ -346,6 +348,96 @@ async def test_run_collects_tasks_again_after_a_torn_read(
     assert len(calls) == 2
     assert progresses[-1].complete == 3
     assert mock_eval_runner.run_job.call_count == 3
+
+
+def test_constructing_runner_does_not_read_task_runs(
+    mock_eval, mock_task, mock_eval_config, mock_run_config, monkeypatch
+):
+    # A runner is also built only to validate a request (validate_*_readiness). Seeding
+    # the trace index reads every TaskRun of the task, so it must not happen here.
+    # Resolving the split reads the runs too; do it before counting.
+    split = _test_split([mock_eval_config])
+    reads: list[int] = []
+    real_runs = Task.runs
+
+    def counting_runs(self, *args, **kwargs):
+        reads.append(1)
+        return real_runs(self, *args, **kwargs)
+
+    monkeypatch.setattr(Task, "runs", counting_runs)
+
+    EvalRunner(
+        eval_configs=[mock_eval_config],
+        run_configs=[mock_run_config],
+        eval_run_type="task_run_eval",
+        split=split,
+    )
+
+    assert reads == []
+
+
+@pytest.mark.asyncio
+async def test_run_seeds_trace_index_once_in_a_thread_before_jobs(
+    mock_eval_runner, monkeypatch
+):
+    events: list[str] = []
+    seeded: list[TraceIndex] = []
+    seed_threads: list[int] = []
+    real_seed = TraceIndex._seed
+
+    def recording_seed(self):
+        events.append("seed")
+        seeded.append(self)
+        seed_threads.append(threading.get_ident())
+        real_seed(self)
+
+    monkeypatch.setattr(TraceIndex, "_seed", recording_seed)
+    mock_eval_runner.collect_tasks = lambda: [{} for _ in range(3)]
+
+    async def run_job(job):
+        events.append("job")
+        assert mock_eval_runner._trace_index is seeded[0]
+        return True
+
+    mock_eval_runner.run_job = run_job
+
+    [progress async for progress in mock_eval_runner.run()]
+
+    assert events == ["seed", "job", "job", "job"]
+    assert seed_threads != [threading.get_ident()]
+
+
+def test_concurrent_seeds_build_one_trace_index(mock_eval_runner, monkeypatch):
+    seeding = threading.Event()
+    release = threading.Event()
+    seeds: list[int] = []
+    real_seed = TraceIndex._seed
+
+    def slow_seed(self):
+        seeds.append(1)
+        seeding.set()
+        release.wait(timeout=5)
+        real_seed(self)
+
+    monkeypatch.setattr(TraceIndex, "_seed", slow_seed)
+    indexes: list[TraceIndex] = []
+
+    def seed():
+        indexes.append(mock_eval_runner._seed_trace_index())
+
+    first = threading.Thread(target=seed)
+    first.start()
+    assert seeding.wait(timeout=5)
+    # The second caller arrives while the first is still reading the runs.
+    second = threading.Thread(target=seed)
+    second.start()
+    release.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert seeds == [1]
+    assert len(indexes) == 2
+    assert indexes[0] is indexes[1]
 
 
 def test_collect_tasks_filtering(
@@ -2899,6 +2991,36 @@ class TestTraceReuse:
         )
         with generating(generator):
             await run_to_completion(runner)
+
+        assert len(generator.calls) == len(dataset_items)
+        assert len(eval_traces(mock_task)) == len(dataset_items)
+        assert scored_run_ids(mock_v2_task_run_eval_config) == scored_run_ids(
+            second_judge
+        )
+
+    @pytest.mark.asyncio
+    async def test_two_concurrent_jobs_on_one_run_config_generate_once_per_item(
+        self,
+        mock_task,
+        mock_v2_task_run_eval_config,
+        second_judge,
+        mock_run_config,
+        dataset_items,
+    ):
+        """The same overlap across jobs: one background eval job per eval config, posted
+        together. Each job builds its own runner, and both are built before either has
+        generated anything, so only an index shared between runners stops both from
+        generating every item.
+        """
+        generator = TraceGenerator(mock_task)
+        first_job = build_task_run_eval_runner(
+            [mock_v2_task_run_eval_config], [mock_run_config]
+        )
+        second_job = build_task_run_eval_runner([second_judge], [mock_run_config])
+        with generating(generator):
+            await asyncio.gather(
+                run_to_completion(first_job), run_to_completion(second_job)
+            )
 
         assert len(generator.calls) == len(dataset_items)
         assert len(eval_traces(mock_task)) == len(dataset_items)

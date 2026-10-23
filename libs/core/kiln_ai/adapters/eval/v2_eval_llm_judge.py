@@ -10,7 +10,7 @@ as the template namespace.
 
 from typing import TYPE_CHECKING, Any
 
-from jinja2 import UndefinedError, meta
+from jinja2 import UndefinedError
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.eval.base_eval import (
@@ -51,7 +51,11 @@ from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, Task
-from kiln_ai.utils.jinja_engine import JinjaExtractionError, _template_env
+from kiln_ai.utils.jinja_engine import (
+    JinjaExtractionError,
+    _template_env,
+    checked_template_variables,
+)
 from kiln_ai.utils.open_ai_types import single_turn_trace
 
 _DEFAULT_SYSTEM_PROMPT = (
@@ -78,15 +82,16 @@ def _judge_trace(eval_input: EvalTaskInput) -> list[dict[str, Any]] | None:
     ]
 
 
-def _unknown_template_variables(template: str, namespace: dict[str, Any]) -> set[str]:
+def _unknown_template_variables(
+    template: str, namespace: dict[str, Any]
+) -> frozenset[str]:
     """Top-level variables the template uses that aren't EvalTaskInput fields.
 
     Distinguishes a template-authoring bug (typo'd variable name) from
     genuinely missing data (e.g. an absent reference_data key) when rendering
     raises UndefinedError.
     """
-    ast = _template_env.parse(template)
-    return meta.find_undeclared_variables(ast) - set(namespace)
+    return checked_template_variables(template) - set(namespace)
 
 
 class _LlmJudgeTask(Task, parent_of={}):
