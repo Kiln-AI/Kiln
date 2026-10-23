@@ -2999,6 +2999,36 @@ class TestTraceReuse:
         )
 
     @pytest.mark.asyncio
+    async def test_two_concurrent_jobs_on_one_run_config_generate_once_per_item(
+        self,
+        mock_task,
+        mock_v2_task_run_eval_config,
+        second_judge,
+        mock_run_config,
+        dataset_items,
+    ):
+        """The same overlap across jobs: one background eval job per eval config, posted
+        together. Each job builds its own runner, and both are built before either has
+        generated anything, so only an index shared between runners stops both from
+        generating every item.
+        """
+        generator = TraceGenerator(mock_task)
+        first_job = build_task_run_eval_runner(
+            [mock_v2_task_run_eval_config], [mock_run_config]
+        )
+        second_job = build_task_run_eval_runner([second_judge], [mock_run_config])
+        with generating(generator):
+            await asyncio.gather(
+                run_to_completion(first_job), run_to_completion(second_job)
+            )
+
+        assert len(generator.calls) == len(dataset_items)
+        assert len(eval_traces(mock_task)) == len(dataset_items)
+        assert scored_run_ids(mock_v2_task_run_eval_config) == scored_run_ids(
+            second_judge
+        )
+
+    @pytest.mark.asyncio
     async def test_a_different_eval_reuses_the_same_traces(
         self,
         mock_task,

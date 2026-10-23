@@ -1,4 +1,5 @@
 import asyncio
+import gc
 import logging
 import os
 import threading
@@ -8,6 +9,7 @@ from typing import Awaitable, Callable
 
 import pytest
 
+from kiln_ai.adapters.eval import trace_index
 from kiln_ai.adapters.eval.trace_index import (
     TraceIndex,
     TraceKey,
@@ -648,3 +650,130 @@ def test_unsettled_world_trace_is_never_indexed(task):
         world_episode=unsettled.model_copy(update={"final_state": None}),
     )
     assert TraceIndex(task)._paths == {}
+
+
+# ---------------------------------------------------------------------------
+# Sharing across runners
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_concurrent_indexes_on_one_task_generate_once(task):
+    """Two eval jobs that share a run config under different eval configs.
+
+    Each job builds its own runner, and so its own index, and both are seeded before
+    either generates. Without a shared view both miss on the same key and both pay for
+    the trace.
+    """
+    generate = Generator(task)
+    first = TraceIndex(task)
+    second = TraceIndex(task)
+
+    results = await asyncio.gather(
+        first.get_or_create(KEY, generate.for_key(KEY)),
+        second.get_or_create(KEY, generate.for_key(KEY)),
+    )
+
+    assert generate.calls == 1
+    assert [was_generated for _, was_generated in results].count(True) == 1
+    assert len({trace.id for trace, _ in results}) == 1
+
+
+@pytest.mark.asyncio
+async def test_indexes_on_separately_loaded_tasks_share(task):
+    """Each job loads its own Task from disk, so sharing has to meet on the file, not on
+    the object."""
+    assert task.path is not None
+    generate = Generator(task)
+    first = TraceIndex(Task.load_from_file(task.path))
+    second = TraceIndex(Task.load_from_file(task.path))
+
+    generated, _ = await first.get_or_create(KEY, generate.for_key(KEY))
+    reused, was_generated = await second.get_or_create(KEY, generate.for_key(KEY))
+
+    assert was_generated is False
+    assert reused.id == generated.id
+    assert generate.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_indexes_on_different_tasks_do_not_share(tmp_path):
+    """The key carries no task, so the shared state must be per task: a trace of one
+    task is never another task's output."""
+    tasks = []
+    for name in ("a", "b"):
+        (tmp_path / name).mkdir()
+        other = Task(
+            name=name,
+            description="test",
+            instruction="do the thing",
+            path=tmp_path / name / "task.kiln",
+        )
+        other.save_to_file()
+        tasks.append(other)
+    generators = [Generator(other) for other in tasks]
+    indexes = [TraceIndex(other) for other in tasks]
+
+    results = await asyncio.gather(
+        *(
+            index.get_or_create(KEY, generator.for_key(KEY))
+            for index, generator in zip(indexes, generators)
+        )
+    )
+
+    assert [generator.calls for generator in generators] == [1, 1]
+    assert all(was_generated for _, was_generated in results)
+
+
+@pytest.mark.asyncio
+async def test_a_joining_index_finds_traces_synced_in_after_the_first(task):
+    """A long-lived server keeps the shared state while any job on the task runs. A job
+    that starts later must still find a trace that sync brought in meanwhile, so joining
+    reseeds from disk."""
+    generate = Generator(task)
+    running = TraceIndex(task)
+    synced = save_trace(task)
+
+    joining = TraceIndex(task)
+    trace, was_generated = await joining.get_or_create(KEY, generate.for_key(KEY))
+
+    assert was_generated is False
+    assert trace.id == synced.id
+    assert generate.calls == 0
+    # The running job sees it too, through the shared view.
+    trace, was_generated = await running.get_or_create(KEY, generate.for_key(KEY))
+    assert was_generated is False
+    assert trace.id == synced.id
+
+
+@pytest.mark.asyncio
+async def test_shared_state_is_released_with_the_last_index(task):
+    """Nothing outlives the jobs that use it, so an idle server holds no task's traces
+    and the next job starts from what is on disk."""
+    assert task.path is not None
+    path = task.path.resolve()
+    generate = Generator(task)
+    index = TraceIndex(task)
+    await index.get_or_create(KEY, generate.for_key(KEY))
+    assert path in trace_index._task_traces
+
+    del index
+    gc.collect()
+
+    assert path not in trace_index._task_traces
+
+
+@pytest.mark.asyncio
+async def test_a_dropped_entry_does_not_remove_a_newer_one(task):
+    """An index drops only the entry that failed to load. A path another index's seed
+    filed under the key in the meantime has not failed, and stays."""
+    existing = save_trace(task)
+    index = TraceIndex(task)
+    assert existing.path is not None
+    replacement = save_trace(task)
+    assert replacement.path is not None
+    index._paths[KEY] = replacement.path
+
+    index._drop(KEY, existing.path)
+
+    assert index._paths[KEY] == replacement.path
