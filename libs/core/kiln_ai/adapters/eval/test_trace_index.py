@@ -1,10 +1,16 @@
 import asyncio
+import gc
 import logging
 import os
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Awaitable, Callable
 
 import pytest
 
+from kiln_ai.adapters.eval import trace_index
 from kiln_ai.adapters.eval.trace_index import (
     TraceIndex,
     TraceKey,
@@ -262,6 +268,60 @@ async def test_seed_duplicate_keys_first_wins(task):
     assert was_generated is False
     assert trace.id == expected.id
     assert generate.calls == 0
+
+
+def test_concurrent_seeds_of_one_task_read_it_one_at_a_time(task, monkeypatch):
+    """Eval jobs that start together each seed an index. On a cold cache, each reader of
+    the task parses its own copy of every TaskRun, so the reads must not overlap."""
+    save_trace(task)
+    real_runs = Task.runs
+    active = 0
+    most_active = 0
+    counter_lock = threading.Lock()
+
+    def counting_runs(self, *args, **kwargs):
+        nonlocal active, most_active
+        with counter_lock:
+            active += 1
+            most_active = max(most_active, active)
+        try:
+            time.sleep(0.05)
+            return real_runs(self, *args, **kwargs)
+        finally:
+            with counter_lock:
+                active -= 1
+
+    monkeypatch.setattr(Task, "runs", counting_runs)
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        indexes = list(pool.map(lambda _: TraceIndex(task), range(4)))
+
+    assert most_active == 1
+    assert all(KEY in index._paths for index in indexes)
+
+
+def test_seeds_of_different_tasks_do_not_wait_for_each_other(
+    task, tmp_path, monkeypatch
+):
+    other = Task(
+        name="other",
+        description="other",
+        instruction="do the other thing",
+        path=tmp_path / "other" / "task.kiln",
+    )
+    other.save_to_file()
+    real_runs = Task.runs
+    # Each seed waits here for the other: a lock shared across tasks breaks the barrier.
+    both_reading = threading.Barrier(2, timeout=5)
+
+    def meeting_runs(self, *args, **kwargs):
+        both_reading.wait()
+        return real_runs(self, *args, **kwargs)
+
+    monkeypatch.setattr(Task, "runs", meeting_runs)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(TraceIndex, [task, other]))
 
 
 @pytest.mark.asyncio
@@ -591,3 +651,205 @@ def test_unsettled_world_trace_is_never_indexed(task):
         world_episode=unsettled.model_copy(update={"final_state": None}),
     )
     assert TraceIndex(task)._paths == {}
+
+
+# ---------------------------------------------------------------------------
+# Sharing across runners
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_concurrent_indexes_on_one_task_generate_once(task):
+    """Two eval jobs that share a run config under different eval configs.
+
+    Each job builds its own runner, and so its own index, and both are seeded before
+    either generates. Without a shared view both miss on the same key and both pay for
+    the trace.
+    """
+    generate = Generator(task)
+    first = TraceIndex(task)
+    second = TraceIndex(task)
+
+    results = await asyncio.gather(
+        first.get_or_create(KEY, generate.for_key(KEY)),
+        second.get_or_create(KEY, generate.for_key(KEY)),
+    )
+
+    assert generate.calls == 1
+    assert [was_generated for _, was_generated in results].count(True) == 1
+    assert len({trace.id for trace, _ in results}) == 1
+
+
+@pytest.mark.asyncio
+async def test_indexes_on_separately_loaded_tasks_share(task):
+    """Each job loads its own Task from disk, so sharing has to meet on the file, not on
+    the object."""
+    assert task.path is not None
+    generate = Generator(task)
+    first = TraceIndex(Task.load_from_file(task.path))
+    second = TraceIndex(Task.load_from_file(task.path))
+
+    generated, _ = await first.get_or_create(KEY, generate.for_key(KEY))
+    reused, was_generated = await second.get_or_create(KEY, generate.for_key(KEY))
+
+    assert was_generated is False
+    assert reused.id == generated.id
+    assert generate.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_indexes_on_different_tasks_do_not_share(tmp_path):
+    """The key carries no task, so the shared state must be per task: a trace of one
+    task is never another task's output."""
+    tasks = []
+    for name in ("a", "b"):
+        (tmp_path / name).mkdir()
+        other = Task(
+            name=name,
+            description="test",
+            instruction="do the thing",
+            path=tmp_path / name / "task.kiln",
+        )
+        other.save_to_file()
+        tasks.append(other)
+    generators = [Generator(other) for other in tasks]
+    indexes = [TraceIndex(other) for other in tasks]
+
+    results = await asyncio.gather(
+        *(
+            index.get_or_create(KEY, generator.for_key(KEY))
+            for index, generator in zip(indexes, generators)
+        )
+    )
+
+    assert [generator.calls for generator in generators] == [1, 1]
+    assert all(was_generated for _, was_generated in results)
+
+
+@pytest.mark.asyncio
+async def test_a_joining_index_finds_traces_synced_in_after_the_first(task):
+    """A long-lived server keeps the shared state while any job on the task runs. A job
+    that starts later must still find a trace that sync brought in meanwhile, so joining
+    reseeds from disk."""
+    generate = Generator(task)
+    running = TraceIndex(task)
+    synced = save_trace(task)
+
+    joining = TraceIndex(task)
+    trace, was_generated = await joining.get_or_create(KEY, generate.for_key(KEY))
+
+    assert was_generated is False
+    assert trace.id == synced.id
+    assert generate.calls == 0
+    # The running job sees it too, through the shared view.
+    trace, was_generated = await running.get_or_create(KEY, generate.for_key(KEY))
+    assert was_generated is False
+    assert trace.id == synced.id
+
+
+@pytest.mark.asyncio
+async def test_a_joining_index_replaces_a_shared_entry_whose_file_is_gone(task):
+    """Sync can delete the trace a running job indexed and bring in another machine's
+    trace for the same key. A job that starts later must reuse the one on disk, not
+    drop the dead entry and generate again."""
+    indexed = save_trace(task)
+    running = TraceIndex(task)
+    assert indexed.path is not None
+    indexed.path.unlink()
+    synced = save_trace(task)
+
+    generate = Generator(task)
+    joining = TraceIndex(task)
+    trace, was_generated = await joining.get_or_create(KEY, generate.for_key(KEY))
+
+    assert was_generated is False
+    assert trace.id == synced.id
+    assert generate.calls == 0
+    trace, was_generated = await running.get_or_create(KEY, generate.for_key(KEY))
+    assert was_generated is False
+    assert trace.id == synced.id
+
+
+def test_a_seed_does_not_overwrite_a_trace_generated_while_it_checked(
+    task, monkeypatch
+):
+    """A seed checks the dead entry's file in a worker thread. A running job can drop
+    that entry and file a new trace in the meantime, and that job scores the new one.
+    The seed must leave it in place, or later jobs would score a different trace."""
+    indexed = save_trace(task)
+    running = TraceIndex(task)
+    assert indexed.path is not None
+    dead = indexed.path
+    dead.unlink()
+    save_trace(task, output="synced")
+    regenerated: list[Path] = []
+    real_exists = Path.exists
+
+    def exists_while_a_job_regenerates(self, *args, **kwargs):
+        if self == dead and not regenerated:
+            # What the running job does between the seed's read and its write. The
+            # seed listed the task's runs before this, so it never sees this trace.
+            running._drop(KEY, dead)
+            path = save_trace(task, output="regenerated").path
+            assert path is not None
+            regenerated.append(path)
+            running._record(KEY, path)
+        return real_exists(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "exists", exists_while_a_job_regenerates)
+
+    TraceIndex(task)
+
+    assert running._paths[KEY] == regenerated[0]
+
+
+@pytest.mark.asyncio
+async def test_a_joining_index_keeps_a_shared_entry_whose_file_is_there(task):
+    """Two traces on disk for one key, as after sync: the entry a running job already
+    holds stays, so every job scores the same generation."""
+    first = save_trace(task, output="first")
+    running = TraceIndex(task)
+    assert first.path is not None
+    assert running._paths[KEY] == first.path
+    save_trace(task, output="second")
+
+    generate = Generator(task)
+    joining = TraceIndex(task)
+    trace, was_generated = await joining.get_or_create(KEY, generate.for_key(KEY))
+
+    assert was_generated is False
+    assert trace.id == first.id
+    assert generate.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_shared_state_is_released_with_the_last_index(task):
+    """Nothing outlives the jobs that use it, so an idle server holds no task's traces
+    and the next job starts from what is on disk."""
+    assert task.path is not None
+    path = task.path.resolve()
+    generate = Generator(task)
+    index = TraceIndex(task)
+    await index.get_or_create(KEY, generate.for_key(KEY))
+    assert path in trace_index._task_traces
+
+    del index
+    gc.collect()
+
+    assert path not in trace_index._task_traces
+
+
+@pytest.mark.asyncio
+async def test_a_dropped_entry_does_not_remove_a_newer_one(task):
+    """An index drops only the entry that failed to load. A path another index's seed
+    filed under the key in the meantime has not failed, and stays."""
+    existing = save_trace(task)
+    index = TraceIndex(task)
+    assert existing.path is not None
+    replacement = save_trace(task)
+    assert replacement.path is not None
+    index._paths[KEY] = replacement.path
+
+    index._drop(KEY, existing.path)
+
+    assert index._paths[KEY] == replacement.path
