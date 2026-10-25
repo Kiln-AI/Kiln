@@ -1132,13 +1132,12 @@ class EvalRunner:
         """Score the trace and persist the score, or for a drive-only run record the
         drive and stop: the trace is already saved, and nothing is judged."""
         if not self.judge:
+            assert job.task_run_config is not None
             self.driven_runs.append(
                 DrivenRun(
                     item_source=item_key(job.item)[0],
                     item_id=str(job.item.id),
-                    run_config_id=str(job.task_run_config.id)
-                    if job.task_run_config
-                    else "",
+                    run_config_id=str(job.task_run_config.id),
                     task_run_id=str(trace.id),
                 )
             )

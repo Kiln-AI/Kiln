@@ -16,6 +16,7 @@ what makes a retry after a scoring failure re-score rather than regenerate.
 import hashlib
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Awaitable, Callable, Dict, Tuple
 
@@ -133,6 +134,7 @@ class TraceIndex:
         # generating at all). Nothing may ever chain a child onto an eval trace
         # without revisiting this seed — the parent would turn invisible here, and
         # the eval would silently regenerate its trace on every run.
+        newest: Dict[TraceKey, Tuple[datetime, Path]] = {}
         for run in self._task.runs(readonly=True, include_eval_generated=True):
             if run.path is None:
                 continue
@@ -141,9 +143,13 @@ class TraceIndex:
                 # Not an eval trace, or missing half its key — either way, no job can
                 # ever match it.
                 continue
-            # First wins (D8). Sync means two machines can each have generated a trace
-            # for the same key; nothing here creates a second, and either is correct.
-            self._paths.setdefault(key, run.path)
+            # Newest wins. A drive-only run adds a trace to a key that has one, and a
+            # later judge must score that drive. Synced duplicates are all correct, so
+            # newest is only a stable pick for them.
+            held = newest.get(key)
+            if held is None or run.created_at > held[0]:
+                newest[key] = (run.created_at, run.path)
+        self._paths = {key: path for key, (_, path) in newest.items()}
 
     async def get_or_create(
         self, key: TraceKey, generate: Callable[[], Awaitable[TaskRun]]
@@ -175,9 +181,8 @@ class TraceIndex:
         For a drive-only run, whose purpose is a fresh generation: the usage the trace
         records (cost, latency) must be of this run, never of an earlier one. `generate`
         has the same contract as in `get_or_create`. The new trace replaces any earlier
-        one in this index, so a later `get_or_create` on the key in the same run reuses
-        it. A later index seeded from disk finds one of the key's traces (the first one
-        it reads), and each one is a correct generation for the key.
+        one in this index, so a later `get_or_create` on the key reuses it, in this
+        index or in a new one seeded from disk, which keeps the newest trace of a key.
 
         Serialized with `get_or_create` on the same key, so a reuse never races the
         generation of the trace that replaces the one it would read.

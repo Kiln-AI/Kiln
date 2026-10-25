@@ -1377,25 +1377,26 @@ async def test_drive_only_drives_again_and_a_judged_run_reuses_the_newest(
     assert drive.drives == 2
     assert len(_traces(task)) == 2
     [score] = cfg.runs(readonly=True)
-    assert score.scored_run_id in {
-        first.driven_runs[0].task_run_id,
-        second.driven_runs[0].task_run_id,
-    }
+    assert score.scored_run_id == second.driven_runs[0].task_run_id
 
 
-async def test_drive_only_in_one_runner_hands_its_trace_to_a_judge(
+async def test_drive_only_redrives_a_scored_item_and_a_new_judge_scores_the_drive(
     project, task, world, syn_tool_id, run_config, eval_, session_manager
 ):
-    """A trace that was already scored is driven again, and the judged job of the
-    same process reuses the new trace, not the scored one."""
+    """A trace that was already scored is driven again, and a later judged job with
+    another judge scores the new trace, not the scored one."""
     _input(task, "note", _reset(world, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="noted:1"))
+    other_cfg = _config(
+        eval_, ExactMatchProperties(expected_value="noted:1"), name="other"
+    )
     generator = ToolCallingGenerator(task, syn_tool_id)
     with patch.object(BaseV2EvalBridge, "run_task", new=generator), _judge_patch():
         await _drain(_runner([cfg], run_config, session_manager))
         assert len(_traces(task)) == 1
         drive_only = _runner([cfg], run_config, session_manager, judge=False)
         await _drain(drive_only)
+        await _drain(_runner([other_cfg], run_config, session_manager))
 
     assert len(_traces(task)) == 2
     assert len(cfg.runs(readonly=True)) == 1
@@ -1403,6 +1404,8 @@ async def test_drive_only_in_one_runner_hands_its_trace_to_a_judge(
     new_trace = next(t for t in _traces(task) if t.id == driven.task_run_id)
     assert new_trace.world_episode is not None
     assert new_trace.world_episode.final_state["notes"] == ["note"]
+    [other_score] = other_cfg.runs(readonly=True)
+    assert other_score.scored_run_id == driven.task_run_id
 
 
 async def test_drive_only_fails_an_item_that_would_be_skipped(
