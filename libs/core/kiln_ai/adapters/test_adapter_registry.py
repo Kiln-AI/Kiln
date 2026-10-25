@@ -36,6 +36,9 @@ from kiln_ai.datamodel.run_config import (
     ToolsRunConfig,
 )
 from kiln_ai.datamodel.skill import Skill
+from kiln_ai.datamodel.tool_id import build_world_tool_id
+from kiln_ai.datamodel.world import World
+from kiln_ai.tools.tool_registry import tool_from_id
 
 
 @pytest.fixture
@@ -1277,6 +1280,128 @@ class TestValidateRunConfigToolNames:
             tools_config=ToolsRunConfig(tools=["kiln_tool::skill::missing_id"])
         )
         with pytest.raises(ValueError, match="not found in the project: missing_id"):
+            await validate_run_config_tool_names(task, rc)
+
+    def _make_world(self, project, name: str = "depot") -> World:
+        world = World(name=name, parent=project)
+        world.save_to_file()
+        return world
+
+    async def test_accepts_world_tools_of_an_existing_world(
+        self, project_task, _agent_config
+    ):
+        """World tools resolve only inside an episode, so creation checks the world
+        exists without resolving them."""
+        project, task = project_task
+        world = self._make_world(project)
+        code_tool = self._make_code_tool(project, "lookup")
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(
+                tools=[
+                    build_world_tool_id(world.id, "graphql"),
+                    build_world_tool_id(world.id, "search"),
+                    f"kiln_tool::code::{code_tool.id}",
+                ]
+            )
+        )
+        await validate_run_config_tool_names(task, rc)
+
+    async def test_world_tool_still_refused_outside_an_episode(
+        self, project_task, _agent_config
+    ):
+        """Accepting a world tool at creation leaves the runtime check as it was."""
+        project, task = project_task
+        world = self._make_world(project)
+        tool_id = build_world_tool_id(world.id, "graphql")
+        await validate_run_config_tool_names(
+            task, _agent_config(tools_config=ToolsRunConfig(tools=[tool_id]))
+        )
+        with pytest.raises(ValueError, match="can only be used while an episode"):
+            tool_from_id(tool_id, task)
+
+    async def test_rejects_world_tool_of_unknown_world(
+        self, project_task, _agent_config
+    ):
+        _, task = project_task
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(
+                tools=[build_world_tool_id("no_such_world", "graphql")]
+            )
+        )
+        with pytest.raises(ValueError, match=r"World\(s\) no_such_world .* not found"):
+            await validate_run_config_tool_names(task, rc)
+
+    async def test_rejects_world_tools_from_two_worlds(
+        self, project_task, _agent_config
+    ):
+        project, task = project_task
+        world_a = self._make_world(project, "a")
+        world_b = self._make_world(project, "b")
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(
+                tools=[
+                    build_world_tool_id(world_a.id, "graphql"),
+                    build_world_tool_id(world_b.id, "search"),
+                ]
+            )
+        )
+        with pytest.raises(ValueError, match="more than one world"):
+            await validate_run_config_tool_names(task, rc)
+
+    async def test_rejects_world_tool_colliding_with_project_tool(
+        self, project_task, _agent_config
+    ):
+        project, task = project_task
+        world = self._make_world(project)
+        code_tool = self._make_code_tool(project, "graphql")
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(
+                tools=[
+                    build_world_tool_id(world.id, "graphql"),
+                    f"kiln_tool::code::{code_tool.id}",
+                ]
+            )
+        )
+        with pytest.raises(ValueError, match="share the same function name: graphql"):
+            await validate_run_config_tool_names(task, rc)
+
+    async def test_rejects_world_tool_named_like_skill_loader(
+        self, project_task, _agent_config
+    ):
+        project, task = project_task
+        world = self._make_world(project)
+        skill = Skill(name="my-skill", description="d", parent=project)
+        skill.save_to_file()
+        skill.save_skill_md("body")
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(
+                tools=[
+                    build_world_tool_id(world.id, "skill"),
+                    f"kiln_tool::skill::{skill.id}",
+                ]
+            )
+        )
+        with pytest.raises(ValueError, match="share the same function name: skill"):
+            await validate_run_config_tool_names(task, rc)
+
+    async def test_world_tools_do_not_skip_project_tool_checks(
+        self, project_task, _agent_config
+    ):
+        """A missing skill or tool is still refused when world tools are listed too."""
+        project, task = project_task
+        world = self._make_world(project)
+        world_tool = build_world_tool_id(world.id, "graphql")
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(
+                tools=[world_tool, "kiln_tool::skill::missing_id"]
+            )
+        )
+        with pytest.raises(ValueError, match="not found in the project: missing_id"):
+            await validate_run_config_tool_names(task, rc)
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(tools=[world_tool, "kiln_tool::code::missing"])
+        )
+        with pytest.raises(ValueError, match="Code tool not found"):
             await validate_run_config_tool_names(task, rc)
 
 
