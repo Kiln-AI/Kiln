@@ -119,6 +119,11 @@ class _TaskTraces:
         # early in a long eval never serves a stale object, and it stays correct across
         # cache invalidation. Cheap, because the reload is usually a cache hit.
         self.paths: Dict[TraceKey, Path] = {}
+        # Every write to `paths` that depends on what it read holds this lock: a seed
+        # runs in a worker thread while jobs on the event loop drop and file entries.
+        # It is held only for the dict operations, never across I/O, so the event loop
+        # waits on it for microseconds at most.
+        self.paths_lock = threading.Lock()
         # A per-key lock held across generation, so jobs on different keys never wait on
         # each other. It also reclaims idle entries, which matters over an eval with
         # thousands of keys. Shared, so a job waits on another runner's generation of its
@@ -195,15 +200,26 @@ class TraceIndex:
                 # Not an eval trace, or missing half its key — either way, no job can
                 # ever match it.
                 continue
-            # First wins (D8). Sync means two machines can each have generated a trace
-            # for the same key; nothing here creates a second, and either is correct.
-            # An entry another live index already holds wins too, while its file is
-            # there: replacing it would only swap one correct trace for another. Once
-            # its file is gone, the run on disk replaces it, or the next lookup of the
-            # key would drop the entry and generate a trace the task already has.
-            existing = self._paths.get(key)
-            if existing is None or (existing != run.path and not existing.exists()):
-                self._paths[key] = run.path
+            self._seed_entry(key, run.path)
+
+    def _seed_entry(self, key: TraceKey, path: Path) -> None:
+        """File a run found on disk, unless the key already has a usable entry.
+
+        First wins (D8). Sync means two machines can each have generated a trace for the
+        same key; nothing here creates a second, and either is correct. An entry another
+        live index already holds wins too, while its file is there: replacing it would
+        only swap one correct trace for another. Once its file is gone, the run on disk
+        replaces it, or the next lookup of the key would drop the entry and generate a
+        trace the task already has.
+        """
+        existing = self._paths.get(key)
+        if existing is not None and (existing == path or existing.exists()):
+            return
+        with self._shared.paths_lock:
+            # Replace only the entry that was checked. While the file was checked, a job
+            # can have dropped it and filed a trace it generated and is scoring now.
+            if self._paths.get(key) == existing:
+                self._paths[key] = path
 
     async def get_or_create(
         self, key: TraceKey, generate: Callable[[], Awaitable[TaskRun]]
@@ -226,7 +242,7 @@ class TraceIndex:
                 return trace, False
 
             run = await generate()
-            self._paths[key] = self._generated_path(key, run)
+            self._record(key, self._generated_path(key, run))
             logger.info("Generated eval trace %s for %s", run.id, key)
             return run, True
 
@@ -275,11 +291,16 @@ class TraceIndex:
             return None
         return trace
 
+    def _record(self, key: TraceKey, path: Path) -> None:
+        with self._shared.paths_lock:
+            self._paths[key] = path
+
     def _drop(self, key: TraceKey, path: Path) -> None:
         # Only the entry that failed. Another index's seed can file a different path
         # under the key while this one was loading, and that one has not failed.
-        if self._paths.get(key) == path:
-            del self._paths[key]
+        with self._shared.paths_lock:
+            if self._paths.get(key) == path:
+                del self._paths[key]
 
     def _generated_path(self, key: TraceKey, run: TaskRun) -> Path:
         """Where a freshly generated trace was persisted, once it has earned indexing.

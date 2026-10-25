@@ -5,6 +5,7 @@ import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Awaitable, Callable
 
 import pytest
@@ -767,6 +768,39 @@ async def test_a_joining_index_replaces_a_shared_entry_whose_file_is_gone(task):
     trace, was_generated = await running.get_or_create(KEY, generate.for_key(KEY))
     assert was_generated is False
     assert trace.id == synced.id
+
+
+def test_a_seed_does_not_overwrite_a_trace_generated_while_it_checked(
+    task, monkeypatch
+):
+    """A seed checks the dead entry's file in a worker thread. A running job can drop
+    that entry and file a new trace in the meantime, and that job scores the new one.
+    The seed must leave it in place, or later jobs would score a different trace."""
+    indexed = save_trace(task)
+    running = TraceIndex(task)
+    assert indexed.path is not None
+    dead = indexed.path
+    dead.unlink()
+    save_trace(task, output="synced")
+    regenerated: list[Path] = []
+    real_exists = Path.exists
+
+    def exists_while_a_job_regenerates(self, *args, **kwargs):
+        if self == dead and not regenerated:
+            # What the running job does between the seed's read and its write. The
+            # seed listed the task's runs before this, so it never sees this trace.
+            running._drop(KEY, dead)
+            path = save_trace(task, output="regenerated").path
+            assert path is not None
+            regenerated.append(path)
+            running._record(KEY, path)
+        return real_exists(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "exists", exists_while_a_job_regenerates)
+
+    TraceIndex(task)
+
+    assert running._paths[KEY] == regenerated[0]
 
 
 @pytest.mark.asyncio
