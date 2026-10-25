@@ -241,10 +241,34 @@ class TraceIndex:
                 logger.debug("Reusing eval trace %s for %s", trace.id, key)
                 return trace, False
 
-            run = await generate()
-            self._record(key, self._generated_path(key, run))
-            logger.info("Generated eval trace %s for %s", run.id, key)
-            return run, True
+            return await self._generate_and_index(key, generate), True
+
+    async def create(
+        self, key: TraceKey, generate: Callable[[], Awaitable[TaskRun]]
+    ) -> TaskRun:
+        """A new trace for `key`, generated even when the task already has one.
+
+        For a drive-only run, whose purpose is a fresh generation: the usage the trace
+        records (cost, latency) must be of this run, never of an earlier one. `generate`
+        has the same contract as in `get_or_create`. The new trace replaces any earlier
+        one in this index, so a later `get_or_create` on the key in the same run reuses
+        it. A later index seeded from disk finds one of the key's traces (the first one
+        it reads), and each one is a correct generation for the key.
+
+        Serialized with `get_or_create` on the same key, so a reuse never races the
+        generation of the trace that replaces the one it would read.
+        """
+        async with self._locks.acquire(key):
+            return await self._generate_and_index(key, generate)
+
+    async def _generate_and_index(
+        self, key: TraceKey, generate: Callable[[], Awaitable[TaskRun]]
+    ) -> TaskRun:
+        """Generate the trace for `key` and index it. The caller holds the key's lock."""
+        run = await generate()
+        self._record(key, self._generated_path(key, run))
+        logger.info("Generated eval trace %s for %s", run.id, key)
+        return run
 
     def _load_indexed(self, key: TraceKey) -> TaskRun | None:
         path = self._paths.get(key)

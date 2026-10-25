@@ -56,6 +56,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.eval_splits import (
     ItemKey,
+    ItemSource,
     ResolvedSplit,
     eval_run_item_key,
     item_key,
@@ -257,6 +258,17 @@ class _Generation:
 
 
 @dataclass(frozen=True)
+class DrivenRun:
+    """One item a drive-only run drove: the TaskRun that holds its fresh trace and the
+    trace's usage (cost, latency), for a caller that measures the generation itself."""
+
+    item_source: ItemSource
+    item_id: str
+    run_config_id: str
+    task_run_id: str
+
+
+@dataclass(frozen=True)
 class _Skip:
     reason: SkippedReason
     detail: str
@@ -442,6 +454,28 @@ def _check_project_versions_of_served_tools(
         )
 
 
+def _check_drive_only(
+    eval_run_type: Literal["eval_config_eval", "task_run_eval"],
+    eval_configs: List[EvalConfig],
+) -> None:
+    """Raise unless a runner with these settings can drive without judging."""
+    from kiln_ai.adapters.eval.registry import has_v2_eval_adapter
+
+    if eval_run_type != "task_run_eval":
+        raise ValueError("Only a task_run_eval can drive without judging")
+    if len(eval_configs) != 1:
+        raise ValueError(
+            "A drive-only run drives each item once per run config, so it takes "
+            "exactly one eval config"
+        )
+    if not has_v2_eval_adapter(eval_configs[0]):
+        raise ValueError(
+            f"Eval config '{eval_configs[0].name}' is not a V2 judge with an adapter, "
+            "so it cannot drive items without judging them: the legacy path generates "
+            "and judges in one call. Use a V2 eval config of the same eval."
+        )
+
+
 def no_golden_set_message(eval: Eval) -> str:
     """Why judge comparison can't run without a golden set. One wording, two raisers.
 
@@ -467,6 +501,11 @@ class EvalRunner:
        Multi-turn synthetic EvalInputs are re-driven as a full conversation per run
        config using the drive config stamped on each item; stored multi-turn TaskRun
        chains are skipped.
+
+    A task_run_eval runner made with `judge=False` drives without judging: each selected
+    item gets a fresh generation (a world episode and a synthetic user where the item
+    has them), saved as a trace exactly as a judged run saves it, and nothing is scored.
+    See `driven_runs`.
     """
 
     def __init__(
@@ -478,9 +517,18 @@ class EvalRunner:
         save_context: SaveContext | None = None,
         item_ids: Set[ID_TYPE] | None = None,
         world_session_manager: WorldSessionManager | None = None,
+        judge: bool = True,
     ):
         """`item_ids` runs only these items of the split (task_run_eval mode only).
-        Ids outside the split are ignored. None runs the whole split."""
+        Ids outside the split are ignored. None runs the whole split.
+
+        `judge=False` drives each selected item once per run config and judges nothing
+        (task_run_eval mode only). Every item is driven again, scored or not, and the
+        new trace replaces the item's earlier one in the trace index, so a later judged
+        run reuses it instead of driving again (for an item in a world, while its reset
+        and the world's version are unchanged, as for any trace). The drive uses the eval config only to
+        reach its generation path, so it takes exactly one, and a judge with a V2
+        adapter: the legacy path generates and judges in one call."""
         if len(eval_configs) == 0:
             raise ValueError("Eval runner requires at least one eval config")
         target_eval = eval_configs[0].parent_eval()
@@ -536,6 +584,12 @@ class EvalRunner:
 
         if item_ids is not None and eval_run_type != "task_run_eval":
             raise ValueError("item_ids narrows a task_run_eval split only")
+        if not judge:
+            _check_drive_only(eval_run_type, eval_configs)
+        self.judge = judge
+        # The items a drive-only run drove, in the order they finished. Empty for a
+        # judged run, whose generations are named by each EvalRun's scored_run_id.
+        self.driven_runs: list[DrivenRun] = []
         self.item_ids = item_ids
         self.eval_run_type = eval_run_type
         self.eval_configs = eval_configs
@@ -651,6 +705,10 @@ class EvalRunner:
             already_run[eval_config.id] = {
                 run_config.id: set() for run_config in self.run_configs or []
             }
+            if not self.judge:
+                # A drive-only run measures a fresh generation, so a scored item is
+                # driven again: its score says nothing about this run's usage.
+                continue
             for run in eval_config.runs(readonly=True):
                 # Scopes the dedupe to the run configs actually being evaluated: an eval
                 # config accumulates runs for every run config ever compared against it.
@@ -1082,14 +1140,43 @@ class EvalRunner:
             # A raising drive persists nothing, so the job's retry re-drives; a
             # successful one is on disk before the judge sees it, so a scoring
             # failure re-scores without paying for the conversation again.
-            trace, _ = await self._trace_index.get_or_create(
+            trace = await self._trace(
                 generation.key, lambda: self._generate_and_save(generation)
             )
-            eval_task_input = EvalTaskInput.from_trace(trace, job.item)
-            result = await evaluator.evaluate(eval_task_input)
-            return await self._persist_judgment(job, trace, result)
+            return await self._judge_trace(job, evaluator, trace)
 
         trace = await self._resolve_trace(job, evaluator)
+        return await self._judge_trace(job, evaluator, trace)
+
+    async def _trace(
+        self, key: TraceKey, generate: Callable[[], Awaitable[TaskRun]]
+    ) -> TaskRun:
+        """The trace a job works on: the indexed one, generated only if the task has
+        none, or for a drive-only run always a new one."""
+        if not self.judge:
+            return await self._trace_index.create(key, generate)
+        # `TraceIndex` logs both outcomes itself — debug on reuse, info on
+        # generation — so the was_generated bool has no reader here.
+        trace, _ = await self._trace_index.get_or_create(key, generate)
+        return trace
+
+    async def _judge_trace(
+        self, job: EvalJob, evaluator: BaseV2EvalBridge, trace: TaskRun
+    ) -> bool:
+        """Score the trace and persist the score, or for a drive-only run record the
+        drive and stop: the trace is already saved, and nothing is judged."""
+        if not self.judge:
+            self.driven_runs.append(
+                DrivenRun(
+                    item_source=item_key(job.item)[0],
+                    item_id=str(job.item.id),
+                    run_config_id=str(job.task_run_config.id)
+                    if job.task_run_config
+                    else "",
+                    task_run_id=str(trace.id),
+                )
+            )
+            return True
         eval_task_input = EvalTaskInput.from_trace(trace, job.item)
         result = await evaluator.evaluate(eval_task_input)
         return await self._persist_judgment(job, trace, result)
@@ -1151,16 +1238,14 @@ class EvalRunner:
             return await self._save_trace(run)
 
         try:
-            trace, _ = await self._trace_index.get_or_create(generation.key, generate)
+            trace = await self._trace(generation.key, generate)
         except Exception as e:
             # The model adapter lets a tool call's transient environment failure
             # propagate, wrapped in KilnRunError, so classify the underlying error.
             if is_transient_environment_error(e):
                 raise RetryableError(str(unwrap_kiln_run_error(e))) from e
             raise
-        eval_task_input = EvalTaskInput.from_trace(trace, job.item)
-        result = await evaluator.evaluate(eval_task_input)
-        return await self._persist_judgment(job, trace, result)
+        return await self._judge_trace(job, evaluator, trace)
 
     async def _resolve_world_target(self, world_reset: WorldReset) -> _WorldTarget:
         """The world an input names, the tools its environment serves, and the trace
@@ -1243,12 +1328,9 @@ class EvalRunner:
             return golden
 
         generation = self._single_turn_generation(job, evaluator)
-        # `TraceIndex` logs both outcomes itself — debug on reuse, info on generation
-        # (architecture 8) — so the was_generated bool has no reader here.
-        trace, _ = await self._trace_index.get_or_create(
+        return await self._trace(
             generation.key, lambda: self._generate_and_save(generation)
         )
-        return trace
 
     async def _generate_trace(
         self, job: EvalJob, evaluator: BaseV2EvalBridge, key: TraceKey
@@ -1329,7 +1411,12 @@ class EvalRunner:
 
         A scoring job genuinely has nothing to point at. Generating a trace for a job
         that can never be scored is the spend these early skips exist to avoid.
+
+        A drive-only run stores no score, so it has no skip record either: the item
+        fails with the reason instead, which the caller sees in its error log.
         """
+        if not self.judge:
+            raise ValueError(f"Item {job.item.id} can't be driven: {detail}")
         golden = _calibration_item(job)
         return await self._persist_score(
             job,
