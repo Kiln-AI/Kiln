@@ -2,7 +2,7 @@ import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field, replace
-from typing import Annotated, Any, Dict, List, Set, Tuple, Type, TypeVar
+from typing import Annotated, Any, Dict, List, Literal, Set, Tuple, Type, TypeVar
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import StreamingResponse
@@ -998,9 +998,24 @@ class EvalResultsSummaryEvalInfo(BaseModel):
     default_judge_config_id: ID_TYPE | None = Field(
         description="The default judge config ID for this eval, if any."
     )
-    dataset_size: int = Field(description="Total size of the eval dataset.")
+    dataset_size: int = Field(
+        description="Number of items in the slice being summarized: the eval's "
+        "own set, or the requested split's."
+    )
     output_score_keys: list[str] = Field(
         description="The output score keys for this eval."
+    )
+    declared_splits: list[str] = Field(
+        default_factory=list,
+        description="Named dataset splits this eval has a filter for, of "
+        "'test', 'train', 'val'. An eval missing the split being viewed "
+        "contributes no results to it.",
+    )
+    split_available: bool = Field(
+        default=True,
+        description="Whether the requested split resolved for this eval. False "
+        "means its cells are absent because it has no such split, not because "
+        "nothing has been run.",
     )
 
 
@@ -1019,6 +1034,13 @@ class EvalResultsSummaryResultCell(BaseModel):
     percent_complete: float = Field(
         description="Percent of dataset processed for this run config."
     )
+    n_used_by_score_key: Dict[str, int] = Field(
+        default_factory=dict,
+        description="How many runs each mean is over, keyed by "
+        "output_score_key. A mean over a 25-item train split and one over a "
+        "150-item test set are not the same claim, and the number is the only "
+        "thing that says so.",
+    )
 
 
 class EvalResultsSummaryResponse(BaseModel):
@@ -1033,6 +1055,11 @@ class EvalResultsSummaryResponse(BaseModel):
     scores_by_run_config_by_eval: Dict[
         ID_TYPE, Dict[ID_TYPE, EvalResultsSummaryResultCell]
     ] = Field(description="Results keyed by run config ID then eval ID.")
+    split: str | None = Field(
+        default=None,
+        description="The split these results were scoped to, echoed back. None "
+        "means the request did not ask for one and got each eval's own set.",
+    )
 
 
 class EvalConfigCompareSummary(BaseModel):
@@ -1073,7 +1100,10 @@ class RunConfigEvalResult(BaseModel):
 
     eval_id: ID_TYPE = Field(description="The unique identifier of the eval.")
     eval_name: str = Field(description="The human-readable name of the eval.")
-    dataset_size: int = Field(description="The dataset size for this eval.")
+    dataset_size: int = Field(
+        description="Number of items in the slice being reported: the eval's "
+        "own set, or the requested split's."
+    )
     eval_config_result: EvalConfigResult | None = Field(
         default=None, description="The eval config results, if available."
     )
@@ -1085,6 +1115,16 @@ class RunConfigEvalResult(BaseModel):
     )
     score_display_names: Dict[str, str] = Field(
         description="The user-facing name of each of the eval's output scores, keyed by the score's JSON key (the keys of eval_config_result.results). The score's display_name when set, otherwise its name.",
+    )
+    declared_splits: list[str] = Field(
+        default_factory=list,
+        description="Named dataset splits this eval has a filter for, of "
+        "'test', 'train', 'val'.",
+    )
+    split_available: bool = Field(
+        default=True,
+        description="Whether the requested split resolved for this eval. False "
+        "means no results for it, because the eval has no such split.",
     )
 
 
@@ -1103,6 +1143,95 @@ class RunConfigEvalScoresSummary(BaseModel):
     )
     mean_usage: MeanUsage | None = Field(
         default=None, description="Average usage statistics across eval runs."
+    )
+    split: str | None = Field(
+        default=None,
+        description="The split these results were scoped to, echoed back. None "
+        "means the request did not ask for one and got each eval's own set.",
+    )
+    n_eval_runs: int = Field(
+        default=0,
+        description="How many eval runs the usage averages are over, after "
+        "split scoping. Zero means the usage is absent, not zero.",
+    )
+
+
+class EvalRunIndexRow(BaseModel):
+    """One eval run, stripped to what a comparison basis needs.
+
+    The full EvalRun carries its input, its output and the whole task run trace, which
+    is why /results is fetched one cell at a time. This is the same run with all of
+    that dropped: the item it scored, the scores, and the usage the run cost. Small
+    enough to fetch every row of every eval for a dozen run configs at once, which is
+    what matching run configs on the conversations they actually share requires.
+    """
+
+    item_id: ID_TYPE = Field(
+        description="The item this run scored: an EvalInput id on a V2 eval, a "
+        "TaskRun (dataset) id on a V1 one. Unique within an eval's rows."
+    )
+    eval_run_id: ID_TYPE = Field(
+        description="The EvalRun this row is. One record, one row - not an "
+        "identity for the conversation behind it, which is what execution_id is."
+    )
+    execution_id: str = Field(
+        description="Which CONVERSATION this row's scores were computed over. "
+        "Equal across two rows exactly when they scored the same run of the "
+        "task, so a caller can join rows from different evals and know it is "
+        "reading one execution rather than two."
+    )
+    scores: Dict[str, float] = Field(
+        default_factory=dict,
+        description="The run's scores, keyed by output_score_key, exactly as "
+        "stored. A key an eval declares can be absent here, the same way it is "
+        "absent from the per-key counts in the summary.",
+    )
+    input_tokens: float | None = Field(
+        default=None, description="Input tokens this run used. None when unrecorded."
+    )
+    output_tokens: float | None = Field(
+        default=None, description="Output tokens this run used. None when unrecorded."
+    )
+    total_tokens: float | None = Field(
+        default=None, description="Total tokens this run used. None when unrecorded."
+    )
+    cost: float | None = Field(
+        default=None, description="Cost of this run in USD. None when unrecorded."
+    )
+    total_llm_latency_ms: float | None = Field(
+        default=None,
+        description="End-to-end LLM latency of this run in ms. None when unrecorded.",
+    )
+
+
+class EvalRunIndexEval(BaseModel):
+    """One eval's rows for the requested run config."""
+
+    eval_id: ID_TYPE = Field(description="The unique identifier of the eval.")
+    eval_config_id: ID_TYPE = Field(
+        description="The judge config these rows came from: the eval's current "
+        "default, the same one every other compare surface reads."
+    )
+    rows: List[EvalRunIndexRow] = Field(
+        description="The run config's non-skipped runs under this eval, one per "
+        "item. Empty when it has never been run against this split."
+    )
+
+
+class EvalRunIndexResponse(BaseModel):
+    """Per-run rows for one run config, across every eval on the task."""
+
+    evals: List[EvalRunIndexEval] = Field(
+        description="One entry per eval that has a default judge config and "
+        "resolves the requested split. An eval missing either is omitted "
+        "rather than reported: this payload feeds a comparison basis, and an "
+        "eval that cannot supply rows cannot contribute to one. The summary "
+        "endpoints are where an eval's absence is explained."
+    )
+    split: str | None = Field(
+        default=None,
+        description="The split these rows were scoped to, echoed back. None "
+        "means the request did not ask for one and got each eval's own set.",
     )
 
 
@@ -1256,6 +1385,118 @@ def eval_run_task_usage(
     return usage_by_scored_run_id.get(eval_run.scored_run_id)
 
 
+# Reading a run config's results one dataset split at a time.
+#
+# An eval's test split is the slice it is measured on. But a run config is usually
+# iterated against the TRAIN split and only measured on test at the end, so the compare
+# views need to read the other splits too: a config with 25 train runs and no test runs
+# would otherwise render as "no score", indistinguishable from one nobody ever ran.
+#
+# This is a READ-side vocabulary and deliberately not `EvalSplitName`, the one the run
+# endpoints use. "all" is meaningful here (show every run that exists, whatever selected
+# it) and meaningless there (you cannot run "all" - EvalRunner needs one split).
+
+EvalSplitQuery = Literal["train", "val", "test", "all"]
+
+
+def declared_splits(eval: Eval) -> List[str]:
+    """The named splits this eval declares, in reading order.
+
+    Declared, not resolved: a split ref is one field read, where resolving it walks a
+    whole store off disk.
+    """
+    return [name for name in ("test", "train", "val") if name in eval.splits]
+
+
+def scored_item_keys(eval_config: EvalConfig) -> Set[ItemKey]:
+    """Every item any run config has scored under this judge config."""
+    return {
+        eval_run_item_key(eval_run)
+        for eval_run in eval_config.runs(readonly=True)
+        if eval_run.task_run_config_id is not None
+    }
+
+
+class SplitItemResolver:
+    """One request's answer to "which items is eval E scoped to for this query".
+
+    Memoized per (source, filter id), the same key `_cached_test_split` uses and for the
+    same reason: the `tag::` grammar is shared between the two stores, so the filter id
+    alone is not a safe cache key, and a task's evals routinely share a filter while each
+    resolution walks every item in a store. Build one per request, for one task.
+    """
+
+    def __init__(self, task: Task):
+        self.task = task
+        self._cache: Dict[Tuple[ItemSource, str], ResolvedSplit] = {}
+
+    def split(self, eval: Eval, name: EvalSplitName) -> ResolvedSplit | None:
+        """One of the eval's splits, resolved, or None when it has no such split."""
+        split_ref = eval.splits.get(name)
+        if split_ref is None:
+            return None
+        key = (split_ref.source, split_ref.filter_id)
+        cached = self._cache.get(key)
+        if cached is None:
+            resolved = resolve_split(self.task, eval, name)
+            if resolved is None:
+                return None
+            self._cache[key] = resolved
+            cached = resolved
+        # Re-stamped with this eval's id: a cached split handed on unchanged would name
+        # whichever eval reached the filter first (see `_cached_test_split`).
+        return cached if cached.eval_id == eval.id else replace(cached, eval_id=eval.id)
+
+    def items_for_query(
+        self,
+        eval: Eval,
+        eval_config: EvalConfig | None,
+        split: EvalSplitQuery | None,
+    ) -> Set[ItemKey] | None:
+        """The item set a split query scopes an eval to, or None for a split it lacks.
+
+        None and "test" are the same request - the eval's own slice - so an omitted
+        parameter is identical to what every caller got before the parameter existed.
+
+        "all" is every item that has been scored under this judge config, plus the eval's
+        test slice. Not the union of the three splits: runs exist against items that are
+        in none of them (an item can drift out of a filter), and an "all" that hid those
+        would be smaller than the sum of its parts. Including the test slice keeps the
+        denominator the declared universe, so a config that only ever ran train reads as
+        partially complete rather than 100%.
+
+        Keys, not bare ids: an eval's splits can come from different stores, and a bare
+        id would let one store's result be counted into the other's.
+        """
+        if split is None or split == "test":
+            resolved = self.split(eval, "test")
+            return resolved.item_keys() if resolved is not None else None
+        if split == "all":
+            test_split = self.split(eval, "test")
+            expected = test_split.item_keys() if test_split is not None else set()
+            if eval_config is None:
+                return expected
+            return expected | scored_item_keys(eval_config)
+        resolved = self.split(eval, split)
+        return resolved.item_keys() if resolved is not None else None
+
+
+def eval_run_execution_id(eval_run: EvalRun) -> str:
+    """Which CONVERSATION an EvalRun's scores were computed over.
+
+    An item id is NOT this. Two evals can hold a row for the same item under the same run
+    config and mean two different runs of the task: trace reuse makes them one
+    conversation judged twice, but a second generation makes them two. `scored_run_id`
+    is exactly that identity: the TaskRun the score was computed over. Records that
+    predate it fall back to the record's own id, which makes every such row its own
+    execution - the conservative direction, since a cross-eval join then finds no match
+    and reports a missing value instead of reading a different run's number.
+    """
+    if eval_run.scored_run_id is not None:
+        return f"run:{eval_run.scored_run_id}"
+    return f"record:{eval_run.id}"
+
+
 _USAGE_FIELDS = (
     "input_tokens",
     "output_tokens",
@@ -1338,13 +1579,19 @@ class _EvalScoreTally:
 
 
 def run_config_eval_scores(
-    task: Task, run_config_ids: List[str]
+    task: Task,
+    run_config_ids: List[str],
+    split: EvalSplitQuery | None = None,
 ) -> Dict[str, RunConfigEvalScoresSummary]:
     """Each run config's scores on every non-archived eval of the task, keyed by run config id.
 
     Reads each eval's runs once for all the requested run configs. A task with many
     evals and run configs holds thousands of eval runs, so a pass per run config
     multiplies that read by the number of run configs.
+
+    `split` scopes the scores and the usage to one of each eval's splits (None is the
+    eval's own test set). An eval without the requested split is still reported, with
+    split_available=False, rather than failing the request for every other eval.
     """
     # Status lives on the eval, falling back to its spec for evals created before that.
     eval_id_to_spec: Dict[str, Spec] = {
@@ -1367,6 +1614,7 @@ def run_config_eval_scores(
     eval_results: Dict[str, List[RunConfigEvalResult]] = {
         run_config_id: [] for run_config_id in run_config_ids
     }
+    resolver = SplitItemResolver(task)
 
     for eval in evals:
         associated_spec = eval_id_to_spec.get(eval.id) if eval.id else None
@@ -1374,12 +1622,35 @@ def run_config_eval_scores(
 
         # None is unreachable for an eval that loaded (Eval validates a test split);
         # skipping keeps one corrupt file from emptying the whole table.
-        test_split = resolve_split(task, eval, "test")
-        if test_split is None:
+        if resolver.split(eval, "test") is None:
             continue
-        dataset_size = len(test_split)
 
         eval_config = summary_eval_config(eval)
+
+        # The slice being reported: the requested split, or the eval's own set when
+        # none was named. Asked with the judge config because "all" reads its universe
+        # out of that config's runs.
+        split_items = resolver.items_for_query(eval, eval_config, split)
+        if split_items is None:
+            # An eval without the requested split reports itself as such rather than
+            # failing the page for every other eval on the task.
+            for run_config_id in run_config_ids:
+                eval_results[run_config_id].append(
+                    RunConfigEvalResult(
+                        eval_id=eval.id,
+                        eval_name=eval.name,
+                        dataset_size=0,
+                        eval_config_result=None,
+                        missing_default_eval_config=eval_config is None,
+                        spec_id=spec_id,
+                        score_display_names=score_display_names(eval),
+                        declared_splits=declared_splits(eval),
+                        split_available=False,
+                    )
+                )
+            continue
+        dataset_size = len(split_items)
+
         if eval_config is None:
             # Still reported, so the UI can say the eval needs a default judge.
             for run_config_id in run_config_ids:
@@ -1392,12 +1663,12 @@ def run_config_eval_scores(
                         missing_default_eval_config=True,
                         spec_id=spec_id,
                         score_display_names=score_display_names(eval),
+                        declared_splits=declared_splits(eval),
                     )
                 )
             continue
 
         # Keyed on (source, id) so an EvalInput's score can't be credited to a TaskRun.
-        split_items = test_split.item_keys()
         tallies = {
             run_config_id: _EvalScoreTally(remaining_items=set(split_items))
             for run_config_id in run_config_ids
@@ -1441,6 +1712,7 @@ def run_config_eval_scores(
                     missing_default_eval_config=False,
                     spec_id=spec_id,
                     score_display_names=score_display_names(eval),
+                    declared_splits=declared_splits(eval),
                     eval_config_result=tally.result(eval, eval_config.id, dataset_size),
                 )
             )
@@ -1449,6 +1721,8 @@ def run_config_eval_scores(
         run_config_id: RunConfigEvalScoresSummary(
             eval_results=eval_results[run_config_id],
             mean_usage=usage_totals[run_config_id].mean(),
+            split=split,
+            n_eval_runs=usage_totals[run_config_id].n_runs,
         )
         for run_config_id in run_config_ids
     }
@@ -1915,16 +2189,19 @@ def compute_score_summary(
     eval: Eval,
     eval_config: EvalConfig,
     task_run_configs: list[TaskRunConfig],
-    split: ResolvedSplit,
+    split: ResolvedSplit | Set[ItemKey],
 ) -> EvalResultSummary:
     """Aggregate an eval config's runs over exactly one of the eval's splits.
+
+    `split` is a resolved split, or the item keys a split query resolved to (see
+    SplitItemResolver.items_for_query).
 
     Takes the resolved split rather than a set of ids so the aggregate is scoped to one
     store as well as one item set: a run is counted only when the item it scored is in
     this split, keyed on (source, id). A bare id would let an EvalInput's score be
     averaged into a TaskRun-backed split's mean, which no reader could then detect.
     """
-    split_items = split.item_keys()
+    split_items = split.item_keys() if isinstance(split, ResolvedSplit) else set(split)
     if len(split_items) == 0:
         return EvalResultSummary(
             results={},
@@ -3065,11 +3342,12 @@ def connect_evals_api(app: FastAPI):
             str, Path(description="The unique identifier of the run configuration.")
         ],
         split: Annotated[
-            EvalSplitName,
+            EvalSplitQuery,
             Query(
-                description="Which of the eval's dataset splits to return results for. "
-                "Required: every response about eval results is scoped to exactly one "
-                "split, and reading has no obvious default the way running does."
+                description="Which of the eval's dataset splits to return results for, "
+                "or 'all' for every run this judge has under this run config. Required: "
+                "every response about eval results is scoped explicitly, and reading has "
+                "no obvious default the way running does."
             ),
         ],
     ) -> EvalRunResult:
@@ -3083,12 +3361,21 @@ def connect_evals_api(app: FastAPI):
         # results recorded before splits existed. Membership is keyed on (source, id):
         # an EvalRun records exactly one of dataset_id or eval_input_id, and a split
         # yields ids from one store only.
-        resolved_split = resolved_split_or_422(task, eval, split)
+        split_items = SplitItemResolver(task).items_for_query(eval, eval_config, split)
+        if split_items is None:
+            # A 422 rather than an empty list: this endpoint is asked for one eval's
+            # runs, so a split it does not have is a bad request. The task-wide summaries
+            # make the opposite call - there, one eval without the split must not fail
+            # the page.
+            raise HTTPException(
+                status_code=422,
+                detail=f"Eval '{eval.id}' has no '{split}' split.",
+            )
         results = [
             run_result
             for run_result in eval_config.runs(readonly=True)
             if run_result.task_run_config_id == run_config_id
-            and eval_run_item_key(run_result) in resolved_split
+            and eval_run_item_key(run_result) in split_items
         ]
         return EvalRunResult(
             results=resolve_eval_run_traces(task, results),
@@ -3238,6 +3525,17 @@ def connect_evals_api(app: FastAPI):
             str,
             Path(description="The unique identifier of the task within the project."),
         ],
+        split: Annotated[
+            EvalSplitQuery | None,
+            Query(
+                description="Scope the results to one dataset split: 'train', "
+                "'val', 'test', or 'all' (every run that exists, plus the "
+                "eval's own set as the denominator). Omit for each eval's own "
+                "set, which is what 'test' means. Never fails on an eval that "
+                "has no such split: that eval reports split_available=false "
+                "and contributes no cells."
+            ),
+        ] = None,
     ) -> EvalResultsSummaryResponse:
         task = task_from_id(project_id, task_id)
         task_run_configs = get_all_run_configs(project_id, task_id)
@@ -3252,42 +3550,50 @@ def connect_evals_api(app: FastAPI):
         # filter id alone: the `tag::` grammar is shared across both stores, so
         # "tag::golden" over task.runs() and over task.eval_inputs() are different item
         # sets behind the same string.
-        split_cache: Dict[Tuple[ItemSource, str], ResolvedSplit] = {}
+        resolver = SplitItemResolver(task)
         evals_out: Dict[ID_TYPE, EvalResultsSummaryEvalInfo] = {}
         scores_out: Dict[ID_TYPE, Dict[ID_TYPE, EvalResultsSummaryResultCell]] = {}
 
         for eval in task.evals(readonly=True):
-            test_split = _cached_test_split(task, eval, split_cache)
+            test_split = resolver.split(eval, "test")
             if test_split is None:
                 # Unreachable for an eval that loaded: Eval validates that it has a test
                 # split. Skipping rather than 4xx-ing keeps one corrupt file from
                 # emptying the whole task's results table.
                 continue
 
+            # The default judge is resolved before the item set, because "all" reads
+            # its universe out of that judge's runs.
+            default_config = None
+            if eval.current_config_id is not None:
+                for eval_config in eval.configs(readonly=True):
+                    if eval_config.id == eval.current_config_id:
+                        default_config = eval_config
+                        break
+
+            # Never fails on an eval without the queried split: that eval reports
+            # split_available=false and contributes no cells (see the query's docs).
+            queried_items = resolver.items_for_query(eval, default_config, split)
+
             evals_out[eval.id] = EvalResultsSummaryEvalInfo(
                 name=eval.name,
                 default_judge_config_id=eval.current_config_id,
-                dataset_size=len(test_split),
+                # The size of the slice being reported: a cell's percent_complete is
+                # measured against this number.
+                dataset_size=len(queried_items) if queried_items is not None else 0,
                 output_score_keys=[s.json_key() for s in eval.output_scores],
+                declared_splits=declared_splits(eval),
+                split_available=queried_items is not None,
             )
 
-            if eval.current_config_id is None:
-                continue
-
-            default_config = None
-            for eval_config in eval.configs(readonly=True):
-                if eval_config.id == eval.current_config_id:
-                    default_config = eval_config
-                    break
-
-            if default_config is None or len(test_split) == 0:
+            if default_config is None or not queried_items:
                 continue
 
             summary = compute_score_summary(
                 eval,
                 default_config,
                 task_run_configs,
-                test_split,
+                queried_items,
             )
 
             for rc_id, scores_dict in summary.results.items():
@@ -3300,6 +3606,9 @@ def connect_evals_api(app: FastAPI):
                 cell = EvalResultsSummaryResultCell(
                     mean_scores=mean_scores,
                     percent_complete=percent_complete,
+                    n_used_by_score_key={
+                        key: s.n_used for key, s in scores_dict.items()
+                    },
                 )
                 if rc_id not in scores_out:
                     scores_out[rc_id] = {}
@@ -3309,6 +3618,7 @@ def connect_evals_api(app: FastAPI):
             evals_by_id=evals_out,
             run_configs_by_id=run_configs_out,
             scores_by_run_config_by_eval=scores_out,
+            split=split,
         )
 
     # Compared to above, this is comparing all eval configs to each other, not looking at a single eval config
@@ -3482,12 +3792,22 @@ def connect_evals_api(app: FastAPI):
         run_config_id: Annotated[
             str, Path(description="The unique identifier of the run configuration.")
         ],
+        split: Annotated[
+            EvalSplitQuery | None,
+            Query(
+                description="Scope the scores and the usage averages to one "
+                "dataset split: 'train', 'val', 'test', or 'all' (every run "
+                "that exists). Omit for each eval's own set, which is what "
+                "'test' means. An eval with no such split reports "
+                "split_available=false rather than failing the request."
+            ),
+        ] = None,
     ) -> RunConfigEvalScoresSummary:
         def read() -> RunConfigEvalScoresSummary:
             task = task_from_id(project_id, task_id)
             # Called for its 404 when the run config doesn't exist.
             task_run_config_from_id(project_id, task_id, run_config_id)
-            return run_config_eval_scores(task, [run_config_id])[run_config_id]
+            return run_config_eval_scores(task, [run_config_id], split)[run_config_id]
 
         return await to_thread_retrying_torn_read(read)
 
@@ -3505,6 +3825,16 @@ def connect_evals_api(app: FastAPI):
             str,
             Path(description="The unique identifier of the task within the project."),
         ],
+        split: Annotated[
+            EvalSplitQuery | None,
+            Query(
+                description="Scope the scores and the usage averages to one "
+                "dataset split: 'train', 'val', 'test', or 'all' (every run "
+                "that exists). Omit for each eval's own set, which is what "
+                "'test' means. An eval with no such split reports "
+                "split_available=false rather than failing the request."
+            ),
+        ] = None,
     ) -> Dict[str, RunConfigEvalScoresSummary]:
         """Eval scores for every run config of the task, keyed by run config id. Each value matches the per-run-config eval_scores endpoint."""
 
@@ -3515,7 +3845,130 @@ def connect_evals_api(app: FastAPI):
                 for run_config in get_all_run_configs(project_id, task_id)
                 if run_config.id is not None
             ]
-            return run_config_eval_scores(task, run_config_ids)
+            return run_config_eval_scores(task, run_config_ids, split)
+
+        return await to_thread_retrying_torn_read(read)
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}/eval_run_index",
+        summary="Get Run Config Eval Run Index",
+        tags=["Run Configs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_run_config_eval_run_index(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_config_id: Annotated[
+            str, Path(description="The unique identifier of the run configuration.")
+        ],
+        split: Annotated[
+            EvalSplitQuery | None,
+            Query(
+                description="Scope the rows to one dataset split: 'train', "
+                "'val', 'test', or 'all' (every run that exists). Omit for each "
+                "eval's own set, which is what 'test' means. An eval with no "
+                "such split contributes no entry."
+            ),
+        ] = None,
+    ) -> EvalRunIndexResponse:
+        """Every eval run this run config has, one row each, without the traces.
+
+        The aggregating siblings (eval_results_summary, eval_scores) answer "what did
+        this config score". Comparing configs on the SAME conversations needs the rows
+        themselves - which items each config covered - and there is no way to intersect
+        item sets from a mean.
+
+        Scoped exactly like eval_scores, so a number computed from these rows can only
+        differ from the aggregate one by the filtering the caller applied: the eval's
+        default judge config only, archived evals skipped, the split resolved through
+        SplitItemResolver, skipped runs excluded, and at most one row per item (first
+        wins, in eval_config.runs() order - the same rule compute_score_summary dedupes
+        with).
+        """
+
+        def read() -> EvalRunIndexResponse:
+            task = task_from_id(project_id, task_id)
+            # Called for its 404 when the run config doesn't exist.
+            task_run_config_from_id(project_id, task_id, run_config_id)
+            resolver = SplitItemResolver(task)
+
+            # Status lives on the eval, falling back to its spec for evals created
+            # before that.
+            eval_id_to_spec: Dict[str, Spec] = {
+                spec.eval_id: spec for spec in task.specs() if spec.eval_id and spec.id
+            }
+            evals = [
+                eval
+                for eval in task.evals()
+                if eval.resolved_status(
+                    eval_id_to_spec.get(eval.id) if eval.id else None
+                )
+                != EvalStatus.archived
+            ]
+
+            # Per-row usage lives on the trace each score points at, so it is loaded
+            # once for the whole request rather than per row.
+            usage_by_scored_run_id = scored_trace_usage_for_run_configs(
+                task, evals, {run_config_id}
+            )
+
+            index_evals: List[EvalRunIndexEval] = []
+            for eval in evals:
+                default_eval_config = summary_eval_config(eval)
+                if default_eval_config is None:
+                    continue
+                expected_item_keys = resolver.items_for_query(
+                    eval, default_eval_config, split
+                )
+                if expected_item_keys is None:
+                    continue
+
+                remaining_expected_items = set(expected_item_keys)
+                rows: List[EvalRunIndexRow] = []
+                for eval_run in default_eval_config.runs(readonly=True):
+                    if eval_run.task_run_config_id != run_config_id:
+                        continue
+                    item_key = eval_run_item_key(eval_run)
+                    if item_key not in remaining_expected_items:
+                        continue
+                    # The item's slot is consumed before the skip test, the same way
+                    # run_config_eval_scores does it: a skipped run and a scored one for
+                    # the same item leave one row at most, the first in iteration order.
+                    remaining_expected_items.remove(item_key)
+                    if eval_run.skipped_reason is not None:
+                        continue
+
+                    usage = eval_run_task_usage(eval_run, usage_by_scored_run_id)
+                    rows.append(
+                        EvalRunIndexRow(
+                            item_id=item_key[1],
+                            eval_run_id=eval_run.id,
+                            execution_id=eval_run_execution_id(eval_run),
+                            scores=dict(eval_run.scores),
+                            input_tokens=usage.input_tokens if usage else None,
+                            output_tokens=usage.output_tokens if usage else None,
+                            total_tokens=usage.total_tokens if usage else None,
+                            cost=usage.cost if usage else None,
+                            total_llm_latency_ms=usage.total_llm_latency_ms
+                            if usage
+                            else None,
+                        )
+                    )
+
+                index_evals.append(
+                    EvalRunIndexEval(
+                        eval_id=eval.id,
+                        eval_config_id=default_eval_config.id,
+                        rows=rows,
+                    )
+                )
+
+            return EvalRunIndexResponse(evals=index_evals, split=split)
 
         return await to_thread_retrying_torn_read(read)
 

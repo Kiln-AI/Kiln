@@ -2543,6 +2543,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}/eval_run_index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Run Config Eval Run Index
+         * @description Every eval run this run config has, one row each, without the traces.
+         *
+         *     The aggregating siblings (eval_results_summary, eval_scores) answer "what did
+         *     this config score". Comparing configs on the SAME conversations needs the rows
+         *     themselves - which items each config covered - and there is no way to intersect
+         *     item sets from a mean.
+         *
+         *     Scoped exactly like eval_scores, so a number computed from these rows can only
+         *     differ from the aggregate one by the filtering the caller applied: the eval's
+         *     default judge config only, archived evals skipped, the split resolved through
+         *     SplitItemResolver, skipped runs excluded, and at most one row per item (first
+         *     wins, in eval_config.runs() order - the same rule compute_score_summary dedupes
+         *     with).
+         */
+        get: operations["get_run_config_eval_run_index_api_projects__project_id__tasks__task_id__run_configs__run_config_id__eval_run_index_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/add_code_trust": {
         parameters: {
             query?: never;
@@ -7697,7 +7729,7 @@ export interface components {
             default_judge_config_id: string | null;
             /**
              * Dataset Size
-             * @description Total size of the eval dataset.
+             * @description Number of items in the slice being summarized: the eval's own set, or the requested split's.
              */
             dataset_size: number;
             /**
@@ -7705,6 +7737,17 @@ export interface components {
              * @description The output score keys for this eval.
              */
             output_score_keys: string[];
+            /**
+             * Declared Splits
+             * @description Named dataset splits this eval has a filter for, of 'test', 'train', 'val'. An eval missing the split being viewed contributes no results to it.
+             */
+            declared_splits?: string[];
+            /**
+             * Split Available
+             * @description Whether the requested split resolved for this eval. False means its cells are absent because it has no such split, not because nothing has been run.
+             * @default true
+             */
+            split_available: boolean;
         };
         /**
          * EvalResultsSummaryResponse
@@ -7734,6 +7777,11 @@ export interface components {
                     [key: string]: components["schemas"]["EvalResultsSummaryResultCell"];
                 };
             };
+            /**
+             * Split
+             * @description The split these results were scoped to, echoed back. None means the request did not ask for one and got each eval's own set.
+             */
+            split?: string | null;
         };
         /**
          * EvalResultsSummaryResultCell
@@ -7752,6 +7800,13 @@ export interface components {
              * @description Percent of dataset processed for this run config.
              */
             percent_complete: number;
+            /**
+             * N Used By Score Key
+             * @description How many runs each mean is over, keyed by output_score_key. A mean over a 25-item train split and one over a 150-item test set are not the same claim, and the number is the only thing that says so.
+             */
+            n_used_by_score_key?: {
+                [key: string]: number;
+            };
         };
         /**
          * EvalResultsSummaryRunConfigInfo
@@ -7908,6 +7963,102 @@ export interface components {
             skipped_detail?: string | null;
             /** Model Type */
             readonly model_type: string;
+        };
+        /**
+         * EvalRunIndexEval
+         * @description One eval's rows for the requested run config.
+         */
+        EvalRunIndexEval: {
+            /**
+             * Eval Id
+             * @description The unique identifier of the eval.
+             */
+            eval_id: string | null;
+            /**
+             * Eval Config Id
+             * @description The judge config these rows came from: the eval's current default, the same one every other compare surface reads.
+             */
+            eval_config_id: string | null;
+            /**
+             * Rows
+             * @description The run config's non-skipped runs under this eval, one per item. Empty when it has never been run against this split.
+             */
+            rows: components["schemas"]["EvalRunIndexRow"][];
+        };
+        /**
+         * EvalRunIndexResponse
+         * @description Per-run rows for one run config, across every eval on the task.
+         */
+        EvalRunIndexResponse: {
+            /**
+             * Evals
+             * @description One entry per eval that has a default judge config and resolves the requested split. An eval missing either is omitted rather than reported: this payload feeds a comparison basis, and an eval that cannot supply rows cannot contribute to one. The summary endpoints are where an eval's absence is explained.
+             */
+            evals: components["schemas"]["EvalRunIndexEval"][];
+            /**
+             * Split
+             * @description The split these rows were scoped to, echoed back. None means the request did not ask for one and got each eval's own set.
+             */
+            split?: string | null;
+        };
+        /**
+         * EvalRunIndexRow
+         * @description One eval run, stripped to what a comparison basis needs.
+         *
+         *     The full EvalRun carries its input, its output and the whole task run trace, which
+         *     is why /results is fetched one cell at a time. This is the same run with all of
+         *     that dropped: the item it scored, the scores, and the usage the run cost. Small
+         *     enough to fetch every row of every eval for a dozen run configs at once, which is
+         *     what matching run configs on the conversations they actually share requires.
+         */
+        EvalRunIndexRow: {
+            /**
+             * Item Id
+             * @description The item this run scored: an EvalInput id on a V2 eval, a TaskRun (dataset) id on a V1 one. Unique within an eval's rows.
+             */
+            item_id: string | null;
+            /**
+             * Eval Run Id
+             * @description The EvalRun this row is. One record, one row - not an identity for the conversation behind it, which is what execution_id is.
+             */
+            eval_run_id: string | null;
+            /**
+             * Execution Id
+             * @description Which CONVERSATION this row's scores were computed over. Equal across two rows exactly when they scored the same run of the task, so a caller can join rows from different evals and know it is reading one execution rather than two.
+             */
+            execution_id: string;
+            /**
+             * Scores
+             * @description The run's scores, keyed by output_score_key, exactly as stored. A key an eval declares can be absent here, the same way it is absent from the per-key counts in the summary.
+             */
+            scores?: {
+                [key: string]: number;
+            };
+            /**
+             * Input Tokens
+             * @description Input tokens this run used. None when unrecorded.
+             */
+            input_tokens?: number | null;
+            /**
+             * Output Tokens
+             * @description Output tokens this run used. None when unrecorded.
+             */
+            output_tokens?: number | null;
+            /**
+             * Total Tokens
+             * @description Total tokens this run used. None when unrecorded.
+             */
+            total_tokens?: number | null;
+            /**
+             * Cost
+             * @description Cost of this run in USD. None when unrecorded.
+             */
+            cost?: number | null;
+            /**
+             * Total Llm Latency Ms
+             * @description End-to-end LLM latency of this run in ms. None when unrecorded.
+             */
+            total_llm_latency_ms?: number | null;
         };
         /**
          * EvalRunResult
@@ -11923,7 +12074,7 @@ export interface components {
             eval_name: string;
             /**
              * Dataset Size
-             * @description The dataset size for this eval.
+             * @description Number of items in the slice being reported: the eval's own set, or the requested split's.
              */
             dataset_size: number;
             /** @description The eval config results, if available. */
@@ -11945,6 +12096,17 @@ export interface components {
             score_display_names: {
                 [key: string]: string;
             };
+            /**
+             * Declared Splits
+             * @description Named dataset splits this eval has a filter for, of 'test', 'train', 'val'.
+             */
+            declared_splits?: string[];
+            /**
+             * Split Available
+             * @description Whether the requested split resolved for this eval. False means no results for it, because the eval has no such split.
+             * @default true
+             */
+            split_available: boolean;
         };
         /**
          * RunConfigEvalScoresSummary
@@ -11958,6 +12120,17 @@ export interface components {
             eval_results: components["schemas"]["RunConfigEvalResult"][];
             /** @description Average usage statistics across eval runs. */
             mean_usage?: components["schemas"]["MeanUsage"] | null;
+            /**
+             * Split
+             * @description The split these results were scoped to, echoed back. None means the request did not ask for one and got each eval's own set.
+             */
+            split?: string | null;
+            /**
+             * N Eval Runs
+             * @description How many eval runs the usage averages are over, after split scoping. Zero means the usage is absent, not zero.
+             * @default 0
+             */
+            n_eval_runs: number;
         };
         /**
          * RunSummary
@@ -20502,8 +20675,8 @@ export interface operations {
     get_eval_run_results_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get: {
         parameters: {
             query: {
-                /** @description Which of the eval's dataset splits to return results for. Required: every response about eval results is scoped to exactly one split, and reading has no obvious default the way running does. */
-                split: "train" | "val" | "test";
+                /** @description Which of the eval's dataset splits to return results for, or 'all' for every run this judge has under this run config. Required: every response about eval results is scoped explicitly, and reading has no obvious default the way running does. */
+                split: "train" | "val" | "test" | "all";
             };
             header?: never;
             path: {
@@ -20658,7 +20831,10 @@ export interface operations {
     };
     get_eval_results_summary_api_projects__project_id__tasks__task_id__eval_results_summary_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Scope the results to one dataset split: 'train', 'val', 'test', or 'all' (every run that exists, plus the eval's own set as the denominator). Omit for each eval's own set, which is what 'test' means. Never fails on an eval that has no such split: that eval reports split_available=false and contributes no cells. */
+                split?: ("train" | "val" | "test" | "all") | null;
+            };
             header?: never;
             path: {
                 /** @description The unique identifier of the project. */
@@ -20728,7 +20904,10 @@ export interface operations {
     };
     get_run_config_eval_scores_api_projects__project_id__tasks__task_id__run_configs__run_config_id__eval_scores_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Scope the scores and the usage averages to one dataset split: 'train', 'val', 'test', or 'all' (every run that exists). Omit for each eval's own set, which is what 'test' means. An eval with no such split reports split_available=false rather than failing the request. */
+                split?: ("train" | "val" | "test" | "all") | null;
+            };
             header?: never;
             path: {
                 /** @description The unique identifier of the project. */
@@ -20764,7 +20943,10 @@ export interface operations {
     };
     get_all_run_configs_eval_scores_api_projects__project_id__tasks__task_id__run_configs_eval_scores_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Scope the scores and the usage averages to one dataset split: 'train', 'val', 'test', or 'all' (every run that exists). Omit for each eval's own set, which is what 'test' means. An eval with no such split reports split_available=false rather than failing the request. */
+                split?: ("train" | "val" | "test" | "all") | null;
+            };
             header?: never;
             path: {
                 /** @description The unique identifier of the project. */
@@ -20785,6 +20967,45 @@ export interface operations {
                     "application/json": {
                         [key: string]: components["schemas"]["RunConfigEvalScoresSummary"];
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_config_eval_run_index_api_projects__project_id__tasks__task_id__run_configs__run_config_id__eval_run_index_get: {
+        parameters: {
+            query?: {
+                /** @description Scope the rows to one dataset split: 'train', 'val', 'test', or 'all' (every run that exists). Omit for each eval's own set, which is what 'test' means. An eval with no such split contributes no entry. */
+                split?: ("train" | "val" | "test" | "all") | null;
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the run configuration. */
+                run_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalRunIndexResponse"];
                 };
             };
             /** @description Validation Error */
