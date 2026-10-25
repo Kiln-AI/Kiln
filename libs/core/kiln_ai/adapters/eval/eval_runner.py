@@ -549,8 +549,9 @@ class EvalRunner:
         # visible to the next, whether that next job is running concurrently under a
         # different eval config or is this job's own retry.
         #
-        # Seeded by `run()`, in a worker thread: seeding reads every TaskRun of the
-        # task, and a runner built only to validate a request never looks a trace up.
+        # Seeded by `run()`, in a worker thread, and only when it has task_run_eval jobs:
+        # seeding reads every TaskRun of the task, and a runner built only to validate a
+        # request never looks a trace up.
         self._trace_index_instance: TraceIndex | None = None
         self._trace_index_lock = threading.Lock()
         # A session manager passed in replaces the process-wide OpenEnv session manager
@@ -579,8 +580,12 @@ class EvalRunner:
         return index
 
     def _collect_tasks_and_seed_trace_index(self) -> List[EvalJob]:
-        self._seed_trace_index()
-        return self.collect_tasks()
+        jobs = self.collect_tasks()
+        # Only a task_run_eval job looks a trace up. A calibration run, or a run whose
+        # items are all scored already, never does, so it skips the read of every TaskRun.
+        if jobs and self.eval_run_type == "task_run_eval":
+            self._seed_trace_index()
+        return jobs
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":

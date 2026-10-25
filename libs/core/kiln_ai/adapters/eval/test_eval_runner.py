@@ -407,6 +407,31 @@ async def test_run_seeds_trace_index_once_in_a_thread_before_jobs(
     assert seed_threads != [threading.get_ident()]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "eval_run_type, job_count",
+    [
+        # Every item is scored already: nothing to look up.
+        ("task_run_eval", 0),
+        # Calibration scores stored dataset runs and never generates a trace.
+        ("eval_config_eval", 3),
+    ],
+)
+async def test_run_without_trace_lookups_does_not_seed_trace_index(
+    mock_eval_runner, monkeypatch, eval_run_type, job_count
+):
+    seeds: list[int] = []
+    monkeypatch.setattr(TraceIndex, "_seed", lambda self: seeds.append(1))
+    mock_eval_runner.eval_run_type = eval_run_type
+    mock_eval_runner.collect_tasks = lambda: [{} for _ in range(job_count)]
+    mock_eval_runner.run_job = AsyncMock(return_value=True)
+
+    [progress async for progress in mock_eval_runner.run()]
+
+    assert seeds == []
+    assert mock_eval_runner.run_job.call_count == job_count
+
+
 def test_concurrent_seeds_build_one_trace_index(mock_eval_runner, monkeypatch):
     seeding = threading.Event()
     release = threading.Event()
