@@ -1309,7 +1309,8 @@ class TestValidateRunConfigToolNames:
     async def test_world_tool_still_refused_outside_an_episode(
         self, project_task, _agent_config
     ):
-        """Accepting a world tool at creation leaves the runtime check as it was."""
+        """Validation accepts a world tool, and tool_from_id still refuses it
+        outside an episode."""
         project, task = project_task
         world = self._make_world(project)
         tool_id = build_world_tool_id(world.id, "graphql")
@@ -1330,6 +1331,15 @@ class TestValidateRunConfigToolNames:
         )
         with pytest.raises(ValueError, match=r"World\(s\) no_such_world .* not found"):
             await validate_run_config_tool_names(task, rc)
+
+    async def test_rejects_world_tools_for_task_without_project(
+        self, basic_task, _agent_config
+    ):
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(tools=[build_world_tool_id("w1", "graphql")])
+        )
+        with pytest.raises(ValueError, match="require the task to belong to a project"):
+            await validate_run_config_tool_names(basic_task, rc)
 
     async def test_rejects_world_tools_from_two_worlds(
         self, project_task, _agent_config
