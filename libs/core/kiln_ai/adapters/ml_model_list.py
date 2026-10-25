@@ -4959,6 +4959,8 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/nvidia/nemotron-3-120b-a12b",
+                # Cloudflare Workers AI price list; LiteLLM has no price for this model.
+                token_prices=TokenPrices(input_per_mtok=0.50, output_per_mtok=1.50),
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
@@ -6189,6 +6191,8 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/google/gemma-4-26b-a4b-it",
+                # Cloudflare Workers AI price list; LiteLLM has no price for this model.
+                token_prices=TokenPrices(input_per_mtok=0.10, output_per_mtok=0.30),
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -6721,6 +6725,12 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/deepseek-ai/deepseek-v4-pro-0813",
+                # Cloudflare Workers AI price list; LiteLLM has no price for this model.
+                token_prices=TokenPrices(
+                    input_per_mtok=1.32,
+                    cached_input_per_mtok=0.044,
+                    output_per_mtok=3.96,
+                ),
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=DEEPSEEK_V4_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="high",
@@ -6762,6 +6772,12 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.cloudflare,
                 suggested_for_synthetic_user=True,
                 model_id="@cf/deepseek-ai/deepseek-v4-flash-0731",
+                # Cloudflare Workers AI price list; LiteLLM has no price for this model.
+                token_prices=TokenPrices(
+                    input_per_mtok=0.44,
+                    cached_input_per_mtok=0.014,
+                    output_per_mtok=1.32,
+                ),
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=DEEPSEEK_V4_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="high",
@@ -10076,6 +10092,12 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.cloudflare,
                 suggested_for_synthetic_user=True,
                 model_id="@cf/zai-org/glm-5.3-flash",
+                # Cloudflare Workers AI price list; LiteLLM has no price for this model.
+                token_prices=TokenPrices(
+                    input_per_mtok=0.15,
+                    cached_input_per_mtok=0.03,
+                    output_per_mtok=0.50,
+                ),
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GLM_5_3_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="max",
@@ -10160,6 +10182,12 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/zai-org/glm-5.2",
+                # Cloudflare Workers AI price list; LiteLLM has no price for this model.
+                token_prices=TokenPrices(
+                    input_per_mtok=1.40,
+                    cached_input_per_mtok=0.26,
+                    output_per_mtok=4.40,
+                ),
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GLM_5_2_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="max",
@@ -10355,6 +10383,8 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/zai-org/glm-4.7-flash",
+                # Cloudflare Workers AI price list; LiteLLM has no price for this model.
+                token_prices=TokenPrices(input_per_mtok=0.06, output_per_mtok=0.40),
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
@@ -10781,6 +10811,12 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/moonshotai/kimi-k2.6",
+                # Cloudflare Workers AI price list; LiteLLM has no price for this model.
+                token_prices=TokenPrices(
+                    input_per_mtok=0.95,
+                    cached_input_per_mtok=0.16,
+                    output_per_mtok=4.00,
+                ),
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=KIMI_K2_6_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="high",
