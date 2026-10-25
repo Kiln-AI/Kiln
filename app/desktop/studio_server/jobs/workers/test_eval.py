@@ -979,15 +979,24 @@ async def test_run_builds_the_runner_again_after_a_torn_read(
     monkeypatch.setattr("kiln_ai.utils.torn_read.TORN_READ_RETRY_DELAY_SECONDS", 0)
     from kiln_ai.adapters.eval import eval_runner
 
+    # Only a v2 judge looks a trace up, so only its run seeds the index.
+    EvalConfig(
+        id="eval_config_exact",
+        name="Exact",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="yes"),
+        parent=eval_config.parent_eval(),
+    ).save_to_file()
+    params = params.model_copy(update={"eval_config_id": "eval_config_exact"})
     _make_task_run(task, data_source, "eval_set")
     original = eval_runner.TraceIndex
     builds: list[int] = []
 
-    def trace_index(task):
+    def trace_index(task, registry=None):
         builds.append(1)
         if len(builds) == 1:
             raise json.JSONDecodeError("Expecting value", "", 0)
-        return original(task)
+        return original(task, registry)
 
     monkeypatch.setattr(eval_runner, "TraceIndex", trace_index)
 
@@ -1010,6 +1019,19 @@ async def test_run_builds_the_runner_again_after_a_torn_read(
 
     assert len(builds) == 2
     assert result == EvalJobResult(total=1, success=1, error=0)
+
+
+def test_runners_of_one_worker_share_a_trace_index_registry(
+    resolve_project, task, eval_config, run_config, data_source, params
+):
+    _make_task_run(task, data_source, "eval_set")
+    worker = EvalJobWorker()
+
+    first = worker._build_eval_runner(params, None)
+    second = worker._build_eval_runner(params, None)
+
+    assert first._trace_index_registry is not None
+    assert first._trace_index_registry is second._trace_index_registry
 
 
 async def test_run_idempotent_skips_already_scored(

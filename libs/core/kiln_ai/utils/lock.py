@@ -26,10 +26,8 @@ class AsyncLockManager:
     """
 
     def __init__(self) -> None:
-        # The bookkeeping below never awaits between reading and writing the dict or the
-        # counters, so on one event loop it needs no lock of its own. An awaited mutex
-        # here is what let a cancellation land between taking a key's lock and recording
-        # the holder.
+        # Keep the bookkeeping free of awaits: a cancellation at an await between taking
+        # a key's lock and recording the holder would leak the lock.
         self._locks: Dict[Hashable, _Entry] = {}
 
     @asynccontextmanager
@@ -60,9 +58,6 @@ class AsyncLockManager:
         try:
             yield  # critical section
         finally:
-            # Whatever the critical section raised, including a cancellation or a
-            # TimeoutError of its own, the holder only releases. It is no longer a
-            # waiter, so it must not touch the waiter count again.
             entry.lock.release()
             entry.holders -= 1
             self._discard_if_idle(key, entry)

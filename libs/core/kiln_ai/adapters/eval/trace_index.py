@@ -14,8 +14,8 @@ what makes a retry after a scoring failure re-score rather than regenerate.
 
 The same race exists one level up, between runners. Each background eval job builds its
 own `EvalRunner`, so jobs posted together for one run config under several eval configs
-are each seeded before any of them has generated. The live view is therefore shared by
-every index on a task, not owned by one.
+are each seeded before any of them has generated. Runners that share a
+`TraceIndexRegistry` therefore share one live view of each task.
 """
 
 import hashlib
@@ -111,72 +111,69 @@ def _stored_trace_key(run: TaskRun) -> TraceKey | None:
 
 
 class _TaskTraces:
-    """The state every live `TraceIndex` on one task shares."""
+    """The state every `TraceIndex` on one task shares."""
 
     def __init__(self) -> None:
-        # Paths, not TaskRuns. Reloading is what keeps a handed-out trace honest: it
-        # re-reads the record (ModelCache validates on path + mtime), so an index built
-        # early in a long eval never serves a stale object, and it stays correct across
-        # cache invalidation. Cheap, because the reload is usually a cache hit.
+        # Paths, not TaskRuns: reloading re-reads the record (ModelCache validates on
+        # path + mtime), so a long eval never serves a stale trace.
         self.paths: Dict[TraceKey, Path] = {}
-        # Every write to `paths` that depends on what it read holds this lock: a seed
-        # runs in a worker thread while jobs on the event loop drop and file entries.
-        # It is held only for the dict operations, never across I/O, so the event loop
-        # waits on it for microseconds at most.
+        # Held only for dict operations, never across I/O: a seed in a worker thread and
+        # jobs on the event loop both write `paths`.
         self.paths_lock = threading.Lock()
-        # A per-key lock held across generation, so jobs on different keys never wait on
-        # each other. It also reclaims idle entries, which matters over an eval with
-        # thousands of keys. Shared, so a job waits on another runner's generation of its
-        # key and then reuses it. A job cancelled mid-generation only releases its key,
-        # and the next waiter takes it over. The locks are asyncio locks:
-        # every runner sharing them must run on the one event loop, which the studio
-        # server's job runner does.
+        # Held across generation, per key. asyncio locks: every index sharing them must
+        # run on one event loop.
         self.locks = AsyncLockManager()
-        # One seed at a time on the task. Seeding reads every TaskRun of the task, and on
-        # a cold ModelCache each concurrent reader parses its own copy of every file, so
-        # eval jobs that start together on a large task each held the whole task in
-        # memory. Under the lock the first seed parses and fills the cache, and a seed
-        # that waited behind it gets the cached objects back. Jobs that start together
-        # are live together, so they always meet on this lock.
+        # Seeds of one task read its runs one at a time. On a cold ModelCache, parallel
+        # seeds would each parse and hold their own copy of every TaskRun.
         self.seed_lock = threading.Lock()
 
 
-# Weak values: the shared state lives exactly as long as some index on the task does.
-# Over a long-lived server that bounds it to the jobs in flight, and once the last one
-# ends, the next job seeds from disk alone. Keyed by the task file's resolved path, so
-# Task objects loaded separately for each job still meet.
-_task_traces: "weakref.WeakValueDictionary[Path, _TaskTraces]" = (
-    weakref.WeakValueDictionary()
-)
-# A thread lock, not an asyncio one: runners are built inside `asyncio.to_thread`.
-_task_traces_guard = threading.Lock()
+class TraceIndexRegistry:
+    """Shares eval traces between the `TraceIndex` objects built on one task.
 
+    Each `EvalRunner` builds its own index. Runners given the same registry reuse each
+    other's traces, and two runners that need the same trace generate it once. Every
+    runner that shares a registry must run on the same event loop. Without a registry,
+    an index shares nothing.
 
-def _shared_traces(task: Task) -> _TaskTraces:
-    if task.path is None:
-        # An unsaved task has no runs on disk and no identity to meet on.
-        return _TaskTraces()
-    path = task.path.resolve()
-    with _task_traces_guard:
-        traces = _task_traces.get(path)
-        if traces is None:
-            traces = _TaskTraces()
-            _task_traces[path] = traces
-        return traces
+    A task's shared state lives only while some index on it is alive, so an idle
+    registry holds nothing.
+    """
+
+    def __init__(self) -> None:
+        # Keyed by the task file's resolved path: each job loads its own Task object.
+        self._traces: weakref.WeakValueDictionary[Path, _TaskTraces] = (
+            weakref.WeakValueDictionary()
+        )
+        # A thread lock: runners are built in worker threads.
+        self._lock = threading.Lock()
+
+    def _traces_for(self, task: Task) -> _TaskTraces:
+        if task.path is None:
+            # An unsaved task has no runs on disk and no identity to meet on.
+            return _TaskTraces()
+        path = task.path.resolve()
+        with self._lock:
+            traces = self._traces.get(path)
+            if traces is None:
+                traces = _TaskTraces()
+                self._traces[path] = traces
+            return traces
 
 
 class TraceIndex:
     """The eval traces a task already has, and the gate for creating the ones it doesn't.
 
-    Built by each runner, but a view onto state shared by every live index on the same
-    task: a trace one runner generates is reused by the others, and two runners on one
-    key generate it once. Each index still seeds from disk at construction, so a job that
-    starts while others are running also finds traces synced in since they started.
+    Seeded from disk at construction. Indexes built with the same `registry` share
+    their view of the task, so a trace one generates is reused by the others. Each one
+    still seeds, so an index built while others run also finds traces synced in since.
     """
 
-    def __init__(self, task: Task):
+    def __init__(self, task: Task, registry: TraceIndexRegistry | None = None):
         self._task = task
-        self._shared = _shared_traces(task)
+        self._shared = (
+            registry._traces_for(task) if registry is not None else _TaskTraces()
+        )
         self._paths = self._shared.paths
         self._locks = self._shared.locks
         self._seed()
@@ -205,12 +202,9 @@ class TraceIndex:
     def _seed_entry(self, key: TraceKey, path: Path) -> None:
         """File a run found on disk, unless the key already has a usable entry.
 
-        First wins (D8). Sync means two machines can each have generated a trace for the
-        same key; nothing here creates a second, and either is correct. An entry another
-        live index already holds wins too, while its file is there: replacing it would
-        only swap one correct trace for another. Once its file is gone, the run on disk
-        replaces it, or the next lookup of the key would drop the entry and generate a
-        trace the task already has.
+        After sync, two machines can each have generated a trace for one key, and either
+        is correct. The entry already filed wins while its file exists, so every job
+        scores the same trace. Once its file is gone, the run on disk replaces it.
         """
         existing = self._paths.get(key)
         if existing is not None and (existing == path or existing.exists()):

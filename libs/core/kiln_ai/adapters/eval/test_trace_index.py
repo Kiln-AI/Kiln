@@ -10,9 +10,9 @@ from typing import Awaitable, Callable
 
 import pytest
 
-from kiln_ai.adapters.eval import trace_index
 from kiln_ai.adapters.eval.trace_index import (
     TraceIndex,
+    TraceIndexRegistry,
     TraceKey,
     trace_key,
     world_trace_tag,
@@ -29,6 +29,11 @@ from kiln_ai.datamodel.task_run import EvalItemSource, eval_item_key
 from kiln_ai.datamodel.world import WorldEpisode, WorldReset
 
 KEY: TraceKey = ("eval_input", "item1", "rc1", "")
+
+
+@pytest.fixture
+def registry():
+    return TraceIndexRegistry()
 
 
 @pytest.fixture
@@ -270,7 +275,9 @@ async def test_seed_duplicate_keys_first_wins(task):
     assert generate.calls == 0
 
 
-def test_concurrent_seeds_of_one_task_read_it_one_at_a_time(task, monkeypatch):
+def test_concurrent_seeds_of_one_task_read_it_one_at_a_time(
+    task, registry, monkeypatch
+):
     """Eval jobs that start together each seed an index. On a cold cache, each reader of
     the task parses its own copy of every TaskRun, so the reads must not overlap."""
     save_trace(task)
@@ -294,14 +301,14 @@ def test_concurrent_seeds_of_one_task_read_it_one_at_a_time(task, monkeypatch):
     monkeypatch.setattr(Task, "runs", counting_runs)
 
     with ThreadPoolExecutor(max_workers=4) as pool:
-        indexes = list(pool.map(lambda _: TraceIndex(task), range(4)))
+        indexes = list(pool.map(lambda _: TraceIndex(task, registry), range(4)))
 
     assert most_active == 1
     assert all(KEY in index._paths for index in indexes)
 
 
 def test_seeds_of_different_tasks_do_not_wait_for_each_other(
-    task, tmp_path, monkeypatch
+    task, registry, tmp_path, monkeypatch
 ):
     other = Task(
         name="other",
@@ -321,7 +328,7 @@ def test_seeds_of_different_tasks_do_not_wait_for_each_other(
     monkeypatch.setattr(Task, "runs", meeting_runs)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        list(pool.map(TraceIndex, [task, other]))
+        list(pool.map(lambda t: TraceIndex(t, registry), [task, other]))
 
 
 @pytest.mark.asyncio
@@ -659,7 +666,19 @@ def test_unsettled_world_trace_is_never_indexed(task):
 
 
 @pytest.mark.asyncio
-async def test_concurrent_indexes_on_one_task_generate_once(task):
+async def test_indexes_without_a_registry_do_not_share(task):
+    generate = Generator(task)
+    first = TraceIndex(task)
+    second = TraceIndex(task)
+
+    await first.get_or_create(KEY, generate.for_key(KEY))
+    await second.get_or_create(KEY, generate.for_key(KEY))
+
+    assert generate.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_concurrent_indexes_on_one_task_generate_once(task, registry):
     """Two eval jobs that share a run config under different eval configs.
 
     Each job builds its own runner, and so its own index, and both are seeded before
@@ -667,8 +686,8 @@ async def test_concurrent_indexes_on_one_task_generate_once(task):
     the trace.
     """
     generate = Generator(task)
-    first = TraceIndex(task)
-    second = TraceIndex(task)
+    first = TraceIndex(task, registry)
+    second = TraceIndex(task, registry)
 
     results = await asyncio.gather(
         first.get_or_create(KEY, generate.for_key(KEY)),
@@ -681,13 +700,13 @@ async def test_concurrent_indexes_on_one_task_generate_once(task):
 
 
 @pytest.mark.asyncio
-async def test_indexes_on_separately_loaded_tasks_share(task):
+async def test_indexes_on_separately_loaded_tasks_share(task, registry):
     """Each job loads its own Task from disk, so sharing has to meet on the file, not on
     the object."""
     assert task.path is not None
     generate = Generator(task)
-    first = TraceIndex(Task.load_from_file(task.path))
-    second = TraceIndex(Task.load_from_file(task.path))
+    first = TraceIndex(Task.load_from_file(task.path), registry)
+    second = TraceIndex(Task.load_from_file(task.path), registry)
 
     generated, _ = await first.get_or_create(KEY, generate.for_key(KEY))
     reused, was_generated = await second.get_or_create(KEY, generate.for_key(KEY))
@@ -698,7 +717,7 @@ async def test_indexes_on_separately_loaded_tasks_share(task):
 
 
 @pytest.mark.asyncio
-async def test_indexes_on_different_tasks_do_not_share(tmp_path):
+async def test_indexes_on_different_tasks_do_not_share(tmp_path, registry):
     """The key carries no task, so the shared state must be per task: a trace of one
     task is never another task's output."""
     tasks = []
@@ -713,7 +732,7 @@ async def test_indexes_on_different_tasks_do_not_share(tmp_path):
         other.save_to_file()
         tasks.append(other)
     generators = [Generator(other) for other in tasks]
-    indexes = [TraceIndex(other) for other in tasks]
+    indexes = [TraceIndex(other, registry) for other in tasks]
 
     results = await asyncio.gather(
         *(
@@ -727,15 +746,15 @@ async def test_indexes_on_different_tasks_do_not_share(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_a_joining_index_finds_traces_synced_in_after_the_first(task):
+async def test_a_joining_index_finds_traces_synced_in_after_the_first(task, registry):
     """A long-lived server keeps the shared state while any job on the task runs. A job
     that starts later must still find a trace that sync brought in meanwhile, so joining
     reseeds from disk."""
     generate = Generator(task)
-    running = TraceIndex(task)
+    running = TraceIndex(task, registry)
     synced = save_trace(task)
 
-    joining = TraceIndex(task)
+    joining = TraceIndex(task, registry)
     trace, was_generated = await joining.get_or_create(KEY, generate.for_key(KEY))
 
     assert was_generated is False
@@ -748,18 +767,20 @@ async def test_a_joining_index_finds_traces_synced_in_after_the_first(task):
 
 
 @pytest.mark.asyncio
-async def test_a_joining_index_replaces_a_shared_entry_whose_file_is_gone(task):
+async def test_a_joining_index_replaces_a_shared_entry_whose_file_is_gone(
+    task, registry
+):
     """Sync can delete the trace a running job indexed and bring in another machine's
     trace for the same key. A job that starts later must reuse the one on disk, not
     drop the dead entry and generate again."""
     indexed = save_trace(task)
-    running = TraceIndex(task)
+    running = TraceIndex(task, registry)
     assert indexed.path is not None
     indexed.path.unlink()
     synced = save_trace(task)
 
     generate = Generator(task)
-    joining = TraceIndex(task)
+    joining = TraceIndex(task, registry)
     trace, was_generated = await joining.get_or_create(KEY, generate.for_key(KEY))
 
     assert was_generated is False
@@ -771,13 +792,13 @@ async def test_a_joining_index_replaces_a_shared_entry_whose_file_is_gone(task):
 
 
 def test_a_seed_does_not_overwrite_a_trace_generated_while_it_checked(
-    task, monkeypatch
+    task, registry, monkeypatch
 ):
     """A seed checks the dead entry's file in a worker thread. A running job can drop
     that entry and file a new trace in the meantime, and that job scores the new one.
     The seed must leave it in place, or later jobs would score a different trace."""
     indexed = save_trace(task)
-    running = TraceIndex(task)
+    running = TraceIndex(task, registry)
     assert indexed.path is not None
     dead = indexed.path
     dead.unlink()
@@ -798,23 +819,23 @@ def test_a_seed_does_not_overwrite_a_trace_generated_while_it_checked(
 
     monkeypatch.setattr(Path, "exists", exists_while_a_job_regenerates)
 
-    TraceIndex(task)
+    TraceIndex(task, registry)
 
     assert running._paths[KEY] == regenerated[0]
 
 
 @pytest.mark.asyncio
-async def test_a_joining_index_keeps_a_shared_entry_whose_file_is_there(task):
+async def test_a_joining_index_keeps_a_shared_entry_whose_file_is_there(task, registry):
     """Two traces on disk for one key, as after sync: the entry a running job already
     holds stays, so every job scores the same generation."""
     first = save_trace(task, output="first")
-    running = TraceIndex(task)
+    running = TraceIndex(task, registry)
     assert first.path is not None
     assert running._paths[KEY] == first.path
     save_trace(task, output="second")
 
     generate = Generator(task)
-    joining = TraceIndex(task)
+    joining = TraceIndex(task, registry)
     trace, was_generated = await joining.get_or_create(KEY, generate.for_key(KEY))
 
     assert was_generated is False
@@ -823,28 +844,28 @@ async def test_a_joining_index_keeps_a_shared_entry_whose_file_is_there(task):
 
 
 @pytest.mark.asyncio
-async def test_shared_state_is_released_with_the_last_index(task):
+async def test_shared_state_is_released_with_the_last_index(task, registry):
     """Nothing outlives the jobs that use it, so an idle server holds no task's traces
     and the next job starts from what is on disk."""
     assert task.path is not None
     path = task.path.resolve()
     generate = Generator(task)
-    index = TraceIndex(task)
+    index = TraceIndex(task, registry)
     await index.get_or_create(KEY, generate.for_key(KEY))
-    assert path in trace_index._task_traces
+    assert path in registry._traces
 
     del index
     gc.collect()
 
-    assert path not in trace_index._task_traces
+    assert path not in registry._traces
 
 
 @pytest.mark.asyncio
-async def test_a_dropped_entry_does_not_remove_a_newer_one(task):
+async def test_a_dropped_entry_does_not_remove_a_newer_one(task, registry):
     """An index drops only the entry that failed to load. A path another index's seed
     filed under the key in the meantime has not failed, and stays."""
     existing = save_trace(task)
-    index = TraceIndex(task)
+    index = TraceIndex(task, registry)
     assert existing.path is not None
     replacement = save_trace(task)
     assert replacement.path is not None

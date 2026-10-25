@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import threading
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 from kiln_ai.adapters.eval.registry import legacy_eval_adapter_from_type
 from kiln_ai.adapters.eval.trace_index import (
     TraceIndex,
+    TraceIndexRegistry,
     TraceKey,
     trace_key,
     world_trace_tag,
@@ -478,9 +480,13 @@ class EvalRunner:
         save_context: SaveContext | None = None,
         item_ids: Set[ID_TYPE] | None = None,
         world_session_manager: WorldSessionManager | None = None,
+        trace_index_registry: TraceIndexRegistry | None = None,
     ):
         """`item_ids` runs only these items of the split (task_run_eval mode only).
-        Ids outside the split are ignored. None runs the whole split."""
+        Ids outside the split are ignored. None runs the whole split.
+
+        Runners given the same `trace_index_registry` reuse each other's eval traces and
+        must run on the same event loop. None shares traces only within this runner."""
         if len(eval_configs) == 0:
             raise ValueError("Eval runner requires at least one eval config")
         target_eval = eval_configs[0].parent_eval()
@@ -552,6 +558,7 @@ class EvalRunner:
         # Seeded by `run()`, in a worker thread, and only when it has task_run_eval jobs:
         # seeding reads every TaskRun of the task, and a runner built only to validate a
         # request never looks a trace up.
+        self._trace_index_registry = trace_index_registry
         self._trace_index_instance: TraceIndex | None = None
         self._trace_index_lock = threading.Lock()
         # A session manager passed in replaces the process-wide OpenEnv session manager
@@ -562,11 +569,12 @@ class EvalRunner:
         self._world_targets: dict[str, _WorldTarget | Exception] = {}
         self._world_target_locks = AsyncLockManager()
 
-    @property
-    def _trace_index(self) -> TraceIndex:
-        # `run()` has already seeded it. Seeding here is only for a caller that runs a
-        # job without `run()`, and it blocks the calling thread for the whole read.
-        return self._seed_trace_index()
+    async def _trace_index(self) -> TraceIndex:
+        index = self._trace_index_instance
+        if index is None:
+            # Only a caller that runs a job without `run()` gets here.
+            index = await asyncio.to_thread(self._seed_trace_index)
+        return index
 
     def _seed_trace_index(self) -> TraceIndex:
         """Build the trace index if it is not built yet, and return it. Blocking: it
@@ -576,14 +584,19 @@ class EvalRunner:
             with self._trace_index_lock:
                 index = self._trace_index_instance
                 if index is None:
-                    index = self._trace_index_instance = TraceIndex(self.task)
+                    index = self._trace_index_instance = TraceIndex(
+                        self.task, self._trace_index_registry
+                    )
         return index
 
     def _collect_tasks_and_seed_trace_index(self) -> List[EvalJob]:
         jobs = self.collect_tasks()
-        # Only a task_run_eval job looks a trace up. A calibration run, or a run whose
-        # items are all scored already, never does, so it skips the read of every TaskRun.
-        if jobs and self.eval_run_type == "task_run_eval":
+        # Only a v2 task_run_eval job looks a trace up.
+        if (
+            jobs
+            and self.eval_run_type == "task_run_eval"
+            and any(c.config_type == EvalConfigType.v2 for c in self.eval_configs)
+        ):
             self._seed_trace_index()
         return jobs
 
@@ -1082,7 +1095,8 @@ class EvalRunner:
             # A raising drive persists nothing, so the job's retry re-drives; a
             # successful one is on disk before the judge sees it, so a scoring
             # failure re-scores without paying for the conversation again.
-            trace, _ = await self._trace_index.get_or_create(
+            trace_index = await self._trace_index()
+            trace, _ = await trace_index.get_or_create(
                 generation.key, lambda: self._generate_and_save(generation)
             )
             eval_task_input = EvalTaskInput.from_trace(trace, job.item)
@@ -1151,7 +1165,8 @@ class EvalRunner:
             return await self._save_trace(run)
 
         try:
-            trace, _ = await self._trace_index.get_or_create(generation.key, generate)
+            trace_index = await self._trace_index()
+            trace, _ = await trace_index.get_or_create(generation.key, generate)
         except Exception as e:
             # The model adapter lets a tool call's transient environment failure
             # propagate, wrapped in KilnRunError, so classify the underlying error.
@@ -1245,7 +1260,8 @@ class EvalRunner:
         generation = self._single_turn_generation(job, evaluator)
         # `TraceIndex` logs both outcomes itself — debug on reuse, info on generation
         # (architecture 8) — so the was_generated bool has no reader here.
-        trace, _ = await self._trace_index.get_or_create(
+        trace_index = await self._trace_index()
+        trace, _ = await trace_index.get_or_create(
             generation.key, lambda: self._generate_and_save(generation)
         )
         return trace

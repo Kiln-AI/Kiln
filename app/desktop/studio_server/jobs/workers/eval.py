@@ -11,6 +11,7 @@ from kiln_ai.adapters.eval.eval_runner import (
     EvalJob,
     EvalRunner,
 )
+from kiln_ai.adapters.eval.trace_index import TraceIndexRegistry
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
@@ -231,6 +232,11 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
     properties_model = EvalJobProperties
     supports_pause = True
     create_path = "/api/jobs/evals/run"
+
+    def __init__(self) -> None:
+        # Eval jobs on one task reuse each other's traces. The registry requires every
+        # job on the one event loop, which is where the job runner runs them.
+        self._trace_index_registry = TraceIndexRegistry()
 
     def dedupe_key(self, params: EvalJobParams) -> Hashable:
         """Jobs that score the same items of the same split with the same judge and
@@ -519,6 +525,7 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
             split=self._resolve_split(eval, task, params),
             save_context=save_context,
             item_ids=set(params.item_ids) if params.item_ids is not None else None,
+            trace_index_registry=self._trace_index_registry,
         )
 
     def _eval_and_task(self, eval_config: EvalConfig) -> tuple[Eval, Task]:
