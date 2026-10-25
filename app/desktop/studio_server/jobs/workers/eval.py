@@ -159,7 +159,9 @@ class EvalJobParams(BaseModel):
         "but runs no judge and stores no score. Every item is driven again, scored or "
         "not, so the usage is of this job. `result.driven_runs` names the task runs. A "
         "later judged job on the same items and run config reuses these traces instead "
-        "of driving again. Needs a V2 eval config. A drive-only job is never "
+        "of driving again. For an item in a world, only while the item's world_reset "
+        "and the world's version are unchanged: a trace is reused only for the reset "
+        "and version it ran with. Needs a V2 eval config. A drive-only job is never "
         "deduplicated and cannot be paused: each one is a new measurement.",
     )
 
@@ -173,7 +175,9 @@ class DrivenTaskRun(BaseModel):
     item_id: str = Field(description="Id of the dataset item that was driven.")
     task_run_id: str = Field(
         description="Id of the task run that holds the fresh trace. Its `usage` has "
-        "the drive's cost and latency (for a multi-turn item, the whole conversation)."
+        "the agent's cost and latency (for a multi-turn item, the whole "
+        "conversation). For a multi-turn item, `synthetic_user_usage` has the "
+        "synthetic user's spend: add both for the drive's full model cost."
     )
 
 

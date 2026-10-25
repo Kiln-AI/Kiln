@@ -524,7 +524,8 @@ class EvalRunner:
         `judge=False` drives each selected item once per run config and judges nothing
         (task_run_eval mode only). Every item is driven again, scored or not, and the
         new trace replaces the item's earlier one in the trace index, so a later judged
-        run reuses it instead of driving again. The drive uses the eval config only to
+        run reuses it instead of driving again (for an item in a world, while its reset
+        and the world's version are unchanged, as for any trace). The drive uses the eval config only to
         reach its generation path, so it takes exactly one, and a judge with a V2
         adapter: the legacy path generates and judges in one call."""
         if len(eval_configs) == 0:
@@ -1120,8 +1121,8 @@ class EvalRunner:
         none, or for a drive-only run always a new one."""
         if not self.judge:
             return await self._trace_index.create(key, generate)
-        # `TraceIndex` logs both outcomes itself — debug on reuse, info on generation
-        # (architecture 8) — so the was_generated bool has no reader here.
+        # `TraceIndex` logs both outcomes itself — debug on reuse, info on
+        # generation — so the was_generated bool has no reader here.
         trace, _ = await self._trace_index.get_or_create(key, generate)
         return trace
 

@@ -308,7 +308,8 @@ def connect_jobs_api(app: FastAPI) -> None:
 
         With `judge` false the job drives every selected item again and judges
         nothing: read `result.driven_runs` for the task runs, and each task run's
-        `usage` for the cost and latency of its drive. Such a job is never
+        `usage` for the agent's cost and latency. For a multi-turn item, add the task
+        run's `synthetic_user_usage` for the drive's full model cost. Such a job is never
         deduplicated and cannot be paused, and a 400 also means that its eval config
         is not a V2 judge."""
         # Entity loads are blocking IO, so run them off the event loop. In the thread,

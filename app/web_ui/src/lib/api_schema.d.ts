@@ -4238,7 +4238,8 @@ export interface paths {
          *
          *     With `judge` false the job drives every selected item again and judges
          *     nothing: read `result.driven_runs` for the task runs, and each task run's
-         *     `usage` for the cost and latency of its drive. Such a job is never
+         *     `usage` for the agent's cost and latency. For a multi-turn item, add the task
+         *     run's `synthetic_user_usage` for the drive's full model cost. Such a job is never
          *     deduplicated and cannot be paused, and a 400 also means that its eval config
          *     is not a V2 judge.
          */
@@ -7574,7 +7575,7 @@ export interface components {
             item_ids?: string[] | null;
             /**
              * Judge
-             * @description Whether to judge the items. False drives each item exactly as a judged job does (a fresh episode for an item with a world_reset, the synthetic user for a multi-turn item) and saves its trace as a task run with its usage, but runs no judge and stores no score. Every item is driven again, scored or not, so the usage is of this job. `result.driven_runs` names the task runs. A later judged job on the same items and run config reuses these traces instead of driving again. Needs a V2 eval config. A drive-only job is never deduplicated and cannot be paused: each one is a new measurement.
+             * @description Whether to judge the items. False drives each item exactly as a judged job does (a fresh episode for an item with a world_reset, the synthetic user for a multi-turn item) and saves its trace as a task run with its usage, but runs no judge and stores no score. Every item is driven again, scored or not, so the usage is of this job. `result.driven_runs` names the task runs. A later judged job on the same items and run config reuses these traces instead of driving again. For an item in a world, only while the item's world_reset and the world's version are unchanged: a trace is reused only for the reset and version it ran with. Needs a V2 eval config. A drive-only job is never deduplicated and cannot be paused: each one is a new measurement.
              * @default true
              */
             judge: boolean;

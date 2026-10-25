@@ -176,8 +176,8 @@ class TraceIndex:
         records (cost, latency) must be of this run, never of an earlier one. `generate`
         has the same contract as in `get_or_create`. The new trace replaces any earlier
         one in this index, so a later `get_or_create` on the key in the same run reuses
-        it. A later index seeded from disk finds one of the key's traces (first wins,
-        D8), and each one is a correct generation for the key.
+        it. A later index seeded from disk finds one of the key's traces (the first one
+        it reads), and each one is a correct generation for the key.
 
         Serialized with `get_or_create` on the same key, so a reuse never races the
         generation of the trace that replaces the one it would read.
