@@ -197,9 +197,13 @@ class TraceIndex:
                 continue
             # First wins (D8). Sync means two machines can each have generated a trace
             # for the same key; nothing here creates a second, and either is correct.
-            # An entry another live index already holds wins too: it is verified, and
-            # replacing it would only swap one correct trace for another.
-            self._paths.setdefault(key, run.path)
+            # An entry another live index already holds wins too, while its file is
+            # there: replacing it would only swap one correct trace for another. Once
+            # its file is gone, the run on disk replaces it, or the next lookup of the
+            # key would drop the entry and generate a trace the task already has.
+            existing = self._paths.get(key)
+            if existing is None or (existing != run.path and not existing.exists()):
+                self._paths[key] = run.path
 
     async def get_or_create(
         self, key: TraceKey, generate: Callable[[], Awaitable[TaskRun]]

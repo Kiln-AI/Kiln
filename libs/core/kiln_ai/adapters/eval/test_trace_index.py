@@ -747,6 +747,48 @@ async def test_a_joining_index_finds_traces_synced_in_after_the_first(task):
 
 
 @pytest.mark.asyncio
+async def test_a_joining_index_replaces_a_shared_entry_whose_file_is_gone(task):
+    """Sync can delete the trace a running job indexed and bring in another machine's
+    trace for the same key. A job that starts later must reuse the one on disk, not
+    drop the dead entry and generate again."""
+    indexed = save_trace(task)
+    running = TraceIndex(task)
+    assert indexed.path is not None
+    indexed.path.unlink()
+    synced = save_trace(task)
+
+    generate = Generator(task)
+    joining = TraceIndex(task)
+    trace, was_generated = await joining.get_or_create(KEY, generate.for_key(KEY))
+
+    assert was_generated is False
+    assert trace.id == synced.id
+    assert generate.calls == 0
+    trace, was_generated = await running.get_or_create(KEY, generate.for_key(KEY))
+    assert was_generated is False
+    assert trace.id == synced.id
+
+
+@pytest.mark.asyncio
+async def test_a_joining_index_keeps_a_shared_entry_whose_file_is_there(task):
+    """Two traces on disk for one key, as after sync: the entry a running job already
+    holds stays, so every job scores the same generation."""
+    first = save_trace(task, output="first")
+    running = TraceIndex(task)
+    assert first.path is not None
+    assert running._paths[KEY] == first.path
+    save_trace(task, output="second")
+
+    generate = Generator(task)
+    joining = TraceIndex(task)
+    trace, was_generated = await joining.get_or_create(KEY, generate.for_key(KEY))
+
+    assert was_generated is False
+    assert trace.id == first.id
+    assert generate.calls == 0
+
+
+@pytest.mark.asyncio
 async def test_shared_state_is_released_with_the_last_index(task):
     """Nothing outlives the jobs that use it, so an idle server holds no task's traces
     and the next job starts from what is on disk."""
