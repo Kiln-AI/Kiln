@@ -128,7 +128,10 @@ def _check_eval_job_request(params: EvalJobParams) -> None:
                 detail=f"Items not in the '{params.split}' split of eval '{eval.id}': "
                 + ", ".join(outside),
             )
-    require_dataset_run_items_or_400(eval, eval_config.config_type, split)
+    if params.judge:
+        # A drive-only job runs no judge, so a V1 judge's item limits do not apply. The
+        # runner refuses a V1 judge for it below, with its own reason.
+        require_dataset_run_items_or_400(eval, eval_config.config_type, split)
     try:
         runner = EvalRunner(
             eval_configs=[eval_config],
@@ -136,6 +139,7 @@ def _check_eval_job_request(params: EvalJobParams) -> None:
             eval_run_type="task_run_eval",
             split=split,
             item_ids=set(params.item_ids) if params.item_ids is not None else None,
+            judge=params.judge,
         )
         runner.validate_multi_turn_drive_readiness()
         runner.validate_world_readiness()
@@ -300,7 +304,13 @@ def connect_jobs_api(app: FastAPI) -> None:
         an environment that cannot be reached or refuses a reset, and a run config
         that lists the project's own version of a tool that the world serves. A
         503 means that a project file was not readable, for example while another
-        job wrote it. Send the request again."""
+        job wrote it. Send the request again.
+
+        With `judge` false the job drives every selected item again and judges
+        nothing: read `result.driven_runs` for the task runs, and each task run's
+        `usage` for the cost and latency of its drive. Such a job is never
+        deduplicated and cannot be paused, and a 400 also means that its eval config
+        is not a V2 judge."""
         # Entity loads are blocking IO, so run them off the event loop. In the thread,
         # they can read a file that a running job is saving: read it again once.
         try:

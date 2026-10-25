@@ -4235,6 +4235,12 @@ export interface paths {
          *     that lists the project's own version of a tool that the world serves. A
          *     503 means that a project file was not readable, for example while another
          *     job wrote it. Send the request again.
+         *
+         *     With `judge` false the job drives every selected item again and judges
+         *     nothing: read `result.driven_runs` for the task runs, and each task run's
+         *     `usage` for the cost and latency of its drive. Such a job is never
+         *     deduplicated and cannot be paused, and a 400 also means that its eval config
+         *     is not a V2 judge.
          */
         post: operations["run_eval_job_api_jobs_evals_run_post"];
         delete?: never;
@@ -7566,6 +7572,12 @@ export interface components {
              * @description Restrict the job to these items of the split (EvalInput ids for an EvalInput-backed split, TaskRun ids for a TaskRun-backed one). Fails with 422 if an id is not in the split when the job is created. Progress and completion are measured over the subset. Leave null to run the whole split. Lets a caller trial a run config on a few named items before paying for the full split: the rows it stores are reused by a later full run, which skips scored items.
              */
             item_ids?: string[] | null;
+            /**
+             * Judge
+             * @description Whether to judge the items. False drives each item exactly as a judged job does (a fresh episode for an item with a world_reset, the synthetic user for a multi-turn item) and saves its trace as a task run with its usage, but runs no judge and stores no score. Every item is driven again, scored or not, so the usage is of this job. `result.driven_runs` names the task runs. A later judged job on the same items and run config reuses these traces instead of driving again. Needs a V2 eval config. A drive-only job is never deduplicated and cannot be paused: each one is a new measurement.
+             * @default true
+             */
+            judge: boolean;
         };
         /**
          * EvalOutputScore

@@ -52,6 +52,7 @@ from app.desktop.studio_server.jobs.models import (
 )
 from app.desktop.studio_server.jobs.registry import JobRegistry
 from app.desktop.studio_server.jobs.workers.eval import (
+    DrivenTaskRun,
     EvalJobParams,
     EvalJobProperties,
     EvalJobResult,
@@ -1426,7 +1427,7 @@ async def test_eval_job_through_registry(
 
     final = registry._jobs[job.id]
     assert final.status == BackgroundJobStatus.SUCCEEDED
-    assert final.result == {"total": 2, "success": 2, "error": 0}
+    assert final.result == {"total": 2, "success": 2, "error": 0, "driven_runs": None}
     assert final.progress.success == 2
     assert final.progress.total == 2
     assert final.project_id == "project1"
@@ -1504,7 +1505,7 @@ async def test_eval_job_pause_then_resume_works_each_item_once(
     assert final.progress.total == 3
     assert final.progress.success == 3
     assert final.progress.error == 0
-    assert final.result == {"total": 3, "success": 3, "error": 0}
+    assert final.result == {"total": 3, "success": 3, "error": 0, "driven_runs": None}
     stored = [run.dataset_id for run in eval_config.runs()]
     assert sorted(stored) == sorted(item.id for item in items)
 
@@ -1683,3 +1684,164 @@ async def test_run_works_an_item_in_its_world_and_logs_a_refused_reset(
     assert extra["dataset_id"] == refused.id
     assert extra["item_source"] == "eval_input"
     assert extra["run_config_id"] == world_run_config.id
+
+
+# -- drive-only (judge=False) ------------------------------------------------
+
+
+def _world_params(world_eval_config, world_run_config, **overrides) -> EvalJobParams:
+    return EvalJobParams(
+        **{
+            **_input_backed_params().model_dump(),
+            "eval_config_id": world_eval_config.id,
+            "run_config_id": world_run_config.id,
+            **overrides,
+        }
+    )
+
+
+def _eval_traces(task) -> list[TaskRun]:
+    return [
+        run
+        for run in task.runs(readonly=True, include_eval_generated=True)
+        if run.eval_source is not None
+    ]
+
+
+async def test_drive_only_job_drives_in_the_world_and_names_its_task_runs(
+    resolve_project,
+    task,
+    world,
+    world_run_config,
+    world_eval_config,
+    shared_world_sessions,
+):
+    # End to end on the job path: each item runs in a fresh episode, its trace is
+    # saved with the episode, no judge runs and no score is stored, and the result
+    # names the task run of each drive so the caller can read its usage.
+    items = [
+        _make_eval_input(
+            task,
+            "inputs",
+            world_reset=WorldReset(
+                world_id=world.id, reset_kwargs={"fixture_id": fixture}
+            ),
+        )
+        for fixture in ("a", "b")
+    ]
+    generator = _WorldToolGenerator(task, build_world_tool_id(world.id, "append_note"))
+    ctx = _RecordingCtx()
+
+    with patch.object(BaseV2EvalBridge, "run_task", new=generator):
+        result = await EvalJobWorker().run(
+            _world_params(world_eval_config, world_run_config, judge=False), ctx
+        )
+
+    assert world_eval_config.runs(readonly=True) == []
+    traces = {str(run.id): run for run in _eval_traces(task)}
+    assert len(traces) == 2
+    assert result.total == 2 and result.success == 2 and result.error == 0
+    assert result.driven_runs is not None
+    assert sorted(run.item_id for run in result.driven_runs) == sorted(
+        str(item.id) for item in items
+    )
+    for driven in result.driven_runs:
+        assert driven.item_source == "eval_input"
+        trace = traces[driven.task_run_id]
+        assert trace.eval_source is not None
+        assert trace.eval_source.source_id == driven.item_id
+        assert trace.world_episode is not None
+        assert trace.world_episode.final_state["notes"] == ["hi"]
+    assert ctx.progress[-1] == (2, 0, 2)
+
+
+async def test_drive_only_job_drives_scored_items_again(
+    resolve_project,
+    task,
+    world,
+    world_run_config,
+    world_eval_config,
+    shared_world_sessions,
+):
+    # A drive-only job measures its own drives: an item that a judged job scored is
+    # driven again, and a later judged job finds nothing left to drive or score.
+    item = _make_eval_input(
+        task,
+        "inputs",
+        world_reset=WorldReset(world_id=world.id, reset_kwargs={"fixture_id": "a"}),
+    )
+    generator = _WorldToolGenerator(task, build_world_tool_id(world.id, "append_note"))
+    worker = EvalJobWorker()
+
+    with patch.object(BaseV2EvalBridge, "run_task", new=generator):
+        judged = await worker.run(
+            _world_params(world_eval_config, world_run_config), _RecordingCtx()
+        )
+        assert judged == EvalJobResult(total=1, success=1, error=0)
+        driven = await worker.run(
+            _world_params(world_eval_config, world_run_config, judge=False),
+            _RecordingCtx(),
+        )
+
+    assert driven.driven_runs is not None
+    [run] = driven.driven_runs
+    assert run == DrivenTaskRun(
+        item_source="eval_input", item_id=str(item.id), task_run_id=run.task_run_id
+    )
+    assert len(_eval_traces(task)) == 2
+    assert len(world_eval_config.runs(readonly=True)) == 1
+
+
+async def test_drive_only_job_has_no_derived_state(
+    resolve_project, task, run_config, input_backed_eval
+):
+    # Its progress is what the job reports: a score on disk says nothing about it.
+    _make_eval_input(task, "inputs")
+    assert (
+        await EvalJobWorker().compute_state(_input_backed_params(judge=False)) is None
+    )
+
+
+def test_drive_only_job_is_not_deduplicated_or_pausable():
+    worker = EvalJobWorker()
+    assert worker.dedupe_key(_params(judge=False)) is None
+    assert worker.pausable(_params(judge=False)) is False
+    assert worker.dedupe_key(_params()) is not None
+    assert worker.pausable(_params()) is True
+
+
+async def test_drive_only_jobs_through_the_registry_are_separate_and_unpausable(
+    resolve_project, task, eval, run_config, data_source
+):
+    EvalConfig(
+        id="eval_config_v2",
+        name="Exact Match",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="x"),
+        parent=eval,
+    ).save_to_file()
+    params = _params(eval_config_id="eval_config_v2", judge=False)
+    gate = asyncio.Event()
+
+    async def gated_run(
+        self, concurrency=None, observers=None, max_retries=0, retry_delay=1.0
+    ) -> AsyncIterator[Progress]:
+        await gate.wait()
+        yield Progress(complete=0, total=0, errors=0)
+
+    registry = JobRegistry()
+    registry.register_type(EvalJobWorker)
+    with patch("kiln_ai.adapters.eval.eval_runner.EvalRunner.run", new=gated_run):
+        first = await registry.create("eval", params)
+        second = await registry.create("eval", params)
+        assert first.id != second.id
+        assert first.supports_pause is False
+        with pytest.raises(Exception, match="does not support pause"):
+            await registry.pause(first.id)
+        gate.set()
+        await registry.wait(first.id, timeout=10)
+        await registry.wait(second.id, timeout=10)
+
+    final = registry._jobs[first.id]
+    assert final.status == BackgroundJobStatus.SUCCEEDED
+    assert final.result == {"total": 0, "success": 0, "error": 0, "driven_runs": []}

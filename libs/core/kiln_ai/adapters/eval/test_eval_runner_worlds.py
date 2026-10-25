@@ -24,7 +24,7 @@ from litellm.types.utils import ModelResponse
 
 from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.base_eval import BaseV2EvalBridge
-from kiln_ai.adapters.eval.eval_runner import EvalJob, EvalRunner
+from kiln_ai.adapters.eval.eval_runner import DrivenRun, EvalJob, EvalRunner
 from kiln_ai.adapters.ml_model_list import KilnModelProvider
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 from kiln_ai.datamodel.code_tool import CodeTool
@@ -57,14 +57,14 @@ from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import Task, TaskRunConfig
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
-from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.datamodel.task_run import TaskRun, Usage
 from kiln_ai.datamodel.tool_id import build_code_tool_id, build_world_tool_id
 from kiln_ai.datamodel.world import World, WorldReset
 from kiln_ai.run_context import get_episode
 from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
 from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.tool_registry import tool_from_id
-from kiln_ai.utils.async_job_runner import RetryableError
+from kiln_ai.utils.async_job_runner import AsyncJobRunnerObserver, RetryableError
 from kiln_ai.worlds.session_manager import (
     OpenEnvError,
     OpenEnvRejectedError,
@@ -312,7 +312,7 @@ def _judge_patch():
     )
 
 
-def _runner(eval_configs, run_config, session_manager, split_name="test"):
+def _runner(eval_configs, run_config, session_manager, split_name="test", judge=True):
     eval_ = eval_configs[0].parent_eval()
     task = eval_.parent_task()
     split = resolve_split(task, eval_, split_name)
@@ -322,6 +322,7 @@ def _runner(eval_configs, run_config, session_manager, split_name="test"):
         eval_run_type="task_run_eval",
         split=split,
         world_session_manager=session_manager,
+        judge=judge,
     )
 
 
@@ -1244,6 +1245,196 @@ async def test_multi_turn_skip_needs_no_environment(
     await _drain(_runner([cfg], run_config, session_manager))
     assert cfg.runs(readonly=True)[0].skipped_reason == "missing_drive_config"
     assert session_manager._servers == {}
+
+
+# ---------------------------------------------------------------------------
+# Drive-only runs (judge=False)
+# ---------------------------------------------------------------------------
+
+
+def _multi_turn_input(task, world, id="ei_multi"):
+    ei = EvalInput(
+        id=id,
+        parent=task,
+        data=MultiTurnSyntheticEvalInputData(
+            first_message=UserMessage(text="first note"),
+            synthetic_user_info=SyntheticUserInfo(
+                persona="a technician", goal="log two notes", behavior_guidance=None
+            ),
+            drive_config=MultiTurnDriveConfig(
+                model_name="claude_4_5_haiku", model_provider="openrouter", turns=2
+            ),
+        ),
+        world_reset=_reset(world, "a"),
+    )
+    ei.save_to_file()
+    return ei
+
+
+class NoteDrive:
+    """Stands in for the synthetic-user drive: each turn calls the world's tool, so
+    the episode runs for real, and each turn reports a latency."""
+
+    def __init__(self, tool_id: str):
+        self.tool_id = tool_id
+        self.drives = 0
+
+    async def __call__(self, *, seed_prompt, target_task, turns, **_):
+        self.drives += 1
+        chain = []
+        for note in ("first note", "second note")[:turns]:
+            tool = tool_from_id(self.tool_id, target_task)
+            result = await tool.run(ToolCallContext(), note=note)
+            assert not result.is_error, result.output
+            run = TaskRun(
+                parent=target_task,
+                input=note,
+                output=TaskOutput(
+                    output=result.output,
+                    source=DataSource(
+                        type=DataSourceType.synthetic,
+                        properties={
+                            "model_name": "gpt-4",
+                            "model_provider": "openai",
+                            "adapter_name": "test_adapter",
+                        },
+                    ),
+                ),
+                usage=Usage(total_llm_latency_ms=100 * self.drives, cost=0.01),
+                trace=[
+                    {"role": "user", "content": "first note"},
+                    {"role": "assistant", "content": "ok"},
+                    {"role": "user", "content": "second note"},
+                    {"role": "assistant", "content": result.output},
+                ],
+            )
+            run.id = None
+            chain.append(run)
+        return DriveCaseResult(chain=chain, su_usage=None)
+
+
+async def test_drive_only_drives_in_the_world_and_judges_nothing(
+    project, task, world, syn_tool_id, run_config, eval_, session_manager
+):
+    """A drive-only run drives a multi-turn item in a fresh episode with its
+    synthetic user, saves the trace with its usage and settled episode, stores no
+    score, and names the trace in `driven_runs`."""
+    ei = _multi_turn_input(task, world)
+    cfg = _config(eval_, ExactMatchProperties(expected_value="noted:2"))
+    drive = NoteDrive(syn_tool_id)
+    runner = _runner([cfg], run_config, session_manager, judge=False)
+    with (
+        patch("kiln_ai.adapters.eval.eval_runner.drive_case_for_eval", new=drive),
+        _judge_patch(),
+    ):
+        await _drain(runner)
+
+    assert drive.drives == 1
+    assert RecordingJudge.seen == []
+    assert cfg.runs(readonly=True) == []
+    traces = _traces(task)
+    assert len(traces) == 1
+    trace = traces[0]
+    assert trace.world_episode is not None
+    assert trace.world_episode.final_state["notes"] == ["first note", "second note"]
+    assert trace.usage is not None
+    # Conversation-total latency: both turns of the drive.
+    assert trace.usage.total_llm_latency_ms == 200
+    assert runner.driven_runs == [
+        DrivenRun(
+            item_source="eval_input",
+            item_id=str(ei.id),
+            run_config_id=str(run_config.id),
+            task_run_id=str(trace.id),
+        )
+    ]
+    assert session_manager._sessions == {}
+
+
+async def test_drive_only_drives_again_and_a_judged_run_reuses_the_newest(
+    project, task, world, syn_tool_id, run_config, eval_, session_manager
+):
+    """Every drive-only run is a fresh generation, even of an item that has a trace,
+    and a later judged run scores the newest drive instead of driving again."""
+    _multi_turn_input(task, world)
+    cfg = _config(eval_, ExactMatchProperties(expected_value="noted:2"))
+    drive = NoteDrive(syn_tool_id)
+    with (
+        patch("kiln_ai.adapters.eval.eval_runner.drive_case_for_eval", new=drive),
+        _judge_patch(),
+    ):
+        first = _runner([cfg], run_config, session_manager, judge=False)
+        await _drain(first)
+        second = _runner([cfg], run_config, session_manager, judge=False)
+        await _drain(second)
+        assert drive.drives == 2
+        assert len(_traces(task)) == 2
+        assert first.driven_runs[0].task_run_id != second.driven_runs[0].task_run_id
+
+        judged = _runner([cfg], run_config, session_manager)
+        await _drain(judged)
+
+    assert drive.drives == 2
+    assert len(_traces(task)) == 2
+    [score] = cfg.runs(readonly=True)
+    assert score.scored_run_id in {
+        first.driven_runs[0].task_run_id,
+        second.driven_runs[0].task_run_id,
+    }
+
+
+async def test_drive_only_in_one_runner_hands_its_trace_to_a_judge(
+    project, task, world, syn_tool_id, run_config, eval_, session_manager
+):
+    """A trace that was already scored is driven again, and the judged job of the
+    same process reuses the new trace, not the scored one."""
+    _input(task, "note", _reset(world, "a"), id="ei_a")
+    cfg = _config(eval_, ExactMatchProperties(expected_value="noted:1"))
+    generator = ToolCallingGenerator(task, syn_tool_id)
+    with patch.object(BaseV2EvalBridge, "run_task", new=generator), _judge_patch():
+        await _drain(_runner([cfg], run_config, session_manager))
+        assert len(_traces(task)) == 1
+        drive_only = _runner([cfg], run_config, session_manager, judge=False)
+        await _drain(drive_only)
+
+    assert len(_traces(task)) == 2
+    assert len(cfg.runs(readonly=True)) == 1
+    [driven] = drive_only.driven_runs
+    new_trace = next(t for t in _traces(task) if t.id == driven.task_run_id)
+    assert new_trace.world_episode is not None
+    assert new_trace.world_episode.final_state["notes"] == ["note"]
+
+
+async def test_drive_only_fails_an_item_that_would_be_skipped(
+    project, task, world, run_config, eval_, session_manager
+):
+    """A drive-only run has no score record to hold a skip, so the item fails and
+    says why."""
+    EvalInput(
+        id="ei_nodrive",
+        parent=task,
+        data=MultiTurnSyntheticEvalInputData(
+            first_message=UserMessage(text="hi"),
+            synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            drive_config=None,
+        ),
+        world_reset=_reset(world, "a"),
+    ).save_to_file()
+    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
+    runner = _runner([cfg], run_config, session_manager, judge=False)
+    errors: list[Exception] = []
+
+    class Recorder(AsyncJobRunnerObserver[EvalJob]):
+        async def on_error(self, job, error):
+            errors.append(error)
+
+    async for progress in runner.run(observers=[Recorder()]):
+        last = progress
+    assert last.errors == 1
+    assert "can't be driven" in str(errors[0])
+    assert "no synthetic user configuration" in str(errors[0])
+    assert cfg.runs(readonly=True) == []
+    assert runner.driven_runs == []
 
 
 # ---------------------------------------------------------------------------
