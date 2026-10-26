@@ -1029,52 +1029,11 @@ class TestValidateUniqueAllowlistToolNames:
     async def test_rejects_world_tool_of_unknown_world(self, project):
         with pytest.raises(
             ValueError,
-            match=r"World\(s\) no_such_world referenced by world tools in the code "
-            r"tool's tool_allowlist not found",
+            match=r"World\(s\) no_such_world referenced by world tools in the "
+            r"tool_allowlist not found",
         ):
             await validate_unique_allowlist_tool_names(
                 [build_world_tool_id("no_such_world", "sql_query")], project
-            )
-
-    async def test_rejects_world_tools_from_two_worlds(self, project):
-        world_a = self._make_world(project, "a")
-        world_b = self._make_world(project, "b")
-        with pytest.raises(ValueError, match="more than one world"):
-            await validate_unique_allowlist_tool_names(
-                [
-                    build_world_tool_id(world_a.id, "sql_query"),
-                    build_world_tool_id(world_b.id, "search"),
-                ],
-                project,
-            )
-
-    @pytest.mark.parametrize("other_kind", ["code", "mcp"])
-    async def test_rejects_world_tool_colliding_with_another_tool(
-        self, project, other_kind
-    ):
-        """Sandboxed code calls a world tool by the last segment of its id. A
-        collision with an MCP tool is refused too: the world tool is the one that
-        can be dropped."""
-        world = self._make_world(project)
-        if other_kind == "code":
-            other_id = (
-                f"kiln_tool::code::{self._make_code_tool(project, 'sql_query').id}"
-            )
-        else:
-            server = ExternalToolServer(
-                name="server",
-                type=ToolServerType.remote_mcp,
-                properties={
-                    "server_url": "https://a.example.com",
-                    "is_archived": False,
-                },
-                parent=project,
-            )
-            server.save_to_file()
-            other_id = f"mcp::remote::{server.id}::sql_query"
-        with pytest.raises(ValueError, match="share the same function name: sql_query"):
-            await validate_unique_allowlist_tool_names(
-                [build_world_tool_id(world.id, "sql_query"), other_id], project
             )
 
     async def test_world_tools_do_not_skip_other_tool_checks(self, project):

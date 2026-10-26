@@ -29,8 +29,9 @@ from kiln_ai.datamodel.tool_id import (
     SKILL_TOOL_ID_PREFIX,
     WORLD_TOOL_ID_PREFIX,
     skill_id_from_tool_id,
+    world_and_tool_name_from_id,
 )
-from kiln_ai.tools.tool_registry import validate_world_tool_ids
+from kiln_ai.datamodel.world import World
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
@@ -99,7 +100,10 @@ async def validate_run_config_tool_names(
 
     World tools (`kiln_tool::world::<world_id>::<tool_name>`) resolve only inside
     an episode of their world, which only the eval runner starts, so they are not
-    resolved here: see validate_world_tool_ids.
+    resolved here. Their world must exist in the task's project, all of them must
+    come from one world (a job runs in one world), and the name the model sees
+    (the id's tool_name) must not collide with another selected tool. Whether the
+    world really serves that tool is checked at runtime, inside the episode.
     """
     if run_config_properties.type != "kiln_agent":
         return
@@ -117,14 +121,53 @@ async def validate_run_config_tool_names(
         task, project_tool_ids, list(skills.values())
     )
     if world_tool_ids:
-        project = task.parent_project()
-        if project is None:
-            raise ValueError(
-                "World tools require the task to belong to a project: "
-                f"{', '.join(world_tool_ids)}"
-            )
         tool_names = [await tool.name() for tool in tools]
-        validate_world_tool_ids(world_tool_ids, project, tool_names, owner="run config")
+        validate_world_tool_ids(task, world_tool_ids, tool_names)
+
+
+def validate_world_tool_ids(
+    task: datamodel.Task,
+    world_tool_ids: list[str],
+    project_tool_names: list[str],
+) -> None:
+    """Check a run config's world tool ids without an active episode.
+
+    Raises ValueError when a world is not in the task's project, when the ids
+    name more than one world, or when a world tool's name collides with another
+    world tool or with one of *project_tool_names* (the names of the run config's
+    resolved project tools, including the "skill" tool when skills are selected).
+    """
+    world_and_tool_names = [world_and_tool_name_from_id(t) for t in world_tool_ids]
+    world_ids = sorted({world_id for world_id, _ in world_and_tool_names})
+
+    project = task.parent_project()
+    if project is None:
+        raise ValueError(
+            "World tools require the task to belong to a project: "
+            f"{', '.join(world_tool_ids)}"
+        )
+    found = World.from_ids_and_parent_path(set(world_ids), project.path, readonly=True)
+    missing = [world_id for world_id in world_ids if world_id not in found]
+    if missing:
+        raise ValueError(
+            f"World(s) {', '.join(missing)} referenced by world tools in the run "
+            f"config not found in project {project.id}. Create the world first, or "
+            "remove its tools from the run config."
+        )
+    if len(world_ids) > 1:
+        raise ValueError(
+            f"Run config lists tools from more than one world ({', '.join(world_ids)}). "
+            "A job runs in one world, so all world tools must come from the same world."
+        )
+
+    tool_names = project_tool_names + [name for _, name in world_and_tool_names]
+    if len(tool_names) != len(set(tool_names)):
+        duplicates = sorted({n for n in tool_names if tool_names.count(n) > 1})
+        raise ValueError(
+            f"Multiple selected tools share the same function name: {', '.join(duplicates)}. "
+            "A world tool's name is the last segment of its id. Each tool must have a "
+            "unique name: de-select the duplicate tools, or rename the project tools."
+        )
 
 
 def litellm_core_provider_config(

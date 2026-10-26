@@ -249,14 +249,13 @@ async def validate_unique_allowlist_tool_names(
     call-time ambiguity error remains the backstop — for those, and because
     tools can be renamed after the allowlist is saved.
 
-    World tools resolve only inside an episode of their world, so they are
-    checked without being resolved (see validate_world_tool_ids). A world
-    tool's name may not collide with any other allowlisted tool, MCP included.
+    World tools resolve only inside an episode of their world, so they are not
+    resolved here: their world must exist in *project*. Whether the world serves
+    the tool is checked at runtime, inside the episode.
     """
-    world_tool_ids = [t for t in tool_allowlist if t.startswith(WORLD_TOOL_ID_PREFIX)]
     carriers: dict[str, list[str]] = {}
     for tool_id in tool_allowlist:
-        if tool_id in world_tool_ids:
+        if tool_id.startswith(WORLD_TOOL_ID_PREFIX):
             continue
         name = await tool_from_id_and_project(
             tool_id, project=project, task=task
@@ -273,61 +272,21 @@ async def validate_unique_allowlist_tool_names(
             f"{', '.join(duplicates)}. Tools are called by name from sandboxed "
             "code, so each tool in the allowlist must have a unique name."
         )
-    if world_tool_ids:
-        validate_world_tool_ids(
-            world_tool_ids,
-            project,
-            list(carriers),
-            owner="code tool's tool_allowlist",
-        )
 
-
-def validate_world_tool_ids(
-    world_tool_ids: list[str],
-    project: Project,
-    other_tool_names: list[str],
-    *,
-    owner: str,
-) -> None:
-    """Check world tool ids without an active episode.
-
-    A world tool (`kiln_tool::world::<world_id>::<tool_name>`) resolves only inside
-    an episode of its world, which only the eval runner starts, so it cannot be
-    resolved when a run config or code tool is saved. Whether the world really
-    serves the tool is checked at runtime, inside the episode.
-
-    Raises ValueError when a world is not in *project*, when the ids name more than
-    one world (a job runs in one world), or when a world tool's name (the last
-    segment of its id) collides with another world tool or with one of
-    *other_tool_names*. *owner* names what lists the tools, for the error messages.
-    """
-    world_and_tool_names = [world_and_tool_name_from_id(t) for t in world_tool_ids]
-    world_ids = sorted({world_id for world_id, _ in world_and_tool_names})
-
-    found = World.from_ids_and_parent_path(set(world_ids), project.path, readonly=True)
-    missing = [world_id for world_id in world_ids if world_id not in found]
-    if missing:
-        raise ValueError(
-            f"World(s) {', '.join(missing)} referenced by world tools in the {owner} "
-            f"not found in project {project.id}. Create the world first, or remove "
-            f"its tools from the {owner}."
-        )
-    if len(world_ids) > 1:
-        raise ValueError(
-            f"The {owner} lists tools from more than one world "
-            f"({', '.join(world_ids)}). A job runs in one world, so all world tools "
-            "must come from the same world."
-        )
-
-    tool_names = other_tool_names + [name for _, name in world_and_tool_names]
-    if len(tool_names) != len(set(tool_names)):
-        duplicates = sorted({n for n in tool_names if tool_names.count(n) > 1})
-        raise ValueError(
-            f"Multiple tools in the {owner} share the same function name: "
-            f"{', '.join(duplicates)}. A world tool's name is the last segment of its "
-            "id. Each tool must have a unique name: remove the duplicate tools, or "
-            "rename the project tools."
-        )
+    world_ids = {
+        world_and_tool_name_from_id(t)[0]
+        for t in tool_allowlist
+        if t.startswith(WORLD_TOOL_ID_PREFIX)
+    }
+    if world_ids:
+        found = World.from_ids_and_parent_path(world_ids, project.path, readonly=True)
+        missing = sorted(world_ids - set(found))
+        if missing:
+            raise ValueError(
+                f"World(s) {', '.join(missing)} referenced by world tools in the "
+                f"tool_allowlist not found in project {project.id}. Create the world "
+                "first, or remove its tools from the tool_allowlist."
+            )
 
 
 async def tool_definitions_from_ids(
