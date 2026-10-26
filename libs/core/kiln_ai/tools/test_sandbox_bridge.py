@@ -324,7 +324,10 @@ class TestNestedToolServer:
             other_err["message"]
             == "Tool 'other' is not available. Available tools: []."
         )
-        assert [entry.output_preview for entry in log] == ["unavailable", "not allowed"]
+        assert [entry.output_preview for entry in log] == [
+            world_err["message"],
+            "not allowed",
+        ]
 
     @pytest.mark.asyncio
     async def test_serve_list_tools(self, tmp_path):

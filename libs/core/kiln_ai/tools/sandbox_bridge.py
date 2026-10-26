@@ -234,7 +234,7 @@ class NestedToolServer:
                         },
                     }
                 )
-                preview = "not allowed" if reason is None else "unavailable"
+                preview = "not allowed" if reason is None else err_msg
                 self._record(tool_name, arguments, preview, True, start)
                 return
 

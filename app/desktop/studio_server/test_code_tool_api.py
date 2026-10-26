@@ -901,6 +901,7 @@ class TestCodeToolWorldTools:
         assert body["result"] is None
         assert "Tool 'sql_query' is not available: World tool" in body["error"]
         assert "can only be used while an episode" in body["error"]
-        assert [entry["output_preview"] for entry in body["tool_call_log"]] == [
-            "unavailable"
-        ]
+        (entry,) = body["tool_call_log"]
+        assert entry["output_preview"].startswith(
+            "Tool 'sql_query' is not available: World tool"
+        )
