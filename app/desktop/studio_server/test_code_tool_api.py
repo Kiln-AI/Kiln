@@ -9,13 +9,10 @@ from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.tool_id import build_world_tool_id
 from kiln_ai.datamodel.world import World
 from kiln_ai.tools.code_tool import ChildOutcome, PythonCodeTool
-from kiln_ai.tools.sandbox_bridge import NOT_ALLOWED_PREVIEW, ToolCallLogEntry
+from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
 from kiln_server.custom_errors import connect_custom_errors
 
-from app.desktop.studio_server.code_tool_api import (
-    _world_tool_test_message,
-    connect_code_tool_api,
-)
+from app.desktop.studio_server.code_tool_api import connect_code_tool_api
 from app.desktop.studio_server.tool_api import connect_tool_servers_api
 
 SIMPLE_CODE = "def run(x: int) -> str:\n    return str(x * 2)\n"
@@ -903,11 +900,11 @@ class TestCodeToolWorldTools:
             "params": {"x": 5},
         }
 
-    def test_test_explains_refused_world_tool_call(
+    def test_test_says_why_world_tool_call_is_refused(
         self, client, test_project, mock_project_from_id, world
     ):
-        """Runs the sandbox for real: outside an episode the world tool is refused,
-        and the response says why instead of a bare ToolNotAllowed."""
+        """Runs the sandbox for real: the test runs outside any episode, so the world
+        tool is refused, and the error says why instead of listing no tools."""
         code = (
             "from kiln import tools\n"
             "def run(x: int) -> str:\n"
@@ -922,72 +919,8 @@ class TestCodeToolWorldTools:
         assert response.status_code == 200, response.text
         body = response.json()
         assert body["result"] is None
-        expected = (
-            f"'sql_query' is a tool of world {world.id}. World tools can be tested "
-            "only inside an eval run whose inputs start a world episode."
-        )
-        assert body["error"].startswith(expected)
-        assert "ToolNotAllowed" in body["traceback"]
+        assert "Tool 'sql_query' is not available: World tool" in body["error"]
+        assert "can only be used while an episode" in body["error"]
         assert [entry["output_preview"] for entry in body["tool_call_log"]] == [
-            _world_tool_test_message("sql_query", world.id)
+            "unavailable"
         ]
-
-    def test_test_explains_world_tool_call_the_code_caught(
-        self, client, test_project, mock_project_from_id, world
-    ):
-        """When the code handles the refusal itself, its result stands and the log
-        entry still says why the call was refused."""
-        code = (
-            "from kiln import tools\n"
-            "from kiln.tools import ToolNotAllowed\n"
-            "def run(x: int) -> str:\n"
-            "    try:\n"
-            "        return tools.sql_query(query=str(x))\n"
-            "    except ToolNotAllowed:\n"
-            "        return 'refused'\n"
-        )
-        with patch(TRUST_PATCH, return_value=True):
-            response = client.post(
-                f"/api/projects/{test_project.id}/test_code_tool",
-                json=self._test_request(world.id, code),
-            )
-
-        assert response.status_code == 200, response.text
-        body = response.json()
-        assert body["result"] == "refused"
-        assert body["error"] is None
-        assert body["tool_call_log"][0]["output_preview"] == (
-            _world_tool_test_message("sql_query", world.id)
-        )
-
-    def test_test_leaves_other_refused_calls_unchanged(
-        self, client, test_project, mock_project_from_id, world
-    ):
-        """Only calls to the allowlist's world tools get the world message."""
-        outcome = ChildOutcome(error="ToolNotAllowed: Tool 'other' is not available.")
-
-        async def mock_invoke(self_ref, context, kwargs):
-            self_ref._tool_call_recorder(
-                ToolCallLogEntry(
-                    tool_name="other",
-                    arguments={},
-                    output_preview=NOT_ALLOWED_PREVIEW,
-                    is_error=True,
-                    duration_ms=1,
-                )
-            )
-            return outcome
-
-        with (
-            patch.object(PythonCodeTool, "_invoke", mock_invoke),
-            patch(TRUST_PATCH, return_value=True),
-        ):
-            response = client.post(
-                f"/api/projects/{test_project.id}/test_code_tool",
-                json=self._test_request(world.id, SIMPLE_CODE),
-            )
-
-        assert response.status_code == 200, response.text
-        body = response.json()
-        assert body["error"] == outcome.error
-        assert body["tool_call_log"][0]["output_preview"] == NOT_ALLOWED_PREVIEW

@@ -292,6 +292,41 @@ class TestNestedToolServer:
         assert log[0].is_error is True
 
     @pytest.mark.asyncio
+    async def test_serve_says_why_world_tool_is_unavailable(self, tmp_path):
+        """Outside an episode a world tool does not resolve; a call to it gets the
+        reason, while other unknown names keep the plain not-allowed error."""
+        project = _make_project(tmp_path)
+        log: list[ToolCallLogEntry] = []
+        server = NestedToolServer(
+            allowlist=["kiln_tool::world::w1::sql_query"],
+            project=project,
+            task=None,
+            context=None,
+            recorder=log.append,
+        )
+        responses = _CollectingResponses()
+        for call_id, tool_name in [(1, "sql_query"), (2, "other")]:
+            msg = {
+                "type": "tool_call",
+                "call_id": call_id,
+                "tool_name": tool_name,
+                "arguments": {},
+            }
+            await server.serve(msg, responses)
+
+        world_err, other_err = (m["error"] for m in responses.messages)
+        assert world_err["kind"] == "not_allowed"
+        assert world_err["message"].startswith(
+            "Tool 'sql_query' is not available: World tool "
+            "kiln_tool::world::w1::sql_query can only be used while an episode"
+        )
+        assert (
+            other_err["message"]
+            == "Tool 'other' is not available. Available tools: []."
+        )
+        assert [entry.output_preview for entry in log] == ["unavailable", "not allowed"]
+
+    @pytest.mark.asyncio
     async def test_serve_list_tools(self, tmp_path):
         project = _make_project(tmp_path)
         fake = _FakeTool("kiln_tool::add_numbers", "fake_add", fn_desc="adds")

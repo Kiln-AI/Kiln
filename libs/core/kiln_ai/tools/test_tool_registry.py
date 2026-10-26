@@ -35,7 +35,6 @@ from kiln_ai.tools.tool_registry import (
     tool_from_id,
     tool_from_id_and_project,
     validate_unique_allowlist_tool_names,
-    world_ids_reached_by_code_tools,
 )
 
 
@@ -922,7 +921,7 @@ class TestCodeToolRegistry:
 
 
 class TestValidateUniqueAllowlistToolNames:
-    def _make_code_tool(self, project, function_name, tool_allowlist=None):
+    def _make_code_tool(self, project, function_name):
         from kiln_ai.datamodel.code_tool import CodeTool
 
         ct = CodeTool(
@@ -931,7 +930,6 @@ class TestValidateUniqueAllowlistToolNames:
             tool_description="d",
             parameters_schema={"type": "object", "properties": {}},
             code="def run() -> str:\n    return 'ok'\n",
-            tool_allowlist=tool_allowlist or [],
             parent=project,
         )
         ct.save_to_file()
@@ -1031,7 +1029,7 @@ class TestValidateUniqueAllowlistToolNames:
     async def test_rejects_world_tool_of_unknown_world(self, project):
         with pytest.raises(
             ValueError,
-            match=r"World\(s\) no_such_world referenced by world tools of the code "
+            match=r"World\(s\) no_such_world referenced by world tools in the code "
             r"tool's tool_allowlist not found",
         ):
             await validate_unique_allowlist_tool_names(
@@ -1046,25 +1044,6 @@ class TestValidateUniqueAllowlistToolNames:
                 [
                     build_world_tool_id(world_a.id, "sql_query"),
                     build_world_tool_id(world_b.id, "search"),
-                ],
-                project,
-            )
-
-    async def test_rejects_world_tool_of_another_world_than_a_nested_code_tool(
-        self, project
-    ):
-        """An allowlisted code tool's world tools run in the same episode, so they
-        count toward the one-world rule."""
-        world_a = self._make_world(project, "a")
-        world_b = self._make_world(project, "b")
-        inner = self._make_code_tool(
-            project, "inner", [build_world_tool_id(world_b.id, "search")]
-        )
-        with pytest.raises(ValueError, match="more than one world"):
-            await validate_unique_allowlist_tool_names(
-                [
-                    build_world_tool_id(world_a.id, "sql_query"),
-                    f"kiln_tool::code::{inner.id}",
                 ],
                 project,
             )
@@ -1118,58 +1097,6 @@ class TestValidateUniqueAllowlistToolNames:
                 ],
                 project,
             )
-
-
-class TestWorldIdsReachedByCodeTools:
-    @pytest.fixture
-    def project(self, tmp_path):
-        project = Project(name="test_proj", path=tmp_path / "project.kiln")
-        project.save_to_file()
-        return project
-
-    def _make_code_tool(self, project, name, tool_allowlist):
-        from kiln_ai.datamodel.code_tool import CodeTool
-
-        ct = CodeTool(
-            name=name,
-            tool_function_name=name,
-            tool_description="d",
-            parameters_schema={"type": "object", "properties": {}},
-            code="def run() -> str:\n    return 'ok'\n",
-            tool_allowlist=tool_allowlist,
-            parent=project,
-        )
-        ct.save_to_file()
-        return f"kiln_tool::code::{ct.id}"
-
-    def test_collects_worlds_at_any_depth(self, project):
-        inner = self._make_code_tool(
-            project, "inner", [build_world_tool_id("w_inner", "search")]
-        )
-        outer = self._make_code_tool(
-            project, "outer", [build_world_tool_id("w_outer", "sql_query"), inner]
-        )
-        plain = self._make_code_tool(project, "plain", [])
-        reached = world_ids_reached_by_code_tools(
-            [
-                outer,
-                plain,
-                build_world_tool_id("w_direct", "x"),
-                "kiln_tool::add_numbers",
-            ],
-            project,
-        )
-        assert reached == {outer: {"w_outer", "w_inner"}}
-
-    def test_skips_missing_code_tools(self, project):
-        outer = self._make_code_tool(
-            project,
-            "outer",
-            [build_world_tool_id("w1", "sql_query"), "kiln_tool::code::missing"],
-        )
-        assert world_ids_reached_by_code_tools(
-            [outer, "kiln_tool::code::missing"], project
-        ) == {outer: {"w1"}}
 
 
 class TestProjectToolFunctionName:

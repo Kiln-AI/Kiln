@@ -29,12 +29,8 @@ from kiln_ai.datamodel.tool_id import (
     SKILL_TOOL_ID_PREFIX,
     WORLD_TOOL_ID_PREFIX,
     skill_id_from_tool_id,
-    world_and_tool_name_from_id,
 )
-from kiln_ai.tools.tool_registry import (
-    validate_world_tool_ids,
-    world_ids_reached_by_code_tools,
-)
+from kiln_ai.tools.tool_registry import validate_world_tool_ids
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
@@ -103,13 +99,7 @@ async def validate_run_config_tool_names(
 
     World tools (`kiln_tool::world::<world_id>::<tool_name>`) resolve only inside
     an episode of their world, which only the eval runner starts, so they are not
-    resolved here: see validate_world_tool_ids. The run config's own world tools
-    and the world tools its code tools may call must all come from one world.
-
-    A code tool's world tools run in the episode that the run config's own world
-    tools start: the eval runner starts an episode only for a run config that
-    lists world tools itself. So a run config whose code tools call a world's
-    tools must also list a tool of that world, or those calls always fail.
+    resolved here: see validate_world_tool_ids.
     """
     if run_config_properties.type != "kiln_agent":
         return
@@ -126,30 +116,15 @@ async def validate_run_config_tool_names(
     tools = await assemble_unique_agent_tools(
         task, project_tool_ids, list(skills.values())
     )
-
-    project = task.parent_project()
-    if project is None:
-        if world_tool_ids:
+    if world_tool_ids:
+        project = task.parent_project()
+        if project is None:
             raise ValueError(
                 "World tools require the task to belong to a project: "
                 f"{', '.join(world_tool_ids)}"
             )
-        return
-    tool_names = [await tool.name() for tool in tools]
-    validate_world_tool_ids(tools_config.tools, project, tool_names, owner="run config")
-
-    own_world_ids = {world_and_tool_name_from_id(t)[0] for t in world_tool_ids}
-    for code_tool_id, world_ids in world_ids_reached_by_code_tools(
-        project_tool_ids, project
-    ).items():
-        if not world_ids <= own_world_ids:
-            raise ValueError(
-                f"Code tool {code_tool_id} calls tools of world "
-                f"{', '.join(sorted(world_ids))}, but the run config lists no tool of "
-                "that world. An eval job starts a world episode only for the world "
-                "whose tools the run config lists, so add a tool of that world to the "
-                "run config."
-            )
+        tool_names = [await tool.name() for tool in tools]
+        validate_world_tool_ids(world_tool_ids, project, tool_names, owner="run config")
 
 
 def litellm_core_provider_config(

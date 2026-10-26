@@ -1,4 +1,3 @@
-from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.task import Task
@@ -188,6 +187,9 @@ def _resolve_project_tool(
 
         ct_id = code_tool_id_from_tool_id(tool_id)
 
+        # Lazy import to avoid circular dependency
+        from kiln_ai.datamodel.code_tool import CodeTool
+
         code_tool = CodeTool.from_id_and_parent_path(ct_id, project.path)
         if code_tool is None:
             raise ValueError(
@@ -251,9 +253,10 @@ async def validate_unique_allowlist_tool_names(
     checked without being resolved (see validate_world_tool_ids). A world
     tool's name may not collide with any other allowlisted tool, MCP included.
     """
+    world_tool_ids = [t for t in tool_allowlist if t.startswith(WORLD_TOOL_ID_PREFIX)]
     carriers: dict[str, list[str]] = {}
     for tool_id in tool_allowlist:
-        if tool_id.startswith(WORLD_TOOL_ID_PREFIX):
+        if tool_id in world_tool_ids:
             continue
         name = await tool_from_id_and_project(
             tool_id, project=project, task=task
@@ -270,61 +273,50 @@ async def validate_unique_allowlist_tool_names(
             f"{', '.join(duplicates)}. Tools are called by name from sandboxed "
             "code, so each tool in the allowlist must have a unique name."
         )
-    validate_world_tool_ids(
-        tool_allowlist, project, list(carriers), owner="code tool's tool_allowlist"
-    )
+    if world_tool_ids:
+        validate_world_tool_ids(
+            world_tool_ids,
+            project,
+            list(carriers),
+            owner="code tool's tool_allowlist",
+        )
 
 
 def validate_world_tool_ids(
-    tool_ids: list[str],
+    world_tool_ids: list[str],
     project: Project,
     other_tool_names: list[str],
     *,
     owner: str,
 ) -> None:
-    """Check the world tools a run config or a code tool may call, without an episode.
+    """Check world tool ids without an active episode.
 
-    A world tool (`kiln_tool::world::<world_id>::<tool_name>`) resolves only inside an
-    episode of its world, which only the eval runner starts, so it cannot be resolved
-    when the run config or code tool is saved. This checks what can be known without
-    one. Whether the world really serves the tool is checked at runtime, inside the
-    episode.
+    A world tool (`kiln_tool::world::<world_id>::<tool_name>`) resolves only inside
+    an episode of its world, which only the eval runner starts, so it cannot be
+    resolved when a run config or code tool is saved. Whether the world really
+    serves the tool is checked at runtime, inside the episode.
 
-    The worlds are those of the world tools in *tool_ids*, and those reached through
-    the code tools in *tool_ids* (see world_ids_reached_by_code_tools): sandboxed code
-    calls its world tools inside the caller's episode. Raises ValueError when a world
-    is not in *project*, or when the worlds are more than one (a job runs in one
-    world). Also raises when the name of a world tool in *tool_ids* (the last segment
-    of its id, the name the episode serves it under) collides with another world tool
-    or with one of *other_tool_names*, the names of the other tools in *tool_ids*.
-    *owner* names what lists the tools, for the error messages.
+    Raises ValueError when a world is not in *project*, when the ids name more than
+    one world (a job runs in one world), or when a world tool's name (the last
+    segment of its id) collides with another world tool or with one of
+    *other_tool_names*. *owner* names what lists the tools, for the error messages.
     """
-    world_and_tool_names = [
-        world_and_tool_name_from_id(t)
-        for t in tool_ids
-        if t.startswith(WORLD_TOOL_ID_PREFIX)
-    ]
-    world_ids = sorted(
-        {world_id for world_id, _ in world_and_tool_names}.union(
-            *world_ids_reached_by_code_tools(tool_ids, project).values()
-        )
-    )
-    if not world_ids:
-        return
+    world_and_tool_names = [world_and_tool_name_from_id(t) for t in world_tool_ids]
+    world_ids = sorted({world_id for world_id, _ in world_and_tool_names})
 
     found = World.from_ids_and_parent_path(set(world_ids), project.path, readonly=True)
     missing = [world_id for world_id in world_ids if world_id not in found]
     if missing:
         raise ValueError(
-            f"World(s) {', '.join(missing)} referenced by world tools of the {owner} "
+            f"World(s) {', '.join(missing)} referenced by world tools in the {owner} "
             f"not found in project {project.id}. Create the world first, or remove "
             f"its tools from the {owner}."
         )
     if len(world_ids) > 1:
         raise ValueError(
-            f"The {owner} reaches tools from more than one world "
-            f"({', '.join(world_ids)}), directly or through code tools. A job runs "
-            "in one world, so all world tools must come from the same world."
+            f"The {owner} lists tools from more than one world "
+            f"({', '.join(world_ids)}). A job runs in one world, so all world tools "
+            "must come from the same world."
         )
 
     tool_names = other_tool_names + [name for _, name in world_and_tool_names]
@@ -336,42 +328,6 @@ def validate_world_tool_ids(
             "id. Each tool must have a unique name: remove the duplicate tools, or "
             "rename the project tools."
         )
-
-
-def world_ids_reached_by_code_tools(
-    tool_ids: list[str], project: Project
-) -> dict[str, set[str]]:
-    """For each code tool in *tool_ids*, the worlds whose tools its code may call.
-
-    These are the worlds of the world tools in its tool_allowlist, and of the code
-    tools that allowlist names, at any depth. Code tools that reach no world, and code
-    tools that cannot be found (resolving them reports that), are left out.
-    """
-    reached: dict[str, set[str]] = {}
-    for tool_id in tool_ids:
-        if not tool_id.startswith(CODE_TOOL_ID_PREFIX):
-            continue
-        world_ids: set[str] = set()
-        visited: set[str] = set()
-        pending = [tool_id]
-        while pending:
-            code_tool_id = pending.pop()
-            if code_tool_id in visited:
-                continue
-            visited.add(code_tool_id)
-            code_tool = CodeTool.from_id_and_parent_path(
-                code_tool_id_from_tool_id(code_tool_id), project.path
-            )
-            if code_tool is None:
-                continue
-            for allowed_id in code_tool.tool_allowlist:
-                if allowed_id.startswith(WORLD_TOOL_ID_PREFIX):
-                    world_ids.add(world_and_tool_name_from_id(allowed_id)[0])
-                elif allowed_id.startswith(CODE_TOOL_ID_PREFIX):
-                    pending.append(allowed_id)
-        if world_ids:
-            reached[tool_id] = world_ids
-    return reached
 
 
 async def tool_definitions_from_ids(
@@ -419,6 +375,8 @@ def project_tool_function_name(tool_id: str, project: Project | None) -> str | N
             name = server.properties.get("name") if server is not None else None
             return name if isinstance(name, str) else None
         if tool_id.startswith(CODE_TOOL_ID_PREFIX):
+            from kiln_ai.datamodel.code_tool import CodeTool
+
             code_tool = CodeTool.from_id_and_parent_path(
                 code_tool_id_from_tool_id(tool_id), project.path
             )

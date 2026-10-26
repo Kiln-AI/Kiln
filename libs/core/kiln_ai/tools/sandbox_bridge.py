@@ -28,7 +28,11 @@ from typing import Any, Callable
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.task import Task
-from kiln_ai.datamodel.tool_id import ToolId
+from kiln_ai.datamodel.tool_id import (
+    WORLD_TOOL_ID_PREFIX,
+    ToolId,
+    world_and_tool_name_from_id,
+)
 from kiln_ai.sandbox.spawn import start_process_with_light_main
 from kiln_ai.tools.base_tool import ToolCallContext
 
@@ -146,10 +150,6 @@ class BridgeResult:
         return describe_crash(subject, self.exit_code)
 
 
-NOT_ALLOWED_PREVIEW = "not allowed"
-"""The ``output_preview`` of a recorded call to a tool that is not in the name map."""
-
-
 class NestedToolServer:
     """Handles nested tool-call IPC for one bridged run.
 
@@ -172,6 +172,9 @@ class NestedToolServer:
         self._context = context
         self._recorder = recorder
         self._name_map: dict[str, list[ToolId]] | None = None
+        # Why each allowlisted world tool that failed to resolve is unavailable, by
+        # the name the code calls it (the last segment of its id).
+        self._unavailable: dict[str, str] = {}
 
     async def serve(
         self,
@@ -216,6 +219,9 @@ class NestedToolServer:
                     f"Tool '{tool_name}' is not available. "
                     f"Available tools: {available_names}."
                 )
+                reason = self._unavailable.get(tool_name)
+                if reason is not None:
+                    err_msg = f"Tool '{tool_name}' is not available: {reason}"
                 responses.put(
                     {
                         "type": "tool_result",
@@ -228,7 +234,8 @@ class NestedToolServer:
                         },
                     }
                 )
-                self._record(tool_name, arguments, NOT_ALLOWED_PREVIEW, True, start)
+                preview = "not allowed" if reason is None else "unavailable"
+                self._record(tool_name, arguments, preview, True, start)
                 return
 
             if len(tool_ids) > 1:
@@ -411,6 +418,12 @@ class NestedToolServer:
                     tool_id,
                     exc,
                 )
+                # A world tool resolves only inside an episode of its world, but its
+                # name is known without one: say why when the code calls it.
+                if tool_id.startswith(WORLD_TOOL_ID_PREFIX):
+                    self._unavailable[world_and_tool_name_from_id(tool_id)[1]] = str(
+                        exc
+                    )
                 continue
             name_map.setdefault(fn_name, []).append(tool_id)
 
