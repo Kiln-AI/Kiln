@@ -10553,7 +10553,6 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Kimi K3.1 Pro
     KilnModel(
         family=ModelFamily.kimi,
         name=ModelName.kimi_k3_1_pro,
