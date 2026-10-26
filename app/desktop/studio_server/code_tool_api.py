@@ -10,11 +10,15 @@ from kiln_ai.adapters.eval.v2_eval_code_eval import has_add_code_trust
 from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance
-from kiln_ai.datamodel.tool_id import ToolId
+from kiln_ai.datamodel.tool_id import (
+    WORLD_TOOL_ID_PREFIX,
+    ToolId,
+    world_and_tool_name_from_id,
+)
 from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.code_tool import ChildOutcome, PythonCodeTool
 from kiln_ai.tools.mcp_session_manager import mcp_session_scope
-from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
+from kiln_ai.tools.sandbox_bridge import NOT_ALLOWED_PREVIEW, ToolCallLogEntry
 from kiln_ai.tools.tool_registry import validate_unique_allowlist_tool_names
 from kiln_server.project_api import project_from_id
 from kiln_server.provenance_api import validate_provenance_or_400
@@ -210,6 +214,45 @@ def _outcome_to_test_response(
     )
 
 
+def _world_tool_test_message(tool_name: str, world_id: str) -> str:
+    return (
+        f"'{tool_name}' is a tool of world {world_id}. World tools can be tested only "
+        "inside an eval run whose inputs start a world episode. This test runs "
+        "outside an episode, so the call was refused."
+    )
+
+
+def _explain_refused_world_tool_calls(
+    response: TestCodeToolResponse, tool_allowlist: list[ToolId]
+) -> TestCodeToolResponse:
+    """Say why a test refused the code's calls to allowlisted world tools.
+
+    The test endpoint runs outside a world episode, and a world tool resolves only
+    inside one, so the sandbox refuses those calls as if the tool were not
+    allowlisted (ToolNotAllowed). The refused calls are found in the tool call log;
+    their log entries, and the error when the run failed, get the reason.
+    """
+    world_of_tool_name = {
+        tool_name: world_id
+        for world_id, tool_name in (
+            world_and_tool_name_from_id(tool_id)
+            for tool_id in tool_allowlist
+            if tool_id.startswith(WORLD_TOOL_ID_PREFIX)
+        )
+    }
+    messages: list[str] = []
+    for entry in response.tool_call_log:
+        world_id = world_of_tool_name.get(entry.tool_name)
+        if world_id is None or entry.output_preview != NOT_ALLOWED_PREVIEW:
+            continue
+        entry.output_preview = _world_tool_test_message(entry.tool_name, world_id)
+        if entry.output_preview not in messages:
+            messages.append(entry.output_preview)
+    if messages and response.error is not None:
+        response.error = "\n".join([*messages, response.error])
+    return response
+
+
 def connect_code_tool_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/code_tools",
@@ -311,7 +354,10 @@ def connect_code_tool_api(app: FastAPI):
             outcome = await tool._invoke(
                 ToolCallContext(allow_saving=False), request.params
             )
-            return _outcome_to_test_response(outcome, tool_call_log)
+            return _explain_refused_world_tool_calls(
+                _outcome_to_test_response(outcome, tool_call_log),
+                request.tool_allowlist,
+            )
 
     @app.get(
         "/api/projects/{project_id}/code_tools",

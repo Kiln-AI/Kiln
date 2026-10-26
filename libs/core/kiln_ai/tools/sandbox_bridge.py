@@ -146,6 +146,10 @@ class BridgeResult:
         return describe_crash(subject, self.exit_code)
 
 
+NOT_ALLOWED_PREVIEW = "not allowed"
+"""The ``output_preview`` of a recorded call to a tool that is not in the name map."""
+
+
 class NestedToolServer:
     """Handles nested tool-call IPC for one bridged run.
 
@@ -224,7 +228,7 @@ class NestedToolServer:
                         },
                     }
                 )
-                self._record(tool_name, arguments, "not allowed", True, start)
+                self._record(tool_name, arguments, NOT_ALLOWED_PREVIEW, True, start)
                 return
 
             if len(tool_ids) > 1:

@@ -1190,13 +1190,16 @@ class TestValidateRunConfigToolNames:
         task.save_to_file()
         return project, task
 
-    def _make_code_tool(self, project, function_name: str) -> CodeTool:
+    def _make_code_tool(
+        self, project, function_name: str, tool_allowlist: list[str] | None = None
+    ) -> CodeTool:
         code_tool = CodeTool(
             name=function_name,
             tool_function_name=function_name,
             tool_description="d",
             parameters_schema={"type": "object", "properties": {}},
             code="def run() -> str:\n    return 'ok'\n",
+            tool_allowlist=tool_allowlist or [],
             parent=project,
         )
         code_tool.save_to_file()
@@ -1412,6 +1415,82 @@ class TestValidateRunConfigToolNames:
             tools_config=ToolsRunConfig(tools=[world_tool, "kiln_tool::code::missing"])
         )
         with pytest.raises(ValueError, match="Code tool not found"):
+            await validate_run_config_tool_names(task, rc)
+
+    async def test_accepts_code_tool_calling_tools_of_the_run_config_world(
+        self, project_task, _agent_config
+    ):
+        """A code tool's world tools run in the episode the run config's own world
+        tools start, so the same world is accepted."""
+        project, task = project_task
+        world = self._make_world(project)
+        wrapper = self._make_code_tool(
+            project, "sql_preview", [build_world_tool_id(world.id, "sql_query")]
+        )
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(
+                tools=[
+                    build_world_tool_id(world.id, "search"),
+                    f"kiln_tool::code::{wrapper.id}",
+                ]
+            )
+        )
+        await validate_run_config_tool_names(task, rc)
+
+    async def test_rejects_code_tool_world_when_run_config_lists_no_world_tool(
+        self, project_task, _agent_config
+    ):
+        """The eval runner starts an episode only for a run config that lists world
+        tools itself, so a code tool's world tools would never resolve."""
+        project, task = project_task
+        world = self._make_world(project)
+        wrapper = self._make_code_tool(
+            project, "sql_preview", [build_world_tool_id(world.id, "sql_query")]
+        )
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(tools=[f"kiln_tool::code::{wrapper.id}"])
+        )
+        with pytest.raises(
+            ValueError,
+            match=f"Code tool kiln_tool::code::{wrapper.id} calls tools of world "
+            f"{world.id}, but the run config lists no tool of that world",
+        ):
+            await validate_run_config_tool_names(task, rc)
+
+    async def test_rejects_code_tool_world_other_than_run_config_world(
+        self, project_task, _agent_config
+    ):
+        """A job runs in one world: a code tool calling another world's tools is
+        refused, also through a nested code tool."""
+        project, task = project_task
+        world_a = self._make_world(project, "a")
+        world_b = self._make_world(project, "b")
+        inner = self._make_code_tool(
+            project, "inner", [build_world_tool_id(world_b.id, "sql_query")]
+        )
+        outer = self._make_code_tool(project, "outer", [f"kiln_tool::code::{inner.id}"])
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(
+                tools=[
+                    build_world_tool_id(world_a.id, "search"),
+                    f"kiln_tool::code::{outer.id}",
+                ]
+            )
+        )
+        with pytest.raises(ValueError, match="more than one world"):
+            await validate_run_config_tool_names(task, rc)
+
+    async def test_rejects_code_tool_of_unknown_world(
+        self, project_task, _agent_config
+    ):
+        project, task = project_task
+        wrapper = self._make_code_tool(
+            project, "sql_preview", [build_world_tool_id("no_such_world", "sql_query")]
+        )
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(tools=[f"kiln_tool::code::{wrapper.id}"])
+        )
+        with pytest.raises(ValueError, match=r"World\(s\) no_such_world .* not found"):
             await validate_run_config_tool_names(task, rc)
 
 

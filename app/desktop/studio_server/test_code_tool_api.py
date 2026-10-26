@@ -6,11 +6,16 @@ from fastapi.testclient import TestClient
 from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance
+from kiln_ai.datamodel.tool_id import build_world_tool_id
+from kiln_ai.datamodel.world import World
 from kiln_ai.tools.code_tool import ChildOutcome, PythonCodeTool
-from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
+from kiln_ai.tools.sandbox_bridge import NOT_ALLOWED_PREVIEW, ToolCallLogEntry
 from kiln_server.custom_errors import connect_custom_errors
 
-from app.desktop.studio_server.code_tool_api import connect_code_tool_api
+from app.desktop.studio_server.code_tool_api import (
+    _world_tool_test_message,
+    connect_code_tool_api,
+)
 from app.desktop.studio_server.tool_api import connect_tool_servers_api
 
 SIMPLE_CODE = "def run(x: int) -> str:\n    return str(x * 2)\n"
@@ -768,3 +773,221 @@ class TestAvailableToolsCodeGroup:
         tool_sets = response.json()
         code_sets = [ts for ts in tool_sets if ts["type"] == "code"]
         assert len(code_sets) == 0
+
+
+class TestCodeToolWorldTools:
+    """World tools resolve only inside an episode of their world. Creating a code
+    tool checks them without one; testing one runs outside any episode."""
+
+    @pytest.fixture
+    def world(self, test_project):
+        world = World(name="Depot", parent=test_project)
+        world.save_to_file()
+        return world
+
+    def _create(self, client, test_project, create_request, tool_allowlist):
+        create_request["tool_allowlist"] = tool_allowlist
+        with patch(TRUST_PATCH, return_value=True):
+            return client.post(
+                f"/api/projects/{test_project.id}/code_tools", json=create_request
+            )
+
+    def test_create_accepts_world_tools(
+        self, client, test_project, mock_project_from_id, create_request, world
+    ):
+        helper = CodeTool(
+            name="helper",
+            tool_function_name="helper",
+            tool_description="d",
+            parameters_schema=SIMPLE_SCHEMA,
+            code=SIMPLE_CODE,
+            parent=test_project,
+        )
+        helper.save_to_file()
+        allowlist = [
+            build_world_tool_id(world.id, "sql_query"),
+            f"kiln_tool::code::{helper.id}",
+        ]
+
+        response = self._create(client, test_project, create_request, allowlist)
+
+        assert response.status_code == 200, response.text
+        result = response.json()
+        assert result["tool_allowlist"] == allowlist
+        loaded = CodeTool.from_id_and_parent_path(result["id"], test_project.path)
+        assert loaded is not None
+        assert loaded.tool_allowlist == allowlist
+
+    def test_create_rejects_world_tool_of_unknown_world(
+        self, client, test_project, mock_project_from_id, create_request
+    ):
+        response = self._create(
+            client,
+            test_project,
+            create_request,
+            [build_world_tool_id("no_such_world", "sql_query")],
+        )
+
+        assert response.status_code == 400
+        assert "no_such_world" in response.json()["message"]
+        assert "not found in project" in response.json()["message"]
+        assert test_project.code_tools(readonly=True) == []
+
+    def test_create_rejects_world_tools_from_two_worlds(
+        self, client, test_project, mock_project_from_id, create_request, world
+    ):
+        other = World(name="Other", parent=test_project)
+        other.save_to_file()
+
+        response = self._create(
+            client,
+            test_project,
+            create_request,
+            [
+                build_world_tool_id(world.id, "sql_query"),
+                build_world_tool_id(other.id, "search"),
+            ],
+        )
+
+        assert response.status_code == 400
+        assert "more than one world" in response.json()["message"]
+        assert test_project.code_tools(readonly=True) == []
+
+    def test_create_rejects_world_tool_name_collision(
+        self,
+        client,
+        test_project,
+        mock_project_from_id,
+        create_request,
+        world,
+        saved_code_tool,
+    ):
+        response = self._create(
+            client,
+            test_project,
+            create_request,
+            [
+                build_world_tool_id(world.id, saved_code_tool.tool_function_name),
+                f"kiln_tool::code::{saved_code_tool.id}",
+            ],
+        )
+
+        assert response.status_code == 400
+        assert (
+            f"share the same function name: {saved_code_tool.tool_function_name}"
+            in response.json()["message"]
+        )
+
+    def test_patch_keeps_world_tool_allowlist(
+        self, client, test_project, mock_project_from_id, create_request, world
+    ):
+        allowlist = [build_world_tool_id(world.id, "sql_query")]
+        created = self._create(client, test_project, create_request, allowlist)
+        assert created.status_code == 200, created.text
+
+        response = client.patch(
+            f"/api/projects/{test_project.id}/code_tools/{created.json()['id']}",
+            json={"name": "renamed"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["name"] == "renamed"
+        assert response.json()["tool_allowlist"] == allowlist
+
+    def _test_request(self, world_id: str, code: str) -> dict:
+        return {
+            "tool_function_name": "sql_preview",
+            "parameters_schema": SIMPLE_SCHEMA,
+            "code": code,
+            "tool_allowlist": [build_world_tool_id(world_id, "sql_query")],
+            "params": {"x": 5},
+        }
+
+    def test_test_explains_refused_world_tool_call(
+        self, client, test_project, mock_project_from_id, world
+    ):
+        """Runs the sandbox for real: outside an episode the world tool is refused,
+        and the response says why instead of a bare ToolNotAllowed."""
+        code = (
+            "from kiln import tools\n"
+            "def run(x: int) -> str:\n"
+            "    return tools.sql_query(query=str(x))\n"
+        )
+        with patch(TRUST_PATCH, return_value=True):
+            response = client.post(
+                f"/api/projects/{test_project.id}/test_code_tool",
+                json=self._test_request(world.id, code),
+            )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["result"] is None
+        expected = (
+            f"'sql_query' is a tool of world {world.id}. World tools can be tested "
+            "only inside an eval run whose inputs start a world episode."
+        )
+        assert body["error"].startswith(expected)
+        assert "ToolNotAllowed" in body["traceback"]
+        assert [entry["output_preview"] for entry in body["tool_call_log"]] == [
+            _world_tool_test_message("sql_query", world.id)
+        ]
+
+    def test_test_explains_world_tool_call_the_code_caught(
+        self, client, test_project, mock_project_from_id, world
+    ):
+        """When the code handles the refusal itself, its result stands and the log
+        entry still says why the call was refused."""
+        code = (
+            "from kiln import tools\n"
+            "from kiln.tools import ToolNotAllowed\n"
+            "def run(x: int) -> str:\n"
+            "    try:\n"
+            "        return tools.sql_query(query=str(x))\n"
+            "    except ToolNotAllowed:\n"
+            "        return 'refused'\n"
+        )
+        with patch(TRUST_PATCH, return_value=True):
+            response = client.post(
+                f"/api/projects/{test_project.id}/test_code_tool",
+                json=self._test_request(world.id, code),
+            )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["result"] == "refused"
+        assert body["error"] is None
+        assert body["tool_call_log"][0]["output_preview"] == (
+            _world_tool_test_message("sql_query", world.id)
+        )
+
+    def test_test_leaves_other_refused_calls_unchanged(
+        self, client, test_project, mock_project_from_id, world
+    ):
+        """Only calls to the allowlist's world tools get the world message."""
+        outcome = ChildOutcome(error="ToolNotAllowed: Tool 'other' is not available.")
+
+        async def mock_invoke(self_ref, context, kwargs):
+            self_ref._tool_call_recorder(
+                ToolCallLogEntry(
+                    tool_name="other",
+                    arguments={},
+                    output_preview=NOT_ALLOWED_PREVIEW,
+                    is_error=True,
+                    duration_ms=1,
+                )
+            )
+            return outcome
+
+        with (
+            patch.object(PythonCodeTool, "_invoke", mock_invoke),
+            patch(TRUST_PATCH, return_value=True),
+        ):
+            response = client.post(
+                f"/api/projects/{test_project.id}/test_code_tool",
+                json=self._test_request(world.id, SIMPLE_CODE),
+            )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["error"] == outcome.error
+        assert body["tool_call_log"][0]["output_preview"] == NOT_ALLOWED_PREVIEW
