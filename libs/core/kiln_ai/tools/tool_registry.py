@@ -250,16 +250,18 @@ async def validate_unique_allowlist_tool_names(
     tools can be renamed after the allowlist is saved.
 
     World tools resolve only inside an episode of their world, so they are not
-    resolved here: their world must exist in *project*. Whether the world serves
-    the tool is checked at runtime, inside the episode.
+    resolved here: their name is the last segment of their id, and their world
+    must exist in *project*. Whether the world serves the tool is checked at
+    runtime, inside the episode.
     """
     carriers: dict[str, list[str]] = {}
     for tool_id in tool_allowlist:
         if tool_id.startswith(WORLD_TOOL_ID_PREFIX):
-            continue
-        name = await tool_from_id_and_project(
-            tool_id, project=project, task=task
-        ).name()
+            name = world_and_tool_name_from_id(tool_id)[1]
+        else:
+            name = await tool_from_id_and_project(
+                tool_id, project=project, task=task
+            ).name()
         carriers.setdefault(name, []).append(tool_id)
     duplicates = sorted(
         name

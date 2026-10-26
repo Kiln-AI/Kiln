@@ -830,6 +830,31 @@ class TestCodeToolWorldTools:
         assert "not found in project" in response.json()["message"]
         assert test_project.code_tools(readonly=True) == []
 
+    def test_create_rejects_world_tool_name_collision(
+        self,
+        client,
+        test_project,
+        mock_project_from_id,
+        create_request,
+        world,
+        saved_code_tool,
+    ):
+        response = self._create(
+            client,
+            test_project,
+            create_request,
+            [
+                build_world_tool_id(world.id, saved_code_tool.tool_function_name),
+                f"kiln_tool::code::{saved_code_tool.id}",
+            ],
+        )
+
+        assert response.status_code == 400
+        assert (
+            f"share the same function name: {saved_code_tool.tool_function_name}"
+            in response.json()["message"]
+        )
+
     def test_patch_keeps_world_tool_allowlist(
         self, client, test_project, mock_project_from_id, create_request, world
     ):
