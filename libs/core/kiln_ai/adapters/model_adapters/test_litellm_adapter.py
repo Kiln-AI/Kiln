@@ -17,6 +17,8 @@ from kiln_ai.adapters.ml_model_list import (
     ModelName,
     ModelProviderName,
     StructuredOutputMode,
+    TokenPrices,
+    built_in_models,
     built_in_models_from_provider,
 )
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
@@ -1033,6 +1035,163 @@ def test_usage_from_response(config, mock_task, litellm_usage, cost, expected_us
 
     # Verify the response was queried correctly
     response.get.assert_called_once_with("usage", None)
+
+
+def _priced_response(litellm_usage, cost):
+    response = Mock(spec=ModelResponse)
+    response.get.return_value = litellm_usage
+    response._hidden_params = {"response_cost": cost}
+    return response
+
+
+def _litellm_usage(prompt_tokens, completion_tokens, cached_tokens=None, **kwargs):
+    return litellm.types.utils.Usage(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=prompt_tokens + completion_tokens,
+        prompt_tokens_details=(
+            {"cached_tokens": cached_tokens} if cached_tokens is not None else None
+        ),
+        **kwargs,
+    )
+
+
+def _patch_provider_prices(prices: TokenPrices | None):
+    return patch(
+        "kiln_ai.adapters.model_adapters.litellm_adapter.built_in_models_from_provider",
+        return_value=KilnModelProvider(
+            name=ModelProviderName.openrouter, model_id="m", token_prices=prices
+        ),
+    )
+
+
+PRICES_WITH_CACHED_RATE = TokenPrices(
+    input_per_mtok=2.0, cached_input_per_mtok=0.5, output_per_mtok=8.0
+)
+PRICES_WITHOUT_CACHED_RATE = TokenPrices(input_per_mtok=2.0, output_per_mtok=8.0)
+
+
+@pytest.mark.parametrize(
+    "prices,litellm_usage,expected_cost",
+    [
+        # No cached tokens: 1M input at $2 + 0.5M output at $8.
+        (PRICES_WITH_CACHED_RATE, _litellm_usage(1_000_000, 500_000), 6.0),
+        # 0.6M of the 1M input tokens are cached and cost the cached rate.
+        (
+            PRICES_WITH_CACHED_RATE,
+            _litellm_usage(1_000_000, 0, cached_tokens=600_000),
+            0.4 * 2.0 + 0.6 * 0.5,
+        ),
+        # No cached rate: cached tokens cost the input price.
+        (
+            PRICES_WITHOUT_CACHED_RATE,
+            _litellm_usage(1_000_000, 0, cached_tokens=600_000),
+            2.0,
+        ),
+        # A cached count above the input count never makes the uncached part negative.
+        (
+            PRICES_WITH_CACHED_RATE,
+            _litellm_usage(1_000, 0, cached_tokens=5_000),
+            1_000 * 0.5 / 1_000_000,
+        ),
+        # completion_tokens already includes the reasoning tokens, so they cost
+        # the output price one time.
+        (
+            PRICES_WITHOUT_CACHED_RATE,
+            _litellm_usage(
+                0,
+                1_000_000,
+                completion_tokens_details={"reasoning_tokens": 900_000},
+            ),
+            8.0,
+        ),
+    ],
+)
+def test_usage_from_response_uses_token_prices_when_litellm_has_no_cost(
+    config, mock_task, prices, litellm_usage, expected_cost
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    with _patch_provider_prices(prices) as lookup:
+        result = adapter.usage_from_response(_priced_response(litellm_usage, None))
+    assert result.cost == pytest.approx(expected_cost)
+    lookup.assert_called_once_with(ModelProviderName.openrouter, "test-model")
+
+
+@pytest.mark.parametrize("litellm_cost", [0.25, 0.0])
+def test_usage_from_response_keeps_the_litellm_cost(config, mock_task, litellm_cost):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    with _patch_provider_prices(PRICES_WITH_CACHED_RATE):
+        result = adapter.usage_from_response(
+            _priced_response(_litellm_usage(1_000_000, 1_000_000), litellm_cost)
+        )
+    assert result.cost == litellm_cost
+
+
+def test_usage_from_response_has_no_cost_for_a_provider_without_token_prices(
+    config, mock_task
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    with _patch_provider_prices(None):
+        result = adapter.usage_from_response(
+            _priced_response(_litellm_usage(1000, 10), None)
+        )
+    assert result.cost is None
+
+
+def test_usage_from_response_has_no_cost_for_a_model_not_in_the_model_list(
+    config, mock_task
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    result = adapter.usage_from_response(
+        _priced_response(_litellm_usage(1000, 10), None)
+    )
+    assert result.cost is None
+
+
+@pytest.mark.parametrize(
+    "provider_name,expected_cost",
+    [
+        # Cloudflare Kimi K2.6: $0.95 input, $4.00 output per million tokens.
+        (ModelProviderName.cloudflare, 0.95 + 4.0),
+        # The same model on OpenRouter has no token_prices.
+        (ModelProviderName.openrouter, None),
+    ],
+)
+def test_cost_from_token_prices_looks_up_the_model_and_the_provider(
+    mock_task, provider_name, expected_cost
+):
+    config = LiteLlmConfig(
+        base_url="https://api.test.com",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name=ModelName.kimi_k2_6,
+            model_provider_name=provider_name,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+    )
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    usage = MessageUsage(input_tokens=1_000_000, output_tokens=1_000_000)
+    assert adapter.cost_from_token_prices(usage) == pytest.approx(expected_cost)
+
+
+def test_cost_from_token_prices_needs_input_and_output_counts(config, mock_task):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    with _patch_provider_prices(PRICES_WITH_CACHED_RATE):
+        assert adapter.cost_from_token_prices(MessageUsage(input_tokens=10)) is None
+        assert adapter.cost_from_token_prices(MessageUsage(output_tokens=10)) is None
+
+
+def test_every_cloudflare_provider_has_token_prices():
+    # Kiln calls Cloudflare as a custom OpenAI-compatible endpoint, so LiteLLM never
+    # returns a cost for it.
+    unpriced = [
+        model.name
+        for model in built_in_models
+        for provider in model.providers
+        if provider.name == ModelProviderName.cloudflare
+        and provider.token_prices is None
+    ]
+    assert unpriced == []
 
 
 def test_usage_from_response_prompt_details_without_cached_tokens(config, mock_task):

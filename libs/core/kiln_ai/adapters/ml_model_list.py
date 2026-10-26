@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import List
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from kiln_ai.datamodel.datamodel_enums import (
     ChatStrategy,
@@ -383,6 +383,15 @@ class ModelAdapterId(str, Enum):
     jev = "jev"
 
 
+class TokenPrices(BaseModel):
+    """A provider's published price for a model, in US dollars per million tokens."""
+
+    input_per_mtok: float = Field(ge=0)
+    output_per_mtok: float = Field(ge=0)
+    # None: the provider publishes no cached-input price, so cached tokens cost the input price.
+    cached_input_per_mtok: float | None = Field(default=None, ge=0)
+
+
 class KilnModelProvider(BaseModel):
     """
     Configuration for a specific model provider.
@@ -405,6 +414,7 @@ class KilnModelProvider(BaseModel):
         multimodal_requires_pdf_as_image: Whether the model requires PDFs to be processed as images
         supports_vision: Whether the model supports vision inputs (e.g. images, video)
         adapter: Which Kiln adapter runs this model. Defaults to LiteLLM; set to jev for TypeSafe's System One API.
+        token_prices: The provider's price for this model. Used to compute a call's cost only when LiteLLM returns no cost.
     """
 
     name: ModelProviderName
@@ -475,6 +485,10 @@ class KilnModelProvider(BaseModel):
 
     # The model is deprecated and no longer supported on a specific provider
     deprecated: bool = False
+
+    # Set only where LiteLLM returns no cost for a call: a model missing from its price
+    # table, or a provider Kiln calls as a custom OpenAI-compatible endpoint (eg Cloudflare).
+    token_prices: TokenPrices | None = None
 
     @model_validator(mode="after")
     def validate_openrouter_reasoning_object(self) -> "KilnModelProvider":
@@ -4923,6 +4937,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/nvidia/nemotron-3-120b-a12b",
+                token_prices=TokenPrices(input_per_mtok=0.50, output_per_mtok=1.50),
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
@@ -6151,6 +6166,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/google/gemma-4-26b-a4b-it",
+                token_prices=TokenPrices(input_per_mtok=0.10, output_per_mtok=0.30),
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -6507,6 +6523,11 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+                token_prices=TokenPrices(
+                    input_per_mtok=0.30,
+                    cached_input_per_mtok=0.006,
+                    output_per_mtok=1.20,
+                ),
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=DEEPSEEK_V4_1_FLASH_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="high",
@@ -6677,6 +6698,11 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/deepseek-ai/deepseek-v4-pro-0813",
+                token_prices=TokenPrices(
+                    input_per_mtok=1.32,
+                    cached_input_per_mtok=0.044,
+                    output_per_mtok=3.96,
+                ),
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=DEEPSEEK_V4_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="high",
@@ -6718,6 +6744,11 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.cloudflare,
                 suggested_for_synthetic_user=True,
                 model_id="@cf/deepseek-ai/deepseek-v4-flash-0731",
+                token_prices=TokenPrices(
+                    input_per_mtok=0.44,
+                    cached_input_per_mtok=0.014,
+                    output_per_mtok=1.32,
+                ),
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=DEEPSEEK_V4_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="high",
@@ -7711,6 +7742,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/qwen/qwen3.8-27b",
+                token_prices=TokenPrices(input_per_mtok=0.45, output_per_mtok=3.20),
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=QWEN_3P8_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="xhigh",
@@ -9891,6 +9923,11 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/zai-org/glm-5.3",
+                token_prices=TokenPrices(
+                    input_per_mtok=1.40,
+                    cached_input_per_mtok=0.26,
+                    output_per_mtok=4.40,
+                ),
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GLM_5_3_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="max",
@@ -10022,6 +10059,11 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.cloudflare,
                 suggested_for_synthetic_user=True,
                 model_id="@cf/zai-org/glm-5.3-flash",
+                token_prices=TokenPrices(
+                    input_per_mtok=0.15,
+                    cached_input_per_mtok=0.03,
+                    output_per_mtok=0.50,
+                ),
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GLM_5_3_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="max",
@@ -10106,6 +10148,11 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/zai-org/glm-5.2",
+                token_prices=TokenPrices(
+                    input_per_mtok=1.40,
+                    cached_input_per_mtok=0.26,
+                    output_per_mtok=4.40,
+                ),
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GLM_5_2_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="max",
@@ -10301,6 +10348,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/zai-org/glm-4.7-flash",
+                token_prices=TokenPrices(input_per_mtok=0.06, output_per_mtok=0.40),
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
@@ -10727,6 +10775,11 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/moonshotai/kimi-k2.6",
+                token_prices=TokenPrices(
+                    input_per_mtok=0.95,
+                    cached_input_per_mtok=0.16,
+                    output_per_mtok=4.00,
+                ),
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=KIMI_K2_6_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="high",

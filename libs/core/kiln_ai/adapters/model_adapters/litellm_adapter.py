@@ -34,6 +34,7 @@ from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     ModelProviderName,
     StructuredOutputMode,
+    built_in_models_from_provider,
 )
 from kiln_ai.adapters.model_adapters.adapter_stream import (
     AdapterStream,
@@ -985,7 +986,38 @@ class LiteLlmAdapter(BaseAdapter):
                 f"Unexpected cost format from litellm: {cost}. Expected float, got {type(cost)}"
             )
 
+        if usage.cost is None:
+            usage.cost = self.cost_from_token_prices(usage)
+
         return usage
+
+    def cost_from_token_prices(self, usage: MessageUsage) -> float | None:
+        """The call's cost in US dollars from the built-in provider's `token_prices`.
+
+        Returns None when the run config's model and provider have no built-in entry, the
+        entry has no `token_prices`, or the usage has no input or output token count.
+        """
+        if usage.input_tokens is None or usage.output_tokens is None:
+            return None
+        # A plain model-list lookup: model_provider() also requires the provider's API keys.
+        run_config = as_kiln_agent_run_config(self.run_config)
+        provider = built_in_models_from_provider(
+            run_config.model_provider_name, run_config.model_name
+        )
+        prices = provider.token_prices if provider else None
+        if prices is None:
+            return None
+        cached = min(usage.cached_tokens or 0, usage.input_tokens)
+        cached_price = (
+            prices.input_per_mtok
+            if prices.cached_input_per_mtok is None
+            else prices.cached_input_per_mtok
+        )
+        return (
+            (usage.input_tokens - cached) * prices.input_per_mtok
+            + cached * cached_price
+            + usage.output_tokens * prices.output_per_mtok
+        ) / 1_000_000
 
     async def cached_available_tools(self) -> list[KilnToolInterface]:
         if self._cached_available_tools is None:

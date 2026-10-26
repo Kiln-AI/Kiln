@@ -457,6 +457,7 @@ Replace the `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `
 - [ ] Flags inherited from predecessor and adjusted for quirks
 - [ ] `reasoning_capable` defaulted to `False` for adaptive-reasoning models (only `True` for always-emits-reasoning models — see [Reasoning Capable Default](#reasoning-capable-default))
 - [ ] Thinking levels configured if model supports reasoning effort (see [Thinking Levels Reference](#thinking-levels-reference))
+- [ ] Cloudflare: `token_prices` set from the Workers AI pricing page (see [Cloudflare (Workers AI)](#cloudflare-workers-ai))
 - [ ] Cloudflare and OpenRouter: `check_thinking_levels.py` reports no ❌ finding (see [Cloudflare thinking levels](#cloudflare-thinking-levels) and [OpenRouter (general)](#openrouter-general))
 - [ ] Every `suggested_for_evals` entry with thinking levels defaults to `"medium"` (or `"low"`), never `"none"` (see [Judge Models Must Reason by Default](#judge-models-must-reason-by-default))
 - [ ] Preserve existing comments from predecessor (e.g. reasoning notes, MIME type groupings)
@@ -693,7 +694,7 @@ Runs through LiteLLM's generic `openai/` route against Cloudflare's OpenAI-compa
 - **Workers Paid:** many of the newer models need the Workers Paid plan. Paid tests need an account on it.
 - **Rate limits:** 300 requests/minute for most text models, but only 20/minute per model for Workers Paid-only models. Don't run the paid suite with many workers against one model; use `-n 4` or lower.
 - **Slow models:** Qwen 3.8 27B runs at about 23 tokens/s. Long non-streaming generations hit Cloudflare's server-side timeout (HTTP 408, code 3046, after about 2 minutes).
-- **No cost reporting.** Kiln sends bare `@cf/...` ids through LiteLLM's `openai/` route, which never match LiteLLM's price map (its few entries are keyed `cloudflare/@cf/...`), so every Cloudflare run records tokens with `cost: null`.
+- **Set `token_prices` on every Cloudflare entry.** Kiln sends bare `@cf/...` ids through LiteLLM's `openai/` route, which never match LiteLLM's price map (its few entries are keyed `cloudflare/@cf/...`). LiteLLM returns no cost, so Kiln computes the cost from `token_prices`. Copy the input, cached input and output prices per million tokens from the [Workers AI pricing page](https://developers.cloudflare.com/workers-ai/platform/pricing/). Leave `cached_input_per_mtok` unset when the page lists no cached price. An entry without `token_prices` records `cost: null`, and `test_every_cloudflare_provider_has_token_prices` fails.
 - **No Model Substitution.** When Cloudflare retires a model it may **silently alias** the old ID to a different, often more expensive, model (Kimi K2.5 → K2.6 in May 2026). The response still echoes the requested ID, so Kiln can't detect it at runtime. Cloudflare announces retirements by adding `planned_deprecation_date` to the model (notice has been 13–22 days). **Remove or mark deprecated every Kiln Cloudflare entry that gains a `planned_deprecation_date`, before that date.** The `kiln-check-deprecation` skill reports these dates.
 
 ### Qwen3 / Thinking Models
