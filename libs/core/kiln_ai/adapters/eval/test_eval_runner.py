@@ -5803,3 +5803,90 @@ async def test_run_notifies_observers_of_a_failed_item(
     assert len(failures) == 1
     assert failures[0][0].item.id == task_run.id
     assert str(failures[0][1]) == "judge exploded"
+
+
+# -------------------------------------------------------------------
+# Drive-only runs (judge=False)
+# -------------------------------------------------------------------
+class TestDriveOnly:
+    @pytest.mark.asyncio
+    async def test_drives_every_item_and_scores_none(
+        self, mock_task, mock_v2_eval_config, mock_run_config, mock_eval_inputs
+    ):
+        generator = TraceGenerator(mock_task)
+        runner = build_task_run_eval_runner(
+            [mock_v2_eval_config], [mock_run_config], judge=False
+        )
+        with generating(generator):
+            async for _ in runner.run():
+                pass
+
+        assert len(generator.calls) == 2
+        assert mock_v2_eval_config.runs(readonly=True) == []
+        driven = {run.item_id: run for run in runner.driven_runs}
+        assert set(driven) == {"ei_1", "ei_2"}
+        for run in driven.values():
+            assert run.item_source == "eval_input"
+            assert run.run_config_id == mock_run_config.id
+            trace = trace_for(mock_task, run.task_run_id)
+            assert trace.usage == generator.usage
+            assert trace.eval_source is not None
+            assert trace.eval_source.source_id == run.item_id
+
+    @pytest.mark.asyncio
+    async def test_drives_items_that_are_already_scored(
+        self, mock_task, mock_v2_eval_config, mock_run_config, mock_eval_inputs
+    ):
+        """A score says nothing about this run's usage, so drive-only ignores it."""
+        generator = TraceGenerator(mock_task)
+        with generating(generator):
+            judged = build_task_run_eval_runner(
+                [mock_v2_eval_config], [mock_run_config]
+            )
+            async for _ in judged.run():
+                pass
+            assert len(generator.calls) == 2
+            assert judged.collect_tasks() == []
+
+            drive_only = build_task_run_eval_runner(
+                [mock_v2_eval_config], [mock_run_config], judge=False
+            )
+            assert len(drive_only.collect_tasks()) == 2
+            async for _ in drive_only.run():
+                pass
+
+        assert len(generator.calls) == 4
+        assert len(eval_traces(mock_task)) == 4
+        assert len(mock_v2_eval_config.runs(readonly=True)) == 2
+
+    def test_refuses_a_legacy_judge(
+        self, mock_eval_config, mock_run_config, mock_task, data_source
+    ):
+        with pytest.raises(ValueError, match="not a V2 judge with an adapter"):
+            build_task_run_eval_runner(
+                [mock_eval_config], [mock_run_config], judge=False
+            )
+
+    def test_refuses_two_eval_configs(
+        self, mock_v2_eval, mock_v2_eval_config, mock_run_config
+    ):
+        second = EvalConfig(
+            name="second",
+            config_type=EvalConfigType.v2,
+            properties=ExactMatchProperties(expected_value="x"),
+            parent=mock_v2_eval,
+        )
+        second.save_to_file()
+        with pytest.raises(ValueError, match="exactly one eval config"):
+            build_task_run_eval_runner(
+                [mock_v2_eval_config, second], [mock_run_config], judge=False
+            )
+
+    def test_refuses_judge_calibration(self, mock_v2_eval_config):
+        with pytest.raises(ValueError, match="Only a task_run_eval"):
+            EvalRunner(
+                eval_configs=[mock_v2_eval_config],
+                run_configs=None,
+                eval_run_type="eval_config_eval",
+                judge=False,
+            )

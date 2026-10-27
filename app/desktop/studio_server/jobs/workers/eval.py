@@ -151,12 +151,46 @@ class EvalJobParams(BaseModel):
         "trial a run config on a few named items before paying for the full split: the "
         "rows it stores are reused by a later full run, which skips scored items.",
     )
+    judge: bool = Field(
+        default=True,
+        description="Whether to judge the items. False drives each item exactly as a "
+        "judged job does (a fresh episode for an item with a world_reset, the synthetic "
+        "user for a multi-turn item) and saves its trace as a task run with its usage, "
+        "but runs no judge and stores no score. Every item is driven again, scored or "
+        "not, so the usage is of this job. `result.driven_runs` names the task runs. A "
+        "later judged job on the same items and run config reuses these traces instead "
+        "of driving again. For an item in a world, only while the item's world_reset "
+        "and the world's version are unchanged: a trace is reused only for the reset "
+        "and version it ran with. Needs a V2 eval config. A drive-only job is never "
+        "deduplicated and cannot be paused: each one is a new measurement.",
+    )
+
+
+class DrivenTaskRun(BaseModel):
+    """One item a drive-only job drove, and the task run that holds its trace."""
+
+    item_source: ItemSource = Field(
+        description="Which store the item is from: eval_input or task_run."
+    )
+    item_id: str = Field(description="Id of the dataset item that was driven.")
+    task_run_id: str = Field(
+        description="Id of the task run that holds the fresh trace. Its `usage` has "
+        "the agent's cost and latency (for a multi-turn item, the whole "
+        "conversation). For a multi-turn item, `synthetic_user_usage` has the "
+        "synthetic user's spend: add both for the drive's full model cost."
+    )
 
 
 class EvalJobResult(BaseModel):
     total: int = Field(description="Total number of dataset items the eval processed.")
     success: int = Field(description="Number of dataset items evaluated successfully.")
     error: int = Field(description="Number of dataset items that failed to evaluate.")
+    driven_runs: list[DrivenTaskRun] | None = Field(
+        default=None,
+        description="For a drive-only job (`judge` false), the task run of each item it "
+        "drove, in the order the drives finished. Null for a judged job: each score "
+        "names its task run as scored_run_id.",
+    )
 
 
 class EvalJobProperties(BaseModel):
@@ -223,6 +257,9 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
     already-run (eval_config, run_config, item) triples, so a paused-then-
     resumed (or re-triggered) job skips completed items and writes no duplicate
     EvalRun entities — hence supports_pause = True.
+
+    A drive-only job (`judge` false) is the exception: it drives every item again and
+    stores no score, so it is neither idempotent nor pausable (see `pausable`).
     """
 
     type_name = "eval"
@@ -232,11 +269,16 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
     supports_pause = True
     create_path = "/api/jobs/evals/run"
 
-    def dedupe_key(self, params: EvalJobParams) -> Hashable:
+    def dedupe_key(self, params: EvalJobParams) -> Hashable | None:
         """Jobs that score the same items of the same split with the same judge and
         run config do the same work: a second one would pay for every unscored item
         again and store duplicate EvalRuns. Concurrency only changes how fast, so it
-        is not part of the key."""
+        is not part of the key.
+
+        A drive-only job is never deduplicated: each one is a new measurement, and a
+        caller handed another job's drives would read usage from the wrong window."""
+        if not params.judge:
+            return None
         return (
             params.project_id,
             params.task_id,
@@ -381,7 +423,20 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
 
         return prompt_id
 
-    async def compute_state(self, params: EvalJobParams) -> JobDerivedState:
+    def pausable(self, params: EvalJobParams) -> bool:
+        """A drive-only job cannot be resumed: it drives every item again, so a resume
+        would pay for each item driven before the pause a second time."""
+        return params.judge
+
+    async def compute_state(self, params: EvalJobParams) -> JobDerivedState | None:
+        if not params.judge:
+            # A drive-only job leaves no score to count, and its traces cannot be told
+            # from an earlier job's. The registry keeps the progress the job reports.
+            return None
+        return await self._scored_state(params)
+
+    async def _scored_state(self, params: EvalJobParams) -> JobDerivedState:
+        """The state of a judged job, read from the scores on disk."""
         # _compute_state_sync loads entities and enumerates runs/ directories
         # (os.scandir + open/read/json.loads per child) synchronously. The
         # registry awaits this on the event loop, so offload the blocking IO to
@@ -454,13 +509,15 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
         return split
 
     async def run(self, params: EvalJobParams, ctx: JobContext) -> EvalJobResult:
+        if not params.judge:
+            return await self._drive(params, ctx)
         # Baseline: items already scored (and still in the split) before this run.
         # EvalRunner only works the unfinished remainder, so its Progress counts
         # are relative to that remainder. We add the baseline back so progress
         # and the returned result are reported against the FULL split size, not
         # just the work left for this run. The arithmetic only holds because both
         # numbers come from the same resolution — see _resolve_split.
-        baseline = await self.compute_state(params)
+        baseline = await self._scored_state(params)
         baseline_success = baseline.success
 
         # save_context_for_project stays on the event loop: it wakes the git
@@ -497,6 +554,43 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
 
         return EvalJobResult(total=total, success=success, error=error)
 
+    async def _drive(self, params: EvalJobParams, ctx: JobContext) -> EvalJobResult:
+        """A drive-only job: every item of the scope, with no baseline to add back."""
+        save_context = save_context_for_project(
+            params.project_id,
+            context=f"eval drive job {params.eval_id}/{params.run_config_id}",
+        )
+        eval_runner = await to_thread_retrying_torn_read(
+            partial(self._build_eval_runner, params, save_context)
+        )
+        success = 0
+        total = 0
+        error = 0
+        async for progress in eval_runner.run(
+            concurrency=params.concurrency,
+            observers=[_EvalErrorLogObserver(ctx)],
+            max_retries=JOB_TRANSIENT_ERROR_MAX_RETRIES,
+            retry_delay=JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS,
+        ):
+            success = progress.complete
+            total = progress.total
+            error = progress.errors
+            await ctx.report_progress(success=success, error=error, total=total)
+
+        return EvalJobResult(
+            total=total,
+            success=success,
+            error=error,
+            driven_runs=[
+                DrivenTaskRun(
+                    item_source=run.item_source,
+                    item_id=run.item_id,
+                    task_run_id=run.task_run_id,
+                )
+                for run in eval_runner.driven_runs
+            ],
+        )
+
     def _build_eval_runner(
         self, params: EvalJobParams, save_context: SaveContext | None
     ) -> EvalRunner:
@@ -519,6 +613,7 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
             split=self._resolve_split(eval, task, params),
             save_context=save_context,
             item_ids=set(params.item_ids) if params.item_ids is not None else None,
+            judge=params.judge,
         )
 
     def _eval_and_task(self, eval_config: EvalConfig) -> tuple[Eval, Task]:

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from datetime import timedelta
 from typing import Awaitable, Callable
 
 import pytest
@@ -244,23 +245,21 @@ async def test_seed_ignores_trace_without_run_config(task):
 
 
 @pytest.mark.asyncio
-async def test_seed_duplicate_keys_first_wins(task):
-    save_trace(task, output="first")
-    save_trace(task, output="second")
-    # Asserted against the order the seed itself iterates, not filesystem ordering: which
-    # of two synced duplicates wins is arbitrary (D8), that it is stable is not.
-    expected = next(
-        run
-        for run in task.runs(readonly=True, include_eval_generated=True)
-        if run.eval_source is not None
-    )
+@pytest.mark.parametrize("newest_saved_first", [True, False])
+async def test_seed_duplicate_keys_newest_wins(task, newest_saved_first):
+    first = save_trace(task, output="first")
+    second = save_trace(task, output="second")
+    older = second if newest_saved_first else first
+    older.created_at = older.created_at - timedelta(hours=1)
+    older.save_to_file()
+    newest = first if newest_saved_first else second
     generate = Generator(task)
 
     index = TraceIndex(task)
     trace, was_generated = await index.get_or_create(KEY, generate.for_key(KEY))
 
     assert was_generated is False
-    assert trace.id == expected.id
+    assert trace.id == newest.id
     assert generate.calls == 0
 
 
@@ -367,6 +366,75 @@ async def test_distinct_keys_do_not_share_a_trace(task):
         assert was_generated is False
         assert found.id == trace.id
     assert reused.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_create_generates_even_when_a_trace_exists(task):
+    """A drive-only run measures its own generation, never an earlier one."""
+    existing = save_trace(task)
+    generate = Generator(task)
+    index = TraceIndex(task)
+
+    first = await index.create(KEY, generate.for_key(KEY))
+    second = await index.create(KEY, generate.for_key(KEY))
+
+    assert generate.calls == 2
+    assert len({existing.id, first.id, second.id}) == 3
+
+
+@pytest.mark.asyncio
+async def test_created_trace_is_reused_by_a_later_get_or_create(task):
+    """A judged job after a drive-only one scores the newest drive, not an older one."""
+    save_trace(task, output="older")
+    generate = Generator(task)
+    index = TraceIndex(task)
+
+    driven = await index.create(KEY, generate.for_key(KEY))
+    trace, was_generated = await index.get_or_create(KEY, generate.for_key(KEY))
+
+    assert was_generated is False
+    assert trace.id == driven.id
+    assert generate.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_created_trace_is_found_by_a_fresh_index(task):
+    """The cross-run half: a later judged job, in a new runner, reuses the drive."""
+    older = save_trace(task, output="older")
+    older.created_at = older.created_at - timedelta(hours=1)
+    older.save_to_file()
+    driven = await TraceIndex(task).create(KEY, Generator(task).for_key(KEY))
+
+    next_run = Generator(task)
+    trace, was_generated = await TraceIndex(task).get_or_create(
+        KEY, next_run.for_key(KEY)
+    )
+
+    assert was_generated is False
+    assert trace.id == driven.id
+    assert next_run.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_failed_create_keeps_the_earlier_trace(task):
+    existing = save_trace(task)
+    index = TraceIndex(task)
+
+    with pytest.raises(RuntimeError, match="generation failed"):
+        await index.create(KEY, Generator(task, raises=True).for_key(KEY))
+
+    trace, was_generated = await index.get_or_create(KEY, Generator(task).for_key(KEY))
+    assert was_generated is False
+    assert trace.id == existing.id
+
+
+@pytest.mark.asyncio
+async def test_create_checks_the_stamped_key(task):
+    index = TraceIndex(task)
+    other: TraceKey = ("eval_input", "item1", "rc_other", "")
+
+    with pytest.raises(ValueError, match="files itself under"):
+        await index.create(KEY, Generator(task).for_key(other))
 
 
 @pytest.mark.asyncio

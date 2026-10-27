@@ -192,7 +192,7 @@ class JobRegistry:
             properties=properties,
             metadata=metadata or {},
             project_id=project_id,
-            supports_pause=worker.supports_pause,
+            supports_pause=worker.pausable(validated),
         )
         self._jobs[job_id] = job
         if dedupe_key is not None:

@@ -336,6 +336,15 @@ class JobWorker(Generic[TParams, TResult]):
         """
         return None
 
+    def pausable(self, params: TParams) -> bool:
+        """Whether a job with these params can be paused and resumed. The registry
+        stamps it on the job at create time. Defaults to the type's `supports_pause`;
+        a worker overrides it when some of its jobs cannot be resumed safely.
+
+        Must be pure and cheap, like `dedupe_key`.
+        """
+        return self.supports_pause
+
     async def describe(self, params: TParams) -> BaseModel | None:
         """Return static, worker-specific descriptive properties for the UI.
 
