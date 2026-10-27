@@ -203,3 +203,11 @@ def test_init_subclass_rejects_duplicate_filesystem_name():
             },
         ):
             name: FilenameString
+
+
+def test_find_save_location_fields_reports_python_attribute_name():
+    payload = {"name": "rel_parent", "_kids": [{"name": "kid", "path": "kid.kiln"}]}
+
+    assert _TestParentRelationship.find_save_location_fields(payload) == [
+        "_kids[0].path"
+    ]
