@@ -11,11 +11,18 @@ persisted by another job in the same run, and `AsyncJobRunner` runs 25 of them a
 two jobs sharing an item and a run config but differing in eval config would both miss
 and both generate, spending exactly the money this exists to save. The same liveness is
 what makes a retry after a scoring failure re-score rather than regenerate.
+
+The same race exists one level up, between runners. Each background eval job builds its
+own `EvalRunner`, so jobs posted together for one run config under several eval configs
+are each seeded before any of them has generated. Runners that share a
+`TraceIndexRegistry` therefore share one live view of each task.
 """
 
 import hashlib
 import json
 import logging
+import threading
+import weakref
 from datetime import datetime
 from pathlib import Path
 from typing import Awaitable, Callable, Dict, Tuple
@@ -104,25 +111,72 @@ def _stored_trace_key(run: TaskRun) -> TraceKey | None:
     )
 
 
+class _TaskTraces:
+    """The state every `TraceIndex` on one task shares."""
+
+    def __init__(self) -> None:
+        # Paths, not TaskRuns: reloading re-reads the record (ModelCache validates on
+        # path + mtime), so a long eval never serves a stale trace.
+        self.paths: Dict[TraceKey, Path] = {}
+        # Held only for dict operations, never across I/O: a seed in a worker thread and
+        # jobs on the event loop both write `paths`.
+        self.paths_lock = threading.Lock()
+        # Held across generation, per key. asyncio locks: every index sharing them must
+        # run on one event loop.
+        self.locks = AsyncLockManager()
+        # Seeds of one task read its runs one at a time. On a cold ModelCache, parallel
+        # seeds would each parse and hold their own copy of every TaskRun.
+        self.seed_lock = threading.Lock()
+
+
+class TraceIndexRegistry:
+    """Shares eval traces between the `TraceIndex` objects built on one task.
+
+    Each `EvalRunner` builds its own index. Runners given the same registry reuse each
+    other's traces, and two runners that need the same trace generate it once. Every
+    runner that shares a registry must run on the same event loop. Without a registry,
+    an index shares nothing.
+
+    A task's shared state lives only while some index on it is alive, so an idle
+    registry holds nothing.
+    """
+
+    def __init__(self) -> None:
+        # Keyed by the task file's resolved path: each job loads its own Task object.
+        self._traces: weakref.WeakValueDictionary[Path, _TaskTraces] = (
+            weakref.WeakValueDictionary()
+        )
+        # A thread lock: runners are built in worker threads.
+        self._lock = threading.Lock()
+
+    def _traces_for(self, task: Task) -> _TaskTraces:
+        if task.path is None:
+            # An unsaved task has no runs on disk and no identity to meet on.
+            return _TaskTraces()
+        path = task.path.resolve()
+        with self._lock:
+            traces = self._traces.get(path)
+            if traces is None:
+                traces = _TaskTraces()
+                self._traces[path] = traces
+            return traces
+
+
 class TraceIndex:
     """The eval traces a task already has, and the gate for creating the ones it doesn't.
 
-    Runner-owned and single-run-scoped: seeded once from disk at construction, then kept
-    current by every trace it hands out.
+    Seeded from disk at construction. Indexes built with the same `registry` share
+    their view of the task, so a trace one generates is reused by the others. Each one
+    still seeds, so an index built while others run also finds traces synced in since.
     """
 
-    def __init__(self, task: Task):
+    def __init__(self, task: Task, registry: TraceIndexRegistry | None = None):
         self._task = task
-        # Paths, not TaskRuns. Reloading is what keeps a handed-out trace honest: it
-        # re-reads the record (ModelCache validates on path + mtime), so an index built
-        # early in a long eval never serves a stale object, and it stays correct across
-        # cache invalidation. Cheap, because the reload is usually a cache hit.
-        self._paths: Dict[TraceKey, Path] = {}
-        # Already the two-level locking this needs: a manager mutex held only long enough
-        # to create an entry, and a per-key lock held across generation, so jobs on
-        # different keys never wait on each other. It also reclaims idle entries, which
-        # matters over an eval with thousands of keys.
-        self._locks = AsyncLockManager()
+        self._shared = (
+            registry._traces_for(task) if registry is not None else _TaskTraces()
+        )
+        self._paths = self._shared.paths
+        self._locks = self._shared.locks
         self._seed()
 
     def _seed(self) -> None:
@@ -134,8 +188,11 @@ class TraceIndex:
         # generating at all). Nothing may ever chain a child onto an eval trace
         # without revisiting this seed — the parent would turn invisible here, and
         # the eval would silently regenerate its trace on every run.
+        with self._shared.seed_lock:
+            runs = self._task.runs(readonly=True, include_eval_generated=True)
         newest: Dict[TraceKey, Tuple[datetime, Path]] = {}
-        for run in self._task.runs(readonly=True, include_eval_generated=True):
+        listed: Dict[Path, datetime] = {}
+        for run in runs:
             if run.path is None:
                 continue
             key = _stored_trace_key(run)
@@ -143,13 +200,45 @@ class TraceIndex:
                 # Not an eval trace, or missing half its key — either way, no job can
                 # ever match it.
                 continue
+            listed[run.path] = run.created_at
             # Newest wins. A drive-only run adds a trace to a key that has one, and a
             # later judge must score that drive. Synced duplicates are all correct, so
             # newest is only a stable pick for them.
             held = newest.get(key)
             if held is None or run.created_at > held[0]:
                 newest[key] = (run.created_at, run.path)
-        self._paths = {key: path for key, (_, path) in newest.items()}
+        for key, (created_at, path) in newest.items():
+            self._seed_entry(key, path, created_at, listed)
+
+    def _seed_entry(
+        self,
+        key: TraceKey,
+        path: Path,
+        created_at: datetime,
+        listed: Dict[Path, datetime],
+    ) -> None:
+        """File the newest run found on disk for `key`, unless the key's entry is newer.
+
+        `listed` holds every eval trace the seed read, by path. An entry among them gives
+        way to a newer run, as in a new index. An entry the seed did not read was filed
+        after the read, by a job that generated it, so it is the newest and stays while
+        its file exists. Once its file is gone, the run on disk replaces it.
+        """
+        existing = self._paths.get(key)
+        if existing == path:
+            return
+        if existing is not None:
+            existing_created_at = listed.get(existing)
+            if existing_created_at is not None:
+                if existing_created_at >= created_at:
+                    return
+            elif existing.exists():
+                return
+        with self._shared.paths_lock:
+            # Replace only the entry that was checked. While the file was checked, a job
+            # can have dropped it and filed a trace it generated and is scoring now.
+            if self._paths.get(key) == existing:
+                self._paths[key] = path
 
     async def get_or_create(
         self, key: TraceKey, generate: Callable[[], Awaitable[TaskRun]]
@@ -181,8 +270,9 @@ class TraceIndex:
         For a drive-only run, whose purpose is a fresh generation: the usage the trace
         records (cost, latency) must be of this run, never of an earlier one. `generate`
         has the same contract as in `get_or_create`. The new trace replaces any earlier
-        one in this index, so a later `get_or_create` on the key reuses it, in this
-        index or in a new one seeded from disk, which keeps the newest trace of a key.
+        one in this index and in every index sharing it, so a later `get_or_create` on
+        the key reuses it, there or in a new index seeded from disk, which keeps the
+        newest trace of a key.
 
         Serialized with `get_or_create` on the same key, so a reuse never races the
         generation of the trace that replaces the one it would read.
@@ -195,7 +285,7 @@ class TraceIndex:
     ) -> TaskRun:
         """Generate the trace for `key` and index it. The caller holds the key's lock."""
         run = await generate()
-        self._paths[key] = self._generated_path(key, run)
+        self._record(key, self._generated_path(key, run))
         logger.info("Generated eval trace %s for %s", run.id, key)
         return run
 
@@ -212,7 +302,7 @@ class TraceIndex:
             logger.warning(
                 "Indexed eval trace for %s is gone from %s; regenerating", key, path
             )
-            del self._paths[key]
+            self._drop(key, path)
             return None
         except (json.JSONDecodeError, ValidationError, ValueError) as error:
             # The file exists but no longer parses as a TaskRun — truncated by a crash
@@ -224,7 +314,7 @@ class TraceIndex:
                 path,
                 error,
             )
-            del self._paths[key]
+            self._drop(key, path)
             return None
 
         # The write path's check, applied on read. Entries only enter `_paths` verified,
@@ -240,9 +330,20 @@ class TraceIndex:
                 stored,
                 key,
             )
-            del self._paths[key]
+            self._drop(key, path)
             return None
         return trace
+
+    def _record(self, key: TraceKey, path: Path) -> None:
+        with self._shared.paths_lock:
+            self._paths[key] = path
+
+    def _drop(self, key: TraceKey, path: Path) -> None:
+        # Only the entry that failed. Another index's seed can file a different path
+        # under the key while this one was loading, and that one has not failed.
+        with self._shared.paths_lock:
+            if self._paths.get(key) == path:
+                del self._paths[key]
 
     def _generated_path(self, key: TraceKey, run: TaskRun) -> Path:
         """Where a freshly generated trace was persisted, once it has earned indexing.
