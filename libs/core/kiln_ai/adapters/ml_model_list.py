@@ -79,6 +79,8 @@ class ModelName(str, Enum):
     llama_4_scout = "llama_4_scout"
     gpt_6_1_sol_pro = "gpt_6_1_sol_pro"
     gpt_6_1_sol = "gpt_6_1_sol"
+    gpt_6_1_terra_pro = "gpt_6_1_terra_pro"
+    gpt_6_1_terra = "gpt_6_1_terra"
     gpt_6_astra = "gpt_6_astra"
     gpt_6_sol_pro = "gpt_6_sol_pro"
     gpt_6_sol = "gpt_6_sol"
@@ -936,6 +938,94 @@ built_in_models: List[KilnModel] = [
                 model_id="openai/gpt-6.1-sol",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 6.1 Terra Pro
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_1_terra_pro,
+        friendly_name="GPT-6.1 Terra Pro",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-6.1-terra-pro",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 6.1 Terra
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_1_terra,
+        friendly_name="GPT-6.1 Terra",
+        editorial_notes="OpenAI's mid-tier GPT-6.1 model. Strong reasoning and multimodal at a lower cost.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-6.1-terra",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                # /v1/chat/completions accepts none through xhigh for this
+                # model and rejects max with a 400.
+                available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
+                # for gpt-5.4+. Disable function calling until Kiln routes these
+                # models to /v1/responses.
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-6.1-terra",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
                 # Use OpenRouter's reasoning object so reasoning is preserved
                 # when tools are sent (the bare reasoning_effort param is
