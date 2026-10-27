@@ -4235,6 +4235,13 @@ export interface paths {
          *     that lists the project's own version of a tool that the world serves. A
          *     503 means that a project file was not readable, for example while another
          *     job wrote it. Send the request again.
+         *
+         *     With `judge` false the job drives every selected item again and judges
+         *     nothing: read `result.driven_runs` for the task runs, and each task run's
+         *     `usage` for the agent's cost and latency. For a multi-turn item, add the task
+         *     run's `synthetic_user_usage` for the drive's full model cost. Such a job is never
+         *     deduplicated and cannot be paused, and a 400 also means that its eval config
+         *     is not a V2 judge.
          */
         post: operations["run_eval_job_api_jobs_evals_run_post"];
         delete?: never;
@@ -5002,7 +5009,6 @@ export interface components {
         Body_bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post: {
             /**
              * File
-             * Format: binary
              * @description The CSV file containing run data to import.
              */
             file: string;
@@ -5070,7 +5076,6 @@ export interface components {
         Body_parse_import_file_api_projects__project_id__tasks__task_id__copilot_parse_import_file_post: {
             /**
              * File
-             * Format: binary
              * @description The file of input examples to parse and validate.
              */
             file: string;
@@ -7568,6 +7573,12 @@ export interface components {
              * @description Restrict the job to these items of the split (EvalInput ids for an EvalInput-backed split, TaskRun ids for a TaskRun-backed one). Fails with 422 if an id is not in the split when the job is created. Progress and completion are measured over the subset. Leave null to run the whole split. Lets a caller trial a run config on a few named items before paying for the full split: the rows it stores are reused by a later full run, which skips scored items.
              */
             item_ids?: string[] | null;
+            /**
+             * Judge
+             * @description Whether to judge the items. False drives each item exactly as a judged job does (a fresh episode for an item with a world_reset, the synthetic user for a multi-turn item) and saves its trace as a task run with its usage, but runs no judge and stores no score. Every item is driven again, scored or not, so the usage is of this job. `result.driven_runs` names the task runs. A later judged job on the same items and run config reuses these traces instead of driving again. For an item in a world, only while the item's world_reset and the world's version are unchanged: a trace is reused only for the reset and version it ran with. Needs a V2 eval config. A drive-only job is never deduplicated and cannot be paused: each one is a new measurement.
+             * @default true
+             */
+            judge: boolean;
         };
         /**
          * EvalOutputScore
@@ -9536,7 +9547,7 @@ export interface components {
          *         created_at (datetime): Timestamp when the model was created
          *         created_by (str): User ID of the creator
          */
-        KilnBaseModel: {
+        "KilnBaseModel-Input": {
             /**
              * V
              * @description Schema version for migration support.
@@ -9564,6 +9575,48 @@ export interface components {
              * @description User ID of the creator.
              */
             created_by?: string;
+        };
+        /**
+         * KilnBaseModel
+         * @description Base model for all Kiln data models with common functionality for persistence and versioning.
+         *
+         *     Attributes:
+         *         v (int): Schema version number for migration support
+         *         id (str): Unique identifier for the model instance
+         *         path (Path): File system path where the model is stored
+         *         created_at (datetime): Timestamp when the model was created
+         *         created_by (str): User ID of the creator
+         */
+        "KilnBaseModel-Output": {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /** Model Type */
+            readonly model_type: string;
         };
         /** KilnFileResponse */
         KilnFileResponse: {
@@ -13417,7 +13470,7 @@ export interface components {
              * @description User ID of the creator.
              */
             created_by?: string;
-            parent?: components["schemas"]["KilnBaseModel"] | null;
+            parent?: components["schemas"]["KilnBaseModel-Input"] | null;
             /**
              * Input
              * @description The inputs to the task. JSON formatted for structured input, plaintext for unstructured input.
@@ -14488,6 +14541,10 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
         /**
          * VectorStoreConfig

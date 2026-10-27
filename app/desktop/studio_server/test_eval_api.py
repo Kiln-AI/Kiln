@@ -9417,6 +9417,89 @@ async def test_create_task_run_config_rejects_missing_skill(
     assert len(mock_task.run_configs()) == 0
 
 
+def _world_tools_run_config_body(tool_ids: list[str]) -> dict:
+    return {
+        "name": "RC",
+        "run_config_properties": {
+            "model_name": "gpt-4o",
+            "model_provider_name": "openai",
+            "prompt_id": "simple_chain_of_thought_prompt_builder",
+            "structured_output_mode": "json_schema",
+            "tools_config": {"tools": tool_ids},
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_config_accepts_world_tools(
+    client, mock_task_from_id, mock_task
+):
+    """World tools resolve only inside an episode of their world. Creation checks the
+    world exists in the project and does not resolve them, so a run config for a
+    world task can be created through the API."""
+    from kiln_ai.datamodel.tool_id import build_world_tool_id
+
+    mock_task_from_id.return_value = mock_task
+    world = World(name="Depot", parent=mock_task.parent_project())
+    world.save_to_file()
+    tool_ids = [
+        build_world_tool_id(world.id, "graphql"),
+        build_world_tool_id(world.id, "search"),
+    ]
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/run_configs",
+        json=_world_tools_run_config_body(tool_ids),
+    )
+
+    assert response.status_code == 200, response.text
+    saved = mock_task.run_configs()
+    assert len(saved) == 1
+    tools_config = saved[0].run_config_properties.tools_config
+    assert tools_config is not None
+    assert tools_config.tools == tool_ids
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_config_rejects_world_tool_of_unknown_world(
+    client, mock_task_from_id, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/run_configs",
+        json=_world_tools_run_config_body(["kiln_tool::world::no_such_world::graphql"]),
+    )
+
+    assert response.status_code == 422
+    assert "no_such_world" in response.text
+    assert "not found in project" in response.text
+    assert len(mock_task.run_configs()) == 0
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_config_with_world_tools_still_rejects_missing_skill(
+    client, mock_task_from_id, mock_task
+):
+    """Listing world tools does not skip the checks on the other tools."""
+    from kiln_ai.datamodel.tool_id import build_world_tool_id
+
+    mock_task_from_id.return_value = mock_task
+    world = World(name="Depot", parent=mock_task.parent_project())
+    world.save_to_file()
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/run_configs",
+        json=_world_tools_run_config_body(
+            [build_world_tool_id(world.id, "graphql"), "kiln_tool::skill::missing_id"]
+        ),
+    )
+
+    assert response.status_code == 422
+    assert "not found in the project: missing_id" in response.text
+    assert len(mock_task.run_configs()) == 0
+
+
 def _two_run_configs_with_scores(mock_task, mock_eval, mock_eval_config, data_source):
     """Two run configs that scored different values on the same two items, plus a
     skipped run on one of them. Returns the run configs and the ids of the items."""

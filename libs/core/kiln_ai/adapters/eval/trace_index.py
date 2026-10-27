@@ -23,6 +23,7 @@ import json
 import logging
 import threading
 import weakref
+from datetime import datetime
 from pathlib import Path
 from typing import Awaitable, Callable, Dict, Tuple
 
@@ -189,6 +190,8 @@ class TraceIndex:
         # the eval would silently regenerate its trace on every run.
         with self._shared.seed_lock:
             runs = self._task.runs(readonly=True, include_eval_generated=True)
+        newest: Dict[TraceKey, Tuple[datetime, Path]] = {}
+        listed: Dict[Path, datetime] = {}
         for run in runs:
             if run.path is None:
                 continue
@@ -197,18 +200,40 @@ class TraceIndex:
                 # Not an eval trace, or missing half its key — either way, no job can
                 # ever match it.
                 continue
-            self._seed_entry(key, run.path)
+            listed[run.path] = run.created_at
+            # Newest wins. A drive-only run adds a trace to a key that has one, and a
+            # later judge must score that drive. Synced duplicates are all correct, so
+            # newest is only a stable pick for them.
+            held = newest.get(key)
+            if held is None or run.created_at > held[0]:
+                newest[key] = (run.created_at, run.path)
+        for key, (created_at, path) in newest.items():
+            self._seed_entry(key, path, created_at, listed)
 
-    def _seed_entry(self, key: TraceKey, path: Path) -> None:
-        """File a run found on disk, unless the key already has a usable entry.
+    def _seed_entry(
+        self,
+        key: TraceKey,
+        path: Path,
+        created_at: datetime,
+        listed: Dict[Path, datetime],
+    ) -> None:
+        """File the newest run found on disk for `key`, unless the key's entry is newer.
 
-        After sync, two machines can each have generated a trace for one key, and either
-        is correct. The entry already filed wins while its file exists, so every job
-        scores the same trace. Once its file is gone, the run on disk replaces it.
+        `listed` holds every eval trace the seed read, by path. An entry among them gives
+        way to a newer run, as in a new index. An entry the seed did not read was filed
+        after the read, by a job that generated it, so it is the newest and stays while
+        its file exists. Once its file is gone, the run on disk replaces it.
         """
         existing = self._paths.get(key)
-        if existing is not None and (existing == path or existing.exists()):
+        if existing == path:
             return
+        if existing is not None:
+            existing_created_at = listed.get(existing)
+            if existing_created_at is not None:
+                if existing_created_at >= created_at:
+                    return
+            elif existing.exists():
+                return
         with self._shared.paths_lock:
             # Replace only the entry that was checked. While the file was checked, a job
             # can have dropped it and filed a trace it generated and is scoring now.
@@ -235,10 +260,34 @@ class TraceIndex:
                 logger.debug("Reusing eval trace %s for %s", trace.id, key)
                 return trace, False
 
-            run = await generate()
-            self._record(key, self._generated_path(key, run))
-            logger.info("Generated eval trace %s for %s", run.id, key)
-            return run, True
+            return await self._generate_and_index(key, generate), True
+
+    async def create(
+        self, key: TraceKey, generate: Callable[[], Awaitable[TaskRun]]
+    ) -> TaskRun:
+        """A new trace for `key`, generated even when the task already has one.
+
+        For a drive-only run, whose purpose is a fresh generation: the usage the trace
+        records (cost, latency) must be of this run, never of an earlier one. `generate`
+        has the same contract as in `get_or_create`. The new trace replaces any earlier
+        one in this index and in every index sharing it, so a later `get_or_create` on
+        the key reuses it, there or in a new index seeded from disk, which keeps the
+        newest trace of a key.
+
+        Serialized with `get_or_create` on the same key, so a reuse never races the
+        generation of the trace that replaces the one it would read.
+        """
+        async with self._locks.acquire(key):
+            return await self._generate_and_index(key, generate)
+
+    async def _generate_and_index(
+        self, key: TraceKey, generate: Callable[[], Awaitable[TaskRun]]
+    ) -> TaskRun:
+        """Generate the trace for `key` and index it. The caller holds the key's lock."""
+        run = await generate()
+        self._record(key, self._generated_path(key, run))
+        logger.info("Generated eval trace %s for %s", run.id, key)
+        return run
 
     def _load_indexed(self, key: TraceKey) -> TaskRun | None:
         path = self._paths.get(key)
