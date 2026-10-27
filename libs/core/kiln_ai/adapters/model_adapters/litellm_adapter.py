@@ -936,6 +936,10 @@ class LiteLlmAdapter(BaseAdapter):
         allowed_openai_params = self._allowed_openai_params_for_completion_kwargs(
             completion_kwargs
         )
+        if provider.litellm_allowed_openai_params:
+            allowed_openai_params = list(
+                set(allowed_openai_params + provider.litellm_allowed_openai_params)
+            )
         if len(allowed_openai_params) > 0:
             completion_kwargs["allowed_openai_params"] = allowed_openai_params
 
