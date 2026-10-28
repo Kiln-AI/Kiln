@@ -16,9 +16,11 @@ from kiln_ai.datamodel.tool_id import (
     RAG_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     _check_tool_id,
+    build_world_tool_id,
     kiln_task_server_id_from_tool_id,
     mcp_server_and_tool_name_from_id,
 )
+from kiln_ai.datamodel.world import World
 from kiln_ai.tools.built_in_tools.kiln_api_call_tool import KilnApiCallTool
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
@@ -992,6 +994,94 @@ class TestValidateUniqueAllowlistToolNames:
                 [
                     f"mcp::remote::{server_a.id}::search",
                     f"kiln_tool::code::{code_tool.id}",
+                ],
+                project,
+            )
+
+    def _make_world(self, project, name="depot"):
+        world = World(name=name, parent=project)
+        world.save_to_file()
+        return world
+
+    async def test_accepts_world_tools_of_an_existing_world(self, project):
+        """World tools resolve only inside an episode, so the allowlist check finds
+        their world in the project and does not resolve them."""
+        world = self._make_world(project)
+        helper = self._make_code_tool(project, "helper")
+        await validate_unique_allowlist_tool_names(
+            [
+                build_world_tool_id(world.id, "sql_query"),
+                build_world_tool_id(world.id, "search"),
+                f"kiln_tool::code::{helper.id}",
+            ],
+            project,
+        )
+
+    async def test_world_tool_still_refused_outside_an_episode(self, project):
+        """The allowlist check accepts a world tool, and resolving it outside an
+        episode still fails."""
+        world = self._make_world(project)
+        tool_id = build_world_tool_id(world.id, "sql_query")
+        await validate_unique_allowlist_tool_names([tool_id], project)
+        with pytest.raises(ValueError, match="can only be used while an episode"):
+            tool_from_id_and_project(tool_id, project=project)
+
+    async def test_rejects_world_tool_of_unknown_world(self, project):
+        with pytest.raises(
+            ValueError,
+            match=r"World\(s\) no_such_world referenced by world tools in the "
+            r"tool_allowlist not found",
+        ):
+            await validate_unique_allowlist_tool_names(
+                [build_world_tool_id("no_such_world", "sql_query")], project
+            )
+
+    @pytest.mark.parametrize("other_kind", ["code", "mcp"])
+    async def test_rejects_world_tool_colliding_with_another_tool(
+        self, project, other_kind
+    ):
+        """Sandboxed code calls a world tool by the last segment of its id. A
+        collision with an MCP tool is refused too: the world tool is the one that
+        can be dropped."""
+        world = self._make_world(project)
+        if other_kind == "code":
+            other_id = (
+                f"kiln_tool::code::{self._make_code_tool(project, 'sql_query').id}"
+            )
+        else:
+            server = ExternalToolServer(
+                name="server",
+                type=ToolServerType.remote_mcp,
+                properties={
+                    "server_url": "https://a.example.com",
+                    "is_archived": False,
+                },
+                parent=project,
+            )
+            server.save_to_file()
+            other_id = f"mcp::remote::{server.id}::sql_query"
+        with pytest.raises(ValueError, match="share the same function name: sql_query"):
+            await validate_unique_allowlist_tool_names(
+                [build_world_tool_id(world.id, "sql_query"), other_id], project
+            )
+
+    async def test_world_tools_do_not_skip_other_tool_checks(self, project):
+        """A missing tool or a name collision among the other tools is still refused
+        when world tools are listed too."""
+        world = self._make_world(project)
+        world_tool = build_world_tool_id(world.id, "sql_query")
+        with pytest.raises(ValueError, match="Code tool not found"):
+            await validate_unique_allowlist_tool_names(
+                [world_tool, "kiln_tool::code::missing"], project
+            )
+        dup_a = self._make_code_tool(project, "dup_tool")
+        dup_b = self._make_code_tool(project, "dup_tool")
+        with pytest.raises(ValueError, match="share the same function name: dup_tool"):
+            await validate_unique_allowlist_tool_names(
+                [
+                    world_tool,
+                    f"kiln_tool::code::{dup_a.id}",
+                    f"kiln_tool::code::{dup_b.id}",
                 ],
                 project,
             )

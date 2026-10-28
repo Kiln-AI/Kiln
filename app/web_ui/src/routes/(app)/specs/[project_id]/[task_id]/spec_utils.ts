@@ -11,12 +11,6 @@ export type SuggestedEdit = {
 }
 
 /**
- * The creation workflow the spec builder runs, carried as a `workflow` query
- * param. Manual is the only one: the builder fills the template form by hand.
- */
-export type SpecWorkflow = "manual"
-
-/**
  * The judge each template implies. Programmatic judges are chosen directly on
  * the template picker (not via a template), so every template's judge is
  * implied: an LLM judge for the written-rubric templates, and the Tool Call
@@ -80,7 +74,7 @@ export function judge_only_builder_url(
   task_id: string,
   judge: V2EvalType,
 ): string {
-  const params = new URLSearchParams({ judge, workflow: "manual" })
+  const params = new URLSearchParams({ judge })
   return `/specs/${project_id}/${task_id}/spec_builder?${params.toString()}`
 }
 
@@ -95,19 +89,17 @@ export function next_page_after_judge(
   spec_type: SpecType,
   judge: V2EvalType,
 ): string {
-  return spec_builder_url(project_id, task_id, spec_type, "manual", judge)
+  return spec_builder_url(project_id, task_id, spec_type, judge)
 }
 
 export function spec_builder_url(
   project_id: string,
   task_id: string,
   spec_type: SpecType,
-  workflow: SpecWorkflow,
   judge: V2EvalType,
 ): string {
   const params = new URLSearchParams({
     type: spec_type,
-    workflow,
     judge,
   })
   return `/specs/${project_id}/${task_id}/spec_builder?${params.toString()}`
@@ -214,6 +206,34 @@ export async function updateEvalStatus(
   })
 
   return data
+}
+
+/**
+ * Check a candidate eval name against the task's existing specs, using the
+ * case- and spacing-insensitive comparison that spec creation enforces.
+ * @returns The candidate when it is free, or the nearest available suffixed
+ * variant with was_taken set. Null when the check itself fails.
+ */
+export async function resolve_available_name(
+  project_id: string,
+  task_id: string,
+  candidate: string,
+): Promise<components["schemas"]["AvailableSpecNameResponse"] | null> {
+  try {
+    const { data, error } = await client.GET(
+      "/api/projects/{project_id}/tasks/{task_id}/available_spec_name",
+      {
+        params: {
+          path: { project_id, task_id },
+          query: { name: candidate },
+        },
+      },
+    )
+    if (error || !data) return null
+    return data
+  } catch {
+    return null
+  }
 }
 
 /**

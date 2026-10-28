@@ -96,6 +96,7 @@ filterwarnings = [
 [tool.coverage.run]
 omit = [
     "**/test_*.py",
+    "**/*_for_tests.py",
     "libs/core/kiln_ai/adapters/ml_model_list.py",
     "**/conftest.py",
     "*/kiln_ai_server_client/*",

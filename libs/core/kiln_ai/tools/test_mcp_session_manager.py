@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 from mcp.shared.exceptions import McpError
-from mcp.types import ErrorData
+from mcp.types import ErrorData, TextContent
 from pydantic import ValidationError
 
 from kiln_ai.datamodel.external_tool_server import (
@@ -1503,20 +1503,22 @@ class TestMCPSessionManager:
                 pass
 
 
+def _text_blocks(result) -> list[str]:
+    """The text of a tool result, which is what these tests assert on."""
+    return [b.text for b in result.content if isinstance(b, TextContent)]
+
+
 class TestMCPServerIntegration:
     """Integration tests for MCPServer using real services."""
 
-    @pytest.mark.skip(
-        reason="Skipping integration test since it requires calling a real MCP server"
-    )
-    async def test_list_tools_with_real_remote_mcp_server(self):
-        """Test list_tools with a real MCP server if available."""
+    async def test_list_tools_with_real_remote_mcp_server(self, mcp_echo_http_url):
+        """Test list_tools against a real server over streamable HTTP."""
         external_tool_server = ExternalToolServer(
-            name="postman_echo",
+            name="echo_http",
             type=ToolServerType.remote_mcp,
-            description="Postman Echo MCP Server for testing",
+            description="Echo MCP server over streamable HTTP",
             properties={
-                "server_url": "https://postman-echo-mcp.fly.dev/",
+                "server_url": mcp_echo_http_url,
                 "is_archived": False,
             },
         )
@@ -1530,21 +1532,13 @@ class TestMCPServerIntegration:
         assert len(tools.tools) > 0
         assert "echo" in [tool.name for tool in tools.tools]
 
-    @pytest.mark.skip(
-        reason="Skipping integration test since it requires calling a real MCP server"
-    )
-    async def test_list_tools_with_real_local_mcp_server(self):
-        """Test list_tools with a real local MCP server if available."""
+    async def test_list_tools_with_real_local_mcp_server(self, mcp_echo_stdio_command):
+        """Test list_tools against a real server over stdio."""
         external_tool_server = ExternalToolServer(
-            name="Firecrawl",
+            name="echo_stdio",
             type=ToolServerType.local_mcp,
-            description="Firecrawl MCP Server for testing",
-            properties={
-                "command": "npx",
-                "args": ["-y", "firecrawl-mcp"],
-                "env_vars": {"FIRECRAWL_API_KEY": "REPLACE_WITH_YOUR_API_KEY"},
-                "is_archived": False,
-            },
+            description="Echo MCP server over stdio",
+            properties=mcp_echo_stdio_command,
         )
 
         async with MCPSessionManager.shared().mcp_client(
@@ -1554,7 +1548,55 @@ class TestMCPServerIntegration:
 
         assert tools is not None
         assert len(tools.tools) > 0
-        assert "firecrawl_scrape" in [tool.name for tool in tools.tools]
+        assert "echo" in [tool.name for tool in tools.tools]
+
+    async def test_call_tool_on_real_local_mcp_server(self, mcp_echo_stdio_command):
+        """Test call_tool over stdio, which list_tools alone does not reach."""
+        external_tool_server = ExternalToolServer(
+            name="echo_stdio",
+            type=ToolServerType.local_mcp,
+            description="Echo MCP server over stdio",
+            properties=mcp_echo_stdio_command,
+        )
+
+        async with MCPSessionManager.shared().mcp_client(
+            external_tool_server
+        ) as session:
+            result = await session.call_tool("echo", {"message": "over stdio"})
+
+        assert _text_blocks(result) == ["Tool echo: over stdio"]
+
+    async def test_env_vars_reach_real_local_mcp_server(self, mcp_echo_stdio_command):
+        """Test that the env vars the caller sets arrive in the server process.
+
+        A local server reads its credentials from the environment, and the
+        session manager merges the stored secrets into it. Only a real child
+        process shows that the merged environment arrives.
+        """
+        external_tool_server = ExternalToolServer(
+            name="echo_stdio_env",
+            type=ToolServerType.local_mcp,
+            description="Echo MCP server over stdio",
+            properties={
+                **mcp_echo_stdio_command,
+                "env_vars": {"KILN_TEST_PLAIN_VALUE": "plain"},
+                "secret_env_var_keys": ["KILN_TEST_SECRET_VALUE"],
+            },
+        )
+        external_tool_server._unsaved_secrets = {"KILN_TEST_SECRET_VALUE": "secret"}
+
+        async with MCPSessionManager.shared().mcp_client(
+            external_tool_server
+        ) as session:
+            plain = await session.call_tool(
+                "echo_env", {"name": "KILN_TEST_PLAIN_VALUE"}
+            )
+            secret = await session.call_tool(
+                "echo_env", {"name": "KILN_TEST_SECRET_VALUE"}
+            )
+
+        assert _text_blocks(plain) == ["plain"]
+        assert _text_blocks(secret) == ["secret"]
 
     async def test_local_mcp_nonexistent_command_raises_kiln_mcp_error(self):
         """Real integration test (no mocks): confirms that spawning a local MCP server
