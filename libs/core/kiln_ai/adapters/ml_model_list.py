@@ -448,6 +448,12 @@ class KilnModelProvider(BaseModel):
     # When true, send `reasoning: {effort: <level>}` instead of `reasoning_effort`.
     # Use only for OpenRouter models that require the reasoning-object format.
     openrouter_reasoning_object: bool = False
+    # We call LiteLLM with drop_params=True, so it drops OpenAI params it thinks the model
+    # does not support. It decides from its model cost map, which can be missing a model
+    # (or be the older bundled copy when the remote map can't be fetched). List params
+    # this provider is known to accept here, and they are sent regardless. Not for providers
+    # where LiteLLM translates the param (eg Anthropic, Gemini): it would send both forms.
+    litellm_allowed_openai_params: List[str] | None = None
     available_thinking_levels: dict[str, str] | None = None
     default_thinking_level: str | None = None
     ollama_model_aliases: List[str] | None = None
@@ -817,6 +823,24 @@ QWEN_3P8_GROQ_THINKING_LEVELS = {
     "Off/None": "none",
     "Low": "low",
     "Medium": "medium",
+}
+
+# Fireworks: Muse Spark Open accepts "xhigh" but reasons no longer than with "high",
+# so Extra High is left out here.
+MUSE_SPARK_OPEN_FIREWORKS_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+}
+
+# Fireworks: GLM 5.3 Flash is thinking-only ("none" is rejected). With no
+# reasoning_effort it reasons as long as with "max", so "max" is the default.
+# Fireworks does not document its levels for this model. It accepts "medium", but
+# measured on Fireworks "medium" reasons the same as "high", so Medium is left out.
+GLM_5P3_FLASH_FIREWORKS_THINKING_LEVELS = {
+    "Low": "low",
+    "High": "high",
+    "Max": "max",
 }
 
 # Cloudflare levels mirror `reasoning_effort.supported_efforts` in Cloudflare's
@@ -5603,8 +5627,10 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/muse-spark-open",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                # Fireworks streams nothing when reasoning_effort is set on this
-                # model (request hangs until timeout), so no thinking levels here.
+                # Not in LiteLLM's bundled model map, so it would drop reasoning_effort
+                litellm_allowed_openai_params=["reasoning_effort"],
+                available_thinking_levels=MUSE_SPARK_OPEN_FIREWORKS_THINKING_LEVELS,
+                default_thinking_level="medium",
                 supports_data_gen=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -9992,6 +10018,8 @@ built_in_models: List[KilnModel] = [
                 model_id="accounts/fireworks/models/glm-5p3-flash",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=False,
+                available_thinking_levels=GLM_5P3_FLASH_FIREWORKS_THINKING_LEVELS,
+                default_thinking_level="max",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -11418,6 +11446,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="arcee-ai/trinity-large-thinking",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
                 supports_function_calling=True,

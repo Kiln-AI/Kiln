@@ -162,7 +162,6 @@ test("rubric templates go straight from the type picker to the spec form", async
   // The template choice is the last question: no workflow screen in between.
   await expect(page).toHaveURL(/spec_builder\?.*judge=llm_judge/)
   await expect(page).toHaveURL(/type=toxicity/)
-  await expect(page).toHaveURL(/workflow=manual/)
   await expect(
     page.getByText("Toxicity Examples", { exact: true }),
   ).toBeVisible()
@@ -294,7 +293,7 @@ test("code judge: untouched does not warn, edited code does", async ({
 
   // The code editor doesn't emit bubbling input events, so it's tracked by value.
   await page.goto(
-    `/specs/${project.id}/${task.id}/spec_builder?judge=code_eval&workflow=manual`,
+    `/specs/${project.id}/${task.id}/spec_builder?judge=code_eval`,
   )
   await expect(page.getByRole("button", { name: "Save Eval" })).toBeVisible()
   await page.goBack()

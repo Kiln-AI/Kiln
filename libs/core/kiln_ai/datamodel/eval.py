@@ -1344,21 +1344,14 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
             return self
 
         from kiln_ai.utils.jinja_engine import (
+            checked_template_variables,
             compile_expression_or_raise,
-            compile_template_or_raise,
             expression_variables,
         )
 
         props = self.properties
         if isinstance(props, LlmJudgeProperties):
-            compile_template_or_raise(props.prompt_template)
-            from jinja2 import meta
-
-            from kiln_ai.utils.jinja_engine import _template_env
-
-            referenced = meta.find_undeclared_variables(
-                _template_env.parse(props.prompt_template)
-            )
+            referenced = checked_template_variables(props.prompt_template)
             meaningful = {"final_message", "trace", "task_input"}
             if not (referenced & meaningful):
                 raise ValueError(
