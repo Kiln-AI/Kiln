@@ -978,11 +978,9 @@ built_in_models: List[KilnModel] = [
                 supports_vision=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
-                    # documents
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
-                    # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
@@ -1012,11 +1010,9 @@ built_in_models: List[KilnModel] = [
                 supports_vision=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
-                    # documents
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
-                    # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
@@ -1035,11 +1031,9 @@ built_in_models: List[KilnModel] = [
                 supports_vision=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
-                    # documents
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
-                    # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
