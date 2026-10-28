@@ -50,6 +50,7 @@ class ModelFamily(str, Enum):
     elorian = "elorian"
     xingchen = "xingchen"
     ling = "ling"
+    inception = "inception"
     prismml = "prismml"
     paper_instruments = "paper_instruments"
 
@@ -328,6 +329,7 @@ class ModelName(str, Enum):
     hunyuan_hy3 = "hunyuan_hy3"
     hunyuan_a13b = "hunyuan_a13b"
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
+    minimax_m3_1_flash = "minimax_m3_1_flash"
     minimax_m3 = "minimax_m3"
     minimax_m2_7 = "minimax_m2_7"
     minimax_m2_5 = "minimax_m2_5"
@@ -357,6 +359,7 @@ class ModelName(str, Enum):
     glimpse = "glimpse"
     xing_4_0_29b_a4b = "xing_4_0_29b_a4b"
     ling_3_1_flash = "ling_3_1_flash"
+    mercury_3 = "mercury_3"
     ternary_bonsai_2_9b = "ternary_bonsai_2_9b"
     ultramarine_1_flash = "ultramarine_1_flash"
 
@@ -11049,6 +11052,64 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    KilnModel(
+        family=ModelFamily.minimax,
+        name=ModelName.minimax_m3_1_flash,
+        friendly_name="Minimax M3.1 Flash",
+        editorial_notes="MiniMax's faster M3.1 variant. 1M context, native image and video input, built for agentic tasks.",
+        providers=[
+            # Unlike M3, M3.1 Flash does not always return reasoning on OpenRouter,
+            # so the R1 parser and required reasoning are off.
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="minimax/minimax-m3.1-flash",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # documents (via PDF-as-image)
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+            ),
+            # Fireworks lists image input for M3.1 Flash, unlike its text-only M3.
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/minimax-m3p1-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+            ),
+            # Together serves the raw weights, which can emit <think> inline, so the
+            # optional parser strips the tags when present.
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="MiniMaxAI/MiniMax-M3.1-Flash",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.optional_r1_thinking,
+                supports_data_gen=True,
+                supports_function_calling=False,
+            ),
+        ],
+    ),
     # Minimax M3
     # 1M context, native multimodal (text/image/video input), sparse attention
     KilnModel(
@@ -11389,6 +11450,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="arcee-ai/trinity-large-thinking",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
                 supports_function_calling=True,
@@ -11917,6 +11979,20 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="inclusionai/ling-3.1-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.inception,
+        name=ModelName.mercury_3,
+        friendly_name="Mercury 3",
+        editorial_notes="Inception's diffusion-based language model, built for low-latency agentic workflows. Text only, 1M context.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="inception/mercury-3",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
