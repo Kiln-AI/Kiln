@@ -11076,6 +11076,24 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MOV,
                 ],
             ),
+            # Fireworks lists image input for M3.1 Flash, unlike its text-only M3.
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/minimax-m3p1-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+            ),
             # Together serves the raw weights, which can emit <think> inline, so the
             # optional parser strips the tags when present.
             KilnModelProvider(
