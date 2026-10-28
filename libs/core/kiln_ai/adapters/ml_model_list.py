@@ -6823,8 +6823,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
-                suggested_for_synthetic_user=True,
                 model_id="deepseek-ai/DeepSeek-V4-Flash-0731",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
             ),
