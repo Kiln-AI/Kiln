@@ -51,6 +51,8 @@ class ModelFamily(str, Enum):
     xingchen = "xingchen"
     ling = "ling"
     inception = "inception"
+    prismml = "prismml"
+    paper_instruments = "paper_instruments"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -361,6 +363,8 @@ class ModelName(str, Enum):
     xing_4_0_29b_a4b = "xing_4_0_29b_a4b"
     ling_3_1_flash = "ling_3_1_flash"
     mercury_3 = "mercury_3"
+    ternary_bonsai_2_9b = "ternary_bonsai_2_9b"
+    ultramarine_1_flash = "ultramarine_1_flash"
 
 
 class ModelParserID(str, Enum):
@@ -12105,6 +12109,56 @@ built_in_models: List[KilnModel] = [
                 model_id="inception/mercury-3",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
+            ),
+        ],
+    ),
+    # Ternary Bonsai 2 9B
+    KilnModel(
+        family=ModelFamily.prismml,
+        name=ModelName.ternary_bonsai_2_9b,
+        friendly_name="Ternary Bonsai 2 9B",
+        editorial_notes="PrismML's compact open-weights model with ternary weights, built on Qwen 3.5 9B. Text and image input, 256K context.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="prism-ml/ternary-bonsai-2-9b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Ultramarine 1 Flash
+    KilnModel(
+        family=ModelFamily.paper_instruments,
+        name=ModelName.ultramarine_1_flash,
+        friendly_name="Ultramarine 1 Flash",
+        editorial_notes="Paper Instruments' model for professional knowledge work, post-trained from GLM 5.3 Flash. 1M context.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/ultramarine-1-flash-us",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
