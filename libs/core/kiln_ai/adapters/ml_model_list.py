@@ -296,6 +296,7 @@ class ModelName(str, Enum):
     qwen_3_vl_30b_a3b_no_thinking = "qwen_3_vl_30b_a3b_no_thinking"
     qwen_3_vl_8b_no_thinking = "qwen_3_vl_8b_no_thinking"
     qwen_long_l1_32b = "qwen_long_l1_32b"
+    kimi_k3_1_pro = "kimi_k3_1_pro"
     kimi_k3 = "kimi_k3"
     kimi_k3_fast = "kimi_k3_fast"
     kimi_k2_6 = "kimi_k2_6"
@@ -10664,6 +10665,35 @@ built_in_models: List[KilnModel] = [
                 reasoning_optional_for_structured_output=True,
                 supports_data_gen=False,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.kimi,
+        name=ModelName.kimi_k3_1_pro,
+        friendly_name="Kimi K3.1 Pro",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="moonshotai/kimi-k3.1-pro",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=KIMI_K3_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
             ),
         ],
     ),
