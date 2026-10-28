@@ -209,6 +209,34 @@ export async function updateEvalStatus(
 }
 
 /**
+ * Check a candidate eval name against the task's existing specs, using the
+ * case- and spacing-insensitive comparison that spec creation enforces.
+ * @returns The candidate when it is free, or the nearest available suffixed
+ * variant with was_taken set. Null when the check itself fails.
+ */
+export async function resolve_available_name(
+  project_id: string,
+  task_id: string,
+  candidate: string,
+): Promise<components["schemas"]["AvailableSpecNameResponse"] | null> {
+  try {
+    const { data, error } = await client.GET(
+      "/api/projects/{project_id}/tasks/{task_id}/available_spec_name",
+      {
+        params: {
+          path: { project_id, task_id },
+          query: { name: candidate },
+        },
+      },
+    )
+    if (error || !data) return null
+    return data
+  } catch {
+    return null
+  }
+}
+
+/**
  * Extract a tag from a filter_id string (e.g., "tag::my_tag" -> "my_tag")
  * @param filter_id - The filter ID to extract the tag from
  * @returns The tag if the filter_id is a tag filter, undefined otherwise

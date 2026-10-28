@@ -166,6 +166,54 @@ def generate_spec_eval_tags(spec_name: str) -> SpecEvalTags:
     )
 
 
+class SpecNameConflictError(ValueError):
+    """A spec name that can't be used without sharing another spec's eval tags."""
+
+
+class AvailableSpecName(NamedTuple):
+    name: str
+    was_taken: bool
+
+
+def resolve_available_spec_name(
+    candidate: str, existing_names: list[str]
+) -> AvailableSpecName:
+    """Return `candidate` if no existing name derives the same eval tags, else
+    the first free variant.
+
+    Variants add ` 2` through ` 99`, trimming the base and any trailing spaces
+    or underscores so the result stays within 32 characters.
+
+    Raises SpecNameConflictError if every variant is taken.
+    """
+    taken = {generate_spec_eval_tags(name).test_tag for name in existing_names}
+    if generate_spec_eval_tags(candidate).test_tag not in taken:
+        return AvailableSpecName(name=candidate, was_taken=False)
+    max_length = 32  # FilenameStringShort's cap; validated on the way in
+    for i in range(2, 100):
+        suffix = f" {i}"
+        base = candidate[: max_length - len(suffix)].rstrip("_ ")
+        variant = f"{base}{suffix}"
+        if generate_spec_eval_tags(variant).test_tag not in taken:
+            return AvailableSpecName(name=variant, was_taken=True)
+    raise SpecNameConflictError(f"No available variant of '{candidate}' was found.")
+
+
+def ensure_spec_name_available(task: Task, name: str) -> None:
+    """Raise SpecNameConflictError if `name` derives the same eval tags as one
+    of the task's existing specs. The message names the nearest available
+    variant.
+    """
+    available = resolve_available_spec_name(
+        name, [spec.name for spec in task.specs(readonly=True)]
+    )
+    if available.was_taken:
+        raise SpecNameConflictError(
+            f"A spec named '{name}' (or one differing only by case or spacing) "
+            f"already exists for this task. Try '{available.name}' instead."
+        )
+
+
 def tag_filter_id(tag: str) -> DatasetFilterId:
     """The dataset filter that selects the items carrying a tag."""
     return f"tag::{tag}"
