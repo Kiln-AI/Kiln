@@ -3298,6 +3298,26 @@ class TestV2TemplateValidation:
                 ),
             )
 
+    @pytest.mark.parametrize(
+        "template, error",
+        [
+            ("Hello {{ broken", "Invalid Jinja2 template"),
+            ("{{ reference_data }}", "never references the model output"),
+        ],
+    )
+    def test_bad_prompt_template_rejected_every_time(self, template, error):
+        """The template check is cached per template. A bad template must still fail
+        every validation, not only the first."""
+        for _ in range(3):
+            with pytest.raises(ValidationError, match=error):
+                _make_v2_eval_config(
+                    properties=LlmJudgeProperties(
+                        model_name="m",
+                        model_provider="p",
+                        prompt_template=template,
+                    ),
+                )
+
     def test_static_prompt_template_rejected(self):
         """A prompt_template with no Jinja expressions is rejected."""
         with pytest.raises(ValidationError, match="never references the model output"):

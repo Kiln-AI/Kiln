@@ -20,7 +20,8 @@ concurrency:
 jobs:
   test:
     timeout-minutes: 60
-    runs-on: ubuntu-latest
+    # Playwright 1.60 cannot install Chromium on ubuntu-26.04, which ubuntu-latest can pick.
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: ./app/web_ui

@@ -3,7 +3,7 @@ import logging
 from unittest.mock import patch
 
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.datamodel_enums import Priority
@@ -23,7 +23,11 @@ from kiln_ai.datamodel.spec_properties import (
 )
 
 from kiln_server.custom_errors import connect_custom_errors
-from kiln_server.spec_api import connect_spec_api, resolve_available_spec_name
+from kiln_server.spec_api import connect_spec_api
+from kiln_server.utils.spec_utils import (
+    SpecNameConflictError,
+    resolve_available_spec_name,
+)
 
 
 @pytest.fixture
@@ -92,6 +96,18 @@ def create_reference_answer_accuracy_properties_dict():
         "accurate_examples": "Accurate example",
         "inaccurate_examples": "Inaccurate example",
     }
+
+
+def post_spec(client, project, task, name: str):
+    with patch("kiln_server.spec_api.task_from_id", return_value=task):
+        return client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs",
+            json={
+                "name": name,
+                "definition": "The system should always respond politely",
+                "properties": create_tone_properties_dict(),
+            },
+        )
 
 
 @pytest.fixture
@@ -1590,9 +1606,8 @@ class TestResolveAvailableSpecName:
 
     def test_exhausted_search_refuses(self):
         taken = ["name"] + [f"name {i}" for i in range(2, 100)]
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(SpecNameConflictError):
             resolve_available_spec_name("name", taken)
-        assert exc.value.status_code == 409
 
 
 def test_available_spec_name_route(client, project_and_task):
@@ -1634,6 +1649,27 @@ def test_available_spec_name_route_rejects_invalid_candidate(client, project_and
     # the save request enforces. Validation fires before task resolution.
     response = client.get(url, params={"name": "x" * 33})
     assert response.status_code == 422
+
+
+def test_available_spec_name_route_returns_409_when_no_variant_is_free(
+    client, project_and_task
+):
+    project, task = project_and_task
+    url = f"/api/projects/{project.id}/tasks/{task.id}/available_spec_name"
+
+    with (
+        patch("kiln_server.spec_api.task_from_id", return_value=task),
+        patch(
+            "kiln_server.spec_api.resolve_available_spec_name",
+            side_effect=SpecNameConflictError(
+                "No available variant of 'name' was found."
+            ),
+        ),
+    ):
+        response = client.get(url, params={"name": "name"})
+
+    assert response.status_code == 409
+    assert response.json()["message"] == "No available variant of 'name' was found."
 
 
 def test_available_spec_name_route_task_not_found(client):
@@ -1702,3 +1738,41 @@ def test_update_spec_priority_status_sync_to_eval(client, project_and_task):
     assert len(evals) == 1
     assert evals[0].priority == Priority.p3
     assert evals[0].status == SpecStatus.archived
+
+
+@pytest.mark.parametrize(
+    "second_name",
+    [
+        "Test Spec",  # the same name
+        "test spec",  # differs only by case
+        "Test_Spec",  # differs only by spacing
+    ],
+)
+def test_create_spec_rejects_name_with_taken_eval_tags(
+    client, project_and_task, second_name
+):
+    project, task = project_and_task
+    assert post_spec(client, project, task, "Test Spec").status_code == 200
+
+    response = post_spec(client, project, task, second_name)
+
+    assert response.status_code == 409
+    assert response.json()["message"] == (
+        f"A spec named '{second_name}' (or one differing only by case or spacing) "
+        f"already exists for this task. Try '{second_name} 2' instead."
+    )
+    assert [spec.name for spec in task.specs()] == ["Test Spec"]
+    assert len(task.evals()) == 1
+
+
+def test_create_spec_allows_near_miss_name(client, project_and_task):
+    """A name that only shares a prefix with an existing spec, such as the
+    variant the duplicate-name error suggests, derives its own eval tags."""
+    project, task = project_and_task
+    assert post_spec(client, project, task, "Test Spec").status_code == 200
+
+    response = post_spec(client, project, task, "Test Spec 2")
+
+    assert response.status_code == 200
+    assert sorted(spec.name for spec in task.specs()) == ["Test Spec", "Test Spec 2"]
+    assert len(task.evals()) == 2
