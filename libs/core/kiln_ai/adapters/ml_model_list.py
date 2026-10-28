@@ -11428,6 +11428,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="arcee-ai/trinity-large-thinking",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
                 supports_function_calling=True,
