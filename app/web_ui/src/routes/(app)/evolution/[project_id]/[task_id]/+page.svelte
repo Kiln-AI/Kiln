@@ -34,6 +34,7 @@
     primary_parent_id,
   } from "$lib/utils/evolution/graph_assembly"
   import { layout_forest } from "$lib/utils/evolution/layout"
+  import { MAP_DEFAULT_MIN_NODES } from "$lib/utils/evolution/map_view"
   import type {
     Lens,
     LensData,
@@ -303,7 +304,15 @@
   // Track if we're initializing from URL to avoid updating URL during load
   let isInitializing = true
 
-  let canvas: EvolutionCanvas | null = null
+  // The graph card fills the window (Expand in the graph header; Esc closes)
+  let graph_expanded = false
+
+  // Graph view: null until the reader picks one, then "map" or "detail". With
+  // no pick a large task opens on the map, where every run config fits.
+  let graph_view: "map" | "detail" | null = null
+  $: effective_graph_view =
+    graph_view ??
+    (forest.nodes.size >= MAP_DEFAULT_MIN_NODES ? "map" : "detail")
 
   $: lens = parse_lens_key(
     typeof lens_selected === "string" ? lens_selected : null,
@@ -314,6 +323,10 @@
     const urlLens = urlParams.get("lens")
     if (urlLens) {
       lens_selected = urlLens
+    }
+    const urlView = urlParams.get("view")
+    if (urlView === "map" || urlView === "detail") {
+      graph_view = urlView
     }
     const urlSel = urlParams.get("sel")
     if (urlSel) {
@@ -459,6 +472,11 @@
     } else {
       urlParams.delete("lens")
     }
+    if (graph_view) {
+      urlParams.set("view", graph_view)
+    } else {
+      urlParams.delete("view")
+    }
     if (selected_id) {
       urlParams.set("sel", selected_id)
     } else {
@@ -539,6 +557,7 @@
   $: sync_url(
     isInitializing,
     lens_selected,
+    graph_view,
     selected_id,
     split_view,
     match_predicate,
@@ -854,21 +873,8 @@
   $: selected_node = selected_id ? forest.nodes.get(selected_id) ?? null : null
 
   // Docking the detail panel takes 400px off the canvas (and undocking gives it
-  // back), so the graph is re-fit to the new width - otherwise the transform
-  // from the old width leaves it off-center or half out of view. Only the
-  // transitions matter: re-fitting on every selection change would throw away
-  // the pan/zoom the user set while clicking around the graph.
-  let panel_was_docked = false
-  $: refit_on_dock_change(!!selected_node)
-  async function refit_on_dock_change(docked: boolean) {
-    if (docked === panel_was_docked) {
-      return
-    }
-    panel_was_docked = docked
-    // Wait for the column to be added/removed before measuring the viewport.
-    await tick()
-    canvas?.fit()
-  }
+  // back); the canvas keeps the point at its center in place when its width
+  // changes, so the pan/zoom the reader set survives clicking around.
 
   // Lazily fetch the selected node's detailed eval scores
   $: if (selected_node && !selected_node.ghost) {
@@ -2259,6 +2265,14 @@
   }
 </script>
 
+<svelte:window
+  on:keydown={(event) => {
+    if (event.key === "Escape" && graph_expanded) {
+      graph_expanded = false
+    }
+  }}
+/>
+
 <AppPage title="Compare" subtitle="Run config lineage, scores, and drill-downs">
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -2346,32 +2360,6 @@
           {/each}
         </div>
       </div>
-      <div class="flex-grow"></div>
-      {#if forest.edges.length > 0}
-        <div class="join">
-          <button
-            class="btn btn-sm btn-outline join-item"
-            title="Zoom out"
-            on:click={() => canvas?.zoom_by(1 / 1.25)}
-          >
-            −
-          </button>
-          <button
-            class="btn btn-sm btn-outline join-item"
-            title="Fit graph to view"
-            on:click={() => canvas?.fit()}
-          >
-            Fit
-          </button>
-          <button
-            class="btn btn-sm btn-outline join-item"
-            title="Zoom in"
-            on:click={() => canvas?.zoom_by(1.25)}
-          >
-            +
-          </button>
-        </div>
-      {/if}
     </div>
 
     <!-- The three sections stack full width: graph, radar, matrix. Each one
@@ -2384,12 +2372,13 @@
          overlaps the radar below, and the canvas simply takes the width that's
          left. -->
     <div
-      class="min-w-0 h-[560px] min-h-[560px] flex flex-row rounded-lg border border-gray-200 overflow-hidden"
+      class="min-w-0 flex flex-row border-gray-200 overflow-hidden bg-white {graph_expanded
+        ? 'fixed inset-0 z-50'
+        : 'h-[560px] min-h-[560px] rounded-lg border'}"
     >
       <div class="flex-1 min-w-0">
         {#if forest.edges.length > 0}
           <EvolutionCanvas
-            bind:this={canvas}
             {forest}
             {layout}
             {displays}
@@ -2397,8 +2386,12 @@
             {project_id}
             {prompts}
             {pins}
+            view={effective_graph_view}
+            expanded={graph_expanded}
             on:select={(event) => handle_select(event.detail)}
             on:toggle_pin={(event) => toggle_pin(event.detail)}
+            on:view_change={(event) => (graph_view = event.detail)}
+            on:toggle_expand={() => (graph_expanded = !graph_expanded)}
           />
         {:else}
           <!-- Empty state: no lineage recorded at all. Fills the same card, so
@@ -2420,9 +2413,9 @@
 
       {#if selected_node}
         <!-- Intro-only transition: the column takes its full width immediately
-             (so the canvas re-fits against a settled layout) and the panel
-             fades in over it. An outro would hold the width open while the
-             canvas has already been told to re-fit. -->
+             (so the canvas re-centers once, on a settled width) and the panel
+             fades in over it. An outro would hold the width open after the
+             canvas has re-centered. -->
         <div
           class="w-[400px] flex-none border-l border-gray-200 bg-white overflow-hidden"
           in:fly={{ x: 16, duration: 150, easing: cubicOut }}

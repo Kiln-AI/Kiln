@@ -10,6 +10,24 @@ export const V_GAP_GEN = 70
 // Vertical separation between two stacked components
 export const COMPONENT_GAP = 120
 
+// Card and gap sizes of one layout. The detail view lays out full cards; the
+// map view (map_view.ts) runs the same algorithm on small blocks.
+export interface LayoutSizes {
+  nodeW: number
+  nodeH: number
+  hGap: number
+  vGap: number
+  componentGap: number
+}
+
+export const DETAIL_SIZES: LayoutSizes = {
+  nodeW: NODE_W,
+  nodeH: NODE_H,
+  hGap: H_GAP_SIB,
+  vGap: V_GAP_GEN,
+  componentGap: COMPONENT_GAP,
+}
+
 export interface EvolutionLayout {
   positions: Map<string, { x: number; y: number }>
   edgePaths: Map<string, { d: string; chipAt: { x: number; y: number } }>
@@ -17,7 +35,7 @@ export interface EvolutionLayout {
 }
 
 // Sort helper: created_at ascending, nulls (ghosts) first, id as tiebreaker.
-function created_asc(a: EvoNode, b: EvoNode): number {
+export function created_asc(a: EvoNode, b: EvoNode): number {
   const ca = a.created_at ?? ""
   const cb = b.created_at ?? ""
   if (ca !== cb) {
@@ -31,7 +49,11 @@ function created_asc(a: EvoNode, b: EvoNode): number {
 // placement tree (multi-parent nodes hang under their primary parent only),
 // then a per-row collision pass pushes overlapping cards right. Components
 // stack vertically, one below the other.
-export function layout_forest(forest: EvoForest): EvolutionLayout {
+export function layout_forest(
+  forest: EvoForest,
+  sizes: LayoutSizes = DETAIL_SIZES,
+): EvolutionLayout {
+  const { nodeW, nodeH, hGap, vGap, componentGap } = sizes
   const positions = new Map<string, { x: number; y: number }>()
   let previous_bottom = 0
   let first_component = true
@@ -100,13 +122,13 @@ export function layout_forest(forest: EvoForest): EvolutionLayout {
     const component_positions = new Map<string, { x: number; y: number }>()
     for (const node of members) {
       component_positions.set(node.id, {
-        x: (cols.get(node.id) ?? 0) * (NODE_W + H_GAP_SIB),
-        y: node.depth * (NODE_H + V_GAP_GEN),
+        x: (cols.get(node.id) ?? 0) * (nodeW + hGap),
+        y: node.depth * (nodeH + vGap),
       })
     }
 
     // Collision pass per generation row: sweep in column order, pushing each
-    // card right so it clears the previous card's right edge by H_GAP_SIB.
+    // card right so it clears the previous card's right edge by hGap.
     const generations = new Map<number, EvoNode[]>()
     for (const node of members) {
       const generation = generations.get(node.depth) ?? []
@@ -125,23 +147,23 @@ export function layout_forest(forest: EvoForest): EvolutionLayout {
         if (!pos) {
           continue
         }
-        if (pos.x < prev_right + H_GAP_SIB) {
-          pos.x = prev_right + H_GAP_SIB
+        if (pos.x < prev_right + hGap) {
+          pos.x = prev_right + hGap
         }
-        prev_right = pos.x + NODE_W
+        prev_right = pos.x + nodeW
       }
     }
 
     // Stack this component below the previous one, left-aligned at x = 0
     const min_x = Math.min(...[...component_positions.values()].map((p) => p.x))
     const min_y = Math.min(...[...component_positions.values()].map((p) => p.y))
-    const start_y = first_component ? 0 : previous_bottom + COMPONENT_GAP
+    const start_y = first_component ? 0 : previous_bottom + componentGap
     const offset_x = -min_x
     const offset_y = start_y - min_y
     for (const [id, pos] of component_positions) {
       const final = { x: pos.x + offset_x, y: pos.y + offset_y }
       positions.set(id, final)
-      previous_bottom = Math.max(previous_bottom, final.y + NODE_H)
+      previous_bottom = Math.max(previous_bottom, final.y + nodeH)
     }
     first_component = false
   }
@@ -160,9 +182,9 @@ export function layout_forest(forest: EvoForest): EvolutionLayout {
     if (!parent_pos || !child_pos) {
       continue
     }
-    const x1 = parent_pos.x + NODE_W / 2
-    const y1 = parent_pos.y + NODE_H
-    const x2 = child_pos.x + NODE_W / 2
+    const x1 = parent_pos.x + nodeW / 2
+    const y1 = parent_pos.y + nodeH
+    const x2 = child_pos.x + nodeW / 2
     const y2 = child_pos.y
     const mid_y = (y1 + y2) / 2
     edgePaths.set(edge.id, {
@@ -174,8 +196,8 @@ export function layout_forest(forest: EvoForest): EvolutionLayout {
   let width = 0
   let height = 0
   for (const pos of positions.values()) {
-    width = Math.max(width, pos.x + NODE_W)
-    height = Math.max(height, pos.y + NODE_H)
+    width = Math.max(width, pos.x + nodeW)
+    height = Math.max(height, pos.y + nodeH)
   }
 
   return { positions, edgePaths, world: { width, height } }
