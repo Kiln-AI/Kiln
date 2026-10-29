@@ -307,6 +307,12 @@
   // The graph card fills the window (Expand in the graph header; Esc closes)
   let graph_expanded = false
 
+  // The page opens simple: the map of every run config, and the quality and
+  // performance charts for the configs clicked in it. No toolbar, no detail
+  // panel, no tables. ?full=1 brings back the whole page.
+  let full_page = false
+  const SIMPLE_METRIC_FAMILIES: MetricFamily[] = ["cost", "speed"]
+
   // Graph view: null until the reader picks one, then "map" or "detail". With
   // no pick a large task opens on the map, where every run config fits.
   let graph_view: "map" | "detail" | null = null
@@ -324,6 +330,7 @@
     if (urlLens) {
       lens_selected = urlLens
     }
+    full_page = urlParams.get("full") === "1"
     const urlView = urlParams.get("view")
     if (urlView === "map" || urlView === "detail") {
       graph_view = urlView
@@ -1600,8 +1607,14 @@
   $: shown_metric_keys = metric_axis_keys ?? default_metric_keys
   // Filtered from the canonical list rather than mapped from the selection, so
   // the axis order is stable no matter what order they were switched on in.
-  $: shown_metric_axes = visible_axes.filter((axis) =>
-    shown_metric_keys.includes(axis.key),
+  $: shown_metric_axes = visible_axes.filter(
+    (axis) =>
+      shown_metric_keys.includes(axis.key) &&
+      // The simple page keeps to money, time and total tokens (the chart
+      // needs three metrics)
+      (full_page ||
+        SIMPLE_METRIC_FAMILIES.includes(axis.family) ||
+        axis.key === TOTAL_TOKENS_KEY),
   )
 
   function toggle_metric_axis(key: string) {
@@ -2273,7 +2286,12 @@
   }}
 />
 
-<AppPage title="Compare" subtitle="Run config lineage, scores, and drill-downs">
+<AppPage
+  title="Compare"
+  subtitle={full_page
+    ? "Run config lineage, scores, and drill-downs"
+    : "Every run config we tried. Click one to compare it below."}
+>
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
       <div class="loading loading-spinner loading-lg"></div>
@@ -2288,8 +2306,12 @@
       </div>
     </div>
   {:else}
-    <!-- Toolbar -->
-    <div class="flex flex-row items-center gap-4 mb-4 flex-wrap">
+    <!-- Toolbar (full page only) -->
+    <div
+      class="flex flex-row items-center gap-4 mb-4 flex-wrap {full_page
+        ? ''
+        : 'hidden'}"
+    >
       <div class="w-72">
         <FancySelect
           aria_label="Score lens"
@@ -2386,7 +2408,9 @@
             {project_id}
             {prompts}
             {pins}
-            view={effective_graph_view}
+            view={full_page ? effective_graph_view : "map"}
+            simple={!full_page}
+            pin_colors={series_colors}
             expanded={graph_expanded}
             on:select={(event) => handle_select(event.detail)}
             on:toggle_pin={(event) => toggle_pin(event.detail)}
@@ -2411,7 +2435,7 @@
         {/if}
       </div>
 
-      {#if selected_node}
+      {#if selected_node && full_page}
         <!-- Intro-only transition: the column takes its full width immediately
              (so the canvas re-centers once, on a settled width) and the panel
              fades in over it. An outro would hold the width open after the
@@ -2459,7 +2483,7 @@
          charts because it governs all of them, and rendered at every
          predicate - including the default, where the fact worth stating is
          that the configs are NOT on the same conversations. -->
-    {#if pinned_nodes.length > 0}
+    {#if pinned_nodes.length > 0 && full_page}
       <div class="mt-3">
         <ComparisonBasis
           applied={match_result.applied}
@@ -2516,6 +2540,7 @@
             specDescriptions={spec_descriptions}
             getSampleSize={get_sample_size}
             title="Quality Scores"
+            show_not_shown_note={full_page}
             subtitle={`Eval scores for the selected run configurations.${
               split_scope_label ? ` ${split_scope_label} only.` : ""
             }${
@@ -2532,7 +2557,9 @@
           >
             <div class="text-lg font-medium text-gray-900 mb-1">
               {#if pinned_nodes.length === 0}
-                Pin configs to compare
+                {full_page
+                  ? "Pin configs to compare"
+                  : "Pick configs to compare"}
               {:else if quality_all_hidden}
                 Every quality score is hidden
               {:else}
@@ -2540,7 +2567,10 @@
               {/if}
             </div>
             <div class="text-sm text-gray-500 max-w-md">
-              {#if pinned_nodes.length === 0}
+              {#if pinned_nodes.length === 0 && !full_page}
+                Click run configs in the map above. Up to {MAX_PINS} are charted
+                here.
+              {:else if pinned_nodes.length === 0}
                 Select a run config, or hover a card and hit Pin, to build a
                 compare set. Up to {MAX_PINS} configs are charted here and listed
                 in the table below.
@@ -2572,25 +2602,30 @@
           selectedRunConfigIds={visible_pinned_ids}
           seriesColors={series_colors}
           seriesLabels={series_labels}
-          notShownNote={metrics_not_shown_note}
+          notShownNote={full_page ? metrics_not_shown_note : null}
           availableAxisCount={visible_axes.length}
           hiddenAxisCount={hidden_axis_count}
         >
-          <FloatingMenu slot="controls" items={metric_menu_items} width="w-64">
-            <button
-              slot="trigger"
-              type="button"
-              class="btn btn-sm font-normal"
-              title="Choose which metrics are plotted"
-            >
-              Metrics ({shown_metric_axes.length})
-            </button>
-          </FloatingMenu>
+          <svelte:fragment slot="controls">
+            {#if full_page}
+              <FloatingMenu items={metric_menu_items} width="w-64">
+                <button
+                  slot="trigger"
+                  type="button"
+                  class="btn btn-sm font-normal"
+                  title="Choose which metrics are plotted"
+                >
+                  Metrics ({shown_metric_axes.length})
+                </button>
+              </FloatingMenu>
+            {/if}
+          </svelte:fragment>
         </CompareMetricsBarChart>
       </div>
     </div>
 
-    <!-- Section 2a: the shipping decision. Quality held to a floor, then the
+    {#if full_page}
+      <!-- Section 2a: the shipping decision. Quality held to a floor, then the
          two costs that are left - money and time - against each other.
 
          On its own row under the pair above rather than beside them: it is not
@@ -2613,42 +2648,42 @@
          Mounted whenever anything is pinned, not only when it can draw: the
          card's footnote names the configs it had to leave off and why, and that
          is most worth saying exactly when there is no chart. -->
-    {#if pinned_nodes.length > 0}
-      <div class="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div class="min-w-0 flex flex-col">
-          <ComparePriceLatencyChart
-            run_configs={run_configs ?? []}
-            model_info={$model_info}
-            selectedRunConfigIds={visible_pinned_ids}
-            seriesColors={series_colors}
-            seriesLabels={series_labels}
-            getMetricValue={get_metric_value}
-            getQuality={get_quality}
-            getQualityBreakdown={get_quality_breakdown}
-            getSampleSize={get_sample_size}
-            qualityFloor={quality_floor}
-            scopeLabel={stated_scope_label}
-          >
-            <FloatingMenu
-              slot="controls"
-              items={quality_floor_menu_items}
-              width="w-72"
+      {#if pinned_nodes.length > 0}
+        <div class="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <div class="min-w-0 flex flex-col">
+            <ComparePriceLatencyChart
+              run_configs={run_configs ?? []}
+              model_info={$model_info}
+              selectedRunConfigIds={visible_pinned_ids}
+              seriesColors={series_colors}
+              seriesLabels={series_labels}
+              getMetricValue={get_metric_value}
+              getQuality={get_quality}
+              getQualityBreakdown={get_quality_breakdown}
+              getSampleSize={get_sample_size}
+              qualityFloor={quality_floor}
+              scopeLabel={stated_scope_label}
             >
-              <button
-                slot="trigger"
-                type="button"
-                class="btn btn-sm font-normal"
-                title={quality_gate_hint}
+              <FloatingMenu
+                slot="controls"
+                items={quality_floor_menu_items}
+                width="w-72"
               >
-                Quality gate: {quality_floor_label}
-              </button>
-            </FloatingMenu>
-          </ComparePriceLatencyChart>
+                <button
+                  slot="trigger"
+                  type="button"
+                  class="btn btn-sm font-normal"
+                  title={quality_gate_hint}
+                >
+                  Quality gate: {quality_floor_label}
+                </button>
+              </FloatingMenu>
+            </ComparePriceLatencyChart>
+          </div>
         </div>
-      </div>
-    {/if}
+      {/if}
 
-    <!-- Section 2b: the quality scores once more, full width, with the
+      <!-- Section 2b: the quality scores once more, full width, with the
          confidence interval behind each one drawn.
 
          Under the radar rather than beside it, and full width, because it is
@@ -2657,43 +2692,43 @@
          whether that shape survives its own error bars. Width is what the bands
          need - they are vertical, and squeezing five axes into half the page
          stacks them into mud. -->
-    {#if parallel_available}
-      <div class="mt-6">
-        <!-- get_metric_value is a superset of get_model_value_raw: for every
+      {#if parallel_available}
+        <div class="mt-6">
+          <!-- get_metric_value is a superset of get_model_value_raw: for every
              key that is not a `cost::` rollup field it reads the same lens map,
              so one getter serves both the quality axes and the raw values
              behind the rank axes. -->
-        <CompareParallelChart
-          axes={parallel_chart_axes}
-          getValue={get_metric_value}
-          getSampleSize={get_sample_size}
-          getRankScore={get_parallel_rank_score}
-          notShownNote={parallel_metrics_note}
-          run_configs={run_configs ?? []}
-          model_info={$model_info}
-          selectedRunConfigIds={visible_pinned_ids}
-          seriesColors={series_colors}
-          seriesLabels={series_labels}
-        >
-          <FloatingMenu
-            slot="controls"
-            items={parallel_metric_menu_items}
-            width="w-64"
+          <CompareParallelChart
+            axes={parallel_chart_axes}
+            getValue={get_metric_value}
+            getSampleSize={get_sample_size}
+            getRankScore={get_parallel_rank_score}
+            notShownNote={parallel_metrics_note}
+            run_configs={run_configs ?? []}
+            model_info={$model_info}
+            selectedRunConfigIds={visible_pinned_ids}
+            seriesColors={series_colors}
+            seriesLabels={series_labels}
           >
-            <button
-              slot="trigger"
-              type="button"
-              class="btn btn-sm font-normal"
-              title="Add a performance metric as a ranked axis on this chart"
+            <FloatingMenu
+              slot="controls"
+              items={parallel_metric_menu_items}
+              width="w-64"
             >
-              Metrics ({parallel_metric_keys.length})
-            </button>
-          </FloatingMenu>
-        </CompareParallelChart>
-      </div>
-    {/if}
+              <button
+                slot="trigger"
+                type="button"
+                class="btn btn-sm font-normal"
+                title="Add a performance metric as a ranked axis on this chart"
+              >
+                Metrics ({parallel_metric_keys.length})
+              </button>
+            </FloatingMenu>
+          </CompareParallelChart>
+        </div>
+      {/if}
 
-    <!-- Section 3: the comparison tables - one per track, each full page
+      <!-- Section 3: the comparison tables - one per track, each full page
          width and stacked rather than paired into columns. There can be a
          dozen run configs, and every one of them is a column: splitting the
          page in two would halve the columns visible before the reader has to
@@ -2707,92 +2742,93 @@
          the legend above: hiding a config there is decluttering an image, not
          a statement that its numbers are no longer wanted. Flipping
          respect_visibility to true on both is what links them. -->
-    {#if pinned_nodes.length > 0}
-      <div class="mt-6">
-        <div class="flex items-center gap-2 mb-2">
-          <div class="text-sm font-medium text-gray-900">
-            Quality Scores ({pinned_nodes.length}
-            {pinned_nodes.length === 1 ? "config" : "configs"})
+      {#if pinned_nodes.length > 0}
+        <div class="mt-6">
+          <div class="flex items-center gap-2 mb-2">
+            <div class="text-sm font-medium text-gray-900">
+              Quality Scores ({pinned_nodes.length}
+              {pinned_nodes.length === 1 ? "config" : "configs"})
+            </div>
+            {#if hidden_quality_info.length > 0}
+              <FloatingMenu items={quality_hidden_menu_items} width="w-72">
+                <button
+                  slot="trigger"
+                  type="button"
+                  class="btn btn-xs btn-outline rounded-full font-normal"
+                  title="Rows hidden from this table and the quality radar"
+                >
+                  Hidden ({hidden_quality_info.length})
+                </button>
+              </FloatingMenu>
+            {/if}
           </div>
-          {#if hidden_quality_info.length > 0}
-            <FloatingMenu items={quality_hidden_menu_items} width="w-72">
-              <button
-                slot="trigger"
-                type="button"
-                class="btn btn-xs btn-outline rounded-full font-normal"
-                title="Rows hidden from this table and the quality radar"
-              >
-                Hidden ({hidden_quality_info.length})
-              </button>
-            </FloatingMenu>
-          {/if}
+          <CompareMatrix
+            {pinned_nodes}
+            lens_data={effective_lens_data}
+            {eval_scores_cache}
+            {eval_scores_loading}
+            get_usage_value={matrix_usage_getter}
+            groups={quality_table_groups}
+            respect_visibility={false}
+            empty_message="Every quality score is hidden. Use “Hidden” above to restore them."
+            on:select={(event) => handle_select(event.detail)}
+            on:inspect={(event) =>
+              open_inspector(event.detail.eval_id, event.detail.run_config_id)}
+            on:hide_score={(event) => hide_score_row(event.detail)}
+            on:hide_usage={(event) => hide_usage_row(event.detail)}
+          />
         </div>
-        <CompareMatrix
-          {pinned_nodes}
-          lens_data={effective_lens_data}
-          {eval_scores_cache}
-          {eval_scores_loading}
-          get_usage_value={matrix_usage_getter}
-          groups={quality_table_groups}
-          respect_visibility={false}
-          empty_message="Every quality score is hidden. Use “Hidden” above to restore them."
-          on:select={(event) => handle_select(event.detail)}
-          on:inspect={(event) =>
-            open_inspector(event.detail.eval_id, event.detail.run_config_id)}
-          on:hide_score={(event) => hide_score_row(event.detail)}
-          on:hide_usage={(event) => hide_usage_row(event.detail)}
-        />
-      </div>
 
-      <div class="mt-6">
-        <div class="flex items-center gap-2 mb-2">
-          <div class="text-sm font-medium text-gray-900">
-            Performance Metrics ({pinned_nodes.length}
-            {pinned_nodes.length === 1 ? "config" : "configs"})
+        <div class="mt-6">
+          <div class="flex items-center gap-2 mb-2">
+            <div class="text-sm font-medium text-gray-900">
+              Performance Metrics ({pinned_nodes.length}
+              {pinned_nodes.length === 1 ? "config" : "configs"})
+            </div>
+            {#if hidden_performance_info.length + hidden_usage_info.length > 0}
+              <FloatingMenu items={performance_hidden_menu_items} width="w-72">
+                <button
+                  slot="trigger"
+                  type="button"
+                  class="btn btn-xs btn-outline rounded-full font-normal"
+                  title="Rows hidden from this table and the metrics radar"
+                >
+                  Hidden ({hidden_performance_info.length +
+                    hidden_usage_info.length})
+                </button>
+              </FloatingMenu>
+            {/if}
           </div>
-          {#if hidden_performance_info.length + hidden_usage_info.length > 0}
-            <FloatingMenu items={performance_hidden_menu_items} width="w-72">
-              <button
-                slot="trigger"
-                type="button"
-                class="btn btn-xs btn-outline rounded-full font-normal"
-                title="Rows hidden from this table and the metrics radar"
-              >
-                Hidden ({hidden_performance_info.length +
-                  hidden_usage_info.length})
-              </button>
-            </FloatingMenu>
-          {/if}
+          <CompareMatrix
+            {pinned_nodes}
+            lens_data={effective_lens_data}
+            {eval_scores_cache}
+            {eval_scores_loading}
+            get_usage_value={matrix_usage_getter}
+            groups={performance_table_groups}
+            respect_visibility={false}
+            empty_message="Every performance metric is hidden. Use “Hidden” above to restore them."
+            on:select={(event) => handle_select(event.detail)}
+            on:inspect={(event) =>
+              open_inspector(event.detail.eval_id, event.detail.run_config_id)}
+            on:hide_score={(event) => hide_score_row(event.detail)}
+            on:hide_usage={(event) => hide_usage_row(event.detail)}
+          />
         </div>
-        <CompareMatrix
-          {pinned_nodes}
-          lens_data={effective_lens_data}
-          {eval_scores_cache}
-          {eval_scores_loading}
-          get_usage_value={matrix_usage_getter}
-          groups={performance_table_groups}
-          respect_visibility={false}
-          empty_message="Every performance metric is hidden. Use “Hidden” above to restore them."
-          on:select={(event) => handle_select(event.detail)}
-          on:inspect={(event) =>
-            open_inspector(event.detail.eval_id, event.detail.run_config_id)}
-          on:hide_score={(event) => hide_score_row(event.detail)}
-          on:hide_usage={(event) => hide_usage_row(event.detail)}
-        />
-      </div>
+      {/if}
+
+      <UnlinkedSection
+        nodes={unlinked_nodes}
+        {displays}
+        {selected_id}
+        {pins}
+        expanded={forest.edges.length === 0 || unlinked_expanded}
+        collapsible={forest.edges.length > 0}
+        on:toggle={() => (unlinked_expanded = !unlinked_expanded)}
+        on:select={(event) => handle_select(event.detail)}
+        on:toggle_pin={(event) => toggle_pin(event.detail)}
+      />
     {/if}
-
-    <UnlinkedSection
-      nodes={unlinked_nodes}
-      {displays}
-      {selected_id}
-      {pins}
-      expanded={forest.edges.length === 0 || unlinked_expanded}
-      collapsible={forest.edges.length > 0}
-      on:toggle={() => (unlinked_expanded = !unlinked_expanded)}
-      on:select={(event) => handle_select(event.detail)}
-      on:toggle_pin={(event) => toggle_pin(event.detail)}
-    />
   {/if}
 </AppPage>
 

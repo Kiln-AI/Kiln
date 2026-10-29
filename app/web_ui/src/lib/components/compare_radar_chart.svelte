@@ -143,6 +143,9 @@
   // point at it are true on both pages that use this chart: the older compare
   // page puts its table above, Compare V2 puts it below.
   export let table_location: "above" | "below" = "above"
+  // The "Not shown: ... See the table" line under the subtitle. Off where the
+  // page shows no table to point at.
+  export let show_not_shown_note = true
 
   // Axis scaling mode.
   //
@@ -368,6 +371,7 @@ Related criteria sit together: the axes are grouped into the families the task's
   $: chartKeys = dataKeys.filter((key) => !excludedKeys.includes(key))
 
   $: notShownNote = (() => {
+    if (!show_not_shown_note) return null
     const parts: string[] = []
     if (excludedKeys.length > 0) {
       parts.push(

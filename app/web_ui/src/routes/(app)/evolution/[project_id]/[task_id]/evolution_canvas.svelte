@@ -42,6 +42,11 @@
   export let view: "map" | "detail" = "detail"
   // The page's graph card fills the window (the page owns that state)
   export let expanded = false
+  // Simple mode (the page's default): map only, and a click on a block adds it
+  // to the page's charts or takes it out, instead of opening its card.
+  export let simple = false
+  // Chart color of each run config in the charts, for the ring on its block
+  export let pin_colors: Record<string, string> = {}
 
   const dispatch = createEventDispatcher<{
     select: string | null
@@ -225,6 +230,13 @@
   // A map block opens its card in the detail view. A run config with no parent
   // has no card there, so it is only selected (its detail panel docks).
   let pending_focus_id: string | null = null
+  function click_map_node(id: string) {
+    if (simple) {
+      dispatch("toggle_pin", id)
+    } else {
+      open_from_map(id)
+    }
+  }
   function open_from_map(id: string) {
     dispatch("select", id)
     if (!layout.positions.has(id)) {
@@ -338,30 +350,32 @@
         </span>
       </div>
       <div class="flex-grow"></div>
-      <div class="join" role="group" aria-label="Graph view">
-        <button
-          type="button"
-          class="join-item btn btn-sm font-normal {view === 'map'
-            ? 'btn-active'
-            : ''}"
-          aria-pressed={view === "map"}
-          title="Every run config as a small block"
-          on:click={() => dispatch("view_change", "map")}
-        >
-          Map
-        </button>
-        <button
-          type="button"
-          class="join-item btn btn-sm font-normal {view === 'detail'
-            ? 'btn-active'
-            : ''}"
-          aria-pressed={view === "detail"}
-          title="The lineage as full cards"
-          on:click={() => dispatch("view_change", "detail")}
-        >
-          Cards
-        </button>
-      </div>
+      {#if !simple}
+        <div class="join" role="group" aria-label="Graph view">
+          <button
+            type="button"
+            class="join-item btn btn-sm font-normal {view === 'map'
+              ? 'btn-active'
+              : ''}"
+            aria-pressed={view === "map"}
+            title="Every run config as a small block"
+            on:click={() => dispatch("view_change", "map")}
+          >
+            Map
+          </button>
+          <button
+            type="button"
+            class="join-item btn btn-sm font-normal {view === 'detail'
+              ? 'btn-active'
+              : ''}"
+            aria-pressed={view === "detail"}
+            title="The lineage as full cards"
+            on:click={() => dispatch("view_change", "detail")}
+          >
+            Cards
+          </button>
+        </div>
+      {/if}
       <div class="join">
         <button
           class="btn btn-sm btn-outline join-item"
@@ -462,6 +476,20 @@
           {#each map_nodes as node (node.id)}
             {@const pos = map_layout.positions.get(node.id) ?? { x: 0, y: 0 }}
             {@const style = MAP_KIND_STYLES[kinds.get(node.id) ?? "same"]}
+            {#if pins.includes(node.id)}
+              <!-- In the charts: a ring in the config's chart color -->
+              <rect
+                x={pos.x - 10}
+                y={pos.y - 10}
+                width={MAP_SIZES.nodeW + 20}
+                height={MAP_SIZES.nodeH + 20}
+                rx="12"
+                fill="none"
+                stroke={pin_colors[node.id] ?? "#415CF5"}
+                stroke-width="4"
+                vector-effect="non-scaling-stroke"
+              />
+            {/if}
             <rect
               data-evolution-node
               x={pos.x}
@@ -478,10 +506,10 @@
               role="button"
               tabindex="0"
               aria-label={node.name}
-              on:click={() => open_from_map(node.id)}
+              on:click={() => click_map_node(node.id)}
               on:keydown={(event) => {
                 if (event.key === "Enter") {
-                  open_from_map(node.id)
+                  click_map_node(node.id)
                 }
               }}
               on:mouseenter={() => (hovered_map_id = node.id)}
@@ -524,6 +552,13 @@
               class="text-gray-500 italic mt-1 border-t border-gray-100 pt-1"
             >
               {hovered_map_node.noteSummary}
+            </div>
+          {/if}
+          {#if simple && !hovered_map_node.ghost}
+            <div class="text-gray-400 mt-1">
+              {pins.includes(hovered_map_node.id)
+                ? "In the charts below. Click to take it out."
+                : "Click to add it to the charts below."}
             </div>
           {/if}
         </div>
