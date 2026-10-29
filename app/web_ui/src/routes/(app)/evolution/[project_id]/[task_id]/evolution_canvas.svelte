@@ -230,16 +230,15 @@
   // A map block opens its card in the detail view. A run config with no parent
   // has no card there, so it is only selected (its detail panel docks).
   let pending_focus_id: string | null = null
-  // A config with no eval runs in the page's split has nothing to chart
+  // A config with no eval runs in the page's split joins the list, but has
+  // nothing for the charts to draw
   function has_scores(id: string): boolean {
     return (displays[id]?.runs ?? 0) > 0
   }
 
   function click_map_node(id: string) {
     if (simple) {
-      if (has_scores(id) || pins.includes(id)) {
-        dispatch("toggle_pin", id)
-      }
+      dispatch("toggle_pin", id)
     } else {
       open_from_map(id)
     }
@@ -567,7 +566,7 @@
                 ? "In the charts below. Click to take it out."
                 : has_scores(hovered_map_node.id)
                   ? "Click to add it to the charts below."
-                  : "No scores yet, so it cannot go in the charts."}
+                  : "Click to add it to the list. It has no test scores, so the charts skip it."}
             </div>
           {/if}
         </div>

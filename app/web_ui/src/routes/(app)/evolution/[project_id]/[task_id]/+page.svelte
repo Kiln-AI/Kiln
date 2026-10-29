@@ -833,7 +833,39 @@
     null
   $: forest = build_forest(run_configs || [])
   $: layout = layout_forest(forest)
-  $: lens_data = build_lens_data(summary, evals)
+  // The simple page reads only the active evals. A config scored only on an
+  // archived version of an eval shares no axis with one scored on the current
+  // version, and the charts would come up empty.
+  $: lens_summary = full_page ? summary : active_evals_only(summary, evals)
+  $: lens_data = build_lens_data(lens_summary, evals)
+  function active_evals_only(
+    all: EvalResultsSummaryResponse | null,
+    task_evals: Eval[] | null,
+  ): EvalResultsSummaryResponse | null {
+    const retired = new Set(
+      (task_evals ?? [])
+        .filter((evaluator) => evaluator.id && evaluator.status !== "active")
+        .map((evaluator) => evaluator.id as string),
+    )
+    if (!all || retired.size === 0) {
+      return all
+    }
+    const keep = ([eval_id]: [string, unknown]) => !retired.has(eval_id)
+    return {
+      ...all,
+      evals_by_id: Object.fromEntries(
+        Object.entries(all.evals_by_id).filter(keep),
+      ),
+      scores_by_run_config_by_eval: Object.fromEntries(
+        Object.entries(all.scores_by_run_config_by_eval).map(
+          ([run_config_id, cells]) => [
+            run_config_id,
+            Object.fromEntries(Object.entries(cells).filter(keep)),
+          ],
+        ),
+      ),
+    }
+  }
 
   // How much of the task the current split actually covers. An eval with no
   // train filter contributes nothing to the train view, and a page that just
@@ -1124,7 +1156,25 @@
   // hidden config simply never reaches one, which is what lets three charts
   // that know nothing about each other stay in step.
   $: reconcile_visibility(pinned_ids)
-  $: visible_pinned_ids = visible_ids(pinned_ids, $hidden_run_config_ids)
+  // The simple page lets any map block into the list, but a config with no
+  // eval runs in the split has nothing to draw, and one empty series makes the
+  // radar drop every axis. Those stay in the list, marked, and out of the
+  // charts.
+  $: unscored_pinned_ids = full_page
+    ? []
+    : pinned_ids.filter((id) => run_count(lens_data, id) === 0)
+  $: unscored_notes = Object.fromEntries(
+    unscored_pinned_ids.map((id) => [
+      id,
+      split_view === "all"
+        ? "No scores, so not in the charts"
+        : `No ${SPLIT_LABELS[split_view].toLowerCase()} scores, so not in the charts`,
+    ]),
+  )
+  $: visible_pinned_ids = visible_ids(
+    pinned_ids,
+    $hidden_run_config_ids,
+  ).filter((id) => !unscored_pinned_ids.includes(id))
   // Colour is fixed by position in the PINNED list, not by a chart's series
   // index. Any of the three can drop a config it has no numbers for, and doing
   // so used to renumber the palette for every config after it - so the same
@@ -2488,6 +2538,7 @@
       model_info={$model_info}
       {prompts}
       colors={series_colors}
+      notes={unscored_notes}
     />
 
     <!-- What every number under here is over. Between the legend and the

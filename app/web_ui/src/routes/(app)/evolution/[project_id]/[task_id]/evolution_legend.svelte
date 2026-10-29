@@ -46,6 +46,8 @@
   // Colour per run config id, from series_color_map. Passed in rather than
   // computed here so the legend and the charts cannot disagree about it.
   export let colors: Record<string, string> = {}
+  // An optional last line per chip, by run config id (why it is not charted)
+  export let notes: Record<string, string> = {}
 
   $: entries = pinned_ids
     .map((id) => run_configs.find((config) => config.id === id))
@@ -128,6 +130,11 @@
                     : 'text-gray-500'}">{line}</span
                 >
               {/each}
+              {#if notes[entry.id]}
+                <span class="block text-xs italic text-gray-400 truncate">
+                  {notes[entry.id]}
+                </span>
+              {/if}
             </span>
           </button>
         {/each}
