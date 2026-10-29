@@ -312,6 +312,11 @@
   // panel, no tables. ?full=1 brings back the whole page.
   let full_page = false
   const SIMPLE_METRIC_FAMILIES: MetricFamily[] = ["cost", "speed"]
+  // Both charts size themselves to their box, and the box grows to fit its
+  // content. The simple page fixes the row height so a chart can never push
+  // its own box taller; the full page keeps a floor, so more metrics get more
+  // room.
+  $: chart_column_height = full_page ? "min-h-[800px]" : "h-[860px]"
 
   // Graph view: null until the reader picks one, then "map" or "detail". With
   // no pick a large task opens on the map, where every run config fits.
@@ -2528,7 +2533,7 @@
          may add a margin of its own, which would come straight out of that
          height on one side only. -->
     <div class="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
-      <div class="min-w-0 min-h-[800px] flex flex-col">
+      <div class="min-w-0 flex flex-col {chart_column_height}">
         {#if radar_available}
           <CompareRadarChart
             comparisonFeatures={comparison_features}
@@ -2597,7 +2602,7 @@
         {/if}
       </div>
 
-      <div class="min-w-0 min-h-[800px] flex flex-col">
+      <div class="min-w-0 flex flex-col {chart_column_height}">
         <CompareMetricsBarChart
           scopeLabel={matching_active ? stated_scope_label : split_scope_label}
           axes={shown_metric_axes}
