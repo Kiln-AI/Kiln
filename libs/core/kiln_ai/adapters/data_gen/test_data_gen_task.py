@@ -19,13 +19,23 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenSampleTaskInput,
     DataGenSingleInputTask,
     DataGenSingleInputTaskInput,
+    GuidancePromptBuilder,
     list_json_schema_for_task,
+    prompt_builder_with_guidance,
     single_input_json_schema_for_task,
+    wrap_task_with_guidance,
 )
 from kiln_ai.adapters.provider_tools import get_model_and_provider
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel import Project, Task
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
+from kiln_ai.datamodel.prompt import BasePrompt, Prompt
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    McpRunConfigProperties,
+    MCPToolReference,
+)
+from kiln_ai.datamodel.task import TaskRunConfig
 
 
 @pytest.fixture
@@ -1052,3 +1062,70 @@ def test_data_gen_single_input_task_shape(tmp_path):
         "kiln_data_gen_system_prompt",
         "kiln_data_gen_input_guidance",
     }
+
+
+@pytest.fixture
+def saved_task(test_project) -> Task:
+    task = Task(name="Moderate", instruction="TASK INSTRUCTION", parent=test_project)
+    task.save_to_file()
+    return task
+
+
+def _agent_rcp(prompt_id: str) -> KilnAgentRunConfigProperties:
+    return KilnAgentRunConfigProperties(
+        model_name="gpt-4",
+        model_provider_name="openai",
+        prompt_id=prompt_id,
+        structured_output_mode=StructuredOutputMode.json_schema,
+    )
+
+
+def test_guidance_reaches_a_saved_prompt(saved_task):
+    saved = Prompt(name="Saved", prompt="SAVED PROMPT TEXT", parent=saved_task)
+    saved.save_to_file()
+    builder = prompt_builder_with_guidance(
+        saved_task, _agent_rcp(f"id::{saved.id}"), "LABEL THIS AS SPAM"
+    )
+    assert isinstance(builder, GuidancePromptBuilder)
+    assert builder.build_prompt(include_json_instructions=False) == (
+        wrap_task_with_guidance("SAVED PROMPT TEXT", "LABEL THIS AS SPAM")
+    )
+    assert builder.prompt_id() == saved.id
+
+
+def test_guidance_reaches_a_run_config_prompt(saved_task, test_project):
+    run_config = TaskRunConfig(
+        name="Frozen",
+        run_config_properties=_agent_rcp("simple_prompt_builder"),
+        prompt=BasePrompt(
+            name="Frozen",
+            prompt="FROZEN PROMPT TEXT",
+            chain_of_thought_instructions="THINK FIRST",
+        ),
+        parent=saved_task,
+    )
+    run_config.save_to_file()
+    prompt_id = f"task_run_config::{test_project.id}::{saved_task.id}::{run_config.id}"
+    builder = prompt_builder_with_guidance(
+        saved_task, _agent_rcp(prompt_id), "LABEL THIS AS SPAM"
+    )
+    assert builder is not None
+    prompt = builder.build_prompt(include_json_instructions=False)
+    assert prompt.startswith("FROZEN PROMPT TEXT")
+    assert "LABEL THIS AS SPAM" in prompt
+    assert "TASK INSTRUCTION" not in prompt
+    assert builder.chain_of_thought_prompt() == "THINK FIRST"
+    assert builder.prompt_id() == prompt_id
+
+
+@pytest.mark.parametrize("guidance", [None, "", "   "])
+def test_no_guidance_keeps_the_default_builder(saved_task, guidance):
+    rcp = _agent_rcp("simple_prompt_builder")
+    assert prompt_builder_with_guidance(saved_task, rcp, guidance) is None
+
+
+def test_an_mcp_run_config_gets_no_builder(saved_task):
+    rcp = McpRunConfigProperties(
+        tool_reference=MCPToolReference(tool_id="mcp::local::server::tool")
+    )
+    assert prompt_builder_with_guidance(saved_task, rcp, "guidance") is None

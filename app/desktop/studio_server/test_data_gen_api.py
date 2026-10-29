@@ -21,8 +21,6 @@ from kiln_ai.datamodel.prompt import Prompt
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
-    McpRunConfigProperties,
-    MCPToolReference,
 )
 from kiln_server.custom_errors import connect_custom_errors
 
@@ -38,7 +36,6 @@ from app.desktop.studio_server.data_gen_api import (
     _BatchJob,
     _generate_one_input,
     _generate_one_output,
-    _prompt_builder_with_guidance,
     _register_batch_job,
     _run_inputs_batch_job,
     _run_outputs_batch_job,
@@ -589,13 +586,6 @@ async def test_generate_one_output_guidance_reaches_a_saved_prompt(
     prompt = builder.build_prompt(include_json_instructions=False)
     assert prompt.startswith("SAVED PROMPT TEXT")
     assert "LABEL THIS AS SPAM" in prompt
-
-
-def test_prompt_builder_with_guidance_skips_an_mcp_run_config(test_task):
-    rcp = McpRunConfigProperties(
-        tool_reference=MCPToolReference(tool_id="mcp::local::server::tool")
-    )
-    assert _prompt_builder_with_guidance(test_task, rcp, "guidance") is None
 
 
 def test_generate_qna_success_with_session_and_tags(

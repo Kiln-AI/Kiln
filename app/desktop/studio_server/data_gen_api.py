@@ -18,11 +18,11 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenSampleTaskInput,
     DataGenSingleInputTask,
     DataGenSingleInputTaskInput,
-    wrap_task_with_guidance,
+    prompt_builder_with_guidance,
 )
 from kiln_ai.adapters.data_gen.qna_gen_task import DataGenQnaTask, DataGenQnaTaskInput
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
-from kiln_ai.adapters.prompt_builders import BasePromptBuilder, prompt_builder_from_id
+from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun, generate_model_id
 from kiln_ai.datamodel.data_guide import DataGuide, DataGuideSource
 from kiln_ai.datamodel.extraction import Document
@@ -419,41 +419,6 @@ async def _generate_one_input(
     return parsed["generated_input"]
 
 
-class _GuidancePromptBuilder(BasePromptBuilder):
-    """The run config's own prompt with the output guidance appended.
-
-    The guidance goes on the built prompt, not on `task.instruction`: a saved
-    prompt (`id::`), a run-config prompt or a fine-tune prompt carries its own
-    text and never reads the instruction."""
-
-    def __init__(self, inner: BasePromptBuilder, guidance: str):
-        super().__init__(inner.task)
-        self.inner = inner
-        self.guidance = guidance
-
-    def prompt_id(self) -> str | None:
-        return self.inner.prompt_id()
-
-    def build_base_prompt(self) -> str:
-        return wrap_task_with_guidance(self.inner.build_base_prompt(), self.guidance)
-
-    def chain_of_thought_prompt(self) -> str | None:
-        return self.inner.chain_of_thought_prompt()
-
-
-def _prompt_builder_with_guidance(
-    task: Task, run_config_properties: RunConfigProperties, guidance: str | None
-) -> BasePromptBuilder | None:
-    """The prompt builder for an output-generation run, or None to let the
-    adapter build its default one. An MCP run config has no prompt."""
-    if not guidance or not guidance.strip():
-        return None
-    if not isinstance(run_config_properties, KilnAgentRunConfigProperties):
-        return None
-    inner = prompt_builder_from_id(run_config_properties.prompt_id, task)
-    return _GuidancePromptBuilder(inner, guidance)
-
-
 async def _generate_one_output(
     project_id: str,
     task_id: str,
@@ -475,7 +440,7 @@ async def _generate_one_output(
         base_adapter_config=AdapterConfig(
             allow_saving=False,
             skills=skills,
-            prompt_builder=_prompt_builder_with_guidance(
+            prompt_builder=prompt_builder_with_guidance(
                 task, run_config_properties, guidance
             ),
         ),
@@ -785,7 +750,7 @@ The topic path for this sample is:
             base_adapter_config=AdapterConfig(
                 allow_saving=False,
                 skills=skills,
-                prompt_builder=_prompt_builder_with_guidance(
+                prompt_builder=prompt_builder_with_guidance(
                     task, sample.run_config_properties, guidance
                 ),
             ),
