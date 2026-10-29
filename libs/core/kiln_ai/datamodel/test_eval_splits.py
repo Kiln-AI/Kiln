@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 
 from kiln_ai.datamodel import (
@@ -20,6 +22,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.eval_splits import (
     ResolvedSplit,
+    SplitStore,
     eval_run_item_key,
     item_key,
     resolve_split,
@@ -418,3 +421,46 @@ def test_golden_set_is_not_a_split(task, data_source):
     resolved = resolve_split(task, eval, "test")
     assert resolved is not None
     assert len(resolved) == 0
+
+
+def test_split_store_reads_each_store_once_across_evals(task, data_source):
+    run_a = make_task_run(task, data_source, ["test_a"])
+    run_b = make_task_run(task, data_source, ["test_b"])
+    input_a = make_eval_input(task, ["val_a"])
+    eval_a = make_eval(
+        task,
+        splits={
+            "test": TaskRunSplit(filter_id="tag::test_a"),
+            "val": EvalInputSplit(filter_id="tag::val_a"),
+        },
+    )
+    eval_b = make_eval(task, splits={"test": TaskRunSplit(filter_id="tag::test_b")})
+    store = SplitStore(task)
+
+    with (
+        patch.object(Task, "runs", autospec=True, side_effect=Task.runs) as runs,
+        patch.object(
+            Task, "eval_inputs", autospec=True, side_effect=Task.eval_inputs
+        ) as eval_inputs,
+    ):
+        test_a = resolve_split(task, eval_a, "test", store=store)
+        test_b = resolve_split(task, eval_b, "test", store=store)
+        val_a = resolve_split(task, eval_a, "val", store=store)
+        resolve_split(task, eval_a, "val", store=store)
+
+    # Same answers as resolving without a store, from one read of each store
+    assert test_a is not None and test_a.item_keys() == {("task_run", run_a.id)}
+    assert test_b is not None and test_b.item_keys() == {("task_run", run_b.id)}
+    assert val_a is not None and val_a.item_keys() == {("eval_input", input_a.id)}
+    assert runs.call_count == 1
+    assert eval_inputs.call_count == 1
+
+
+def test_split_store_reads_nothing_until_asked(task):
+    with (
+        patch.object(Task, "runs", autospec=True) as runs,
+        patch.object(Task, "eval_inputs", autospec=True) as eval_inputs,
+    ):
+        SplitStore(task)
+    runs.assert_not_called()
+    eval_inputs.assert_not_called()

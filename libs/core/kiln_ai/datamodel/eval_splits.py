@@ -130,12 +130,45 @@ class ResolvedSplit:
         return True
 
 
-def resolve_split(task: Task, eval: Eval, split: EvalSplitName) -> ResolvedSplit | None:
+class SplitStore:
+    """A task's two item stores, each read at most once.
+
+    Resolving a split walks a whole store, and a task's evals each carry their own
+    filter, so a request that resolves every eval's split would otherwise read the
+    store once per eval. Build one per request: it holds what was read for the life of
+    the object, not beyond.
+    """
+
+    def __init__(self, task: Task):
+        self.task = task
+        self._task_runs: List[TaskRun] | None = None
+        self._eval_inputs: List[EvalInput] | None = None
+
+    def task_runs(self) -> List[TaskRun]:
+        if self._task_runs is None:
+            self._task_runs = self.task.runs(readonly=True)
+        return self._task_runs
+
+    def eval_inputs(self) -> List[EvalInput]:
+        if self._eval_inputs is None:
+            self._eval_inputs = self.task.eval_inputs(readonly=True)
+        return self._eval_inputs
+
+
+def resolve_split(
+    task: Task,
+    eval: Eval,
+    split: EvalSplitName,
+    store: SplitStore | None = None,
+) -> ResolvedSplit | None:
     """The items in one of an eval's splits, from whichever store backs it.
 
     Returns None when the eval has no such split — the caller decides whether that is a
     422, a zero, or a skip. An eval that has the split but whose filter matches nothing
     returns an empty ResolvedSplit, which is a different answer.
+
+    Pass a SplitStore to share one read of each store across many calls; without one,
+    the store is read from the task on every call.
     """
     split_ref = eval.splits.get(split)
     match split_ref:
@@ -146,7 +179,13 @@ def resolve_split(task: Task, eval: Eval, split: EvalSplitName) -> ResolvedSplit
             return ResolvedSplit(
                 name=split,
                 source="task_run",
-                items=[run for run in task.runs(readonly=True) if task_run_filter(run)],
+                items=[
+                    run
+                    for run in (
+                        store.task_runs() if store else task.runs(readonly=True)
+                    )
+                    if task_run_filter(run)
+                ],
                 eval_id=eval.id,
             )
         case EvalInputSplit():
@@ -156,7 +195,11 @@ def resolve_split(task: Task, eval: Eval, split: EvalSplitName) -> ResolvedSplit
                 source="eval_input",
                 items=[
                     eval_input
-                    for eval_input in task.eval_inputs(readonly=True)
+                    for eval_input in (
+                        store.eval_inputs()
+                        if store
+                        else task.eval_inputs(readonly=True)
+                    )
                     if eval_input_filter(eval_input)
                 ],
                 eval_id=eval.id,

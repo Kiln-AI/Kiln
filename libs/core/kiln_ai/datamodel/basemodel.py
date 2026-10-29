@@ -818,17 +818,34 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
 
         children = {}
 
-        # Note: we're using the in-file ID. We could make this faster using the path-ID if this becomes perf bottleneck, but it's better to have 1 source of truth.
+        # Matched on the in-file ID, the one source of truth. The folder name is only
+        # used to skip reading a child that is not cached and is clearly another model:
+        # reading every uncached child to learn its ID made a bulk load of a few runs
+        # read the whole directory (thousands of traces) off disk.
         for child_path in cls.iterate_children_paths_of_parent_path(parent_path):
             child_id = ModelCache.shared().get_model_id(child_path, cls)
             if child_id in ids:
                 children[child_id] = cls.load_from_file(child_path, readonly=readonly)
             if child_id is None:
+                folder_id = folder_name_id(child_path)
+                if folder_id is not None and folder_id not in ids:
+                    continue
                 child = cls.load_from_file(child_path, readonly=readonly)
                 if child.id in ids:
                     children[child.id] = child
 
         return children
+
+
+def folder_name_id(child_path: Path) -> str | None:
+    """The model ID a child's folder name carries, or None if the name does not show one.
+
+    Children are saved under "{id}" or "{id} - {name}" (see build_child_dirname), and
+    generated IDs are digits. A folder named any other way is not read as an ID, so a
+    hand-made folder is never skipped on its name alone.
+    """
+    candidate = child_path.parent.name.split(" - ", 1)[0]
+    return candidate if candidate.isdigit() else None
 
 
 class ParentOfRelationship(BaseModel):

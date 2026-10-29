@@ -71,6 +71,7 @@ from kiln_ai.datamodel.eval_splits import (
     ItemKey,
     ItemSource,
     ResolvedSplit,
+    SplitStore,
     eval_run_item_key,
     resolve_split,
 )
@@ -1429,6 +1430,9 @@ class SplitItemResolver:
     def __init__(self, task: Task):
         self.task = task
         self._cache: Dict[Tuple[ItemSource, str], ResolvedSplit] = {}
+        # Each eval tends to have its own filter, so the per-filter cache above rarely
+        # hits; this keeps every resolution in the request to one read of each store.
+        self._store = SplitStore(task)
 
     def split(self, eval: Eval, name: EvalSplitName) -> ResolvedSplit | None:
         """One of the eval's splits, resolved, or None when it has no such split."""
@@ -1438,7 +1442,7 @@ class SplitItemResolver:
         key = (split_ref.source, split_ref.filter_id)
         cached = self._cache.get(key)
         if cached is None:
-            resolved = resolve_split(self.task, eval, name)
+            resolved = resolve_split(self.task, eval, name, store=self._store)
             if resolved is None:
                 return None
             self._cache[key] = resolved
@@ -3537,89 +3541,96 @@ def connect_evals_api(app: FastAPI):
             ),
         ] = None,
     ) -> EvalResultsSummaryResponse:
-        task = task_from_id(project_id, task_id)
-        task_run_configs = get_all_run_configs(project_id, task_id)
+        # A worker thread, like the other summary reads: this walks every eval run
+        # of the task, and on the event loop it held up every other request.
+        def read() -> EvalResultsSummaryResponse:
+            task = task_from_id(project_id, task_id)
+            task_run_configs = get_all_run_configs(project_id, task_id)
 
-        run_configs_out: Dict[ID_TYPE, EvalResultsSummaryRunConfigInfo] = {
-            rc.id: EvalResultsSummaryRunConfigInfo(name=rc.name)
-            for rc in task_run_configs
-        }
+            run_configs_out: Dict[ID_TYPE, EvalResultsSummaryRunConfigInfo] = {
+                rc.id: EvalResultsSummaryRunConfigInfo(name=rc.name)
+                for rc in task_run_configs
+            }
 
-        # Resolving a split walks a whole store off disk, and sibling evals routinely
-        # share a test filter, so cache it. Keyed on (source, filter_id) rather than the
-        # filter id alone: the `tag::` grammar is shared across both stores, so
-        # "tag::golden" over task.runs() and over task.eval_inputs() are different item
-        # sets behind the same string.
-        resolver = SplitItemResolver(task)
-        evals_out: Dict[ID_TYPE, EvalResultsSummaryEvalInfo] = {}
-        scores_out: Dict[ID_TYPE, Dict[ID_TYPE, EvalResultsSummaryResultCell]] = {}
+            # Resolving a split walks a whole store off disk, and sibling evals routinely
+            # share a test filter, so cache it. Keyed on (source, filter_id) rather than the
+            # filter id alone: the `tag::` grammar is shared across both stores, so
+            # "tag::golden" over task.runs() and over task.eval_inputs() are different item
+            # sets behind the same string.
+            resolver = SplitItemResolver(task)
+            evals_out: Dict[ID_TYPE, EvalResultsSummaryEvalInfo] = {}
+            scores_out: Dict[ID_TYPE, Dict[ID_TYPE, EvalResultsSummaryResultCell]] = {}
 
-        for eval in task.evals(readonly=True):
-            test_split = resolver.split(eval, "test")
-            if test_split is None:
-                # Unreachable for an eval that loaded: Eval validates that it has a test
-                # split. Skipping rather than 4xx-ing keeps one corrupt file from
-                # emptying the whole task's results table.
-                continue
+            for eval in task.evals(readonly=True):
+                test_split = resolver.split(eval, "test")
+                if test_split is None:
+                    # Unreachable for an eval that loaded: Eval validates that it has a test
+                    # split. Skipping rather than 4xx-ing keeps one corrupt file from
+                    # emptying the whole task's results table.
+                    continue
 
-            # The default judge is resolved before the item set, because "all" reads
-            # its universe out of that judge's runs.
-            default_config = None
-            if eval.current_config_id is not None:
-                for eval_config in eval.configs(readonly=True):
-                    if eval_config.id == eval.current_config_id:
-                        default_config = eval_config
-                        break
+                # The default judge is resolved before the item set, because "all" reads
+                # its universe out of that judge's runs.
+                default_config = None
+                if eval.current_config_id is not None:
+                    for eval_config in eval.configs(readonly=True):
+                        if eval_config.id == eval.current_config_id:
+                            default_config = eval_config
+                            break
 
-            # Never fails on an eval without the queried split: that eval reports
-            # split_available=false and contributes no cells (see the query's docs).
-            queried_items = resolver.items_for_query(eval, default_config, split)
+                # Never fails on an eval without the queried split: that eval reports
+                # split_available=false and contributes no cells (see the query's docs).
+                queried_items = resolver.items_for_query(eval, default_config, split)
 
-            evals_out[eval.id] = EvalResultsSummaryEvalInfo(
-                name=eval.name,
-                default_judge_config_id=eval.current_config_id,
-                # The size of the slice being reported: a cell's percent_complete is
-                # measured against this number.
-                dataset_size=len(queried_items) if queried_items is not None else 0,
-                output_score_keys=[s.json_key() for s in eval.output_scores],
-                declared_splits=declared_splits(eval),
-                split_available=queried_items is not None,
-            )
-
-            if default_config is None or not queried_items:
-                continue
-
-            summary = compute_score_summary(
-                eval,
-                default_config,
-                task_run_configs,
-                queried_items,
-            )
-
-            for rc_id, scores_dict in summary.results.items():
-                mean_scores = {
-                    key: s.mean_score
-                    for key, s in scores_dict.items()
-                    if s.mean_score is not None
-                }
-                percent_complete = summary.run_config_percent_complete.get(rc_id, 0.0)
-                cell = EvalResultsSummaryResultCell(
-                    mean_scores=mean_scores,
-                    percent_complete=percent_complete,
-                    n_used_by_score_key={
-                        key: s.n_used for key, s in scores_dict.items()
-                    },
+                evals_out[eval.id] = EvalResultsSummaryEvalInfo(
+                    name=eval.name,
+                    default_judge_config_id=eval.current_config_id,
+                    # The size of the slice being reported: a cell's percent_complete is
+                    # measured against this number.
+                    dataset_size=len(queried_items) if queried_items is not None else 0,
+                    output_score_keys=[s.json_key() for s in eval.output_scores],
+                    declared_splits=declared_splits(eval),
+                    split_available=queried_items is not None,
                 )
-                if rc_id not in scores_out:
-                    scores_out[rc_id] = {}
-                scores_out[rc_id][eval.id] = cell
 
-        return EvalResultsSummaryResponse(
-            evals_by_id=evals_out,
-            run_configs_by_id=run_configs_out,
-            scores_by_run_config_by_eval=scores_out,
-            split=split,
-        )
+                if default_config is None or not queried_items:
+                    continue
+
+                summary = compute_score_summary(
+                    eval,
+                    default_config,
+                    task_run_configs,
+                    queried_items,
+                )
+
+                for rc_id, scores_dict in summary.results.items():
+                    mean_scores = {
+                        key: s.mean_score
+                        for key, s in scores_dict.items()
+                        if s.mean_score is not None
+                    }
+                    percent_complete = summary.run_config_percent_complete.get(
+                        rc_id, 0.0
+                    )
+                    cell = EvalResultsSummaryResultCell(
+                        mean_scores=mean_scores,
+                        percent_complete=percent_complete,
+                        n_used_by_score_key={
+                            key: s.n_used for key, s in scores_dict.items()
+                        },
+                    )
+                    if rc_id not in scores_out:
+                        scores_out[rc_id] = {}
+                    scores_out[rc_id][eval.id] = cell
+
+            return EvalResultsSummaryResponse(
+                evals_by_id=evals_out,
+                run_configs_by_id=run_configs_out,
+                scores_by_run_config_by_eval=scores_out,
+                split=split,
+            )
+
+        return await to_thread_retrying_torn_read(read)
 
     # Compared to above, this is comparing all eval configs to each other, not looking at a single eval config
     @app.get(

@@ -18,6 +18,7 @@ from kiln_ai.datamodel.basemodel import (
     KilnBaseModel,
     KilnParentedModel,
     ReadOnlyMutationError,
+    folder_name_id,
     name_validator,
     string_to_valid_name,
 )
@@ -677,6 +678,63 @@ def test_from_ids_and_parent_path_basic(test_base_parented_file, tmp_model_cache
     # Verify they are not the same instances (deep copies)
     assert found_children[child1.id] is not child1
     assert found_children[child3.id] is not child3
+
+
+def test_from_ids_and_parent_path_skips_other_folders_unread(
+    test_base_parented_file, tmp_model_cache
+):
+    """An uncached child whose folder name shows another ID is not read at all"""
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+    wanted = DefaultParentedModel(parent=parent, name="Wanted")
+    others = [DefaultParentedModel(parent=parent, name=f"Other{i}") for i in range(3)]
+    for child in [wanted, *others]:
+        child.save_to_file()
+    assert wanted.id is not None
+    tmp_model_cache.clear()
+
+    with patch.object(
+        DefaultParentedModel,
+        "load_from_file",
+        wraps=DefaultParentedModel.load_from_file,
+    ) as load:
+        found = DefaultParentedModel.from_ids_and_parent_path(
+            {wanted.id}, test_base_parented_file
+        )
+
+    assert list(found) == [wanted.id]
+    assert [call.args[0] for call in load.call_args_list] == [wanted.path]
+
+
+def test_from_ids_and_parent_path_finds_child_in_hand_named_folder(
+    test_base_parented_file, tmp_model_cache
+):
+    """A folder whose name carries no ID is read and matched on its in-file ID"""
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+    child = DefaultParentedModel(parent=parent, name="Moved")
+    child.save_to_file()
+    assert child.id is not None and child.path is not None
+    child.path.parent.rename(child.path.parent.with_name("hand made folder"))
+    tmp_model_cache.clear()
+
+    found = DefaultParentedModel.from_ids_and_parent_path(
+        {child.id}, test_base_parented_file
+    )
+
+    assert list(found) == [child.id]
+    assert found[child.id].name == "Moved"
+
+
+@pytest.mark.parametrize(
+    "folder_name,expected",
+    [
+        ("123456789012", "123456789012"),
+        ("123456789012 - Some Name", "123456789012"),
+        ("hand made folder", None),
+        ("123abc - name", None),
+    ],
+)
+def test_folder_name_id(folder_name, expected):
+    assert folder_name_id(Path("/tmp") / folder_name / "model.kiln") == expected
 
 
 def test_from_ids_and_parent_path_empty_list(test_base_parented_file):

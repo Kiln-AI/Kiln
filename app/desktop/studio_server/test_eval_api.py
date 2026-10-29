@@ -117,7 +117,7 @@ def patch_resolve_split(**by_split_name: ResolvedSplit | None):
     """Patch eval_api's resolve_split to answer per split name, None for anything else."""
     return patch(
         "app.desktop.studio_server.eval_api.resolve_split",
-        side_effect=lambda task, eval, split: by_split_name.get(split),
+        side_effect=lambda task, eval, split, store=None: by_split_name.get(split),
     )
 
 
@@ -129,7 +129,7 @@ def patch_resolve_split_by_ref(items_by_ref: Dict[Tuple[ItemSource, str], set]):
     exists for.
     """
 
-    def resolve(task, eval, split_name):
+    def resolve(task, eval, split_name, store=None):
         ref = eval.splits.get(split_name)
         if ref is None:
             return None
