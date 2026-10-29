@@ -894,7 +894,13 @@
 
   // Compare set: explicit pins, or (when empty) the selected node plus its
   // primary parent chain, capped at 3 nodes.
-  $: effective_pin_ids = compute_effective_pins(pins, selected_id, forest)
+  // The simple page has no selection: only the configs clicked in the map are
+  // compared, never a selection left in the URL by the full page.
+  $: effective_pin_ids = compute_effective_pins(
+    pins,
+    full_page ? selected_id : null,
+    forest,
+  )
   function compute_effective_pins(
     explicit_pins: string[],
     current_id: string | null,
@@ -2404,7 +2410,7 @@
             {forest}
             {layout}
             {displays}
-            {selected_id}
+            selected_id={full_page ? selected_id : null}
             {project_id}
             {prompts}
             {pins}
