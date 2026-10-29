@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from kiln_ai.adapters.data_gen.data_gen_task import wrap_task_with_guidance
+from kiln_ai.adapters.prompt_builders import SimplePromptBuilder
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -15,8 +17,13 @@ from kiln_ai.datamodel import (
 from kiln_ai.datamodel.data_guide import DataGuide
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.extraction import Document
+from kiln_ai.datamodel.prompt import Prompt
 from kiln_ai.datamodel.prompt_id import PromptGenerators
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    McpRunConfigProperties,
+    MCPToolReference,
+)
 from kiln_server.custom_errors import connect_custom_errors
 
 from app.desktop.studio_server.data_gen_api import (
@@ -31,6 +38,7 @@ from app.desktop.studio_server.data_gen_api import (
     _BatchJob,
     _generate_one_input,
     _generate_one_output,
+    _prompt_builder_with_guidance,
     _register_batch_job,
     _run_inputs_batch_job,
     _run_outputs_batch_job,
@@ -426,61 +434,38 @@ def test_topic_path_conversions():
 
 
 @pytest.mark.parametrize(
-    "guidance,topic_path,initial_instruction,expected_wrapped_call,expected_final_instruction,should_call_wrap",
+    "guidance,topic_path,expected_guidance",
     [
-        # Test 1: Only guidance provided (no topic path)
+        # Only guidance provided (no topic path)
         (
             "Custom guidance for generation",
             [],
-            "Test Instruction",
             "Custom guidance for generation",
-            "wrapped_instruction",
-            True,
         ),
-        # Test 2: Only topic path provided (no guidance). Topic path block is
+        # Only topic path provided (no guidance). Topic path block is
         # appended after a leading newline to the empty guidance string.
         (
             None,
             ["AI", "Machine Learning"],
-            "Original instruction",
             """
 ## Topic Path
 The topic path for this sample is:
 ["AI", "Machine Learning"]""",
-            "wrapped_instruction_with_topic",
-            True,
         ),
-        # Test 3: Both guidance and topic path provided. Topic path block is
+        # Both guidance and topic path provided. Topic path block is
         # appended directly after the guidance with a single newline separator.
         (
             "Focus on technical accuracy",
             ["Technology", "AI"],
-            "Original instruction",
             """Focus on technical accuracy
 ## Topic Path
 The topic path for this sample is:
 ["Technology", "AI"]""",
-            "wrapped_instruction_combined",
-            True,
         ),
-        # Test 4: Neither guidance nor topic path provided
-        (
-            None,
-            [],
-            "Original instruction",
-            None,  # Won't be called
-            "Original instruction",  # Should remain unchanged
-            False,
-        ),
-        # Test 5: Empty guidance string (should be treated as no guidance)
-        (
-            "",
-            [],
-            "Original instruction",
-            None,  # Won't be called
-            "Original instruction",  # Should remain unchanged
-            False,
-        ),
+        # Neither guidance nor topic path provided
+        (None, [], None),
+        # Empty guidance string (should be treated as no guidance)
+        ("", [], None),
     ],
     ids=[
         "only_guidance",
@@ -492,59 +477,125 @@ The topic path for this sample is:
 )
 def test_generate_sample_guidance_generation(
     mock_task_from_id,
-    mock_task_adapter,
     client,
     mock_task_run,
     test_task,
     guidance,
     topic_path,
-    initial_instruction,
-    expected_wrapped_call,
-    expected_final_instruction,
-    should_call_wrap,
+    expected_guidance,
 ):
-    """Test that guidance is properly generated and applied in save_sample function"""
-    from unittest.mock import patch
+    """Guidance and topic path reach the system prompt the adapter builds,
+    and the task itself is left unchanged."""
+    input_data = DataGenSaveSamplesApiInput(
+        input="Test input",
+        input_model_name="gpt-4",
+        input_provider="openai",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        topic_path=topic_path,
+        guidance=guidance,
+    )
 
-    with patch(
-        "app.desktop.studio_server.data_gen_api.wrap_task_with_guidance"
-    ) as mock_wrap:
-        # Set up the mock return value and initial task instruction
-        mock_wrap.return_value = expected_final_instruction
-        test_task.instruction = initial_instruction
-
-        input_data = DataGenSaveSamplesApiInput(
-            input="Test input",
-            input_model_name="gpt-4",
-            input_provider="openai",
-            run_config_properties=KilnAgentRunConfigProperties(
-                model_name="gpt-4",
-                model_provider_name=ModelProviderName.openai,
-                prompt_id=PromptGenerators.SIMPLE,
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-            topic_path=topic_path,
-            guidance=guidance,
-        )
-
+    with patch("app.desktop.studio_server.data_gen_api.adapter_for_task") as mock:
+        mock.return_value.invoke = AsyncMock(return_value=mock_task_run)
         response = client.post(
             "/api/projects/proj-ID/tasks/task-ID/generate_sample",
             json=input_data.model_dump(),
         )
 
-        assert response.status_code == 200
-
-        if should_call_wrap:
-            # Verify wrap_task_with_guidance was called with expected parameters
-            mock_wrap.assert_called_once_with(
-                initial_instruction, expected_wrapped_call
+    assert response.status_code == 200
+    assert test_task.instruction == "Test Instruction"
+    builder = mock.call_args.kwargs["base_adapter_config"].prompt_builder
+    if expected_guidance is None:
+        assert builder is None
+    else:
+        assert builder.build_prompt(include_json_instructions=False) == (
+            wrap_task_with_guidance(
+                SimplePromptBuilder(test_task).build_base_prompt(),
+                expected_guidance,
             )
-        else:
-            # Verify wrap_task_with_guidance was NOT called
-            mock_wrap.assert_not_called()
+        )
 
-        # Verify task instruction final state
-        assert test_task.instruction == expected_final_instruction
+
+def test_generate_sample_guidance_reaches_a_saved_prompt(
+    mock_task_from_id,
+    client,
+    mock_task_run,
+    test_task,
+):
+    """A run config with a saved prompt (`id::`) builds from the prompt's own
+    text, not `task.instruction`. The guidance must still reach it."""
+    saved = Prompt(name="Saved", prompt="SAVED PROMPT TEXT", parent=test_task)
+    saved.save_to_file()
+    input_data = DataGenSaveSamplesApiInput(
+        input="Test input",
+        input_model_name="gpt-4",
+        input_provider="openai",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=f"id::{saved.id}",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        topic_path=[],
+        guidance="LABEL THIS AS SPAM",
+    )
+
+    with patch("app.desktop.studio_server.data_gen_api.adapter_for_task") as mock:
+        mock.return_value.invoke = AsyncMock(return_value=mock_task_run)
+        response = client.post(
+            "/api/projects/proj-ID/tasks/task-ID/generate_sample",
+            json=input_data.model_dump(),
+        )
+
+    assert response.status_code == 200
+    builder = mock.call_args.kwargs["base_adapter_config"].prompt_builder
+    prompt = builder.build_prompt(include_json_instructions=False)
+    assert prompt.startswith("SAVED PROMPT TEXT")
+    assert "LABEL THIS AS SPAM" in prompt
+    assert "Test Instruction" not in prompt
+    assert builder.prompt_id() == saved.id
+
+
+async def test_generate_one_output_guidance_reaches_a_saved_prompt(
+    mock_task_from_id, mock_task_run, test_task
+):
+    saved = Prompt(name="Saved", prompt="SAVED PROMPT TEXT", parent=test_task)
+    saved.save_to_file()
+    with patch("app.desktop.studio_server.data_gen_api.adapter_for_task") as mock:
+        mock.return_value.invoke = AsyncMock(return_value=mock_task_run)
+        await _generate_one_output(
+            project_id="proj-ID",
+            task_id="task-ID",
+            item_input="hi",
+            input_model_name="gpt-4",
+            input_provider="openai",
+            run_config_properties=KilnAgentRunConfigProperties(
+                model_name="gpt-4",
+                model_provider_name=ModelProviderName.openai,
+                prompt_id=f"id::{saved.id}",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            guidance="LABEL THIS AS SPAM",
+            session_id=None,
+            tags=None,
+        )
+
+    builder = mock.call_args.kwargs["base_adapter_config"].prompt_builder
+    prompt = builder.build_prompt(include_json_instructions=False)
+    assert prompt.startswith("SAVED PROMPT TEXT")
+    assert "LABEL THIS AS SPAM" in prompt
+
+
+def test_prompt_builder_with_guidance_skips_an_mcp_run_config(test_task):
+    rcp = McpRunConfigProperties(
+        tool_reference=MCPToolReference(tool_id="mcp::local::server::tool")
+    )
+    assert _prompt_builder_with_guidance(test_task, rcp, "guidance") is None
 
 
 def test_generate_qna_success_with_session_and_tags(
@@ -1090,12 +1141,6 @@ def test_generate_sample_does_not_inject_data_guide(
     saved = DataGuide(parent=test_task, guide="DO_NOT_LEAK_TO_OUTPUT_STAGE")
     saved.save_to_file()
 
-    captured: dict = {}
-
-    def capturing_wrap(instruction: str, guidance: str) -> str:
-        captured["wrapped_with"] = guidance
-        return instruction
-
     fake_run = TaskRun(
         input="hi",
         input_source=DataSource(
@@ -1127,10 +1172,6 @@ def test_generate_sample_does_not_inject_data_guide(
             "app.desktop.studio_server.data_gen_api.load_skills_for_task",
             return_value=[],
         ),
-        patch(
-            "app.desktop.studio_server.data_gen_api.wrap_task_with_guidance",
-            side_effect=capturing_wrap,
-        ),
     ):
         mock_adapter = AsyncMock()
         mock_adapter.invoke = AsyncMock(return_value=fake_run)
@@ -1155,12 +1196,15 @@ def test_generate_sample_does_not_inject_data_guide(
         )
 
     assert response.status_code == 200
-    # Either the wrap was never called (no guidance at all) or, if it was
-    # called for the topic-path tail, the guidance string must NOT contain the
-    # data guide body.
-    wrapped = captured.get("wrapped_with", "")
-    assert "DO_NOT_LEAK_TO_OUTPUT_STAGE" not in wrapped
-    assert "Task Data Guide" not in wrapped
+    # The topic path alone makes a guidance block; it must NOT carry the data
+    # guide body.
+    builder = mock_adapter_for_task.call_args.kwargs[
+        "base_adapter_config"
+    ].prompt_builder
+    prompt = builder.build_prompt(include_json_instructions=False)
+    assert "greetings" in prompt
+    assert "DO_NOT_LEAK_TO_OUTPUT_STAGE" not in prompt
+    assert "Task Data Guide" not in prompt
 
 
 # --- /data_gen_guide_preview endpoint ---
