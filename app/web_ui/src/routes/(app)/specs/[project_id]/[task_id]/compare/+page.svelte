@@ -44,6 +44,8 @@
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import RunEval from "$lib/components/run_eval.svelte"
   import FloatingMenu from "$lib/ui/floating_menu.svelte"
+  import EditIcon from "$lib/ui/icons/edit_icon.svelte"
+  import ScoreDisplayNameDialog from "$lib/components/score_display_name_dialog.svelte"
   import type { FloatingMenuItem } from "$lib/ui/floating_menu_types"
 
   import { agentInfo } from "$lib/agent"
@@ -76,6 +78,11 @@
   let eval_scores_cache: Record<string, RunConfigEvalScoresSummary> = {}
   let eval_scores_loading: Record<string, boolean> = {}
   let eval_scores_errors: Record<string, string> = {}
+  // Every run config's scores load in one request when the page opens. The
+  // per-run-config fetches below wait for it, then pick up run configs it
+  // missed: ones created later, or all of them if the request failed.
+  let all_eval_scores_requested_for_task: string | null = null
+  let all_eval_scores_loading = false
 
   // Eval data cache (full eval objects, keyed by eval_id)
   let eval_data_cache: Record<string, Eval> = {}
@@ -222,6 +229,36 @@
     }
   }
 
+  async function fetch_all_eval_scores(run_config_ids: string[]) {
+    all_eval_scores_requested_for_task = task_id
+    if (run_config_ids.length === 0) {
+      return
+    }
+    all_eval_scores_loading = true
+    for (const id of run_config_ids) {
+      eval_scores_loading[id] = true
+    }
+    try {
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/eval_scores",
+        { params: { path: { project_id, task_id } } },
+      )
+      if (fetch_error) {
+        throw fetch_error
+      }
+      eval_scores_cache = { ...eval_scores_cache, ...data }
+    } catch (err) {
+      // Left out of the cache, so the per-run-config fetches retry each one
+      // and report errors per run config.
+      console.error("Failed to fetch eval scores for all run configs", err)
+    } finally {
+      for (const id of run_config_ids) {
+        eval_scores_loading[id] = false
+      }
+      all_eval_scores_loading = false
+    }
+  }
+
   async function fetch_eval_scores(run_config_id: string) {
     if (
       eval_scores_cache[run_config_id] ||
@@ -260,7 +297,12 @@
   }
 
   // Reactively fetch eval scores when models are selected (for table)
-  $: {
+  // Compares the task id directly: this block starts the batch request, and a
+  // reactive copy of the flag would not update within the same flush.
+  $: if (
+    all_eval_scores_requested_for_task === task_id &&
+    !all_eval_scores_loading
+  ) {
     selectedModels.forEach((modelId) => {
       if (
         modelId &&
@@ -275,7 +317,16 @@
   }
 
   // Fetch eval scores for ALL run configs (for chart)
-  $: if (current_task_run_configs) {
+  $: if (
+    current_task_run_configs &&
+    all_eval_scores_requested_for_task !== task_id
+  ) {
+    fetch_all_eval_scores(
+      current_task_run_configs.flatMap((config) =>
+        config.id ? [config.id] : [],
+      ),
+    )
+  } else if (current_task_run_configs && !all_eval_scores_loading) {
     current_task_run_configs.forEach((config) => {
       if (
         config.id &&
@@ -421,13 +472,37 @@
     })
   }
 
+  let score_display_name_dialog: ScoreDisplayNameDialog | null = null
+
+  // Applies a renamed score to every cached summary, so labels update without refetching.
+  function apply_score_display_name(
+    event: CustomEvent<{
+      eval_id: string
+      score_key: string
+      display_name: string
+    }>,
+  ) {
+    const { eval_id, score_key, display_name } = event.detail
+    for (const summary of Object.values(eval_scores_cache)) {
+      for (const eval_result of summary.eval_results) {
+        if (eval_result.eval_id === eval_id) {
+          eval_result.score_display_names = {
+            ...eval_result.score_display_names,
+            [score_key]: display_name,
+          }
+        }
+      }
+    }
+    eval_scores_cache = eval_scores_cache
+  }
+
   function generateComparisonFeatures(
     models: (string | null)[],
     scores_cache: Record<string, RunConfigEvalScoresSummary>,
   ) {
     const features: {
       category: string
-      items: { label: string; key: string }[]
+      items: { label: string; key: string; score_key?: string }[]
       has_default_eval_config: boolean | undefined
       eval_id: string
       spec_id: string | null
@@ -435,6 +510,7 @@
     const evalCategories: Record<string, Set<string>> = {}
     const hasDefaultEvalConfig: Record<string, boolean> = {}
     const evalNames: Record<string, string> = {}
+    const scoreDisplayNames: Record<string, Record<string, string>> = {}
     const specIds: Record<string, string | null> = {}
 
     // Collect all evals and their scores from selected models
@@ -446,6 +522,7 @@
         const evalId = evalResult.eval_id || ""
         hasDefaultEvalConfig[evalId] = !evalResult.missing_default_eval_config
         evalNames[evalId] = evalResult.eval_name
+        scoreDisplayNames[evalId] = evalResult.score_display_names || {}
         specIds[evalId] = evalResult.spec_id || null
 
         if (!evalCategories[evalId]) {
@@ -463,10 +540,11 @@
     // Convert to comparison features format
     Object.entries(evalCategories).forEach(([evalId, scoreKeys]) => {
       const items = Array.from(scoreKeys).map((scoreKey) => ({
-        label: scoreKey
-          .replace(/_/g, " ")
-          .replace(/\b\w/g, (l) => l.toUpperCase()),
+        label:
+          scoreDisplayNames[evalId]?.[scoreKey] ||
+          scoreKey.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
         key: `${evalId}::${scoreKey}`,
+        score_key: scoreKey,
       }))
 
       features.push({
@@ -1041,11 +1119,31 @@
                 >
                   {#each section.items as item, item_index}
                     <!-- Feature Label -->
-                    <div
-                      class="px-6 py-4 bg-gray-50 font-medium text-gray-700 flex items-center border-b border-gray-100"
-                    >
-                      {item.label}
-                    </div>
+                    {#if item.score_key}
+                      {@const score_key = item.score_key}
+                      <button
+                        class="group px-6 py-4 bg-gray-50 hover:bg-gray-100 font-medium text-gray-700 flex items-center text-left border-b border-gray-100 transition-colors"
+                        aria-label={`Rename score ${item.label}`}
+                        on:click={() =>
+                          score_display_name_dialog?.show(
+                            section.eval_id,
+                            score_key,
+                          )}
+                      >
+                        {item.label}
+                        <span
+                          class="ml-1.5 w-4 h-4 shrink-0 text-gray-500 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity"
+                        >
+                          <EditIcon />
+                        </span>
+                      </button>
+                    {:else}
+                      <div
+                        class="px-6 py-4 bg-gray-50 font-medium text-gray-700 flex items-center border-b border-gray-100"
+                      >
+                        {item.label}
+                      </div>
+                    {/if}
 
                     <!-- Model Values -->
                     {#each Array(columns) as _, i}
@@ -1291,6 +1389,13 @@
     </div>
   {/if}
 </AppPage>
+
+<ScoreDisplayNameDialog
+  bind:this={score_display_name_dialog}
+  {project_id}
+  {task_id}
+  on:saved={apply_score_display_name}
+/>
 
 <CreateNewRunConfigDialog
   bind:this={create_new_run_config_dialog}

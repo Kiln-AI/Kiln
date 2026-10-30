@@ -460,11 +460,13 @@ def test_get_rating_options_with_evals(client, project_and_task):
     # Create score mocks with proper name attributes
     score1 = MagicMock()
     score1.name = "Score 1"
+    score1.display_name = "Quality"
     score1.instruction = "Score 1 instruction"
     score1.type = "five_star"
 
     score2 = MagicMock()
     score2.name = "Overall Rating"
+    score2.display_name = None
     score2.instruction = "Overall instruction"
     score2.type = "five_star"
 
@@ -477,6 +479,7 @@ def test_get_rating_options_with_evals(client, project_and_task):
     # Create score mocks with proper name attributes
     score3 = MagicMock()
     score3.name = "Score 1"
+    score3.display_name = None
     score3.instruction = "Score 1 instruction"
     score3.type = "five_star"
 
@@ -498,6 +501,8 @@ def test_get_rating_options_with_evals(client, project_and_task):
     assert len(res["options"]) == 1  # Only Score 1, Overall Rating is skipped
     option = res["options"][0]
     assert option["requirement"]["name"] == "Score 1"
+    assert option["requirement"]["id"] == "named::Score 1"
+    assert option["display_name"] == "Quality"
     assert option["show_for_all"] is False
     # Note: we're checking it's not added twice with the dupe
     assert option["show_for_tags"] == ["golden_set"]
@@ -548,6 +553,7 @@ def test_get_rating_options_duplicate_requirements(client, project_and_task):
 
     score1 = MagicMock()
     score1.name = "Duplicate Score"
+    score1.display_name = None
     score1.instruction = "Score 1 instruction"
     score1.type = "five_star"
     eval1.output_scores = [score1]
@@ -557,6 +563,7 @@ def test_get_rating_options_duplicate_requirements(client, project_and_task):
 
     score2 = MagicMock()
     score2.name = "Duplicate Score"  # Same name as eval1
+    score2.display_name = None
     score2.instruction = "Score 2 instruction"
     score2.type = "five_star"
     eval2.output_scores = [score2]
@@ -579,6 +586,47 @@ def test_get_rating_options_duplicate_requirements(client, project_and_task):
     assert option["requirement"]["name"] == "Duplicate Score"
     assert option["show_for_all"] is False
     assert set(option["show_for_tags"]) == {"golden_set1", "golden_set2"}
+
+
+def test_get_rating_options_merged_score_uses_first_display_name(
+    client, project_and_task
+):
+    """A score merged into an existing option takes the first display name set."""
+    project, task = project_and_task
+
+    def eval_with_score(tag: str, display_name: str | None) -> MagicMock:
+        score = MagicMock()
+        score.name = "Shared Score"
+        score.display_name = display_name
+        score.instruction = "instruction"
+        score.type = "five_star"
+        eval = MagicMock()
+        eval.eval_configs_filter_id = f"tag::{tag}"
+        eval.output_scores = [score]
+        return eval
+
+    evals = [
+        eval_with_score("golden_set1", None),
+        eval_with_score("golden_set2", "Quality"),
+        eval_with_score("golden_set3", "Other"),
+    ]
+
+    with (
+        patch("kiln_server.task_api.project_from_id") as mock_project_from_id,
+        patch("kiln_ai.datamodel.Task.evals") as mock_evals,
+    ):
+        mock_project_from_id.return_value = project
+        mock_evals.return_value = evals
+
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/rating_options"
+        )
+
+    assert response.status_code == 200
+    options = response.json()["options"]
+    assert len(options) == 1
+    assert options[0]["requirement"]["name"] == "Shared Score"
+    assert options[0]["display_name"] == "Quality"
 
 
 def test_delete_task_success(client, project_and_task):

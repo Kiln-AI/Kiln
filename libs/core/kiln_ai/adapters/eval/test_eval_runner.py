@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, contextmanager
 from typing import ClassVar, Dict
@@ -19,6 +20,7 @@ from kiln_ai.adapters.eval.eval_runner import (
     _conversation_usage,
     conversation_health_problem,
 )
+from kiln_ai.adapters.eval.trace_index import TraceIndex, TraceIndexRegistry
 from kiln_ai.adapters.jev import JevApiError
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.retry_classification import is_retryable_error
@@ -346,6 +348,147 @@ async def test_run_collects_tasks_again_after_a_torn_read(
     assert len(calls) == 2
     assert progresses[-1].complete == 3
     assert mock_eval_runner.run_job.call_count == 3
+
+
+def test_constructing_runner_does_not_read_task_runs(
+    mock_eval, mock_task, mock_eval_config, mock_run_config, monkeypatch
+):
+    # A runner is also built only to validate a request (validate_*_readiness). Seeding
+    # the trace index reads every TaskRun of the task, so it must not happen here.
+    # Resolving the split reads the runs too; do it before counting.
+    split = _test_split([mock_eval_config])
+    reads: list[int] = []
+    real_runs = Task.runs
+
+    def counting_runs(self, *args, **kwargs):
+        reads.append(1)
+        return real_runs(self, *args, **kwargs)
+
+    monkeypatch.setattr(Task, "runs", counting_runs)
+
+    EvalRunner(
+        eval_configs=[mock_eval_config],
+        run_configs=[mock_run_config],
+        eval_run_type="task_run_eval",
+        split=split,
+    )
+
+    assert reads == []
+
+
+@pytest.mark.asyncio
+async def test_run_seeds_trace_index_once_in_a_thread_before_jobs(
+    mock_eval_runner, monkeypatch
+):
+    events: list[str] = []
+    seeded: list[TraceIndex] = []
+    seed_threads: list[int] = []
+    real_seed = TraceIndex._seed
+
+    def recording_seed(self):
+        events.append("seed")
+        seeded.append(self)
+        seed_threads.append(threading.get_ident())
+        real_seed(self)
+
+    monkeypatch.setattr(TraceIndex, "_seed", recording_seed)
+    mock_eval_runner.eval_configs = [
+        config.model_copy(update={"config_type": EvalConfigType.v2})
+        for config in mock_eval_runner.eval_configs
+    ]
+    mock_eval_runner.collect_tasks = lambda: [{} for _ in range(3)]
+
+    async def run_job(job):
+        events.append("job")
+        assert await mock_eval_runner._trace_index() is seeded[0]
+        return True
+
+    mock_eval_runner.run_job = run_job
+
+    [progress async for progress in mock_eval_runner.run()]
+
+    assert events == ["seed", "job", "job", "job"]
+    assert seed_threads != [threading.get_ident()]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "eval_run_type, job_count",
+    [
+        # Every item is scored already: nothing to look up.
+        ("task_run_eval", 0),
+        # A legacy judge generates its own output and never looks a trace up.
+        ("task_run_eval", 3),
+        # Calibration scores stored dataset runs and never generates a trace.
+        ("eval_config_eval", 3),
+    ],
+)
+async def test_run_without_trace_lookups_does_not_seed_trace_index(
+    mock_eval_runner, monkeypatch, eval_run_type, job_count
+):
+    seeds: list[int] = []
+    monkeypatch.setattr(TraceIndex, "_seed", lambda self: seeds.append(1))
+    mock_eval_runner.eval_run_type = eval_run_type
+    mock_eval_runner.collect_tasks = lambda: [{} for _ in range(job_count)]
+    mock_eval_runner.run_job = AsyncMock(return_value=True)
+
+    [progress async for progress in mock_eval_runner.run()]
+
+    assert seeds == []
+    assert mock_eval_runner.run_job.call_count == job_count
+
+
+def test_concurrent_seeds_build_one_trace_index(mock_eval_runner, monkeypatch):
+    seeding = threading.Event()
+    release = threading.Event()
+    seeds: list[int] = []
+    real_seed = TraceIndex._seed
+
+    def slow_seed(self):
+        seeds.append(1)
+        seeding.set()
+        release.wait(timeout=5)
+        real_seed(self)
+
+    monkeypatch.setattr(TraceIndex, "_seed", slow_seed)
+    indexes: list[TraceIndex] = []
+
+    def seed():
+        indexes.append(mock_eval_runner._seed_trace_index())
+
+    first = threading.Thread(target=seed)
+    first.start()
+    assert seeding.wait(timeout=5)
+    # The second caller arrives while the first is still reading the runs.
+    second = threading.Thread(target=seed)
+    second.start()
+    release.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert seeds == [1]
+    assert len(indexes) == 2
+    assert indexes[0] is indexes[1]
+
+
+@pytest.mark.asyncio
+async def test_a_job_outside_run_seeds_the_trace_index_in_a_thread(
+    mock_eval_runner, monkeypatch
+):
+    seed_threads: list[int] = []
+    real_seed = TraceIndex._seed
+
+    def recording_seed(self):
+        seed_threads.append(threading.get_ident())
+        real_seed(self)
+
+    monkeypatch.setattr(TraceIndex, "_seed", recording_seed)
+
+    index = await mock_eval_runner._trace_index()
+
+    assert await mock_eval_runner._trace_index() is index
+    assert len(seed_threads) == 1
+    assert seed_threads != [threading.get_ident()]
 
 
 def test_collect_tasks_filtering(
@@ -2218,6 +2361,45 @@ class TestV2FreshGeneration:
         assert saved.task_run_usage is None
 
     @pytest.mark.asyncio
+    async def test_judge_trace_is_recorded_on_the_score(
+        self,
+        mock_v2_task_run_eval_runner,
+        mock_v2_task_run_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        """The judge's conversation, so what its template rendered can be inspected."""
+        judge_trace = [
+            {"role": "system", "content": "Score the output."},
+            {"role": "user", "content": "rendered judge prompt"},
+            {"role": "assistant", "content": '{"accuracy": 1.0}'},
+        ]
+
+        class TracedJudge(StubV2Eval):
+            async def evaluate(self, eval_input):
+                return V2EvalResult(scores={"accuracy": 1.0}, judge_trace=judge_trace)
+
+        item = TaskRun(
+            input="test input",
+            output=TaskOutput(output="stale output", source=data_source),
+            parent=mock_v2_task_run_eval_runner.task,
+        )
+        item.save_to_file()
+
+        job = EvalJob(
+            item=item,
+            eval_config=mock_v2_task_run_eval_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+        with generating(TraceGenerator(mock_v2_task_run_eval_runner.task), TracedJudge):
+            await mock_v2_task_run_eval_runner.run_job(job)
+
+        (saved,) = mock_v2_task_run_eval_config.runs(readonly=True)
+        assert saved.judge_trace == judge_trace
+        assert saved.task_run_trace is None
+
+    @pytest.mark.asyncio
     async def test_scoring_skip_still_names_the_trace_it_could_not_score(
         self,
         mock_v2_task_run_eval_runner,
@@ -2860,6 +3042,41 @@ class TestTraceReuse:
         )
         with generating(generator):
             await run_to_completion(runner)
+
+        assert len(generator.calls) == len(dataset_items)
+        assert len(eval_traces(mock_task)) == len(dataset_items)
+        assert scored_run_ids(mock_v2_task_run_eval_config) == scored_run_ids(
+            second_judge
+        )
+
+    @pytest.mark.asyncio
+    async def test_two_concurrent_jobs_on_one_run_config_generate_once_per_item(
+        self,
+        mock_task,
+        mock_v2_task_run_eval_config,
+        second_judge,
+        mock_run_config,
+        dataset_items,
+    ):
+        """The same overlap across jobs: one background eval job per eval config, posted
+        together. Each job builds its own runner, and both are built before either has
+        generated anything, so only an index shared between runners stops both from
+        generating every item.
+        """
+        generator = TraceGenerator(mock_task)
+        registry = TraceIndexRegistry()
+        first_job = build_task_run_eval_runner(
+            [mock_v2_task_run_eval_config],
+            [mock_run_config],
+            trace_index_registry=registry,
+        )
+        second_job = build_task_run_eval_runner(
+            [second_judge], [mock_run_config], trace_index_registry=registry
+        )
+        with generating(generator):
+            await asyncio.gather(
+                run_to_completion(first_job), run_to_completion(second_job)
+            )
 
         assert len(generator.calls) == len(dataset_items)
         assert len(eval_traces(mock_task)) == len(dataset_items)
@@ -5764,3 +5981,90 @@ async def test_run_notifies_observers_of_a_failed_item(
     assert len(failures) == 1
     assert failures[0][0].item.id == task_run.id
     assert str(failures[0][1]) == "judge exploded"
+
+
+# -------------------------------------------------------------------
+# Drive-only runs (judge=False)
+# -------------------------------------------------------------------
+class TestDriveOnly:
+    @pytest.mark.asyncio
+    async def test_drives_every_item_and_scores_none(
+        self, mock_task, mock_v2_eval_config, mock_run_config, mock_eval_inputs
+    ):
+        generator = TraceGenerator(mock_task)
+        runner = build_task_run_eval_runner(
+            [mock_v2_eval_config], [mock_run_config], judge=False
+        )
+        with generating(generator):
+            async for _ in runner.run():
+                pass
+
+        assert len(generator.calls) == 2
+        assert mock_v2_eval_config.runs(readonly=True) == []
+        driven = {run.item_id: run for run in runner.driven_runs}
+        assert set(driven) == {"ei_1", "ei_2"}
+        for run in driven.values():
+            assert run.item_source == "eval_input"
+            assert run.run_config_id == mock_run_config.id
+            trace = trace_for(mock_task, run.task_run_id)
+            assert trace.usage == generator.usage
+            assert trace.eval_source is not None
+            assert trace.eval_source.source_id == run.item_id
+
+    @pytest.mark.asyncio
+    async def test_drives_items_that_are_already_scored(
+        self, mock_task, mock_v2_eval_config, mock_run_config, mock_eval_inputs
+    ):
+        """A score says nothing about this run's usage, so drive-only ignores it."""
+        generator = TraceGenerator(mock_task)
+        with generating(generator):
+            judged = build_task_run_eval_runner(
+                [mock_v2_eval_config], [mock_run_config]
+            )
+            async for _ in judged.run():
+                pass
+            assert len(generator.calls) == 2
+            assert judged.collect_tasks() == []
+
+            drive_only = build_task_run_eval_runner(
+                [mock_v2_eval_config], [mock_run_config], judge=False
+            )
+            assert len(drive_only.collect_tasks()) == 2
+            async for _ in drive_only.run():
+                pass
+
+        assert len(generator.calls) == 4
+        assert len(eval_traces(mock_task)) == 4
+        assert len(mock_v2_eval_config.runs(readonly=True)) == 2
+
+    def test_refuses_a_legacy_judge(
+        self, mock_eval_config, mock_run_config, mock_task, data_source
+    ):
+        with pytest.raises(ValueError, match="not a V2 judge with an adapter"):
+            build_task_run_eval_runner(
+                [mock_eval_config], [mock_run_config], judge=False
+            )
+
+    def test_refuses_two_eval_configs(
+        self, mock_v2_eval, mock_v2_eval_config, mock_run_config
+    ):
+        second = EvalConfig(
+            name="second",
+            config_type=EvalConfigType.v2,
+            properties=ExactMatchProperties(expected_value="x"),
+            parent=mock_v2_eval,
+        )
+        second.save_to_file()
+        with pytest.raises(ValueError, match="exactly one eval config"):
+            build_task_run_eval_runner(
+                [mock_v2_eval_config, second], [mock_run_config], judge=False
+            )
+
+    def test_refuses_judge_calibration(self, mock_v2_eval_config):
+        with pytest.raises(ValueError, match="Only a task_run_eval"):
+            EvalRunner(
+                eval_configs=[mock_v2_eval_config],
+                run_configs=None,
+                eval_run_type="eval_config_eval",
+                judge=False,
+            )

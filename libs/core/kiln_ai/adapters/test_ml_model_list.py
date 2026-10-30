@@ -741,3 +741,99 @@ def test_cloudflare_model_ids_are_workers_ai_ids():
     for provider in cloudflare_providers:
         assert provider.model_id is not None
         assert provider.model_id.startswith("@cf/"), provider.model_id
+
+
+@pytest.mark.parametrize(
+    "model_id,expected_levels,expected_default",
+    [
+        # Each set is drawn from the model's `supported_efforts` in Cloudflare's
+        # catalog; Cloudflare silently remaps any other value. `none` is left out
+        # where the model still returns reasoning with it.
+        (
+            "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+            {"Off": "none", "Low": "low", "High": "high", "Max": "max"},
+            "high",
+        ),
+        (
+            "@cf/deepseek-ai/deepseek-v4-pro-0813",
+            {"Low": "low", "High": "high", "Max": "max"},
+            "high",
+        ),
+        (
+            "@cf/deepseek-ai/deepseek-v4-flash-0731",
+            {"Low": "low", "High": "high", "Max": "max"},
+            "high",
+        ),
+        (
+            "@cf/zai-org/glm-5.3",
+            {"Low": "low", "High": "high", "Max": "max"},
+            "max",
+        ),
+        (
+            "@cf/zai-org/glm-5.3-flash",
+            {"Low": "low", "High": "high", "Max": "max"},
+            "max",
+        ),
+        (
+            "@cf/zai-org/glm-5.2",
+            {"High": "high", "Max": "max"},
+            "max",
+        ),
+        (
+            "@cf/moonshotai/kimi-k2.6",
+            {"Off": "none", "High": "high"},
+            "high",
+        ),
+        (
+            "@cf/qwen/qwen3.8-27b",
+            {"Low": "low", "Medium": "medium", "Extra High": "xhigh"},
+            "xhigh",
+        ),
+    ],
+)
+def test_cloudflare_thinking_levels(model_id, expected_levels, expected_default):
+    provider = next(
+        p
+        for model in built_in_models
+        for p in model.providers
+        if p.name == ModelProviderName.cloudflare and p.model_id == model_id
+    )
+    # Adaptive-reasoning models stay False: a run with no reasoning would otherwise fail.
+    assert not provider.reasoning_capable
+    assert provider.available_thinking_levels == expected_levels
+    assert provider.default_thinking_level == expected_default
+
+
+@pytest.mark.parametrize(
+    "model_id,expected_levels,expected_default,expected_allowed_params",
+    [
+        # Not in LiteLLM's bundled model map, so reasoning_effort must be whitelisted.
+        # No Extra High: Fireworks accepts "xhigh" but reasons no longer than "high".
+        (
+            "accounts/fireworks/models/muse-spark-open",
+            {"Low": "low", "Medium": "medium", "High": "high"},
+            "medium",
+            ["reasoning_effort"],
+        ),
+        # Thinking-only: Fireworks rejects "none", and no effort reasons as long as "max".
+        # No Medium: Fireworks accepts "medium" but it reasons the same as "high".
+        (
+            "accounts/fireworks/models/glm-5p3-flash",
+            {"Low": "low", "High": "high", "Max": "max"},
+            "max",
+            None,
+        ),
+    ],
+)
+def test_fireworks_thinking_levels(
+    model_id, expected_levels, expected_default, expected_allowed_params
+):
+    provider = next(
+        p
+        for model in built_in_models
+        for p in model.providers
+        if p.name == ModelProviderName.fireworks_ai and p.model_id == model_id
+    )
+    assert provider.available_thinking_levels == expected_levels
+    assert provider.default_thinking_level == expected_default
+    assert provider.litellm_allowed_openai_params == expected_allowed_params
