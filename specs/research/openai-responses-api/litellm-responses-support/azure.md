@@ -24,11 +24,11 @@ The third row is the Kiln-relevant trap: with `base_model` set so LiteLLM knows 
 
 ## URL, auth and body
 
-- URL: `BaseAzureLLM._get_base_azure_url(route="/openai/responses", default_api_version=AZURE_DEFAULT_RESPONSES_API_VERSION)` (`llms/azure/responses/transformation.py:159-186`, `llms/azure/common_utils.py:743-800`). The default version is env `AZURE_DEFAULT_RESPONSES_API_VERSION` or `"preview"` (`constants.py:9`). The versions `preview`, `latest` and `v1` switch the path to `/openai/v1/responses` (`_is_azure_v1_api_version`, `common_utils.py:821-824`). Observed: no `api_version` gave `/openai/v1/responses?api-version=preview`; `api_version="2025-04-01-preview"` gave `/openai/responses?api-version=2025-04-01-preview`.
-- Auth: Azure environment validation (`api-key` header was present in the capture), `llms/azure/responses/transformation.py:47-48`.
-- Body `model` is the deployment name with any `responses/` or `o_series/` prefix stripped (`get_stripped_model_name`, lines 50-56).
-- Tools nested under `function` are flattened (lines 128-142). The bridge already flattens them, so the bridged body was the same shape as for OpenAI, including `"strict": null` and `"description": null`.
-- Input items: `status` is removed from reasoning items and from message items, because "Azure OpenAI API does not accept 'status' field in input messages" (lines 58-118, citing issue [#13484](https://github.com/BerriAI/litellm/issues/13484)).
+- URL: `BaseAzureLLM._get_base_azure_url(route="/openai/responses", default_api_version=AZURE_DEFAULT_RESPONSES_API_VERSION)` (`llms/azure/responses/transformation.py:154-182`, `llms/azure/common_utils.py:743-791`). The default version is env `AZURE_DEFAULT_RESPONSES_API_VERSION` or `"preview"` (`constants.py:9`). The versions `preview`, `latest` and `v1` switch the path to `/openai/v1/responses` (`_is_azure_v1_api_version`, `common_utils.py:821-824`). Observed: no `api_version` gave `/openai/v1/responses?api-version=preview`; `api_version="2025-04-01-preview"` gave `/openai/responses?api-version=2025-04-01-preview`.
+- Auth: Azure environment validation (`api-key` header was present in the capture), `llms/azure/responses/transformation.py:48-49`.
+- Body `model` is the deployment name with any `responses/` or `o_series/` prefix stripped (`get_stripped_model_name`, lines 51-57).
+- Tools nested under `function` are flattened (lines 131-145). The bridge already flattens them, so the bridged body was the same shape as for OpenAI, including `"strict": null` and `"description": null`.
+- Input items: `status` is removed from reasoning items and from message items, because "Azure OpenAI API does not accept 'status' field in input messages" (lines 59-118, citing issue [#13484](https://github.com/BerriAI/litellm/issues/13484)).
 - `context_management` is not supported on Azure (line 27).
 - `AzureOpenAIOSeriesResponsesAPIConfig` is chosen when the model is an o-series name or `supports_reasoning(model)` is true (`utils.py:8791-8801`). It removes `temperature` from supported params and drops it under `drop_params` (`o_series_transformation.py`).
 - Temperature rules for GPT-5 names use `AzureOpenAIGPT5Config` (lines 34-40).
