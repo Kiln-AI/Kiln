@@ -19,8 +19,8 @@
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "@redocly/cli": "^2.51.2",
-    "@sveltejs/adapter-static": "^3.0.2",
-    "@sveltejs/kit": "^2.70.2",
+    "@sveltejs/adapter-static": "^4.0.0",
+    "@sveltejs/kit": "^3.1.0",
     "@sveltejs/vite-plugin-svelte": "^3.1.1",
     "@tailwindcss/typography": "^0.5.13",
     "@testing-library/jest-dom": "^6.9.1",
