@@ -83,7 +83,7 @@ The `messages` list is mutated in place so a partial trace survives exceptions (
 
 ### Observed: reasoning items ride on the `Message` object within a run
 
-Offline probe (script in my scratchpad; `respx` mocks `https://api.openai.com/v1/responses`), model `gpt_5_4_pro` / `openai` (LiteLLM 1.102.0 already sends this model to `/v1/responses` on its own, see §6). First reply: a `reasoning` item (`id: rs_1`, `encrypted_content: "ENC123"`, one summary) and a `function_call` (`call_id: call_abc`). Kiln ran the tool and made a second call whose `input` was:
+Offline probe ([offline-probes.md](./offline-probes.md) §2; `respx` mocks `https://api.openai.com/v1/responses`), model `gpt_5_4_pro` / `openai` (LiteLLM 1.102.0 already sends this model to `/v1/responses` on its own, see §6). First reply: a `reasoning` item (`id: rs_1`, `encrypted_content: "ENC123"`, one summary) and a `function_call` (`call_id: call_abc`). Kiln ran the tool and made a second call whose `input` was:
 
 ```
 {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "what is 2+2"}]}
