@@ -17,8 +17,8 @@ Closed PR Kiln-AI/Kiln#1757 (branch `mike/openai-responses-routing`) was an earl
 - [ ] Kiln adapter and public surface — what in Kiln's code would change, and what must not
 - [ ] History of the workaround — why tools were turned off on newer OpenAI models, and what the real bug is today
 - [ ] LiteLLM Responses support — the native call, the chat-to-responses conversion layer, routing rules, and known defects
-- [ ] OpenAI Responses API — official differences from Chat Completions, model-specific limits, storage and data retention
-- [ ] Prior art — how other LLM frameworks moved OpenAI calls to Responses, and what went wrong for them
+- [x] OpenAI Responses API — official differences from Chat Completions, model-specific limits, storage and data retention
+- [x] Prior art — how other LLM frameworks moved OpenAI calls to Responses, and what went wrong for them
 
 ## Focus Details
 
