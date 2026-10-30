@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest"
-import { prompt_link, tool_link, tool_set_type_label } from "./link_builder"
+import {
+  compare_run_configs_link,
+  experiment_lineage_link,
+  prompt_link,
+  tool_link,
+  tool_set_type_label,
+} from "./link_builder"
 
 describe("prompt_link", () => {
   const mockProjectId = "test-project"
@@ -189,5 +195,61 @@ describe("tool_set_type_label", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       tool_set_type_label("invalid_type" as any),
     ).toThrow("Unexpected value")
+  })
+})
+
+describe("experiment_lineage_link", () => {
+  it("links to the page without a selection", () => {
+    expect(experiment_lineage_link("p1", "t1")).toBe(
+      "/optimize/p1/t1/experiment_lineage",
+    )
+    expect(experiment_lineage_link("p1", "t1", null)).toBe(
+      "/optimize/p1/t1/experiment_lineage",
+    )
+    expect(experiment_lineage_link("p1", "t1", "")).toBe(
+      "/optimize/p1/t1/experiment_lineage",
+    )
+  })
+
+  it("adds the selected run config", () => {
+    expect(experiment_lineage_link("p1", "t1", "rc_42")).toBe(
+      "/optimize/p1/t1/experiment_lineage?selected=rc_42",
+    )
+  })
+
+  it("encodes the selected id", () => {
+    const link = experiment_lineage_link("p1", "t1", "a&b c")
+    const url = new URL(link, "http://localhost")
+    expect(url.searchParams.get("selected")).toBe("a&b c")
+  })
+})
+
+describe("compare_run_configs_link", () => {
+  it("fills both columns", () => {
+    expect(compare_run_configs_link("p1", "t1", ["rc_a", "rc_b"])).toBe(
+      "/specs/p1/t1/compare?from=optimize&columns=2&models=rc_a%2Crc_b",
+    )
+  })
+
+  it("leaves a null column empty", () => {
+    const link = compare_run_configs_link("p1", "t1", ["rc_a", null])
+    const url = new URL(link, "http://localhost")
+    expect(url.pathname).toBe("/specs/p1/t1/compare")
+    expect(url.searchParams.get("from")).toBe("optimize")
+    expect(url.searchParams.get("columns")).toBe("2")
+    expect(url.searchParams.get("models")).toBe("rc_a,")
+  })
+
+  it("round trips the ids the way the Compare page reads them", () => {
+    const link = compare_run_configs_link("p1", "t1", [null, "rc_b", "rc_c"])
+    const models = new URL(link, "http://localhost").searchParams.get("models")
+    expect(models?.split(",").map((id) => (id === "" ? null : id))).toEqual([
+      null,
+      "rc_b",
+      "rc_c",
+    ])
+    expect(new URL(link, "http://localhost").searchParams.get("columns")).toBe(
+      "3",
+    )
   })
 })
