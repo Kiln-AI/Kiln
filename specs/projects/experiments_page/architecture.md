@@ -47,6 +47,8 @@ app/web_ui/src/routes/(app)/optimize/[project_id]/[task_id]/
     lineage_swatch.svelte               NEW   glyph in a standalone <svg> for HTML contexts
     lineage_filter_chips.svelte (+ test) NEW  chips row
     lineage_panel.svelte   (+ test)     NEW   detail panel
+    panel_close_key.ts     (+ test)     NEW   which key presses close the panel (page-level Escape)
+    __tests__/filter_chips_harness.svelte NEW  test harness for the chips' two-way binding (test support only)
 app/web_ui/src/routes/(app)/specs/[project_id]/[task_id]/compare/+page.svelte
                                         EDIT  AppPage action button
 ```
@@ -326,7 +328,8 @@ Both build their query strings with `URLSearchParams`. Compare reads them back w
   - `ctx: DisplayContext`
 - **Local state:** `filters: Set<FilterKey>`, `selected_id: string | null`.
 - **URL sync.** After the first load completes, read `selected` once from `$page.url.searchParams`. Keep it only if `graph.nodes.has(id)`, and pass it as `initial_center_id`. Later selection changes call `goto(experiment_lineage_link(p, t, selected_id), { replaceState: true, noScroll: true, keepFocus: true })`.
-- **Body height.** At `lg` and up (`window.matchMedia("(min-width: 1024px)")`), the height is `max(420, innerHeight - body_el.getBoundingClientRect().top - 64)`. The 64 is AppPage's `mb-12` plus the layout's `mb-4`. It's recomputed on mount, after the first load, and on `svelte:window` resize. Below `lg`, the graph frame is 480px tall.
+- **Escape.** A `svelte:window` keydown handler closes the panel on an Escape from anywhere on the page, so it works after focus moves into the panel. It skips a key another handler already took (`defaultPrevented`, as the canvas sets), a key typed into a field, and any key while a `<dialog>` is open. The check is `closes_panel` in `panel_close_key.ts` beside the page.
+- **Body height.** At `lg` and up (`window.matchMedia("(min-width: 1024px)")`), the height is `max(420, innerHeight - (body_el.getBoundingClientRect().top + scrollY) - 97)`. The 97 is AppPage's `mb-12`, plus the app layout's `pb-8`, its 1px border and its `mb-4`. It's recomputed on `svelte:window` resize, and when a `ResizeObserver` on the body's container reports a change (the chips wrapping as the column narrows, the warning showing), one frame later so the height change stays out of the observer's callback. Below `lg`, the graph frame is 480px tall.
 - **Layout order:**
   1. `AppPage`: title, subtitle and breadcrumb.
   2. Loading spinner, error block, or `Intro` for zero configs.
@@ -358,13 +361,13 @@ Both build their query strings with `URLSearchParams`. Compare reads them back w
   - `dblclick` on empty space calls `fit`.
   - `keydown`:
     - Arrow keys call `next_selection`, dispatch `select`, then `ensure_visible`.
-    - `Escape` dispatches `close`.
+    - `Escape` dispatches `close` and calls `preventDefault()`.
     - `+` or `=` zooms in, `-` zooms out, and `0` fits.
     - Arrow keys and the zoom keys call `preventDefault()`.
 - **Toolbar.** The hint text, then a `join` of `btn btn-sm`: "−" (`aria-label="Zoom out"`), the zoom as `Math.round(k * 100)%` in a non-interactive `span`, "+" (`aria-label="Zoom in"`), and "Fit" (`aria-label="Fit graph"`).
 - **Viewport lifecycle:**
   - Once the view and `layout.width` are both non-zero, it initializes once. With `initial_center_id`, it calls `center_on` at k=1 on that node's center. Otherwise it calls `fit`.
-  - When the view size changes (a reactive comparison with the previous size), it calls `resize_keep_center`.
+  - When the view size changes (a reactive comparison with the previous size), it calls `resize_keep_center`. With a node selected, it then calls `ensure_visible` on that node, so opening the panel can't push a node just selected off screen.
   - When `layout` changes after initialization, it keeps the viewport and re-clamps it.
 
 ### `lineage_filter_chips.svelte`

@@ -31,11 +31,18 @@ export interface GlyphRect {
   overlay: boolean
 }
 
+/** A glyph's square size, the gap between its segments, and its corner radius, in px. */
+export interface GlyphSize {
+  size: number
+  gap: number
+  radius: number
+}
+
 export const GLYPH = {
-  graph: { size: 14, gap: 1 },
-  panel: { size: 40, gap: 2 },
-  swatch: { size: 12, gap: 1 },
-} as const
+  graph: { size: 14, gap: 1, radius: 2 },
+  panel: { size: 40, gap: 2, radius: 4 },
+  swatch: { size: 12, gap: 1, radius: 2 },
+} as const satisfies Record<string, GlyphSize>
 
 interface UnitRect {
   x: number

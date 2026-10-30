@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest"
 import type { TaskRunConfig } from "$lib/types"
 import { build_lineage_graph } from "./lineage_graph"
-import { LAYOUT, layout_lineage, type LineageLayout } from "./lineage_layout"
+import {
+  LAYOUT,
+  edge_path_groups,
+  layout_lineage,
+  type LineageLayout,
+} from "./lineage_layout"
 import {
   make_chain,
   make_dated_config,
@@ -197,5 +202,41 @@ describe("layout_lineage grid", () => {
 
   it("has no label without grid nodes", () => {
     expect(layout_of(make_chain(2)).grid_label).toBeNull()
+  })
+})
+
+describe("edge_path_groups", () => {
+  const edges = [
+    { id: "a->b", primary: true, d: "M1 1V2H3V4" },
+    { id: "a->c", primary: true, d: "M5 5V6H7V8" },
+    { id: "b->c", primary: false, d: "M9 9V10H11V12" },
+    { id: "d->c", primary: false, d: "M13 13V14H15V16" },
+  ]
+
+  it("splits edges into primary and extra paths", () => {
+    expect(edge_path_groups(edges, new Set())).toEqual({
+      primary: "M1 1V2H3V4M5 5V6H7V8",
+      extra: "M9 9V10H11V12M13 13V14H15V16",
+      highlighted_primary: "",
+      highlighted_extra: "",
+    })
+  })
+
+  it("moves highlighted edges into the highlighted paths", () => {
+    expect(edge_path_groups(edges, new Set(["a->c", "b->c"]))).toEqual({
+      primary: "M1 1V2H3V4",
+      extra: "M13 13V14H15V16",
+      highlighted_primary: "M5 5V6H7V8",
+      highlighted_extra: "M9 9V10H11V12",
+    })
+  })
+
+  it("gives four empty paths without edges", () => {
+    expect(edge_path_groups([], new Set(["a->b"]))).toEqual({
+      primary: "",
+      extra: "",
+      highlighted_primary: "",
+      highlighted_extra: "",
+    })
   })
 })

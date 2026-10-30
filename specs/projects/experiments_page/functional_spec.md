@@ -142,7 +142,7 @@ Counting rules:
 - A plain scroll or two-finger swipe pans. Dragging empty space pans. Double-clicking empty space fits.
 - "Fit" shows the whole graph, centered, with a small margin.
 - On load: if `selected` names a run config, zoom to 100% centered on it. Otherwise, fit.
-- When the detail panel opens or closes and the graph area changes width, the point at the center of the view stays at the center.
+- When the detail panel opens or closes and the graph area changes width, the point at the center of the view stays at the center. If a node is selected and that would leave it out of view, the view then pans the least distance that brings it back in, whether it was selected by click or by keyboard.
 
 ### Hover
 

@@ -18,7 +18,12 @@ import {
   split_tool_and_skill_ids,
 } from "$lib/stores/tools_store"
 import { changed_setting_fields, type SettingField } from "./lineage_changes"
-import type { ChangeKind, LineageNode, LineageStatus } from "./lineage_graph"
+import type {
+  ChangeKind,
+  LineageGraph,
+  LineageNode,
+  LineageStatus,
+} from "./lineage_graph"
 import { CHANGE_KIND_LABELS } from "./lineage_glyph"
 
 export interface DisplayContext {
@@ -73,6 +78,65 @@ export function children_text(count: number): string {
     return "No children"
   }
   return count === 1 ? "1 child" : `${count} children`
+}
+
+/** A piece of the panel's lineage line: plain text, or a node to link to. */
+export type LineagePart =
+  | { type: "text"; text: string }
+  | { type: "link"; node_id: string; text: string }
+
+/**
+ * The panel's lineage line, for example "Derived from {A} and {B}, {C} · 3
+ * children", where each parent is a link.
+ */
+export function lineage_line_parts(
+  node: LineageNode,
+  graph: LineageGraph,
+): LineagePart[] {
+  const children: LineagePart = {
+    type: "text",
+    text: ` · ${children_text(node.child_ids.length)}`,
+  }
+  switch (node.status.type) {
+    case "starting_point":
+      return [{ type: "text", text: "Starting point" }, children]
+    case "no_parent":
+      return [{ type: "text", text: "No recorded parent" }]
+    case "deleted":
+      return [{ type: "text", text: "This run config was deleted" }, children]
+    case "changed":
+    case "copy":
+    case "parent_deleted": {
+      const parts: LineagePart[] = [{ type: "text", text: "Derived from " }]
+      node.parent_ids.forEach((parent_id, index) => {
+        if (index > 0) {
+          parts.push({ type: "text", text: index === 1 ? " and " : ", " })
+        }
+        const parent = graph.nodes.get(parent_id)
+        parts.push({
+          type: "link",
+          node_id: parent_id,
+          text: parent ? node_title(parent) : parent_id,
+        })
+      })
+      parts.push(children)
+      return parts
+    }
+    default:
+      return assertNever(node.status)
+  }
+}
+
+/** Who created a run config, from its provenance origin; null when unknown. */
+export function origin_text(origin: string | null | undefined): string | null {
+  switch (origin) {
+    case "agent":
+      return "Created by an agent"
+    case "human":
+      return "Created by a person"
+    default:
+      return null
+  }
 }
 
 export function change_rows(

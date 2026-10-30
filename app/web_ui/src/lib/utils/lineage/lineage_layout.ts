@@ -217,3 +217,44 @@ function group_rows(
       }),
     )
 }
+
+/** The edges' path data, split by edge type and by whether the edge is highlighted. */
+export interface EdgePathGroups {
+  primary: string
+  extra: string
+  highlighted_primary: string
+  highlighted_extra: string
+}
+
+/**
+ * Joins the edges into one path per group, so the canvas draws four paths
+ * however many edges there are.
+ */
+export function edge_path_groups(
+  edges: LineageLayout["edges"],
+  highlighted: ReadonlySet<string>,
+): EdgePathGroups {
+  const groups: Record<keyof EdgePathGroups, string[]> = {
+    primary: [],
+    extra: [],
+    highlighted_primary: [],
+    highlighted_extra: [],
+  }
+  for (const edge of edges) {
+    const lit = highlighted.has(edge.id)
+    const group = edge.primary
+      ? lit
+        ? groups.highlighted_primary
+        : groups.primary
+      : lit
+        ? groups.highlighted_extra
+        : groups.extra
+    group.push(edge.d)
+  }
+  return {
+    primary: groups.primary.join(""),
+    extra: groups.extra.join(""),
+    highlighted_primary: groups.highlighted_primary.join(""),
+    highlighted_extra: groups.highlighted_extra.join(""),
+  }
+}

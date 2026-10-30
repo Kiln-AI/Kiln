@@ -14,13 +14,17 @@ import {
 import {
   change_rows,
   children_text,
+  lineage_line_parts,
   node_model_text,
   node_title,
+  origin_text,
   status_text,
   type DisplayContext,
+  type LineagePart,
 } from "./lineage_display"
 import {
   make_agent_config,
+  make_dated_config,
   make_mcp_config,
 } from "./__tests__/lineage_fixtures"
 
@@ -263,5 +267,85 @@ describe("change_rows", () => {
       },
       { kind: "settings", value: "—", previous: "—", provider_id: null },
     ])
+  })
+})
+
+describe("lineage_line_parts", () => {
+  const configs = [
+    make_dated_config("root", 0),
+    make_dated_config("b", 1, ["root"]),
+    make_dated_config("c", 2, ["root"]),
+    make_dated_config("merge", 3, ["b", "root", "c"]),
+    make_dated_config("orphan", 4, ["gone"]),
+    make_dated_config("alone", 5),
+  ]
+  const graph = build_lineage_graph(configs)
+
+  function parts_of(id: string): LineagePart[] {
+    const node = graph.nodes.get(id)
+    if (!node) {
+      throw new Error(`no node ${id}`)
+    }
+    return lineage_line_parts(node, graph)
+  }
+
+  function text_of(parts: LineagePart[]): string {
+    return parts.map((part) => part.text).join("")
+  }
+
+  it("describes a starting point with its children", () => {
+    expect(parts_of("root")).toEqual([
+      { type: "text", text: "Starting point" },
+      { type: "text", text: " · 3 children" },
+    ])
+  })
+
+  it("links a single parent", () => {
+    expect(parts_of("b")).toEqual([
+      { type: "text", text: "Derived from " },
+      { type: "link", node_id: "root", text: "Name root" },
+      { type: "text", text: " · 1 child" },
+    ])
+  })
+
+  it("links every parent, primary first", () => {
+    const parts = parts_of("merge")
+    expect(text_of(parts)).toBe(
+      "Derived from Name b and Name root, Name c · No children",
+    )
+    expect(
+      parts.flatMap((part) => (part.type === "link" ? [part.node_id] : [])),
+    ).toEqual(["b", "root", "c"])
+  })
+
+  it("links a deleted primary parent as the placeholder", () => {
+    expect(parts_of("orphan")).toEqual([
+      { type: "text", text: "Derived from " },
+      { type: "link", node_id: "gone", text: "Deleted run config" },
+      { type: "text", text: " · No children" },
+    ])
+  })
+
+  it("describes a node with no recorded parent without children", () => {
+    expect(text_of(parts_of("alone"))).toBe("No recorded parent")
+  })
+
+  it("describes the deleted placeholder with its children", () => {
+    expect(text_of(parts_of("gone"))).toBe(
+      "This run config was deleted · 1 child",
+    )
+  })
+})
+
+describe("origin_text", () => {
+  it("names who created the run config", () => {
+    expect(origin_text("agent")).toBe("Created by an agent")
+    expect(origin_text("human")).toBe("Created by a person")
+  })
+
+  it("is null when the origin is unknown", () => {
+    expect(origin_text(null)).toBeNull()
+    expect(origin_text(undefined)).toBeNull()
+    expect(origin_text("robot")).toBeNull()
   })
 })

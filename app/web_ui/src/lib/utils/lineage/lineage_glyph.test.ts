@@ -125,9 +125,9 @@ describe("glyph_rects", () => {
 
   it("defines the three glyph sizes", () => {
     expect(GLYPH).toEqual({
-      graph: { size: 14, gap: 1 },
-      panel: { size: 40, gap: 2 },
-      swatch: { size: 12, gap: 1 },
+      graph: { size: 14, gap: 1, radius: 2 },
+      panel: { size: 40, gap: 2, radius: 4 },
+      swatch: { size: 12, gap: 1, radius: 2 },
     })
   })
 })
