@@ -26,7 +26,7 @@
     getRunConfigPromptDisplayName,
     getRunConfigInputTransformSummaryLabel,
   } from "$lib/utils/run_config_formatters"
-  import { tool_link } from "$lib/utils/link_builder"
+  import { experiment_lineage_link, tool_link } from "$lib/utils/link_builder"
   import { formatDate } from "$lib/utils/formatters"
   import {
     get_tools_property_info,
@@ -368,8 +368,11 @@
     <div class="flex flex-col gap-4">
       <h2 class="text-lg font-medium text-gray-900">Optimization Strategies</h2>
       <FeatureCarousel features={optimizer_features} />
+      <!-- The title's zero basis gives the buttons their full width first. When
+           the row is too narrow, the buttons wrap before the title narrows past
+           its min width. -->
       <div class="flex flex-col sm:flex-row gap-4 sm:gap-8 mt-8">
-        <div class="grow">
+        <div class="grow sm:basis-0 min-w-44">
           <h2 class="text-lg font-medium text-gray-900">Run Configurations</h2>
           <div class="text-sm text-gray-500">
             Saved configurations for running this task. Compare configs to find
@@ -377,7 +380,7 @@
           </div>
         </div>
         <div
-          class="flex flex-row items-center gap-3 flex-shrink-0 whitespace-nowrap"
+          class="flex flex-row flex-wrap items-center sm:justify-end gap-3 whitespace-nowrap"
         >
           {#if select_mode}
             <div class="font-light text-sm">
@@ -389,6 +392,13 @@
               Cancel Selection
             </button>
           {:else}
+            <button
+              class="btn btn-mid"
+              on:click={() =>
+                goto(experiment_lineage_link(project_id, task_id))}
+            >
+              Experiment Lineage
+            </button>
             <button class="btn btn-mid" on:click={() => (select_mode = true)}>
               Compare
             </button>
@@ -545,7 +555,7 @@
                   </td>
                   <td class="p-0" on:click|stopPropagation>
                     <TableActionMenu
-                      width="w-56"
+                      width="w-64"
                       items={[
                         {
                           label: "Clone",
@@ -556,6 +566,20 @@
                           label: "Set as Task Default",
                           onclick: () => handleSetDefault(config),
                           hidden: is_default,
+                        },
+                        // Not an `href` item: FloatingMenu stops the link's click
+                        // from bubbling, so SvelteKit's router never sees it and
+                        // the browser reloads the whole app.
+                        {
+                          label: "Show in Experiment Lineage",
+                          onclick: () =>
+                            goto(
+                              experiment_lineage_link(
+                                project_id,
+                                task_id,
+                                config.id,
+                              ),
+                            ),
                         },
                       ]}
                     />
