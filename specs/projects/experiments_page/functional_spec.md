@@ -2,7 +2,7 @@
 status: draft
 ---
 
-# Functional Spec: Lineage Page
+# Functional Spec: Experiment Lineage Page
 
 A read-only page that draws every run config of a task as a lineage graph. Each run config is one small square, connected to the run config(s) it was derived from. The square's fill shows which kinds of change it made against its parent. The point of the page is to show, at a glance, how much was tried on a task and how the agent evolved.
 
@@ -11,13 +11,14 @@ This is not a compare screen. The existing Compare page stays as it is, apart fr
 Reference material in this folder:
 
 - `reference_mock.webp`: the first mock ("All the things we tried").
-- `design_reference/`: the design handoff (`README.md`, `lineage_page.html`, `lineage.js`, `screenshot.png`). It was made without access to the code. Where it conflicts with this spec or with the Kiln style guide, this spec and the style guide win. `ui_design.md` lists each conflict and how it is resolved.
+- `design_reference/`: the design handoff (`README.md`, `lineage_page.html`, `lineage.js`, `screenshot.png`). It was made without access to the code. Where it conflicts with this spec or with the Kiln style guide, this spec and the style guide win. `ui_design.md` lists each conflict and how it is resolved. The handoff's eval scores are not built (see Out of Scope).
 - Mike's prototype on branch `mike/compare-map-view` (route `/evolution/[project_id]/[task_id]`, map view). Inspiration only. Nothing is ported from it.
 
 ## Naming and Route
 
-- Page title: **Lineage**. (Open question 1 below. The first brief said "Experiments", the design and later messages say "lineage".)
-- Route: `/optimize/[project_id]/[task_id]/lineage`.
+- Page title: **Experiment Lineage**.
+- Subtitle: "Every run configuration for this task, and what changed from its parent."
+- Route: `/optimize/[project_id]/[task_id]/experiment_lineage`.
 - Breadcrumb: "Optimize", linking to `/optimize/[project_id]/[task_id]`.
 - Optional query parameter `selected=<run config id>`: the run config to select on load (see Selection).
 
@@ -25,9 +26,9 @@ Reference material in this folder:
 
 There is no link in the left sidebar.
 
-1. **Optimize page, Run Configurations header.** A plain `btn btn-mid` labelled "Lineage", placed before "Compare". It is shown only when not in select mode (select mode swaps the header buttons for selection controls, and Lineage hides with them).
-2. **Optimize page, run config row menu.** A new item "Show in Lineage" in each row's `TableActionMenu`. It opens the page with `selected=<that run config's id>`.
-3. **Compare page.** An AppPage action button labelled "Lineage" that opens the page. It does not pass any selection.
+1. **Optimize page, Run Configurations header.** A plain `btn btn-mid` labelled "Experiment Lineage", placed before "Compare". It is shown only when not in select mode (select mode swaps the header buttons for selection controls, and this button hides with them).
+2. **Optimize page, run config row menu.** A new item "Show in Experiment Lineage" in each row's `TableActionMenu`. It opens the page with `selected=<that run config's id>`.
+3. **Compare page.** An AppPage action button labelled "Experiment Lineage" that opens the page. It does not pass any selection.
 
 ## Data
 
@@ -92,13 +93,19 @@ Each node is a small square. The fill shows its status. For "Changed", it shows 
 
 From top to bottom:
 
-1. AppPage header: title, breadcrumb, and a subtitle carrying the stats (see Stats).
-2. Filter row: "Changed from parent" label with an info tooltip, then six toggle chips.
-3. Body: the graph, and the detail panel to its right when a node is selected. The body fills the remaining height of the window.
+1. AppPage header: breadcrumb, title and subtitle.
+2. Stats row (see Stats).
+3. Filter row: "Changed from parent" label with an info tooltip, then six toggle chips.
+4. Body: the graph, and the detail panel to its right when a node is selected. The body fills the remaining height of the window.
 
 ## Stats
 
-The subtitle reads "N run configurations across M models". Examples: "182 run configurations across 17 models", "1 run configuration across 1 model".
+A styled row under the page header, with two stats. Each is a large number over a short label:
+
+- **N** "run configurations" ("run configuration" when N is 1)
+- **M** "models" ("model" when M is 1)
+
+Counting rules:
 
 - N counts every run config. It excludes deleted placeholders.
 - M counts distinct models among run configs that have a model. A model is the pair (model name, provider). A fine-tuned model counts as its own model. MCP run configs don't add a model.
@@ -177,9 +184,10 @@ From top to bottom:
 3. **Notes** section, when `provenance.notes` exists: the full notes as read-only text, plus who created it ("Created by an agent" or "Created by a person", from `provenance.origin`, omitted when unknown).
 4. **Run Configuration** section: the same property list the run config detail page shows (`getRunConfigUiProperties` with `PropertyList`). Hidden for the deleted placeholder.
 5. **Actions**:
-   - "Compare to Parent" opens the Compare page with the parent and this run config in its two columns. It is shown only when the primary parent is a live run config.
-   - "Run Configuration" opens the run config detail page. It is hidden for the deleted placeholder.
+   - "Compare" opens the Compare page with this run config in column 1 and column 2 empty. It is hidden for the deleted placeholder.
+   - "Compare to Parent" opens the Compare page with the parent in column 1 and this run config in column 2, so it reads before and after. It is shown only when the primary parent is a live run config.
    - Neither is a primary button. This page has no primary button.
+   - There is no link to the run config detail page. The panel already shows everything that page shows. Only the detail page's Edit and Clone actions are missing, and those are out of scope here.
 
 ## Empty, Loading and Error States
 
@@ -197,16 +205,8 @@ From top to bottom:
 
 ## Out of Scope
 
-- Eval scores on the graph (pending open question 2).
+- **Eval scores.** The design shows a score per run config: a best-score stat, a ring on the best node, the score in the tooltip, and the score with its change against the parent in the panel. None of these are built. Kiln has no single score per run config: a task has several evals, each eval has several output scores on different scales, and many run configs were never evaluated. The page stays a pure lineage view. The panel's Compare buttons cover scores.
 - Mike's cards view, compare matrix, score lenses and inspector.
 - Editing, cloning or deleting run configs from this page.
 - Any change to the Compare page apart from the new link.
 - A sidebar link.
-
-## Open Questions
-
-1. **Page name.** "Lineage" (the design, and your own word for it in your last message) or "Experiments" (your first brief)? The title, route, button and row menu item all follow it.
-2. **Eval scores.** The design shows an "eval score" per run config: the best-score stat, a ring on the best node, the score in the tooltip, and the score with its change against the parent in the panel. Kiln has no single score per run config. A task has several evals, each eval has several output scores on different scales, and many run configs have never been evaluated. Data for all run configs is available in one existing call (`GET /api/projects/{project_id}/tasks/{task_id}/run_configs/eval_scores`).
-   - **Option A:** no scores. The page stays a pure lineage view. Compare to Parent covers scores.
-   - **Option B (recommended):** a later phase adds a "Score" picker: a dropdown listing each (eval, output score) pair, plus "None". It defaults to the highest-priority eval's first score. With a score chosen, the design's score features turn on. Nodes without a score show "No score". All score UI hides when "None" is picked or no run config has scores.
-   - **Option C:** like B, but in the first build.

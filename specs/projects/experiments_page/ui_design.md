@@ -2,7 +2,7 @@
 status: draft
 ---
 
-# UI Design: Lineage Page
+# UI Design: Experiment Lineage Page
 
 This doc turns the design handoff (`design_reference/`) into a Kiln screen. The handoff's layout, node encoding and interactions are the goal. Kiln's style guide (`.agents/frontend_design_guide.md`, `.agents/frontend_controls.md`, the `kiln-ui` skill) wins wherever the two disagree. Behavior is defined in `functional_spec.md`. This doc covers look and controls.
 
@@ -16,8 +16,8 @@ Each row is a place where the handoff can't be built as drawn, or where house st
 |---|---|---|
 | Eyebrow "Optimize" above the title | AppPage breadcrumb "Optimize" | The breadcrumb is the house eyebrow. |
 | H1 24px/700, subtitle 14px light | AppPage `title` and `subtitle` | AppPage owns the page title. |
-| Stats block at the top right of the header | Stats go in the AppPage `subtitle`: "182 run configurations across 17 models" | AppPage has no slot there. Adding one would change a shared control. The per-kind counts already sit on the chips. |
-| "best eval score" stat, "Best" pill, best ring, score in tooltip and panel | Not in this build. Pending open question 2 in the functional spec | Kiln has no single score per run config. |
+| Stats block at the top right of the header | A stats row in the page body, directly under the AppPage header, left aligned | AppPage has no slot at the top right. Adding one would change a shared control. |
+| "best eval score" stat, "Best" pill, best ring, score in tooltip and panel | Not built | Kiln has no single score per run config. Decided: no scores on this page. |
 | "Configuration #178" | The run config's name, for example "Gusty Forest" | Run configs have names, not small numbers. |
 | "Prompt v14" | The prompt display name (`getRunConfigPromptDisplayName`) | Prompts have names, not versions. |
 | "Hyperparameters", "temperature 0.3 · max 1024 tokens" | "Settings": temperature, top P, thinking level, structured output mode, input transform | Kiln has no max tokens setting. Input transform and output mode aren't hyperparameters. |
@@ -29,12 +29,12 @@ Each row is a place where the handoff can't be built as drawn, or where house st
 | Detail panel as a bordered card | No box. A column beside the graph, sections titled with `SettingsHeader` | House rule: content sits on the page. |
 | Custom ✕ close button | The `Dialog` close button classes | The existing house close button. |
 | Panel config rows (custom grid) | "Changed from Parent" keeps a small custom diff list. The full config is the existing `PropertyList` from `getRunConfigUiProperties` | The ask was to reuse the run config component. No house control shows old and new values, so the diff list is the one custom element in the panel. |
-| "Open in Run" `btn-primary` | "Run Configuration" `btn btn-mid`, linking to the run config detail page | The detail page is the run config's home. The page has no single main action, so it has no primary button. |
+| "Open in Run" `btn-primary`, "Compare to Parent" | "Compare" and "Compare to Parent", both `btn btn-mid` | The panel already shows everything the run config detail page does, so there's no link to it. The page has no single main action, so it has no primary button. |
 | White tooltip card, 12px text | `InfoTooltip`'s popover look: `bg-stone-200 rounded-md shadow-lg px-3 py-2 text-sm`, left aligned, positioned with `@floating-ui/dom` | One tooltip look across the app. |
 | 13px and 12px text | `text-sm` and `text-xs` | DaisyUI and Tailwind sizes only. |
 | Zoom 50–200% only, scroll to pan | Zoom from min(50%, fit) to 200%. Drag and scroll pan. Fit button added. | You asked for Fit/+/− and pan, like Mike's. |
 | Single parent per node | Every parent drawn. Extra parents dashed. | Merges are part of the story. |
-| Initial selection: best node | No selection on load, unless `selected` is in the URL | No scores. See open question 2. |
+| Initial selection: best node | No selection on load, unless `selected` is in the URL | There's no best node without scores. |
 | Colors in `oklch`, new theme tokens | Colors from the shared chart palette (below) | One palette in code. |
 
 ## Color
@@ -93,8 +93,11 @@ The same glyph is drawn at 40px (radius 4px, gap 2px) in the panel header, and a
 
 ```
 Optimize >                                              [breadcrumb]
-Lineage                                                 [AppPage title]
-182 run configurations across 17 models                 [AppPage subtitle]
+Experiment Lineage                                      [AppPage title]
+Every run configuration for this task, and what changed from its parent.   [AppPage subtitle]
+
+182                       17                            [stats row]
+run configurations        models
 
 Changed from parent (i)  [■ Prompt 31] [■ Tools 25] [■ Skills 12] [■ Model 112] [■ Settings 41] [■ Copy or re-run 26]  Clear
 
@@ -108,10 +111,11 @@ Changed from parent (i)  [■ Prompt 31] [■ Tools 25] [■ Skills 12] [■ Mod
 │                                               │   (Output)
 │  No recorded parent (12)                      │   Run Configuration ────────────
 │  ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                      │   (PropertyList)
-└───────────────────────────────────────────────┘   [Compare to Parent] [Run Configuration]
+└───────────────────────────────────────────────┘   [Compare] [Compare to Parent]
 ```
 
 - Vertical rhythm: the page content is one `flex flex-col gap-6`. Children carry no margins.
+- **Stats row**: `flex gap-10`. Each stat is a column: the number as `text-xl font-medium tabular-nums`, the label under it as `text-sm text-gray-500`. Left aligned. No box, no divider. There's no house stat control, so this is a justified custom element.
 - **Filter row**: `flex flex-wrap items-center gap-2`. The label is `text-sm font-medium` with `InfoTooltip`. Each chip is a `btn btn-sm` (outline when off, secondary when on) holding a 12px swatch glyph, the name, and the count. The count is `text-gray-500` when off and `opacity-70` when on, so it stays readable on black.
 - **Body**: `flex gap-6`. It fills the window's remaining height: measure the body's top offset on mount and on resize, set the height to `100vh − top − bottom padding`, minimum 420px. At `lg` and wider, the panel (fixed 360px) sits right of the graph. Below `lg`, the body stacks, the graph keeps a fixed 480px height, and the panel sits below it.
 - **Graph frame**: `rounded-lg border`, `flex flex-col`, `overflow-hidden`.
@@ -137,10 +141,13 @@ Changed from parent (i)  [■ Prompt 31] [■ Tools 25] [■ Skills 12] [■ Mod
 
 ## Entry Point Placement
 
-- Optimize page, Run Configurations header: `btn btn-mid` "Lineage", first in the row, before "Compare". Hidden in select mode.
-- Optimize page, row `TableActionMenu`: "Show in Lineage", after "Set as Task Default".
-- Compare page: AppPage `action_buttons` entry `{ label: "Lineage", href: "/optimize/{project_id}/{task_id}/lineage" }`.
-- From the panel, "Compare to Parent" links to `/specs/{project_id}/{task_id}/compare?from=optimize&columns=2&models={parent_id},{child_id}`. `from=optimize` makes Compare's breadcrumb point back to Optimize.
+- Optimize page, Run Configurations header: `btn btn-mid` "Experiment Lineage", first in the row, before "Compare". Hidden in select mode.
+- Optimize page, row `TableActionMenu`: "Show in Experiment Lineage", after "Set as Task Default".
+- Compare page: AppPage `action_buttons` entry `{ label: "Experiment Lineage", href: "/optimize/{project_id}/{task_id}/experiment_lineage" }`.
+- From the panel:
+  - "Compare" links to `/specs/{project_id}/{task_id}/compare?from=optimize&columns=2&models={this_id},`. The trailing comma leaves column 2 empty, the same way Compare writes its own URL.
+  - "Compare to Parent" links to `/specs/{project_id}/{task_id}/compare?from=optimize&columns=2&models={parent_id},{this_id}`.
+  - `from=optimize` makes Compare's breadcrumb point back to Optimize.
 
 ## Component Plan (Seed)
 
@@ -148,7 +155,8 @@ The coding agent completes this per the `kiln-ui` skill. It is listed here so th
 
 | Element | House control | Justification if custom |
 |---|---|---|
-| Title, breadcrumb, stats | `AppPage` | |
+| Title, breadcrumb, subtitle | `AppPage` | |
+| Stats row | Custom | No house stat control. AppPage has no slot for it. |
 | "Changed from parent" label tip | `InfoTooltip` | |
 | Filter chips | Rating and Feedback selection recipe | Adds a swatch and a count inside the button. |
 | Clear | `button.link` | |
