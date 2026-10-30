@@ -37,8 +37,11 @@ app/web_ui/src/lib/utils/
 app/web_ui/src/lib/components/
   compare_chart.svelte                  EDIT  color: CHART_PALETTE
   compare_radar_chart.svelte            EDIT  color: CHART_PALETTE
+app/web_ui/src/lib/ui/run_config_component/
+  __tests__/create_new_run_config_dialog_stub.svelte NEW  stands in for the dialog in page tests (test support only)
 app/web_ui/src/routes/(app)/optimize/[project_id]/[task_id]/
   +page.svelte                          EDIT  header button + row menu item
+  page.test.ts                          NEW   the two Optimize entry points
   experiment_lineage/
     +page.ts                            NEW   export const prerender = false
     +page.svelte                        NEW   loading, state, URL sync, layout of the page
@@ -49,8 +52,9 @@ app/web_ui/src/routes/(app)/optimize/[project_id]/[task_id]/
     lineage_panel.svelte   (+ test)     NEW   detail panel
     panel_close_key.ts     (+ test)     NEW   which key presses close the panel (page-level Escape)
     __tests__/filter_chips_harness.svelte NEW  test harness for the chips' two-way binding (test support only)
-app/web_ui/src/routes/(app)/specs/[project_id]/[task_id]/compare/+page.svelte
-                                        EDIT  AppPage action button
+app/web_ui/src/routes/(app)/specs/[project_id]/[task_id]/compare/
+  +page.svelte                          EDIT  AppPage action button
+  page.test.ts                          NEW   the Compare entry point
 ```
 
 The `lib/utils/lineage/` modules are pure TypeScript: no stores, no DOM and no Svelte. Components and the page own all store reads. The Svelte components are used by this route only, so they live beside the page (web_ui.md: move to `lib/` only when a second route needs one).
@@ -71,9 +75,10 @@ export const CHART_PALETTE = [
 
 ## Graph Model: `lineage_graph.ts`
 
+`ChangeKind` and `CHANGE_KINDS` are defined in `lineage_changes.ts` (below). This module re-exports them.
+
 ```ts
-export type ChangeKind = "prompt" | "tools" | "skills" | "model" | "settings"
-export const CHANGE_KINDS: readonly ChangeKind[] = ["prompt", "tools", "skills", "model", "settings"]
+export { CHANGE_KINDS, type ChangeKind } // from lineage_changes.ts
 
 export type LineageStatus =
   | { type: "starting_point" }
@@ -152,6 +157,8 @@ export function summarize_lineage(graph: LineageGraph): LineageSummary
 ## Change Detection: `lineage_changes.ts`
 
 ```ts
+export type ChangeKind = "prompt" | "tools" | "skills" | "model" | "settings"
+export const CHANGE_KINDS: readonly ChangeKind[] = ["prompt", "tools", "skills", "model", "settings"]
 export type SettingField = "temperature" | "top_p" | "thinking_level" | "structured_output_mode" | "input_transform"
 export const SETTING_FIELDS: readonly SettingField[] = [...]
 export function detect_changes(parent: TaskRunConfig, child: TaskRunConfig): ChangeKind[]
@@ -273,7 +280,7 @@ export type NavKey = "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight"
 export function next_selection(graph: LineageGraph, layout: LineageLayout, current: string | null, key: NavKey): string | null
 ```
 
-- With no current selection, any key picks `layout.rows[0][0]`, or `null` for an empty graph.
+- With no current selection, any key picks the oldest starting point (the first `starting_point` in `tree_root_ids`). With none, it picks `layout.rows[0][0]`, or `null` for an empty graph. The leftmost root can be a deleted placeholder, which is why starting points come first.
 - Up picks `parent_ids[0]`. Down picks `child_ids[0]`.
 - Left and Right pick the neighbor in the current node's `rows` entry.
 - With no target, it returns `current` unchanged.
@@ -396,7 +403,8 @@ Both build their query strings with `URLSearchParams`. Compare reads them back w
 
 - **Optimize `+page.svelte`:**
   - In the not-select-mode branch, before "Compare": `<button class="btn btn-mid" on:click={() => goto(experiment_lineage_link(project_id, task_id))}>Experiment Lineage</button>`.
-  - Row `TableActionMenu`: add `{ label: "Show in Experiment Lineage", onclick: () => goto(experiment_lineage_link(project_id, task_id, config.id)) }` after "Set as Task Default".
+  - The header's button group is `flex flex-wrap sm:justify-end`, and the title is `grow sm:basis-0 min-w-44`, so the buttons wrap before they overflow (see `ui_design.md`).
+  - Row `TableActionMenu`: add `{ label: "Show in Experiment Lineage", onclick: () => goto(experiment_lineage_link(project_id, task_id, config.id)) }` after "Set as Task Default". The menu is `w-64` so the label stays on one line. It is an `onclick` item, not an `href` item: `FloatingMenu` stops a link's click from bubbling, so SvelteKit's router never sees it and the browser reloads the whole app.
 - **Compare `+page.svelte`:** pass `action_buttons={[{ label: "Experiment Lineage", href: experiment_lineage_link(project_id, task_id) }]}` to `AppPage`.
 
 ## Error Handling
@@ -477,6 +485,9 @@ Vitest. Pure modules get unit tests beside them. Components get `@vitest-environ
   - "Compare to Parent" is hidden when the parent is deleted.
   - The "Compare" href is correct.
   - Notes appear only when present.
+- **Entry points** (page tests with the stores' loads mocked and `CreateNewRunConfigDialog` stubbed):
+  - Optimize `page.test.ts`: the header shows "Experiment Lineage" before "Compare" and opens the page; select mode hides it and Cancel Selection brings it back; the row menu item comes after "Set as Task Default" and opens the page with `selected` set, without also opening the run config.
+  - Compare `page.test.ts`: the header button opens the page with no selection, with the page's loads left pending.
 - **Compare charts:** no new tests. `chart_palette.test.ts` pins the values.
 - **Visual check** (kiln-ui handback):
   - Run the dev server.

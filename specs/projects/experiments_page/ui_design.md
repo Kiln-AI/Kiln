@@ -128,7 +128,7 @@ Changed from parent (i)  [■ Prompt 31] [■ Tools 25] [■ Skills 12] [■ Mod
     - "Changed from Parent": a grid `grid-cols-[12px_auto_1fr] gap-x-3 gap-y-2 text-sm`. Swatch, then the kind name in `text-gray-500`, then a value column. The new value is `font-medium`. The old value sits under it as `text-xs text-gray-500 line-through`. The Model row shows the provider logo (`get_provider_image`, 14px) before the model name. Long tool and skill lists wrap.
     - "Notes": `Output` with the notes text. Under it, "Created by an agent" or "Created by a person" as `text-sm text-gray-500`.
     - "Run Configuration": `PropertyList` with `getRunConfigUiProperties(...)`. It has the same content as the detail page. The input transform action opens the same `InputTransformModal`.
-  - Actions row: `flex gap-2`, two `btn btn-mid` of equal size.
+  - Actions row: `grid grid-cols-2 gap-2`, so the two `btn btn-mid` are the same size.
   - The panel scrolls on its own (`overflow-y-auto`) when it's taller than the body.
 - **Hover tooltip**: shown after a short delay (100ms) and hidden on leave. It's anchored to the hovered node's screen rectangle, placed to the right with a flip. It isn't scaled with the zoom. Line 1 is `font-medium`. Lines 2 and 3 are normal weight.
 
@@ -141,7 +141,7 @@ Changed from parent (i)  [■ Prompt 31] [■ Tools 25] [■ Skills 12] [■ Mod
 
 ## Entry Point Placement
 
-- Optimize page, Run Configurations header: `btn btn-mid` "Experiment Lineage", first in the row, before "Compare". Hidden in select mode.
+- Optimize page, Run Configurations header: `btn btn-mid` "Experiment Lineage", first in the row, before "Compare". Hidden in select mode. The three buttons don't fit beside the title at narrower widths (for example 1024px with the Assistant pane open), so the button group wraps (`flex-wrap`, right-aligned with `sm:justify-end`) and a button drops to a second line. The title keeps the rest of the row (`sm:basis-0`) but never narrows below `min-w-44`, so "Run Configurations" stays on one line. At 1440px with the Assistant pane open, all three buttons fit on one line. The same applies in select mode.
 - Optimize page, row `TableActionMenu`: "Show in Experiment Lineage", after "Set as Task Default".
 - Compare page: AppPage `action_buttons` entry `{ label: "Experiment Lineage", href: "/optimize/{project_id}/{task_id}/experiment_lineage" }`.
 - From the panel:
