@@ -167,7 +167,7 @@
   $: stats = [
     {
       count: summary.run_config_count,
-      label: ["run configuration", "run configurations"],
+      label: ["config", "configs"],
       always_shown: true,
     },
     {
