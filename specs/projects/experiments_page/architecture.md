@@ -40,7 +40,7 @@ app/web_ui/src/lib/components/
 app/web_ui/src/lib/ui/run_config_component/
   __tests__/create_new_run_config_dialog_stub.svelte NEW  stands in for the dialog in page tests (test support only)
 app/web_ui/src/routes/(app)/optimize/[project_id]/[task_id]/
-  +page.svelte                          EDIT  header button + row menu item
+  +page.svelte                          EDIT  subtitle link + row menu item
   page.test.ts                          NEW   the two Optimize entry points
   experiment_lineage/
     +page.ts                            NEW   export const prerender = false
@@ -119,6 +119,8 @@ export function node_matches_filters(status: LineageStatus, filters: ReadonlySet
 export interface LineageSummary {
   run_config_count: number
   model_count: number
+  tool_count: number
+  skill_count: number
   filter_counts: Record<FilterKey, number>
 }
 export function summarize_lineage(graph: LineageGraph): LineageSummary
@@ -154,6 +156,7 @@ export function summarize_lineage(graph: LineageGraph): LineageSummary
 
 - `run_config_count` counts the nodes whose status isn't `deleted`.
 - `model_count` is the number of distinct `` `${model_provider_name}::${model_name}` `` keys over `kiln_agent` configs.
+- `tool_count` and `skill_count` split every `kiln_agent` config's `tools_config?.tools` with `split_tool_and_skill_ids` and count the distinct tool ids and skill ids.
 - `filter_counts` counts each kind once per `changed` node that contains it, and `copy` once per `copy` node.
 
 ## Change Detection: `lineage_changes.ts`
@@ -366,15 +369,16 @@ Both build their query strings with `URLSearchParams`. Compare reads them back w
 - **Local state:** `filters: Set<FilterKey>`, `selected_id: string | null`.
 - **URL sync.** After the first load completes, read `selected` once from `$page.url.searchParams`. Keep it only if `graph.nodes.has(id)`, and pass it as `initial_center_id`. Later selection changes call `goto(experiment_lineage_link(p, t, selected_id), { replaceState: true, noScroll: true, keepFocus: true })`.
 - **Escape.** A `svelte:window` keydown handler closes the panel on an Escape from anywhere on the page, so it works after focus moves into the panel. It skips a key another handler already took (`defaultPrevented`, as the canvas sets), a key typed into a field, and any key while a `<dialog>` is open. The check is `closes_panel` in `panel_close_key.ts` beside the page.
+- **Empty states.** One reactive `empty_state` holds the `Intro`'s title, paragraphs and buttons: "No Run Configurations Yet" with "Create Run Config" when there are no run configs, "No Experiment Lineage" with no button when the graph has no edges, and `null` otherwise.
+- **Panel scroll.** A reactive statement on `selected_id` sets the panel wrapper's `scrollTop` to 0, so a new selection shows its panel from the top.
 - **Focus on close.** The panel's close button and the window Escape go through `close_panel()`. If `document.activeElement` was inside the panel's wrapper, it calls the canvas's `focus_graph()` after clearing the selection, so focus doesn't fall back to the page.
-- **Body height.** At `lg` and up (`window.matchMedia("(min-width: 1024px)")`), the height is `max(420, innerHeight - (body_el.getBoundingClientRect().top + scrollY) - 97)`. The 97 is AppPage's `mb-12`, plus the app layout's `pb-8`, its 1px border and its `mb-4`. It's recomputed on `svelte:window` resize, and when a `ResizeObserver` on the body's container reports a change (the chips wrapping as the column narrows, the warning showing), one frame later so the height change stays out of the observer's callback. Below `lg`, the graph frame is 480px tall.
+- **Body height.** At `lg` and up (`window.matchMedia("(min-width: 1024px)")`), the height is `max(420, innerHeight - (body_el.getBoundingClientRect().top + scrollY) - 97)`. The 97 is AppPage's `mb-12`, plus the app layout's `pb-8`, its 1px border and its `mb-4`. It's recomputed on `svelte:window` resize, and when a `ResizeObserver` on the body's container reports a change (the chips wrapping as the column narrows), one frame later so the height change stays out of the observer's callback. Below `lg`, the graph frame is 480px tall.
 - **Layout order:**
   1. `AppPage`: title, subtitle and breadcrumb.
-  2. Loading spinner, error block, or `Intro` for zero configs.
-  3. Stats row.
-  4. An info `Warning` when `graph.edges.length === 0 && graph.no_parent_ids.length > 0`.
-  5. `LineageFilterChips bind:active={filters} counts={summary.filter_counts}`.
-  6. Body: `LineageCanvas` (`bind:this`) and, when `selected_id` is set, `LineagePanel` in a wrapper the page keeps a reference to.
+  2. Loading spinner, error block, or the `empty_state` `Intro` (no run configs, or no lineage at all). Otherwise:
+  3. Stats row: run configurations and models, then tools and skills when their counts are above zero.
+  4. `LineageFilterChips bind:active={filters} counts={summary.filter_counts}`.
+  5. Body: `LineageCanvas` (`bind:this`) and, when `selected_id` is set, `LineagePanel` in a wrapper the page keeps a reference to.
 - **Display context.** `ctx` carries `project_id` and `task_id` along with the stores, so the display helpers can build links.
 
 ### `lineage_canvas.svelte`
@@ -405,7 +409,7 @@ Both build their query strings with `URLSearchParams`. Compare reads them back w
   - `wheel` is bound with `on:wheel|nonpassive` and always calls `preventDefault()`. With `ctrlKey` or `metaKey`, it calls `zoom_at(cursor, k * wheel_zoom_factor(dy))`. Without, it calls `pan_by(-dx, -dy)`. Deltas go through `wheel_delta_px`.
   - Safari pinch: `gesturestart` stores `k`. `gesturechange` calls `preventDefault()` and `zoom_at(cursor, start_k * event.scale)`. These events aren't in the DOM typings, so read `scale` through a narrow local type.
   - `dblclick`, on a node or on empty space, calls `zoom_step(vp, 1, world, view, cursor)`.
-  - `keydown`:
+  - `keydown` first cancels a pending deselect, so a key pressed right after a click on empty space keeps the selection it makes. Then:
     - Arrow keys call `next_selection`, dispatch `select`, then `ensure_visible`.
     - `Escape` dispatches `close` and calls `preventDefault()`.
     - `+` or `=` zooms in, `-` zooms out, and `0` fits.
@@ -436,15 +440,15 @@ Both build their query strings with `URLSearchParams`. Compare reads them back w
 - **Sections**, per the functional spec, each a `LineagePanelSection`:
   - "Notes": `Output raw_output={notes}`.
   - "Changed from Parent": for `status.type === "changed"`, a `PropertyList` with one `{ name: CHANGE_KIND_LABELS[kind], value: "", use_custom_slot: true }` per `change_rows` row. The `custom_value` slot finds the row by that name. A `value` row renders the value and a "was" line with `LineageLinkedText`. A `list` row renders a `button.link` with `added_removed_text`, which opens the list dialog.
-  - "Run Configuration": the "Compare eval results to others" link in the section's subtitle slot, to `compare_run_configs_link(p, t, [node.id, null])`. Then `PropertyList` with `getRunConfigUiProperties(ctx.project_id, ctx.task_id, config, ctx.model_info, ctx.task_prompts, available_tools, () => input_transform_modal?.show())`. `InputTransformModal` is mounted when the config has a transform, as on the detail page.
-- **Lineage dialog:** a `Dialog` titled "Lineage", with the node's title as its subtitle. "Parents" and "Children" lists from `lineage_relatives`, each left out when empty. A live relative is a `button.link` that closes the dialog and dispatches `select`. A deleted one is grey text.
-- **List dialog:** one `Dialog`, titled "Tools Changed" or "Skills Changed" for the row that opened it, with "Added" and "Removed" lists of `LineageLinkedText`, each left out when empty.
+  - "Run Configuration": the "Compare to others" link in the section's subtitle slot, to `compare_run_configs_link(p, t, [node.id, null])`. Then `PropertyList` with `getRunConfigUiProperties(ctx.project_id, ctx.task_id, config, ctx.model_info, ctx.task_prompts, available_tools, () => input_transform_modal?.show())`. `InputTransformModal` is mounted when the config has a transform, as on the detail page.
+- **Lineage dialog:** a `Dialog` titled "Lineage", with the node's title as its subtitle and no action buttons. "Parents" and "Children" lists from `lineage_relatives`, each left out when empty. A live relative is a `button.link` that closes the dialog and dispatches `select`. A deleted one is grey text.
+- **List dialog:** one `Dialog`, titled "Tools Changed" or "Skills Changed" for the row that opened it, with the subtitle "Compared with the first parent run configuration." "Added" and "Removed" are each a numbered table (`aria-label` set to the heading) of `LineageLinkedText`, left out when empty.
 - **Focus:** each dialog's `close` event focuses the element that opened it.
 
 ## Entry Points
 
 - **Optimize `+page.svelte`:**
-  - In the not-select-mode branch, before "Compare": `<button class="btn btn-mid" on:click={() => goto(experiment_lineage_link(project_id, task_id))}>Experiment Lineage</button>`.
+  - At the end of the Run Configurations subtitle: `<a href={experiment_lineage_link(project_id, task_id)} class="link">See experiment history.</a>`. The header has no Experiment Lineage button.
   - The header row is `flex flex-wrap items-center gap-x-8 gap-y-4`. The title is `grow basis-80`, and the button group is `flex flex-wrap items-center gap-3`. When the two don't fit on one line, the group moves to its own line under the title (see `ui_design.md`).
   - Row `TableActionMenu`: add `{ label: "Show in Experiment Lineage", onclick: () => goto(experiment_lineage_link(project_id, task_id, config.id)) }` after "Set as Task Default". The menu is `w-64` so the label stays on one line. It is an `onclick` item, not an `href` item: `FloatingMenu` stops a link's click from bubbling, so SvelteKit's router never sees it and the browser reloads the whole app.
 - **Compare `+page.svelte`:** pass `action_buttons={[{ label: "Experiment Lineage", href: experiment_lineage_link(project_id, task_id) }]}` to `AppPage`.
@@ -473,7 +477,7 @@ Vitest. Pure modules get unit tests beside them. Components get `@vitest-environ
   - A placeholder's `sort_key` is its oldest child's.
   - `ancestor_edge_ids` includes extra-parent paths.
   - Filter matching: an empty set matches everything, matches combine with OR, and copies match only with the "copy" key.
-  - The summary's overlapping counts and model count, with MCP configs excluded.
+  - The summary's overlapping counts and model count, with MCP configs excluded, and the distinct tool and skill counts.
 - **`lineage_changes`**:
   - Each kind is detected alone.
   - Several kinds come back in order.
@@ -524,7 +528,7 @@ Vitest. Pure modules get unit tests beside them. Components get `@vitest-environ
   - Hovering a node draws its edges to its parents and children in the hovered path after the delay, and leaving clears them.
   - Hovering changes no node's markup, watched with a `MutationObserver` on every `[data-node-id]`; changing the filters does. This doesn't catch a re-run of the node block that yields the same values.
   - The zoom buttons change the label. A double-click zooms in one step and keeps the world point under the cursor fixed.
-  - A click on empty space dispatches `close` after 250ms, but not with nothing selected, not when the click turns into a double-click, and not after a drag.
+  - A click on empty space dispatches `close` after 250ms, but not with nothing selected, not when the click turns into a double-click, not when a key selects a node first, and not after a drag.
   - A `selected_id` set from outside, on a node panned off screen, brings it into view.
   - `focus_graph()` focuses the canvas.
   - `Escape` dispatches `close`, and arrow keys dispatch `select`.
@@ -536,11 +540,12 @@ Vitest. Pure modules get unit tests beside them. Components get `@vitest-environ
   - A single change shows the linked new value and the "was" line.
   - A tools change reads "2 added" and opens the Tools Changed dialog with its lists and links. Closing it returns focus to the link.
   - Copy text and parent-deleted text render.
-  - The Lineage dialog lists parents in order, a deleted parent can't be chosen, and choosing a live one dispatches `select`, closes the dialog and returns focus to the lineage line.
+  - The Lineage dialog lists parents in order, has no Close button, a deleted parent can't be chosen, and choosing a live one dispatches `select`, closes the dialog and returns focus to the lineage line.
+  - The Tools Changed dialog has the "first parent" subtitle and numbered table rows.
   - The lineage line is plain text with no parents and no children.
-  - The "Compare eval results to others" href is correct, and there is no "Compare to Parent".
+  - The "Compare to others" href is correct, and there is no "Compare to Parent".
 - **Entry points** (page tests with the stores' loads mocked and `CreateNewRunConfigDialog` stubbed):
-  - Optimize `page.test.ts`: the header shows "Experiment Lineage" before "Compare" and opens the page; select mode hides it and Cancel Selection brings it back; the row menu item comes after "Set as Task Default" and opens the page with `selected` set, without also opening the run config.
+  - Optimize `page.test.ts`: the subtitle ends with the "See experiment history." link to the page, the header buttons are only "Compare" and "Create Run Config", and the link stays in select mode; the row menu item comes after "Set as Task Default" and opens the page with `selected` set, without also opening the run config.
   - Compare `page.test.ts`: the header button opens the page with no selection, with the page's loads left pending.
 - **Compare charts:** no new tests. `chart_palette.test.ts` pins the values.
 - **Visual check** (kiln-ui handback):

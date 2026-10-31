@@ -99,7 +99,7 @@
   }
 </script>
 
-<div class="flex flex-col gap-8">
+<div class="flex flex-col gap-4">
   <div class="flex items-start gap-3">
     <LineageSwatch status={node.status} glyph={GLYPH.panel} />
     <div class="flex flex-col gap-1 min-w-0 grow">
@@ -135,78 +135,78 @@
     </button>
   </div>
 
-  {#if notes}
-    <LineagePanelSection title="Notes">
-      <Output raw_output={notes} />
-    </LineagePanelSection>
-  {/if}
+  <div class="flex flex-col gap-8">
+    {#if notes}
+      <LineagePanelSection title="Notes">
+        <Output raw_output={notes} />
+      </LineagePanelSection>
+    {/if}
 
-  {#if node.status.type === "changed" || node.status.type === "copy" || node.status.type === "parent_deleted"}
-    <LineagePanelSection title="Changed from Parent">
-      {#if node.status.type === "copy"}
-        <div class="text-sm">Same settings as parent.</div>
-      {:else if node.status.type === "parent_deleted"}
-        <div class="text-sm">
-          The parent run config was deleted, so changes can't be shown.
-        </div>
-      {:else}
-        <div data-testid="lineage-change-rows">
-          <PropertyList properties={change_properties}>
-            <svelte:fragment slot="custom_value" let:property>
-              {@const row = row_named(property.name)}
-              {#if row?.type === "value"}
-                <div class="flex flex-col min-w-0 w-full">
-                  <div class="truncate" title={row.value.text}>
-                    <LineageLinkedText value={row.value} />
+    {#if node.status.type === "changed" || node.status.type === "copy" || node.status.type === "parent_deleted"}
+      <LineagePanelSection title="Changed from Parent">
+        {#if node.status.type === "copy"}
+          <div class="text-sm">Same settings as parent.</div>
+        {:else if node.status.type === "parent_deleted"}
+          <div class="text-sm">
+            The parent run config was deleted, so changes can't be shown.
+          </div>
+        {:else}
+          <div data-testid="lineage-change-rows">
+            <PropertyList properties={change_properties}>
+              <svelte:fragment slot="custom_value" let:property>
+                {@const row = row_named(property.name)}
+                {#if row?.type === "value"}
+                  <div class="flex flex-col min-w-0 w-full">
+                    <div class="truncate" title={row.value.text}>
+                      <LineageLinkedText value={row.value} />
+                    </div>
+                    <div
+                      class="truncate text-xs font-light"
+                      title="was {row.previous.text}"
+                      data-testid="lineage-change-previous"
+                    >
+                      was <LineageLinkedText value={row.previous} />
+                    </div>
                   </div>
-                  <div
-                    class="truncate text-xs font-light"
-                    title="was {row.previous.text}"
-                    data-testid="lineage-change-previous"
+                {:else if row?.type === "list"}
+                  {@const list = row}
+                  <button
+                    type="button"
+                    class="link text-left"
+                    on:click={(event) => open_list_dialog(list, event)}
+                    >{added_removed_text(
+                      row.added.length,
+                      row.removed.length,
+                    )}</button
                   >
-                    was <LineageLinkedText value={row.previous} />
-                  </div>
-                </div>
-              {:else if row?.type === "list"}
-                {@const list = row}
-                <button
-                  type="button"
-                  class="link text-left"
-                  on:click={(event) => open_list_dialog(list, event)}
-                  >{added_removed_text(
-                    row.added.length,
-                    row.removed.length,
-                  )}</button
-                >
-              {/if}
-            </svelte:fragment>
-          </PropertyList>
-        </div>
-      {/if}
-    </LineagePanelSection>
-  {/if}
+                {/if}
+              </svelte:fragment>
+            </PropertyList>
+          </div>
+        {/if}
+      </LineagePanelSection>
+    {/if}
 
-  {#if config}
-    <LineagePanelSection title="Run Configuration">
-      <a
-        slot="subtitle"
-        href={compare_run_configs_link(ctx.project_id, ctx.task_id, [
-          node.id,
-          null,
-        ])}
-        class="link text-sm text-gray-500 self-start"
-        >Compare eval results to others</a
-      >
-      <PropertyList {properties} />
-    </LineagePanelSection>
-  {/if}
+    {#if config}
+      <LineagePanelSection title="Run Configuration">
+        <a
+          slot="subtitle"
+          href={compare_run_configs_link(ctx.project_id, ctx.task_id, [
+            node.id,
+            null,
+          ])}
+          class="link text-sm text-gray-500 self-start">Compare to others</a
+        >
+        <PropertyList {properties} />
+      </LineagePanelSection>
+    {/if}
+  </div>
 </div>
 
 <Dialog
   bind:this={lineage_dialog}
   title="Lineage"
   subtitle={title}
-  action_buttons={[{ label: "Close", isCancel: true }]}
   on:close={() => lineage_opener?.focus()}
 >
   <div class="flex flex-col gap-6 text-sm">
@@ -247,23 +247,33 @@
 <Dialog
   bind:this={list_dialog}
   title={list_row ? `${CHANGE_KIND_LABELS[list_row.kind]} Changed` : ""}
-  subtitle="Compared with the parent run configuration."
+  subtitle="Compared with the first parent run configuration."
   action_buttons={[{ label: "Close", isCancel: true }]}
   on:close={() => list_opener?.focus()}
 >
   {#if list_row}
-    <div class="flex flex-col gap-6 text-sm">
+    <div class="flex flex-col gap-6">
       {#each [{ heading: "Added", items: list_row.added }, { heading: "Removed", items: list_row.removed }] as group}
         {#if group.items.length > 0}
-          <div class="flex flex-col gap-2">
-            <div class="font-medium">{group.heading}</div>
-            <ul class="flex flex-col gap-2" aria-label={group.heading}>
-              {#each group.items as item}
-                <li class="truncate" title={item.text}>
-                  <LineageLinkedText value={item} />
-                </li>
-              {/each}
-            </ul>
+          <div class="rounded-lg border">
+            <table class="table table-fixed" aria-label={group.heading}>
+              <thead>
+                <tr>
+                  <th class="w-12">#</th>
+                  <th>{group.heading}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each group.items as item, index}
+                  <tr>
+                    <td class="text-gray-500 tabular-nums">{index + 1}</td>
+                    <td class="truncate" title={item.text}>
+                      <LineageLinkedText value={item} />
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
           </div>
         {/if}
       {/each}

@@ -6,7 +6,7 @@ status: complete
 
 This doc turns the design handoff (`design_reference/`) into a Kiln screen. The handoff's layout, node encoding and interactions are the goal. Kiln's style guide (`.agents/frontend_design_guide.md`, `.agents/frontend_controls.md`, the `kiln-ui` skill) wins wherever the two disagree. Behavior is defined in `functional_spec.md`. This doc covers look and controls.
 
-**Sibling screens:** the run config detail page (`routes/(app)/optimize/[project_id]/[task_id]/run_config/[run_config_id]/`), whose property list the detail panel reuses; the spec page's sidebar (`routes/(app)/specs/[project_id]/[task_id]/[spec_id]/`), whose section titles the panel uses; and the Optimize page, for header buttons and the table frame.
+**Sibling screens:** the run config detail page (`routes/(app)/optimize/[project_id]/[task_id]/run_config/[run_config_id]/`), whose property list the detail panel reuses; the spec page's sidebar (`routes/(app)/specs/[project_id]/[task_id]/[spec_id]/`), whose section titles the panel uses; and the Optimize page, for header buttons, empty states and the table frame.
 
 ## Where the Design Meets the Codebase
 
@@ -29,7 +29,7 @@ Each row is a place where the handoff can't be built as drawn, or where house st
 | Detail panel as a bordered card | No box. A column beside the graph, sections titled in the sidebar section style (`text-xl font-bold`, no rule) | House rule: content sits on the page. The spec and Run pages title their sidebar sections this way, the same as `PropertyList`'s own title. |
 | Custom ✕ close button | The `Dialog` close button classes | The existing house close button. |
 | Panel config rows (custom grid) | Both "Changed from Parent" and the full config are `PropertyList`. The changes list fills its `custom_value` slot with the new value and a "was" line under it, or an "N added, N removed" link | One property list style across the panel: name on the left in the base color, value on the right in grey. |
-| "Open in Run" `btn-primary`, "Compare to Parent" | A "Compare eval results to others" link under the Run Configuration title. No "Compare to Parent" | Run configs can have several parents, so one before-and-after pair doesn't fit. The panel already shows everything the run config detail page does, so there's no link to it. The page has no single main action, so it has no primary button. |
+| "Open in Run" `btn-primary`, "Compare to Parent" | A "Compare to others" link under the Run Configuration title. No "Compare to Parent" | Run configs can have several parents, so one before-and-after pair doesn't fit. The panel already shows everything the run config detail page does, so there's no link to it. The page has no single main action, so it has no primary button. |
 | White tooltip card, 12px text | `InfoTooltip`'s popover look: `bg-stone-200 rounded-md shadow-lg px-3 py-2 text-sm`, left aligned, positioned with `@floating-ui/dom` | One tooltip look across the app. |
 | 13px and 12px text | `text-sm` and `text-xs` | DaisyUI and Tailwind sizes only. |
 | Zoom 50–200% only, scroll to pan | Zoom from min(50%, fit) to 200%. Drag and scroll pan. Fit button added. | You asked for Fit/+/− and pan, like Mike's. |
@@ -97,8 +97,8 @@ Optimize >                                              [breadcrumb]
 Experiment Lineage                                      [AppPage title]
 Every run configuration for this task, and how they evolved.   [AppPage subtitle]
 
-182                       17                            [stats row]
-run configurations        models
+182                       17          5          2      [stats row; tools and skills only when above zero]
+run configurations        models      tools      skills
 
 Changed from parent   ■ Prompt 31   ■ Tools 25   ■ Skills 12   ■ Model 112   ■ Settings 41   ■ Copy or re-run 26   Clear
 
@@ -114,12 +114,12 @@ Changed from parent   ■ Prompt 31   ■ Tools 25   ■ Skills 12   ■ Model 1
 │                                               │            was Support Prompt v1
 │  No recorded parent (12)                      │   Tools    2 added, 1 removed
 │  ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                      │   Run Configuration
-└───────────────────────────────────────────────┘   Compare eval results to others
+└───────────────────────────────────────────────┘   Compare to others
                                                       (PropertyList)
 ```
 
 - Vertical rhythm: the page content is one `flex flex-col gap-6`. Children carry no margins.
-- **Stats row**: `flex gap-10`. Each stat is a column: the number as `text-xl font-medium tabular-nums`, the label under it as `text-sm text-gray-500`. Left aligned. No box, no divider. There's no house stat control, so this is a justified custom element.
+- **Stats row**: `flex gap-10`. Each stat is a column: the number as `text-xl font-medium tabular-nums`, the label under it as `text-sm text-gray-500`. Left aligned. No box, no divider. The stats are run configurations, models, then tools and skills when their counts are above zero. There's no house stat control, so this is a justified custom element.
 - **Filter row**: `flex flex-wrap items-center gap-2`. The label is `text-sm font-medium`. Each chip is a `btn btn-sm font-normal shadow-none` holding a 12px swatch glyph, the name, and the count in `text-gray-500`. Off, it has a transparent fill and border, so it reads as a legend item. Hovered, it fills with `bg-base-200`. On, it has a `bg-base-200` fill and a `base-300` outline. It is never black.
 - **Body**: `flex gap-6`. It fills the window's remaining height: measure the body's top offset on mount and on resize, set the height to `100vh − top − bottom padding`, minimum 420px. At `lg` and wider, the panel (fixed 360px) sits right of the graph. Below `lg`, the body stacks, the graph keeps a fixed 480px height, and the panel sits below it.
 - **Graph frame**: `rounded-lg border`, `flex flex-col`, `overflow-hidden`.
@@ -127,7 +127,7 @@ Changed from parent   ■ Prompt 31   ■ Tools 25   ■ Skills 12   ■ Model 1
   - Canvas: fills the rest. One SVG holds a single group with the zoom and pan transform. Edges are drawn first, then nodes, so an edge passes behind any node in its way. Cursor: `grab` on empty space and `grabbing` while dragging, `pointer` on nodes.
   - Edge shapes: a primary edge is an elbow that turns in the middle of the gap above the child's row. An extra-parent edge is a cubic S-curve with vertical ends. Its handles are half the vertical distance, capped at one row height (28px), so a long curve bends away from the nodes stacked right below its parent and right above its child. Edge widths don't scale with the zoom.
   - "No recorded parent (N)" label: SVG text in the graph, `text-xs`, `fill-gray-500`, above the grid.
-- **Detail panel**: one `flex flex-col gap-8` column.
+- **Detail panel**: a `flex flex-col gap-4` column holding the header row and then the sections, which sit in their own `flex flex-col gap-8` column. So the first section title sits 16px under the header, and sections are 32px apart.
   - Header row: 40px glyph, then a `flex flex-col gap-1` column, then the close button at the top right of the panel, using `Dialog`'s close button classes and the same icon. The column holds:
     - The name as `text-xl font-bold line-clamp-2 break-words`, with the full name in `title`.
     - The lineage line as a `button.link` in `text-sm text-gray-500`, or plain text in the same style when there is nothing to list.
@@ -135,28 +135,30 @@ Changed from parent   ■ Prompt 31   ■ Tools 25   ■ Skills 12   ■ Model 1
   - Sections, each a section title over its body with `gap-4`. The title is `h2.text-xl.font-bold`, the sidebar section style of the spec and Run pages, which `PropertyList` also uses for its `title`. A local `lineage_panel_section.svelte` owns it, with a slot for a line right under the title.
     - "Notes": `Output` with the notes text.
     - "Changed from Parent": `PropertyList`, one property per changed kind, each filled through its `custom_value` slot. A single value is a column: the new value, then the "was" line as `text-xs font-light`. Both are `truncate` with a `title`, and both use `link` where there is a page. A list kind is a `button.link` reading "2 added, 1 removed". No swatches or provider logos, so the rows match the property list below.
-    - "Run Configuration": under the title, "Compare eval results to others" as an `a.link` in `text-sm text-gray-500`. Then `PropertyList` with `getRunConfigUiProperties(...)`. It has the same content as the detail page. The input transform action opens the same `InputTransformModal`.
-  - The panel scrolls on its own (`overflow-y-auto`) when it's taller than the body.
-- **Lineage dialog** and **Tools Changed / Skills Changed dialogs**: `Dialog` at its normal width with a Close button (`isCancel`). The body is `flex flex-col gap-6 text-sm`. Each list is a `font-medium` heading over a `ul` with `gap-2`, one item per `li`, each `truncate` with a `title`. Lineage items start with a 12px glyph and are `button.link`; a deleted parent is `text-gray-500` text. Tool and skill items are `a.link` where `tool_link` gives a page, plain text otherwise.
+    - "Run Configuration": under the title, "Compare to others" as an `a.link` in `text-sm text-gray-500`. Then `PropertyList` with `getRunConfigUiProperties(...)`. It has the same content as the detail page. The input transform action opens the same `InputTransformModal`.
+  - The panel scrolls on its own (`overflow-y-auto`) when it's taller than the body. A new selection scrolls it back to the top.
+- **Lineage dialog**: `Dialog` at its normal width, closed from its X, with no action buttons. The body is `flex flex-col gap-6 text-sm`. Each list is a `font-medium` heading over a `ul` with `gap-2`, one item per `li`, each `truncate` with a `title`. Items start with a 12px glyph and are `button.link`; a deleted parent is `text-gray-500` text.
+- **Tools Changed / Skills Changed dialogs**: `Dialog` at its normal width with a Close button (`isCancel`). The body is `flex flex-col gap-6`. Each list is a house table frame (`rounded-lg border` around `table table-fixed`) whose header row reads "#" and "Added" or "Removed". Each row is the item's number in `text-gray-500 tabular-nums`, then its name, `truncate` with a `title`, as an `a.link` where `tool_link` gives a page and plain text otherwise.
 - **Hover tooltip**: shown after a short delay (100ms) and hidden on leave. The hovered node's edges turn dark at the same moment and return to rest with it. It's anchored to the hovered node's screen rectangle, placed to the right with a flip. It isn't scaled with the zoom. Line 1 is `font-medium`. Lines 2 and 3 are normal weight.
 
 ## Empty and Edge States
 
 - No run configs: `Intro` with the title "No Run Configurations Yet", one paragraph on what lineage shows, and a "Create Run Config" button.
-- No lineage at all: info `Warning` (default size) above the graph frame. The graph shows just the grid.
+- No lineage at all: the page body is the same centered `Intro` as for no run configs, with the fork icon, the title "No Experiment Lineage", its two lines as two paragraphs, and no button.
 - Selected node hidden by a filter: it stays at full opacity (functional spec).
 - Very long run config names: two lines, then an ellipsis, in the panel header. One line in the tooltip and in the dialogs. The full name is in `title`.
 
 ## Entry Point Placement
 
-- Optimize page, Run Configurations header: `btn btn-mid` "Experiment Lineage", first in the row, before "Compare". Hidden in select mode.
+- Optimize page, Run Configurations header: no button. The subtitle ends with "See experiment history." as an `a.link`, in every mode.
   - The header row is `flex flex-wrap items-center gap-x-8 gap-y-4`. The title block is `grow basis-80`, and the button group is its own `flex flex-wrap gap-3`.
-  - When the title's 20rem and the buttons fit side by side, the buttons sit to the right of the title. At 1440px with the Assistant pane open, all three buttons are on one line beside the title.
+  - When the title's 20rem and the buttons fit side by side, the buttons sit to the right of the title. At 1440px with the Assistant pane open, both buttons are on one line beside the title.
+  - A plain flex row, with the title growing and the buttons never shrinking, squeezes the title once the subtitle carries the link: at 1024px with the Assistant pane open the title is about 200px wide with a four-line subtitle, and in select mode about 135px with "Run Configurations" on two lines and a seven-line subtitle.
   - When they don't fit (for example at 640px, or at 1024px and 1100px with the Assistant pane open), the whole button group moves to its own line under the subtitle, left-aligned with the title, and the subtitle gets the full width. The subtitle then reads on one or two lines, with no empty space beside the buttons. When the row is narrower than the buttons, they also wrap among themselves.
   - Select mode uses the same row, with "N selected", "Cancel Selection" and "Compare" in the group.
 - Optimize page, row `TableActionMenu`: "Show in Experiment Lineage", after "Set as Task Default".
 - Compare page: AppPage `action_buttons` entry `{ label: "Experiment Lineage", href: "/optimize/{project_id}/{task_id}/experiment_lineage" }`.
-- From the panel, "Compare eval results to others" links to `/specs/{project_id}/{task_id}/compare?from=optimize&columns=2&models={this_id},`. The trailing comma leaves column 2 empty, the same way Compare writes its own URL. `from=optimize` makes Compare's breadcrumb point back to Optimize.
+- From the panel, "Compare to others" links to `/specs/{project_id}/{task_id}/compare?from=optimize&columns=2&models={this_id},`. The trailing comma leaves column 2 empty, the same way Compare writes its own URL. `from=optimize` makes Compare's breadcrumb point back to Optimize.
 
 ## Component Plan (Seed)
 
@@ -179,6 +181,8 @@ The coding agent completes this per the `kiln-ui` skill. It is listed here so th
 | Run config properties | `PropertyList` with `getRunConfigUiProperties` | |
 | Panel close | `Dialog` close button classes | |
 | Compare link | `a.link` | |
+| Tools and skills dialog lists | Table frame, `rounded-lg border` around `table` | A numbered table reads as an ordered list; a plain stack of links did not. |
 | Lineage, Tools Changed and Skills Changed dialogs | `Dialog` | |
 | Empty state | `Intro` | |
-| No-lineage message | `Warning` (info) | |
+| No-lineage empty state | `Intro` | |
+| Optimize header link | `a.link` in the subtitle | |

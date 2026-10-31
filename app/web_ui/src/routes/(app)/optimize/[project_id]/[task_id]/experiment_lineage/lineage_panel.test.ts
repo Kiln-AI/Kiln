@@ -137,6 +137,13 @@ function dialog_titled(container: HTMLElement, title: string) {
   return dialog
 }
 
+function table_texts(dialog: HTMLElement, label: string): string[] {
+  const table = dialog.querySelector(`table[aria-label="${label}"]`)
+  return [...(table?.querySelectorAll("tbody tr") ?? [])].map(
+    (row) => row.textContent?.replace(/\s+/g, " ").trim() ?? "",
+  )
+}
+
 function list_texts(dialog: HTMLElement, label: string): string[] {
   const list = dialog.querySelector(`ul[aria-label="${label}"]`)
   return [...(list?.querySelectorAll("li") ?? [])].map(
@@ -196,12 +203,17 @@ describe("LineagePanel", () => {
     await fireEvent.click(summary)
     const dialog = dialog_titled(container, "Tools Changed")
     expect(dialog.open).toBe(true)
-    expect(list_texts(dialog, "Added")).toEqual([
-      "kiln_tool::web_search",
-      "kiln_tool::sql_query",
+    expect(dialog.textContent).toContain(
+      "Compared with the first parent run configuration.",
+    )
+    expect(table_texts(dialog, "Added")).toEqual([
+      "1 kiln_tool::web_search",
+      "2 kiln_tool::sql_query",
     ])
-    expect(dialog.querySelector('ul[aria-label="Removed"]')).toBeNull()
-    expect(dialog.querySelector("li a")?.getAttribute("href")).toBe("/tools/p1")
+    expect(dialog.querySelector('table[aria-label="Removed"]')).toBeNull()
+    expect(dialog.querySelector("tbody a")?.getAttribute("href")).toBe(
+      "/tools/p1",
+    )
   })
 
   it("returns focus to the summary when the tools dialog closes", async () => {
@@ -261,6 +273,7 @@ describe("LineagePanel", () => {
     ])
     expect(dialog.querySelector('ul[aria-label="Children"]')).toBeNull()
     expect(button_named(dialog, "Deleted run config")).toBeNull()
+    expect(button_named(dialog, "Close")).toBeNull()
   })
 
   it("selects a relative from the dialog and closes it", async () => {
@@ -297,7 +310,7 @@ describe("LineagePanel", () => {
 
   it("links to Compare with this run config and an empty second column", () => {
     const { container } = render_panel("child")
-    const link = within(container).getByText("Compare eval results to others")
+    const link = within(container).getByText("Compare to others")
     expect(link.getAttribute("href")).toBe(
       compare_run_configs_link(PROJECT_ID, TASK_ID, ["child", null]),
     )

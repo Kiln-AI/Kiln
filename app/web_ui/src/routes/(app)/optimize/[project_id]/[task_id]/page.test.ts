@@ -104,33 +104,23 @@ describe("Optimize +page.svelte entry points to Experiment Lineage", () => {
     run_configs_by_task_composite_id.set({})
   })
 
-  it("shows Experiment Lineage first in the header and opens the page", async () => {
+  it("links to the page from the end of the header's subtitle", async () => {
     await render_page()
 
-    expect(header_button_labels()).toEqual([
-      "Experiment Lineage",
-      "Compare",
-      "Create Run Config",
-    ])
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Experiment Lineage" }),
+    const link = screen.getByRole("link", { name: "See experiment history." })
+    expect(link.getAttribute("href")).toBe(LINEAGE_PATH)
+    expect(link.parentElement?.textContent?.trim()).toMatch(
+      /^Saved configurations for running this task\..*See experiment history\.$/s,
     )
-    expect(mockGoto).toHaveBeenCalledWith(LINEAGE_PATH)
+    expect(header_button_labels()).toEqual(["Compare", "Create Run Config"])
   })
 
-  it("hides the header button in select mode and restores it on cancel", async () => {
+  it("keeps the subtitle link in select mode", async () => {
     await render_page()
 
     await fireEvent.click(screen.getByRole("button", { name: "Compare" }))
     expect(
-      screen.queryByRole("button", { name: "Experiment Lineage" }),
-    ).toBeNull()
-
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Cancel Selection" }),
-    )
-    expect(
-      screen.getByRole("button", { name: "Experiment Lineage" }),
+      screen.getByRole("link", { name: "See experiment history." }),
     ).toBeTruthy()
   })
 

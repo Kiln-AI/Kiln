@@ -26,7 +26,7 @@ Reference material in this folder:
 
 There is no link in the left sidebar.
 
-1. **Optimize page, Run Configurations header.** A plain `btn btn-mid` labelled "Experiment Lineage", placed before "Compare". It is shown only when not in select mode (select mode swaps the header buttons for selection controls, and this button hides with them). When the buttons don't fit beside the title, they move to their own line under it (see `ui_design.md`).
+1. **Optimize page, Run Configurations header.** A link "See experiment history." at the end of the header's subtitle. It opens the page with no selection, and it shows in select mode too. The header has no Experiment Lineage button. When the header buttons don't fit beside the title, they move to their own line under it (see `ui_design.md`).
 2. **Optimize page, run config row menu.** A new item "Show in Experiment Lineage" in each row's `TableActionMenu`. It opens the page with `selected=<that run config's id>`.
 3. **Compare page.** An AppPage action button labelled "Experiment Lineage" that opens the page. It does not pass any selection.
 
@@ -100,15 +100,18 @@ From top to bottom:
 
 ## Stats
 
-A styled row under the page header, with two stats. Each is a large number over a short label:
+A styled row under the page header. Each stat is a large number over a short label:
 
 - **N** "run configurations" ("run configuration" when N is 1)
 - **M** "models" ("model" when M is 1)
+- **T** "tools" ("tool" when T is 1), shown only when T is above zero
+- **S** "skills" ("skill" when S is 1), shown only when S is above zero
 
 Counting rules:
 
 - N counts every run config. It excludes deleted placeholders.
 - M counts distinct models among run configs that have a model. A model is the pair (model name, provider). A fine-tuned model counts as its own model. MCP run configs don't add a model.
+- T counts distinct tool IDs across all run configs, not counting skills. S counts distinct skill IDs (prefix `kiln_tool::skill::`). MCP run configs add neither.
 
 ## Filter Chips
 
@@ -158,7 +161,8 @@ Hovering a node draws its own edges dark (see Edges) and shows a short tooltip n
 
 - Clicking a node selects it. This opens the detail panel and highlights its lineage.
 - Clicking another node moves the selection.
-- A single click on empty space clears the selection and closes the panel. It waits about 250ms first, so a double-click on empty space only zooms. Dragging to pan never clears the selection.
+- A single click on empty space clears the selection and closes the panel. It waits about 250ms first, so a double-click on empty space only zooms. A key pressed in that time, such as an arrow key, cancels it. Dragging to pan never clears the selection.
+- When a different run config is selected, the panel scrolls back to its top.
 - The panel's close button or Esc clears the selection and closes the panel. If focus was in the panel, it moves to the graph.
 - Selecting a run config from the panel's lineage dialog pans the view the least distance that brings it into view, as the arrow keys do.
 - The selected node gets a dark ring.
@@ -192,13 +196,13 @@ From top to bottom:
    - Prompt, Model and Settings show the new value, then under it a smaller, lighter line "was ‹old value›". Each is cut to one line with an ellipsis, with the full text on hover. A prompt links to its page, both the new and the old one, when it has a page; generator prompts such as "Basic (Zero Shot)" have none. Models and settings are plain text. Settings shows only the fields that changed, as "Temperature 0.7 · Thinking High".
    - Tools and Skills show "2 added, 1 removed", leaving off a part that is zero ("2 added"). It is a link that opens the Tools Changed or Skills Changed dialog (below).
    - A Copy or re-run reads "Same settings as parent." A Parent deleted node reads "The parent run config was deleted, so changes can't be shown." This section is hidden for other statuses.
-4. **Run Configuration** section: under its title, a link "Compare eval results to others" that opens the Compare page with this run config in column 1 and column 2 empty. Then the same property list the run config detail page shows (`getRunConfigUiProperties` with `PropertyList`). Hidden for the deleted placeholder.
+4. **Run Configuration** section: under its title, a link "Compare to others" that opens the Compare page with this run config in column 1 and column 2 empty. Then the same property list the run config detail page shows (`getRunConfigUiProperties` with `PropertyList`). Hidden for the deleted placeholder.
 
 There is no "Compare to Parent" action: a run config can have several parents, so a single before-and-after pair doesn't fit. There is no primary button, and there is no link to the run config detail page. The panel already shows everything that page shows. Only the detail page's Edit and Clone actions are missing, and those are out of scope here.
 
 ### Lineage Dialog
 
-Opened from the lineage line. The house dialog, titled "Lineage", with the run config's name as its subtitle and a Close button.
+Opened from the lineage line. The house dialog, titled "Lineage", with the run config's name as its subtitle. It closes from its X, with no Close button at the bottom.
 
 - A "Parents" list in recorded order, primary first, and a "Children" list, oldest first. A list with no entries is left out.
 - One run config per line, with its small square, cut to one line with an ellipsis.
@@ -207,10 +211,10 @@ Opened from the lineage line. The house dialog, titled "Lineage", with the run c
 
 ### Tools Changed and Skills Changed Dialogs
 
-Opened from a Tools or Skills row. The house dialog, titled "Tools Changed" or "Skills Changed", with the subtitle "Compared with the parent run configuration." and a Close button.
+Opened from a Tools or Skills row. The house dialog, titled "Tools Changed" or "Skills Changed", with the subtitle "Compared with the first parent run configuration." and a Close button.
 
-- An "Added" list and a "Removed" list. A list with no entries is left out.
-- One tool or skill per line, by name, cut to one line with an ellipsis. Each links to its tool or skill page where one exists.
+- An "Added" list and a "Removed" list, each a small numbered table. A list with no entries is left out.
+- One tool or skill per row, numbered, by name, cut to one line with an ellipsis. Each links to its tool or skill page where one exists.
 
 Closing either dialog returns focus to the link that opened it.
 
@@ -219,7 +223,7 @@ Closing either dialog returns focus to the link that opened it.
 - **Loading**: the standard full-page spinner, as on the Optimize page.
 - **Error**: the standard error block, as on the Compare page.
 - **No run configs**: an `Intro` explaining run configs and lineage, with a button "Create Run Config" that goes to the Optimize page's create flow (`/optimize/[project_id]/[task_id]/run_config/create`).
-- **Run configs, but no lineage at all** (every node has no recorded parent): the graph shows just the grid. Above it, an info `Warning`: "Lineage is recorded when you clone a run config, or when an agent derives one from another. These run configs were created without it."
+- **Run configs, but no lineage at all** (the graph has no edges): the whole page body is an `Intro` titled "No Experiment Lineage", with two lines: "Lineage is recorded when you clone a run config, or when an agent derives one from another." and "No run config in this task has a parent." It has no stats, chips or graph, and no button.
 
 ## Constraints
 

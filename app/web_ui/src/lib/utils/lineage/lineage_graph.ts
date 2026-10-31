@@ -1,4 +1,5 @@
 import type { TaskRunConfig } from "$lib/types"
+import { split_tool_and_skill_ids } from "$lib/stores/tools_store"
 import {
   CHANGE_KINDS,
   detect_changes,
@@ -46,6 +47,8 @@ export const FILTER_KEYS: readonly FilterKey[] = [...CHANGE_KINDS, "copy"]
 export interface LineageSummary {
   run_config_count: number
   model_count: number
+  tool_count: number // distinct tool ids across run configs, skills excluded
+  skill_count: number // distinct skill ids across run configs
   filter_counts: Record<FilterKey, number>
 }
 
@@ -149,6 +152,8 @@ export function summarize_lineage(graph: LineageGraph): LineageSummary {
     FILTER_KEYS.map((key) => [key, 0]),
   ) as Record<FilterKey, number>
   const model_keys = new Set<string>()
+  const tool_ids = new Set<string>()
+  const skill_ids = new Set<string>()
   let run_config_count = 0
 
   for (const node of graph.nodes.values()) {
@@ -167,10 +172,21 @@ export function summarize_lineage(graph: LineageGraph): LineageSummary {
       model_keys.add(
         `${properties.model_provider_name}::${properties.model_name}`,
       )
+      const split = split_tool_and_skill_ids(
+        properties.tools_config?.tools ?? [],
+      )
+      split.tool_ids.forEach((id) => tool_ids.add(id))
+      split.skill_ids.forEach((id) => skill_ids.add(id))
     }
   }
 
-  return { run_config_count, model_count: model_keys.size, filter_counts }
+  return {
+    run_config_count,
+    model_count: model_keys.size,
+    tool_count: tool_ids.size,
+    skill_count: skill_ids.size,
+    filter_counts,
+  }
 }
 
 function edge_id(parent_id: string, child_id: string): string {

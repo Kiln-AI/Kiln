@@ -304,6 +304,18 @@ describe("LineageCanvas", () => {
     expect(close).not.toHaveBeenCalled()
   })
 
+  it("keeps a selection made by key right after a click on empty space", async () => {
+    vi.useFakeTimers()
+    const { container, canvas, select, close } = render_canvas({
+      selected_id: "a",
+    })
+    await click(empty_space(container))
+    await fireEvent.keyDown(canvas, { key: "ArrowUp" })
+    vi.advanceTimersByTime(1000)
+    expect(select).toHaveBeenCalledWith("root")
+    expect(close).not.toHaveBeenCalled()
+  })
+
   it("keeps the selection after a drag on empty space", async () => {
     vi.useFakeTimers()
     const { canvas, close } = render_canvas({ selected_id: "a" })

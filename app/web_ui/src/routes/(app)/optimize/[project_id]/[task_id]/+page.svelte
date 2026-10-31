@@ -377,6 +377,9 @@
           <div class="text-sm text-gray-500">
             Saved configurations for running this task. Compare configs to find
             the best one.
+            <a href={experiment_lineage_link(project_id, task_id)} class="link"
+              >See experiment history.</a
+            >
           </div>
         </div>
         <div class="flex flex-wrap items-center gap-3 whitespace-nowrap">
@@ -390,13 +393,6 @@
               Cancel Selection
             </button>
           {:else}
-            <button
-              class="btn btn-mid"
-              on:click={() =>
-                goto(experiment_lineage_link(project_id, task_id))}
-            >
-              Experiment Lineage
-            </button>
             <button class="btn btn-mid" on:click={() => (select_mode = true)}>
               Compare
             </button>

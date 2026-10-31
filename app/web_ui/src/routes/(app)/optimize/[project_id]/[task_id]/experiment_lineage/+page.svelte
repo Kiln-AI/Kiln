@@ -20,7 +20,6 @@
   } from "$lib/stores/run_configs_store"
   import ForkIcon from "$lib/ui/icons/fork_icon.svelte"
   import Intro from "$lib/ui/intro.svelte"
-  import Warning from "$lib/ui/warning.svelte"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import { experiment_lineage_link } from "$lib/utils/link_builder"
   import type { DisplayContext } from "$lib/utils/lineage/lineage_display"
@@ -139,7 +138,63 @@
   $: if (!loading && selected_id && !selected_node) {
     select(null)
   }
-  $: has_no_lineage = graph.edges.length === 0 && graph.no_parent_ids.length > 0
+  $: empty_state =
+    summary.run_config_count === 0
+      ? {
+          title: "No Run Configurations Yet",
+          paragraphs: [
+            "A run configuration is one way to run this task: a model, a prompt, tools and settings. Each one you clone or derive from another is linked to it, so this page can show how your agent evolved and what changed at each step.",
+          ],
+          action_buttons: [
+            {
+              label: "Create Run Config",
+              href: `/optimize/${project_id}/${task_id}/run_config/create`,
+              is_primary: true,
+            },
+          ],
+        }
+      : graph.edges.length === 0
+        ? {
+            title: "No Experiment Lineage",
+            paragraphs: [
+              "Lineage is recorded when you clone a run config, or when an agent derives one from another.",
+              "No run config in this task has a parent.",
+            ],
+            action_buttons: [],
+          }
+        : null
+  $: stats = [
+    {
+      count: summary.run_config_count,
+      label: ["run configuration", "run configurations"],
+      always_shown: true,
+    },
+    {
+      count: summary.model_count,
+      label: ["model", "models"],
+      always_shown: true,
+    },
+    {
+      count: summary.tool_count,
+      label: ["tool", "tools"],
+      always_shown: false,
+    },
+    {
+      count: summary.skill_count,
+      label: ["skill", "skills"],
+      always_shown: false,
+    },
+  ].filter((stat) => stat.always_shown || stat.count > 0)
+
+  // A new selection shows its panel from the top, not at the previous one's
+  // scroll position.
+  $: scroll_panel_to_top(selected_id)
+
+  function scroll_panel_to_top(_: string | null) {
+    if (panel_el) {
+      panel_el.scrollTop = 0
+    }
+  }
 
   $: agentInfo.set({
     name: "Experiment Lineage",
@@ -161,10 +216,10 @@
     )
   }
 
-  // The body's top moves whenever something above it changes size: the chips
-  // wrap as the column narrows (the assistant opening, say), or the warning
-  // shows. Measuring a frame later keeps the height change out of the
-  // observer's callback, where the browser would report a resize loop.
+  // The body's top moves whenever something above it changes size, such as the
+  // chips wrapping as the column narrows when the assistant opens. Measuring a
+  // frame later keeps the height change out of the observer's callback, where
+  // the browser would report a resize loop.
   function remeasure_on_container_resize(body: HTMLElement) {
     let frame: number | null = null
     const observer = new ResizeObserver(() => {
@@ -212,20 +267,12 @@
         {error.getMessage() || "An unknown error occurred"}
       </div>
     </div>
-  {:else if summary.run_config_count === 0}
+  {:else if empty_state}
     <div class="flex flex-col items-center justify-center min-h-[50vh]">
       <Intro
-        title="No Run Configurations Yet"
-        description_paragraphs={[
-          "A run configuration is one way to run this task: a model, a prompt, tools and settings. Each one you clone or derive from another is linked to it, so this page can show how your agent evolved and what changed at each step.",
-        ]}
-        action_buttons={[
-          {
-            label: "Create Run Config",
-            href: `/optimize/${project_id}/${task_id}/run_config/create`,
-            is_primary: true,
-          },
-        ]}
+        title={empty_state.title}
+        description_paragraphs={empty_state.paragraphs}
+        action_buttons={empty_state.action_buttons}
       >
         <div slot="icon">
           <div class="h-12 w-12">
@@ -237,32 +284,15 @@
   {:else}
     <div class="flex flex-col gap-6">
       <div class="flex gap-10">
-        <div class="flex flex-col">
-          <div class="text-xl font-medium tabular-nums">
-            {summary.run_config_count}
+        {#each stats as stat}
+          <div class="flex flex-col">
+            <div class="text-xl font-medium tabular-nums">{stat.count}</div>
+            <div class="text-sm text-gray-500">
+              {stat.count === 1 ? stat.label[0] : stat.label[1]}
+            </div>
           </div>
-          <div class="text-sm text-gray-500">
-            {summary.run_config_count === 1
-              ? "run configuration"
-              : "run configurations"}
-          </div>
-        </div>
-        <div class="flex flex-col">
-          <div class="text-xl font-medium tabular-nums">
-            {summary.model_count}
-          </div>
-          <div class="text-sm text-gray-500">
-            {summary.model_count === 1 ? "model" : "models"}
-          </div>
-        </div>
+        {/each}
       </div>
-      {#if has_no_lineage}
-        <Warning
-          warning_color="primary"
-          warning_icon="info"
-          warning_message="Lineage is recorded when you clone a run config, or when an agent derives one from another. These run configs were created without it."
-        />
-      {/if}
       <LineageFilterChips
         bind:active={filters}
         counts={summary.filter_counts}

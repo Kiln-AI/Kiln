@@ -391,6 +391,9 @@
   }
 
   function on_keydown(event: KeyboardEvent) {
+    // A key pressed right after a click on empty space would otherwise have its
+    // selection cleared when the click's deselect fires.
+    cancel_deselect()
     // Leaves the browser's own shortcuts alone, such as ⌘+ and Ctrl+0.
     if (event.ctrlKey || event.metaKey || event.altKey) {
       return
