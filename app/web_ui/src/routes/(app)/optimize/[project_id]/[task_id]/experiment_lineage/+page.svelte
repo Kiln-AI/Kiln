@@ -38,9 +38,10 @@
   // Below this the body stacks and the graph keeps a fixed height.
   const WIDE_LAYOUT_QUERY = "(min-width: 1024px)"
   const MIN_BODY_HEIGHT_PX = 420
-  // AppPage's mb-12 under its content, plus the app layout's pb-8, 1px border
-  // and mb-4.
-  const SPACE_BELOW_BODY_PX = 97
+  // The body's lg:-mb-8 cancels 32px of AppPage's mb-12, so the gap under it
+  // is 48px, the same as the card's md:px-12 side gutter. Below the body: the
+  // rest of mb-12 (16px), plus the app layout's pb-8, 1px border and mb-4.
+  const SPACE_BELOW_BODY_PX = 65
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -300,7 +301,7 @@
       <div
         bind:this={body_el}
         use:remeasure_on_container_resize
-        class="flex flex-col lg:flex-row gap-6"
+        class="flex flex-col lg:flex-row gap-6 lg:-mb-8"
         style={body_height === null ? undefined : `height: ${body_height}px;`}
       >
         <div class="h-[480px] lg:h-auto lg:flex-1 min-w-0">
