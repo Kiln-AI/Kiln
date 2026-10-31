@@ -4,7 +4,9 @@ import { build_lineage_graph } from "./lineage_graph"
 import {
   LAYOUT,
   edge_path_groups,
+  join_edge_paths,
   layout_lineage,
+  type LayoutEdge,
   type LineageLayout,
 } from "./lineage_layout"
 import {
@@ -96,7 +98,7 @@ describe("layout_lineage", () => {
     }
   })
 
-  it("draws elbow edges from a parent's bottom to a child's top", () => {
+  it("draws a primary edge as an elbow and an extra edge as an S-curve with a dot", () => {
     const layout = layout_of([
       make_dated_config("a", 0),
       make_dated_config("b", 1, ["a"]),
@@ -108,12 +110,39 @@ describe("layout_lineage", () => {
       id: "a->b",
       primary: true,
       d: "M32 30V37H23V44",
+      dot: null,
     })
     expect(by_id.get("b->c")).toEqual({
       id: "b->c",
       primary: false,
-      d: "M23 58V65H41V72",
+      d: "M23 58C23 65 41 65 41 72",
+      dot: "M39 70a2 2 0 1 0 4 0a2 2 0 1 0 -4 0",
     })
+  })
+
+  it("caps a long curve's handles at one row", () => {
+    const layout = layout_of([
+      ...make_chain(4),
+      make_dated_config("merge", 10, ["rc_3", "rc_0"]),
+    ])
+    const curve = layout.edges.find((e) => e.id === "rc_0->merge")
+    // rc_0's bottom is at y 30 and merge's top at y 128, both at x 23.
+    expect(curve?.d).toBe("M23 30C23 58 23 100 23 128")
+  })
+
+  it("lists each node's edges to its parents and its children", () => {
+    const layout = layout_of([
+      make_dated_config("a", 0),
+      make_dated_config("b", 1, ["a"]),
+      make_dated_config("c", 2, ["a", "b"]),
+      make_dated_config("lone", 3),
+    ])
+    const ids = (node_id: string) =>
+      (layout.node_edges.get(node_id) ?? []).map((e) => e.id).sort()
+    expect(ids("a")).toEqual(["a->b", "a->c"])
+    expect(ids("b")).toEqual(["a->b", "b->c"])
+    expect(ids("c")).toEqual(["a->c", "b->c"])
+    expect(layout.node_edges.has("lone")).toBe(false)
   })
 
   it("groups rows by y and sorts each by x", () => {
@@ -140,6 +169,7 @@ describe("layout_lineage", () => {
     expect(layout_of([])).toEqual({
       positions: new Map(),
       edges: [],
+      node_edges: new Map(),
       grid_label: null,
       rows: [],
       width: 0,
@@ -205,38 +235,60 @@ describe("layout_lineage grid", () => {
   })
 })
 
-describe("edge_path_groups", () => {
-  const edges = [
-    { id: "a->b", primary: true, d: "M1 1V2H3V4" },
-    { id: "a->c", primary: true, d: "M5 5V6H7V8" },
-    { id: "b->c", primary: false, d: "M9 9V10H11V12" },
-    { id: "d->c", primary: false, d: "M13 13V14H15V16" },
-  ]
+function edge(id: string, primary: boolean, n: number): LayoutEdge {
+  return {
+    id,
+    primary,
+    d: `M${n} ${n}V${n + 1}`,
+    dot: primary ? null : `M${n} ${n}a1 1 0 1 0 2 0`,
+  }
+}
 
-  it("splits edges into primary and extra paths", () => {
-    expect(edge_path_groups(edges, new Set())).toEqual({
-      primary: "M1 1V2H3V4M5 5V6H7V8",
-      extra: "M9 9V10H11V12M13 13V14H15V16",
-      highlighted_primary: "",
-      highlighted_extra: "",
+describe("join_edge_paths", () => {
+  it("joins elbows, curves and dots into one path each", () => {
+    expect(
+      join_edge_paths([
+        edge("a->b", true, 1),
+        edge("b->c", false, 5),
+        edge("a->c", true, 9),
+        edge("d->c", false, 13),
+      ]),
+    ).toEqual({
+      primary: "M1 1V2M9 9V10",
+      extra: "M5 5V6M13 13V14",
+      extra_dots: "M5 5a1 1 0 1 0 2 0M13 13a1 1 0 1 0 2 0",
     })
   })
 
-  it("moves highlighted edges into the highlighted paths", () => {
-    expect(edge_path_groups(edges, new Set(["a->c", "b->c"]))).toEqual({
-      primary: "M1 1V2H3V4",
-      extra: "M13 13V14H15V16",
-      highlighted_primary: "M5 5V6H7V8",
-      highlighted_extra: "M9 9V10H11V12",
-    })
-  })
-
-  it("gives four empty paths without edges", () => {
-    expect(edge_path_groups([], new Set(["a->b"]))).toEqual({
+  it("gives empty paths without edges", () => {
+    expect(join_edge_paths([])).toEqual({
       primary: "",
       extra: "",
-      highlighted_primary: "",
-      highlighted_extra: "",
+      extra_dots: "",
     })
+  })
+})
+
+describe("edge_path_groups", () => {
+  const edges = [
+    edge("a->b", true, 1),
+    edge("a->c", true, 5),
+    edge("b->c", false, 9),
+    edge("d->c", false, 13),
+  ]
+
+  it("leaves every edge at rest without highlights", () => {
+    const { resting, highlighted } = edge_path_groups(edges, new Set())
+    expect(resting).toEqual(join_edge_paths(edges))
+    expect(highlighted).toEqual(join_edge_paths([]))
+  })
+
+  it("moves highlighted edges and their dots into the highlighted paths", () => {
+    const { resting, highlighted } = edge_path_groups(
+      edges,
+      new Set(["a->c", "b->c"]),
+    )
+    expect(resting).toEqual(join_edge_paths([edges[0], edges[3]]))
+    expect(highlighted).toEqual(join_edge_paths([edges[1], edges[2]]))
   })
 })

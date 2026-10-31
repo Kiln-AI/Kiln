@@ -16,6 +16,7 @@
   import { GLYPH } from "$lib/utils/lineage/lineage_glyph"
   import {
     edge_path_groups,
+    join_edge_paths,
     type LineageLayout,
   } from "$lib/utils/lineage/lineage_layout"
   import {
@@ -185,6 +186,11 @@
 
   $: hover_node = hover_id ? graph.nodes.get(hover_id) : undefined
   $: hover_pos = hover_id ? layout.positions.get(hover_id) : undefined
+  // Drawn over the other edges instead of moving them into another group, so a
+  // hover redraws only these few edges.
+  $: hover_paths = join_edge_paths(
+    hover_id ? layout.node_edges.get(hover_id) ?? [] : [],
+  )
 
   function clear_hover_timer() {
     if (hover_timer !== null) {
@@ -448,36 +454,49 @@
       </defs>
       <g transform="translate({vp.tx} {vp.ty}) scale({vp.k})">
         <path
-          d={edge_paths.primary}
+          d={edge_paths.resting.primary}
           class="stroke-base-300"
           stroke-width="1"
           fill="none"
           vector-effect="non-scaling-stroke"
         />
         <path
-          d={edge_paths.extra}
-          class="stroke-base-300"
-          stroke-width="1"
-          stroke-dasharray="3 3"
+          d={edge_paths.resting.extra}
+          class="stroke-base-300/60"
+          stroke-width="0.75"
           fill="none"
           vector-effect="non-scaling-stroke"
         />
         <path
-          d={edge_paths.highlighted_primary}
-          class="stroke-secondary"
-          stroke-width="1.5"
-          fill="none"
-          vector-effect="non-scaling-stroke"
-          data-testid="lineage-highlighted-primary"
+          d={edge_paths.resting.extra_dots}
+          class="fill-base-300"
+          data-testid="lineage-resting-dots"
         />
         <path
-          d={edge_paths.highlighted_extra}
+          d={edge_paths.highlighted.primary + edge_paths.highlighted.extra}
           class="stroke-secondary"
           stroke-width="1.5"
-          stroke-dasharray="3 3"
           fill="none"
           vector-effect="non-scaling-stroke"
-          data-testid="lineage-highlighted-extra"
+          data-testid="lineage-highlighted-edges"
+        />
+        <path
+          d={edge_paths.highlighted.extra_dots}
+          class="fill-secondary"
+          data-testid="lineage-highlighted-dots"
+        />
+        <path
+          d={hover_paths.primary + hover_paths.extra}
+          class="stroke-secondary"
+          stroke-width="1.5"
+          fill="none"
+          vector-effect="non-scaling-stroke"
+          data-testid="lineage-hovered-edges"
+        />
+        <path
+          d={hover_paths.extra_dots}
+          class="fill-secondary"
+          data-testid="lineage-hovered-dots"
         />
         {#if layout.grid_label}
           <text

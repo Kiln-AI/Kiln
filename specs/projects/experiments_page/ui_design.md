@@ -33,7 +33,7 @@ Each row is a place where the handoff can't be built as drawn, or where house st
 | White tooltip card, 12px text | `InfoTooltip`'s popover look: `bg-stone-200 rounded-md shadow-lg px-3 py-2 text-sm`, left aligned, positioned with `@floating-ui/dom` | One tooltip look across the app. |
 | 13px and 12px text | `text-sm` and `text-xs` | DaisyUI and Tailwind sizes only. |
 | Zoom 50–200% only, scroll to pan | Zoom from min(50%, fit) to 200%. Drag and scroll pan. Fit button added. | You asked for Fit/+/− and pan, like Mike's. |
-| Single parent per node | Every parent drawn. Extra parents dashed. | Merges are part of the story. |
+| Single parent per node | Every parent drawn. Extra parents as light curves that end in a dot. | Merges are part of the story. |
 | Initial selection: best node | No selection on load, unless `selected` is in the URL | There's no best node without scores. |
 | Colors in `oklch`, new theme tokens | Colors from the shared chart palette (below) | One palette in code. |
 
@@ -71,8 +71,10 @@ Applied with Tailwind's `fill-*` and `stroke-*` classes on the SVG, so they foll
 | Starting point | `secondary` |
 | Parent deleted, No recorded parent | `base-100` fill, `base-300` 1px outline |
 | Deleted placeholder | `base-100` fill, `base-300` 1px dashed outline |
-| Edges | `base-300`, 1px |
-| Selected lineage edges | `secondary`, 1.5px |
+| Primary edges | `base-300`, 1px |
+| Extra-parent curves | `base-300` at 60% opacity, 0.75px |
+| Extra-parent end dots | `base-300` fill |
+| Selected lineage edges, and the hovered node's edges | `secondary`, 1.5px, with `secondary` end dots |
 | Selected ring | 2px `base-100` gap, then a 1.5px `secondary` ring |
 
 ## Node Glyph
@@ -120,7 +122,8 @@ Changed from parent (i)  [■ Prompt 31] [■ Tools 25] [■ Skills 12] [■ Mod
 - **Body**: `flex gap-6`. It fills the window's remaining height: measure the body's top offset on mount and on resize, set the height to `100vh − top − bottom padding`, minimum 420px. At `lg` and wider, the panel (fixed 360px) sits right of the graph. Below `lg`, the body stacks, the graph keeps a fixed 480px height, and the panel sits below it.
 - **Graph frame**: `rounded-lg border`, `flex flex-col`, `overflow-hidden`.
   - Toolbar: a row with `px-3 py-2 border-b`. Left: hint "Click a run config for details. Hover for a summary." as `text-xs text-gray-500`. Right: a DaisyUI `join` of `btn btn-sm`: "−", the zoom percentage as non-interactive text, "+", "Fit". Buttons have `aria-label`s: "Zoom out", "Zoom in", "Fit graph".
-  - Canvas: fills the rest. One SVG holds a single group with the zoom and pan transform. Edges are drawn first, then nodes. Cursor: `grab` on empty space and `grabbing` while dragging, `pointer` on nodes.
+  - Canvas: fills the rest. One SVG holds a single group with the zoom and pan transform. Edges are drawn first, then nodes, so an edge passes behind any node in its way. Cursor: `grab` on empty space and `grabbing` while dragging, `pointer` on nodes.
+  - Edge shapes: a primary edge is an elbow that turns in the middle of the gap above the child's row. An extra-parent edge is a cubic S-curve with vertical ends. Its handles are half the vertical distance, capped at one row height (28px), so a long curve bends away from the nodes stacked right below its parent and right above its child. Its end dot has a 2px radius and rests on the child's top edge, centered. Edge widths don't scale with the zoom. Dots do, like the nodes.
   - "No recorded parent (N)" label: SVG text in the graph, `text-xs`, `fill-gray-500`, above the grid.
 - **Detail panel**:
   - Header row: 40px glyph, then a column with the name (`text-lg font-medium`, truncated with a `title`) and the lineage line (`text-sm text-gray-500`, parent names as `link` buttons). The close button sits at the top right of the panel, using `Dialog`'s close button classes and the same icon.
@@ -130,7 +133,7 @@ Changed from parent (i)  [■ Prompt 31] [■ Tools 25] [■ Skills 12] [■ Mod
     - "Run Configuration": `PropertyList` with `getRunConfigUiProperties(...)`. It has the same content as the detail page. The input transform action opens the same `InputTransformModal`.
   - Actions row: `grid grid-cols-2 gap-2`, so the two `btn btn-mid` are the same size.
   - The panel scrolls on its own (`overflow-y-auto`) when it's taller than the body.
-- **Hover tooltip**: shown after a short delay (100ms) and hidden on leave. It's anchored to the hovered node's screen rectangle, placed to the right with a flip. It isn't scaled with the zoom. Line 1 is `font-medium`. Lines 2 and 3 are normal weight.
+- **Hover tooltip**: shown after a short delay (100ms) and hidden on leave. The hovered node's edges turn dark at the same moment and return to rest with it. It's anchored to the hovered node's screen rectangle, placed to the right with a flip. It isn't scaled with the zoom. Line 1 is `font-medium`. Lines 2 and 3 are normal weight.
 
 ## Empty and Edge States
 

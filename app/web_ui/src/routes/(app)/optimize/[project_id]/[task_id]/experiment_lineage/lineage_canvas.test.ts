@@ -18,6 +18,7 @@ import {
 } from "$lib/utils/lineage/lineage_graph"
 import {
   layout_lineage,
+  type LayoutEdge,
   type LineageLayout,
 } from "$lib/utils/lineage/lineage_layout"
 import { make_dated_config } from "$lib/utils/lineage/__tests__/lineage_fixtures"
@@ -172,12 +173,27 @@ function parse_transform(transform: string): {
   return { tx: Number(match[1]), ty: Number(match[2]), k: Number(match[3]) }
 }
 
-function edge_d(layout: LineageLayout, id: string): string {
+function layout_edge(layout: LineageLayout, id: string): LayoutEdge {
   const edge = layout.edges.find((e) => e.id === id)
   if (!edge) {
     throw new Error(`no edge ${id}`)
   }
-  return edge.d
+  return edge
+}
+
+function edge_d(layout: LineageLayout, id: string): string {
+  return layout_edge(layout, id).d
+}
+
+function edge_dot(layout: LineageLayout, id: string): string {
+  return layout_edge(layout, id).dot ?? ""
+}
+
+function path_d(container: HTMLElement, testid: string): string {
+  return (
+    container.querySelector(`[data-testid="${testid}"]`)?.getAttribute("d") ??
+    ""
+  )
 }
 
 async function click(target: Element, at = { x: 10, y: 10 }) {
@@ -263,15 +279,23 @@ describe("LineageCanvas", () => {
     }
   })
 
+  it("draws a dot where the extra-parent edge meets its child", () => {
+    const { container, layout } = render_canvas()
+    expect(path_d(container, "lineage-resting-dots")).toBe(
+      edge_dot(layout, "b->c"),
+    )
+  })
+
   it("highlights every edge above the selected node and rings it", () => {
     const { container, layout } = render_canvas({ selected_id: "c" })
-    const path = (id: string) =>
-      container.querySelector(`[data-testid="${id}"]`)?.getAttribute("d") ?? ""
-    const primary = path("lineage-highlighted-primary")
-    for (const id of ["root->a", "root->b", "a->c"]) {
-      expect(primary).toContain(edge_d(layout, id))
+    const highlighted = path_d(container, "lineage-highlighted-edges")
+    for (const id of ["root->a", "root->b", "a->c", "b->c"]) {
+      expect(highlighted).toContain(edge_d(layout, id))
     }
-    expect(path("lineage-highlighted-extra")).toBe(edge_d(layout, "b->c"))
+    expect(path_d(container, "lineage-highlighted-dots")).toBe(
+      edge_dot(layout, "b->c"),
+    )
+    expect(path_d(container, "lineage-resting-dots")).toBe("")
     expect(
       container.querySelector('[data-testid="lineage-selection-ring"]'),
     ).not.toBeNull()
@@ -279,11 +303,7 @@ describe("LineageCanvas", () => {
 
   it("highlights nothing and draws no ring without a selection", () => {
     const { container } = render_canvas()
-    expect(
-      container
-        .querySelector('[data-testid="lineage-highlighted-primary"]')
-        ?.getAttribute("d"),
-    ).toBe("")
+    expect(path_d(container, "lineage-highlighted-edges")).toBe("")
     expect(
       container.querySelector('[data-testid="lineage-selection-ring"]'),
     ).toBeNull()
@@ -291,10 +311,40 @@ describe("LineageCanvas", () => {
 
   it("highlights only the edges above the selected node", () => {
     const { container, layout } = render_canvas({ selected_id: "a" })
-    const path = (id: string) =>
-      container.querySelector(`[data-testid="${id}"]`)?.getAttribute("d") ?? ""
-    expect(path("lineage-highlighted-primary")).toBe(edge_d(layout, "root->a"))
-    expect(path("lineage-highlighted-extra")).toBe("")
+    expect(path_d(container, "lineage-highlighted-edges")).toBe(
+      edge_d(layout, "root->a"),
+    )
+    expect(path_d(container, "lineage-highlighted-dots")).toBe("")
+  })
+
+  it("draws a hovered node's edges to its parents and children dark", async () => {
+    vi.useFakeTimers()
+    const { container, layout } = render_canvas()
+    const hovered = () => path_d(container, "lineage-hovered-edges")
+    await fireEvent.pointerOver(hit_target(container, "b"))
+    expect(hovered()).toBe("")
+    vi.advanceTimersByTime(100)
+    await tick()
+    expect(hovered()).toBe(edge_d(layout, "root->b") + edge_d(layout, "b->c"))
+    expect(path_d(container, "lineage-hovered-dots")).toBe(
+      edge_dot(layout, "b->c"),
+    )
+    await fireEvent.pointerOut(hit_target(container, "b"), {
+      relatedTarget: container.querySelector("svg"),
+    })
+    expect(hovered()).toBe("")
+    expect(path_d(container, "lineage-hovered-dots")).toBe("")
+  })
+
+  it("draws a hovered merge's edges from both its parents", async () => {
+    vi.useFakeTimers()
+    const { container, layout } = render_canvas()
+    await fireEvent.pointerOver(hit_target(container, "c"))
+    vi.advanceTimersByTime(100)
+    await tick()
+    expect(path_d(container, "lineage-hovered-edges")).toBe(
+      edge_d(layout, "a->c") + edge_d(layout, "b->c"),
+    )
   })
 
   it("fits the graph on load, which caps the zoom at 100%", async () => {

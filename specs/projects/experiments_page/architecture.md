@@ -221,16 +221,27 @@ Rounded corners:
 ## Layout: `lineage_layout.ts`
 
 ```ts
-export const LAYOUT = { node: 14, col_gap: 4, row_height: 28, padding: 16, section_gap: 40, label_height: 16 } as const
+export const LAYOUT = { node: 14, col_gap: 4, row_height: 28, padding: 16, section_gap: 40, label_height: 16, extra_dot_radius: 2 } as const
+export interface LayoutEdge {
+  id: string
+  primary: boolean
+  d: string // primary: an elbow; extra parent: an S-curve
+  dot: string | null // extra parent: a filled dot resting on the child's top edge
+}
 export interface LineageLayout {
   positions: Map<string, { x: number; y: number }> // top-left of each node square, world px
-  edges: { id: string; primary: boolean; d: string }[]
+  edges: LayoutEdge[]
+  node_edges: Map<string, LayoutEdge[]> // each node's edges to its parents and children
   grid_label: { x: number; y: number } | null
   rows: string[][] // node ids grouped by y (top to bottom), each sorted by x
   width: number
   height: number
 }
 export function layout_lineage(graph: LineageGraph, config = LAYOUT): LineageLayout
+
+export interface EdgePaths { primary: string; extra: string; extra_dots: string }
+export function join_edge_paths(edges: readonly LayoutEdge[]): EdgePaths
+export function edge_path_groups(edges: readonly LayoutEdge[], highlighted: ReadonlySet<string>): { resting: EdgePaths; highlighted: EdgePaths }
 ```
 
 1. **Placement tree.** Each tree node hangs under `parent_ids[0]`. Placement children are sorted by `(sort_key, id)`.
@@ -241,9 +252,14 @@ export function layout_lineage(graph: LineageGraph, config = LAYOUT): LineageLay
    - Top: `grid_top = (tree ? tree_bottom + section_gap : padding) + label_height`.
    - Positions: node `i` goes to column `i % cols` and row `floor(i / cols)`, with `node + col_gap` spacing in both directions.
    - `grid_label` is at `{ x: padding, y: grid_top - 6 }`. It is `null` when there are no grid nodes.
-5. **Edges.** For each graph edge: `x1 = parent.x + node/2`, `y1 = parent.y + node`, `x2 = child.x + node/2`, `y2 = child.y`, `m = y2 - (row_height - node) / 2`. The path is `` `M${x1} ${y1}V${m}H${x2}V${y2}` ``.
+5. **Edges.** For each graph edge: `x1 = parent.x + node/2`, `y1 = parent.y + node`, `x2 = child.x + node/2`, `y2 = child.y`.
+   - Primary: with `m = y2 - (row_height - node) / 2`, the path is the elbow `` `M${x1} ${y1}V${m}H${x2}V${y2}` `` and `dot` is `null`.
+   - Extra parent: with `h = min((y2 - y1) / 2, row_height)`, the path is the S-curve `` `M${x1} ${y1}C${x1} ${y1 + h} ${x2} ${y2 - h} ${x2} ${y2}` ``. The cap on `h` keeps a long curve's vertical ends from running behind the nodes stacked right below the parent and right above the child. `dot` is a circle path of radius `extra_dot_radius`, centered at `(x2, y2 - extra_dot_radius)`.
+   - `node_edges` lists each edge under both its parent and its child. A node with no edges has no entry.
 6. **Size.** `width` and `height` are the maximum node extent plus `padding`. An empty graph gives `0`.
 7. **Rows.** Group all positioned nodes by `y` and sort each group by `x`.
+
+`join_edge_paths` concatenates the `d` strings of the primary edges into `primary`, of the extra edges into `extra`, and their dots into `extra_dots`, so the canvas draws a fixed number of paths however many edges there are. `edge_path_groups` splits the edges by `highlighted` and joins each side.
 
 ## Viewport: `lineage_viewport.ts`
 
@@ -352,7 +368,16 @@ Both build their query strings with `URLSearchParams`. Compare reads them back w
 - **DOM:** a toolbar row, then a canvas `div`. It is `relative overflow-hidden`, has `tabindex="0"` and `aria-label="Run config lineage graph"`, and carries `bind:this`, `bind:clientWidth` and `bind:clientHeight`. Inside it:
   - One `<svg>` (100% by 100%, `aria-hidden="true"`), with `<defs>` holding the clip path.
   - `<g transform="translate(tx ty) scale(k)">` holding:
-    - Four edge `<path>`s: normal primary, normal extra, highlighted primary and highlighted extra. Each joins its edges' `d` strings into one path. All use `fill="none"` and `vector-effect="non-scaling-stroke"`. Extra edges use `stroke-dasharray="3 3"`. Normal edges are `stroke-base-300` at 1px, highlighted are `stroke-secondary` at 1.5px. Highlighted means `ancestor_edge_ids(graph, selected_id)`, memoized on `(graph, selected_id)`.
+    - Seven edge `<path>`s, in this order:
+      1. Resting primary edges: `stroke-base-300`, 1px.
+      2. Resting extra-parent curves: `stroke-base-300/60`, 0.75px.
+      3. Resting end dots: `fill-base-300`.
+      4. Highlighted edges, primary and extra in one path: `stroke-secondary`, 1.5px.
+      5. Highlighted end dots: `fill-secondary`.
+      6. The hovered node's edges, primary and extra in one path: `stroke-secondary`, 1.5px.
+      7. The hovered node's end dots: `fill-secondary`.
+    - Lines use `fill="none"` and `vector-effect="non-scaling-stroke"`. Paths 1 to 5 come from `edge_path_groups(layout.edges, highlighted)`, where highlighted means `ancestor_edge_ids(graph, selected_id)`, memoized on `(graph, selected_id)`.
+    - Paths 6 and 7 are `join_edge_paths(layout.node_edges.get(hover_id) ?? [])`. They draw over the resting edges instead of moving the hovered edges out of them, so a hover joins only that node's few edges and doesn't touch the node `{#each}` block. The 1,000-node budget depends on that: nothing in the node block may read the hover state.
     - The grid label as `<text class="text-xs fill-gray-500">`.
     - The nodes, as `{#each [...graph.nodes.values()] as node (node.id)}`. Each is `<g transform="translate(x y)" data-node-id={node.id} opacity={dim ? 0.15 : 1} class="cursor-pointer">` with the clipped `LineageGlyph` inside. Dimming applies when `!node_matches_filters(node.status, filters) && node.id !== selected_id`.
     - The selection ring, drawn last. It's two rects: one at `x-1, y-1, 16, 16` with `stroke-base-100` width 2, and one at `x-2.75, y-2.75, 19.5, 19.5` with `stroke-secondary` width 1.5. Both use `fill="none"`.
@@ -362,7 +387,7 @@ Both build their query strings with `URLSearchParams`. Compare reads them back w
   - `pointerdown` (button 0): call `setPointerCapture` and record the start point and the node id under the pointer.
   - `pointermove`: once the pointer has moved more than 4px, set `dragging`, hide the tooltip, and `pan_by` the movement.
   - `pointerup`: release capture. If it wasn't a drag and a node was under the pointer at `pointerdown`, dispatch `select`.
-  - Hover: `pointerover` and `pointerout` with a 100ms show delay. Suppressed while dragging.
+  - Hover: `pointerover` and `pointerout` with a 100ms show delay. Suppressed while dragging. The one `hover_id` drives both the tooltip and the hovered edges.
   - `wheel` is bound with `on:wheel|nonpassive` and always calls `preventDefault()`. With `ctrlKey` or `metaKey`, it calls `zoom_at(cursor, k * wheel_zoom_factor(dy))`. Without, it calls `pan_by(-dx, -dy)`. Deltas go through `wheel_delta_px`.
   - Safari pinch: `gesturestart` stores `k`. `gesturechange` calls `preventDefault()` and `zoom_at(cursor, start_k * event.scale)`. These events aren't in the DOM typings, so read `scale` through a narrow local type.
   - `dblclick` on empty space calls `fit`.
@@ -451,7 +476,9 @@ Vitest. Pure modules get unit tests beside them. Components get `@vitest-environ
   - Two trees sit side by side.
   - No two nodes in a row overlap, on a 200-node random fixture with a fixed seed.
   - The grid's columns and its top, with and without a tree.
-  - A sample edge path string.
+  - Sample paths for an elbow, an S-curve and its dot.
+  - A long curve's handles are capped at one row.
+  - `node_edges` lists a node's edges to its parents and children.
   - Rows are grouped and sorted.
   - An empty graph.
   - A 1,000-node fixture lays out without error.
@@ -465,6 +492,7 @@ Vitest. Pure modules get unit tests beside them. Components get `@vitest-environ
   - `resize_keep_center`.
   - `wheel_delta_px` modes.
 - **`lineage_navigation`**: each key, edges of rows, no selection, and an empty graph.
+- **`join_edge_paths` and `edge_path_groups`**: each kind of edge and its dots land in their own path, highlighted edges move with their dots, and no edges give empty paths.
 - **`lineage_display`**:
   - `status_text` for each status.
   - `change_rows` for each kind, including settings with two fields changed, unloaded tools, and MCP.
@@ -474,6 +502,8 @@ Vitest. Pure modules get unit tests beside them. Components get `@vitest-environ
   - It renders one `[data-node-id]` per node.
   - A pointerdown and pointerup on a node dispatches `select`. A 10px drag doesn't.
   - Filters dim non-matching nodes, but not the selected node.
+  - An extra-parent edge draws its end dot at rest, and the selection moves it to the highlighted paths.
+  - Hovering a node draws its edges to its parents and children in the hovered paths after the delay, and leaving clears them.
   - The zoom buttons change the label.
   - `Escape` dispatches `close`, and arrow keys dispatch `select`.
   - In jsdom, set `clientWidth` and `clientHeight` through `Object.defineProperty` on the element prototype in the test.

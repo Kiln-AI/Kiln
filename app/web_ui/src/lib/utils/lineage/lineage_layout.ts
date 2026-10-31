@@ -7,6 +7,7 @@ export interface LayoutConfig {
   padding: number
   section_gap: number
   label_height: number
+  extra_dot_radius: number
 }
 
 export const LAYOUT: Readonly<LayoutConfig> = {
@@ -16,11 +17,20 @@ export const LAYOUT: Readonly<LayoutConfig> = {
   padding: 16,
   section_gap: 40,
   label_height: 16,
+  extra_dot_radius: 2,
+}
+
+export interface LayoutEdge {
+  id: string
+  primary: boolean
+  d: string // primary: an elbow; extra parent: an S-curve
+  dot: string | null // extra parent: a filled dot resting on the child's top edge
 }
 
 export interface LineageLayout {
   positions: Map<string, { x: number; y: number }> // top-left of each node square, world px
-  edges: { id: string; primary: boolean; d: string }[]
+  edges: LayoutEdge[]
+  node_edges: Map<string, LayoutEdge[]> // each node's edges to its parents and children
   grid_label: { x: number; y: number } | null
   rows: string[][] // node ids grouped by y (top to bottom), each sorted by x
   width: number
@@ -60,25 +70,31 @@ export function layout_lineage(
     config,
   )
 
-  const edges = graph.edges.flatMap((edge) => {
+  const edges: LayoutEdge[] = []
+  const node_edges = new Map<string, LayoutEdge[]>()
+  for (const edge of graph.edges) {
     const parent = positions.get(edge.parent_id)
     const child = positions.get(edge.child_id)
     if (!parent || !child) {
-      return []
+      continue
     }
-    const x1 = parent.x + config.node / 2
-    const y1 = parent.y + config.node
-    const x2 = child.x + config.node / 2
-    const y2 = child.y
-    const m = y2 - (config.row_height - config.node) / 2
-    return [
-      {
-        id: edge.id,
-        primary: edge.primary,
-        d: `M${x1} ${y1}V${m}H${x2}V${y2}`,
-      },
-    ]
-  })
+    const layout_edge = layout_edge_between(
+      edge.id,
+      edge.primary,
+      parent,
+      child,
+      config,
+    )
+    edges.push(layout_edge)
+    for (const id of [edge.parent_id, edge.child_id]) {
+      const touching = node_edges.get(id)
+      if (touching) {
+        touching.push(layout_edge)
+      } else {
+        node_edges.set(id, [layout_edge])
+      }
+    }
+  }
 
   let width = 0
   let height = 0
@@ -90,10 +106,39 @@ export function layout_lineage(
   return {
     positions,
     edges,
+    node_edges,
     grid_label,
     rows: group_rows(positions),
     width,
     height,
+  }
+}
+
+// From the parent's bottom center to the child's top center.
+function layout_edge_between(
+  id: string,
+  primary: boolean,
+  parent: { x: number; y: number },
+  child: { x: number; y: number },
+  config: Readonly<LayoutConfig>,
+): LayoutEdge {
+  const x1 = parent.x + config.node / 2
+  const y1 = parent.y + config.node
+  const x2 = child.x + config.node / 2
+  const y2 = child.y
+  if (primary) {
+    const m = y2 - (config.row_height - config.node) / 2
+    return { id, primary, d: `M${x1} ${y1}V${m}H${x2}V${y2}`, dot: null }
+  }
+  // Handles of at most one row keep a long curve's vertical ends from running
+  // behind the nodes stacked right below the parent and right above the child.
+  const handle = Math.min((y2 - y1) / 2, config.row_height)
+  const r = config.extra_dot_radius
+  return {
+    id,
+    primary,
+    d: `M${x1} ${y1}C${x1} ${y1 + handle} ${x2} ${y2 - handle} ${x2} ${y2}`,
+    dot: `M${x2 - r} ${y2 - r}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`,
   }
 }
 
@@ -218,43 +263,54 @@ function group_rows(
     )
 }
 
-/** The edges' path data, split by edge type and by whether the edge is highlighted. */
-export interface EdgePathGroups {
+/** Path data for a set of edges, joined into one string per way they're drawn. */
+export interface EdgePaths {
   primary: string
   extra: string
-  highlighted_primary: string
-  highlighted_extra: string
+  extra_dots: string
 }
 
 /**
- * Joins the edges into one path per group, so the canvas draws four paths
- * however many edges there are.
+ * Joins the edges into one path per kind of edge, so the canvas draws a fixed
+ * number of paths however many edges there are.
  */
-export function edge_path_groups(
-  edges: LineageLayout["edges"],
-  highlighted: ReadonlySet<string>,
-): EdgePathGroups {
-  const groups: Record<keyof EdgePathGroups, string[]> = {
-    primary: [],
-    extra: [],
-    highlighted_primary: [],
-    highlighted_extra: [],
-  }
+export function join_edge_paths(edges: readonly LayoutEdge[]): EdgePaths {
+  const primary: string[] = []
+  const extra: string[] = []
+  const extra_dots: string[] = []
   for (const edge of edges) {
-    const lit = highlighted.has(edge.id)
-    const group = edge.primary
-      ? lit
-        ? groups.highlighted_primary
-        : groups.primary
-      : lit
-        ? groups.highlighted_extra
-        : groups.extra
-    group.push(edge.d)
+    if (edge.primary) {
+      primary.push(edge.d)
+    } else {
+      extra.push(edge.d)
+    }
+    if (edge.dot !== null) {
+      extra_dots.push(edge.dot)
+    }
   }
   return {
-    primary: groups.primary.join(""),
-    extra: groups.extra.join(""),
-    highlighted_primary: groups.highlighted_primary.join(""),
-    highlighted_extra: groups.highlighted_extra.join(""),
+    primary: primary.join(""),
+    extra: extra.join(""),
+    extra_dots: extra_dots.join(""),
+  }
+}
+
+/** Splits the edges into the ones at rest and the highlighted ones, each joined. */
+export function edge_path_groups(
+  edges: readonly LayoutEdge[],
+  highlighted: ReadonlySet<string>,
+): { resting: EdgePaths; highlighted: EdgePaths } {
+  const resting: LayoutEdge[] = []
+  const lit: LayoutEdge[] = []
+  for (const edge of edges) {
+    if (highlighted.has(edge.id)) {
+      lit.push(edge)
+    } else {
+      resting.push(edge)
+    }
+  }
+  return {
+    resting: join_edge_paths(resting),
+    highlighted: join_edge_paths(lit),
   }
 }

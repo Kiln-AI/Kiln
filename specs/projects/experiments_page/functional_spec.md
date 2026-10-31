@@ -131,7 +131,9 @@ Counting rules:
 ### Edges
 
 - Primary edges: elbow lines. They go down from the parent's bottom center, across at the gap above the child's row, then down into the child's top center.
-- Extra-parent edges: the same elbow shape, drawn dashed so a merge reads as a merge. They are not faded.
+- Extra-parent edges: a smooth S-curve straight from the parent's bottom center to the child's top center, vertical at both ends. The curve marks them, so they have no dashes. At rest they are lighter and thinner than primary edges.
+- A small dot sits where each extra-parent edge meets its child, so the line reads as ending at that node rather than passing behind it.
+- Hovering a node draws that node's own edges dark and slightly thicker: the edges to its parents and to its children, primary and extra. They show and hide with the tooltip.
 - When a node is selected, every edge on any path from a root to that node is drawn dark and slightly thicker. That includes extra-parent paths.
 
 ### Zoom and Pan
@@ -146,7 +148,7 @@ Counting rules:
 
 ### Hover
 
-Hovering a node shows a short tooltip next to it:
+Hovering a node draws its own edges dark (see Edges) and shows a short tooltip next to it:
 
 - Line 1: the run config name, or "Deleted run config".
 - Line 2: the status. For Changed it lists the kinds ("Prompt, Model"). The others read "Starting point", "Copy or re-run, no changes", "Parent deleted", "No recorded parent" or "This run config was deleted".
