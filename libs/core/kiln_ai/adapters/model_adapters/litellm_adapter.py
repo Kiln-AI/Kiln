@@ -76,6 +76,8 @@ from kiln_ai.utils.open_ai_types import (
 
 MAX_CALLS_PER_TURN = 10
 MAX_TOOL_CALLS_PER_TURN = 100
+# OpenRouter model id suffixes that pick the provider by price or throughput
+OPENROUTER_ROUTING_SUFFIXES = (":floor", ":nitro")
 
 # Cerebras validates assistant messages strictly and rejects the reasoning fields
 # LiteLLM attaches to responses from reasoning models, so prior assistant turns are
@@ -763,17 +765,24 @@ class LiteLlmAdapter(BaseAdapter):
             # OpenRouter will ignore providers that don't support the model.
             # Special cases below (like R1) can override this order.
             # allow_fallbacks is true by default, but we can override it here.
-            provider_options["order"] = [
-                "fireworks",
-                "parasail",
-                "together",
-                "deepinfra",
-                "novita",
-                "groq",
-                "amazon-bedrock",
-                "azure",
-                "nebius",
-            ]
+            # Skipped for ids with an OpenRouter routing suffix (:floor, :nitro): an
+            # explicit order would override the price/throughput sorting they ask for.
+            model_id = provider.model_id
+            has_routing_suffix = isinstance(model_id, str) and model_id.endswith(
+                OPENROUTER_ROUTING_SUFFIXES
+            )
+            if not has_routing_suffix:
+                provider_options["order"] = [
+                    "fireworks",
+                    "parasail",
+                    "together",
+                    "deepinfra",
+                    "novita",
+                    "groq",
+                    "amazon-bedrock",
+                    "azure",
+                    "nebius",
+                ]
 
         if provider.anthropic_extended_thinking and "thinking" not in extra_body:
             extra_body["thinking"] = {"type": "enabled", "budget_tokens": 4000}

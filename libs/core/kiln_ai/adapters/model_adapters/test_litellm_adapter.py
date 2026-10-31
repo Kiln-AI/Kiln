@@ -740,6 +740,30 @@ def test_build_extra_body_openrouter_default_provider_order(config, mock_task):
     assert extra_body["provider"]["order"] == expected_order
 
 
+@pytest.mark.parametrize("suffix", [":floor", ":nitro"])
+def test_build_extra_body_openrouter_routing_suffix_skips_default_order(
+    config, mock_task, suffix
+):
+    """Ids with a routing suffix keep OpenRouter's own price/throughput sorting"""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.openrouter
+    mock_provider.model_id = f"deepseek/deepseek-chat{suffix}"
+    mock_provider.default_thinking_level = None
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert "order" not in extra_body.get("provider", {})
+
+
 def test_build_extra_body_r1_overrides_default_order(config, mock_task):
     """Test that R1 specific options override the default provider order"""
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
