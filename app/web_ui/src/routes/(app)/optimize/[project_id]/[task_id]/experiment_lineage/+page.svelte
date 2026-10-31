@@ -51,6 +51,8 @@
   let filters: Set<FilterKey> = new Set()
   let selected_id: string | null = null
   let initial_center_id: string | null = null
+  let canvas: LineageCanvas | null = null
+  let panel_el: HTMLDivElement | null = null
 
   $: if (project_id && task_id) {
     load_page_data(project_id, task_id)
@@ -91,7 +93,18 @@
 
   function on_window_keydown(event: KeyboardEvent) {
     if (selected_id !== null && closes_panel(event)) {
-      select(null)
+      close_panel()
+    }
+  }
+
+  // Closing the panel removes the focused element with it, so focus moves to
+  // the graph rather than falling back to the page.
+  function close_panel() {
+    const focus_was_in_panel =
+      panel_el?.contains(document.activeElement) ?? false
+    select(null)
+    if (focus_was_in_panel) {
+      canvas?.focus_graph()
     }
   }
 
@@ -113,6 +126,8 @@
   $: summary = summarize_lineage(graph)
   let ctx: DisplayContext
   $: ctx = {
+    project_id,
+    task_id,
     model_info: $model_info,
     task_prompts:
       $prompts_by_task_composite_id[
@@ -179,7 +194,7 @@
 
 <AppPage
   title="Experiment Lineage"
-  subtitle="Every run configuration for this task, and what changed from its parent."
+  subtitle="Every run configuration for this task, and how they evolved."
   breadcrumbs={[
     { label: "Optimize", href: `/optimize/${project_id}/${task_id}` },
   ]}
@@ -260,6 +275,7 @@
       >
         <div class="h-[480px] lg:h-auto lg:flex-1 min-w-0">
           <LineageCanvas
+            bind:this={canvas}
             {graph}
             {layout}
             {filters}
@@ -271,16 +287,17 @@
           />
         </div>
         {#if selected_node}
-          <div class="lg:w-[360px] lg:flex-none lg:overflow-y-auto">
+          <div
+            bind:this={panel_el}
+            class="lg:w-[360px] lg:flex-none lg:overflow-y-auto"
+          >
             <LineagePanel
-              {project_id}
-              {task_id}
               node={selected_node}
               {graph}
               {ctx}
               available_tools={$available_tools}
               on:select={(event) => select(event.detail)}
-              on:close={() => select(null)}
+              on:close={close_panel}
             />
           </div>
         {/if}

@@ -7,6 +7,7 @@ import type {
 } from "$lib/types"
 import { assertNever } from "$lib/utils/exhaustive"
 import { structuredOutputModeToString } from "$lib/utils/formatters"
+import { prompt_link, tool_link } from "$lib/utils/link_builder"
 import {
   getInputTransformDisplay,
   getRunConfigModelDisplayName,
@@ -27,17 +28,44 @@ import type {
 import { CHANGE_KIND_LABELS } from "./lineage_glyph"
 
 export interface DisplayContext {
+  project_id: string
+  task_id: string
   model_info: ProviderModels | null
   task_prompts: PromptResponse | null
   project_tools: ToolSetApiDescription[] | null // available_tools[project_id] ?? null
 }
 
-/** One "Changed from Parent" row: the child's value and the parent's. */
-export interface ChangeRow {
-  kind: ChangeKind
-  value: string
-  previous: string
-  provider_id: string | null // the child's model provider, for its logo
+/** A display string, with the page it links to when one exists. */
+export interface LinkedValue {
+  text: string
+  link: string | null
+}
+
+type ListKind = Extract<ChangeKind, "tools" | "skills">
+
+/**
+ * One "Changed from Parent" row. A single value shows the child's value over
+ * the parent's; a list shows what the child added and removed.
+ */
+export type ChangeRow =
+  | {
+      type: "value"
+      kind: Exclude<ChangeKind, ListKind>
+      value: LinkedValue
+      previous: LinkedValue
+    }
+  | {
+      type: "list"
+      kind: ListKind
+      added: LinkedValue[]
+      removed: LinkedValue[]
+    }
+
+/** A parent or child in the lineage dialog. */
+export interface Relative {
+  id: string
+  text: string
+  deleted: boolean // the placeholder for a missing parent; it can't be selected
 }
 
 const NOT_APPLICABLE = "—"
@@ -74,69 +102,76 @@ export function node_model_text(
 }
 
 export function children_text(count: number): string {
-  if (count === 0) {
-    return "No children"
-  }
   return count === 1 ? "1 child" : `${count} children`
 }
 
-/** A piece of the panel's lineage line: plain text, or a node to link to. */
-export type LineagePart =
-  | { type: "text"; text: string }
-  | { type: "link"; node_id: string; text: string }
-
 /**
- * The panel's lineage line, for example "Derived from {A} and {B}, {C} · 3
- * children", where each parent is a link.
+ * The panel's lineage line, for example "Derived from 2 parents · 3 children".
+ * The children part is left off when there are none.
  */
-export function lineage_line_parts(
-  node: LineageNode,
-  graph: LineageGraph,
-): LineagePart[] {
-  const children: LineagePart = {
-    type: "text",
-    text: ` · ${children_text(node.child_ids.length)}`,
-  }
+export function lineage_summary_text(node: LineageNode): string {
+  const lead = lineage_lead_text(node)
+  const children = node.child_ids.length
+  return children === 0 ? lead : `${lead} · ${children_text(children)}`
+}
+
+function lineage_lead_text(node: LineageNode): string {
   switch (node.status.type) {
     case "starting_point":
-      return [{ type: "text", text: "Starting point" }, children]
+      return "Starting point"
     case "no_parent":
-      return [{ type: "text", text: "No recorded parent" }]
+      return "No recorded parent"
     case "deleted":
-      return [{ type: "text", text: "This run config was deleted" }, children]
+      return "This run config was deleted"
     case "changed":
     case "copy":
     case "parent_deleted": {
-      const parts: LineagePart[] = [{ type: "text", text: "Derived from " }]
-      node.parent_ids.forEach((parent_id, index) => {
-        if (index > 0) {
-          parts.push({ type: "text", text: index === 1 ? " and " : ", " })
-        }
-        const parent = graph.nodes.get(parent_id)
-        parts.push({
-          type: "link",
-          node_id: parent_id,
-          text: parent ? node_title(parent) : parent_id,
-        })
-      })
-      parts.push(children)
-      return parts
+      const count = node.parent_ids.length
+      return `Derived from ${count} ${count === 1 ? "parent" : "parents"}`
     }
     default:
       return assertNever(node.status)
   }
 }
 
-/** Who created a run config, from its provenance origin; null when unknown. */
+/** A node's parents (primary first) and children (oldest first). */
+export function lineage_relatives(
+  node: LineageNode,
+  graph: LineageGraph,
+): { parents: Relative[]; children: Relative[] } {
+  const relative = (id: string): Relative => {
+    const other = graph.nodes.get(id)
+    return {
+      id,
+      text: other ? node_title(other) : id,
+      deleted: other?.status.type === "deleted",
+    }
+  }
+  return {
+    parents: node.parent_ids.map(relative),
+    children: node.child_ids.map(relative),
+  }
+}
+
+/** The creator badge's label, from the provenance origin; null when unknown. */
 export function origin_text(origin: string | null | undefined): string | null {
   switch (origin) {
     case "agent":
-      return "Created by an agent"
+      return "Agent Created"
     case "human":
-      return "Created by a person"
+      return "Human Created"
     default:
       return null
   }
+}
+
+/** For example "2 added, 1 removed", leaving off a part that is zero. */
+export function added_removed_text(added: number, removed: number): string {
+  const parts = [
+    ...(added > 0 ? [`${added} added`] : []),
+    ...(removed > 0 ? [`${removed} removed`] : []),
+  ]
+  return parts.join(", ")
 }
 
 export function change_rows(
@@ -145,21 +180,45 @@ export function change_rows(
   kinds: ChangeKind[],
   ctx: DisplayContext,
 ): ChangeRow[] {
-  const child_properties = child.run_config_properties
-  const provider_id =
-    child_properties.type === "kiln_agent"
-      ? child_properties.model_provider_name
-      : null
-  return kinds.map((kind) => {
-    if (kind === "settings") {
-      const [value, previous] = settings_texts(parent, child)
-      return { kind, value, previous, provider_id: null }
-    }
-    return {
-      kind,
-      value: kind_value(kind, child, ctx),
-      previous: kind_value(kind, parent, ctx),
-      provider_id: kind === "model" ? provider_id : null,
+  return kinds.map((kind): ChangeRow => {
+    switch (kind) {
+      case "tools":
+      case "skills": {
+        const before = new Set(tool_ids_of(kind, parent))
+        const after = tool_ids_of(kind, child)
+        const after_set = new Set(after)
+        return {
+          type: "list",
+          kind,
+          added: linked_tools(
+            after.filter((id) => !before.has(id)),
+            ctx,
+          ),
+          removed: linked_tools(
+            [...before].filter((id) => !after_set.has(id)),
+            ctx,
+          ),
+        }
+      }
+      case "settings": {
+        const [value, previous] = settings_texts(parent, child)
+        return {
+          type: "value",
+          kind,
+          value: { text: value, link: null },
+          previous: { text: previous, link: null },
+        }
+      }
+      case "prompt":
+      case "model":
+        return {
+          type: "value",
+          kind,
+          value: kind_value(kind, child, ctx),
+          previous: kind_value(kind, parent, ctx),
+        }
+      default:
+        return assertNever(kind)
     }
   })
 }
@@ -176,47 +235,56 @@ function config_model_text(
 }
 
 function kind_value(
-  kind: Exclude<ChangeKind, "settings">,
+  kind: "prompt" | "model",
   config: TaskRunConfig,
   ctx: DisplayContext,
-): string {
-  const properties = config.run_config_properties
+): LinkedValue {
   if (kind === "model") {
-    return config_model_text(config, ctx.model_info)
+    return { text: config_model_text(config, ctx.model_info), link: null }
   }
+  const properties = config.run_config_properties
   if (properties.type !== "kiln_agent") {
-    return NOT_APPLICABLE
+    return { text: NOT_APPLICABLE, link: null }
   }
-  switch (kind) {
-    case "prompt":
-      return (
-        getRunConfigPromptDisplayName(config, ctx.task_prompts) ??
-        properties.prompt_id
-      )
-    case "tools":
-    case "skills": {
-      const split = split_tool_and_skill_ids(
-        properties.tools_config?.tools ?? [],
-      )
-      const ids = kind === "tools" ? split.tool_ids : split.skill_ids
-      return tool_list_text(ids, ctx.project_tools)
-    }
-    default:
-      return assertNever(kind)
+  return {
+    text:
+      getRunConfigPromptDisplayName(config, ctx.task_prompts) ??
+      properties.prompt_id,
+    link: prompt_page_link(properties.prompt_id, ctx),
   }
 }
 
-function tool_list_text(
-  ids: string[],
-  project_tools: ToolSetApiDescription[] | null,
-): string {
-  if (ids.length === 0) {
-    return "None"
+// Generator prompts, such as "Basic (Zero Shot)", have no page of their own.
+function prompt_page_link(
+  prompt_id: string,
+  ctx: DisplayContext,
+): string | null {
+  const is_generator =
+    ctx.task_prompts?.generators.some(
+      (generator) => generator.id === prompt_id,
+    ) ?? false
+  return is_generator
+    ? null
+    : prompt_link(ctx.project_id, ctx.task_id, prompt_id) ?? null
+}
+
+function tool_ids_of(kind: ListKind, config: TaskRunConfig): string[] {
+  const properties = config.run_config_properties
+  if (properties.type !== "kiln_agent") {
+    return []
   }
-  const names = project_tools
-    ? get_tool_names_from_ids(ids, project_tools)
+  const split = split_tool_and_skill_ids(properties.tools_config?.tools ?? [])
+  return kind === "tools" ? split.tool_ids : split.skill_ids
+}
+
+function linked_tools(ids: string[], ctx: DisplayContext): LinkedValue[] {
+  const names = ctx.project_tools
+    ? get_tool_names_from_ids(ids, ctx.project_tools)
     : ids
-  return names.join(", ")
+  return ids.map((id, index) => ({
+    text: names[index],
+    link: tool_link(ctx.project_id, id),
+  }))
 }
 
 // Shows only the fields that differ, so both sides list the same settings.

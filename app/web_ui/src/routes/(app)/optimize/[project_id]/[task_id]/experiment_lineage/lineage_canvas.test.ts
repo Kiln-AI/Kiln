@@ -18,7 +18,6 @@ import {
 } from "$lib/utils/lineage/lineage_graph"
 import {
   layout_lineage,
-  type LayoutEdge,
   type LineageLayout,
 } from "$lib/utils/lineage/lineage_layout"
 import { make_dated_config } from "$lib/utils/lineage/__tests__/lineage_fixtures"
@@ -173,20 +172,12 @@ function parse_transform(transform: string): {
   return { tx: Number(match[1]), ty: Number(match[2]), k: Number(match[3]) }
 }
 
-function layout_edge(layout: LineageLayout, id: string): LayoutEdge {
+function edge_d(layout: LineageLayout, id: string): string {
   const edge = layout.edges.find((e) => e.id === id)
   if (!edge) {
     throw new Error(`no edge ${id}`)
   }
-  return edge
-}
-
-function edge_d(layout: LineageLayout, id: string): string {
-  return layout_edge(layout, id).d
-}
-
-function edge_dot(layout: LineageLayout, id: string): string {
-  return layout_edge(layout, id).dot ?? ""
+  return edge.d
 }
 
 function path_d(container: HTMLElement, testid: string): string {
@@ -194,6 +185,37 @@ function path_d(container: HTMLElement, testid: string): string {
     container.querySelector(`[data-testid="${testid}"]`)?.getAttribute("d") ??
     ""
   )
+}
+
+// Watches every node's element and its children. The returned function stops
+// watching and gives every change seen. Records reach the callback in a
+// microtask, so an await can deliver some; takeRecords() picks up the rest.
+function watch_nodes(container: HTMLElement): () => MutationRecord[] {
+  const records: MutationRecord[] = []
+  const observer = new MutationObserver((batch) => records.push(...batch))
+  for (const el of container.querySelectorAll("[data-node-id]")) {
+    observer.observe(el, {
+      attributes: true,
+      childList: true,
+      characterData: true,
+      subtree: true,
+    })
+  }
+  return () => {
+    records.push(...observer.takeRecords())
+    observer.disconnect()
+    return records
+  }
+}
+
+async function hover(container: HTMLElement, id: string) {
+  await fireEvent.pointerOver(hit_target(container, id))
+  vi.advanceTimersByTime(100)
+  await tick()
+}
+
+function empty_space(container: HTMLElement): SVGSVGElement {
+  return container.querySelector("svg") as SVGSVGElement
 }
 
 async function click(target: Element, at = { x: 10, y: 10 }) {
@@ -253,9 +275,56 @@ describe("LineageCanvas", () => {
   })
 
   it("doesn't select anything on a click on empty space", async () => {
-    const { container, select } = render_canvas()
-    await click(container.querySelector("svg") as SVGSVGElement)
+    vi.useFakeTimers()
+    const { container, select, close } = render_canvas()
+    await click(empty_space(container))
+    vi.advanceTimersByTime(1000)
     expect(select).not.toHaveBeenCalled()
+    expect(close).not.toHaveBeenCalled()
+  })
+
+  it("deselects a short wait after a click on empty space", async () => {
+    vi.useFakeTimers()
+    const { container, close } = render_canvas({ selected_id: "a" })
+    await click(empty_space(container))
+    vi.advanceTimersByTime(200)
+    expect(close).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(50)
+    expect(close).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps the selection when a click on empty space turns into a double-click", async () => {
+    vi.useFakeTimers()
+    const { container, canvas, close } = render_canvas({ selected_id: "a" })
+    await click(empty_space(container))
+    vi.advanceTimersByTime(100)
+    await click(empty_space(container))
+    await fireEvent.dblClick(canvas)
+    vi.advanceTimersByTime(1000)
+    expect(close).not.toHaveBeenCalled()
+  })
+
+  it("keeps the selection after a drag on empty space", async () => {
+    vi.useFakeTimers()
+    const { canvas, close } = render_canvas({ selected_id: "a" })
+    await fireEvent.pointerDown(canvas, {
+      button: 0,
+      pointerId: 1,
+      clientX: 10,
+      clientY: 10,
+    })
+    await fireEvent.pointerMove(canvas, {
+      pointerId: 1,
+      clientX: 30,
+      clientY: 10,
+    })
+    await fireEvent.pointerUp(canvas, {
+      pointerId: 1,
+      clientX: 30,
+      clientY: 10,
+    })
+    vi.advanceTimersByTime(1000)
+    expect(close).not.toHaveBeenCalled()
   })
 
   it("dims nodes that don't match the filters, except the selected one", () => {
@@ -279,23 +348,12 @@ describe("LineageCanvas", () => {
     }
   })
 
-  it("draws a dot where the extra-parent edge meets its child", () => {
-    const { container, layout } = render_canvas()
-    expect(path_d(container, "lineage-resting-dots")).toBe(
-      edge_dot(layout, "b->c"),
-    )
-  })
-
   it("highlights every edge above the selected node and rings it", () => {
     const { container, layout } = render_canvas({ selected_id: "c" })
     const highlighted = path_d(container, "lineage-highlighted-edges")
     for (const id of ["root->a", "root->b", "a->c", "b->c"]) {
       expect(highlighted).toContain(edge_d(layout, id))
     }
-    expect(path_d(container, "lineage-highlighted-dots")).toBe(
-      edge_dot(layout, "b->c"),
-    )
-    expect(path_d(container, "lineage-resting-dots")).toBe("")
     expect(
       container.querySelector('[data-testid="lineage-selection-ring"]'),
     ).not.toBeNull()
@@ -314,7 +372,6 @@ describe("LineageCanvas", () => {
     expect(path_d(container, "lineage-highlighted-edges")).toBe(
       edge_d(layout, "root->a"),
     )
-    expect(path_d(container, "lineage-highlighted-dots")).toBe("")
   })
 
   it("draws a hovered node's edges to its parents and children dark", async () => {
@@ -326,25 +383,38 @@ describe("LineageCanvas", () => {
     vi.advanceTimersByTime(100)
     await tick()
     expect(hovered()).toBe(edge_d(layout, "root->b") + edge_d(layout, "b->c"))
-    expect(path_d(container, "lineage-hovered-dots")).toBe(
-      edge_dot(layout, "b->c"),
-    )
     await fireEvent.pointerOut(hit_target(container, "b"), {
       relatedTarget: container.querySelector("svg"),
     })
     expect(hovered()).toBe("")
-    expect(path_d(container, "lineage-hovered-dots")).toBe("")
   })
 
   it("draws a hovered merge's edges from both its parents", async () => {
     vi.useFakeTimers()
     const { container, layout } = render_canvas()
-    await fireEvent.pointerOver(hit_target(container, "c"))
-    vi.advanceTimersByTime(100)
-    await tick()
+    await hover(container, "c")
     expect(path_d(container, "lineage-hovered-edges")).toBe(
       edge_d(layout, "a->c") + edge_d(layout, "b->c"),
     )
+  })
+
+  // Hover must stay cheap at 1,000 nodes. This catches hover state that changes
+  // a node's markup, not a re-run of the node block that yields the same values.
+  it("leaves every node's markup untouched on hover", async () => {
+    vi.useFakeTimers()
+    const { container } = render_canvas()
+    const node_changes = watch_nodes(container)
+    await hover(container, "b")
+    expect(path_d(container, "lineage-hovered-edges")).not.toBe("")
+    expect(node_changes()).toEqual([])
+  })
+
+  it("changes node markup when the filters change", async () => {
+    const { container, component } = render_canvas()
+    const node_changes = watch_nodes(container)
+    component.$set({ filters: new Set<FilterKey>(["prompt"]) })
+    await tick()
+    expect(node_changes().length).toBeGreaterThan(0)
   })
 
   it("fits the graph on load, which caps the zoom at 100%", async () => {
@@ -397,21 +467,41 @@ describe("LineageCanvas", () => {
     expect(world_transform(container)).not.toBe(before)
   })
 
-  it("fits on a double-click on empty space", async () => {
+  it("zooms in one step about the cursor on a double-click", async () => {
     const { container, canvas } = await rendered_and_sized()
-    await fireEvent.click(button(container, "Zoom in"))
-    const svg = container.querySelector("svg") as SVGSVGElement
-    await click(svg)
-    await fireEvent.dblClick(canvas)
-    expect(zoom_label(container)).toBe("100%")
+    const cursor = { x: 120, y: 90 }
+    const before = parse_transform(world_transform(container))
+    await fireEvent.dblClick(canvas, { clientX: cursor.x, clientY: cursor.y })
+    const after = parse_transform(world_transform(container))
+    expect(zoom_label(container)).toBe("125%")
+    expect((cursor.x - after.tx) / after.k).toBeCloseTo(
+      (cursor.x - before.tx) / before.k,
+    )
+    expect((cursor.y - after.ty) / after.k).toBeCloseTo(
+      (cursor.y - before.ty) / before.k,
+    )
   })
 
-  it("doesn't fit on a double-click on a node", async () => {
-    const { container, canvas } = await rendered_and_sized()
-    await fireEvent.click(button(container, "Zoom in"))
-    await click(hit_target(container, "a"))
-    await fireEvent.dblClick(canvas)
-    expect(zoom_label(container)).toBe("125%")
+  it("brings a node selected from outside the graph into view", async () => {
+    const { container, canvas, component, layout } = await rendered_and_sized()
+    // Pans the graph far to the left, so c ends up off screen.
+    await fireEvent.wheel(canvas, { deltaX: 600 })
+    component.$set({ selected_id: "c" })
+    await tick()
+    const { tx, ty, k } = parse_transform(world_transform(container))
+    const pos = layout.positions.get("c") as { x: number; y: number }
+    const left = pos.x * k + tx
+    const top = pos.y * k + ty
+    expect(left).toBeGreaterThanOrEqual(0)
+    expect(left + 14 * k).toBeLessThanOrEqual(VIEW.width)
+    expect(top).toBeGreaterThanOrEqual(0)
+    expect(top + 14 * k).toBeLessThanOrEqual(VIEW.height)
+  })
+
+  it("focuses the graph on request", () => {
+    const { canvas, component } = render_canvas()
+    component.focus_graph()
+    expect(document.activeElement).toBe(canvas)
   })
 
   it("dispatches close on Escape and marks the key handled", async () => {

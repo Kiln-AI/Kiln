@@ -1,19 +1,21 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte"
-  import { goto } from "$app/navigation"
   import type { ToolSetApiDescription } from "$lib/types"
+  import Dialog from "$lib/ui/dialog.svelte"
   import CloseIcon from "$lib/ui/icons/close_icon.svelte"
   import Output from "$lib/ui/output.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
-  import { get_provider_image } from "$lib/ui/provider_image"
+  import type { UiProperty } from "$lib/ui/property_list"
   import InputTransformModal from "$lib/ui/run_config_component/input_transform_modal.svelte"
-  import SettingsHeader from "$lib/ui/settings_header.svelte"
   import { compare_run_configs_link } from "$lib/utils/link_builder"
   import {
+    added_removed_text,
     change_rows,
-    lineage_line_parts,
+    lineage_relatives,
+    lineage_summary_text,
     node_title,
     origin_text,
+    type ChangeRow,
     type DisplayContext,
   } from "$lib/utils/lineage/lineage_display"
   import type {
@@ -25,10 +27,10 @@
     getRunConfigInputTransform,
     getRunConfigUiProperties,
   } from "$lib/utils/run_config_formatters"
+  import LineageLinkedText from "./lineage_linked_text.svelte"
+  import LineagePanelSection from "./lineage_panel_section.svelte"
   import LineageSwatch from "./lineage_swatch.svelte"
 
-  export let project_id: string
-  export let task_id: string
   export let node: LineageNode
   export let graph: LineageGraph
   export let ctx: DisplayContext
@@ -36,11 +38,21 @@
 
   const dispatch = createEventDispatcher<{ select: string; close: null }>()
 
+  type ListRow = Extract<ChangeRow, { type: "list" }>
+
   let input_transform_modal: InputTransformModal | null = null
+  let lineage_dialog: Dialog | null = null
+  let lineage_opener: HTMLButtonElement | null = null
+  let list_dialog: Dialog | null = null
+  let list_opener: HTMLElement | null = null
+  let list_row: ListRow | null = null
 
   $: config = node.config
   $: title = node_title(node)
-  $: lineage_parts = lineage_line_parts(node, graph)
+  $: summary = lineage_summary_text(node)
+  $: relatives = lineage_relatives(node, graph)
+  $: has_relatives =
+    relatives.parents.length > 0 || relatives.children.length > 0
   $: primary_parent_id = node.parent_ids[0] ?? null
   $: parent_config = primary_parent_id
     ? graph.nodes.get(primary_parent_id)?.config ?? null
@@ -49,13 +61,20 @@
     config && parent_config && node.status.type === "changed"
       ? change_rows(parent_config, config, node.status.kinds, ctx)
       : []
+  $: change_properties = rows.map(
+    (row): UiProperty => ({
+      name: CHANGE_KIND_LABELS[row.kind],
+      value: "",
+      use_custom_slot: true,
+    }),
+  )
   $: notes = config?.provenance?.notes ?? null
-  $: created_by = origin_text(config?.provenance?.origin)
+  $: creator = origin_text(config?.provenance?.origin)
   $: input_transform = config ? getRunConfigInputTransform(config) : null
   $: properties = config
     ? getRunConfigUiProperties(
-        project_id,
-        task_id,
+        ctx.project_id,
+        ctx.task_id,
         config,
         ctx.model_info,
         ctx.task_prompts,
@@ -64,35 +83,47 @@
       )
     : []
 
-  function compare() {
-    goto(compare_run_configs_link(project_id, task_id, [node.id, null]))
+  function row_named(name: string): ChangeRow | undefined {
+    return rows.find((row) => CHANGE_KIND_LABELS[row.kind] === name)
   }
 
-  function compare_to_parent() {
-    if (primary_parent_id) {
-      goto(
-        compare_run_configs_link(project_id, task_id, [
-          primary_parent_id,
-          node.id,
-        ]),
-      )
-    }
+  function select_relative(id: string) {
+    lineage_dialog?.close()
+    dispatch("select", id)
+  }
+
+  function open_list_dialog(row: ListRow, event: MouseEvent) {
+    list_row = row
+    list_opener = event.currentTarget as HTMLElement
+    list_dialog?.show()
   }
 </script>
 
-<div class="flex flex-col gap-6">
+<div class="flex flex-col gap-8">
   <div class="flex items-start gap-3">
     <LineageSwatch status={node.status} glyph={GLYPH.panel} />
-    <div class="flex flex-col min-w-0 grow">
-      <div class="text-lg font-medium truncate" {title}>{title}</div>
-      <div class="text-sm text-gray-500" data-testid="lineage-panel-line">
-        {#each lineage_parts as part}{#if part.type === "link"}<button
-              type="button"
-              class="link"
-              on:click={() => dispatch("select", part.node_id)}
-              >{part.text}</button
-            >{:else}{part.text}{/if}{/each}
+    <div class="flex flex-col gap-1 min-w-0 grow">
+      <div class="text-xl font-bold line-clamp-2 break-words" {title}>
+        {title}
       </div>
+      {#if has_relatives}
+        <button
+          type="button"
+          class="link text-sm text-gray-500 text-left self-start"
+          data-testid="lineage-panel-line"
+          bind:this={lineage_opener}
+          on:click={() => lineage_dialog?.show()}>{summary}</button
+        >
+      {:else}
+        <div class="text-sm text-gray-500" data-testid="lineage-panel-line">
+          {summary}
+        </div>
+      {/if}
+      {#if creator}
+        <span class="badge badge-outline badge-primary badge-sm self-start mt-1"
+          >{creator}</span
+        >
+      {/if}
     </div>
     <button
       type="button"
@@ -104,9 +135,14 @@
     </button>
   </div>
 
+  {#if notes}
+    <LineagePanelSection title="Notes">
+      <Output raw_output={notes} />
+    </LineagePanelSection>
+  {/if}
+
   {#if node.status.type === "changed" || node.status.type === "copy" || node.status.type === "parent_deleted"}
-    <div class="flex flex-col gap-4">
-      <SettingsHeader title="Changed from Parent" />
+    <LineagePanelSection title="Changed from Parent">
       {#if node.status.type === "copy"}
         <div class="text-sm">Same settings as parent.</div>
       {:else if node.status.type === "parent_deleted"}
@@ -114,67 +150,126 @@
           The parent run config was deleted, so changes can't be shown.
         </div>
       {:else}
-        <div
-          class="grid grid-cols-[12px_auto_1fr] gap-x-3 gap-y-2 text-sm"
-          data-testid="lineage-change-rows"
-        >
-          {#each rows as row}
-            <div class="pt-1">
-              <LineageSwatch
-                status={{ type: "changed", kinds: [row.kind] }}
-                glyph={GLYPH.swatch}
-              />
-            </div>
-            <div class="text-gray-500">{CHANGE_KIND_LABELS[row.kind]}</div>
-            <div class="flex flex-col min-w-0 break-words">
-              <div class="font-medium flex items-center gap-1">
-                {#if row.provider_id}
-                  <img
-                    src={get_provider_image(row.provider_id)}
-                    alt=""
-                    class="w-3.5 h-3.5 flex-none"
-                  />
-                {/if}
-                <span class="min-w-0">{row.value}</span>
-              </div>
-              <div class="text-xs text-gray-500 line-through">
-                {row.previous}
-              </div>
-            </div>
-          {/each}
+        <div data-testid="lineage-change-rows">
+          <PropertyList properties={change_properties}>
+            <svelte:fragment slot="custom_value" let:property>
+              {@const row = row_named(property.name)}
+              {#if row?.type === "value"}
+                <div class="flex flex-col min-w-0 w-full">
+                  <div class="truncate" title={row.value.text}>
+                    <LineageLinkedText value={row.value} />
+                  </div>
+                  <div
+                    class="truncate text-xs font-light"
+                    title="was {row.previous.text}"
+                    data-testid="lineage-change-previous"
+                  >
+                    was <LineageLinkedText value={row.previous} />
+                  </div>
+                </div>
+              {:else if row?.type === "list"}
+                {@const list = row}
+                <button
+                  type="button"
+                  class="link text-left"
+                  on:click={(event) => open_list_dialog(list, event)}
+                  >{added_removed_text(
+                    row.added.length,
+                    row.removed.length,
+                  )}</button
+                >
+              {/if}
+            </svelte:fragment>
+          </PropertyList>
         </div>
       {/if}
-    </div>
-  {/if}
-
-  {#if notes}
-    <div class="flex flex-col gap-4">
-      <SettingsHeader title="Notes" />
-      <Output raw_output={notes} />
-      {#if created_by}
-        <div class="text-sm text-gray-500">{created_by}</div>
-      {/if}
-    </div>
+    </LineagePanelSection>
   {/if}
 
   {#if config}
-    <div class="flex flex-col gap-4">
-      <SettingsHeader title="Run Configuration" />
+    <LineagePanelSection title="Run Configuration">
+      <a
+        slot="subtitle"
+        href={compare_run_configs_link(ctx.project_id, ctx.task_id, [
+          node.id,
+          null,
+        ])}
+        class="link text-sm text-gray-500 self-start"
+        >Compare eval results to others</a
+      >
       <PropertyList {properties} />
-    </div>
-
-    <div class="grid grid-cols-2 gap-2">
-      <button type="button" class="btn btn-mid" on:click={compare}>
-        Compare
-      </button>
-      {#if parent_config}
-        <button type="button" class="btn btn-mid" on:click={compare_to_parent}>
-          Compare to Parent
-        </button>
-      {/if}
-    </div>
+    </LineagePanelSection>
   {/if}
 </div>
+
+<Dialog
+  bind:this={lineage_dialog}
+  title="Lineage"
+  subtitle={title}
+  action_buttons={[{ label: "Close", isCancel: true }]}
+  on:close={() => lineage_opener?.focus()}
+>
+  <div class="flex flex-col gap-6 text-sm">
+    {#each [{ heading: "Parents", items: relatives.parents }, { heading: "Children", items: relatives.children }] as group}
+      {#if group.items.length > 0}
+        <div class="flex flex-col gap-2">
+          <div class="font-medium">{group.heading}</div>
+          <ul class="flex flex-col gap-2" aria-label={group.heading}>
+            {#each group.items as relative (relative.id)}
+              {@const relative_node = graph.nodes.get(relative.id)}
+              <li class="flex items-center gap-2 min-w-0">
+                {#if relative_node}
+                  <LineageSwatch
+                    status={relative_node.status}
+                    glyph={GLYPH.swatch}
+                  />
+                {/if}
+                {#if relative.deleted}
+                  <span class="truncate text-gray-500">{relative.text}</span>
+                {:else}
+                  <button
+                    type="button"
+                    class="link truncate text-left min-w-0"
+                    title={relative.text}
+                    on:click={() => select_relative(relative.id)}
+                    >{relative.text}</button
+                  >
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+    {/each}
+  </div>
+</Dialog>
+
+<Dialog
+  bind:this={list_dialog}
+  title={list_row ? `${CHANGE_KIND_LABELS[list_row.kind]} Changed` : ""}
+  subtitle="Compared with the parent run configuration."
+  action_buttons={[{ label: "Close", isCancel: true }]}
+  on:close={() => list_opener?.focus()}
+>
+  {#if list_row}
+    <div class="flex flex-col gap-6 text-sm">
+      {#each [{ heading: "Added", items: list_row.added }, { heading: "Removed", items: list_row.removed }] as group}
+        {#if group.items.length > 0}
+          <div class="flex flex-col gap-2">
+            <div class="font-medium">{group.heading}</div>
+            <ul class="flex flex-col gap-2" aria-label={group.heading}>
+              {#each group.items as item}
+                <li class="truncate" title={item.text}>
+                  <LineageLinkedText value={item} />
+                </li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
+      {/each}
+    </div>
+  {/if}
+</Dialog>
 
 {#if input_transform}
   <InputTransformModal

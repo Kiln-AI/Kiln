@@ -101,6 +101,16 @@ describe("zoom_at and zoom_step", () => {
     expect(zoomed_out.k).toBeCloseTo(1 / ZOOM_STEP)
     expect(world_point(zoomed_out, center).x).toBeCloseTo(before.x)
   })
+
+  it("steps in about a given point", () => {
+    const cursor = { x: 120, y: 340 }
+    const start: Viewport = { k: 1, tx: -100, ty: -50 }
+    const before = world_point(start, cursor)
+    const zoomed_in = zoom_step(start, 1, WORLD, VIEW, cursor)
+    expect(zoomed_in.k).toBeCloseTo(ZOOM_STEP)
+    expect(world_point(zoomed_in, cursor).x).toBeCloseTo(before.x)
+    expect(world_point(zoomed_in, cursor).y).toBeCloseTo(before.y)
+  })
 })
 
 describe("pan_by and clamping", () => {

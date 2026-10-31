@@ -53,7 +53,7 @@ describe("LineageFilterChips", () => {
     })
     for (const chip of chips(container)) {
       expect(chip.getAttribute("aria-pressed")).toBe("false")
-      expect(chip.className).toContain("btn-outline")
+      expect(chip.className).toContain("border-transparent")
     }
     expect(clear_button(container)).toBeNull()
   })
@@ -65,7 +65,8 @@ describe("LineageFilterChips", () => {
     const tools = chips(container)[1]
     await fireEvent.click(tools)
     expect(tools.getAttribute("aria-pressed")).toBe("true")
-    expect(tools.className).toContain("btn-secondary")
+    expect(tools.className).toContain("border-base-300")
+    expect(tools.className).not.toContain("btn-secondary")
     expect([...component.active]).toEqual(["tools"])
 
     await fireEvent.click(tools)

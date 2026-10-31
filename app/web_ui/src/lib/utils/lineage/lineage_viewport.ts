@@ -98,20 +98,15 @@ export function zoom_at(
   )
 }
 
-/** One zoom step in (1) or out (-1), about the center of the view. */
+/** One zoom step in (1) or out (-1), about `point` or the center of the view. */
 export function zoom_step(
   vp: Viewport,
   direction: 1 | -1,
   world: Size,
   view: Size,
+  point: Point = { x: view.width / 2, y: view.height / 2 },
 ): Viewport {
-  return zoom_at(
-    vp,
-    { x: view.width / 2, y: view.height / 2 },
-    vp.k * ZOOM_STEP ** direction,
-    world,
-    view,
-  )
+  return zoom_at(vp, point, vp.k * ZOOM_STEP ** direction, world, view)
 }
 
 export function pan_by(

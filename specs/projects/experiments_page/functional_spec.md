@@ -17,7 +17,7 @@ Reference material in this folder:
 ## Naming and Route
 
 - Page title: **Experiment Lineage**.
-- Subtitle: "Every run configuration for this task, and what changed from its parent."
+- Subtitle: "Every run configuration for this task, and how they evolved."
 - Route: `/optimize/[project_id]/[task_id]/experiment_lineage`.
 - Breadcrumb: "Optimize", linking to `/optimize/[project_id]/[task_id]`.
 - Optional query parameter `selected=<run config id>`: the run config to select on load (see Selection).
@@ -26,7 +26,7 @@ Reference material in this folder:
 
 There is no link in the left sidebar.
 
-1. **Optimize page, Run Configurations header.** A plain `btn btn-mid` labelled "Experiment Lineage", placed before "Compare". It is shown only when not in select mode (select mode swaps the header buttons for selection controls, and this button hides with them).
+1. **Optimize page, Run Configurations header.** A plain `btn btn-mid` labelled "Experiment Lineage", placed before "Compare". It is shown only when not in select mode (select mode swaps the header buttons for selection controls, and this button hides with them). When the buttons don't fit beside the title, they move to their own line under it (see `ui_design.md`).
 2. **Optimize page, run config row menu.** A new item "Show in Experiment Lineage" in each row's `TableActionMenu`. It opens the page with `selected=<that run config's id>`.
 3. **Compare page.** An AppPage action button labelled "Experiment Lineage" that opens the page. It does not pass any selection.
 
@@ -95,7 +95,7 @@ From top to bottom:
 
 1. AppPage header: breadcrumb, title and subtitle.
 2. Stats row (see Stats).
-3. Filter row: "Changed from parent" label with an info tooltip, then six toggle chips.
+3. Filter row: a "Changed from parent" label, then six toggle chips. The chips double as the graph's color legend.
 4. Body: the graph, and the detail panel to its right when a node is selected. The body fills the remaining height of the window.
 
 ## Stats
@@ -117,7 +117,7 @@ Counting rules:
 - Clicking a chip toggles it. Several chips can be on at once. A node matches if it matches **any** active chip.
 - While any chip is on, nodes that don't match drop to 15% opacity. Edges stay as they are. The selected node always stays at full opacity. Starting points, placeholders and nodes with no parent never match a chip.
 - A "Clear" link appears after the chips while any chip is on. It turns every chip off.
-- The info tooltip says: "Each square shows what changed from its parent run configuration. One change fills the square. More changes split it, always in the order prompt, tools, skills, model, settings. Settings covers temperature, top P, thinking level, structured output mode and input transform. Click a chip to filter."
+- There is no info tooltip. The chips and the squares explain themselves.
 - Filter state is not kept in the URL.
 
 ## Graph
@@ -132,7 +132,6 @@ Counting rules:
 
 - Primary edges: elbow lines. They go down from the parent's bottom center, across at the gap above the child's row, then down into the child's top center.
 - Extra-parent edges: a smooth S-curve straight from the parent's bottom center to the child's top center, vertical at both ends. The curve marks them, so they have no dashes. At rest they are lighter and thinner than primary edges.
-- A small dot sits where each extra-parent edge meets its child, so the line reads as ending at that node rather than passing behind it.
 - Hovering a node draws that node's own edges dark and slightly thicker: the edges to its parents and to its children, primary and extra. They show and hide with the tooltip.
 - When a node is selected, every edge on any path from a root to that node is drawn dark and slightly thicker. That includes extra-parent paths.
 
@@ -141,7 +140,8 @@ Counting rules:
 - Toolbar buttons: "−", "Fit", "+". The current zoom shows as a percentage between "−" and "Fit".
 - Zoom range: from the lower of 50% and the zoom that fits the whole graph, up to 200%. "+" and "−" step by a factor of 1.25, centered on the middle of the view.
 - Pinch on a trackpad, or Ctrl/⌘ plus the scroll wheel, zooms at the cursor.
-- A plain scroll or two-finger swipe pans. Dragging empty space pans. Double-clicking empty space fits.
+- A plain scroll or two-finger swipe pans. Dragging empty space pans.
+- Double-clicking zooms in one step, the same as "+", centered on the cursor. Fit stays on its button and the `0` key.
 - "Fit" shows the whole graph, centered, with a small margin.
 - On load: if `selected` names a run config, zoom to 100% centered on it. Otherwise, fit.
 - When the detail panel opens or closes and the graph area changes width, the point at the center of the view stays at the center. If a node is selected and that would leave it out of view, the view then pans the least distance that brings it back in, whether it was selected by click or by keyboard.
@@ -157,8 +157,10 @@ Hovering a node draws its own edges dark (see Edges) and shows a short tooltip n
 ### Selection
 
 - Clicking a node selects it. This opens the detail panel and highlights its lineage.
-- Clicking another node moves the selection. Clicking empty space does not clear it.
-- The panel's close button or Esc clears the selection and closes the panel.
+- Clicking another node moves the selection.
+- A single click on empty space clears the selection and closes the panel. It waits about 250ms first, so a double-click on empty space only zooms. Dragging to pan never clears the selection.
+- The panel's close button or Esc clears the selection and closes the panel. If focus was in the panel, it moves to the graph.
+- Selecting a run config from the panel's lineage dialog pans the view the least distance that brings it into view, as the arrow keys do.
 - The selected node gets a dark ring.
 - The selection is mirrored to the URL as `selected=<id>`, using replaceState, so reloading keeps it. An unknown `selected` id is ignored and the page fits.
 
@@ -171,25 +173,46 @@ Hovering a node draws its own edges dark (see Edges) and shows a short tooltip n
 
 ## Detail Panel
 
-Opens on the right of the graph when a node is selected. It reuses the run config detail page's property list and does not invent a new layout.
+Opens on the right of the graph when a node is selected. Its run config section reuses the run config detail page's property list, and its changes section takes the same property list style. Every section is titled in the sidebar section style of the spec and Run pages.
 
 From top to bottom:
 
-1. **Header**: the node's square drawn large, the run config name, and a lineage line:
-   - Starting point: "Starting point · N children".
-   - One parent: "Derived from {parent name} · N children". The parent name is a link that selects the parent.
-   - Several parents: "Derived from {primary} and {others, comma separated} · N children". Each name is a link.
-   - No recorded parent: "No recorded parent".
-   - Deleted placeholder: "This run config was deleted · N children".
-   The close button sits at the top right.
-2. **Changed from Parent** section (for a node with a live primary parent): one row per changed kind, in order. Each row has the kind's swatch, the kind's name, the new value, and the parent's value struck through underneath. Values are the same display strings the property list uses (prompt name, tool and skill names, model with provider, settings as "Temperature 0.7"). A Copy or re-run reads "Same settings as parent." A Parent deleted node reads "The parent run config was deleted, so changes can't be shown." This section is hidden for other statuses.
-3. **Notes** section, when `provenance.notes` exists: the full notes as read-only text, plus who created it ("Created by an agent" or "Created by a person", from `provenance.origin`, omitted when unknown).
-4. **Run Configuration** section: the same property list the run config detail page shows (`getRunConfigUiProperties` with `PropertyList`). Hidden for the deleted placeholder.
-5. **Actions**:
-   - "Compare" opens the Compare page with this run config in column 1 and column 2 empty. It is hidden for the deleted placeholder.
-   - "Compare to Parent" opens the Compare page with the parent in column 1 and this run config in column 2, so it reads before and after. It is shown only when the primary parent is a live run config.
-   - Neither is a primary button. This page has no primary button.
-   - There is no link to the run config detail page. The panel already shows everything that page shows. Only the detail page's Edit and Clone actions are missing, and those are out of scope here.
+1. **Header**: the node's square drawn large, then a column, then the close button at the top right. The column holds:
+   - The run config name. It wraps to two lines, then ends in an ellipsis.
+   - The lineage line, a count rather than a list of names:
+     - Starting point: "Starting point · 3 children".
+     - Derived: "Derived from 1 parent · 1 child", or "Derived from 2 parents · 3 children" for a merge.
+     - No recorded parent: "No recorded parent".
+     - Deleted placeholder: "This run config was deleted · 2 children".
+     - The children part is left off when there are none ("Derived from 2 parents").
+     - The line is a link that opens the Lineage dialog (below). It is plain text when the node has no parents and no children.
+   - A creator badge, "Agent Created" or "Human Created", from `provenance.origin`. It is hidden when no creator is recorded.
+2. **Notes** section, when `provenance.notes` exists: the full notes as read-only text.
+3. **Changed from Parent** section, for a node with a live primary parent. One row per changed kind, in order, in the property list style: the kind's name on the left in the base text color, the value on the right in grey.
+   - Prompt, Model and Settings show the new value, then under it a smaller, lighter line "was ‹old value›". Each is cut to one line with an ellipsis, with the full text on hover. A prompt links to its page, both the new and the old one, when it has a page; generator prompts such as "Basic (Zero Shot)" have none. Models and settings are plain text. Settings shows only the fields that changed, as "Temperature 0.7 · Thinking High".
+   - Tools and Skills show "2 added, 1 removed", leaving off a part that is zero ("2 added"). It is a link that opens the Tools Changed or Skills Changed dialog (below).
+   - A Copy or re-run reads "Same settings as parent." A Parent deleted node reads "The parent run config was deleted, so changes can't be shown." This section is hidden for other statuses.
+4. **Run Configuration** section: under its title, a link "Compare eval results to others" that opens the Compare page with this run config in column 1 and column 2 empty. Then the same property list the run config detail page shows (`getRunConfigUiProperties` with `PropertyList`). Hidden for the deleted placeholder.
+
+There is no "Compare to Parent" action: a run config can have several parents, so a single before-and-after pair doesn't fit. There is no primary button, and there is no link to the run config detail page. The panel already shows everything that page shows. Only the detail page's Edit and Clone actions are missing, and those are out of scope here.
+
+### Lineage Dialog
+
+Opened from the lineage line. The house dialog, titled "Lineage", with the run config's name as its subtitle and a Close button.
+
+- A "Parents" list in recorded order, primary first, and a "Children" list, oldest first. A list with no entries is left out.
+- One run config per line, with its small square, cut to one line with an ellipsis.
+- Each live run config is a link. Choosing it closes the dialog, selects that run config and pans it into view.
+- A deleted parent shows as "Deleted run config" in grey and can't be chosen.
+
+### Tools Changed and Skills Changed Dialogs
+
+Opened from a Tools or Skills row. The house dialog, titled "Tools Changed" or "Skills Changed", with the subtitle "Compared with the parent run configuration." and a Close button.
+
+- An "Added" list and a "Removed" list. A list with no entries is left out.
+- One tool or skill per line, by name, cut to one line with an ellipsis. Each links to its tool or skill page where one exists.
+
+Closing either dialog returns focus to the link that opened it.
 
 ## Empty, Loading and Error States
 
@@ -207,7 +230,7 @@ From top to bottom:
 
 ## Out of Scope
 
-- **Eval scores.** The design shows a score per run config: a best-score stat, a ring on the best node, the score in the tooltip, and the score with its change against the parent in the panel. None of these are built. Kiln has no single score per run config: a task has several evals, each eval has several output scores on different scales, and many run configs were never evaluated. The page stays a pure lineage view. The panel's Compare buttons cover scores.
+- **Eval scores.** The design shows a score per run config: a best-score stat, a ring on the best node, the score in the tooltip, and the score with its change against the parent in the panel. None of these are built. Kiln has no single score per run config: a task has several evals, each eval has several output scores on different scales, and many run configs were never evaluated. The page stays a pure lineage view. The panel's Compare link covers scores.
 - Mike's cards view, compare matrix, score lenses and inspector.
 - Editing, cloning or deleting run configs from this page.
 - Any change to the Compare page apart from the new link.

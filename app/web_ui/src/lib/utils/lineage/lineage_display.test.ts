@@ -12,15 +12,16 @@ import {
   type LineageStatus,
 } from "./lineage_graph"
 import {
+  added_removed_text,
   change_rows,
   children_text,
-  lineage_line_parts,
+  lineage_relatives,
+  lineage_summary_text,
   node_model_text,
   node_title,
   origin_text,
   status_text,
   type DisplayContext,
-  type LineagePart,
 } from "./lineage_display"
 import {
   make_agent_config,
@@ -36,7 +37,15 @@ const MODEL_INFO: ProviderModels = {
 }
 
 const TASK_PROMPTS: PromptResponse = {
-  generators: [],
+  generators: [
+    {
+      id: "simple_prompt_builder",
+      name: "Basic (Zero Shot)",
+      short_description: "",
+      description: "",
+      chain_of_thought: false,
+    },
+  ],
   prompts: [
     { id: "p_old", name: "Old Prompt", prompt: "Be brief.", type: "saved" },
     { id: "p_new", name: "New Prompt", prompt: "Be kind.", type: "saved" },
@@ -62,12 +71,16 @@ const PROJECT_TOOLS: ToolSetApiDescription[] = [
 ]
 
 const LOADED: DisplayContext = {
+  project_id: "p1",
+  task_id: "t1",
   model_info: MODEL_INFO,
   task_prompts: TASK_PROMPTS,
   project_tools: PROJECT_TOOLS,
 }
 
 const UNLOADED: DisplayContext = {
+  project_id: "p1",
+  task_id: "t1",
   model_info: null,
   task_prompts: null,
   project_tools: null,
@@ -135,14 +148,21 @@ describe("node_model_text", () => {
 
 describe("children_text", () => {
   it("counts children", () => {
-    expect(children_text(0)).toBe("No children")
     expect(children_text(1)).toBe("1 child")
     expect(children_text(4)).toBe("4 children")
   })
 })
 
+describe("added_removed_text", () => {
+  it("counts what was added and removed, leaving off a zero part", () => {
+    expect(added_removed_text(2, 1)).toBe("2 added, 1 removed")
+    expect(added_removed_text(2, 0)).toBe("2 added")
+    expect(added_removed_text(0, 3)).toBe("3 removed")
+  })
+})
+
 describe("change_rows", () => {
-  it("shows the new and old prompt names", () => {
+  it("shows the new and old prompt names, each linked to its page", () => {
     const rows = change_rows(
       agent({ prompt_id: "p_old" }),
       agent({ prompt_id: "p_new" }),
@@ -151,12 +171,25 @@ describe("change_rows", () => {
     )
     expect(rows).toEqual([
       {
+        type: "value",
         kind: "prompt",
-        value: "New Prompt",
-        previous: "Old Prompt",
-        provider_id: null,
+        value: { text: "New Prompt", link: "/prompts/p1/t1/saved/p_new" },
+        previous: { text: "Old Prompt", link: "/prompts/p1/t1/saved/p_old" },
       },
     ])
+  })
+
+  it("doesn't link a generator prompt, which has no page", () => {
+    const [row] = change_rows(
+      agent({ prompt_id: "simple_prompt_builder" }),
+      agent({ prompt_id: "p_new" }),
+      ["prompt"],
+      LOADED,
+    )
+    expect(row.type === "value" && row.previous).toEqual({
+      text: "Basic (Zero Shot)",
+      link: null,
+    })
   })
 
   it("falls back to prompt ids before prompts load", () => {
@@ -166,27 +199,42 @@ describe("change_rows", () => {
       ["prompt"],
       UNLOADED,
     )
-    expect([row.value, row.previous]).toEqual(["p_new", "p_old"])
+    expect(row.type === "value" && [row.value.text, row.previous.text]).toEqual(
+      ["p_new", "p_old"],
+    )
   })
 
-  it("lists tools and skills by name", () => {
+  it("lists the tools and skills added and removed, by name with links", () => {
     const rows = change_rows(
-      agent({ tools_config: { tools: ["kiln_tool::add_numbers"] } }),
       agent({
         tools_config: {
-          tools: [
-            "kiln_tool::add_numbers",
-            "kiln_tool::web_search",
-            "kiln_tool::skill::tone",
-          ],
+          tools: ["kiln_tool::add_numbers", "kiln_tool::skill::tone"],
+        },
+      }),
+      agent({
+        tools_config: {
+          tools: ["kiln_tool::web_search", "kiln_tool::sql_query"],
         },
       }),
       ["tools", "skills"],
       LOADED,
     )
-    expect(rows.map((r) => [r.kind, r.value, r.previous])).toEqual([
-      ["tools", "add_numbers, web_search", "add_numbers"],
-      ["skills", "Tone Guide", "None"],
+    expect(rows).toEqual([
+      {
+        type: "list",
+        kind: "tools",
+        added: [
+          { text: "web_search", link: "/tools/p1" },
+          { text: "kiln_tool::sql_query", link: "/tools/p1" },
+        ],
+        removed: [{ text: "add_numbers", link: "/tools/p1" }],
+      },
+      {
+        type: "list",
+        kind: "skills",
+        added: [],
+        removed: [{ text: "Tone Guide", link: "/skills/p1/tone" }],
+      },
     ])
   })
 
@@ -197,10 +245,12 @@ describe("change_rows", () => {
       ["tools"],
       UNLOADED,
     )
-    expect([row.value, row.previous]).toEqual(["kiln_tool::web_search", "None"])
+    expect(row.type === "list" && row.added.map((tool) => tool.text)).toEqual([
+      "kiln_tool::web_search",
+    ])
   })
 
-  it("shows the model with its provider, and the child's provider id", () => {
+  it("shows the model with its provider, without a link", () => {
     const [row] = change_rows(
       agent(),
       agent({ model_name: "gpt_5_mini" }),
@@ -208,10 +258,10 @@ describe("change_rows", () => {
       LOADED,
     )
     expect(row).toEqual({
+      type: "value",
       kind: "model",
-      value: "GPT 5 Mini (OpenAI)",
-      previous: "GPT 5 (OpenAI)",
-      provider_id: "openai",
+      value: { text: "GPT 5 Mini (OpenAI)", link: null },
+      previous: { text: "GPT 5 (OpenAI)", link: null },
     })
   })
 
@@ -223,10 +273,10 @@ describe("change_rows", () => {
       LOADED,
     )
     expect(row).toEqual({
+      type: "value",
       kind: "settings",
-      value: "Temperature 0.7 · Thinking High",
-      previous: "Temperature 1 · Thinking Default",
-      provider_id: null,
+      value: { text: "Temperature 0.7 · Thinking High", link: null },
+      previous: { text: "Temperature 1 · Thinking Default", link: null },
     })
   })
 
@@ -241,106 +291,114 @@ describe("change_rows", () => {
       ["settings"],
       LOADED,
     )
-    expect(row.value).toBe(
-      "Top P 0.5 · Output JSON Mode · Input transform Custom Template",
-    )
-    expect(row.previous).toBe(
-      "Top P 1 · Output JSON Schema · Input transform None",
+    expect(row.type === "value" && [row.value.text, row.previous.text]).toEqual(
+      [
+        "Top P 0.5 · Output JSON Mode · Input transform Custom Template",
+        "Top P 1 · Output JSON Schema · Input transform None",
+      ],
     )
   })
 
-  it("shows the MCP tool as the model, and a dash for kinds it lacks", () => {
+  it("shows the MCP tool as the model, and a dash or nothing for kinds it lacks", () => {
     const rows = change_rows(
-      agent({ prompt_id: "p_new" }),
+      agent({ prompt_id: "p_new", tools_config: { tools: [] } }),
       make_mcp_config(),
       ["prompt", "tools", "model", "settings"],
       LOADED,
     )
+    const none = { text: "—", link: null }
     expect(rows).toEqual([
-      { kind: "prompt", value: "—", previous: "New Prompt", provider_id: null },
-      { kind: "tools", value: "—", previous: "None", provider_id: null },
       {
-        kind: "model",
-        value: "MCP: Run Task",
-        previous: "GPT 5 (OpenAI)",
-        provider_id: null,
+        type: "value",
+        kind: "prompt",
+        value: none,
+        previous: { text: "New Prompt", link: "/prompts/p1/t1/saved/p_new" },
       },
-      { kind: "settings", value: "—", previous: "—", provider_id: null },
+      { type: "list", kind: "tools", added: [], removed: [] },
+      {
+        type: "value",
+        kind: "model",
+        value: { text: "MCP: Run Task", link: null },
+        previous: { text: "GPT 5 (OpenAI)", link: null },
+      },
+      { type: "value", kind: "settings", value: none, previous: none },
     ])
   })
 })
 
-describe("lineage_line_parts", () => {
+describe("lineage_summary_text and lineage_relatives", () => {
   const configs = [
     make_dated_config("root", 0),
     make_dated_config("b", 1, ["root"]),
     make_dated_config("c", 2, ["root"]),
-    make_dated_config("merge", 3, ["b", "root", "c"]),
+    make_dated_config("merge", 3, ["b", "gone", "c"]),
     make_dated_config("orphan", 4, ["gone"]),
     make_dated_config("alone", 5),
   ]
   const graph = build_lineage_graph(configs)
 
-  function parts_of(id: string): LineagePart[] {
+  function node_of(id: string): LineageNode {
     const node = graph.nodes.get(id)
     if (!node) {
       throw new Error(`no node ${id}`)
     }
-    return lineage_line_parts(node, graph)
+    return node
   }
 
-  function text_of(parts: LineagePart[]): string {
-    return parts.map((part) => part.text).join("")
-  }
-
-  it("describes a starting point with its children", () => {
-    expect(parts_of("root")).toEqual([
-      { type: "text", text: "Starting point" },
-      { type: "text", text: " · 3 children" },
-    ])
-  })
-
-  it("links a single parent", () => {
-    expect(parts_of("b")).toEqual([
-      { type: "text", text: "Derived from " },
-      { type: "link", node_id: "root", text: "Name root" },
-      { type: "text", text: " · 1 child" },
-    ])
-  })
-
-  it("links every parent, primary first", () => {
-    const parts = parts_of("merge")
-    expect(text_of(parts)).toBe(
-      "Derived from Name b and Name root, Name c · No children",
+  it("counts a starting point's children", () => {
+    expect(lineage_summary_text(node_of("root"))).toBe(
+      "Starting point · 2 children",
     )
-    expect(
-      parts.flatMap((part) => (part.type === "link" ? [part.node_id] : [])),
-    ).toEqual(["b", "root", "c"])
   })
 
-  it("links a deleted primary parent as the placeholder", () => {
-    expect(parts_of("orphan")).toEqual([
-      { type: "text", text: "Derived from " },
-      { type: "link", node_id: "gone", text: "Deleted run config" },
-      { type: "text", text: " · No children" },
-    ])
+  it("counts the parents and children of a derived node", () => {
+    expect(lineage_summary_text(node_of("b"))).toBe(
+      "Derived from 1 parent · 1 child",
+    )
   })
 
-  it("describes a node with no recorded parent without children", () => {
-    expect(text_of(parts_of("alone"))).toBe("No recorded parent")
+  it("leaves the children off when there are none", () => {
+    expect(lineage_summary_text(node_of("merge"))).toBe(
+      "Derived from 3 parents",
+    )
+    expect(lineage_summary_text(node_of("orphan"))).toBe(
+      "Derived from 1 parent",
+    )
+    expect(lineage_summary_text(node_of("alone"))).toBe("No recorded parent")
   })
 
   it("describes the deleted placeholder with its children", () => {
-    expect(text_of(parts_of("gone"))).toBe(
-      "This run config was deleted · 1 child",
+    expect(lineage_summary_text(node_of("gone"))).toBe(
+      "This run config was deleted · 2 children",
     )
+  })
+
+  it("lists the parents in recorded order and marks a deleted one", () => {
+    expect(lineage_relatives(node_of("merge"), graph)).toEqual({
+      parents: [
+        { id: "b", text: "Name b", deleted: false },
+        { id: "gone", text: "Deleted run config", deleted: true },
+        { id: "c", text: "Name c", deleted: false },
+      ],
+      children: [],
+    })
+  })
+
+  it("lists the children oldest first", () => {
+    expect(lineage_relatives(node_of("root"), graph)).toEqual({
+      parents: [],
+      children: [
+        { id: "b", text: "Name b", deleted: false },
+        { id: "c", text: "Name c", deleted: false },
+      ],
+    })
   })
 })
 
 describe("origin_text", () => {
   it("names who created the run config", () => {
-    expect(origin_text("agent")).toBe("Created by an agent")
-    expect(origin_text("human")).toBe("Created by a person")
+    expect(origin_text("agent")).toBe("Agent Created")
+    expect(origin_text("human")).toBe("Human Created")
   })
 
   it("is null when the origin is unknown", () => {

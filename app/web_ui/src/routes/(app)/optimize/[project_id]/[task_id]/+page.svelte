@@ -368,20 +368,18 @@
     <div class="flex flex-col gap-4">
       <h2 class="text-lg font-medium text-gray-900">Optimization Strategies</h2>
       <FeatureCarousel features={optimizer_features} />
-      <!-- The title's zero basis gives the buttons their full width first. When
-           the row is too narrow, the buttons wrap before the title narrows past
-           its min width. -->
-      <div class="flex flex-col sm:flex-row gap-4 sm:gap-8 mt-8">
-        <div class="grow sm:basis-0 min-w-44">
+      <!-- The title's basis is the narrowest it gets beside the buttons. When
+           both don't fit on one line, the buttons move to their own line under
+           the title. -->
+      <div class="flex flex-wrap items-center gap-x-8 gap-y-4 mt-8">
+        <div class="grow basis-80">
           <h2 class="text-lg font-medium text-gray-900">Run Configurations</h2>
           <div class="text-sm text-gray-500">
             Saved configurations for running this task. Compare configs to find
             the best one.
           </div>
         </div>
-        <div
-          class="flex flex-row flex-wrap items-center sm:justify-end gap-3 whitespace-nowrap"
-        >
+        <div class="flex flex-wrap items-center gap-3 whitespace-nowrap">
           {#if select_mode}
             <div class="font-light text-sm">
               {selected_run_configs.size} selected{#if selected_run_configs.size >= MAX_SELECTIONS}

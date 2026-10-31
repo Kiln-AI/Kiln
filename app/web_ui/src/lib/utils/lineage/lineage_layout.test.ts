@@ -98,7 +98,7 @@ describe("layout_lineage", () => {
     }
   })
 
-  it("draws a primary edge as an elbow and an extra edge as an S-curve with a dot", () => {
+  it("draws a primary edge as an elbow and an extra edge as an S-curve", () => {
     const layout = layout_of([
       make_dated_config("a", 0),
       make_dated_config("b", 1, ["a"]),
@@ -110,13 +110,11 @@ describe("layout_lineage", () => {
       id: "a->b",
       primary: true,
       d: "M32 30V37H23V44",
-      dot: null,
     })
     expect(by_id.get("b->c")).toEqual({
       id: "b->c",
       primary: false,
       d: "M23 58C23 65 41 65 41 72",
-      dot: "M39 70a2 2 0 1 0 4 0a2 2 0 1 0 -4 0",
     })
   })
 
@@ -236,16 +234,11 @@ describe("layout_lineage grid", () => {
 })
 
 function edge(id: string, primary: boolean, n: number): LayoutEdge {
-  return {
-    id,
-    primary,
-    d: `M${n} ${n}V${n + 1}`,
-    dot: primary ? null : `M${n} ${n}a1 1 0 1 0 2 0`,
-  }
+  return { id, primary, d: `M${n} ${n}V${n + 1}` }
 }
 
 describe("join_edge_paths", () => {
-  it("joins elbows, curves and dots into one path each", () => {
+  it("joins the elbows into one path and the curves into another", () => {
     expect(
       join_edge_paths([
         edge("a->b", true, 1),
@@ -256,16 +249,11 @@ describe("join_edge_paths", () => {
     ).toEqual({
       primary: "M1 1V2M9 9V10",
       extra: "M5 5V6M13 13V14",
-      extra_dots: "M5 5a1 1 0 1 0 2 0M13 13a1 1 0 1 0 2 0",
     })
   })
 
   it("gives empty paths without edges", () => {
-    expect(join_edge_paths([])).toEqual({
-      primary: "",
-      extra: "",
-      extra_dots: "",
-    })
+    expect(join_edge_paths([])).toEqual({ primary: "", extra: "" })
   })
 })
 
@@ -283,7 +271,7 @@ describe("edge_path_groups", () => {
     expect(highlighted).toEqual(join_edge_paths([]))
   })
 
-  it("moves highlighted edges and their dots into the highlighted paths", () => {
+  it("moves highlighted edges into the highlighted paths", () => {
     const { resting, highlighted } = edge_path_groups(
       edges,
       new Set(["a->c", "b->c"]),

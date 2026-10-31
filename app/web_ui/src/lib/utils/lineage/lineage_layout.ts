@@ -7,7 +7,6 @@ export interface LayoutConfig {
   padding: number
   section_gap: number
   label_height: number
-  extra_dot_radius: number
 }
 
 export const LAYOUT: Readonly<LayoutConfig> = {
@@ -17,14 +16,12 @@ export const LAYOUT: Readonly<LayoutConfig> = {
   padding: 16,
   section_gap: 40,
   label_height: 16,
-  extra_dot_radius: 2,
 }
 
 export interface LayoutEdge {
   id: string
   primary: boolean
   d: string // primary: an elbow; extra parent: an S-curve
-  dot: string | null // extra parent: a filled dot resting on the child's top edge
 }
 
 export interface LineageLayout {
@@ -128,17 +125,15 @@ function layout_edge_between(
   const y2 = child.y
   if (primary) {
     const m = y2 - (config.row_height - config.node) / 2
-    return { id, primary, d: `M${x1} ${y1}V${m}H${x2}V${y2}`, dot: null }
+    return { id, primary, d: `M${x1} ${y1}V${m}H${x2}V${y2}` }
   }
-  // Handles of at most one row keep a long curve's vertical ends from running
-  // behind the nodes stacked right below the parent and right above the child.
+  // Handles of at most one row bend a long curve's vertical ends away from the
+  // nodes stacked right below the parent and right above the child.
   const handle = Math.min((y2 - y1) / 2, config.row_height)
-  const r = config.extra_dot_radius
   return {
     id,
     primary,
     d: `M${x1} ${y1}C${x1} ${y1 + handle} ${x2} ${y2 - handle} ${x2} ${y2}`,
-    dot: `M${x2 - r} ${y2 - r}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`,
   }
 }
 
@@ -267,7 +262,6 @@ function group_rows(
 export interface EdgePaths {
   primary: string
   extra: string
-  extra_dots: string
 }
 
 /**
@@ -277,22 +271,14 @@ export interface EdgePaths {
 export function join_edge_paths(edges: readonly LayoutEdge[]): EdgePaths {
   const primary: string[] = []
   const extra: string[] = []
-  const extra_dots: string[] = []
   for (const edge of edges) {
     if (edge.primary) {
       primary.push(edge.d)
     } else {
       extra.push(edge.d)
     }
-    if (edge.dot !== null) {
-      extra_dots.push(edge.dot)
-    }
   }
-  return {
-    primary: primary.join(""),
-    extra: extra.join(""),
-    extra_dots: extra_dots.join(""),
-  }
+  return { primary: primary.join(""), extra: extra.join("") }
 }
 
 /** Splits the edges into the ones at rest and the highlighted ones, each joined. */

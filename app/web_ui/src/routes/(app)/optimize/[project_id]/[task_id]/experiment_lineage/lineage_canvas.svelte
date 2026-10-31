@@ -55,6 +55,9 @@
   const NODE_SIZE = GLYPH.graph.size
   const DRAG_THRESHOLD_PX = 4
   const HOVER_DELAY_MS = 100
+  // Long enough for a second click to make it a double-click, which zooms
+  // instead of deselecting.
+  const DESELECT_DELAY_MS = 250
   const DIMMED_OPACITY = 0.15
   const NAV_KEYS: readonly string[] = [
     "ArrowUp",
@@ -86,6 +89,20 @@
   let last_layout: LineageLayout | null = null
 
   $: sync_viewport(layout, view_width, view_height)
+  // Brings a newly selected node into view, such as one chosen from the panel.
+  // A clicked node is already on screen, so at most it shifts in from the edge.
+  $: reveal(selected_id)
+
+  function reveal(id: string | null) {
+    const pos = id && initialized ? layout.positions.get(id) : undefined
+    if (pos) {
+      vp = ensure_visible(vp, node_rect(pos), world, view)
+    }
+  }
+
+  export function focus_graph() {
+    canvas_el.focus()
+  }
 
   function sync_viewport(
     next_layout: LineageLayout,
@@ -240,16 +257,29 @@
 
   let drag: PointerDrag | null = null
   let dragging = false
-  // With pointer capture on, a double-click's target is the canvas, so the
-  // node under the second press decides whether it was on empty space.
-  let last_press_node_id: string | null = null
+  let deselect_timer: ReturnType<typeof setTimeout> | null = null
+
+  function cancel_deselect() {
+    if (deselect_timer !== null) {
+      clearTimeout(deselect_timer)
+      deselect_timer = null
+    }
+  }
+
+  function schedule_deselect() {
+    cancel_deselect()
+    deselect_timer = setTimeout(() => {
+      deselect_timer = null
+      dispatch("close")
+    }, DESELECT_DELAY_MS)
+  }
 
   function on_pointerdown(event: PointerEvent) {
     if (event.button !== 0) {
       return
     }
+    cancel_deselect()
     const node_id = node_id_at(event.target)
-    last_press_node_id = node_id
     const point = { x: event.clientX, y: event.clientY }
     drag = { pointer_id: event.pointerId, start: point, last: point, node_id }
     // Keeps the drag going when the pointer leaves the canvas.
@@ -278,8 +308,12 @@
     if (!drag || event.pointerId !== drag.pointer_id) {
       return
     }
-    if (!dragging && drag.node_id !== null) {
-      dispatch("select", drag.node_id)
+    if (!dragging) {
+      if (drag.node_id !== null) {
+        dispatch("select", drag.node_id)
+      } else if (selected_id !== null) {
+        schedule_deselect()
+      }
     }
     end_drag()
   }
@@ -289,10 +323,9 @@
     dragging = false
   }
 
-  function on_dblclick() {
-    if (last_press_node_id === null) {
-      fit_view()
-    }
+  function on_dblclick(event: MouseEvent) {
+    cancel_deselect()
+    set_viewport(zoom_step(vp, 1, world, view, view_point(event)))
   }
 
   function on_wheel(event: WheelEvent) {
@@ -336,7 +369,10 @@
     }
   })
 
-  onDestroy(clear_hover_timer)
+  onDestroy(() => {
+    clear_hover_timer()
+    cancel_deselect()
+  })
 
   function is_nav_key(key: string): key is NavKey {
     return NAV_KEYS.includes(key)
@@ -468,11 +504,6 @@
           vector-effect="non-scaling-stroke"
         />
         <path
-          d={edge_paths.resting.extra_dots}
-          class="fill-base-300"
-          data-testid="lineage-resting-dots"
-        />
-        <path
           d={edge_paths.highlighted.primary + edge_paths.highlighted.extra}
           class="stroke-secondary"
           stroke-width="1.5"
@@ -481,22 +512,12 @@
           data-testid="lineage-highlighted-edges"
         />
         <path
-          d={edge_paths.highlighted.extra_dots}
-          class="fill-secondary"
-          data-testid="lineage-highlighted-dots"
-        />
-        <path
           d={hover_paths.primary + hover_paths.extra}
           class="stroke-secondary"
           stroke-width="1.5"
           fill="none"
           vector-effect="non-scaling-stroke"
           data-testid="lineage-hovered-edges"
-        />
-        <path
-          d={hover_paths.extra_dots}
-          class="fill-secondary"
-          data-testid="lineage-hovered-dots"
         />
         {#if layout.grid_label}
           <text

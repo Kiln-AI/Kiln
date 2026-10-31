@@ -1,5 +1,4 @@
 <script lang="ts">
-  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import {
     FILTER_KEYS,
     type FilterKey,
@@ -10,9 +9,6 @@
 
   export let counts: Record<FilterKey, number>
   export let active: Set<FilterKey>
-
-  const FILTER_HELP =
-    "Each square shows what changed from its parent run configuration. One change fills the square. More changes split it, always in the order prompt, tools, skills, model, settings. Settings covers temperature, top P, thinking level, structured output mode and input transform. Click a chip to filter."
 
   function swatch_status(key: FilterKey): LineageStatus {
     return key === "copy" ? { type: "copy" } : { type: "changed", kinds: [key] }
@@ -34,23 +30,22 @@
 </script>
 
 <div class="flex flex-wrap items-center gap-2">
-  <div class="flex items-center text-sm font-medium">
-    Changed from parent
-    <InfoTooltip tooltip_text={FILTER_HELP} position="bottom" />
-  </div>
+  <div class="text-sm font-medium">Changed from parent</div>
   {#each FILTER_KEYS as key}
     {@const on = active.has(key)}
+    <!-- The chips double as the graph's color legend, so at rest they have no
+         outline and read as plain legend items. -->
     <button
       type="button"
-      class="btn btn-sm gap-2 {on ? 'btn-secondary' : 'btn-outline'}"
+      class="btn btn-sm gap-2 font-normal shadow-none hover:bg-base-200 {on
+        ? 'bg-base-200 border-base-300 hover:border-base-300'
+        : 'bg-transparent border-transparent hover:border-transparent'}"
       aria-pressed={on}
       on:click={() => toggle(key)}
     >
       <LineageSwatch status={swatch_status(key)} glyph={GLYPH.swatch} />
       {FILTER_LABELS[key]}
-      <span class="tabular-nums {on ? 'opacity-70' : 'text-gray-500'}"
-        >{counts[key]}</span
-      >
+      <span class="tabular-nums text-gray-500">{counts[key]}</span>
     </button>
   {/each}
   {#if active.size > 0}

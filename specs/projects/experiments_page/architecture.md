@@ -32,7 +32,7 @@ app/web_ui/src/lib/utils/
     lineage_layout.ts     (+ .test.ts)  NEW   tree + grid layout, edge paths, rows
     lineage_viewport.ts   (+ .test.ts)  NEW   zoom and pan math
     lineage_navigation.ts (+ .test.ts)  NEW   arrow-key selection
-    lineage_display.ts    (+ .test.ts)  NEW   display strings for tooltip, panel, diff rows
+    lineage_display.ts    (+ .test.ts)  NEW   display strings and links for tooltip, panel, dialogs
     __tests__/lineage_fixtures.ts       NEW   run config builders for tests (test support only)
 app/web_ui/src/lib/components/
   compare_chart.svelte                  EDIT  color: CHART_PALETTE
@@ -49,7 +49,9 @@ app/web_ui/src/routes/(app)/optimize/[project_id]/[task_id]/
     lineage_glyph.svelte                NEW   <svelte:options namespace="svg" />, glyph rects
     lineage_swatch.svelte               NEW   glyph in a standalone <svg> for HTML contexts
     lineage_filter_chips.svelte (+ test) NEW  chips row
-    lineage_panel.svelte   (+ test)     NEW   detail panel
+    lineage_panel.svelte   (+ test)     NEW   detail panel and its two dialogs
+    lineage_panel_section.svelte        NEW   a panel section's title, subtitle slot and body
+    lineage_linked_text.svelte          NEW   a display string, as a link when it has a page
     panel_close_key.ts     (+ test)     NEW   which key presses close the panel (page-level Escape)
     __tests__/filter_chips_harness.svelte NEW  test harness for the chips' two-way binding (test support only)
 app/web_ui/src/routes/(app)/specs/[project_id]/[task_id]/compare/
@@ -221,12 +223,11 @@ Rounded corners:
 ## Layout: `lineage_layout.ts`
 
 ```ts
-export const LAYOUT = { node: 14, col_gap: 4, row_height: 28, padding: 16, section_gap: 40, label_height: 16, extra_dot_radius: 2 } as const
+export const LAYOUT = { node: 14, col_gap: 4, row_height: 28, padding: 16, section_gap: 40, label_height: 16 } as const
 export interface LayoutEdge {
   id: string
   primary: boolean
   d: string // primary: an elbow; extra parent: an S-curve
-  dot: string | null // extra parent: a filled dot resting on the child's top edge
 }
 export interface LineageLayout {
   positions: Map<string, { x: number; y: number }> // top-left of each node square, world px
@@ -239,7 +240,7 @@ export interface LineageLayout {
 }
 export function layout_lineage(graph: LineageGraph, config = LAYOUT): LineageLayout
 
-export interface EdgePaths { primary: string; extra: string; extra_dots: string }
+export interface EdgePaths { primary: string; extra: string }
 export function join_edge_paths(edges: readonly LayoutEdge[]): EdgePaths
 export function edge_path_groups(edges: readonly LayoutEdge[], highlighted: ReadonlySet<string>): { resting: EdgePaths; highlighted: EdgePaths }
 ```
@@ -253,13 +254,13 @@ export function edge_path_groups(edges: readonly LayoutEdge[], highlighted: Read
    - Positions: node `i` goes to column `i % cols` and row `floor(i / cols)`, with `node + col_gap` spacing in both directions.
    - `grid_label` is at `{ x: padding, y: grid_top - 6 }`. It is `null` when there are no grid nodes.
 5. **Edges.** For each graph edge: `x1 = parent.x + node/2`, `y1 = parent.y + node`, `x2 = child.x + node/2`, `y2 = child.y`.
-   - Primary: with `m = y2 - (row_height - node) / 2`, the path is the elbow `` `M${x1} ${y1}V${m}H${x2}V${y2}` `` and `dot` is `null`.
-   - Extra parent: with `h = min((y2 - y1) / 2, row_height)`, the path is the S-curve `` `M${x1} ${y1}C${x1} ${y1 + h} ${x2} ${y2 - h} ${x2} ${y2}` ``. The cap on `h` keeps a long curve's vertical ends from running behind the nodes stacked right below the parent and right above the child. `dot` is a circle path of radius `extra_dot_radius`, centered at `(x2, y2 - extra_dot_radius)`.
+   - Primary: with `m = y2 - (row_height - node) / 2`, the path is the elbow `` `M${x1} ${y1}V${m}H${x2}V${y2}` ``.
+   - Extra parent: with `h = min((y2 - y1) / 2, row_height)`, the path is the S-curve `` `M${x1} ${y1}C${x1} ${y1 + h} ${x2} ${y2 - h} ${x2} ${y2}` ``. The cap on `h` bends a long curve's vertical ends away from the nodes stacked right below the parent and right above the child. With a sideways offset of only a column or two, the ends still pass behind those nodes.
    - `node_edges` lists each edge under both its parent and its child. A node with no edges has no entry.
 6. **Size.** `width` and `height` are the maximum node extent plus `padding`. An empty graph gives `0`.
 7. **Rows.** Group all positioned nodes by `y` and sort each group by `x`.
 
-`join_edge_paths` concatenates the `d` strings of the primary edges into `primary`, of the extra edges into `extra`, and their dots into `extra_dots`, so the canvas draws a fixed number of paths however many edges there are. `edge_path_groups` splits the edges by `highlighted` and joins each side.
+`join_edge_paths` concatenates the `d` strings of the primary edges into `primary` and of the extra edges into `extra`, so the canvas draws a fixed number of paths however many edges there are. `edge_path_groups` splits the edges by `highlighted` and joins each side.
 
 ## Viewport: `lineage_viewport.ts`
 
@@ -273,7 +274,7 @@ export function fit_zoom(world: Size, view: Size): number // min((vw-2m)/w, (vh-
 export function min_zoom(world: Size, view: Size): number // min(ZOOM_FLOOR, fit_zoom)
 export function fit(world: Size, view: Size): Viewport // fit_zoom, centered
 export function zoom_at(vp: Viewport, point: { x: number; y: number }, k: number, world: Size, view: Size): Viewport
-export function zoom_step(vp: Viewport, direction: 1 | -1, world: Size, view: Size): Viewport // about the view center
+export function zoom_step(vp: Viewport, direction: 1 | -1, world: Size, view: Size, point?: Point): Viewport // about point, default the view center
 export function pan_by(vp: Viewport, dx: number, dy: number, world: Size, view: Size): Viewport
 export function center_on(point: { x: number; y: number }, k: number, world: Size, view: Size): Viewport
 export function ensure_visible(vp: Viewport, rect: { x: number; y: number; w: number; h: number }, world: Size, view: Size, margin?: number): Viewport
@@ -305,28 +306,41 @@ export function next_selection(graph: LineageGraph, layout: LineageLayout, curre
 
 ```ts
 export interface DisplayContext {
+  project_id: string
+  task_id: string
   model_info: ProviderModels | null
   task_prompts: PromptResponse | null
   project_tools: ToolSetApiDescription[] | null // available_tools[project_id] ?? null
 }
-export interface ChangeRow { kind: ChangeKind; value: string; previous: string; provider_id: string | null }
+export interface LinkedValue { text: string; link: string | null }
+export type ChangeRow =
+  | { type: "value"; kind: "prompt" | "model" | "settings"; value: LinkedValue; previous: LinkedValue }
+  | { type: "list"; kind: "tools" | "skills"; added: LinkedValue[]; removed: LinkedValue[] }
+export interface Relative { id: string; text: string; deleted: boolean }
 export function node_title(node: LineageNode): string // config.name, or "Deleted run config"
 export function status_text(status: LineageStatus): string
 export function node_model_text(node: LineageNode, model_info: ProviderModels | null): string
-export function children_text(count: number): string // "No children", "1 child", "N children"
+export function children_text(count: number): string // "1 child", "N children"
+export function lineage_summary_text(node: LineageNode): string
+export function lineage_relatives(node: LineageNode, graph: LineageGraph): { parents: Relative[]; children: Relative[] }
+export function origin_text(origin: string | null | undefined): string | null // "Agent Created", "Human Created", or null
+export function added_removed_text(added: number, removed: number): string
 export function change_rows(parent: TaskRunConfig, child: TaskRunConfig, kinds: ChangeKind[], ctx: DisplayContext): ChangeRow[]
 ```
 
 - **`status_text`** returns the functional spec's tooltip line 2 for each status. For `changed`, it's the kinds' labels joined by ", ".
 - **`node_model_text`** returns `getRunConfigModelDisplayName(...)` for `kiln_agent`, `"MCP: " + tool_name` for MCP, and `""` for placeholders.
+- **`lineage_summary_text`** returns the panel's lineage line: "Starting point", "Derived from N parent(s)", "No recorded parent" or "This run config was deleted", then `" · " + children_text(n)` when there are children.
+- **`lineage_relatives`** maps `parent_ids` (primary first) and `child_ids` (oldest first) to `node_title`. `deleted` is true for a placeholder.
+- **`added_removed_text`** returns "2 added, 1 removed", leaving off a part that is zero.
 - **`change_rows`** returns one row per kind:
-  - prompt: `getRunConfigPromptDisplayName(...) ?? prompt_id`.
-  - tools and skills: `get_tool_names_from_ids(ids, project_tools)` joined by ", ". It falls back to the raw ids when `project_tools` is `null`, and shows `"None"` when the list is empty.
-  - model: `node_model_text`. `provider_id` is set for `kiln_agent`, for the logo.
-  - settings: only the changed fields, each as `"{Label} {value}"`, joined by " · ".
+  - prompt: a `value` row. The text is `getRunConfigPromptDisplayName(...) ?? prompt_id`. The link is `prompt_link(...)`, except for a prompt in `task_prompts.generators`, which has no page.
+  - tools and skills: a `list` row. Split each side's `tools_config?.tools` with `split_tool_and_skill_ids`. `added` holds the child's ids the parent lacks, in the child's order. `removed` holds the parent's ids the child lacks, in the parent's order. Each is named with `get_tool_names_from_ids`, falling back to the raw ids when `project_tools` is `null`, and linked with `tool_link`. An MCP side has no tools.
+  - model: a `value` row with `node_model_text` and no link.
+  - settings: a `value` row with no link, showing only the changed fields, each as `"{Label} {value}"`, joined by " · ".
     - Labels: "Temperature", "Top P", "Thinking", "Output", "Input transform".
     - Values: `thinking_level` shows `getThinkingLevelDisplayName(...)`, or "Default" when it is `null`. Output mode shows `structuredOutputModeToString(...)`. The input transform shows `getInputTransformDisplay(...).valueLabel`, or "None".
-  - A kind that can't apply returns `"—"`, for example a prompt on an MCP side.
+  - A kind that can't apply shows `"—"`, for example a prompt on an MCP side.
 
 ## Links: `link_builder.ts`
 
@@ -352,6 +366,7 @@ Both build their query strings with `URLSearchParams`. Compare reads them back w
 - **Local state:** `filters: Set<FilterKey>`, `selected_id: string | null`.
 - **URL sync.** After the first load completes, read `selected` once from `$page.url.searchParams`. Keep it only if `graph.nodes.has(id)`, and pass it as `initial_center_id`. Later selection changes call `goto(experiment_lineage_link(p, t, selected_id), { replaceState: true, noScroll: true, keepFocus: true })`.
 - **Escape.** A `svelte:window` keydown handler closes the panel on an Escape from anywhere on the page, so it works after focus moves into the panel. It skips a key another handler already took (`defaultPrevented`, as the canvas sets), a key typed into a field, and any key while a `<dialog>` is open. The check is `closes_panel` in `panel_close_key.ts` beside the page.
+- **Focus on close.** The panel's close button and the window Escape go through `close_panel()`. If `document.activeElement` was inside the panel's wrapper, it calls the canvas's `focus_graph()` after clearing the selection, so focus doesn't fall back to the page.
 - **Body height.** At `lg` and up (`window.matchMedia("(min-width: 1024px)")`), the height is `max(420, innerHeight - (body_el.getBoundingClientRect().top + scrollY) - 97)`. The 97 is AppPage's `mb-12`, plus the app layout's `pb-8`, its 1px border and its `mb-4`. It's recomputed on `svelte:window` resize, and when a `ResizeObserver` on the body's container reports a change (the chips wrapping as the column narrows, the warning showing), one frame later so the height change stays out of the observer's callback. Below `lg`, the graph frame is 480px tall.
 - **Layout order:**
   1. `AppPage`: title, subtitle and breadcrumb.
@@ -359,25 +374,24 @@ Both build their query strings with `URLSearchParams`. Compare reads them back w
   3. Stats row.
   4. An info `Warning` when `graph.edges.length === 0 && graph.no_parent_ids.length > 0`.
   5. `LineageFilterChips bind:active={filters} counts={summary.filter_counts}`.
-  6. Body: `LineageCanvas` and, when `selected_id` is set, `LineagePanel`.
+  6. Body: `LineageCanvas` (`bind:this`) and, when `selected_id` is set, `LineagePanel` in a wrapper the page keeps a reference to.
+- **Display context.** `ctx` carries `project_id` and `task_id` along with the stores, so the display helpers can build links.
 
 ### `lineage_canvas.svelte`
 
 - **Props:** `graph`, `layout`, `filters`, `selected_id`, `initial_center_id`, `model_info`.
 - **Events:** `select` (detail: id) and `close`.
+- **Method:** `focus_graph()` focuses the canvas `div`.
 - **DOM:** a toolbar row, then a canvas `div`. It is `relative overflow-hidden`, has `tabindex="0"` and `aria-label="Run config lineage graph"`, and carries `bind:this`, `bind:clientWidth` and `bind:clientHeight`. Inside it:
   - One `<svg>` (100% by 100%, `aria-hidden="true"`), with `<defs>` holding the clip path.
   - `<g transform="translate(tx ty) scale(k)">` holding:
-    - Seven edge `<path>`s, in this order:
+    - Four edge `<path>`s, in this order:
       1. Resting primary edges: `stroke-base-300`, 1px.
       2. Resting extra-parent curves: `stroke-base-300/60`, 0.75px.
-      3. Resting end dots: `fill-base-300`.
-      4. Highlighted edges, primary and extra in one path: `stroke-secondary`, 1.5px.
-      5. Highlighted end dots: `fill-secondary`.
-      6. The hovered node's edges, primary and extra in one path: `stroke-secondary`, 1.5px.
-      7. The hovered node's end dots: `fill-secondary`.
-    - Lines use `fill="none"` and `vector-effect="non-scaling-stroke"`. Paths 1 to 5 come from `edge_path_groups(layout.edges, highlighted)`, where highlighted means `ancestor_edge_ids(graph, selected_id)`, memoized on `(graph, selected_id)`.
-    - Paths 6 and 7 are `join_edge_paths(layout.node_edges.get(hover_id) ?? [])`. They draw over the resting edges instead of moving the hovered edges out of them, so a hover joins only that node's few edges and doesn't touch the node `{#each}` block. The 1,000-node budget depends on that: nothing in the node block may read the hover state.
+      3. Highlighted edges, primary and extra in one path: `stroke-secondary`, 1.5px.
+      4. The hovered node's edges, primary and extra in one path: `stroke-secondary`, 1.5px.
+    - All use `fill="none"` and `vector-effect="non-scaling-stroke"`. Paths 1 to 3 come from `edge_path_groups(layout.edges, highlighted)`, where highlighted means `ancestor_edge_ids(graph, selected_id)`, memoized on `(graph, selected_id)`.
+    - Path 4 is `join_edge_paths(layout.node_edges.get(hover_id) ?? [])`. It draws over the resting edges instead of moving the hovered edges out of them, so a hover joins only that node's few edges and doesn't touch the node `{#each}` block. The 1,000-node budget depends on that: nothing in the node block may read the hover state.
     - The grid label as `<text class="text-xs fill-gray-500">`.
     - The nodes, as `{#each [...graph.nodes.values()] as node (node.id)}`. Each is `<g transform="translate(x y)" data-node-id={node.id} opacity={dim ? 0.15 : 1} class="cursor-pointer">` with the clipped `LineageGlyph` inside. Dimming applies when `!node_matches_filters(node.status, filters) && node.id !== selected_id`.
     - The selection ring, drawn last. It's two rects: one at `x-1, y-1, 16, 16` with `stroke-base-100` width 2, and one at `x-2.75, y-2.75, 19.5, 19.5` with `stroke-secondary` width 1.5. Both use `fill="none"`.
@@ -386,11 +400,11 @@ Both build their query strings with `URLSearchParams`. Compare reads them back w
 - **Input**, delegated from the canvas `div`. Node ids come from `(event.target as Element).closest("[data-node-id]")`.
   - `pointerdown` (button 0): call `setPointerCapture` and record the start point and the node id under the pointer.
   - `pointermove`: once the pointer has moved more than 4px, set `dragging`, hide the tooltip, and `pan_by` the movement.
-  - `pointerup`: release capture. If it wasn't a drag and a node was under the pointer at `pointerdown`, dispatch `select`.
+  - `pointerup`: release capture. If it wasn't a drag and a node was under the pointer at `pointerdown`, dispatch `select`. If it wasn't a drag, no node was under the pointer and a node is selected, start a 250ms timer that dispatches `close`. The next `pointerdown`, a `dblclick` and `onDestroy` cancel the timer, so a double-click on empty space doesn't deselect.
   - Hover: `pointerover` and `pointerout` with a 100ms show delay. Suppressed while dragging. The one `hover_id` drives both the tooltip and the hovered edges.
   - `wheel` is bound with `on:wheel|nonpassive` and always calls `preventDefault()`. With `ctrlKey` or `metaKey`, it calls `zoom_at(cursor, k * wheel_zoom_factor(dy))`. Without, it calls `pan_by(-dx, -dy)`. Deltas go through `wheel_delta_px`.
   - Safari pinch: `gesturestart` stores `k`. `gesturechange` calls `preventDefault()` and `zoom_at(cursor, start_k * event.scale)`. These events aren't in the DOM typings, so read `scale` through a narrow local type.
-  - `dblclick` on empty space calls `fit`.
+  - `dblclick`, on a node or on empty space, calls `zoom_step(vp, 1, world, view, cursor)`.
   - `keydown`:
     - Arrow keys call `next_selection`, dispatch `select`, then `ensure_visible`.
     - `Escape` dispatches `close` and calls `preventDefault()`.
@@ -401,34 +415,37 @@ Both build their query strings with `URLSearchParams`. Compare reads them back w
   - Once the view and `layout.width` are both non-zero, it initializes once. With `initial_center_id`, it calls `center_on` at k=1 on that node's center. Otherwise it calls `fit`.
   - When the view size changes (a reactive comparison with the previous size), it calls `resize_keep_center`. With a node selected, it then calls `ensure_visible` on that node, so opening the panel can't push a node just selected off screen.
   - When `layout` changes after initialization, it keeps the viewport and re-clamps it.
+  - When `selected_id` changes after initialization, it calls `ensure_visible` on that node. A clicked node is already on screen, so at most it shifts in from the edge. A selection from the panel's Lineage dialog can move the view further.
 
 ### `lineage_filter_chips.svelte`
 
 - **Props:** `counts: Record<FilterKey, number>` and `active: Set<FilterKey>` (two-way bound).
 - **Each chip:**
   - Element: a `<button type="button" aria-pressed={on}>`.
-  - Class: `btn btn-sm gap-2` plus `btn-outline` when off, or `btn-secondary` when on.
-  - Contents: a `LineageSwatch` (a one-kind `changed` status, or `copy`), the label, and the count (`text-gray-500` when off, `opacity-70` when on).
+  - Class: `btn btn-sm gap-2 font-normal shadow-none hover:bg-base-200`, plus `bg-transparent border-transparent hover:border-transparent` when off, or `bg-base-200 border-base-300 hover:border-base-300` when on.
+  - Contents: a `LineageSwatch` (a one-kind `changed` status, or `copy`), the label, and the count in `text-gray-500`.
 - **Toggling:** assigns a new `Set`, so Svelte sees the change.
-- **Label:** "Changed from parent", `text-sm font-medium`, with `InfoTooltip` holding the spec text.
+- **Label:** "Changed from parent", `text-sm font-medium`, with no tooltip.
 - **Clear:** shown while the set is non-empty. `<button class="link text-sm text-gray-500">Clear</button>`.
 
 ### `lineage_panel.svelte`
 
-- **Props:** `project_id`, `task_id`, `node`, `graph`, `ctx: DisplayContext`, `available_tools: Record<string, ToolSetApiDescription[]>`.
+- **Props:** `node`, `graph`, `ctx: DisplayContext`, `available_tools: Record<string, ToolSetApiDescription[]>`.
 - **Events:** `select` (detail: id) and `close`.
-- **Header:** `LineageSwatch` at `GLYPH.panel`, the name, and the lineage line. Parent names are `<button class="link">` elements that dispatch `select`. Children use `children_text`. The close button uses `Dialog`'s classes and `CloseIcon`, with `aria-label="Close details"`.
-- **Sections**, per the functional spec, each under a `SettingsHeader`. "Changed from Parent" uses `change_rows` when `status.type === "changed"`, with the logo from `get_provider_image(provider_id)`. "Notes" uses `Output raw_output={notes}`. "Run Configuration" uses `PropertyList` with `getRunConfigUiProperties(project_id, task_id, config, ctx.model_info, ctx.task_prompts, available_tools, () => input_transform_modal?.show())`. `InputTransformModal` is mounted when the config has a transform, as on the detail page.
-- **Actions:**
-  - "Compare" goes to `compare_run_configs_link(p, t, [node.id, null])`.
-  - "Compare to Parent" goes to `compare_run_configs_link(p, t, [parent_ids[0], node.id])`, only when that parent's status isn't `deleted`.
-  - Both use `goto`.
+- **Header:** `LineageSwatch` at `GLYPH.panel`, the name (`line-clamp-2`), the lineage line and the creator badge. The lineage line is `lineage_summary_text`, as a `button.link` that opens the Lineage dialog when `lineage_relatives` has any entry, and as plain text otherwise. The badge shows `origin_text(...)` and is left out when that is `null`. The close button uses `Dialog`'s classes and `CloseIcon`, with `aria-label="Close details"`.
+- **Sections**, per the functional spec, each a `LineagePanelSection`:
+  - "Notes": `Output raw_output={notes}`.
+  - "Changed from Parent": for `status.type === "changed"`, a `PropertyList` with one `{ name: CHANGE_KIND_LABELS[kind], value: "", use_custom_slot: true }` per `change_rows` row. The `custom_value` slot finds the row by that name. A `value` row renders the value and a "was" line with `LineageLinkedText`. A `list` row renders a `button.link` with `added_removed_text`, which opens the list dialog.
+  - "Run Configuration": the "Compare eval results to others" link in the section's subtitle slot, to `compare_run_configs_link(p, t, [node.id, null])`. Then `PropertyList` with `getRunConfigUiProperties(ctx.project_id, ctx.task_id, config, ctx.model_info, ctx.task_prompts, available_tools, () => input_transform_modal?.show())`. `InputTransformModal` is mounted when the config has a transform, as on the detail page.
+- **Lineage dialog:** a `Dialog` titled "Lineage", with the node's title as its subtitle. "Parents" and "Children" lists from `lineage_relatives`, each left out when empty. A live relative is a `button.link` that closes the dialog and dispatches `select`. A deleted one is grey text.
+- **List dialog:** one `Dialog`, titled "Tools Changed" or "Skills Changed" for the row that opened it, with "Added" and "Removed" lists of `LineageLinkedText`, each left out when empty.
+- **Focus:** each dialog's `close` event focuses the element that opened it.
 
 ## Entry Points
 
 - **Optimize `+page.svelte`:**
   - In the not-select-mode branch, before "Compare": `<button class="btn btn-mid" on:click={() => goto(experiment_lineage_link(project_id, task_id))}>Experiment Lineage</button>`.
-  - The header's button group is `flex flex-wrap sm:justify-end`, and the title is `grow sm:basis-0 min-w-44`, so the buttons wrap before they overflow (see `ui_design.md`).
+  - The header row is `flex flex-wrap items-center gap-x-8 gap-y-4`. The title is `grow basis-80`, and the button group is `flex flex-wrap items-center gap-3`. When the two don't fit on one line, the group moves to its own line under the title (see `ui_design.md`).
   - Row `TableActionMenu`: add `{ label: "Show in Experiment Lineage", onclick: () => goto(experiment_lineage_link(project_id, task_id, config.id)) }` after "Set as Task Default". The menu is `w-64` so the label stays on one line. It is an `onclick` item, not an `href` item: `FloatingMenu` stops a link's click from bubbling, so SvelteKit's router never sees it and the browser reloads the whole app.
 - **Compare `+page.svelte`:** pass `action_buttons={[{ label: "Experiment Lineage", href: experiment_lineage_link(project_id, task_id) }]}` to `AppPage`.
 
@@ -476,7 +493,7 @@ Vitest. Pure modules get unit tests beside them. Components get `@vitest-environ
   - Two trees sit side by side.
   - No two nodes in a row overlap, on a 200-node random fixture with a fixed seed.
   - The grid's columns and its top, with and without a tree.
-  - Sample paths for an elbow, an S-curve and its dot.
+  - Sample paths for an elbow and an S-curve.
   - A long curve's handles are capped at one row.
   - `node_edges` lists a node's edges to its parents and children.
   - Rows are grouped and sorted.
@@ -487,34 +504,41 @@ Vitest. Pure modules get unit tests beside them. Components get `@vitest-environ
   - `min_zoom` below 0.5 for huge worlds.
   - `zoom_at` keeps the cursor's world point fixed.
   - Clamping of `k` and of the pan.
-  - `zoom_step` stays centered.
+  - `zoom_step` stays centered, or keeps a given point fixed.
   - `ensure_visible` doesn't move when the node is already visible.
   - `resize_keep_center`.
   - `wheel_delta_px` modes.
 - **`lineage_navigation`**: each key, edges of rows, no selection, and an empty graph.
-- **`join_edge_paths` and `edge_path_groups`**: each kind of edge and its dots land in their own path, highlighted edges move with their dots, and no edges give empty paths.
+- **`join_edge_paths` and `edge_path_groups`**: each kind of edge lands in its own path, highlighted edges move to the highlighted paths, and no edges give empty paths.
 - **`lineage_display`**:
   - `status_text` for each status.
-  - `change_rows` for each kind, including settings with two fields changed, unloaded tools, and MCP.
-  - `children_text`.
+  - `change_rows` for each kind, including prompt links and an unlinked generator prompt, tools and skills added and removed with links, settings with two fields changed, unloaded prompts and tools, and MCP.
+  - `lineage_summary_text` for each status, with and without children, and with several parents.
+  - `lineage_relatives` order and the deleted flag.
+  - `children_text`, `added_removed_text` and `origin_text`.
 - **`link_builder`**: both new links, with and without selection, and a `null` column.
 - **`lineage_canvas.test.ts`**:
   - It renders one `[data-node-id]` per node.
   - A pointerdown and pointerup on a node dispatches `select`. A 10px drag doesn't.
   - Filters dim non-matching nodes, but not the selected node.
-  - An extra-parent edge draws its end dot at rest, and the selection moves it to the highlighted paths.
-  - Hovering a node draws its edges to its parents and children in the hovered paths after the delay, and leaving clears them.
-  - The zoom buttons change the label.
+  - Hovering a node draws its edges to its parents and children in the hovered path after the delay, and leaving clears them.
+  - Hovering changes no node's markup, watched with a `MutationObserver` on every `[data-node-id]`; changing the filters does. This doesn't catch a re-run of the node block that yields the same values.
+  - The zoom buttons change the label. A double-click zooms in one step and keeps the world point under the cursor fixed.
+  - A click on empty space dispatches `close` after 250ms, but not with nothing selected, not when the click turns into a double-click, and not after a drag.
+  - A `selected_id` set from outside, on a node panned off screen, brings it into view.
+  - `focus_graph()` focuses the canvas.
   - `Escape` dispatches `close`, and arrow keys dispatch `select`.
   - In jsdom, set `clientWidth` and `clientHeight` through `Object.defineProperty` on the element prototype in the test.
-- **`lineage_filter_chips.test.ts`**: a chip toggles `aria-pressed` and the bound set, Clear appears and resets it, and counts render.
+- **`lineage_filter_chips.test.ts`**: a chip toggles `aria-pressed`, its on and off classes and the bound set, Clear appears and resets it, and counts render.
 - **`lineage_panel.test.ts`**:
-  - Diff rows render for a changed node.
+  - The header's name, lineage line and creator badge, and no badge without a creator.
+  - The section order: Notes, Changed from Parent, Run Configuration.
+  - A single change shows the linked new value and the "was" line.
+  - A tools change reads "2 added" and opens the Tools Changed dialog with its lists and links. Closing it returns focus to the link.
   - Copy text and parent-deleted text render.
-  - Parent links dispatch `select`.
-  - "Compare to Parent" is hidden when the parent is deleted.
-  - The "Compare" href is correct.
-  - Notes appear only when present.
+  - The Lineage dialog lists parents in order, a deleted parent can't be chosen, and choosing a live one dispatches `select`, closes the dialog and returns focus to the lineage line.
+  - The lineage line is plain text with no parents and no children.
+  - The "Compare eval results to others" href is correct, and there is no "Compare to Parent".
 - **Entry points** (page tests with the stores' loads mocked and `CreateNewRunConfigDialog` stubbed):
   - Optimize `page.test.ts`: the header shows "Experiment Lineage" before "Compare" and opens the page; select mode hides it and Cancel Selection brings it back; the row menu item comes after "Set as Task Default" and opens the page with `selected` set, without also opening the run config.
   - Compare `page.test.ts`: the header button opens the page with no selection, with the page's loads left pending.
