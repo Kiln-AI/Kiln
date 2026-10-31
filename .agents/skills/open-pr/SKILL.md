@@ -1,6 +1,6 @@
 ---
 name: open-pr
-description: Open a pull request on the Kiln repo for a human to complete. The title gets a `WIP: ` prefix and a semantic-commit type. The description keeps the human-only header of the PR template as empty placeholders, and the agent writes only the Agentic PR Summary below it (one-line TLDR, summary, implementation bullets, warnings, optional Mermaid diagram, collapsible examples and screenshots). The agent never signs the CLA. Also covers the short watch window for review-bot comments and CI. Use when the user asks to open, create, or raise a PR, to write or rewrite a PR description, or to update a PR after a push.
+description: Open a pull request on the Kiln repo for a human to complete. The title gets a `WIP: ` prefix and a semantic-commit type. The description keeps the human-only header of the PR template as empty placeholders, and the agent writes only the Agentic PR Summary below it (one-line TLDR, summary, implementation bullets, warnings, optional Mermaid diagram, collapsible examples). Screenshots go to the user in chat, not on GitHub. The agent never signs the CLA. Also covers the short watch window for review-bot comments and CI. Use when the user asks to open, create, or raise a PR, to write or rewrite a PR description, or to update a PR after a push.
 ---
 
 # Open a Pull Request
@@ -274,7 +274,6 @@ something or know something. Examples:
 - A regenerated client: "Run `app/web_ui/src/lib/generate_schema.sh` if you add endpoints on top of this branch."
 - A change of behavior that a user sees.
 - A change to on-disk data, a migration, or a compatibility limit.
-- A branch that you must not merge, such as a screenshot assets branch.
 
 Do not add this block when there is nothing to flag.
 
@@ -296,31 +295,26 @@ flowchart LR
 
 Do not add a diagram that only repeats the bullet points.
 
-### 4.6 Examples and screenshots (collapsible, at the end)
+### 4.6 Examples (collapsible, at the end)
 
-Put examples, command output, and screenshots in a collapsible panel. Put the panels
-at the end of the Agentic PR Summary.
+Put examples and command output in a collapsible panel. Put the panels at the end of the
+Agentic PR Summary.
 
-```html
+````html
 <details>
-<summary><b>Screenshots</b></summary>
+<summary><b>Example error response</b></summary>
 
-**The Tools list shows the display name and the function name badge:**
-
-![tools dropdown](https://raw.githubusercontent.com/Kiln-AI/Kiln/<commit-sha>/screenshots/tools_dropdown.png)
-
-</details>
+```json
+{"detail": "Tools 'search_v1' and 'search_v2' share the function name 'search'."}
 ```
 
-To host a screenshot:
+</details>
+````
 
-1. Commit the image files to a separate assets branch, for example `claude/<topic>-assets`.
-2. Push that branch.
-3. Link the raw file, with the commit SHA in the URL. The SHA keeps the link stable.
-4. Write in the panel that this branch must never merge, and that the team can delete it
-   after the PR closes.
-
-Do not commit screenshots to the PR branch itself.
+Keep screenshots off GitHub. Do not commit them to a branch, a gist, or a release. An
+agent cannot upload an image the way a human does with drag and drop. Send the
+screenshots to the user in chat after the PR opens (Step 5). The user adds the ones that
+they want to the PR.
 
 ### 4.7 Related issues and checks
 
@@ -348,6 +342,11 @@ the `WIP: ` prefix, and the body.
 After the PR opens, give the user the full link, for example
 [Kiln-AI/Kiln#1737](https://github.com/Kiln-AI/Kiln/pull/1737).
 
+Then send the screenshots to the user in chat, if you took any intended for the PR. Use
+a tool that sends files to the user, when you have one. Give each screenshot a one-line
+caption. Tell the user that the screenshots are not in the PR, and that they can add the
+ones they want.
+
 Do not approve the PR. Do not merge the PR.
 
 ---
@@ -373,7 +372,7 @@ exactly as it is on GitHub now, whether it is empty or filled in (Rule 0).
 - A new warning applies: a new merge order, a new dependency, or a new companion PR.
 - The base branch changes.
 - The type in the title is no longer correct, for example a `fix` that is now a `feat`.
-- A screenshot or an example no longer agrees with the code.
+- An example no longer agrees with the code.
 
 **Keep them as they are for a small change.** These changes are small:
 
@@ -542,18 +541,6 @@ flowchart LR
 **Checks:** `checks.sh` green. New tests for the save-time check in `libs/server`.
 
 **Docs and skills updated:** none needed, no doc names the changed check.
-
-<details>
-<summary><b>Screenshots</b></summary>
-
-Hosted on the `claude/tool-name-duplicates-assets` branch. Never merge that branch. The
-team can delete it after this PR closes.
-
-**The save error names the two tools:**
-
-![save error](https://raw.githubusercontent.com/Kiln-AI/Kiln/704c5d0/screenshots/save_error.png)
-
-</details>
 ````
 
 ---
@@ -575,6 +562,6 @@ team can delete it after this PR closes.
 - [ ] The summary gives the state before and the state after.
 - [ ] The implementation part is high-level bullet points.
 - [ ] A warning block exists, if there is something to flag.
-- [ ] The examples and the screenshots are in a collapsible panel at the end.
+- [ ] The examples are in a collapsible panel at the end. No screenshot is on GitHub.
 - [ ] No internals of the private server repo are in the text or in an image.
 - [ ] The text follows Simplified Technical English.
