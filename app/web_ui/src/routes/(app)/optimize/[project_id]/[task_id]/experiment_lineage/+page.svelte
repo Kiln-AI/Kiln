@@ -53,12 +53,17 @@
   let initial_center_id: string | null = null
   let canvas: LineageCanvas | null = null
   let panel_el: HTMLDivElement | null = null
+  let latest_load_id = 0
 
   $: if (project_id && task_id) {
     load_page_data(project_id, task_id)
   }
 
+  // Only the latest load may restore the selection, set an error or clear
+  // loading. Going to another task and back leaves this task's earlier load
+  // still running.
   async function load_page_data(req_project_id: string, req_task_id: string) {
+    const load_id = ++latest_load_id
     loading = true
     error = null
     selected_id = null
@@ -70,14 +75,14 @@
         load_task_prompts(req_project_id, req_task_id),
         load_task_run_configs(req_project_id, req_task_id, true),
       ])
-      if (req_project_id !== project_id || req_task_id !== task_id) return
       await tick()
+      if (load_id !== latest_load_id) return
       restore_selection()
     } catch (e) {
-      if (req_project_id !== project_id || req_task_id !== task_id) return
+      if (load_id !== latest_load_id) return
       error = createKilnError(e)
     } finally {
-      if (req_project_id === project_id && req_task_id === task_id) {
+      if (load_id === latest_load_id) {
         loading = false
       }
     }
@@ -217,10 +222,9 @@
     )
   }
 
-  // The body's top moves whenever something above it changes size, such as the
-  // chips wrapping as the column narrows when the assistant opens. Measuring a
-  // frame later keeps the height change out of the observer's callback, where
-  // the browser would report a resize loop.
+  // The body's top moves when content above it resizes, such as chips wrapping.
+  // Measuring a frame later keeps the height change out of the observer's
+  // callback, where the browser would report a resize loop.
   function remeasure_on_container_resize(body: HTMLElement) {
     let frame: number | null = null
     const observer = new ResizeObserver(() => {

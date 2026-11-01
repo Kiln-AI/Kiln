@@ -172,7 +172,7 @@ Hovering a node draws its own edges dark (see Edges) and shows a short tooltip n
 
 - The graph area can be focused. It has a label: "Run config lineage graph".
 - With focus and no selection, any arrow key selects the oldest starting point, or the first node if there is none.
-- With a selection: Up selects the primary parent. Down selects the oldest child. Left and Right select the previous and next node in the same row. The view pans to keep the selected node visible.
+- With a selection: Up selects the primary parent. Down selects the oldest child, or from a node with no children, the nearest node in the first row of the "No recorded parent" grid. In the grid, Up and Down select the nearest node in the row above or below, so Up from the grid's first row reaches the tree's bottom row. Left and Right select the previous and next node in the same row. The view pans to keep the selected node visible.
 - Esc closes the panel. `+`, `-` and `0` zoom in, zoom out and fit.
 
 ## Detail Panel

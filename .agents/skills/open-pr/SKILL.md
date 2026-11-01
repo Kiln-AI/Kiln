@@ -1,6 +1,6 @@
 ---
 name: open-pr
-description: Open a pull request on the Kiln repo for a human to complete. The title gets a `WIP: ` prefix and a semantic-commit type. The description keeps the human-only header of the PR template as empty placeholders, and the agent writes only the Agentic PR Summary below it (one-line TLDR, summary, implementation bullets, warnings, optional Mermaid diagram, collapsible examples). Screenshots go to the user in chat, not on GitHub. The agent never signs the CLA. Also covers the short watch window for review-bot comments and CI. Use when the user asks to open, create, or raise a PR, to write or rewrite a PR description, or to update a PR after a push.
+description: Open a pull request on the Kiln repo for a human to complete. The title gets a `WIP: ` prefix and a semantic-commit type. The description keeps the human-only header of the PR template as empty placeholders, and the agent writes only the Agentic PR Summary below it (one-line TLDR, summary, implementation bullets, warnings, optional Mermaid diagram, collapsible examples). The agent sends screenshots to the user in chat and does not upload them to GitHub. The agent never signs the CLA. Also covers the short watch window for review-bot comments and CI. Use when the user asks to open, create, or raise a PR, to write or rewrite a PR description, or to update a PR after a push.
 ---
 
 # Open a Pull Request
@@ -311,10 +311,10 @@ Agentic PR Summary.
 </details>
 ````
 
-Keep screenshots off GitHub. Do not commit them to a branch, a gist, or a release. An
-agent cannot upload an image the way a human does with drag and drop. Send the
-screenshots to the user in chat after the PR opens (Step 5). The user adds the ones that
-they want to the PR.
+Do not upload screenshots to GitHub yourself. Do not commit PR screenshots to a branch,
+a gist, or a release. An agent cannot upload an image the way a human does with drag and
+drop. Send the screenshots to the user in chat after the PR opens (Step 5). The user adds
+the ones that they want to the PR.
 
 ### 4.7 Related issues and checks
 
@@ -562,6 +562,7 @@ flowchart LR
 - [ ] The summary gives the state before and the state after.
 - [ ] The implementation part is high-level bullet points.
 - [ ] A warning block exists, if there is something to flag.
-- [ ] The examples are in a collapsible panel at the end. No screenshot is on GitHub.
+- [ ] The examples are in a collapsible panel at the end. The agent did not upload
+      screenshots to GitHub.
 - [ ] No internals of the private server repo are in the text or in an image.
 - [ ] The text follows Simplified Technical English.

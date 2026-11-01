@@ -301,7 +301,8 @@ export function next_selection(graph: LineageGraph, layout: LineageLayout, curre
 ```
 
 - With no current selection, any key picks the oldest starting point (the first `starting_point` in `tree_root_ids`). With none, it picks `layout.rows[0][0]`, or `null` for an empty graph. The leftmost root can be a deleted placeholder, which is why starting points come first.
-- Up picks `parent_ids[0]`. Down picks `child_ids[0]`.
+- For a tree node, Up picks `parent_ids[0]`. Down picks `child_ids[0]`; with no children, it picks the node in the first grid row (the `rows` entry holding `no_parent_ids[0]`) nearest in x.
+- For a grid node (status `no_parent`), Up and Down pick the node nearest in x in the `rows` entry above or below, so Up from the first grid row reaches the tree's bottom row. Ties go to the leftmost node.
 - Left and Right pick the neighbor in the current node's `rows` entry.
 - With no target, it returns `current` unchanged.
 
@@ -360,7 +361,7 @@ Both build their query strings with `URLSearchParams`. Compare reads them back w
 
 ### `+page.svelte`
 
-- **Load.** The load is reactive on `project_id` and `task_id`, with the same stale-request guard as the Optimize page. It calls `load_available_tools(project_id)` without waiting, then `await Promise.all([load_model_info(), load_task_prompts(p, t), load_task_run_configs(p, t, true)])`. Errors go through `createKilnError` into an `error` state. The page reads `$run_configs_by_task_composite_id[get_task_composite_id(p, t)] ?? []`.
+- **Load.** The load is reactive on `project_id` and `task_id`. Each load takes the next number from a counter (`latest_load_id`), and only the latest load restores the selection, sets an error or clears `loading`, so an older load of the same route can't win after A to B to A. It calls `load_available_tools(project_id)` without waiting, then `await Promise.all([load_model_info(), load_task_prompts(p, t), load_task_run_configs(p, t, true)])`. Errors go through `createKilnError` into an `error` state. The page reads `$run_configs_by_task_composite_id[get_task_composite_id(p, t)] ?? []`.
 - **Derived state:**
   - `graph = build_lineage_graph(configs)`
   - `layout = layout_lineage(graph)`
