@@ -119,14 +119,14 @@ class TestTokenSearchRange:
         raw = '{"quality": 3}'
         offsets = {"quality": 1}
         start, end = token_search_range(raw, "quality", offsets)
-        assert start == 1 + len("quality")
+        assert start == 1 + len('"quality"')
         assert end == len(raw)
 
     def test_multiple_metrics_bounded(self):
         raw = '{"quality": 3, "relevance": 5}'
         offs = metric_offsets(raw, ["quality", "relevance"])
         start, end = token_search_range(raw, "quality", offs)
-        assert start == offs["quality"] + len("quality")
+        assert start == offs["quality"] + len('"quality"')
         assert end == offs["relevance"]
 
 
@@ -224,6 +224,37 @@ class TestGEvalSingleMetric:
         offs = metric_offsets(raw, ["quality"])
         score = g_eval_single_metric(run_output, "quality", offs, raw)
         assert score is None
+
+    @pytest.mark.parametrize(
+        ("metric", "tokens", "expected"),
+        [
+            ("rule_1", ['{"', "rule", "_", "1", '":', "5", "}"], 5.0),
+            ("step_2", ['{"', "step", "_", "2", '":', "5", "}"], 5.0),
+            ("check3", ['{"', "check", "3", '":', " ", "4", "}"], 4.0),
+            ("rule_1", ['{"', "rule", "_", "1", '":"', "fail", '"}'], 0.0),
+            ("rule_2", ['{"', "rule", "_", "2", '":"', "pass", '"}'], 1.0),
+            ("rule_1", ['{"', "rule", "_", '1"', ":", "5", "}"], 5.0),
+        ],
+    )
+    def test_digit_at_end_of_metric_name_is_not_the_score(
+        self, metric, tokens, expected
+    ):
+        run_output = self._make_run_output(tokens)
+        raw = "".join(tokens)
+        offs = metric_offsets(raw, [metric])
+        assert g_eval_single_metric(run_output, metric, offs, raw) == pytest.approx(
+            expected
+        )
+
+    def test_digit_metric_name_with_following_metric(self):
+        tokens = ['{"', "accuracy", "_", "2", '":', " ", "5", ', "']
+        tokens += ["overall", "_rating", '":', " ", "4", "}"]
+        run_output = self._make_run_output(tokens)
+        raw = "".join(tokens)
+        metrics = ["accuracy_2", "overall_rating"]
+        offs = metric_offsets(raw, metrics)
+        scores = [g_eval_single_metric(run_output, m, offs, raw) for m in metrics]
+        assert scores == [pytest.approx(5.0), pytest.approx(4.0)]
 
     def test_no_logprobs_raises(self):
         run_output = RunOutput(

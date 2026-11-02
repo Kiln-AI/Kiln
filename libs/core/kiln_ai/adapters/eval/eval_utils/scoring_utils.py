@@ -88,7 +88,9 @@ def token_search_range(
 
     Start after the target metric's key and stop before the next metric's key.
     """
-    start_offset = offsets[metric] + len(metric)
+    # offsets point at the key's opening quote. Skip both quotes so that a digit at
+    # the end of the key is not read as the rating.
+    start_offset = offsets[metric] + len(metric) + 2
 
     end_offset = len(raw_output)
     for v in list(offsets.values()):

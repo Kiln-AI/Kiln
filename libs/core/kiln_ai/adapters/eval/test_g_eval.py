@@ -488,17 +488,17 @@ def test_metric_offsets_and_search_ranges(
 
     # Test first metric
     start, end = g_eval.token_search_range(raw_output, "topic_alignment", offsets)
-    assert start == 16  # Position after "topic_alignment"
+    assert start == 18  # Position after "topic_alignment"
     assert end == 23  # Position after "appropriateness"
 
     # Test middle metric
     start, end = g_eval.token_search_range(raw_output, "appropriateness", offsets)
-    assert start == 38  # Position after "appropriateness"
+    assert start == 40  # Position after "appropriateness"
     assert end == 50  # Position after "overall_rating"
 
     # Test last metric
     start, end = g_eval.token_search_range(raw_output, "overall_rating", offsets)
-    assert start == 64  # Position after "overall_rating"
+    assert start == 66  # Position after "overall_rating"
     assert end == len(raw_output)  # end of string
 
 
