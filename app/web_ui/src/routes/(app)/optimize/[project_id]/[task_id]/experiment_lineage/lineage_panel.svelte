@@ -136,12 +136,6 @@
   </div>
 
   <div class="flex flex-col gap-8">
-    {#if notes}
-      <LineagePanelSection title="Notes">
-        <Output raw_output={notes} />
-      </LineagePanelSection>
-    {/if}
-
     {#if node.status.type === "changed" || node.status.type === "copy" || node.status.type === "parent_deleted"}
       <LineagePanelSection title="Changed from Parent">
         {#if node.status.type === "copy"}
@@ -198,6 +192,12 @@
           class="link text-sm text-gray-500 self-start">Compare to others</a
         >
         <PropertyList {properties} />
+      </LineagePanelSection>
+    {/if}
+
+    {#if notes}
+      <LineagePanelSection title="Notes">
+        <Output raw_output={notes} />
       </LineagePanelSection>
     {/if}
   </div>

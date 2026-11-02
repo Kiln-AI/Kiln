@@ -170,12 +170,12 @@ describe("LineagePanel", () => {
     expect(container.querySelector(".badge")).toBeNull()
   })
 
-  it("puts the sections in order: notes, changes, run configuration", () => {
+  it("puts the sections in order: changes, run configuration, notes", () => {
     const { container } = render_panel("child")
     expect(headers(container)).toEqual([
-      "Notes",
       "Changed from Parent",
       "Run Configuration",
+      "Notes",
     ])
     expect(container.textContent).toContain("Tried a kinder prompt.")
   })

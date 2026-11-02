@@ -537,7 +537,7 @@ Vitest. Pure modules get unit tests beside them. Components get `@vitest-environ
 - **`lineage_filter_chips.test.ts`**: a chip toggles `aria-pressed`, its on and off classes and the bound set, Clear appears and resets it, and counts render.
 - **`lineage_panel.test.ts`**:
   - The header's name, lineage line and creator badge, and no badge without a creator.
-  - The section order: Notes, Changed from Parent, Run Configuration.
+  - The section order: Changed from Parent, Run Configuration, Notes.
   - A single change shows the linked new value and the "was" line.
   - A tools change reads "2 added" and opens the Tools Changed dialog with its lists and links. Closing it returns focus to the link.
   - Copy text and parent-deleted text render.

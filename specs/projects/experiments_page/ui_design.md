@@ -107,8 +107,8 @@ Changed from parent   ■ Prompt 31   ■ Tools 25   ■ Skills 12   ■ Model 1
 │                                               │      Derived from 2 parents · 3 children
 │               (graph, pan and zoom)           │      (Agent Created)
 │                                               │
-│                                               │   Notes
-│                                               │   (Output)
+│                                               │
+│                                               │
 │                                               │   Changed from Parent
 │                                               │   Prompt   Support Prompt v7
 │                                               │            was Support Prompt v1
@@ -116,6 +116,8 @@ Changed from parent   ■ Prompt 31   ■ Tools 25   ■ Skills 12   ■ Model 1
 │  ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                      │   Run Configuration
 └───────────────────────────────────────────────┘   Compare to others
                                                       (PropertyList)
+                                                      Notes
+                                                      (Output)
 ```
 
 - Vertical rhythm: the page content is one `flex flex-col gap-6`. Children carry no margins.
@@ -133,9 +135,9 @@ Changed from parent   ■ Prompt 31   ■ Tools 25   ■ Skills 12   ■ Model 1
     - The lineage line as a `button.link` in `text-sm text-gray-500`, or plain text in the same style when there is nothing to list.
     - The creator badge as `badge badge-outline badge-primary badge-sm`.
   - Sections, each a section title over its body with `gap-4`. The title is `h2.text-xl.font-bold`, the sidebar section style of the spec and Run pages, which `PropertyList` also uses for its `title`. A local `lineage_panel_section.svelte` owns it, with a slot for a line right under the title.
-    - "Notes": `Output` with the notes text.
     - "Changed from Parent": `PropertyList`, one property per changed kind, each filled through its `custom_value` slot. A single value is a column: the new value, then the "was" line as `text-xs font-light`. Both are `truncate` with a `title`, and both use `link` where there is a page. A list kind is a `button.link` reading "2 added, 1 removed". No swatches or provider logos, so the rows match the property list below.
     - "Run Configuration": under the title, "Compare to others" as an `a.link` in `text-sm text-gray-500`. Then `PropertyList` with `getRunConfigUiProperties(...)`. It has the same content as the detail page. The input transform action opens the same `InputTransformModal`.
+    - "Notes": `Output` with the notes text.
   - The panel scrolls on its own (`overflow-y-auto`) when it's taller than the body. A new selection scrolls it back to the top.
 - **Lineage dialog**: `Dialog` at its normal width, closed from its X, with no action buttons. The body is `flex flex-col gap-6 text-sm`. Each list is a `font-medium` heading over a `ul` with `gap-2`, one item per `li`, each `truncate` with a `title`. Items start with a 12px glyph and are `button.link`; a deleted parent is `text-gray-500` text.
 - **Tools Changed / Skills Changed dialogs**: `Dialog` at its normal width with a Close button (`isCancel`). The body is `flex flex-col gap-6`. Each list is a house table frame (`rounded-lg border` around `table table-fixed`) whose header row reads "#" and "Added" or "Removed". Each row is the item's number in `text-gray-500 tabular-nums`, then its name, `truncate` with a `title`, as an `a.link` where `tool_link` gives a page and plain text otherwise.

@@ -191,12 +191,12 @@ From top to bottom:
      - The children part is left off when there are none ("Derived from 2 parents").
      - The line is a link that opens the Lineage dialog (below). It is plain text when the node has no parents and no children.
    - A creator badge, "Agent Created" or "Human Created", from `provenance.origin`. It is hidden when no creator is recorded.
-2. **Notes** section, when `provenance.notes` exists: the full notes as read-only text.
-3. **Changed from Parent** section, for a node with a live primary parent. One row per changed kind, in order, in the property list style: the kind's name on the left in the base text color, the value on the right in grey.
+2. **Changed from Parent** section, for a node with a live primary parent. One row per changed kind, in order, in the property list style: the kind's name on the left in the base text color, the value on the right in grey.
    - Prompt, Model and Settings show the new value, then under it a smaller, lighter line "was ‹old value›". Each is cut to one line with an ellipsis, with the full text on hover. A prompt links to its page, both the new and the old one, when it has a page; generator prompts such as "Basic (Zero Shot)" have none. Models and settings are plain text. Settings shows only the fields that changed, as "Temperature 0.7 · Thinking High".
    - Tools and Skills show "2 added, 1 removed", leaving off a part that is zero ("2 added"). It is a link that opens the Tools Changed or Skills Changed dialog (below).
    - A Copy or re-run reads "Same settings as parent." A Parent deleted node reads "The parent run config was deleted, so changes can't be shown." This section is hidden for other statuses.
-4. **Run Configuration** section: under its title, a link "Compare to others" that opens the Compare page with this run config in column 1 and column 2 empty. Then the same property list the run config detail page shows (`getRunConfigUiProperties` with `PropertyList`). Hidden for the deleted placeholder.
+3. **Run Configuration** section: under its title, a link "Compare to others" that opens the Compare page with this run config in column 1 and column 2 empty. Then the same property list the run config detail page shows (`getRunConfigUiProperties` with `PropertyList`). Hidden for the deleted placeholder.
+4. **Notes** section, when `provenance.notes` exists: the full notes as read-only text.
 
 There is no "Compare to Parent" action: a run config can have several parents, so a single before-and-after pair doesn't fit. There is no primary button, and there is no link to the run config detail page. The panel already shows everything that page shows. Only the detail page's Edit and Clone actions are missing, and those are out of scope here.
 
