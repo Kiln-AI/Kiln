@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # OpenAI Responses API for newer OpenAI models
