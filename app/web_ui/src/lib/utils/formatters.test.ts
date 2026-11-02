@@ -4,6 +4,8 @@ import {
   formatSize,
   mime_type_to_string,
   capitalize,
+  escape_html,
+  score_display_name,
 } from "./formatters"
 
 import type { StructuredOutputMode } from "$lib/types"
@@ -468,5 +470,33 @@ describe("formatters", () => {
         expect(structuredOutputModeToString(mode)).toBe(expected)
       })
     })
+  })
+})
+
+describe("score_display_name", () => {
+  it("prefers the display name", () => {
+    expect(score_display_name({ name: "tone", display_name: "Tone" })).toBe(
+      "Tone",
+    )
+  })
+
+  it("falls back to the name when no display name is set", () => {
+    expect(score_display_name({ name: "tone" })).toBe("tone")
+    expect(score_display_name({ name: "tone", display_name: null })).toBe(
+      "tone",
+    )
+    expect(score_display_name({ name: "tone", display_name: "" })).toBe("tone")
+  })
+})
+
+describe("escape_html", () => {
+  it("escapes HTML special characters", () => {
+    expect(escape_html(`<img src=x onerror="a('b')">&`)).toBe(
+      "&lt;img src=x onerror=&quot;a(&#39;b&#39;)&quot;&gt;&amp;",
+    )
+  })
+
+  it("leaves plain text unchanged", () => {
+    expect(escape_html("Overall Rating")).toBe("Overall Rating")
   })
 })

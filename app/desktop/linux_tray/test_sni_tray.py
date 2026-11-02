@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -456,7 +457,12 @@ def test_stop_releases_the_bus_name_and_is_idempotent(client, tray):
     tray.stop()
     tray.set_icon(TrayIcon("ignored", "", ()))
 
-    assert client.bus.NameHasOwner(tray.bus_name) == (False,)
+    # The daemon drops the name once it sees the socket close, which can land
+    # after our next call on the other connection: wait for it.
+    deadline = time.monotonic() + 5
+    while client.bus.NameHasOwner(tray.bus_name) == (True,):
+        assert time.monotonic() < deadline, "bus name was never released"
+        time.sleep(0.01)
 
 
 def test_registers_again_when_the_watcher_restarts(bus_address, watcher, tray):

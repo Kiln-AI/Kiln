@@ -1,8 +1,7 @@
 from functools import partial
 from typing import Awaitable, Callable
 
-import anyio
-from starlette._utils import collapse_excgroups
+from starlette._utils import create_collapsing_task_group
 from starlette.responses import StreamingResponse
 from starlette.types import Receive, Scope, Send
 
@@ -24,15 +23,14 @@ class CancellableStreamingResponse(StreamingResponse):
             await super().__call__(scope, receive, send)
             return
 
-        with collapse_excgroups():
-            async with anyio.create_task_group() as task_group:
+        async with create_collapsing_task_group() as task_group:
 
-                async def wrap(func: Callable[[], Awaitable[None]]) -> None:
-                    await func()
-                    task_group.cancel_scope.cancel()
+            async def wrap(func: Callable[[], Awaitable[None]]) -> None:
+                await func()
+                task_group.cancel_scope.cancel()
 
-                task_group.start_soon(wrap, partial(self.stream_response, send))
-                await wrap(partial(self.listen_for_disconnect, receive))
+            task_group.start_soon(wrap, partial(self.stream_response, send))
+            await wrap(partial(self.listen_for_disconnect, receive))
 
         if self.background is not None:
             await self.background()

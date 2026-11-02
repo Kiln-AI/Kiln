@@ -101,7 +101,6 @@ describe("next_page_after_template", () => {
       )
       expect(url.pathname).toBe("/specs/p1/t1/spec_builder")
       expect(url.searchParams.get("type")).toBe(spec_type)
-      expect(url.searchParams.get("workflow")).toBe("manual")
       expect(url.searchParams.get("judge")).toBe(
         implied_judge_for_spec_type(spec_type),
       )
@@ -126,33 +125,30 @@ describe("next_page_after_judge", () => {
       )
       expect(url.pathname).toBe("/specs/p1/t1/spec_builder")
       expect(url.searchParams.get("judge")).toBe(judge)
-      expect(url.searchParams.get("workflow")).toBe("manual")
     },
   )
 })
 
 describe("judge_only_builder_url", () => {
-  it("routes to the spec builder with judge and manual workflow, no type", () => {
+  it("routes to the spec builder with judge, no type", () => {
     const url = new URL(
       judge_only_builder_url("p1", "t1", "code_eval"),
       "http://localhost",
     )
     expect(url.pathname).toBe("/specs/p1/t1/spec_builder")
     expect(url.searchParams.get("judge")).toBe("code_eval")
-    expect(url.searchParams.get("workflow")).toBe("manual")
     expect(url.searchParams.get("type")).toBeNull()
   })
 })
 
 describe("spec_builder_url", () => {
-  it("encodes the template, workflow, and judge", () => {
+  it("encodes the template and judge", () => {
     const url = new URL(
-      spec_builder_url("p1", "t1", "issue", "manual", "pattern_match"),
+      spec_builder_url("p1", "t1", "issue", "pattern_match"),
       "http://localhost",
     )
     expect(url.pathname).toBe("/specs/p1/t1/spec_builder")
     expect(url.searchParams.get("type")).toBe("issue")
-    expect(url.searchParams.get("workflow")).toBe("manual")
     expect(url.searchParams.get("judge")).toBe("pattern_match")
   })
 })
@@ -177,7 +173,7 @@ describe("the removed Kiln Pro creation path", () => {
         expect(url).not.toContain("select_workflow")
         expect(
           new URL(url, "http://localhost").searchParams.get("workflow"),
-        ).toBe("manual")
+        ).toBeNull()
       }
     },
   )

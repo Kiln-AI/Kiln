@@ -1,5 +1,6 @@
 <script lang="ts">
   export let scores: Record<string, number> = {}
+  export let score_labels: Record<string, string> = {}
   export let skipped_reason: string | null = null
   export let skipped_detail: string | null = null
 
@@ -22,7 +23,9 @@
   <div class="flex flex-col gap-1">
     {#each Object.entries(scores) as [key, value]}
       <div class="flex justify-between gap-4 text-sm">
-        <span class="font-medium text-gray-600">{key}:</span>
+        <span class="font-medium text-gray-600"
+          >{score_labels[key] || key}:</span
+        >
         <span class="font-mono">{value.toFixed(2)}</span>
       </div>
     {/each}

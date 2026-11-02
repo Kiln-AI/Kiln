@@ -121,6 +121,10 @@ class AgentOverviewSpecs(BaseModel):
 
 class AgentOverviewOutputScore(BaseModel):
     name: str
+    display_name: str | None = Field(
+        default=None,
+        description="What the user sees this score called in the UI, if it differs from name. name stays the identifier.",
+    )
     type: str
 
 
@@ -381,7 +385,9 @@ def _evals_block(task: Task) -> list[AgentOverviewEval]:
                 template=ev.template.value if ev.template else None,
                 default_judge_config_id=ev.current_config_id,
                 output_scores=[
-                    AgentOverviewOutputScore(name=s.name, type=s.type.value)
+                    AgentOverviewOutputScore(
+                        name=s.name, display_name=s.display_name, type=s.type.value
+                    )
                     for s in ev.output_scores
                 ],
                 favourite=ev.favourite,

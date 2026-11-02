@@ -175,7 +175,7 @@
   // animation on the same screens.
   import ConversationAnimation from "$lib/ui/animations/conversation_animation.svelte"
   import { spec_field_configs } from "../select_template/spec_templates"
-  import type { SuggestedEdit } from "../spec_utils"
+  import { resolve_available_name, type SuggestedEdit } from "../spec_utils"
   // Splits the refine response into edits the form can show and edits it
   // cannot; the latter are discarded (the request does not declare those
   // fields) and reported for telemetry.
@@ -700,31 +700,6 @@
   $: questions_source = continued_description ?? description
   $: field_configs = spec_field_configs[spec_type]
 
-  // Resolve a candidate eval name against the task's existing specs — the
-  // save guard's derived-tag comparison (case/spacing-insensitive), run
-  // where a collision costs nothing. On a collision the server returns the
-  // nearest available suffixed variant. Returns null when the check itself
-  // fails (offline etc.) — the save-time 409 remains the backstop then.
-  async function resolve_available_name(
-    candidate: string,
-  ): Promise<{ name: string; was_taken: boolean } | null> {
-    try {
-      const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/available_spec_name",
-        {
-          params: {
-            path: { project_id, task_id },
-            query: { name: candidate },
-          },
-        },
-      )
-      if (error || !data) return null
-      return data
-    } catch {
-      return null
-    }
-  }
-
   // Step 1's Continue: record the description as the issue text and move to
   // the clarifying questions. The description is pinned to a local first so
   // everything derived from this Continue describes the same text.
@@ -956,8 +931,13 @@
         // second eval on this task would regenerate a taken name. Take the
         // nearest available variant instead (best-effort).
         name =
-          (await resolve_available_name(refine_response.suggested_name))
-            ?.name ?? refine_response.suggested_name
+          (
+            await resolve_available_name(
+              project_id,
+              task_id,
+              refine_response.suggested_name,
+            )
+          )?.name ?? refine_response.suggested_name
         prefilled_name = name
       }
 
@@ -1019,7 +999,7 @@
       // Best-effort: if the check itself can't run, advance — the save-time
       // 409 remains the backstop.
       refine_form_error = null
-      const resolved = await resolve_available_name(name)
+      const resolved = await resolve_available_name(project_id, task_id, name)
       if (resolved?.was_taken) {
         refine_form_error = new KilnError(
           `An eval named '${name}' already exists for this task ` +

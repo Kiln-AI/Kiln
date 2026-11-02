@@ -12,6 +12,7 @@
     buildSpecDefinition,
     implied_judge_for_spec_type,
     eval_template_for_spec_type,
+    resolve_available_name,
   } from "../spec_utils"
   import { client } from "$lib/api_client"
   import { load_task } from "$lib/stores"
@@ -122,6 +123,7 @@
 
       spec_type = spec_type_param as SpecType
       name = autofillSpecName(spec_type)
+      if (name) void prefill_available_name(name)
 
       // Every template's judge is implied; the URL's judge param is ignored
       // for templated flows so a hand-edited param can't turn a rubric-only
@@ -148,6 +150,16 @@
     } finally {
       loading = false
     }
+  }
+
+  // Resolves after the form is shown, so a name the user typed meanwhile wins.
+  async function prefill_available_name(filled_name: string) {
+    const available = await resolve_available_name(
+      project_id,
+      task_id,
+      filled_name,
+    )
+    if (available && name === filled_name) name = available.name
   }
 
   onMount(() => {

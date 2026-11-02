@@ -718,7 +718,7 @@ async def test_create_finetune(
     assert result["provider"] == "test_provider"
     assert result["base_model_id"] == "base_model_1"
 
-    split1 = next(split for split in test_task.dataset_splits() if split.id == "split1")
+    split1 = DatasetSplit.from_id_and_parent_path("split1", test_task.path)
 
     # Verify the adapter was called correctly
     mock_finetune_adapter.create_and_start.assert_awaited_once_with(

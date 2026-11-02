@@ -828,6 +828,7 @@ class TestAgentOverviewEndpoint:
                 ),
                 EvalOutputScore(
                     name="Hallucination",
+                    display_name="Grounded",
                     type=TaskOutputRatingType.pass_fail,
                 ),
             ],
@@ -863,7 +864,9 @@ class TestAgentOverviewEndpoint:
             assert len(ev["output_scores"]) == 2
             assert ev["output_scores"][0]["name"] == "Accuracy"
             assert ev["output_scores"][0]["type"] == "five_star"
+            assert ev["output_scores"][0]["display_name"] is None
             assert ev["output_scores"][1]["name"] == "Hallucination"
+            assert ev["output_scores"][1]["display_name"] == "Grounded"
             assert ev["output_scores"][1]["type"] == "pass_fail"
 
     def test_connected_providers(self, client, task, project):

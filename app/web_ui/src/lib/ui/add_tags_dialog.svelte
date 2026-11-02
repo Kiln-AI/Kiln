@@ -5,7 +5,7 @@
   export let title: string
   export let project_id: string | null = null
   export let task_id: string | null = null
-  export let tag_type: "doc" | "task_run" = "task_run"
+  export let tag_type: "doc" | "task_run" | "eval" = "task_run"
   export let add_tags: string[] = []
   export let onTagsChanged: (tags: string[]) => void = () => {}
   export let onAddTags: () => Promise<boolean> = async () => true

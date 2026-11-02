@@ -121,35 +121,3 @@ export async function fetch_task_sample_candidates(
     available_runs: sorted_runs,
   }
 }
-
-/**
- * Builds a task prompt with instruction, requirements, and optional task sample examples.
- * Uses the backend prompt builder for consistent formatting.
- */
-export async function build_prompt_with_task_sample(
-  project_id: string,
-  task_id: string,
-  examples: TaskSampleExample[],
-): Promise<string> {
-  const { data, error } = await client.POST(
-    "/api/projects/{project_id}/tasks/{task_id}/build_prompt_with_examples",
-    {
-      params: {
-        path: { project_id, task_id },
-      },
-      body: {
-        examples: examples,
-      },
-    },
-  )
-
-  if (error) {
-    throw new Error(
-      typeof error === "string"
-        ? error
-        : (error as { message?: string }).message ?? "Failed to build prompt",
-    )
-  }
-
-  return data?.prompt ?? ""
-}

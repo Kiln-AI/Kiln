@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest"
-import { render, fireEvent } from "@testing-library/svelte"
+import { render, fireEvent, waitFor } from "@testing-library/svelte"
 import type { EvalConfig } from "$lib/types"
 
 vi.mock("$lib/stores", async () => {
@@ -190,5 +190,73 @@ describe("LlmJudgeResult", () => {
       },
     })
     expect(container.textContent).toContain("View reasoning")
+  })
+
+  it("shows no Judge trace link when the run saved no trace", () => {
+    const { container } = render(LlmJudgeResult, {
+      props: {
+        scores: { quality: 0.8 },
+        eval_config: makeConfig(),
+        load_judge_trace: null,
+      },
+    })
+    expect(container.textContent).not.toContain("Judge trace")
+    expect(container.querySelector('[data-title="Judge Trace"]')).toBeFalsy()
+  })
+
+  it("keeps View reasoning when there is reasoning but no judge trace", () => {
+    const { container } = render(LlmJudgeResult, {
+      props: {
+        scores: { quality: 0.8 },
+        eval_config: makeConfig(),
+        intermediate_outputs: { reasoning: "The model output was good." },
+        load_judge_trace: null,
+      },
+    })
+    const links = container.querySelectorAll("button.link")
+    expect(links.length).toBe(1)
+    expect(links[0].textContent).toContain("View reasoning")
+    expect(container.textContent).not.toContain("Judge trace")
+  })
+
+  it("shows only the Judge trace link when both trace and reasoning exist", () => {
+    const { container } = render(LlmJudgeResult, {
+      props: {
+        scores: { quality: 0.8 },
+        eval_config: makeConfig(),
+        intermediate_outputs: { reasoning: "The model output was good." },
+        load_judge_trace: vi.fn(),
+      },
+    })
+    const links = container.querySelectorAll("button.link")
+    expect(links.length).toBe(1)
+    expect(links[0].textContent).toContain("Judge trace")
+  })
+
+  it("fetches and shows the judge trace when the link is clicked", async () => {
+    const load_judge_trace = vi.fn().mockResolvedValue([
+      { role: "system", content: "Score the output." },
+      { role: "user", content: "Rendered judge prompt with variables" },
+      { role: "assistant", content: '{"quality": "4"}' },
+    ])
+    const { container } = render(LlmJudgeResult, {
+      props: {
+        scores: { quality: 0.8 },
+        eval_config: null,
+        load_judge_trace,
+      },
+    })
+    expect(load_judge_trace).not.toHaveBeenCalled()
+
+    const link = container.querySelector("button.link") as HTMLButtonElement
+    expect(link.textContent).toContain("Judge trace")
+    await fireEvent.click(link)
+
+    expect(load_judge_trace).toHaveBeenCalledTimes(1)
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-title="Judge Trace"]')!.textContent,
+      ).toContain("Rendered judge prompt with variables"),
+    )
   })
 })

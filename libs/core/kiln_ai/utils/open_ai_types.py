@@ -7,6 +7,7 @@ https://github.com/pydantic/pydantic/issues/9541
 Otherwise we are using OpenAI SDK types directly.
 """
 
+import json
 from typing import (
     Any,
     Iterable,
@@ -218,6 +219,26 @@ def materialize_lazy_content(trace: Iterable[Any]) -> None:
         if content is None or isinstance(content, (str, bytes, list, dict)):
             continue
         message["content"] = list(content)
+
+
+def single_turn_trace(
+    input: str | dict[str, Any] | list[Any], output: str | dict[str, Any]
+) -> list[ChatCompletionMessageParam]:
+    """A user message holding `input` followed by an assistant message holding
+    `output`. Structured values are JSON-encoded."""
+    user_message: ChatCompletionUserMessageParam = {
+        "role": "user",
+        "content": input
+        if isinstance(input, str)
+        else json.dumps(input, ensure_ascii=False),
+    }
+    assistant_message: ChatCompletionAssistantMessageParamWrapper = {
+        "role": "assistant",
+        "content": output
+        if isinstance(output, str)
+        else json.dumps(output, ensure_ascii=False),
+    }
+    return [user_message, assistant_message]
 
 
 def serialize_trace(trace: list[ChatCompletionMessageParam]) -> str:

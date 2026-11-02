@@ -17,6 +17,7 @@ from kiln_ai.datamodel.tool_id import (
     rag_config_id_from_id,
     world_and_tool_name_from_id,
 )
+from kiln_ai.datamodel.world import World
 from kiln_ai.run_context import EpisodeContext, get_episode
 from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallDefinition
 from kiln_ai.tools.built_in_tools.kiln_api_call_tool import KilnApiCallTool
@@ -247,12 +248,20 @@ async def validate_unique_allowlist_tool_names(
     no fix short of dropping a server's tools entirely. The sandbox bridge's
     call-time ambiguity error remains the backstop — for those, and because
     tools can be renamed after the allowlist is saved.
+
+    World tools resolve only inside an episode of their world, so they are not
+    resolved here: their name is the last segment of their id, and their world
+    must exist in *project*. Whether the world serves the tool is checked at
+    runtime, inside the episode.
     """
     carriers: dict[str, list[str]] = {}
     for tool_id in tool_allowlist:
-        name = await tool_from_id_and_project(
-            tool_id, project=project, task=task
-        ).name()
+        if tool_id.startswith(WORLD_TOOL_ID_PREFIX):
+            name = world_and_tool_name_from_id(tool_id)[1]
+        else:
+            name = await tool_from_id_and_project(
+                tool_id, project=project, task=task
+            ).name()
         carriers.setdefault(name, []).append(tool_id)
     duplicates = sorted(
         name
@@ -265,6 +274,21 @@ async def validate_unique_allowlist_tool_names(
             f"{', '.join(duplicates)}. Tools are called by name from sandboxed "
             "code, so each tool in the allowlist must have a unique name."
         )
+
+    world_ids = {
+        world_and_tool_name_from_id(t)[0]
+        for t in tool_allowlist
+        if t.startswith(WORLD_TOOL_ID_PREFIX)
+    }
+    if world_ids:
+        found = World.from_ids_and_parent_path(world_ids, project.path, readonly=True)
+        missing = sorted(world_ids - set(found))
+        if missing:
+            raise ValueError(
+                f"World(s) {', '.join(missing)} referenced by world tools in the "
+                f"tool_allowlist not found in project {project.id}. Create the world "
+                "first, or remove its tools from the tool_allowlist."
+            )
 
 
 async def tool_definitions_from_ids(

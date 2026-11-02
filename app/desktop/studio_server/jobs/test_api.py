@@ -857,6 +857,7 @@ _EVAL_PARAMS = {
     "concurrency": None,
     "split": "test",
     "item_ids": None,
+    "judge": True,
 }
 
 
@@ -1079,6 +1080,17 @@ async def test_run_eval_job_with_undrivable_multi_turn_items_400(
 
     assert resp.status_code == 400, resp.text
     assert "MCP one" in resp.text
+    assert registry._jobs == {}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_drive_only_with_a_v1_judge_400(
+    client, registry, stub_eval_worker, split_eval
+):
+    resp = await client.post(_EVAL_RUN_PATH, json=_eval_params(judge=False))
+
+    assert resp.status_code == 400, resp.text
+    assert "not a V2 judge with an adapter" in resp.text
     assert registry._jobs == {}
 
 
@@ -1414,7 +1426,12 @@ async def test_eval_job_contract_failures_retries_and_skips(
     assert record["progress"]["total"] == 3
     assert record["progress"]["success"] == 2
     assert record["progress"]["error"] == 1
-    assert record["result"] == {"total": 3, "success": 2, "error": 1}
+    assert record["result"] == {
+        "total": 3,
+        "success": 2,
+        "error": 1,
+        "driven_runs": None,
+    }
     assert len(errors) == 1
     assert "judge failed" in errors[0]["error_message"]
     assert errors[0]["dataset_id"] == failing_id
@@ -1592,3 +1609,26 @@ async def test_identical_eval_job_request_returns_a_paused_job_as_is(
     finally:
         release.set()
     await _wait_for_status(registry, job_id, BackgroundJobStatus.SUCCEEDED)
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_drive_only_creates_an_unpausable_job(
+    client, registry, stub_eval_worker, world_eval
+):
+    params = _eval_params(
+        eval_id="e_world",
+        eval_config_id="ec_world",
+        run_config_id="rc_world",
+        item_ids=["ei_in_world"],
+        judge=False,
+    )
+    first = await client.post(_EVAL_RUN_PATH, json=params)
+    second = await client.post(_EVAL_RUN_PATH, json=params)
+
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    # Never deduplicated: each drive-only job is its own measurement.
+    assert first.json()["job_id"] != second.json()["job_id"]
+    job = registry._jobs[first.json()["job_id"]]
+    assert job.params["judge"] is False
+    assert job.supports_pause is False

@@ -1627,7 +1627,10 @@ class TestCreateSpecWithCopilotMultiTurn:
             )
 
         assert response.status_code == 409
-        assert "already exists" in response.json()["message"]
+        assert response.json()["message"] == (
+            "A spec named 'Multi Turn Spec' (or one differing only by case or "
+            "spacing) already exists for this task. Try 'Multi Turn Spec 2' instead."
+        )
         assert len(task.evals()) == 0
 
     def test_tag_normalized_spec_name_collision_is_409(

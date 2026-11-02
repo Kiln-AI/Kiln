@@ -134,6 +134,20 @@ def validate_schema_dict(v: Dict, require_object: bool = True):
         raise ValueError(f"Unexpected error validating dict JSON schema: {v}\n {e}")
 
 
+def validate_tool_parameters_schema(v: Dict) -> None:
+    """Check a tool's parameters schema: a valid JSON schema of type object.
+
+    Unlike task schemas, `properties` is optional. A tool that takes no arguments
+    (e.g. an MCP tool whose inputSchema is just `{"type": "object"}`) is valid.
+
+    Raises:
+        ValueError: If the schema is invalid or isn't an object schema
+    """
+    validate_schema_dict(v, require_object=False)
+    if v.get("type") != "object":
+        raise ValueError(f"A tool's parameters schema must have type 'object': {v}")
+
+
 def string_to_json_key(s: str) -> str:
     """Convert a string to a valid JSON key."""
     return re.sub(r"[^a-z0-9_]", "", s.strip().lower().replace(" ", "_"))

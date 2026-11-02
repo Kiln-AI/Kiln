@@ -4,6 +4,7 @@
   import { extractV2Props } from "$lib/utils/eval_types/registry"
 
   export let scores: Record<string, number> = {}
+  export let score_labels: Record<string, string> = {}
   export let skipped_reason: string | null = null
   export let skipped_detail: string | null = null
   export let eval_config: EvalConfig | null = null
@@ -16,7 +17,7 @@
     <span class="badge badge-outline badge-sm text-xs">Beta</span>
   </div>
 
-  <EvalResultScores {scores} {skipped_reason} {skipped_detail} />
+  <EvalResultScores {scores} {score_labels} {skipped_reason} {skipped_detail} />
 
   {#if props}
     <div class="text-xs text-gray-400 flex flex-col gap-0.5">

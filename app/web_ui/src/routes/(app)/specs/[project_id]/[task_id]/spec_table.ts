@@ -1,5 +1,6 @@
 import type { Eval, Priority, Spec, SpecStatus } from "$lib/types"
 import { eval_type_display } from "$lib/utils/eval_types/eval_type_display"
+import { resolved_status } from "$lib/utils/spec_status"
 
 /**
  * Row computation for the evals list page.
@@ -54,13 +55,6 @@ export function resolved_priority(
   return (
     (spec.eval_id ? by_id.get(spec.eval_id)?.priority : null) ?? spec.priority
   )
-}
-
-export function resolved_status(
-  spec: Spec,
-  by_id: Map<string, Eval>,
-): SpecStatus {
-  return (spec.eval_id ? by_id.get(spec.eval_id)?.status : null) ?? spec.status
 }
 
 function getStatusSortOrder(status: SpecStatus): number {

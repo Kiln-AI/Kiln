@@ -12,6 +12,7 @@
     getRunConfigInputTransformSummaryLabel,
   } from "$lib/utils/run_config_formatters"
   import ChartNoData from "$lib/components/chart_no_data.svelte"
+  import { escape_html } from "$lib/utils/formatters"
 
   // Type for comparison features (same as parent page)
   type ComparisonFeature = {
@@ -172,7 +173,7 @@
     html += `<div style="font-weight: bold; margin-bottom: 4px; padding-top: 8px;">Values</div>`
 
     dataKeys.forEach((key) => {
-      const label = getKeyLabel(key)
+      const label = escape_html(getKeyLabel(key))
       const rawValue = config?.id ? getModelValueRaw(config.id, key) : null
       if (rawValue === null) {
         html += `<div>${label}: N/A</div>`

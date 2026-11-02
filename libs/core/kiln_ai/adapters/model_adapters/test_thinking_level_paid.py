@@ -122,6 +122,7 @@ def get_all_model_providers_with_thinking_levels(
             ModelProviderName.openai,
             ModelProviderName.anthropic,
             ModelProviderName.gemini_api,
+            ModelProviderName.cloudflare,
         ]
     ),
 )

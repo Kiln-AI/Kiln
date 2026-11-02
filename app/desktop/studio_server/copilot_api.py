@@ -41,8 +41,10 @@ from kiln_server.utils.agent_checks.policy import (
 )
 from kiln_server.utils.spec_utils import (
     ALL_SPLIT_NAMES,
+    SpecNameConflictError,
     SplitShare,
     build_spec_eval,
+    ensure_spec_name_available,
     generate_spec_eval_tags,
     spec_eval_data_type,
     split_names,
@@ -1134,20 +1136,11 @@ def connect_copilot_api(app: FastAPI):
         """
         task = task_from_id(project_id, task_id)
 
-        # Compared by derived tags rather than by name: tags lowercase and
-        # normalize spacing, so "My Spec" and "my_spec" would share a tag
-        # namespace, and each other's datasets. Two requests in flight at once
-        # can still race past this check.
-        requested_tags = generate_spec_eval_tags(request.name)
-        if any(
-            generate_spec_eval_tags(spec.name) == requested_tags
-            for spec in task.specs(readonly=True)
-        ):
-            raise HTTPException(
-                status_code=409,
-                detail=f"A spec named '{request.name}' (or one differing only "
-                "by case or spacing) already exists for this task.",
-            )
+        # Two requests in flight at once can still race past this check.
+        try:
+            ensure_spec_name_available(task, request.name)
+        except SpecNameConflictError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
 
         # The tags the eval's items carry. The `sdg_session_config` path mints
         # no val items, leaving that split empty rather than absent.
