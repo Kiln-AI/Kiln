@@ -32,8 +32,8 @@ Merging to `main` does not publish the remote model list; only a push to `remote
 
 ### F1. Upgrade LiteLLM (branch 1)
 
-- Move the `litellm` requirement in `libs/core/pyproject.toml` from `>=1.102.0,<1.103` to the latest stable 1.106.x (1.106.6 as of 2026-10-28), keeping the tight-range policy: `>=1.106.6,<1.107`. Update `uv.lock` with the repo's tooling.
-- Why this version: 1.103.5 fixed the bug where a reply containing both text and a tool call came back as two choices and Kiln lost the tool call. 1.106.0 stopped LiteLLM inventing reasoning ids that OpenAI rejects. Both fixes were checked against a local fake server (1.106.6).
+- Move the `litellm` requirement in `libs/core/pyproject.toml` from `>=1.102.0,<1.103` to the newest 1.105.x that passes the repo's 7-day PyPI cooldown (1.105.6 as of 2026-11-03), keeping the tight-range policy: `>=1.105.6,<1.106`. Update `uv.lock` with the repo's tooling.
+- Why this version: 1.103.5 fixed the bug where a reply containing both text and a tool call came back as two choices and Kiln lost the tool call; 1.105.6 has the fix (checked against a local fake server). Not 1.106.x: from 1.106.0, LiteLLM loads `mcp>=2.2` on every tool call, and Kiln is on `mcp` 1.x, so every tool call would fail. 1.106.0's other fix, for invented reasoning ids, doesn't affect Kiln. See [architecture §1](./architecture.md).
 - The upgrade spans four minor versions and affects all 200+ models. All unit tests must pass, and the team runs the full paid suite across all providers before branch 1 merges (see Testing). Any regression found is fixed in branch 1 or reported to the user before merge.
 
 ### F2. Don't let OpenAI store requests (branch 1)
@@ -77,7 +77,7 @@ Merging to `main` does not publish the remote model list; only a push to `remote
 **Where the setting lives.**
 - A checkbox, off by default, in the OpenAI API-key dialog on the connect-providers screen. It appears both in onboarding and in Settings → Providers, because they share that dialog.
 - Next to it is an (i) info tooltip. The tooltip says that summaries show the model's reasoning in Kiln, and that OpenAI requires organization verification for them (with unverified orgs, runs on these models fail). It links to OpenAI's organization settings page.
-- The setting is chosen when the user connects OpenAI. To change it later, the user disconnects OpenAI and connects again; the dialog shows the current value. This means existing users have to re-enter their key to turn it on. That cost is accepted.
+- The setting is chosen when the user connects OpenAI. To change it later, the user disconnects OpenAI and connects again. The checkbox always starts unchecked, because the dialog only opens while OpenAI is disconnected and disconnecting turns the setting off. This means existing users have to re-enter their key to turn it on. That cost is accepted.
 - Disconnecting OpenAI turns the setting off.
 - Users who connected before this release start with it off.
 - It is a global Kiln setting stored with the OpenAI key, not per project or per run config.

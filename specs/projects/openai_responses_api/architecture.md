@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Architecture: OpenAI Responses API for newer OpenAI models
@@ -226,4 +226,4 @@ Fixtures for the Responses bodies and SSE events come from the research probes: 
    - usage, cost and errors behave the same as the non-streamed path.
 
    If it isn't clean, the coding agent stops and proposes punting instead. Punting means shipping non-streamed summaries with only the last reasoning item, documenting that in a code comment, and filing the LiteLLM bug upstream.
-3. **Attach the streamed reasoning items to the rebuilt message (§3.7, step 3): open.** This also fixes within-run reasoning replay on the streaming path, which was listed under the separate reasoning project. §3.6 needs it to avoid a regression.
+3. **Attach the streamed reasoning items to the rebuilt message (§3.7, step 3): decided, yes.** It restores reasoning replay between tool rounds inside one run, on the streaming path. §3.6 needs it to avoid a regression. It does not carry reasoning across runs (saved conversations, `return_on_tool_call` resume, synthetic-user turns); that stays with the separate reasoning project, whose handoff prompt now notes this fix.
