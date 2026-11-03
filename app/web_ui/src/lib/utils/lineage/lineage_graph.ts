@@ -47,6 +47,7 @@ export const FILTER_KEYS: readonly FilterKey[] = [...CHANGE_KINDS, "copy"]
 export interface LineageSummary {
   run_config_count: number
   model_count: number
+  prompt_count: number // distinct prompt ids, the value prompt change detection compares
   tool_count: number // distinct tool ids across run configs, skills excluded
   skill_count: number // distinct skill ids across run configs
   filter_counts: Record<FilterKey, number>
@@ -152,6 +153,7 @@ export function summarize_lineage(graph: LineageGraph): LineageSummary {
     FILTER_KEYS.map((key) => [key, 0]),
   ) as Record<FilterKey, number>
   const model_keys = new Set<string>()
+  const prompt_ids = new Set<string>()
   const tool_ids = new Set<string>()
   const skill_ids = new Set<string>()
   let run_config_count = 0
@@ -172,6 +174,7 @@ export function summarize_lineage(graph: LineageGraph): LineageSummary {
       model_keys.add(
         `${properties.model_provider_name}::${properties.model_name}`,
       )
+      prompt_ids.add(properties.prompt_id)
       const split = split_tool_and_skill_ids(
         properties.tools_config?.tools ?? [],
       )
@@ -183,6 +186,7 @@ export function summarize_lineage(graph: LineageGraph): LineageSummary {
   return {
     run_config_count,
     model_count: model_keys.size,
+    prompt_count: prompt_ids.size,
     tool_count: tool_ids.size,
     skill_count: skill_ids.size,
     filter_counts,

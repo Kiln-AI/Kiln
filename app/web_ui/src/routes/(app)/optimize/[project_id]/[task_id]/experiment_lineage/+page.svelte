@@ -181,6 +181,11 @@
       always_shown: true,
     },
     {
+      count: summary.prompt_count,
+      label: ["prompt", "prompts"],
+      always_shown: true,
+    },
+    {
       count: summary.tool_count,
       label: ["tool", "tools"],
       always_shown: false,

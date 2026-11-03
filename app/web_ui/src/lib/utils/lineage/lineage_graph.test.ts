@@ -251,7 +251,7 @@ describe("node_matches_filters", () => {
 })
 
 describe("summarize_lineage", () => {
-  it("counts run configs, models and overlapping change kinds", () => {
+  it("counts run configs, models, prompts and overlapping change kinds", () => {
     const graph = build_lineage_graph([
       make_dated_config("root", 0),
       make_dated_config("prompt_and_model", 1, ["root"], {
@@ -271,6 +271,7 @@ describe("summarize_lineage", () => {
     expect(summarize_lineage(graph)).toEqual({
       run_config_count: 6,
       model_count: 3,
+      prompt_count: 2,
       tool_count: 1,
       skill_count: 0,
       filter_counts: {
@@ -307,10 +308,43 @@ describe("summarize_lineage", () => {
     expect([summary.tool_count, summary.skill_count]).toEqual([2, 2])
   })
 
+  it("counts distinct prompt ids, matching how a prompt change is detected", () => {
+    const same_prompt = { name: "Frozen", prompt: "Answer in one line." }
+    const graph = build_lineage_graph([
+      make_agent_config({
+        id: "a",
+        created_at: created_at_for(0),
+        prompt: same_prompt,
+        properties: { prompt_id: "task_run_config::p::t::a" },
+      }),
+      make_agent_config({
+        id: "clone",
+        created_at: created_at_for(1),
+        derived_from: ["a"],
+        properties: { prompt_id: "task_run_config::p::t::a" },
+      }),
+      make_agent_config({
+        id: "refrozen",
+        created_at: created_at_for(2),
+        derived_from: ["a"],
+        prompt: same_prompt,
+        properties: { prompt_id: "task_run_config::p::t::refrozen" },
+      }),
+      make_mcp_config({ id: "mcp", created_at: created_at_for(3) }),
+    ])
+    expect(node(graph, "clone").status).toEqual({ type: "copy" })
+    expect(node(graph, "refrozen").status).toEqual({
+      type: "changed",
+      kinds: ["prompt"],
+    })
+    expect(summarize_lineage(graph).prompt_count).toBe(2)
+  })
+
   it("is all zeros for an empty graph", () => {
     expect(summarize_lineage(build_lineage_graph([]))).toEqual({
       run_config_count: 0,
       model_count: 0,
+      prompt_count: 0,
       tool_count: 0,
       skill_count: 0,
       filter_counts: {

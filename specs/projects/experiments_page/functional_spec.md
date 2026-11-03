@@ -104,6 +104,7 @@ A styled row under the page header. Each stat is a large number over a short lab
 
 - **N** "run configurations" ("run configuration" when N is 1)
 - **M** "models" ("model" when M is 1)
+- **P** "prompts" ("prompt" when P is 1)
 - **T** "tools" ("tool" when T is 1), shown only when T is above zero
 - **S** "skills" ("skill" when S is 1), shown only when S is above zero
 
@@ -111,6 +112,7 @@ Counting rules:
 
 - N counts every run config. It excludes deleted placeholders.
 - M counts distinct models among run configs that have a model. A model is the pair (model name, provider). A fine-tuned model counts as its own model. MCP run configs don't add a model.
+- P counts distinct prompt IDs among run configs that have a prompt. Two prompts with the same text but different IDs count as two, the same way a prompt change is detected. MCP run configs don't add a prompt.
 - T counts distinct tool IDs across all run configs, not counting skills. S counts distinct skill IDs (prefix `kiln_tool::skill::`). MCP run configs add neither.
 
 ## Filter Chips

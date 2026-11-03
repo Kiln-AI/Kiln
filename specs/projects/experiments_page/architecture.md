@@ -119,6 +119,7 @@ export function node_matches_filters(status: LineageStatus, filters: ReadonlySet
 export interface LineageSummary {
   run_config_count: number
   model_count: number
+  prompt_count: number
   tool_count: number
   skill_count: number
   filter_counts: Record<FilterKey, number>
@@ -156,6 +157,7 @@ export function summarize_lineage(graph: LineageGraph): LineageSummary
 
 - `run_config_count` counts the nodes whose status isn't `deleted`.
 - `model_count` is the number of distinct `` `${model_provider_name}::${model_name}` `` keys over `kiln_agent` configs.
+- `prompt_count` is the number of distinct `prompt_id` values over `kiln_agent` configs. It counts ids, not prompt text, because prompt change detection compares ids.
 - `tool_count` and `skill_count` split every `kiln_agent` config's `tools_config?.tools` with `split_tool_and_skill_ids` and count the distinct tool ids and skill ids.
 - `filter_counts` counts each kind once per `changed` node that contains it, and `copy` once per `copy` node.
 

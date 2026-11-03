@@ -97,8 +97,8 @@ Optimize >                                              [breadcrumb]
 Experiment Lineage                                      [AppPage title]
 Every run configuration for this task, and how they evolved.   [AppPage subtitle]
 
-182                       17          5          2      [stats row; tools and skills only when above zero]
-run configurations        models      tools      skills
+182                       17          9           5          2      [stats row; tools and skills only when above zero]
+run configurations        models      prompts     tools      skills
 
 Changed from parent   ■ Prompt 31   ■ Tools 25   ■ Skills 12   ■ Model 112   ■ Settings 41   ■ Copy or re-run 26   Clear
 
@@ -121,7 +121,7 @@ Changed from parent   ■ Prompt 31   ■ Tools 25   ■ Skills 12   ■ Model 1
 ```
 
 - Vertical rhythm: the page content is one `flex flex-col gap-6`. Children carry no margins.
-- **Stats row**: `flex gap-10`. Each stat is a column: the number as `text-xl font-medium tabular-nums`, the label under it as `text-sm text-gray-500`. Left aligned. No box, no divider. The stats are run configurations, models, then tools and skills when their counts are above zero. There's no house stat control, so this is a justified custom element.
+- **Stats row**: `flex gap-10`. Each stat is a column: the number as `text-xl font-medium tabular-nums`, the label under it as `text-sm text-gray-500`. Left aligned. No box, no divider. The stats are run configurations, models, prompts, then tools and skills when their counts are above zero. There's no house stat control, so this is a justified custom element.
 - **Filter row**: `flex flex-wrap items-center gap-2`. The label is `text-sm font-medium`. Each chip is a `btn btn-sm font-normal shadow-none` holding a 12px swatch glyph, the name, and the count in `text-gray-500`. Off, it has a transparent fill and border, so it reads as a legend item. Hovered, it fills with `bg-base-200`. On, it has a `bg-base-200` fill and a `base-300` outline. It is never black.
 - **Body**: `flex gap-6`. It fills the window's remaining height: measure the body's top offset on mount and on resize, set the height to `100vh − top − bottom padding`, minimum 420px. At `lg` and wider, the panel (fixed 360px) sits right of the graph. Below `lg`, the body stacks, the graph keeps a fixed 480px height, and the panel sits below it.
 - **Graph frame**: `rounded-lg border`, `flex flex-col`, `overflow-hidden`.
