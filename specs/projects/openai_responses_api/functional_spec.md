@@ -23,12 +23,10 @@ All of the models below are on the **OpenAI provider only** (`ModelProviderName.
 
 Turning tools on reaches every installed app through the remote model list, including old versions that lack the new LiteLLM. So the work ships on two branches:
 
-- **Branch 1 — code.** Merged to `main` and shipped in the next app release. Contains F1, F2, F5 and F6 below.
-- **Branch 2 — model list.** Built on branch 1. Merged to `main` only **after** the release with branch 1 is live, then published by pushing to the `remote_config` branch. Contains F3, F4 and F7.
+- **Branch 1 — code, plus the one model-list change the release needs.** Merged to `main` and shipped in the next app release. Contains F1, F2, F5 and the branch-1 part of F7 below. F5 includes the new `openai_reasoning_summary` provider field and its values on the twelve providers. That model-list change is safe for old apps, because they ignore fields they don't know, and the released app needs it in its bundled model list.
+- **Branch 2 — every other model-list change.** Built on branch 1. Merged to `main` only **after** the release with branch 1 is live, then published by pushing to the `remote_config` branch. Contains F3, F4, F6 and the rest of F7.
 
 Merging to `main` does not publish the remote model list; only a push to `remote_config` does. The release checklist must hold the branch 2 merge and the `remote_config` push until the release is out.
-
-> **Open (question 8):** whether F4 (hiding `max`) and any summaries marker in the model list (see F5) can go on branch 1 instead. Both are safe for old apps: hiding `max` removes an option that already fails, and old apps ignore unknown model-list fields. This draft puts the summaries marker on branch 1, because the released app needs it, and keeps F4 on branch 2 as instructed.
 
 ## Features
 
@@ -60,7 +58,7 @@ Merging to `main` does not publish the remote model list; only a push to `remote
 - Every existing feature that offers tools for a model starts offering them for these ten: run configs, the model picker, fine-tune tool support.
 - No existing run config changes, because none can have tools on these models today.
 
-### F4. Hide `max` on GPT-6 Astra, Sol and Luna (branch 2, see question 8)
+### F4. Hide `max` on GPT-6 Astra, Sol and Luna (branch 2)
 
 - Remove the `max` thinking level from the OpenAI-direct providers for `gpt-6-astra`, `gpt-6-sol` and `gpt-6-luna`. The OpenRouter providers for these models, and other models that share the same level lists, keep `max`.
 - Add a comment in `ml_model_list.py` at the new level lists explaining why. It must say: `/v1/chat/completions` rejects `max` for these models with a 400; only `/v1/responses` accepts it; LiteLLM sends a call to Responses only when tools are attached (or summaries are on), so a run at `max` without tools would fail; restore `max` once every call to these models goes to Responses. GPT-6.1 Sol and Terra already hide `max` for the same reason, so their comment should match.
@@ -70,15 +68,19 @@ Merging to `main` does not publish the remote model list; only a push to `remote
 
 **What it does.** When on, Kiln asks OpenAI for a summary of the model's reasoning on the affected models, and shows it as the run's reasoning, the same way it shows reasoning from other providers. When off (the default), nothing changes from today.
 
-**Which models.** The twelve OpenAI-direct providers in the table above: the ten plus `gpt-5.4-pro` and `gpt-5.2-pro`. No other OpenAI models. Which providers qualify is declared per provider in the model list (see question 8 for which branch carries it).
+**Which models: a per-provider field.**
+- A new optional field on `KilnModelProvider`, `openai_reasoning_summary: str | None`, default `None`. It follows the pattern of `anthropic_summarized_thinking`. The name matches OpenAI's `reasoning.summary` parameter and LiteLLM's `reasoning_summary` argument.
+- Its value is the summary mode Kiln sends, passed through as-is. It is a plain string, not an enum, so a summary mode OpenAI adds later can go into the model list without a client release.
+- It is set to `"auto"` on the twelve OpenAI-direct providers in the table above: the ten plus `gpt-5.4-pro` and `gpt-5.2-pro`. It is `None` everywhere else.
+- Kiln sends `reasoning_summary=<value>` only when the field is set **and** the user's setting is on. When the setting is off, the field has no effect.
 
 **Where the setting lives.**
-- A checkbox in the OpenAI API-key dialog on the connect-providers screen. It appears both in onboarding and in Settings → Providers, because they share that dialog.
-- It is set when the user connects OpenAI. To change it later, the user disconnects OpenAI and connects again; the dialog shows the current value.
+- A checkbox, off by default, in the OpenAI API-key dialog on the connect-providers screen. It appears both in onboarding and in Settings → Providers, because they share that dialog.
+- Next to it is an (i) info tooltip. The tooltip says that summaries show the model's reasoning in Kiln, and that OpenAI requires organization verification for them (with unverified orgs, runs on these models fail). It links to OpenAI's organization settings page.
+- The setting is chosen when the user connects OpenAI. To change it later, the user disconnects OpenAI and connects again; the dialog shows the current value. This means existing users have to re-enter their key to turn it on. That cost is accepted.
 - Disconnecting OpenAI turns the setting off.
 - Users who connected before this release start with it off.
 - It is a global Kiln setting stored with the OpenAI key, not per project or per run config.
-- Label and help text say it shows the model's reasoning, that it needs OpenAI organization verification, and link to OpenAI's organization settings page.
 
 **Where it applies.** Every run on a qualifying provider through the LiteLLM adapter: task runs, evals and judges, data generation, synthetic users, repair and chat. Not the document extractor.
 
@@ -94,11 +96,12 @@ Merging to `main` does not publish the remote model list; only a push to `remote
 
 - OpenAI's docs say GPT-6.1 Terra needs Responses for any tool use, but LiteLLM keeps tools at `none` on Chat Completions. One paid call checks it.
 - If it fails, remove `none` from GPT-6.1 Terra's OpenAI-direct thinking levels on branch 2, with a comment saying why. Its default level is `medium`, so the default doesn't change.
-- If the paid suite finds tools failing at `none` on any other of the ten models, stop and report to the user instead of removing the level. GPT-5.4's default level is `none`, so removing it there would change defaults.
+- If the paid suite finds tools failing at `none` on any other of the ten models, stop and report to the user instead of removing the level. GPT-5.4's default level is `none`, so removing it there would change defaults. OpenAI rejected tools at `none` on GPT-5.4 in April 2026 (#1351), and its docs now say it is allowed. This must be tested before branch 2 ships.
 
-### F7. Update maintainer docs (branch 2)
+### F7. Update maintainer docs (both branches)
 
-- Update `.agents/skills/claude-maintain-models/SKILL.md` so new OpenAI-direct models are no longer added with `supports_function_calling=False`. Explain when `max` must be hidden, and which providers get the summaries marker.
+- Update `.agents/skills/claude-maintain-models/SKILL.md` so new OpenAI-direct models are no longer added with `supports_function_calling=False`, and explain when `max` must be hidden. This part goes on branch 2.
+- Document the `openai_reasoning_summary` field in the same skill: which OpenAI-direct providers should set it (GPT-5.4+ and GPT-6+ reasoning models), and that the value is passed to OpenAI as-is. This part goes on **branch 1**, with the field, so models added before branch 2 merges get it.
 - Run the repo's docs-sync skill for any other docs the change makes stale.
 
 ## Rollout
