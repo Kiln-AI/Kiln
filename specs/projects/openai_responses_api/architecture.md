@@ -79,6 +79,7 @@ Finding 5 means non-streamed calls can't return the full summary. When the kwarg
 
 - Usage and cost come from the built response's `usage`. `usage_from_response` already falls back to `usage.cost`. (Observed: cost present on the built response.)
 - Unit tests that mock `acompletion_checking_response` are unaffected.
+- This change has an exit (§8 decision 2). If it doesn't stay clean, stop and propose punting before going further.
 
 ### 3.7 Streaming fixes (`adapters/litellm_utils/litellm_streaming.py`, `StreamingCompletion.__aiter__`)
 
@@ -216,11 +217,13 @@ Fixtures for the Responses bodies and SSE events come from the research probes: 
 3. Branch 2 PR: OpenAI paid tests with tools on. Merge to `main` after the release is live.
 4. Push to `remote_config`.
 
-## 8. Decisions needed
+## 8. Decisions
 
-1. **LiteLLM 1.105.6 instead of 1.106.x** (finding 1).
-   - **A, recommended:** `>=1.105.6,<1.106`. It has the tool-call fix. It lacks only the invented-id fix, which Kiln doesn't hit.
-   - **B:** 1.106.x plus an `mcp` 2.x upgrade. That's a major-version change to the MCP SDK that Kiln's MCP client and server code depend on, so it's a separate project.
-   - **C:** 1.106.x plus `_skip_mcp_handler=True` on every call. That's a private LiteLLM argument and could break silently.
-2. **Non-streamed calls with summaries stream internally (§3.6).** The alternative is to accept truncated summaries on non-streamed runs until LiteLLM fixes it upstream.
-3. **Attach the streamed reasoning items to the rebuilt message (§3.7, step 3).** This also fixes within-run reasoning replay on the streaming path, which was listed under the separate reasoning project. §3.6 needs it to avoid a regression.
+1. **LiteLLM version: decided, `>=1.105.6,<1.106`** (finding 1). It has the tool-call fix and lacks only the invented-id fix, which Kiln doesn't hit. Not chosen: 1.106.x with an `mcp` 2.x upgrade (a separate project), and 1.106.x with LiteLLM's private `_skip_mcp_handler` argument.
+2. **Non-streamed calls with summaries stream internally: decided, with an exit.** Implement §3.6 if it stays clean. "Clean" means:
+   - the change stays inside `acompletion_checking_response` and `StreamingCompletion`;
+   - no other caller or existing test needs reworking;
+   - usage, cost and errors behave the same as the non-streamed path.
+
+   If it isn't clean, the coding agent stops and proposes punting instead. Punting means shipping non-streamed summaries with only the last reasoning item, documenting that in a code comment, and filing the LiteLLM bug upstream.
+3. **Attach the streamed reasoning items to the rebuilt message (§3.7, step 3): open.** This also fixes within-run reasoning replay on the streaming path, which was listed under the separate reasoning project. §3.6 needs it to avoid a regression.
