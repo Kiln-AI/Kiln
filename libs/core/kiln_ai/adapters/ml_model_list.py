@@ -312,6 +312,7 @@ class ModelName(str, Enum):
     glm_5_3_prime = "glm_5_3_prime"
     glm_5_3_flash = "glm_5_3_flash"
     glm_5_3_flashx = "glm_5_3_flashx"
+    glm_5_3_flashx_legal = "glm_5_3_flashx_legal"
     glm_5_2 = "glm_5_2"
     glm_5_2_fast = "glm_5_2_fast"
     glm_5_1 = "glm_5_1"
@@ -10187,6 +10188,36 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                     # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # GLM 5.3 FlashX Legal
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5_3_flashx_legal,
+        friendly_name="GLM 5.3 FlashX Legal",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-5.3-flashx-legal",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=KIMI_K3_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                reasoning_capable=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
                     KilnMimeType.MP4,
                     KilnMimeType.MOV,
                 ],
