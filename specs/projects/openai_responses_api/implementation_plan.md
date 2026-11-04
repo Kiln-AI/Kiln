@@ -6,6 +6,10 @@ status: complete
 
 Phases 1–3 go on **branch 1**, which merges before the app release. Phase 4 goes on **branch 2**, built on branch 1, which merges after the release is live. The full order is in [architecture §7](./architecture.md#7-release-checklist).
 
+- **Branch 1** is `claude/pensive-cannon-3jnl5q`. It already holds the research and this spec, so its PR carries both.
+- **Branch 2** is `claude/pensive-cannon-3jnl5q-model-list`. Create it from branch 1's latest commit when Phase 4 starts, and push Phase 4 only there.
+- Each phase ends with the paid-test commands it added, for someone on the team to run with real keys.
+
 ## Phases
 
 - [ ] Phase 1 (branch 1): Upgrade LiteLLM to 1.105.6 and send `store: false`.
