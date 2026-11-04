@@ -479,7 +479,7 @@ Most recent models use *adaptive* reasoning and sometimes return no reasoning at
 `reasoning_capable` is **orthogonal to `available_thinking_levels`** — you keep the important behavior with it set to `False`:
 - Thinking-level / effort selection still works (every GPT-5.x entry sets `available_thinking_levels` with `reasoning_capable` unset).
 - Reasoning is still parsed and displayed when the model returns it (parser-driven, independent of this flag).
-- The `test_thinking_level_reasoning_content` paid test still runs and still asserts reasoning is present — it is gated on `available_thinking_levels`, not `reasoning_capable`. So you do NOT lose the ability to test the model's reasoning, as long as it has thinking levels.
+- The `test_thinking_level_reasoning_content` paid test still runs and still asserts reasoning is present — it is gated on `available_thinking_levels`, not `reasoning_capable`. So you do NOT lose the ability to test the model's reasoning, as long as it has thinking levels. OpenAI-direct providers are the exception: OpenAI returns reasoning only as a summary, so that test checks only that the run succeeds, and `test_openai_reasoning_summaries_paid` (same file) checks the summary on providers that set `openai_reasoning_summary`.
 
 What you give up with `reasoning_capable=False`:
 - The conditional "reasoning is present in `intermediate_outputs`" assertion inside the structured-output / structured-input paid tests stops firing (the tests themselves still run — no whole test is skipped).
@@ -560,7 +560,10 @@ model.
   provider card (name, description, and the auth flow — `api_key_steps` /
   `api_key_fields` for key providers, or the custom flow the auth model
   needs) plus connected-status
-  wiring from `settings` keys
+  wiring from `settings` keys. A setting chosen at connect time is an
+  `api_key_options` checkbox; its value reaches `connect_api_key` in the
+  payload's `options` dict, and the provider's disconnect case resets it, because the
+  dialog always opens unchecked (see OpenAI's reasoning summaries)
 - `src/lib/api_schema.d.ts` — regenerate with `make schema` (needs the server
   running on :8757)
 
@@ -605,6 +608,7 @@ plumbing PR must not skip them.
 ### OpenAI
 - Most GPT models use `json_schema` for structured output
 - GPT-5.x models support `available_thinking_levels` — see [Thinking Levels Reference](#thinking-levels-reference)
+- Reasoning summaries: set `openai_reasoning_summary="auto"` on the `openai` provider of GPT-5.4+ and GPT-6+ reasoning models, and of the Pro models LiteLLM already sends to `/v1/responses` (GPT-5.2 Pro, GPT-5.4 Pro). Kiln passes the value to OpenAI as `reasoning.summary` unchanged, and only sends it when the user turned on "Show reasoning summaries" when connecting OpenAI. Leave it unset on every other provider, OpenRouter included, and on models without reasoning.
 - Chat/instant variants (e.g. GPT-5.3 Instant) may not support reasoning effort
 - o-series models have fixed thinking tiers (separate model entries per tier, not configurable levels)
 
