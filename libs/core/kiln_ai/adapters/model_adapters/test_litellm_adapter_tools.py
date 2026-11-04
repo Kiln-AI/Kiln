@@ -4,6 +4,7 @@ import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import litellm
@@ -15,7 +16,12 @@ from kiln_ai import datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.litellm_utils.tool_calls import MISSING_TOOL_NAME_ERROR
-from kiln_ai.adapters.ml_model_list import KilnModelProvider, built_in_models
+from kiln_ai.adapters.ml_model_list import (
+    KilnModelProvider,
+    ModelName,
+    built_in_models,
+    get_model_by_name,
+)
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import (
     LiteLlmAdapter,
@@ -25,6 +31,10 @@ from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.adapters.model_adapters.test_adapter_stream import (
     _make_model_response,
     _make_raw_tool_call,
+)
+from kiln_ai.adapters.model_adapters.test_paid_utils import (
+    OPENAI_RESPONSES_TOOL_MODELS,
+    skip_if_missing_provider_keys,
 )
 from kiln_ai.adapters.retry_classification import unwrap_kiln_run_error
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
@@ -93,7 +103,13 @@ async def run_simple_task_with_tools(
     provider: str,
     simplified: bool = False,
     prompt_id: PromptId | None = None,
+    thinking_level: str | None = None,
 ) -> datamodel.TaskRun:
+    # An explicit thinking_level=None counts as set, and the adapter then sends no
+    # level instead of the provider's default.
+    level_override: dict[str, Any] = (
+        {"thinking_level": thinking_level} if thinking_level is not None else {}
+    )
     adapter = adapter_for_task(
         task,
         KilnAgentRunConfigProperties(
@@ -101,6 +117,7 @@ async def run_simple_task_with_tools(
             model_name=model_name,
             model_provider_name=ModelProviderName(provider),
             prompt_id=prompt_id or "simple_prompt_builder",
+            **level_override,
         ),
     )
 
@@ -238,6 +255,90 @@ async def test_tools_store_false_gpt_5_4_pro(tmp_path):
 
     store_values = [call.kwargs.get("store") for call in acompletion_spy.call_args_list]
     assert store_values == [False, False, False]
+
+
+def openai_responses_tool_levels() -> list[object]:
+    params: list[object] = []
+    for model_name in OPENAI_RESPONSES_TOOL_MODELS:
+        [provider] = [
+            provider
+            for provider in get_model_by_name(model_name).providers
+            if provider.name == ModelProviderName.openai
+        ]
+        for level in (provider.available_thinking_levels or {}).values():
+            params.append(
+                pytest.param(model_name.value, level, id=f"{model_name.value}-{level}")
+            )
+    return params
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize(
+    ("model_name", "thinking_level"), openai_responses_tool_levels()
+)
+async def test_openai_tools_every_thinking_level_paid(
+    tmp_path, model_name: str, thinking_level: str
+):
+    # LiteLLM keeps tool runs at `none` on Chat Completions and sends every other level
+    # to Responses. The gpt_6_1_terra-none case checks OpenAI's docs, which say GPT-6.1
+    # Terra needs Responses for any tool use.
+    skip_if_missing_provider_keys(ModelProviderName.openai)
+    task = build_test_task(tmp_path)
+    await run_simple_task_with_tools(
+        task,
+        model_name,
+        ModelProviderName.openai,
+        simplified=True,
+        thinking_level=thinking_level,
+    )
+
+
+NARRATION_PROMPT = (
+    "Before you call any tool, write one short sentence saying what you are about to "
+    "calculate. Then use the tools to compute 11 + 50 and 50 * 85, and use the add "
+    "tool to add the two results."
+)
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize("model_name", OPENAI_RESPONSES_TOOL_MODELS)
+async def test_openai_narration_then_tool_call_paid(tmp_path, model_name: ModelName):
+    # LiteLLM before 1.103.5 split a Responses reply with text and tool calls into two
+    # choices, and Kiln lost the tool calls. Medium sends these models to Responses.
+    skip_if_missing_provider_keys(ModelProviderName.openai)
+    task = build_test_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        KilnAgentRunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name=model_name,
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            thinking_level="medium",
+        ),
+    )
+    add_spy = Mock(wraps=AddTool())
+    multiply_spy = Mock(wraps=MultiplyTool())
+    tools = [add_spy, SubtractTool(), multiply_spy, DivideTool()]
+
+    with patch.object(adapter, "available_tools", return_value=tools):
+        run = await adapter.invoke(NARRATION_PROMPT)
+
+    assert run.trace is not None
+    narrated_tool_turns = [
+        message
+        for message in run.trace
+        if message["role"] == "assistant"
+        and message.get("content")
+        and message.get("tool_calls")
+    ]
+    assert narrated_tool_turns, (
+        f"{model_name} wrote no text in the same reply as its tool calls, "
+        "so this run did not test that case"
+    )
+    multiply_spy.run.assert_called()
+    add_spy.run.assert_called()
+    assert "4311" in run.output.output.replace(",", "")
 
 
 def check_supports_structured_output(model_name: str, provider_name: str):

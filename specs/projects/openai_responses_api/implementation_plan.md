@@ -32,10 +32,11 @@ Phases 1–3 go on **branch 1**, which merges before the app release. Phase 4 go
   - Backend and web tests.
   - Maintainer skill doc for the field (§3.11).
   - The `docs-sync` skill before the PR.
-- [ ] Phase 4 (branch 2, after release): Model list changes (§4).
+- [x] Phase 4 (branch 2, after release): Model list changes (§4).
   - Turn tools on for the ten providers.
   - Hide `max` on GPT-6 Astra, Sol and Luna for OpenAI direct, using new constants with a comment explaining why. Reword the GPT-6.1 Sol and Terra comments to give the same reason.
   - Update the model list tests.
   - Add the branch 2 paid tests: tools at every thinking level, narration then a tool call, and the ten models added to the streaming and `return_on_tool_call` lists.
   - Finish the rest of the maintainer docs.
   - After the team's paid run, apply F6 to GPT-6.1 Terra only if tools at `none` fail. Any other `none` failure goes to the user.
+  - **Open:** F6 waits on the team's paid run of `test_openai_tools_every_thinking_level_paid[gpt_6_1_terra-none]`. GPT-6.1 Terra still offers `none`.

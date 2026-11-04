@@ -13,7 +13,11 @@ from litellm.types.utils import (
 )
 
 from kiln_ai.adapters.litellm_utils.tool_calls import MISSING_TOOL_NAME_ERROR
-from kiln_ai.adapters.ml_model_list import ModelProviderName, StructuredOutputMode
+from kiln_ai.adapters.ml_model_list import (
+    ModelProviderName,
+    StructuredOutputMode,
+    default_thinking_level_for_model_provider,
+)
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
@@ -32,6 +36,9 @@ from kiln_ai.adapters.model_adapters.test_adapter_stream import (
     _make_streaming_chunk,
     _make_tool_call,
 )
+from kiln_ai.adapters.model_adapters.test_paid_utils import (
+    OPENAI_RESPONSES_TOOL_MODELS,
+)
 from kiln_ai.datamodel import Project, PromptGenerators, Task, TaskRun
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
@@ -40,11 +47,21 @@ from kiln_ai.tools.base_tool import UnmanagedKilnTool
 
 logger = logging.getLogger(__name__)
 
+OPENAI_DIRECT_TOOL_MODELS = [
+    (
+        model_name.value,
+        ModelProviderName.openai,
+        default_thinking_level_for_model_provider(model_name, ModelProviderName.openai),
+    )
+    for model_name in OPENAI_RESPONSES_TOOL_MODELS
+]
+
 RETURN_ON_TOOL_CALL_MODELS = [
     ("claude_4_5_haiku", ModelProviderName.anthropic, "medium"),
     ("claude_4_5_haiku", ModelProviderName.openrouter, "medium"),
     ("claude_4_5_haiku", ModelProviderName.openrouter, "none"),
     ("minimax_m2_5", ModelProviderName.openrouter, "medium"),
+    *OPENAI_DIRECT_TOOL_MODELS,
 ]
 
 STREAMING_MODELS = [
@@ -59,7 +76,14 @@ STREAMING_MODELS = [
     ("minimax_m2_5", ModelProviderName.openrouter, "medium"),
     ("claude_4_5_haiku", ModelProviderName.openrouter, "medium"),
     ("claude_4_5_haiku", ModelProviderName.anthropic, "medium"),
+    *OPENAI_DIRECT_TOOL_MODELS,
 ]
+
+
+def streams_reasoning(provider_name: ModelProviderName) -> bool:
+    # OpenAI returns reasoning only as a summary, which Kiln requests only when the user
+    # turns on reasoning summaries (off in these tests).
+    return provider_name != ModelProviderName.openai
 
 
 def _serialize_for_dump(obj: Any) -> Any:
@@ -195,7 +219,7 @@ async def test_invoke_openai_stream_chunks(
     thinking_level: str | None,
     adapter_factory: Callable[[str, ModelProviderName, str | None], LiteLlmAdapter],
 ):
-    """Collect all OpenAI-protocol chunks via invoke_openai_stream and verify we got reasoning, content, and tool call data."""
+    """Collect all OpenAI-protocol chunks via invoke_openai_stream and verify we got content, tool call data, and reasoning where the provider streams it."""
     adapter = adapter_factory(model_id, provider_name, thinking_level)
 
     chunks: list[litellm.ModelResponseStream] = []
@@ -226,12 +250,13 @@ async def test_invoke_openai_stream_chunks(
         elif delta.content is not None:
             contents.append(delta.content)
 
-    assert len(reasoning_contents) > 0, "No reasoning content in chunks"
+    if streams_reasoning(provider_name):
+        assert len(reasoning_contents) > 0, "No reasoning content in chunks"
+        assert not all(r.strip() == "" for r in reasoning_contents), (
+            "All reasoning content in chunks is empty"
+        )
     assert len(contents) > 0, "No content in chunks"
     assert len(tool_calls) > 0, "No tool calls in chunks"
-    assert not all(r.strip() == "" for r in reasoning_contents), (
-        "All reasoning content in chunks is empty"
-    )
     assert not all(c.strip() == "" for c in contents), "All content in chunks is empty"
 
     tool_call_function_names = [
@@ -288,8 +313,13 @@ async def test_invoke_ai_sdk_stream(
         f"FINISH_STEP (idx {finish_step_idx}) must come before FINISH (idx {finish_idx})"
     )
 
-    assert AiSdkEventType.REASONING_START in event_types, "Should have REASONING_START"
-    assert AiSdkEventType.REASONING_DELTA in event_types, "Should have REASONING_DELTA"
+    if streams_reasoning(provider_name):
+        assert AiSdkEventType.REASONING_START in event_types, (
+            "Should have REASONING_START"
+        )
+        assert AiSdkEventType.REASONING_DELTA in event_types, (
+            "Should have REASONING_DELTA"
+        )
 
     assert AiSdkEventType.TEXT_START in event_types, "Should have TEXT_START"
     assert AiSdkEventType.TEXT_DELTA in event_types, "Should have TEXT_DELTA"

@@ -92,6 +92,15 @@ SUMMARY_PROVIDER_MODELS = [
     and provider.openai_reasoning_summary is not None
 ]
 
+SUMMARY_PROVIDER_LEVELS = [
+    pytest.param(model.name, level, id=f"{model.name}-{level}")
+    for model in built_in_models
+    for provider in model.providers
+    if provider.name == ModelProviderName.openai
+    and provider.openai_reasoning_summary is not None
+    for level in (provider.available_thinking_levels or {}).values()
+]
+
 UNVERIFIED_ORG_ERROR = {
     "error": {
         "message": (
@@ -355,6 +364,34 @@ async def test_reply_with_text_and_tool_call_runs_tool(plain_task):
     tool_calls = narration_turn.get("tool_calls")
     assert tool_calls is not None
     assert [call["function"]["name"] for call in tool_calls] == ["add"]
+
+
+# Chat Completions rejects function tools with reasoning on for these models, so every
+# tool run above `none` must reach Responses. At `none` it stays on Chat Completions.
+@respx.mock
+@pytest.mark.parametrize(("model_name", "thinking_level"), SUMMARY_PROVIDER_LEVELS)
+async def test_tool_runs_use_responses_unless_thinking_is_off(
+    plain_task, model_name, thinking_level
+):
+    responses_route = respx.post(RESPONSES_URL).mock(
+        return_value=httpx.Response(200, json=responses_body([FINAL_MESSAGE]))
+    )
+    chat_route = respx.post(CHAT_COMPLETIONS_URL).mock(
+        return_value=chat_completion_reply("The answer is [4]")
+    )
+    adapter = openai_adapter(plain_task, model_name, thinking_level=thinking_level)
+
+    with patch.object(adapter, "available_tools", return_value=[AddTool()]):
+        run = await adapter.invoke("what is 2+2")
+
+    assert run.output.output == "The answer is [4]"
+    expected_route, unused_route = (
+        (chat_route, responses_route)
+        if thinking_level == "none"
+        else (responses_route, chat_route)
+    )
+    assert expected_route.call_count == 1
+    assert not unused_route.called
 
 
 @respx.mock
