@@ -62,6 +62,10 @@ class StreamingCompletion:
 
         chunks: list[ModelResponseStream] = []
         stream = await litellm.acompletion(*self._args, stream=True, **self._kwargs)
+        if isinstance(stream, ModelResponse):
+            raise RuntimeError(
+                "Expected a streamed response from LiteLLM, got a complete ModelResponse."
+            )
 
         async for chunk in stream:
             chunks.append(chunk)

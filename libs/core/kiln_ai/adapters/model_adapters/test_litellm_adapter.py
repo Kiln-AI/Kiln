@@ -795,6 +795,29 @@ def test_build_extra_body_non_openrouter_no_provider_order(config, mock_task):
         assert "provider" not in extra_body
 
 
+@pytest.mark.parametrize(
+    "provider_name,expects_store_false",
+    [
+        (ModelProviderName.openai, True),
+        (ModelProviderName.openrouter, False),
+        (ModelProviderName.azure_openai, False),
+        (ModelProviderName.openai_compatible, False),
+    ],
+)
+def test_build_extra_body_store_false_only_for_openai(
+    config, mock_task, provider_name, expects_store_false
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    provider = KilnModelProvider(name=provider_name, model_id="gpt-5.4-pro")
+
+    extra_body = adapter.build_extra_body(provider)
+
+    if expects_store_false:
+        assert extra_body["store"] is False
+    else:
+        assert "store" not in extra_body
+
+
 @pytest.mark.asyncio
 async def test_build_completion_kwargs_custom_temperature_top_p(config, mock_task):
     """Test build_completion_kwargs with custom temperature and top_p values"""

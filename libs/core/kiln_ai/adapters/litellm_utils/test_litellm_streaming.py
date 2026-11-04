@@ -5,6 +5,7 @@ from typing import Any, List
 from unittest.mock import MagicMock, patch
 
 import pytest
+from litellm.types.utils import ModelResponse
 
 from kiln_ai.adapters.litellm_utils.litellm_streaming import StreamingCompletion
 
@@ -137,6 +138,18 @@ class TestStreamingCompletion:
 
         assert received == []
         assert stream.response is None
+
+    async def test_complete_response_instead_of_stream_raises(
+        self, mock_acompletion, mock_chunk_builder
+    ):
+        mock_acompletion.return_value = ModelResponse()
+
+        stream = StreamingCompletion(model="test", messages=[])
+        with pytest.raises(RuntimeError, match="Expected a streamed response"):
+            async for _ in stream:
+                pass
+
+        mock_chunk_builder.assert_not_called()
 
     async def test_stream_options_include_usage_added_by_default(
         self, mock_acompletion, mock_chunk_builder

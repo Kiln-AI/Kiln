@@ -804,6 +804,10 @@ class LiteLlmAdapter(BaseAdapter):
         if provider.siliconflow_enable_thinking is not None:
             extra_body["enable_thinking"] = provider.siliconflow_enable_thinking
 
+        if provider.name == ModelProviderName.openai:
+            # Responses stores requests for 30 days by default; Kiln opts out on both endpoints.
+            extra_body["store"] = False
+
         if len(provider_options) > 0:
             extra_body["provider"] = provider_options
 

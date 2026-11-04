@@ -12,7 +12,7 @@ Phases 1–3 go on **branch 1**, which merges before the app release. Phase 4 go
 
 ## Phases
 
-- [ ] Phase 1 (branch 1): Upgrade LiteLLM to 1.105.6 and send `store: false`.
+- [x] Phase 1 (branch 1): Upgrade LiteLLM to 1.105.6 and send `store: false`.
   - `pyproject.toml` pin with its comment, and `uv.lock` (architecture §3.1).
   - `store` in `build_extra_body` (§3.5, first branch), with unit tests.
   - New `test_openai_responses_wire.py` with wire cases 1, 2 and 4 (§6).
