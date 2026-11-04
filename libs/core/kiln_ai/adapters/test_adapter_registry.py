@@ -6,6 +6,7 @@ import pytest
 from kiln_ai import datamodel
 from kiln_ai.adapters.adapter_registry import (
     adapter_for_task,
+    litellm_core_provider_config,
     load_skills_for_task,
     validate_run_config_tool_names,
 )
@@ -594,6 +595,7 @@ def comprehensive_mock_config():
     # Set up all config values that the original switch used
     config_instance.open_router_api_key = "test-openrouter-key"
     config_instance.open_ai_api_key = "test-openai-key"
+    config_instance.open_ai_reasoning_summaries = False
     config_instance.groq_api_key = "test-groq-key"
     config_instance.bedrock_access_key = "test-aws-access-key"
     config_instance.bedrock_secret_key = "test-aws-secret-key"
@@ -904,6 +906,22 @@ def test_lite_llm_core_config_for_provider_virtual_providers(
                     structured_output_mode="json_schema",
                 ),
             )
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_litellm_core_provider_config_copies_openai_reasoning_summaries(enabled):
+    Config.shared().open_ai_reasoning_summaries = enabled
+
+    config = litellm_core_provider_config(
+        KilnAgentRunConfigProperties(
+            model_name="gpt_5_4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        )
+    )
+
+    assert config.openai_reasoning_summaries is enabled
 
 
 def test_docker_model_runner_adapter_creation(mock_config, basic_task):

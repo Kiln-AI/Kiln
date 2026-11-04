@@ -322,6 +322,7 @@ async def test_tools_simplied_mocked(tmp_path):
     # Mock the Config.shared() method to return a mock config with required attributes
     mock_config = Mock()
     mock_config.open_ai_api_key = "mock_api_key"
+    mock_config.open_ai_reasoning_summaries = False
     mock_config.user_id = "test_user"
 
     responses = [mock_response_1, mock_response_2]
@@ -427,6 +428,7 @@ async def test_tools_mocked(tmp_path):
     # Mock the Config.shared() method to return a mock config with required attributes
     mock_config = Mock()
     mock_config.open_ai_api_key = "mock_api_key"
+    mock_config.open_ai_reasoning_summaries = False
     mock_config.user_id = "test_user"
 
     with (

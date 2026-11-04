@@ -17,7 +17,7 @@ Phases 1–3 go on **branch 1**, which merges before the app release. Phase 4 go
   - `store` in `build_extra_body` (§3.5, first branch), with unit tests.
   - New `test_openai_responses_wire.py` with wire cases 1, 2 and 4 (§6).
   - Paid test: a `store: false` tool loop on `gpt_5_4_pro`.
-- [ ] Phase 2 (branch 1): Reasoning summaries in the adapter.
+- [x] Phase 2 (branch 1): Reasoning summaries in the adapter.
   - Provider field `openai_reasoning_summary` set to `"auto"` on the twelve providers (§3.2).
   - Config property `open_ai_reasoning_summaries` (§3.3), and its path through `LiteLlmCoreConfig` and `LiteLlmConfig` (§3.4).
   - `reasoning_summary` in `build_extra_body` (§3.5, second branch).

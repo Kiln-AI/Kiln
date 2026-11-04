@@ -7,8 +7,11 @@ import pytest
 from litellm.types.utils import (
     ChatCompletionMessageToolCall,
     ChoiceLogprobs,
+    Delta,
     Function,
     ModelResponse,
+    ModelResponseStream,
+    StreamingChoices,
 )
 from litellm.types.utils import Message as LiteLLMMessage
 
@@ -816,6 +819,96 @@ def test_build_extra_body_store_false_only_for_openai(
         assert extra_body["store"] is False
     else:
         assert "store" not in extra_body
+
+
+@pytest.mark.parametrize(
+    "summary_mode,setting_on,expected",
+    [
+        ("auto", True, "auto"),
+        ("auto", False, None),
+        (None, True, None),
+        (None, False, None),
+    ],
+)
+def test_build_extra_body_reasoning_summary_needs_field_and_setting(
+    config, mock_task, summary_mode, setting_on, expected
+):
+    config.openai_reasoning_summaries = setting_on
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    provider = KilnModelProvider(
+        name=ModelProviderName.openai,
+        model_id="gpt-5.4",
+        openai_reasoning_summary=summary_mode,
+    )
+
+    extra_body = adapter.build_extra_body(provider)
+
+    assert extra_body.get("reasoning_summary") == expected
+
+
+async def _async_chunks(chunks):
+    for chunk in chunks:
+        yield chunk
+
+
+async def test_acompletion_checking_response_streams_when_summary_requested(
+    config, mock_task
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    chunks = [
+        ModelResponseStream(
+            choices=[StreamingChoices(delta=Delta(reasoning_content="Thinking."))]
+        ),
+        ModelResponseStream(
+            choices=[
+                StreamingChoices(finish_reason="stop", delta=Delta(content="Answer"))
+            ]
+        ),
+    ]
+    with patch(
+        "litellm.acompletion", return_value=_async_chunks(chunks)
+    ) as mock_acompletion:
+        response, choice = await adapter.acompletion_checking_response(
+            model="openai/gpt-5.4", messages=[], reasoning_summary="auto"
+        )
+
+    mock_acompletion.assert_called_once()
+    call_kwargs = mock_acompletion.call_args.kwargs
+    assert call_kwargs["stream"] is True
+    assert call_kwargs["reasoning_summary"] == "auto"
+    assert response.choices[0] is choice
+    assert choice.message.content == "Answer"
+    assert choice.message.reasoning_content == "Thinking."
+
+
+async def test_acompletion_checking_response_without_summary_does_not_stream(
+    config, mock_task
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    model_response = ModelResponse(
+        choices=[{"message": {"role": "assistant", "content": "Answer"}}]
+    )
+    with patch(
+        "litellm.acompletion", AsyncMock(return_value=model_response)
+    ) as mock_acompletion:
+        response, choice = await adapter.acompletion_checking_response(
+            model="openai/gpt-5.4", messages=[]
+        )
+
+    assert "stream" not in mock_acompletion.call_args.kwargs
+    assert response is model_response
+    assert choice.message.content == "Answer"
+
+
+async def test_acompletion_checking_response_rejects_bad_streamed_response(
+    config, mock_task
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    with patch("litellm.acompletion", return_value=_async_chunks([])):
+        with pytest.raises(RuntimeError, match="Expected ModelResponse with Choices"):
+            await adapter.acompletion_checking_response(
+                model="openai/gpt-5.4", messages=[], reasoning_summary="auto"
+            )
 
 
 @pytest.mark.asyncio

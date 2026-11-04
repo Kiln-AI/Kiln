@@ -10,6 +10,8 @@ Provides:
 - `format_error_message`: maps known exceptions to user-friendly text.
 - `EMPTY_RESPONSE_ERROR_MESSAGE`: the error raised when a model returns an
   assistant message with no content and no tool calls.
+- `REASONING_SUMMARY_VERIFICATION_ERROR_MESSAGE`: the message shown when OpenAI
+  refuses reasoning summaries because the user's organization isn't verified.
 """
 
 from __future__ import annotations
@@ -24,6 +26,17 @@ _GENERIC_FALLBACK_MESSAGE = "An unexpected error occurred."
 EMPTY_RESPONSE_ERROR_MESSAGE = (
     "Model returned an assistant message, but no content or tool calls. "
     "This is not supported."
+)
+
+REASONING_SUMMARY_VERIFICATION_ERROR_MESSAGE = (
+    "Your OpenAI organization must be verified to show reasoning summaries. "
+    "Verify it in your OpenAI organization settings "
+    "(https://platform.openai.com/settings/organization/general), or reconnect "
+    "OpenAI in Kiln with reasoning summaries turned off."
+)
+
+_OPENAI_UNVERIFIED_ORG_SUMMARY_ERROR = (
+    "must be verified to generate reasoning summaries"
 )
 
 
@@ -120,6 +133,10 @@ def format_error_message(exc: Exception) -> str:
             return "The model provider is currently unavailable. Try again in a moment."
         if isinstance(exc, litellm.JSONSchemaValidationError):
             return "The model's output didn't match the expected format."
+        if isinstance(
+            exc, litellm.BadRequestError
+        ) and _OPENAI_UNVERIFIED_ORG_SUMMARY_ERROR in _safe_str(exc):
+            return REASONING_SUMMARY_VERIFICATION_ERROR_MESSAGE
 
         if isinstance(exc, RuntimeError):
             msg = _safe_str(exc)

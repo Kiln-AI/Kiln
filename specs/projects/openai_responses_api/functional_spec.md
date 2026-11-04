@@ -90,7 +90,7 @@ Merging to `main` does not publish the remote model list; only a push to `remote
 - When streaming, all parts appear in the reasoning stream in order. None go missing or onto a different stream.
 - A run at thinking level `none`, or a reply where OpenAI returns no summary, has no reasoning. That is not an error.
 
-**When the org isn't verified.** OpenAI rejects the request with HTTP 400 and the message "Your organization must be verified to generate reasoning summaries…". Kiln currently turns every unrecognized LiteLLM error into "An unexpected error occurred.", so OpenAI's message would never reach the user. Kiln recognizes this one error and shows: "Your OpenAI organization must be verified to show reasoning summaries. Verify it in your OpenAI organization settings, or turn off reasoning summaries in Kiln's OpenAI connection settings." The run fails; there is no silent retry. Other errors are unchanged.
+**When the org isn't verified.** OpenAI rejects the request with HTTP 400 and the message "Your organization must be verified to generate reasoning summaries…". Kiln currently turns every unrecognized LiteLLM error into "An unexpected error occurred.", so OpenAI's message would never reach the user. Kiln recognizes this one error and shows: "Your OpenAI organization must be verified to show reasoning summaries. Verify it in your OpenAI organization settings (https://platform.openai.com/settings/organization/general), or reconnect OpenAI in Kiln with reasoning summaries turned off." The run fails; there is no silent retry. Other errors are unchanged.
 
 ### F6. Check GPT-6.1 Terra with tools at `none` (branch 2)
 

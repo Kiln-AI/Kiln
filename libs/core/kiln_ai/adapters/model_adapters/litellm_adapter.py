@@ -25,6 +25,7 @@ import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
 from kiln_ai.adapters.chat.chat_formatter import chat_message_to_dict
 from kiln_ai.adapters.errors import EMPTY_RESPONSE_ERROR_MESSAGE
+from kiln_ai.adapters.litellm_utils.litellm_streaming import StreamingCompletion
 from kiln_ai.adapters.litellm_utils.tool_calls import (
     MISSING_TOOL_NAME_ERROR,
     function_tool_calls,
@@ -580,7 +581,15 @@ class LiteLlmAdapter(BaseAdapter):
     async def acompletion_checking_response(
         self, **kwargs: Any
     ) -> Tuple[ModelResponse, Choices]:
-        response = await litellm.acompletion(**kwargs)
+        if "reasoning_summary" in kwargs:
+            # LiteLLM keeps only the last reasoning item of a non-streamed Responses
+            # reply; the streamed reply carries all of them.
+            stream = StreamingCompletion(**kwargs)
+            async for _ in stream:
+                pass
+            response = stream.response
+        else:
+            response = await litellm.acompletion(**kwargs)
 
         if (
             not isinstance(response, ModelResponse)
@@ -807,6 +816,13 @@ class LiteLlmAdapter(BaseAdapter):
         if provider.name == ModelProviderName.openai:
             # Responses stores requests for 30 days by default; Kiln opts out on both endpoints.
             extra_body["store"] = False
+
+        if (
+            provider.openai_reasoning_summary is not None
+            and self.config.openai_reasoning_summaries
+        ):
+            # LiteLLM sends calls carrying reasoning_summary to /v1/responses as reasoning.summary.
+            extra_body["reasoning_summary"] = provider.openai_reasoning_summary
 
         if len(provider_options) > 0:
             extra_body["provider"] = provider_options

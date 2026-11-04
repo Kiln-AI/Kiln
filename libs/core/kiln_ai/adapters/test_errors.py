@@ -7,6 +7,7 @@ import litellm
 import pytest
 
 from kiln_ai.adapters.errors import (
+    REASONING_SUMMARY_VERIFICATION_ERROR_MESSAGE,
     ErrorWithTrace,
     KilnRunError,
     format_error_message,
@@ -124,6 +125,25 @@ class TestFormatUserMessage:
             format_error_message(exc)
             == "The model's output didn't match the expected format."
         )
+
+    def test_reasoning_summary_verification_error(self):
+        exc = _make_litellm_error(
+            litellm.BadRequestError,
+            message=(
+                "OpenAIException - Your organization must be verified to generate "
+                "reasoning summaries. Please go to: "
+                "https://platform.openai.com/settings/organization/general and click "
+                "on Verify Organization."
+            ),
+        )
+        assert format_error_message(exc) == REASONING_SUMMARY_VERIFICATION_ERROR_MESSAGE
+
+    def test_unrelated_bad_request_error_uses_generic_message(self):
+        exc = _make_litellm_error(
+            litellm.BadRequestError,
+            message="OpenAIException - Unsupported value: 'reasoning_effort'.",
+        )
+        assert format_error_message(exc) == "An unexpected error occurred."
 
     def test_too_many_turns(self):
         exc = RuntimeError(

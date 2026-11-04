@@ -652,6 +652,7 @@ class LiteLlmCoreConfig(BaseModel):
     base_url: str | None = None
     default_headers: Dict[str, str] | None = None
     additional_body_options: Dict[str, Any] | None = None
+    openai_reasoning_summaries: bool = False
 
 
 CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4"
@@ -719,6 +720,7 @@ def lite_llm_core_config_for_provider(
                 additional_body_options={
                     "api_key": Config.shared().open_ai_api_key,
                 },
+                openai_reasoning_summaries=Config.shared().open_ai_reasoning_summaries,
             )
         case ModelProviderName.groq:
             return LiteLlmCoreConfig(

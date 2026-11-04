@@ -13,3 +13,5 @@ class LiteLlmConfig:
     default_headers: dict[str, str] | None = None
     # Extra body to send with every request
     additional_body_options: dict[str, Any] = field(default_factory=dict)
+    # Request reasoning summaries from providers that set openai_reasoning_summary
+    openai_reasoning_summaries: bool = False
