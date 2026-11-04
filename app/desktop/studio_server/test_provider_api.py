@@ -163,7 +163,55 @@ def test_connect_api_key_openai_success(mock_connect_openai, client):
     )
     assert response.status_code == 200
     assert response.json() == {"message": "Connected to OpenAI"}
-    mock_connect_openai.assert_called_once_with("test_key")
+    mock_connect_openai.assert_called_once_with("test_key", reasoning_summaries=False)
+
+
+@patch("app.desktop.studio_server.provider_api.connect_openai")
+def test_connect_api_key_openai_passes_reasoning_summaries_option(
+    mock_connect_openai, client
+):
+    mock_connect_openai.return_value = {"message": "Connected to OpenAI"}
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={
+            "provider": "openai",
+            "key_data": {"API Key": "test_key"},
+            "options": {"reasoning_summaries": True},
+        },
+    )
+    assert response.status_code == 200
+    mock_connect_openai.assert_called_once_with("test_key", reasoning_summaries=True)
+
+
+@pytest.mark.parametrize("provider", ["openai", "groq"])
+@pytest.mark.parametrize(
+    "options",
+    [
+        ["reasoning_summaries"],
+        "reasoning_summaries",
+        None,
+        {"reasoning_summaries": "true"},
+        {"reasoning_summaries": 1},
+    ],
+)
+def test_connect_api_key_rejects_invalid_options(client, provider, options):
+    with (
+        patch("app.desktop.studio_server.provider_api.connect_openai") as openai,
+        patch("app.desktop.studio_server.provider_api.connect_groq") as groq,
+    ):
+        response = client.post(
+            "/api/provider/connect_api_key",
+            json={
+                "provider": provider,
+                "key_data": {"API Key": "test_key"},
+                "options": options,
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json() == {"message": "Invalid options"}
+    openai.assert_not_called()
+    groq.assert_not_called()
 
 
 @patch("app.desktop.studio_server.provider_api.connect_siliconflow")
@@ -357,6 +405,82 @@ def test_connect_openai_request_exception(mock_requests_get, client):
 
     assert response.status_code == 400
     assert "Failed to connect to OpenAI. Error:" in response.json()["message"]
+
+
+def openai_models_response(status_code: int) -> MagicMock:
+    response = MagicMock()
+    response.status_code = status_code
+    return response
+
+
+@pytest.mark.parametrize(
+    "extra_payload, expected",
+    [
+        ({"options": {"reasoning_summaries": True}}, True),
+        ({"options": {"reasoning_summaries": False}}, False),
+        ({"options": {}}, False),
+        ({}, False),
+    ],
+)
+@patch("app.desktop.studio_server.provider_api.requests.get")
+def test_connect_openai_saves_reasoning_summaries_option(
+    mock_requests_get, client, extra_payload, expected
+):
+    mock_requests_get.return_value = openai_models_response(200)
+
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={
+            "provider": "openai",
+            "key_data": {"API Key": "test_key"},
+            **extra_payload,
+        },
+    )
+
+    assert response.status_code == 200
+    assert Config.shared().open_ai_api_key == "test_key"
+    assert Config.shared().open_ai_reasoning_summaries is expected
+
+
+@patch("app.desktop.studio_server.provider_api.requests.get")
+def test_connect_openai_without_option_turns_reasoning_summaries_off(
+    mock_requests_get, client
+):
+    Config.shared().open_ai_reasoning_summaries = True
+    mock_requests_get.return_value = openai_models_response(200)
+
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "openai", "key_data": {"API Key": "test_key"}},
+    )
+
+    assert response.status_code == 200
+    assert Config.shared().open_ai_reasoning_summaries is False
+
+
+@pytest.mark.parametrize(
+    "models_call, expected_status",
+    [
+        ({"return_value": openai_models_response(401)}, 401),
+        ({"side_effect": Exception("Network down")}, 400),
+    ],
+)
+def test_connect_openai_failed_key_check_saves_nothing(
+    client, models_call, expected_status
+):
+    with patch("app.desktop.studio_server.provider_api.requests.get", **models_call):
+        response = client.post(
+            "/api/provider/connect_api_key",
+            json={
+                "provider": "openai",
+                "key_data": {"API Key": "test_key"},
+                "options": {"reasoning_summaries": True},
+            },
+        )
+
+    assert response.status_code == expected_status
+    assert Config.shared().open_ai_api_key is None
+    assert Config.shared().open_ai_reasoning_summaries is False
 
 
 @pytest.fixture
@@ -2278,9 +2402,24 @@ async def test_disconnect_api_key_openai(client, mock_config_all_providers):
         assert response.status_code == 200
         assert response.json() == {"message": "Provider disconnected"}
         assert mock_config_all_providers.open_ai_api_key is None
+        assert mock_config_all_providers.open_ai_reasoning_summaries is False
 
         # Check it didn't unset the other providers
         assert mock_config_all_providers.groq_api_key is not None
+
+
+def test_disconnect_api_key_openai_turns_reasoning_summaries_off(client):
+    Config.shared().open_ai_api_key = "test_key"
+    Config.shared().open_ai_reasoning_summaries = True
+
+    response = client.post(
+        "/api/provider/disconnect_api_key",
+        params={"provider_id": "openai"},
+    )
+
+    assert response.status_code == 200
+    assert Config.shared().open_ai_api_key is None
+    assert Config.shared().open_ai_reasoning_summaries is False
 
 
 @pytest.mark.asyncio

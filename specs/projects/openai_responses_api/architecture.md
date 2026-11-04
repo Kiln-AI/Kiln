@@ -124,7 +124,7 @@ Use the `kiln-ui` skill for this change.
   - `id: "reasoning_summaries"`, `label: "Show reasoning summaries"`;
   - `info`: "Shows a summary of the model's reasoning for newer GPT models. OpenAI requires [organization verification](https://platform.openai.com/settings/organization/general) for this; runs fail if your organization isn't verified. To change this later, disconnect and reconnect OpenAI."
 - New state `api_key_option_values: Record<string, boolean>`, reset to `{}` when the key dialog opens.
-- Render the options below the fields-and-Connect row, **outside** `#api-key-fields`. `submit_api_key` reads every `<input>` in that div as a text value. Each option is a DaisyUI checkbox (`checkbox checkbox-sm`) bound with `bind:checked`, then its label, then `<InfoTooltip tooltip_text={option.info} />`.
+- Render the options below the fields-and-Connect row, **outside** `#api-key-fields`. `submit_api_key` reads every `<input>` in that div as a text value. Each option is a `FormElement` with `inputType="checkbox"`, `label={option.label}`, `info_description={option.info}` and `bind:value`, so the house control owns the input, label and tooltip.
 - `submit_api_key` adds `options: api_key_option_values` to the POST body.
 - The dialog only opens while the provider is disconnected, and disconnecting turns the setting off, so the checkbox always starts unchecked. No current-value fetch is needed. Update the functional spec's "the dialog shows the current value" line to say this.
 

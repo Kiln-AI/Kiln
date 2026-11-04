@@ -26,7 +26,7 @@ Phases 1–3 go on **branch 1**, which merges before the app release. Phase 4 go
   - Mapping for the unverified-org error (§3.8).
   - Unit tests, and wire cases 3, 5, 6 and 7.
   - Paid summaries test, and the adjustment to the thinking-level paid test (§6).
-- [ ] Phase 3 (branch 1): Summaries setting in the app.
+- [x] Phase 3 (branch 1): Summaries setting in the app.
   - Desktop connect `options` and disconnect reset (§3.9).
   - The OpenAI dialog checkbox with an (i) tooltip, built with the `kiln-ui` skill (§3.10).
   - Backend and web tests.
