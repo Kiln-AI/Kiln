@@ -43,7 +43,13 @@
     load_task_prompts,
   } from "$lib/stores/prompts_store"
   import OutputTypeTablePreview from "$lib/components/output_type_table_preview.svelte"
-  import { eval_run_id_from_trace_hash, trace_link_hash } from "./trace_link"
+  import { judge_reasoning } from "$lib/utils/eval_types/judge_reasoning"
+  import {
+    dialog_link_from_hash,
+    dialog_link_hash,
+    type DialogLink,
+    type LinkedDialog,
+  } from "./dialog_link"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -65,6 +71,9 @@
 
   let trace_dialog: Dialog | null = null
   let displayed_trace: Trace | null = null
+
+  let reasoning_dialog: Dialog | null = null
+  let displayed_reasoning: string | null = null
 
   // Keyed on the row object, so a reload of results drops the old entries.
   const parsed_traces = new WeakMap<EvalRunWithTrace, Trace | null>()
@@ -190,47 +199,104 @@
     parsed_trace(result),
   )
 
-  // The eval run whose trace the URL asked for on load. Cleared once handled.
-  let linked_eval_run_id: string | null = null
+  // The row dialog the URL asks for. It waits for the results to load and for
+  // the peek warning to close, then clears.
+  let linked_dialog: DialogLink | null = null
+  let peek_warning_open = false
+  // A page loaded from a dialog link shows the peek warning after that dialog,
+  // so the warning stacks on top of it.
+  let peek_warning_follows_linked_dialog = false
 
   onMount(() => {
-    linked_eval_run_id = eval_run_id_from_trace_hash(window.location.hash)
-    if (!linked_eval_run_id) {
-      peek_dialog?.show()
+    linked_dialog = dialog_link_from_hash(window.location.hash)
+    if (linked_dialog) {
+      peek_warning_follows_linked_dialog = true
+    } else {
+      show_peek_warning()
     }
   })
 
-  $: if (linked_eval_run_id && !results_loading) {
-    open_linked_trace_under_peek(linked_eval_run_id)
+  function show_peek_warning() {
+    peek_warning_follows_linked_dialog = false
+    peek_warning_open = true
+    peek_dialog?.show()
   }
 
-  // Modal dialogs stack in the order they open, so the trace must open before
-  // the peek warning for the warning to sit on top of it.
-  async function open_linked_trace_under_peek(eval_run_id: string) {
-    linked_eval_run_id = null
+  // A hash change on this page (a pasted link, Back, Forward) does not remount
+  // it. The page's own replaceState calls never fire hashchange.
+  function follow_dialog_link() {
+    linked_dialog = dialog_link_from_hash(window.location.hash)
+    if (!linked_dialog) {
+      trace_dialog?.close()
+      reasoning_dialog?.close()
+      if (peek_warning_follows_linked_dialog) {
+        show_peek_warning()
+      }
+    }
+  }
+
+  $: if (linked_dialog && !results_loading && !peek_warning_open) {
+    open_linked_dialog(linked_dialog)
+  }
+
+  // Shows the dialog the link names and closes the other one. Modal dialogs
+  // stack in the order they open, so the linked dialog must open before the
+  // peek warning for the warning to sit on top of it.
+  async function open_linked_dialog({ dialog, eval_run_id }: DialogLink) {
+    linked_dialog = null
     const linked_result = results?.results.find(
       (result) => result.eval_run.id === eval_run_id,
     )
-    const linked_trace = linked_result ? parsed_trace(linked_result) : null
-    if (linked_trace) {
-      displayed_trace = linked_trace
+    const trace =
+      linked_result && dialog === "trace" ? parsed_trace(linked_result) : null
+    const reasoning =
+      linked_result && dialog === "reasoning"
+        ? judge_reasoning(linked_result.eval_run.intermediate_outputs)
+        : null
+    if (trace) {
+      displayed_trace = trace
       // The trace dialog only mounts once a conversation row exists.
       await tick()
       trace_dialog?.show()
+    } else {
+      trace_dialog?.close()
     }
-    peek_dialog?.show()
+    if (reasoning) {
+      displayed_reasoning = reasoning
+      reasoning_dialog?.show()
+    } else {
+      reasoning_dialog?.close()
+    }
+    if (peek_warning_follows_linked_dialog) {
+      show_peek_warning()
+    }
   }
 
   function open_trace(result: EvalRunWithTrace, trace: Trace) {
     displayed_trace = trace
     trace_dialog?.show()
+    write_dialog_link("trace", result)
+  }
+
+  function open_reasoning(result: EvalRunWithTrace) {
+    displayed_reasoning = judge_reasoning(result.eval_run.intermediate_outputs)
+    reasoning_dialog?.show()
+    write_dialog_link("reasoning", result)
+  }
+
+  function write_dialog_link(dialog: LinkedDialog, result: EvalRunWithTrace) {
     if (result.eval_run.id) {
-      replaceState(trace_link_hash(result.eval_run.id), {})
+      replaceState(
+        dialog_link_hash({ dialog, eval_run_id: result.eval_run.id }),
+        {},
+      )
     }
   }
 
-  function clear_trace_link() {
-    if (eval_run_id_from_trace_hash(window.location.hash)) {
+  // A dialog's close event can land after a hash change has already linked the
+  // URL to the other dialog. That link names the dialog now showing, so it stays.
+  function clear_dialog_link(dialog: LinkedDialog) {
+    if (dialog_link_from_hash(window.location.hash)?.dialog === dialog) {
       replaceState(window.location.pathname + window.location.search, {})
     }
   }
@@ -622,6 +688,7 @@
                     intermediate_outputs={result.eval_run
                       .intermediate_outputs ?? null}
                     load_judge_trace={judge_trace_loader(result)}
+                    on_view_reasoning={() => open_reasoning(result)}
                   />
                 </td>
               {:else}
@@ -641,10 +708,13 @@
   {/if}
 </AppPage>
 
+<svelte:window on:hashchange={follow_dialog_link} />
+
 <Dialog
   title="Are you sure you want to peek?"
   bind:this={peek_dialog}
   blur_background={true}
+  on:close={() => (peek_warning_open = false)}
   action_buttons={[
     {
       label: "Look Anyways",
@@ -686,6 +756,18 @@
   </div>
 </Dialog>
 
+<!-- One shared dialog for every row's judge reasoning, so the URL can name the
+     row it shows. -->
+<Dialog
+  bind:this={reasoning_dialog}
+  title="Judge Reasoning"
+  on:close={() => clear_dialog_link("reasoning")}
+>
+  <div class="font-light text-sm whitespace-pre-wrap">
+    {displayed_reasoning}
+  </div>
+</Dialog>
+
 {#if has_conversation_row}
   <!-- One shared dialog for every row: `displayed_trace` picks the row, and
        every open assigns it fresh. -->
@@ -693,7 +775,7 @@
     bind:this={trace_dialog}
     title="Trace"
     width="extra_wide"
-    on:close={clear_trace_link}
+    on:close={() => clear_dialog_link("trace")}
   >
     {#if displayed_trace}
       <ChatTrace trace={displayed_trace} {project_id} />
