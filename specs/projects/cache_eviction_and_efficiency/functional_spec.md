@@ -51,7 +51,7 @@ Cached memory is about 1.15–1.5× the file size. 25k runs of 100 turns take ab
 - File watching. It is out of scope (see "Out of scope").
 - Detecting memory pressure from the operating system.
 - A configurable budget.
-- A saved index for faster cold starts (see "Open questions").
+- A saved index for faster cold starts. The first list load after startup still reads every run file.
 - Changing how lookups by id work. They must not rely on folder names, because folders are sometimes copied around.
 
 ## 1. Where the cache is on
@@ -104,6 +104,7 @@ Every other field is a normal field.
 ### What a cached record holds
 
 - When a record is loaded and added to the cache, it is fully validated, exactly as today. Every validator sees every field. Then the cache drops the values of its large fields from the cached copy. Empty values (`None`) are kept, since they cost nothing.
+- "Not loaded" and "really `None`" are never confused. A dropped field is absent from the record, and the record tracks which fields are absent. A field that holds `None` keeps its real `None` value. `None` is never used as the marker for a dropped field. Reading a real `None` field never touches disk.
 - The record keeps its normal fields and a small set of **summary values** computed from the large fields at load time (see below).
 - The first time code reads any large field of a cached record, the cache reads the file once and restores **all** of that record's large fields. They stay in memory until evicted.
 - The restored values are validated against the field's type. Model validators are not re-run; they already passed for this exact file (same modified time, size and file id).
@@ -141,15 +142,18 @@ These must hold for every model with large fields. Each is covered by tests.
 
 ### Records whose file changed after caching
 
-A caller can hold a cached record while its file changes on disk (git sync, another Kiln instance, a manual edit), then read a large field. Proposed behavior (see "Open questions"):
+A caller can hold a cached record while its file changes on disk (git sync, another Kiln instance, a manual edit), then read a large field.
 
-- Reading a large field returns the value from the file as it is now. The record's normal fields may be from the older version. A debug log notes the mismatch.
-- An editable copy made from such a record is rebuilt from the current file, so it never mixes versions and a save never writes mixed data.
+Today, the held record stays a complete copy of the old version. An editable copy made from it is also the old version, and saving that copy overwrites the newer file.
+
+Behavior after this project:
+- **Reading a large field returns the value from the file as it is now.** If the large fields were evicted, the old values are gone, so the record's normal fields can be from the old version while its large fields are from the new one. A debug log notes the mismatch. This mix is the one new risk. It is small, because large fields (input, output, trace) are almost never edited after a run is created; edits are to tags, ratings and repairs.
+- **An editable copy made from such a record is rebuilt from the current file.** It never mixes versions. Saving it no longer overwrites newer changes on disk with old data, which is an improvement on today.
 - New reads of the record through `load_from_file` see the change and reload it, as they do today.
 
 ### Hidden disk reads
 
-Reading a large field on a cached record can now read the file. This is the cost of bounded memory. Where it shows up:
+Reading a large field on a cached record can now read the file. This happens only when code reads a large field; list operations, which use normal fields and summary values, never do. This is the cost of bounded memory. Where it shows up:
 - Code that reads large fields of every run in a big dataset (eval runner, JSONL export) reads each file once per pass, if its large fields were evicted. Datasets whose large fields fit in the budget stay in memory, as today.
 - The read is a blocking file read wherever the field is accessed, including inside `async` handlers. Loading records in `async` handlers already blocks today, so this adds no new kind of blocking.
 
@@ -160,7 +164,8 @@ Reading a large field on a cached record can now read the file. This is the cost
 - **Eviction order** when the cache is over budget:
   1. Large fields, least recently used first. Evicting a record's large fields keeps its normal part and summary values.
   2. Only when no large fields remain cached: whole records, least recently used first.
-- Eviction runs when data is added to the cache. There is no background thread in the library.
+- **Cheap check on every add.** The cache keeps a running total of its estimated size, updated as entries are added, restored, evicted or removed. Adding data costs one addition and one comparison with the budget. Eviction work happens only when the total goes over budget. It then evicts down to 90% of the budget, so the next adds don't each trigger eviction. Recency is tracked in an ordered structure, so reads and evictions take constant time per entry.
+- There is no background thread in the library.
 - Evicting data never affects a caller that already holds a value. A caller holding a trace list keeps it; the cache just stops pointing to it.
 - A single record whose large fields exceed the whole budget is served, but its large fields are not kept after the read.
 
@@ -229,12 +234,14 @@ Marking `EvalRun`'s large fields (above) means score summaries and the eval work
 - **Memory benchmark:** loads a few thousand large synthetic runs with the cache on, checks the estimated cache size stays under budget, and checks real memory is in line with the estimate.
 - **Speed benchmarks:** warm list loads are no slower than today, and first loads are no slower beyond the measured validator savings.
 - **Change detection:** tests for a changed size, a replaced file (new file id) and a changed modified time. The skip guards in `test_model_cache.py` are removed, so all cache tests run on Linux.
-- **Platforms:** cache tests pass locally on Linux (this environment). CI today runs Python tests on Ubuntu, plus one Windows job scoped to a single test file. This project adds macOS and Windows jobs, following the existing Windows pattern, that run the cache and datamodel test files on every PR. They must pass before merge.
+- **Platforms:** cache tests pass locally on Linux (the agent's environment) and in the normal CI run, which uses Ubuntu.
+  - CI today runs the Python tests only on Ubuntu, plus one Windows job scoped to a single test file.
+  - This project adds no new automatic jobs. Instead, the normal test workflow (`build_and_test.yml`) gets a manual trigger with an operating-system choice: Ubuntu (the default), macOS or Windows. The workflow's steps are adjusted so they run on all three.
+  - Before merge, a maintainer runs it once on macOS and once on Windows against the PR branch.
+  - The cache and datamodel tests must pass on both. Any failures elsewhere in the suite that also fail on `main` are noted, not fixed, in this project.
 - **Hosts:** tests check the cache is on after each host's startup (desktop app, `kiln_server`, `kiln_mcp`), off by default in the library, and that the library switch works.
 - **Add-example dialog:** UI tests for the auto-select rules, plus a manual check in the app.
 
 ## Open questions
 
-1. **Cold-start index:** in this project or a later one? (Explained in chat.)
-2. **Records whose file changed after caching:** is the proposed behavior right? The proposal: a large field returns the current file's value, and editable copies rebuild from the current file.
-3. **Idle shrink in `kiln_server`:** the proposal covers the desktop app and `kiln_server`. Is that right?
+1. **Records whose file changed after caching:** is the behavior in section 3 accepted?
