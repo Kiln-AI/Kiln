@@ -181,6 +181,23 @@ describe("LlmJudgeResult", () => {
     expect(dialog!.textContent).toContain("The model output was good.")
   })
 
+  it("hands View reasoning to the host when it passes on_view_reasoning", async () => {
+    const on_view_reasoning = vi.fn()
+    const { container } = render(LlmJudgeResult, {
+      props: {
+        scores: { quality: 0.8 },
+        eval_config: makeConfig(),
+        intermediate_outputs: { reasoning: "The model output was good." },
+        on_view_reasoning,
+      },
+    })
+
+    await fireEvent.click(container.querySelector("button.link")!)
+
+    expect(on_view_reasoning).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('[data-title="Judge Reasoning"]')).toBeNull()
+  })
+
   it("shows View reasoning even without eval_config (fallback path)", () => {
     const { container } = render(LlmJudgeResult, {
       props: {
