@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Architecture: Cache Eviction and Efficiency
@@ -57,7 +57,7 @@ When the cache is off (the library default), step 3 never runs. Every load retur
 | `libs/server/kiln_server/server.py` | `make_app` installs a default lifespan that turns the cache on, used when the caller passes no lifespan. |
 | `libs/server/kiln_server/mcp/mcp.py` | `main()` turns the cache on before serving. |
 | `.github/workflows/build_and_test.yml` | A macOS and Windows test job, triggered on release and by hand. |
-| `app/web_ui/src/lib/utils/task_sample_example.ts` | The add-example dialog fix (5c). **Pending a decision**, see 5c. |
+| `app/web_ui/src/lib/utils/task_sample_example.ts` | Requests the 100 newest runs (5c). |
 | `conftest.py` (repo root) | A `model_cache_enabled` fixture. The default test state is the library default (off). |
 
 ## Public interfaces
@@ -134,16 +134,20 @@ Switch to `readonly=True` after confirming the caller never assigns to, saves, o
 
 **Kept mutable:** `edit_tags`, which edits selected runs; the JSONL export in `dataset_formatter.py`, which needs full records but only for the split's ids; and any caller that saves.
 
-### 5c. Add-example dialog (pending decision)
+### 5c. Add-example dialog
 
 `fetch_task_sample_candidates` (`task_sample_example.ts`) has four callers: `add_example_dialog.svelte`, `task_sample_selector.svelte`, the spec builder page, and `existing_run_picker_dialog.svelte`. It calls `GET /runs` with no limit.
 
-The picker (`task_run_picker.svelte`) shows each run's full input and output, with a "see all" view, and pages through the list in the browser. The light `runs_summaries` endpoint only has 100-character previews, so it can't feed the picker as it stands.
+The picker (`task_run_picker.svelte`) shows each run's full input and output, so it keeps using full runs.
 
-- **Option A (recommended): cap the request.** Call `GET /runs?limit=250`. The endpoint already returns the newest runs first, and under lazy loading only those 250 load their large fields. The change is one line plus tests. What users see changes slightly: the picker lists only the 250 newest runs, and the five-star auto-select looks only within those.
-- **Option B: summaries plus a full fetch per page.** Pick from `runs_summaries`, then fetch full runs only for the picker's visible page and the auto-selected run. Nothing visible changes. It touches the picker, its paging, the four callers, and needs a "get runs by ids" call.
+The change:
+- `fetch_task_sample_candidates` passes `query: { limit: TASK_SAMPLE_CANDIDATE_LIMIT }`. The constant is 100 and is exported from `task_sample_example.ts`.
+- The endpoint already returns the newest runs first, and under lazy loading only those 100 load their large fields.
+- The function's own sorting and five-star logic stay as they are.
 
-If Option A is chosen, the functional spec's line "What the user sees must not change" is updated to describe the cap.
+Tests in a new `task_sample_example.test.ts`:
+- the request includes `limit=100`;
+- the auto-select rules still hold on the returned list: a five-star run is picked, else the most recent run, else manual entry.
 
 ### 5d. Eval score pages
 

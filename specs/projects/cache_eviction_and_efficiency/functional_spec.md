@@ -189,12 +189,15 @@ Callers that really edit keep mutable loads: `edit_tags`, which only touches the
 
 ### 5c. Add-example dialog
 
-The web UI's add-example dialog (`fetch_task_sample_candidates` in `task_sample_example.ts`, used by `add_example_dialog.svelte`) calls `GET /runs` with no limit. It downloads every full run, traces included, just to auto-select one example and show a picker. It changes to:
-- get the candidate list from the light `runs_summaries` endpoint;
-- choose the auto-selected run there, using the same rules: most recent five-star run, else most recent run;
-- fetch only the run the user picks (or the auto-selected one) in full.
+The web UI's add-example dialog calls `GET /runs` with no limit. It downloads every full run, traces included, just to auto-select one example and show a picker. The call lives in `fetch_task_sample_candidates` (`task_sample_example.ts`), which four places use: the add-example dialog, the task sample selector, the spec builder, and the data guide's existing-run picker.
 
-What the user sees must not change. The `GET /runs` endpoint itself is not changed, since external API callers rely on it.
+It changes to request only the 100 newest runs (`GET /runs?limit=100`). The auto-select rules don't change: the most recent five-star run, else the most recent run.
+
+Visible change (approved):
+- the picker lists at most the 100 newest runs;
+- the five-star auto-select looks only within those 100.
+
+The `GET /runs` endpoint itself is not changed, since external API callers rely on it.
 
 ### 5d. Eval score pages
 
