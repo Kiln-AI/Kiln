@@ -10195,7 +10195,6 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # GLM 5.3 FlashX Legal
     KilnModel(
         family=ModelFamily.glm,
         name=ModelName.glm_5_3_flashx_legal,
