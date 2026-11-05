@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Functional Spec: Cache Eviction and Efficiency
@@ -147,7 +147,7 @@ A caller can hold a cached record while its file changes on disk (git sync, anot
 Today, the held record stays a complete copy of the old version. An editable copy made from it is also the old version, and saving that copy overwrites the newer file.
 
 Behavior after this project:
-- **Reading a large field returns the value from the file as it is now.** If the large fields were evicted, the old values are gone, so the record's normal fields can be from the old version while its large fields are from the new one. A debug log notes the mismatch. This mix is the one new risk. It is small, because large fields (input, output, trace) are almost never edited after a run is created; edits are to tags, ratings and repairs.
+- **Reading a large field returns the value from the file as it is now.** If the large fields were evicted, the old values are gone, so the record's normal fields can be from the old version while its large fields are from the new one. A debug log notes the mismatch. This mix is the one new risk, and it is accepted. It is small, because large fields (input, output, trace) are almost never edited after a run is created; edits are to tags, ratings and repairs.
 - **An editable copy made from such a record is rebuilt from the current file.** It never mixes versions. Saving it no longer overwrites newer changes on disk with old data, which is an improvement on today.
 - New reads of the record through `load_from_file` see the change and reload it, as they do today.
 
@@ -168,12 +168,6 @@ Reading a large field on a cached record can now read the file. This happens onl
 - There is no background thread in the library.
 - Evicting data never affects a caller that already holds a value. A caller holding a trace list keeps it; the cache just stops pointing to it.
 - A single record whose large fields exceed the whole budget is served, but its large fields are not kept after the read.
-
-### Idle shrink (late phase)
-
-- When the desktop app or `kiln_server` has received no API requests for 10 minutes, the cache drops all cached large fields. Normal records stay, so the next list page is still fast.
-- One timer per process, owned by the host's startup code. No per-field or per-record timers.
-- Not in the library or `kiln_mcp`.
 
 ## 5. Efficiency fixes
 
@@ -214,6 +208,7 @@ Marking `EvalRun`'s large fields (above) means score summaries and the eval work
   - Linux needs one watch per run folder and hits the system's watch limits.
   - Synced folders and mounts give unreliable events.
 - **Memory-pressure detection.**
+- **Idle shrink** (dropping cached data when the app is unused). The budget alone bounds memory.
 - **A configurable budget.**
 - **RAG progress endpoint** loading every embedding (`progress.py`). Marking `ChunkEmbeddings.embeddings` as large already stops its vectors from staying cached.
 - **Lookups by id from folder names.**
@@ -232,16 +227,16 @@ Marking `EvalRun`'s large fields (above) means score summaries and the eval work
 - **Field marking:** for every model on the field list, a test round-trips a record through cache, eviction and restore, and checks it is identical to a fresh load.
 - **Budget:** tests with a small test budget check the eviction order and the size accounting, and that a record larger than the budget is still served.
 - **Memory benchmark:** loads a few thousand large synthetic runs with the cache on, checks the estimated cache size stays under budget, and checks real memory is in line with the estimate.
-- **Speed benchmarks:** warm list loads are no slower than today, and first loads are no slower beyond the measured validator savings.
+- **Speed benchmarks:** warm list loads are no slower than today. First loads are no slower than today; the validator fix in 5a should make them 5–23% faster.
 - **Change detection:** tests for a changed size, a replaced file (new file id) and a changed modified time. The skip guards in `test_model_cache.py` are removed, so all cache tests run on Linux.
 - **Platforms:** cache tests pass locally on Linux (the agent's environment) and in the normal CI run, which uses Ubuntu.
   - CI today runs the Python tests only on Ubuntu, plus one Windows job scoped to a single test file.
-  - This project adds no new automatic jobs. Instead, the normal test workflow (`build_and_test.yml`) gets a manual trigger with an operating-system choice: Ubuntu (the default), macOS or Windows. The workflow's steps are adjusted so they run on all three.
-  - Before merge, a maintainer runs it once on macOS and once on Windows against the PR branch.
-  - The cache and datamodel tests must pass on both. Any failures elsewhere in the suite that also fail on `main` are noted, not fixed, in this project.
+  - This project adds a macOS and Windows run of the full Python test suite that does not run on every push. It runs:
+    - when a release is created, the same trigger the desktop release build uses;
+    - when started by hand from the Actions tab, on any branch.
+  - Pushes keep running Ubuntu only, as today.
+  - The macOS and Windows run uses Python 3.13, the desktop app's version, to keep it short. The workflow's steps are adjusted so they run on all three operating systems.
+  - Before merge, a maintainer starts it by hand on the PR branch.
+  - The cache and datamodel tests must pass on macOS and Windows. The suite has never run on macOS, and only one file has run on Windows, so other tests may fail there. Failures outside this project's code are listed in the PR, not fixed in this project.
 - **Hosts:** tests check the cache is on after each host's startup (desktop app, `kiln_server`, `kiln_mcp`), off by default in the library, and that the library switch works.
 - **Add-example dialog:** UI tests for the auto-select rules, plus a manual check in the app.
-
-## Open questions
-
-1. **Records whose file changed after caching:** is the behavior in section 3 accepted?
