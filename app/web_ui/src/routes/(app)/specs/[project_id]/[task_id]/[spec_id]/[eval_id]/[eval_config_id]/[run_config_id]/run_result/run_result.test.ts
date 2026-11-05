@@ -7,42 +7,65 @@ import { tick } from "svelte"
 // Module-level mocks — must come before the dynamic page import
 // ---------------------------------------------------------------------------
 
-const { mockPage, mockClientGET, setResultsResponse } = vi.hoisted(() => {
-  const pageValue = {
-    params: {
-      project_id: "proj1",
-      task_id: "task1",
-      spec_id: "spec1",
-      eval_id: "eval1",
-      eval_config_id: "ec1",
-      run_config_id: "rc1",
-    },
-    url: new URL("http://localhost/specs/proj1/task1/spec1/eval1/ec1/rc1"),
-  }
-  const mockPage = {
-    subscribe(fn: (value: typeof pageValue) => void) {
-      fn(pageValue)
-      return () => {}
-    },
-  }
+const { mockPage, mockClientGET, setResultsResponse, mockReplaceState } =
+  vi.hoisted(() => {
+    const pageValue = {
+      params: {
+        project_id: "proj1",
+        task_id: "task1",
+        spec_id: "spec1",
+        eval_id: "eval1",
+        eval_config_id: "ec1",
+        run_config_id: "rc1",
+      },
+      url: new URL("http://localhost/specs/proj1/task1/spec1/eval1/ec1/rc1"),
+    }
+    const mockPage = {
+      subscribe(fn: (value: typeof pageValue) => void) {
+        fn(pageValue)
+        return () => {}
+      },
+    }
 
-  let results_response: Record<string, unknown> = {}
-  const setResultsResponse = (v: Record<string, unknown>) => {
-    results_response = v
-  }
-  const mockClientGET = vi.fn().mockImplementation(() => {
-    return Promise.resolve({ data: results_response, error: null })
+    let results_response: Record<string, unknown> = {}
+    const setResultsResponse = (v: Record<string, unknown>) => {
+      results_response = v
+    }
+    const mockClientGET = vi.fn().mockImplementation(() => {
+      return Promise.resolve({ data: results_response, error: null })
+    })
+
+    // SvelteKit's replaceState moves the browser URL; jsdom's history does the same.
+    const mockReplaceState = vi.fn((url: string) => {
+      window.history.replaceState(null, "", url)
+    })
+
+    return {
+      mockPage,
+      mockClientGET,
+      setResultsResponse,
+      mockReplaceState,
+    }
   })
 
+// Svelte 4 onMount callbacks do not run under jsdom/vitest. The page's callback
+// opens a bound dialog, so run it once the mount has finished.
+vi.mock("svelte", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("svelte")>()
   return {
-    mockPage,
-    mockClientGET,
-    setResultsResponse,
+    ...actual,
+    // @testing-library/svelte probes this Svelte 5 only export to pick a mount strategy.
+    mount: undefined,
+    onMount: (fn: () => unknown) => queueMicrotask(() => void fn()),
   }
 })
 
 vi.mock("$app/stores", () => ({
   page: mockPage,
+}))
+
+vi.mock("$app/navigation", () => ({
+  replaceState: mockReplaceState,
 }))
 
 vi.mock("$lib/api_client", () => ({
@@ -178,6 +201,8 @@ const conversation = [
 
 afterEach(() => {
   cleanup()
+  window.history.replaceState(null, "", "/")
+  mockReplaceState.mockClear()
 })
 
 describe("run result page — missing trace placeholder", () => {
@@ -541,5 +566,125 @@ describe("run result page — a renderable trace gates the conversation view", (
       expect(text).toContain(`Output: output for ${label}`)
     }
     expect(text).not.toContain("View Full Trace")
+  })
+})
+
+describe("run result page — trace deep link", () => {
+  function traced_row(id: string, first_question: string) {
+    return result_row({
+      eval_run: {
+        id,
+        scored_run_id: `tr_${id}`,
+        scores: {},
+        intermediate_outputs: null,
+      },
+      input: "the input",
+      output: "the output",
+      task_run_trace: JSON.stringify([
+        { role: "user", content: first_question },
+        { role: "assistant", content: `answer for ${id}` },
+      ]),
+    })
+  }
+
+  const rows = [
+    traced_row("er_first", "First question?"),
+    traced_row("er_second", "Second question?"),
+  ]
+
+  function dialog_stub(container: HTMLElement, title: string): HTMLElement {
+    const stub = container.querySelector<HTMLElement>(
+      `[data-testid='dialog-stub'][data-title='${title}']`,
+    )
+    expect(stub).not.toBeNull()
+    return stub!
+  }
+
+  const peek = (container: HTMLElement) =>
+    dialog_stub(container, "Are you sure you want to peek?")
+  const trace = (container: HTMLElement) => dialog_stub(container, "Trace")
+
+  it("writes the row's trace link into the URL when its trace opens", async () => {
+    const container = await render_page(rows)
+
+    const links = container.querySelectorAll("button.text-primary")
+    await fireEvent.click(links[1])
+    await tick()
+
+    expect(window.location.hash).toBe("#trace-er_second")
+    expect(visible_text(trace(container))).toContain(
+      "assistant: answer for er_second",
+    )
+  })
+
+  it("clears the trace link from the URL when the trace closes", async () => {
+    window.history.replaceState(null, "", "/run_result?view=all")
+    const container = await render_page(rows)
+    await fireEvent.click(container.querySelector("button.text-primary")!)
+    await tick()
+    expect(window.location.hash).toBe("#trace-er_first")
+
+    const close = trace(container).querySelector(
+      "[data-testid='dialog-stub-close']",
+    )
+    await fireEvent.click(close!)
+    await tick()
+
+    expect(window.location.hash).toBe("")
+    expect(window.location.pathname + window.location.search).toBe(
+      "/run_result?view=all",
+    )
+  })
+
+  it("opens the linked trace on load, under the peek warning", async () => {
+    window.history.replaceState(null, "", "/#trace-er_second")
+    const container = await render_page(rows)
+
+    expect(trace(container).dataset.open).toBe("true")
+    expect(visible_text(trace(container))).toContain(
+      "assistant: answer for er_second",
+    )
+    expect(peek(container).dataset.open).toBe("true")
+    // The dialog opened last is the one on top.
+    expect(Number(peek(container).dataset.openedAt)).toBeGreaterThan(
+      Number(trace(container).dataset.openedAt),
+    )
+    expect(window.location.hash).toBe("#trace-er_second")
+    expect(mockReplaceState).not.toHaveBeenCalled()
+  })
+
+  it("holds the peek warning until the linked trace can open beneath it", async () => {
+    window.history.replaceState(null, "", "/#trace-er_first")
+    let resolve_results: (value: unknown) => void = () => {}
+    mockClientGET.mockImplementationOnce(
+      () => new Promise((resolve) => (resolve_results = resolve)),
+    )
+    const { container } = render(RunResultPage)
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(peek(container).dataset.open).toBe("false")
+
+    resolve_results({ data: { ...base_response, results: rows }, error: null })
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    expect(trace(container).dataset.open).toBe("true")
+    expect(peek(container).dataset.open).toBe("true")
+  })
+
+  it("shows only the peek warning when the linked row is not in the results", async () => {
+    window.history.replaceState(null, "", "/#trace-er_missing")
+    const container = await render_page(rows)
+
+    expect(peek(container).dataset.open).toBe("true")
+    expect(trace(container).dataset.open).toBe("false")
+  })
+
+  it("shows the peek warning on mount when the URL has no trace link", async () => {
+    const container = await render_page(rows)
+
+    expect(peek(container).dataset.open).toBe("true")
+    expect(trace(container).dataset.open).toBe("false")
   })
 })

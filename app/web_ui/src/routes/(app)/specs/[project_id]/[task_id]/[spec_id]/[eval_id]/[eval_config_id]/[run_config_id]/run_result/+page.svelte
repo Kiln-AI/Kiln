@@ -17,6 +17,7 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
+  import { replaceState } from "$app/navigation"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import { eval_split_filter_id } from "$lib/utils/eval_splits"
   import {
@@ -42,6 +43,7 @@
     load_task_prompts,
   } from "$lib/stores/prompts_store"
   import OutputTypeTablePreview from "$lib/components/output_type_table_preview.svelte"
+  import { eval_run_id_from_trace_hash, trace_link_hash } from "./trace_link"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -188,9 +190,50 @@
     parsed_trace(result),
   )
 
+  // The eval run whose trace the URL asked for on load. Cleared once handled.
+  let linked_eval_run_id: string | null = null
+
   onMount(() => {
-    peek_dialog?.show()
+    linked_eval_run_id = eval_run_id_from_trace_hash(window.location.hash)
+    if (!linked_eval_run_id) {
+      peek_dialog?.show()
+    }
   })
+
+  $: if (linked_eval_run_id && !results_loading) {
+    open_linked_trace_under_peek(linked_eval_run_id)
+  }
+
+  // Modal dialogs stack in the order they open, so the trace must open before
+  // the peek warning for the warning to sit on top of it.
+  async function open_linked_trace_under_peek(eval_run_id: string) {
+    linked_eval_run_id = null
+    const linked_result = results?.results.find(
+      (result) => result.eval_run.id === eval_run_id,
+    )
+    const linked_trace = linked_result ? parsed_trace(linked_result) : null
+    if (linked_trace) {
+      displayed_trace = linked_trace
+      // The trace dialog only mounts once a conversation row exists.
+      await tick()
+      trace_dialog?.show()
+    }
+    peek_dialog?.show()
+  }
+
+  function open_trace(result: EvalRunWithTrace, trace: Trace) {
+    displayed_trace = trace
+    trace_dialog?.show()
+    if (result.eval_run.id) {
+      replaceState(trace_link_hash(result.eval_run.id), {})
+    }
+  }
+
+  function clear_trace_link() {
+    if (eval_run_id_from_trace_hash(window.location.hash)) {
+      replaceState(window.location.pathname + window.location.search, {})
+    }
+  }
 
   $: if (project_id && task_id && eval_id && eval_config_id && run_config_id) {
     load_all(project_id, task_id, eval_id, eval_config_id, run_config_id)
@@ -450,7 +493,9 @@
               <th>Thinking</th>
             {/if}
             {#if is_v2_config && v2_result_component}
-              <th>Result</th>
+              <!-- Without a share of its own, a long interaction takes the
+                   whole row and wraps each result line a word at a time. -->
+              <th class="w-2/5">Result</th>
             {:else}
               {#each results.eval.output_scores as score}
                 <th class="text-center">
@@ -494,10 +539,7 @@
                       <button
                         type="button"
                         class="text-xs text-primary hover:underline"
-                        on:click={() => {
-                          displayed_trace = row_trace
-                          trace_dialog?.show()
-                        }}
+                        on:click={() => open_trace(result, row_trace)}
                       >
                         View Full Trace
                       </button>
@@ -647,7 +689,12 @@
 {#if has_conversation_row}
   <!-- One shared dialog for every row: `displayed_trace` picks the row, and
        every open assigns it fresh. -->
-  <Dialog bind:this={trace_dialog} title="Trace" width="extra_wide">
+  <Dialog
+    bind:this={trace_dialog}
+    title="Trace"
+    width="extra_wide"
+    on:close={clear_trace_link}
+  >
     {#if displayed_trace}
       <ChatTrace trace={displayed_trace} {project_id} />
     {/if}
