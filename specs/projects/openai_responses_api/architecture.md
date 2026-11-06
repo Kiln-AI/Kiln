@@ -28,7 +28,7 @@ These come from running the real libraries on 2026-11-03: the Kiln repo in a scr
 
 | Branch | Contents | Merge |
 |---|---|---|
-| Branch 1 | §3.1–§3.10 | Before the release |
+| Branch 1 | §3.1–§3.10 | Before the release, then push `remote_config` before or with the release |
 | Branch 2 (built on branch 1) | §4 | After the release is live, then push `remote_config` |
 
 ## 3. Branch 1
@@ -105,7 +105,7 @@ Put the helpers as private module functions in `litellm_streaming.py`: `_reasoni
 
 ### 3.8 Unverified-org error (`libs/core/kiln_ai/adapters/errors.py`)
 
-- Add a constant `REASONING_SUMMARY_VERIFICATION_ERROR_MESSAGE = "Your OpenAI organization must be verified to show reasoning summaries. Verify it in your OpenAI organization settings (https://platform.openai.com/settings/organization/general), or reconnect OpenAI in Kiln with reasoning summaries turned off."`
+- Add a constant `REASONING_SUMMARY_VERIFICATION_ERROR_MESSAGE = "Your OpenAI organization must be verified to show reasoning summaries. Verify it in your OpenAI organization settings (https://platform.openai.com/settings/organization/general), or disconnect OpenAI in Kiln settings and reconnect with reasoning summaries turned off."`
 - In `format_error_message`, before the `RuntimeError` branch: if `isinstance(exc, litellm.BadRequestError)` and `"must be verified to generate reasoning summaries"` is in `_safe_str(exc)`, return the constant. Every other `BadRequestError` still falls through to the generic message.
 
 ### 3.9 Desktop API (`app/desktop/studio_server/provider_api.py`)
@@ -121,8 +121,8 @@ Put the helpers as private module functions in `litellm_streaming.py`: `_reasoni
 Use the `kiln-ui` skill for this change.
 
 - `Provider` gets `api_key_options?: { id: string; label: string; info: string }[]`. The OpenAI entry gets one option:
-  - `id: "reasoning_summaries"`, `label: "Show reasoning summaries"`;
-  - `info`: "Shows a summary of the model's reasoning for newer GPT models. OpenAI requires [organization verification](https://platform.openai.com/settings/organization/general) for this; runs fail if your organization isn't verified. To change this later, disconnect and reconnect OpenAI."
+  - `id: "reasoning_summaries"`, `label: "Show reasoning summaries (requires Org verification)"`;
+  - `info`: "Shows a summary of the model's reasoning for newer GPT models. OpenAI requires [organization verification](https://platform.openai.com/settings/organization/general) for this; runs fail if your organization isn't verified."
 - New state `api_key_option_values: Record<string, boolean>`, reset to `{}` when the key dialog opens.
 - Render the options below the fields-and-Connect row, **outside** `#api-key-fields`. `submit_api_key` reads every `<input>` in that div as a text value. Each option is a `FormElement` with `inputType="checkbox"`, `label={option.label}`, `info_description={option.info}` and `bind:value`, so the house control owns the input, label and tooltip.
 - `submit_api_key` adds `options: api_key_option_values` to the POST body.
@@ -213,9 +213,10 @@ Fixtures for the Responses bodies and SSE events come from the research probes: 
 ## 7. Release checklist
 
 1. Branch 1 PR: unit tests, wire tests, lint and type checks, the conventions gate (expect the one H24 FAIL from §3.4, reported), the paid suite. Merge.
-2. Ship the app release.
-3. Branch 2 PR: OpenAI paid tests with tools on. Merge to `main` after the release is live.
-4. Push to `remote_config`.
+2. Push to `remote_config`, before the app release or with it, so the published model list carries `openai_reasoning_summary`. At startup the desktop app replaces its bundled model list with the published one (`refresh_model_list` swaps `built_in_models` wholesale; nothing is merged). Without this push, the released app runs on the older published list, every provider's `openai_reasoning_summary` is `None`, and the summaries checkbox has no effect. The field is additive, so old apps ignore it.
+3. Ship the app release.
+4. Branch 2 PR: OpenAI paid tests with tools on. Merge to `main` after the release is live.
+5. Push to `remote_config` again. This publishes tools on and hidden `max` to every app.
 
 ## 8. Decisions
 

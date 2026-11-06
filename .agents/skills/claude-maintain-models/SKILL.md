@@ -608,7 +608,7 @@ plumbing PR must not skip them.
 ### OpenAI
 - Most GPT models use `json_schema` for structured output
 - GPT-5.x models support `available_thinking_levels` — see [Thinking Levels Reference](#thinking-levels-reference)
-- Reasoning summaries: set `openai_reasoning_summary="auto"` on the `openai` provider of GPT-5.4+ and GPT-6+ reasoning models, and of the Pro models LiteLLM already sends to `/v1/responses` (GPT-5.2 Pro, GPT-5.4 Pro). Kiln passes the value to OpenAI as `reasoning.summary` unchanged, and only sends it when the user turned on "Show reasoning summaries" when connecting OpenAI. Leave it unset on every other provider, OpenRouter included, and on models without reasoning.
+- Reasoning summaries: set `openai_reasoning_summary="auto"` on the `openai` provider of GPT-5.4+ and GPT-6+ reasoning models, and of the Pro models LiteLLM already sends to `/v1/responses` (GPT-5.2 Pro, GPT-5.4 Pro). Kiln passes the value to OpenAI as `reasoning.summary` unchanged, and only sends it when the user turned on the reasoning summaries checkbox when connecting OpenAI. Leave it unset on every other provider, OpenRouter included, and on models without reasoning.
 - Chat/instant variants (e.g. GPT-5.3 Instant) may not support reasoning effort
 - o-series models have fixed thinking tiers (separate model entries per tier, not configurable levels)
 

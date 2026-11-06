@@ -8,7 +8,7 @@ status: complete
 
 Phase 2 added the global setting `open_ai_reasoning_summaries` (default off) and everything that uses it in the adapter. Nothing sets it yet. This phase lets the user turn it on when they connect OpenAI, and turns it off when they disconnect.
 
-The OpenAI API-key dialog on the connect-providers screen gets one checkbox, "Show reasoning summaries", with an (i) tooltip that explains organization verification. The dialog sends the checkbox value to the desktop connect endpoint in a new optional `options` object. The endpoint saves the setting with the key, only after the key check succeeds. Disconnecting OpenAI turns the setting off. The same dialog serves onboarding and Settings → Providers.
+The OpenAI API-key dialog on the connect-providers screen gets one checkbox, "Show reasoning summaries (requires Org verification)", with an (i) tooltip that explains organization verification. The dialog sends the checkbox value to the desktop connect endpoint in a new optional `options` object. The endpoint saves the setting with the key, only after the key check succeeds. Disconnecting OpenAI turns the setting off. The same dialog serves onboarding and Settings → Providers.
 
 The maintainer skill gets a note on the `openai_reasoning_summary` provider field, and the `docs-sync` skill runs over the branch.
 
@@ -39,7 +39,7 @@ The maintainer skill gets a note on the `openai_reasoning_summary` provider fiel
      api_key_options?: ApiKeyOption[]
      ```
 
-   - The OpenAI entry gets one option: `id: "reasoning_summaries"`, `label: "Show reasoning summaries"`, and `info` with the text from architecture §3.10 (the verification link as a markdown link, which `InfoTooltip` renders).
+   - The OpenAI entry gets one option: `id: "reasoning_summaries"`, `label: "Show reasoning summaries (requires Org verification)"`, and `info` with the text from architecture §3.10 (the verification link as a markdown link, which `InfoTooltip` renders).
    - New state `let api_key_option_values: Record<string, boolean> = {}`. `show_api_key_dialog` sets it to every option of the opened provider mapped to `false`, so the checkbox always starts unchecked and the body always carries an explicit boolean.
    - Render the options below the fields-and-Connect row and above the Cancel link, outside `#api-key-fields` (which `submit_api_key` reads as text inputs). Each option is the house checkbox, `FormElement` with `inputType="checkbox"`, `label={option.label}`, `info_description={option.info}`, and `bind:value={api_key_option_values[option.id]}`. `FormElement` owns the `<input>`, the label and the `InfoTooltip`, so the route file writes none of them. One wrapper div owns the spacing (`pt-4`, matching the warning's wrapper in the same dialog).
    - `submit_api_key` adds `options: api_key_option_values` to the POST body.
@@ -64,7 +64,7 @@ Desktop (`app/desktop/studio_server/test_provider_api.py`). The new tests use th
 
 Web (`connect_providers.test.ts`):
 
-- `shows the reasoning summaries option, unchecked, in the OpenAI dialog`: the checkbox labelled "Show reasoning summaries" is present and unchecked, and the tooltip text names organization verification.
+- `shows the reasoning summaries option, unchecked, in the OpenAI dialog`: the checkbox labelled "Show reasoning summaries (requires Org verification)" is present and unchecked, and the tooltip text names organization verification.
 - `does not show the reasoning summaries option for other providers`: the OpenRouter dialog has no such checkbox.
 - `sends the reasoning summaries option with the OpenAI key`: checking the box and connecting posts `options: { reasoning_summaries: true }`; not checking it posts `{ reasoning_summaries: false }`.
 - `starts the option unchecked when the dialog is reopened`: check it, cancel, reopen, and it is unchecked.
