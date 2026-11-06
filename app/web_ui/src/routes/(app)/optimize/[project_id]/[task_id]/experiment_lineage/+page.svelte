@@ -169,29 +169,6 @@
             action_buttons: [],
           }
         : null
-  $: stats = [
-    {
-      count: summary.run_config_count,
-      label: ["config", "configs"],
-      always_shown: true,
-    },
-    {
-      count: summary.model_count,
-      label: ["model", "models"],
-      always_shown: true,
-    },
-    {
-      count: summary.tool_count,
-      label: ["tool", "tools"],
-      always_shown: false,
-    },
-    {
-      count: summary.skill_count,
-      label: ["skill", "skills"],
-      always_shown: false,
-    },
-  ].filter((stat) => stat.always_shown || stat.count > 0)
-
   // A new selection shows its panel from the top, not at the previous one's
   // scroll position.
   $: scroll_panel_to_top(selected_id)
@@ -288,16 +265,6 @@
     </div>
   {:else}
     <div class="flex flex-col gap-6">
-      <div class="flex gap-10">
-        {#each stats as stat}
-          <div class="flex flex-col">
-            <div class="text-xl font-medium tabular-nums">{stat.count}</div>
-            <div class="text-sm text-gray-500">
-              {stat.count === 1 ? stat.label[0] : stat.label[1]}
-            </div>
-          </div>
-        {/each}
-      </div>
       <LineageFilterChips
         bind:active={filters}
         counts={summary.filter_counts}
