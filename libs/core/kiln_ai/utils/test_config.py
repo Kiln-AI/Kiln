@@ -920,3 +920,13 @@ def test_cloudflare_properties(key, env_var, sensitive):
     assert prop.type is str
     assert prop.env_var == env_var
     assert prop.sensitive is sensitive
+
+
+def test_open_ai_reasoning_summaries_defaults_to_false(default_config):
+    assert default_config.open_ai_reasoning_summaries is False
+
+    default_config.save_setting("open_ai_reasoning_summaries", True)
+
+    reloaded = Config(properties=default_config._properties)
+    assert reloaded.open_ai_reasoning_summaries is True
+    assert default_config._properties["open_ai_reasoning_summaries"].sensitive is False

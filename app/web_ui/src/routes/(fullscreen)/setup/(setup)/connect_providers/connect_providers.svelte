@@ -20,6 +20,11 @@
   export let highlight_finetune = false
   export let required_providers: string[] = []
 
+  type ApiKeyOption = {
+    id: string
+    label: string
+    info: string
+  }
   type Provider = {
     name: string
     id: string
@@ -31,6 +36,7 @@
     api_key_warning?: string
     api_key_fields?: string[]
     optional_fields?: string[]
+    api_key_options?: ApiKeyOption[]
   }
   const providers: Provider[] = [
     {
@@ -66,6 +72,13 @@
       ],
       api_key_warning:
         "Note: the OpenAI API requires a separate account from ChatGPT.",
+      api_key_options: [
+        {
+          id: "reasoning_summaries",
+          label: "Show reasoning summaries (requires Org verification)",
+          info: "Shows a summary of the model's reasoning for newer GPT models. OpenAI requires [organization verification](https://platform.openai.com/settings/organization/general) for this; runs fail if your organization isn't verified.",
+        },
+      ],
     },
     {
       name: "Anthropic",
@@ -440,12 +453,16 @@
   let api_key_issue = false
   let api_key_submitting = false
   let api_key_message: string | null = null
+  let api_key_option_values: Record<string, boolean> = {}
   $: {
     intermediate_step = api_key_provider != null
   }
 
   const show_api_key_dialog = (provider: Provider) => {
     api_key_provider = provider
+    api_key_option_values = Object.fromEntries(
+      (provider.api_key_options || []).map((option) => [option.id, false]),
+    )
     api_key_issue = false
     api_key_message = null
     api_key_submitting = false
@@ -728,6 +745,7 @@
         body: JSON.stringify({
           provider: provider_id,
           key_data: apiKeyData,
+          options: api_key_option_values,
         }),
       })
       let data = await res.json()
@@ -1020,6 +1038,20 @@
           {/if}
         </button>
       </div>
+      <!-- submit_api_key reads every input in #api-key-fields as a key field, so options stay outside it. -->
+      {#if api_key_provider.api_key_options}
+        <div class="pt-4 flex flex-col gap-2">
+          {#each api_key_provider.api_key_options as option}
+            <FormElement
+              id={option.id}
+              inputType="checkbox"
+              label={option.label}
+              info_description={option.info}
+              bind:value={api_key_option_values[option.id]}
+            />
+          {/each}
+        </div>
+      {/if}
       <button
         class="link text-center text-sm mt-8"
         on:click={dismiss_api_key_dialog}

@@ -228,6 +228,18 @@ async def test_tools_gpt_4_1_mini_simplified(tmp_path):
     )
 
 
+@pytest.mark.paid
+async def test_tools_store_false_gpt_5_4_pro(tmp_path):
+    # LiteLLM routes gpt-5.4-pro to /v1/responses, so each tool round replays the
+    # previous round's encrypted reasoning, which OpenAI must accept under store: false.
+    task = build_test_task(tmp_path)
+    with patch("litellm.acompletion", wraps=litellm.acompletion) as acompletion_spy:
+        await run_simple_task_with_tools(task, "gpt_5_4_pro", ModelProviderName.openai)
+
+    store_values = [call.kwargs.get("store") for call in acompletion_spy.call_args_list]
+    assert store_values == [False, False, False]
+
+
 def check_supports_structured_output(model_name: str, provider_name: str):
     for model in built_in_models:
         if model.name != model_name:
@@ -310,6 +322,7 @@ async def test_tools_simplied_mocked(tmp_path):
     # Mock the Config.shared() method to return a mock config with required attributes
     mock_config = Mock()
     mock_config.open_ai_api_key = "mock_api_key"
+    mock_config.open_ai_reasoning_summaries = False
     mock_config.user_id = "test_user"
 
     responses = [mock_response_1, mock_response_2]
@@ -415,6 +428,7 @@ async def test_tools_mocked(tmp_path):
     # Mock the Config.shared() method to return a mock config with required attributes
     mock_config = Mock()
     mock_config.open_ai_api_key = "mock_api_key"
+    mock_config.open_ai_reasoning_summaries = False
     mock_config.user_id = "test_user"
 
     with (

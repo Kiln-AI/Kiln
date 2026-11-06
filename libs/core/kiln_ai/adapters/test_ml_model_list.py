@@ -470,6 +470,36 @@ def test_suggested_for_synthetic_user():
             )
 
 
+def test_openai_reasoning_summary_only_on_responses_capable_openai_providers():
+    """OpenAI returns reasoning summaries for GPT-5.4+ and GPT-6+ on OpenAI direct.
+    Pinned by name, so setting the field on any other provider has to update this list."""
+    expected = {
+        ModelName.gpt_6_1_sol,
+        ModelName.gpt_6_1_terra,
+        ModelName.gpt_6_astra,
+        ModelName.gpt_6_sol,
+        ModelName.gpt_6_luna,
+        ModelName.gpt_5_6_sol,
+        ModelName.gpt_5_6_terra,
+        ModelName.gpt_5_6_luna,
+        ModelName.gpt_5_5,
+        ModelName.gpt_5_4,
+        ModelName.gpt_5_4_pro,
+        ModelName.gpt_5_2_pro,
+    }
+
+    with_summary = {
+        (model.name, provider.name): provider.openai_reasoning_summary
+        for model in built_in_models
+        for provider in model.providers
+        if provider.openai_reasoning_summary is not None
+    }
+
+    assert with_summary == {
+        (model_name.value, ModelProviderName.openai): "auto" for model_name in expected
+    }
+
+
 def test_no_empty_multimodal_mime_types():
     """Ensure that multimodal fields are self-consistent as they are interdependent"""
     for model in built_in_models:
