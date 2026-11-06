@@ -1,14 +1,18 @@
 import datetime
 import json
 import logging
+import shutil
 import time
 import uuid
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pydantic import ValidationError
+from pydantic import PrivateAttr, ValidationError, ValidationInfo, model_validator
+from typing_extensions import Self
 
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter
 from kiln_ai.adapters.run_output import RunOutput
@@ -21,7 +25,14 @@ from kiln_ai.datamodel.basemodel import (
     name_validator,
     string_to_valid_name,
 )
-from kiln_ai.datamodel.datamodel_enums import TurnMode
+from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType, TurnMode
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfig,
+    EvalConfigType,
+    EvalDataType,
+    EvalOutputScore,
+)
 from kiln_ai.datamodel.model_cache import FileIdentity, ModelCache
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
@@ -1631,3 +1642,377 @@ def test_mutable_listing_after_a_readonly_listing_attaches_the_callers_parent(
     tasks = parent.tasks()
 
     assert all(task.cached_parent() is parent for task in tasks)
+
+
+# Characterization of the single-pass load: `load_from_file` must give the same
+# result as validating first and assigning `parent` and `path` afterwards.
+
+PLAYWRIGHT_PROJECT = Path(__file__).parents[4] / ".agents" / "playwright_project"
+
+
+def _validate_then_assign_load(
+    cls: type[KilnBaseModel],
+    path: Path | str,
+    readonly: bool = False,
+    parent: KilnBaseModel | None = None,
+) -> KilnBaseModel:
+    """Reference loader: validate, then assign `parent` and `path`.
+
+    Each assignment re-runs every model validator without the load context.
+    """
+    path = Path(path)
+    with open(path, "r", encoding="utf-8") as file:
+        parsed_json = json.loads(file.read())
+    m = cls.model_validate(
+        parsed_json, context={"loading_from_file": True, "source_dir": path.parent}
+    )
+    if not isinstance(m, cls):
+        raise ValueError(f"Loaded model is not of type {cls.__name__}")
+    m._loaded_from_file = True
+    if parent is not None:
+        m.parent = parent  # type: ignore[attr-defined]
+    m.path = path
+    if m.v > m.max_schema_version():
+        raise ValueError("schema version is higher than the current version")
+    if parsed_json["model_type"] != cls.type_name():
+        raise ValueError("model type is incorrect")
+    if readonly:
+        m.mark_as_readonly()
+    return m
+
+
+def _validated_assign_load_parent(self: KilnParentedModel) -> KilnBaseModel | None:
+    """Reference `load_parent`: attaches the parent with a validated assignment."""
+    cached_parent = self.cached_parent()
+    if cached_parent is not None:
+        return cached_parent
+    if self.path is None:
+        return None
+    parent_path = (
+        self.path.parent.parent.parent / self.__class__.parent_type().base_filename()
+    )
+    if not parent_path.exists():
+        return None
+    loaded_parent = self.__class__.parent_type().load_from_file(parent_path)
+    self.parent = loaded_parent
+    return loaded_parent
+
+
+@contextmanager
+def _validate_then_assign_loading() -> Iterator[None]:
+    with (
+        patch.object(
+            KilnBaseModel, "load_from_file", classmethod(_validate_then_assign_load)
+        ),
+        patch.object(KilnParentedModel, "load_parent", _validated_assign_load_parent),
+    ):
+        yield
+
+
+def _load_outcome(load: Callable[[], KilnBaseModel]) -> tuple[str, Any]:
+    try:
+        return "loaded", load().model_dump()
+    except Exception as e:
+        return "raised", type(e)
+
+
+def _reference_and_single_pass_outcomes(
+    cls: type[KilnBaseModel],
+    path: Path,
+    load_parent: Callable[[], KilnBaseModel] | None = None,
+) -> tuple[tuple[str, Any], tuple[str, Any]]:
+    """Load `path` with the reference loader, then with `load_from_file`.
+
+    `load_parent` runs under the same loader as the child it is passed to.
+    """
+
+    def load() -> KilnBaseModel:
+        parent = load_parent() if load_parent is not None else None
+        return cls.load_from_file(path, parent=parent)
+
+    with _validate_then_assign_loading():
+        reference = _load_outcome(load)
+    return reference, _load_outcome(load)
+
+
+def _datamodel_classes_by_type_name() -> dict[str, type[KilnBaseModel]]:
+    classes: dict[str, type[KilnBaseModel]] = {}
+    pending: list[type[KilnBaseModel]] = [KilnBaseModel]
+    while pending:
+        for subclass in pending.pop().__subclasses__():
+            pending.append(subclass)
+            module = subclass.__module__
+            if module.startswith("kiln_ai.datamodel.") and ".test_" not in module:
+                classes[subclass.type_name()] = subclass
+    return classes
+
+
+def _parent_loaders(
+    cls: type[KilnBaseModel], path: Path
+) -> list[Callable[[], KilnBaseModel] | None]:
+    """No parent, plus a loader for the record's parent file when it has one."""
+    loaders: list[Callable[[], KilnBaseModel] | None] = [None]
+    if issubclass(cls, KilnParentedModel):
+        parent_cls = cls.parent_type()
+        parent_path = path.parent.parent.parent / parent_cls.base_filename()
+        if parent_path.exists():
+            loaders.append(lambda: parent_cls.load_from_file(parent_path))
+    return loaders
+
+
+def _first_file_of_type(root: Path, model_type: str, under: str = "") -> Path:
+    for path in sorted(root.rglob("*.kiln")):
+        in_scope = under in path.as_posix()
+        if (
+            in_scope
+            and json.loads(path.read_text(encoding="utf-8"))["model_type"] == model_type
+        ):
+            return path
+    raise AssertionError(f"No {model_type} file under {root} matching {under!r}")
+
+
+@pytest.fixture
+def playwright_project_copy(tmp_path) -> Path:
+    assert PLAYWRIGHT_PROJECT.is_dir(), f"Missing fixture project {PLAYWRIGHT_PROJECT}"
+    return Path(shutil.copytree(PLAYWRIGHT_PROJECT, tmp_path / "project"))
+
+
+def test_single_pass_load_matches_validate_then_assign(playwright_project_copy):
+    classes = _datamodel_classes_by_type_name()
+    mismatches: list[str] = []
+    not_loaded: list[str] = []
+    loaded_types: set[str] = set()
+
+    for path in sorted(playwright_project_copy.rglob("*.kiln")):
+        cls = classes[json.loads(path.read_text(encoding="utf-8"))["model_type"]]
+        for load_parent in _parent_loaders(cls, path):
+            relative_path = path.relative_to(playwright_project_copy)
+            case = f"{relative_path} (parent passed: {load_parent is not None})"
+            reference, single_pass = _reference_and_single_pass_outcomes(
+                cls, path, load_parent
+            )
+            if reference != single_pass:
+                mismatches.append(case)
+            if single_pass[0] == "loaded":
+                loaded_types.add(cls.type_name())
+            else:
+                not_loaded.append(f"{case}: {single_pass[1].__name__}")
+
+    assert mismatches == []
+    assert not_loaded == []
+    assert {
+        "project",
+        "task",
+        "task_run",
+        "eval",
+        "eval_config",
+        "eval_run",
+        "document",
+        "chunk_embeddings",
+    } <= loaded_types
+
+
+def _set_field(key: str, value: Any) -> Callable[[dict[str, Any]], None]:
+    def mutate(data: dict[str, Any]) -> None:
+        data[key] = value
+
+    return mutate
+
+
+def _break_repaired_output(data: dict[str, Any]) -> None:
+    data["repair_instructions"] = "Fix it"
+    data["repaired_output"] = {"output": "not json", "model_type": "task_output"}
+
+
+@pytest.mark.parametrize(
+    "model_type,under,mutate,parent_type,expected_error",
+    [
+        ("project", "", _set_field("model_type", "task"), None, ValueError),
+        ("project", "", _set_field("v", 99), None, ValueError),
+        ("task_run", "", _set_field("tags", ["has space"]), None, ValidationError),
+        # Only the parent task's output schema rejects this repaired output.
+        (
+            "task_run",
+            "Triage Ticket",
+            _break_repaired_output,
+            None,
+            ValidationError,
+        ),
+        ("task_run", "", None, Project, ValidationError),
+    ],
+    ids=[
+        "wrong_model_type",
+        "newer_schema_version",
+        "invalid_field",
+        "fails_parent_schema",
+        "parent_of_wrong_type",
+    ],
+)
+def test_single_pass_load_matches_on_invalid_files(
+    playwright_project_copy, model_type, under, mutate, parent_type, expected_error
+):
+    path = _first_file_of_type(playwright_project_copy, model_type, under)
+    if mutate is not None:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        mutate(data)
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    cls = _datamodel_classes_by_type_name()[model_type]
+    project_path = playwright_project_copy / Project.base_filename()
+    load_parent = (
+        (lambda: parent_type.load_from_file(project_path)) if parent_type else None
+    )
+
+    reference, single_pass = _reference_and_single_pass_outcomes(cls, path, load_parent)
+
+    assert single_pass == ("raised", expected_error)
+    assert reference == single_pass
+
+
+def test_single_pass_load_runs_eval_current_config_migration(tmp_path):
+    task = _project_with_tasks(tmp_path, task_count=1).tasks()[0]
+    eval = Eval(
+        name="Reference eval",
+        parent=task,
+        evaluation_data_type=EvalDataType.reference_answer,
+        eval_set_filter_id="all",
+        eval_configs_filter_id="high_rating",
+        output_scores=[
+            EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail)
+        ],
+    )
+    eval.save_to_file()
+    first_created = datetime.datetime.now().astimezone()
+    configs = [
+        EvalConfig(
+            parent=eval,
+            name=f"Config {i}",
+            model_name="gpt-4",
+            model_provider="openai",
+            config_type=EvalConfigType.g_eval,
+            properties={"eval_steps": ["step1"]},
+            created_at=first_created + datetime.timedelta(seconds=i),
+        )
+        for i in (1, 0)
+    ]
+    for config in configs:
+        config.save_to_file()
+    assert eval.path is not None and eval.current_config_id is None
+
+    reference, single_pass = _reference_and_single_pass_outcomes(Eval, eval.path)
+
+    assert single_pass[0] == "loaded"
+    assert single_pass[1]["current_config_id"] == configs[1].id
+    assert reference == single_pass
+
+
+class ValidationRecord(KilnParentedModel):
+    """Records the state its validator sees, once per validator run."""
+
+    name: Optional[str] = None
+    _seen: list[tuple[bool, Path | None, KilnBaseModel | None]] = PrivateAttr(
+        default_factory=list
+    )
+
+    @classmethod
+    def relationship_name(cls) -> str:
+        return "records"
+
+    @classmethod
+    def parent_type(cls):
+        return BaseParentExample
+
+    @model_validator(mode="after")
+    def record_validation(self, info: ValidationInfo) -> Self:
+        self._seen.append((self.loaded_from_file(info), self.path, self.parent))
+        return self
+
+
+@pytest.fixture
+def saved_validation_record(tmp_path) -> tuple[Path, Path]:
+    """Paths of a saved `BaseParentExample` and of its `ValidationRecord` child."""
+    parent = BaseParentExample(
+        name="Parent", path=tmp_path / BaseParentExample.base_filename()
+    )
+    parent.save_to_file()
+    record = ValidationRecord(parent=parent, name="Child")
+    record.save_to_file()
+    assert parent.path is not None and record.path is not None
+    return parent.path, record.path
+
+
+@pytest.mark.parametrize("pass_parent", [True, False])
+def test_load_from_file_runs_model_validators_once(
+    saved_validation_record, pass_parent
+):
+    parent_path, record_path = saved_validation_record
+    loaded_parent = BaseParentExample.load_from_file(parent_path)
+
+    loaded = ValidationRecord.load_from_file(
+        record_path, parent=loaded_parent if pass_parent else None
+    )
+
+    assert len(loaded._seen) == 1
+    seen_loaded_from_file, seen_path, seen_parent = loaded._seen[0]
+    assert seen_loaded_from_file
+    assert seen_path == record_path
+    assert isinstance(seen_parent, BaseParentExample)
+    assert seen_parent.path == parent_path
+    assert (seen_parent is loaded_parent) == pass_parent
+    assert loaded.cached_parent() is seen_parent
+
+
+def test_mutable_cache_hit_attaches_parent_without_revalidating(
+    saved_validation_record, model_cache_enabled
+):
+    parent_path, record_path = saved_validation_record
+    ValidationRecord.load_from_file(record_path, readonly=True)
+    caller_parent = BaseParentExample.load_from_file(parent_path)
+
+    loaded = ValidationRecord.load_from_file(record_path, parent=caller_parent)
+
+    assert len(loaded._seen) == 1
+    assert loaded.cached_parent() is caller_parent
+
+
+@pytest.mark.parametrize("warm_cache", [False, True])
+def test_load_from_file_rejects_parent_of_wrong_type(
+    saved_validation_record, model_cache_enabled, warm_cache
+):
+    _, record_path = saved_validation_record
+    if warm_cache:
+        ValidationRecord.load_from_file(record_path, readonly=True)
+
+    with pytest.raises(ValidationError, match="Parent must be of type"):
+        ValidationRecord.load_from_file(record_path, parent=KilnBaseModel())
+
+
+@pytest.mark.parametrize("warm_cache", [False, True])
+def test_load_from_file_rejects_parent_for_unparented_model(
+    test_base_file, model_cache_enabled, warm_cache
+):
+    if warm_cache:
+        KilnBaseModel.load_from_file(test_base_file, readonly=True)
+
+    with pytest.raises(ValueError, match="has no parent"):
+        KilnBaseModel.load_from_file(test_base_file, parent=KilnBaseModel())
+
+
+@pytest.mark.parametrize("body", ["null", "[]", '"text"', "3"])
+@pytest.mark.parametrize("cls", [Project, TaskRun, EvalConfig])
+def test_single_pass_load_matches_on_non_object_json(tmp_path, cls, body):
+    path = tmp_path / cls.base_filename()
+    path.write_text(body)
+
+    reference, single_pass = _reference_and_single_pass_outcomes(cls, path)
+
+    assert single_pass[0] == "raised"
+    assert reference == single_pass
+
+
+@pytest.mark.parametrize("body", ["null", "[]", '"text"', "3"])
+def test_load_from_file_rejects_non_object_json(tmp_path, body):
+    path = tmp_path / Project.base_filename()
+    path.write_text(body)
+
+    with pytest.raises(ValidationError):
+        Project.load_from_file(path)

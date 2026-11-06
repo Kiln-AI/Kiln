@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -863,6 +864,55 @@ def test_taskrun_parent_task_run_id_rejected_on_single_turn_task(tmp_path):
             parent=task,
             parent_task_run_id=parent_run.id,
         )
+
+
+@pytest.fixture
+def single_turn_run_with_parent_task_run_id(tmp_path) -> tuple[Task, Path]:
+    """A single-turn task whose one run file sets `parent_task_run_id`.
+
+    The turn-mode check gates writes, so a file like this can't be created
+    through the model, but it must still load.
+    """
+    task = Task(
+        name="Single-turn",
+        instruction="i",
+        path=tmp_path / "task.kiln",
+        turn_mode=TurnMode.single_turn,
+    )
+    task.save_to_file()
+    run = TaskRun(input="c", output=TaskOutput(output="o"), parent=task)
+    run.save_to_file()
+    assert run.path is not None
+    data = json.loads(run.path.read_text(encoding="utf-8"))
+    data["parent_task_run_id"] = "123456789012"
+    run.path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    return task, run.path
+
+
+@pytest.mark.parametrize("pass_parent", [False, True])
+def test_taskrun_parent_task_run_id_on_single_turn_task_still_loads_from_file(
+    single_turn_run_with_parent_task_run_id, pass_parent
+):
+    task, run_path = single_turn_run_with_parent_task_run_id
+    parent = Task.load_from_file(task.path) if pass_parent else None
+
+    loaded = TaskRun.load_from_file(run_path, parent=parent)
+
+    assert loaded.parent_task_run_id == "123456789012"
+    assert loaded.parent_task() is not None
+
+
+def test_taskrun_parent_task_run_id_on_single_turn_task_still_loads_from_cache(
+    single_turn_run_with_parent_task_run_id, model_cache_enabled
+):
+    task, _ = single_turn_run_with_parent_task_run_id
+    loaded_task = Task.load_from_file(task.path)
+    loaded_task.runs(readonly=True)
+
+    runs = loaded_task.runs()
+
+    assert [run.parent_task_run_id for run in runs] == ["123456789012"]
+    assert runs[0].cached_parent() is loaded_task
 
 
 def test_taskrun_parent_task_run_id_allowed_on_multiturn_task(tmp_path):

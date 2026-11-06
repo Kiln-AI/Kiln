@@ -424,37 +424,29 @@ class KilnBaseModel(BaseModel):
             T: Instance of the model
 
         Raises:
-            ValueError: If the loaded model is not of the expected type or version
+            ValueError: If the loaded model is not of the expected type or version, or a parent is passed for a model that has none
             FileNotFoundError: If the file does not exist
         """
         if isinstance(path, str):
             path = Path(path)
+        if parent is not None and not issubclass(cls, KilnParentedModel):
+            raise ValueError(
+                f"{cls.__name__} has no parent, so it can't be loaded with one"
+            )
         cached_model = ModelCache.shared().get_model(path, cls, readonly=readonly)
         if cached_model is not None:
             # A readonly hit is the shared cached instance and keeps the parent it was
             # cached with. A mutable hit is a fresh copy, so it can take the caller's.
             if parent is not None and not readonly:
-                cached_model.parent = parent  # type: ignore[attr-defined]
+                cached_model._attach_parent(parent)  # type: ignore[attr-defined]
             return cached_model
         with open(path, "r", encoding="utf-8") as file:
             # From the open descriptor, so the identity describes the bytes read below.
             identity = FileIdentity.from_stat(os.fstat(file.fileno()))
-            file_data = file.read()
-            parsed_json = json.loads(file_data)
-            m = cls.model_validate(
-                parsed_json,
-                context={"loading_from_file": True, "source_dir": path.parent},
-            )
-            if not isinstance(m, cls):
-                raise ValueError(f"Loaded model is not of type {cls.__name__}")
-            m._loaded_from_file = True
-            file_data = None
-        # Assigning `path` re-runs model validators (validate_assignment), and some
-        # read `self.parent`. Without a parent attached, each one would load the
-        # parent file from disk and fully validate it.
-        if parent is not None:
-            m.parent = parent  # type: ignore[attr-defined]
-        m.path = path
+            parsed_json = json.loads(file.read())
+        m = cls._validate_file_data(parsed_json, path, parent)
+        if not isinstance(m, cls):
+            raise ValueError(f"Loaded model is not of type {cls.__name__}")
         if m.v > m.max_schema_version():
             raise ValueError(
                 f"Cannot load from file because the schema version is higher than the current version. Upgrade kiln to the latest version. "
@@ -473,6 +465,33 @@ class KilnBaseModel(BaseModel):
             # Cache, but only if readonly. Mutable models should not be cached.
             ModelCache.shared().set_model(path, m, identity)
 
+        return m
+
+    @classmethod
+    def _validate_file_data(
+        cls,
+        raw: Any,
+        path: Path,
+        parent: "KilnBaseModel | None",
+    ) -> Self:
+        """Validate a file's parsed JSON into a model, running each validator once.
+
+        Validators see `path`, `parent` and the loading context. A `parent`
+        instance is attached as-is, not copied or re-validated.
+        """
+        data = raw
+        # JSON that isn't an object goes to pydantic unchanged and fails validation.
+        if isinstance(raw, dict):
+            # Passed in the data, not assigned after: each assignment re-runs every
+            # model validator (validate_assignment), without the loading context.
+            data = {**raw, "path": path}
+            if parent is not None:
+                data["parent"] = parent
+        m = cls.model_validate(
+            data,
+            context={"loading_from_file": True, "source_dir": path.parent},
+        )
+        m._loaded_from_file = True
         return m
 
     def loaded_from_file(self, info: ValidationInfo | None = None) -> bool:
@@ -581,6 +600,17 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
     def cached_parent(self) -> Optional[KilnBaseModel]:
         return object.__getattribute__(self, "parent")
 
+    def _attach_parent(self, parent: KilnBaseModel) -> None:
+        """Set `parent` without validate_assignment, which re-runs every model validator.
+
+        That re-run has no loading context, so it would apply checks that loads skip.
+        A parent of the wrong type does go through it, so `check_parent_type` raises.
+        """
+        if isinstance(parent, self.__class__.parent_type()):
+            self.__dict__["parent"] = parent
+        else:
+            self.parent = parent
+
     def mutable_copy(self) -> Self:
         # A cached model's parent is shared by every reader of the cache, and may be
         # readonly. The copy drops it and lazy-loads its own when `parent` is read.
@@ -610,7 +640,7 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         if not parent_path.exists():
             return None
         loaded_parent = self.__class__.parent_type().load_from_file(parent_path)
-        self.parent = loaded_parent
+        self._attach_parent(loaded_parent)
         return loaded_parent
 
     # Dynamically implemented by KilnParentModel method injection

@@ -1682,7 +1682,7 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         return result
 
     @model_validator(mode="after")
-    def upgrade_old_reference_answer_eval_config(self) -> Self:
+    def upgrade_old_reference_answer_eval_config(self, info: ValidationInfo) -> Self:
         """
         Migration: Set the first judge config as the default for existing reference answer evals that don't have a current_config_id set.
 
@@ -1693,7 +1693,7 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
             return self
 
         # Only run during file loading
-        if not self._loaded_from_file:
+        if not self.loaded_from_file(info):
             return self
 
         # Skip if already migrated (has a current_config_id set)

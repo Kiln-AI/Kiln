@@ -3264,6 +3264,25 @@ def _make_v2_eval_config(**kwargs) -> EvalConfig:
     return EvalConfig(name="V2 Test", config_type=EvalConfigType.v2, **kwargs)
 
 
+def _save_config_with_unknown_expression_variable(**kwargs) -> EvalConfig:
+    """Save a V2 config whose `value_expression` names an unknown variable.
+
+    The check gates writes, so the file is edited after saving a valid config.
+    """
+    cfg = _make_v2_eval_config(
+        properties=ExactMatchProperties(
+            expected_value="yes", value_expression="final_message"
+        ),
+        **kwargs,
+    )
+    cfg.save_to_file()
+    assert cfg.path is not None
+    data = json.loads(cfg.path.read_text(encoding="utf-8"))
+    data["properties"]["value_expression"] = "outpt.status"
+    cfg.path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    return cfg
+
+
 # One value_expression per EvalTaskInput field, keyed by the root variable it
 # reads. Checked against EvalTaskInput.model_fields so the coverage claim holds.
 _EVAL_INPUT_FIELD_EXPRESSIONS = {
@@ -3466,6 +3485,34 @@ class TestV2TemplateValidation:
         )
         assert isinstance(cfg.properties, ExactMatchProperties)
         assert cfg.properties.value_expression == "outpt.status"
+
+    def test_value_expression_unknown_variable_still_loads_with_load_from_file(
+        self, tmp_path
+    ):
+        cfg = _save_config_with_unknown_expression_variable(
+            path=tmp_path / "eval_config.kiln"
+        )
+
+        loaded = EvalConfig.load_from_file(cfg.path)
+
+        assert isinstance(loaded.properties, ExactMatchProperties)
+        assert loaded.properties.value_expression == "outpt.status"
+
+    def test_value_expression_unknown_variable_still_loads_from_cache(
+        self, mock_task, tmp_path, model_cache_enabled
+    ):
+        mock_task.path = tmp_path / "task.kiln"
+        mock_task.save_to_file()
+        eval, _ = _v2_eval_and_config(mock_task)
+        eval.save_to_file()
+        _save_config_with_unknown_expression_variable(parent=eval)
+        eval.configs(readonly=True)
+
+        configs = eval.configs()
+
+        assert len(configs) == 1
+        assert isinstance(configs[0].properties, ExactMatchProperties)
+        assert configs[0].properties.value_expression == "outpt.status"
 
     def test_none_value_expression_skipped(self):
         """value_expression=None (default) should not be validated."""
