@@ -368,6 +368,17 @@ class MCPSessionManager:
         Create a session for a remote MCP server.
         """
         server_url, headers = self._prepare_remote_params(tool_server)
+        unreadable_reply: Exception | None = None
+
+        # The MCP SDK passes messages it can't read or match to this callback and
+        # leaves the request waiting. Raising ends the wait but only reports
+        # "Connection closed", so the real error is kept. MCP SDK 2.3.0 only logs
+        # a raise here, so remove this on upgrade.
+        async def end_on_unreadable_reply(message: object) -> None:
+            nonlocal unreadable_reply
+            if isinstance(message, Exception):
+                unreadable_reply = message
+                raise message
 
         try:
             async with streamablehttp_client(server_url, headers=headers) as (
@@ -376,11 +387,16 @@ class MCPSessionManager:
                 _,
             ):
                 # Create a session using the client streams
-                async with ClientSession(read_stream, write_stream) as session:
+                async with ClientSession(
+                    read_stream,
+                    write_stream,
+                    read_timeout_seconds=timedelta(seconds=30),
+                    message_handler=end_on_unreadable_reply,
+                ) as session:
                     await session.initialize()
                     yield session
         except Exception as e:
-            self._handle_remote_mcp_error(e)
+            self._handle_remote_mcp_error(unreadable_reply or e)
             raise  # unreachable but needed for type checker
 
     @asynccontextmanager
@@ -434,6 +450,7 @@ class MCPSessionManager:
             ConnectionError,
             OSError,
             httpx.RequestError,
+            McpError,
         ):
             found = self._extract_first_exception(e, exc_type)
             if found:
