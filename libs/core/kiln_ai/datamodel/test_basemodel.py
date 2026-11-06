@@ -518,7 +518,7 @@ def test_load_from_file_stores_identity(test_base_file, model_cache_enabled):
     model = KilnBaseModel.load_from_file(test_base_file, readonly=True)
 
     model_cache_enabled.set_model.assert_called_once_with(
-        test_base_file, model, FileIdentity.from_path(test_base_file)
+        test_base_file, model, FileIdentity.from_path(test_base_file), None
     )
 
 
@@ -2016,6 +2016,34 @@ def test_mutable_cache_hit_attaches_parent_without_revalidating(
 
     assert len(loaded._seen) == 1
     assert loaded.cached_parent() is caller_parent
+
+
+def test_readonly_path_and_parent_assignment_skip_validators(
+    saved_validation_record, tmp_path
+):
+    parent_path, record_path = saved_validation_record
+    record = ValidationRecord.load_from_file(record_path, readonly=True)
+    other_parent = BaseParentExample.load_from_file(parent_path)
+
+    record.path = str(tmp_path / "moved.kiln")
+    record.parent = other_parent
+
+    assert len(record._seen) == 1
+    assert record.path == tmp_path / "moved.kiln"
+    assert record.cached_parent() is other_parent
+    with pytest.raises(ValidationError, match="Parent must be of type"):
+        record.parent = KilnBaseModel()
+    with pytest.raises(ReadOnlyMutationError):
+        record.name = "renamed"
+
+
+def test_mutable_path_assignment_still_validates(saved_validation_record, tmp_path):
+    _, record_path = saved_validation_record
+    record = ValidationRecord.load_from_file(record_path)
+
+    record.path = tmp_path / "moved.kiln"
+
+    assert len(record._seen) == 2
 
 
 @pytest.mark.parametrize("warm_cache", [False, True])

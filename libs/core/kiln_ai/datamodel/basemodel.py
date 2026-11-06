@@ -28,6 +28,12 @@ from pydantic import (
 from pydantic_core import ErrorDetails
 from typing_extensions import Annotated, Self
 
+from kiln_ai.datamodel.lazy_fields import (
+    LazyFieldsMixin,
+    declares_large_field,
+    detach_large_values,
+    reload_path_for_editable_copy,
+)
 from kiln_ai.datamodel.model_cache import FileIdentity, ModelCache
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.formatting import snake_case
@@ -344,6 +350,15 @@ class KilnBaseModel(BaseModel):
     _loaded_from_file: bool = False
     _readonly: bool = False
 
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        super().__pydantic_init_subclass__(**kwargs)
+        if not issubclass(cls, LazyFieldsMixin) and declares_large_field(cls):
+            raise TypeError(
+                f"{cls.__name__} marks a field with LargeField, so it must inherit "
+                "LazyFieldsMixin, first in its bases."
+            )
+
     @computed_field()
     def model_type(self) -> str:
         return self.type_name()
@@ -362,22 +377,47 @@ class KilnBaseModel(BaseModel):
             )
 
     def __setattr__(self, name: str, value: Any) -> None:
-        """Override setattr to prevent mutations on readonly models."""
-        # Check for error condition: attempting to mutate readonly model
-        # Allow private attributes and certain safe operations even on readonly models
-        readonly_safe_attrs = {"parent", "path"}
-        if (
-            not name.startswith("_")
-            and self._readonly
-            and name not in readonly_safe_attrs
-        ):
-            self._ensure_not_readonly(name)
+        """Override setattr to prevent mutations on readonly models.
 
-        # proceed with attribute setting
+        A readonly model still accepts `path` and `parent`. They are set without
+        validate_assignment, so model validators don't re-run.
+        """
+        if not name.startswith("_") and self._readonly:
+            if name not in ("parent", "path"):
+                self._ensure_not_readonly(name)
+            # Re-running validators would read a cached record's detached large values
+            # back from the file and write them onto the shared record.
+            if self._set_location_without_validation(name, value):
+                return
         super().__setattr__(name, value)
 
+    def _set_location_without_validation(self, name: str, value: Any) -> bool:
+        """Set `path` without running validators; False if this can't set `name` to `value`.
+
+        Values it doesn't handle go through normal assignment, which validates them.
+        """
+        if name != "path" or not (
+            value is None or isinstance(value, (str, os.PathLike))
+        ):
+            return False
+        self.__dict__["path"] = None if value is None else Path(value)
+        if "path" not in self.__pydantic_fields_set__:
+            self.__pydantic_fields_set__.add("path")
+        return True
+
     def mutable_copy(self) -> Self:
-        """Create a mutable copy of the model, resetting readonly flag."""
+        """Create a mutable copy of the model, resetting readonly flag.
+
+        A cached record whose file changed on disk since it was loaded is reloaded from
+        the file instead, so the copy never mixes old fields with new large fields.
+
+        Raises:
+            LargeFieldUnavailableError: if the record's file is gone and its large
+                fields were evicted, or were read from a newer version of the file.
+        """
+        reload_path = reload_path_for_editable_copy(self)
+        if reload_path is not None:
+            return type(self).load_from_file(reload_path)
         copy = super().model_copy(deep=True)
         # Reset readonly flag on copies so they can be mutated
         copy._readonly = False
@@ -462,8 +502,21 @@ class KilnBaseModel(BaseModel):
 
         if readonly:
             m.mark_as_readonly()
+            cache = ModelCache.shared()
             # Cache, but only if readonly. Mutable models should not be cached.
-            ModelCache.shared().set_model(path, m, identity)
+            if cache.enabled:
+                detached = None
+                if isinstance(m, LazyFieldsMixin):
+                    detached = detach_large_values(
+                        m,
+                        source=cache,
+                        path=path,
+                        identity=identity,
+                        revalidate=lambda raw: cls._validate_file_data(
+                            raw, path, parent
+                        ),
+                    )
+                cache.set_model(path, m, identity, detached)
 
         return m
 
@@ -606,10 +659,16 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         That re-run has no loading context, so it would apply checks that loads skip.
         A parent of the wrong type does go through it, so `check_parent_type` raises.
         """
-        if isinstance(parent, self.__class__.parent_type()):
-            self.__dict__["parent"] = parent
-        else:
+        if not self._set_location_without_validation("parent", parent):
             self.parent = parent
+
+    def _set_location_without_validation(self, name: str, value: Any) -> bool:
+        if name == "parent" and (
+            value is None or isinstance(value, self.__class__.parent_type())
+        ):
+            self.__dict__["parent"] = value
+            return True
+        return super()._set_location_without_validation(name, value)
 
     def mutable_copy(self) -> Self:
         # A cached model's parent is shared by every reader of the cache, and may be

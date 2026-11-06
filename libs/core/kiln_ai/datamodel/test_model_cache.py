@@ -11,9 +11,11 @@ from unittest.mock import patch
 import pytest
 
 from kiln_ai.datamodel.basemodel import KilnBaseModel
+from kiln_ai.datamodel.lazy_fields import DetachedValues
 from kiln_ai.datamodel.model_cache import (
     EVICTION_TARGET_FRACTION,
     MEMORY_FACTOR,
+    MIN_RECORD_BYTES,
     FileIdentity,
     ModelCache,
     default_cache_budget_bytes,
@@ -25,6 +27,12 @@ from kiln_ai.datamodel.model_cache import (
 GIB = 1024**3
 RECORD_FILE_BYTES = 1000
 RECORD_BYTES = int(RECORD_FILE_BYTES * MEMORY_FACTOR)
+# A record with large values, split into the part the cache keeps and the large values.
+DETACHED_FILE_BYTES = 4000
+LARGE_BYTES = 4000
+DETACHED_NORMAL_BYTES = int(DETACHED_FILE_BYTES * MEMORY_FACTOR) - LARGE_BYTES
+DETACHED_RECORD_BYTES = DETACHED_NORMAL_BYTES + LARGE_BYTES
+LARGE_VALUES = {("body",): "a large value"}
 
 
 class KilnModelTest(KilnBaseModel):
@@ -66,6 +74,27 @@ def cache_with_model(cache: ModelCache, path: Path) -> KilnModelTest:
     return model
 
 
+def cache_with_detached(
+    cache: ModelCache, path: Path, large_bytes: int = LARGE_BYTES
+) -> object:
+    """Cache a record as if `detach_large_values` took large values out of it; returns
+    the owner token the large-value methods take."""
+    owner = object()
+    cache.set_model(
+        path,
+        readonly_model(),
+        identity_of(path),
+        DetachedValues(values=dict(LARGE_VALUES), size=large_bytes, owner=owner),
+    )
+    return owner
+
+
+def drop_large_values(cache: ModelCache, path: Path) -> None:
+    with cache._lock:
+        if path in cache._loaded:
+            cache._drop_large_values(path)
+
+
 def restore_mtime(path: Path, identity: FileIdentity) -> None:
     os.utime(path, ns=(identity.mtime_ns, identity.mtime_ns))
 
@@ -81,6 +110,16 @@ def record_files(tmp_path) -> list[Path]:
     return [write_record_file(tmp_path / f"record_{i}.kiln") for i in range(10)]
 
 
+@pytest.fixture
+def detached_files(tmp_path) -> list[Path]:
+    """Files whose records, cached with LARGE_BYTES of large values, count
+    DETACHED_RECORD_BYTES each."""
+    return [
+        write_record_file(tmp_path / f"detached_{i}.kiln", DETACHED_FILE_BYTES)
+        for i in range(6)
+    ]
+
+
 def cache_with_budget_for(records: float) -> ModelCache:
     return ModelCache(enabled=True, budget_bytes=int(records * RECORD_BYTES))
 
@@ -90,27 +129,23 @@ def cached_paths(cache: ModelCache) -> list[Path]:
     return list(cache._records)
 
 
+def loaded_paths(cache: ModelCache) -> list[Path]:
+    """Paths whose large values are cached, least recently used first."""
+    return list(cache._loaded)
+
+
 def assert_accounting_consistent(cache: ModelCache) -> None:
     stats = cache.stats()
-    assert stats.records == len(cache._records)
+    entries = cache._records
+    assert stats.records == len(entries)
+    assert stats.records_with_large_values == len(cache._loaded)
+    for path, entry in entries.items():
+        assert (entry.large_values is not None) == (path in cache._loaded)
+    assert set(cache._loaded) <= set(entries)
     assert stats.total_bytes == sum(
-        entry.estimated_bytes for entry in cache._records.values()
-    )
+        entry.normal_bytes for entry in entries.values()
+    ) + sum(entries[path].large_bytes for path in cache._loaded)
     assert stats.total_bytes <= stats.budget_bytes
-
-
-def run_threads_with_frequent_switches(threads: list[threading.Thread]) -> None:
-    """A tiny switch interval makes the interpreter change threads often enough to hit
-    race windows in a short run."""
-    switch_interval = sys.getswitchinterval()
-    sys.setswitchinterval(1e-6)
-    try:
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-    finally:
-        sys.setswitchinterval(switch_interval)
 
 
 def test_disabled_by_default(test_path):
@@ -312,7 +347,9 @@ def test_benchmark_get_model(benchmark, model_cache, test_path):
         )
 
 
-def test_concurrent_access_from_threads_does_not_raise(model_cache, test_path):
+def test_concurrent_access_from_threads_does_not_raise(
+    model_cache, test_path, run_racing_threads
+):
     """The shared cache is used from the event loop and from worker threads at once.
 
     A reader finds the entry, then another thread removes it before the reader
@@ -346,9 +383,7 @@ def test_concurrent_access_from_threads_does_not_raise(model_cache, test_path):
         model_cache.set_model(test_path, model, stale)
 
     steps = [read] * 4 + [store_then_invalidate] * 2 + [store_stale] * 2
-    run_threads_with_frequent_switches(
-        [threading.Thread(target=run, args=(step,)) for step in steps]
-    )
+    run_racing_threads([threading.Thread(target=run, args=(step,)) for step in steps])
 
     assert errors == []
 
@@ -393,7 +428,8 @@ def test_eviction_drops_least_recently_used_down_to_ninety_percent(
         for record in caplog.records
         if record.name == "kiln_ai.datamodel.model_cache"
     ] == [
-        f"Evicted {evicted} cached records; {stats.records} records and "
+        f"Evicted the large values of 0 cached records and {evicted} whole records; "
+        f"{stats.records} records (0 with large values) and "
         f"{stats.total_bytes} of {stats.budget_bytes} budget bytes remain"
     ]
 
@@ -474,12 +510,13 @@ def test_removals_subtract_sizes(
     model_cache, record_files, remove: Callable[[ModelCache, Path], None]
 ):
     removed, kept = record_files[:2]
-    cache_with_model(model_cache, removed)
+    cache_with_detached(model_cache, removed, large_bytes=100)
     cache_with_model(model_cache, kept)
 
     remove(model_cache, removed)
 
     assert cached_paths(model_cache) == [kept]
+    assert loaded_paths(model_cache) == []
     assert model_cache.stats().total_bytes == RECORD_BYTES
 
 
@@ -491,11 +528,16 @@ def test_removals_subtract_sizes(
 def test_dropping_everything_resets_accounting(model_cache, record_files, drop_all):
     for path in record_files[:3]:
         cache_with_model(model_cache, path)
+    cache_with_detached(model_cache, record_files[3], large_bytes=100)
 
     drop_all(model_cache)
 
     stats = model_cache.stats()
-    assert (stats.records, stats.total_bytes) == (0, 0)
+    assert (stats.records, stats.records_with_large_values, stats.total_bytes) == (
+        0,
+        0,
+        0,
+    )
 
 
 def test_accounting_matches_entries(tmp_path):
@@ -511,35 +553,83 @@ def test_accounting_matches_entries(tmp_path):
         for i in range(30)
     ]
     cache = cache_with_budget_for(budget_records)
+    owners: dict[Path, object] = {}
+
+    def random_large_size() -> int:
+        return rng.randint(1, (budget_records + 2) * RECORD_FILE_BYTES)
+
+    def owner_or_stranger(path: Path) -> object:
+        return owners.get(path) if rng.random() < 0.9 else object()
+
+    def set_detached(path: Path) -> None:
+        owners[path] = cache_with_detached(cache, path, random_large_size())
+
     operations: list[Callable[[Path], object]] = [
         lambda path: cache_with_model(cache, path),
-        lambda path: cache_with_model(cache, path),
+        set_detached,
+        set_detached,
         lambda path: cache.get_model(path, KilnModelTest, readonly=True),
         lambda path: cache.get_model_id(path, KilnModelTest),
+        lambda path: cache.large_values_for(path, owner_or_stranger(path)),
+        lambda path: cache.store_restored_values(
+            path,
+            owner_or_stranger(path),
+            identity_of(path),
+            LARGE_VALUES,
+            random_large_size(),
+        ),
+        lambda path: drop_large_values(cache, path),
+        lambda path: cache.drop_entry(path, owner_or_stranger(path)),
         cache.invalidate,
         lambda path: write_record_file(path, random_size()),
     ]
 
+    most_with_large_values = 0
     for _ in range(2000):
         rng.choice(operations)(rng.choice(paths))
         assert_accounting_consistent(cache)
+        most_with_large_values = max(
+            most_with_large_values, cache.stats().records_with_large_values
+        )
     assert cache.stats().records > 0
+    assert most_with_large_values > 1
 
 
-def test_concurrent_get_set_invalidate(tmp_path):
+def test_concurrent_get_set_invalidate(tmp_path, run_racing_threads):
     paths = [write_record_file(tmp_path / f"record_{i}.kiln") for i in range(200)]
     identities = {path: identity_of(path) for path in paths}
     cache = cache_with_budget_for(20)
     model = readonly_model()
+    owners: dict[Path, object] = {}
     errors: list[BaseException] = []
     deadline = time.monotonic() + 0.5
+
+    def set_detached(path: Path) -> None:
+        owner = object()
+        owners[path] = owner
+        cache.set_model(
+            path,
+            model,
+            identities[path],
+            DetachedValues(values=LARGE_VALUES, size=200, owner=owner),
+        )
+
+    def store_restored(path: Path) -> None:
+        cache.store_restored_values(
+            path, owners.get(path), identities[path], LARGE_VALUES, 200
+        )
 
     def run(seed: int) -> None:
         rng = random.Random(seed)
         operations: list[Callable[[Path], object]] = [
             lambda path: cache.set_model(path, model, identities[path]),
+            set_detached,
             lambda path: cache.get_model(path, KilnModelTest, readonly=True),
             lambda path: cache.get_model_id(path, KilnModelTest),
+            lambda path: cache.large_values_for(path, owners.get(path)),
+            store_restored,
+            lambda path: drop_large_values(cache, path),
+            lambda path: cache.drop_entry(path, owners.get(path)),
             cache.invalidate,
         ]
         try:
@@ -548,7 +638,7 @@ def test_concurrent_get_set_invalidate(tmp_path):
         except BaseException as error:
             errors.append(error)
 
-    run_threads_with_frequent_switches(
+    run_racing_threads(
         [threading.Thread(target=run, args=(seed,)) for seed in range(8)]
     )
 
@@ -621,3 +711,181 @@ def test_physical_memory_bytes_from_sysconf(sysconf_values, expected):
 
     with patch.object(os, "sysconf", side_effect=sysconf):
         assert physical_memory_bytes() == expected
+
+
+def test_detached_entry_accounting(model_cache, detached_files, record_files):
+    cache_with_detached(model_cache, detached_files[0])
+    cache_with_detached(model_cache, detached_files[1], large_bytes=LARGE_BYTES * 2)
+    model_cache.set_model(
+        record_files[0],
+        readonly_model(),
+        identity_of(record_files[0]),
+        DetachedValues(values={}, size=0, owner=object()),
+    )
+
+    first, second, nothing_detached = model_cache._records.values()
+    assert (first.normal_bytes, first.large_bytes) == (
+        DETACHED_NORMAL_BYTES,
+        LARGE_BYTES,
+    )
+    assert second.normal_bytes == MIN_RECORD_BYTES
+    assert (nothing_detached.normal_bytes, nothing_detached.large_owner) == (
+        RECORD_BYTES,
+        None,
+    )
+    stats = model_cache.stats()
+    assert (stats.records, stats.records_with_large_values) == (3, 2)
+    assert stats.total_bytes == (
+        DETACHED_RECORD_BYTES + MIN_RECORD_BYTES + 2 * LARGE_BYTES + RECORD_BYTES
+    )
+
+
+def test_eviction_takes_large_values_first(detached_files):
+    cache = ModelCache(enabled=True, budget_bytes=3 * DETACHED_RECORD_BYTES)
+
+    for path in detached_files[:4]:
+        cache_with_detached(cache, path)
+
+    assert cached_paths(cache) == detached_files[:4]
+    assert loaded_paths(cache) == detached_files[2:4]
+    assert_accounting_consistent(cache)
+
+
+def test_whole_records_evicted_once_no_large_values_remain(
+    detached_files, record_files
+):
+    cache = ModelCache(
+        enabled=True, budget_bytes=DETACHED_RECORD_BYTES + 2 * RECORD_BYTES
+    )
+    cache_with_detached(cache, detached_files[0])
+    for path in record_files[:3]:
+        cache_with_model(cache, path)
+    assert loaded_paths(cache) == []
+    assert cached_paths(cache) == [detached_files[0], *record_files[:3]]
+
+    for path in record_files[3:6]:
+        cache_with_model(cache, path)
+
+    assert cached_paths(cache) == record_files[1:6]
+    assert_accounting_consistent(cache)
+
+
+def test_large_value_access_touches_lru_order(detached_files):
+    cache = ModelCache(enabled=True, budget_bytes=3 * DETACHED_RECORD_BYTES)
+    oldest, *others = detached_files[:3]
+    owner = cache_with_detached(cache, oldest)
+    for path in others:
+        cache_with_detached(cache, path)
+
+    assert cache.large_values_for(oldest, owner) == LARGE_VALUES
+    cache_with_detached(cache, detached_files[3])
+
+    assert loaded_paths(cache) == [oldest, detached_files[3]]
+    assert cached_paths(cache) == [*others, oldest, detached_files[3]]
+
+
+def test_large_values_larger_than_budget_served_not_kept(detached_files):
+    path = detached_files[0]
+    cache = ModelCache(enabled=True, budget_bytes=LARGE_BYTES - 1)
+    owner = cache_with_detached(cache, path)
+
+    assert cached_paths(cache) == [path]
+    assert loaded_paths(cache) == []
+    assert cache.stats().total_bytes == DETACHED_NORMAL_BYTES
+    assert cache.large_values_for(path, owner) is None
+    assert not cache.store_restored_values(
+        path, owner, identity_of(path), LARGE_VALUES, LARGE_BYTES
+    )
+    assert cache.is_current_entry(path, owner)
+
+
+def test_store_restored_values_rejects_stale_identity(model_cache, detached_files):
+    path = detached_files[0]
+    owner = cache_with_detached(model_cache, path)
+    drop_large_values(model_cache, path)
+    current = identity_of(path)
+    stale = FileIdentity(
+        mtime_ns=current.mtime_ns - 1, size=current.size, inode=current.inode
+    )
+
+    assert not model_cache.store_restored_values(
+        path, owner, stale, LARGE_VALUES, LARGE_BYTES
+    )
+    assert loaded_paths(model_cache) == []
+
+
+def test_store_restored_values_rejects_replaced_entry(model_cache, detached_files):
+    path = detached_files[0]
+    old_owner = cache_with_detached(model_cache, path)
+    new_owner = cache_with_detached(model_cache, path)
+    drop_large_values(model_cache, path)
+
+    assert not model_cache.store_restored_values(
+        path, old_owner, identity_of(path), LARGE_VALUES, LARGE_BYTES
+    )
+    assert model_cache.large_values_for(path, old_owner) is None
+    assert not model_cache.is_current_entry(path, old_owner)
+    assert model_cache.is_current_entry(path, new_owner)
+    assert loaded_paths(model_cache) == []
+
+
+def test_store_restored_values_second_writer_keeps_first(model_cache, detached_files):
+    path = detached_files[0]
+    owner = cache_with_detached(model_cache, path)
+    drop_large_values(model_cache, path)
+    first = {("body",): "first"}
+    second = {("body",): "second"}
+
+    assert model_cache.store_restored_values(
+        path, owner, identity_of(path), first, LARGE_BYTES
+    )
+    assert model_cache.store_restored_values(
+        path, owner, identity_of(path), second, LARGE_BYTES
+    )
+
+    assert model_cache.large_values_for(path, owner) is first
+    assert_accounting_consistent(model_cache)
+
+
+def test_store_restored_values_evicts_when_over_budget(detached_files, record_files):
+    cache = ModelCache(enabled=True, budget_bytes=2 * DETACHED_RECORD_BYTES)
+    restored, other = detached_files[:2]
+    owner = cache_with_detached(cache, restored)
+    cache_with_detached(cache, other)
+    drop_large_values(cache, restored)
+    cache_with_model(cache, record_files[0])
+
+    assert cache.store_restored_values(
+        restored, owner, identity_of(restored), LARGE_VALUES, LARGE_BYTES
+    )
+
+    assert loaded_paths(cache) == [restored]
+    assert cached_paths(cache) == [other, record_files[0], restored]
+    assert_accounting_consistent(cache)
+
+
+def test_drop_entry_only_drops_owner(model_cache, detached_files):
+    path = detached_files[0]
+    owner = cache_with_detached(model_cache, path)
+
+    model_cache.drop_entry(path, object())
+    assert cached_paths(model_cache) == [path]
+
+    model_cache.drop_entry(path, owner)
+    assert cached_paths(model_cache) == []
+    assert model_cache.stats().total_bytes == 0
+
+
+def test_large_value_methods_when_disabled(model_cache, detached_files):
+    path = detached_files[0]
+    owner = cache_with_detached(model_cache, path)
+
+    model_cache.set_enabled(False)
+
+    assert model_cache.large_values_for(path, owner) is None
+    assert not model_cache.store_restored_values(
+        path, owner, identity_of(path), LARGE_VALUES, LARGE_BYTES
+    )
+    assert not model_cache.is_current_entry(path, owner)
+    cache_with_detached(model_cache, path)
+    assert model_cache.stats().records == 0
