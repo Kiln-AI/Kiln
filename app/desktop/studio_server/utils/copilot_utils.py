@@ -647,9 +647,20 @@ def find_multi_turn_chain_leaves(task: Task, batch_tag: str) -> list[TaskRun]:
     leaf reconstructs the full conversation if a caller needs it; for eval
     purposes the leaf alone is enough because its `.trace` field already
     holds the cumulative OpenAI-format conversation.
+
+    The leaves are editable copies; the task's other runs are only scanned.
     """
-    target_tag = f"{_TAG_PREFIX_SU_BATCH}{batch_tag}"
-    return [run for run in task.runs() if target_tag in (run.tags or [])]
+    return _editable_runs_tagged(task, f"{_TAG_PREFIX_SU_BATCH}{batch_tag}")
+
+
+def _editable_runs_tagged(task: Task, tag: str) -> list[TaskRun]:
+    # The spec save tags and rates the batch runs it gets back, so those are
+    # editable copies. A copy needs every field, so only the matches are copied.
+    return [
+        run.mutable_copy()
+        for run in task.runs(readonly=True)
+        if tag in (run.tags or [])
+    ]
 
 
 def _is_annotated(run: TaskRun) -> bool:
@@ -683,7 +694,7 @@ def delete_multi_turn_batch_chains(task: Task, batch_tag: str) -> int:
     # include_intermediate_runs: the ancestor walk needs the complete on-disk
     # set, not the default leaves-only view. One corpus load serves the leaf
     # scan, the descendant check, and the ancestor lookups.
-    all_runs = task.runs(include_intermediate_runs=True)
+    all_runs = task.runs(include_intermediate_runs=True, readonly=True)
     runs_by_id = {str(run.id): run for run in all_runs}
     parent_ids = {
         str(run.parent_task_run_id)
@@ -753,9 +764,11 @@ def single_turn_drive_tags(batch_tag: str) -> list[str]:
 
 
 def find_single_turn_batch_runs(task: Task, batch_tag: str) -> list[TaskRun]:
-    """Return the runs of one single-turn pipeline batch, by its batch tag."""
-    target_tag = f"{_TAG_PREFIX_SINGLE_TURN_DRIVE_BATCH}{batch_tag}"
-    return [run for run in task.runs() if target_tag in (run.tags or [])]
+    """Return editable copies of the runs of one single-turn pipeline batch, by its
+    batch tag. The task's other runs are only scanned."""
+    return _editable_runs_tagged(
+        task, f"{_TAG_PREFIX_SINGLE_TURN_DRIVE_BATCH}{batch_tag}"
+    )
 
 
 def delete_single_turn_batch_runs(task: Task, batch_tag: str) -> int:
@@ -778,7 +791,10 @@ def delete_single_turn_batch_runs(task: Task, batch_tag: str) -> int:
     target_tag = f"{_TAG_PREFIX_SINGLE_TURN_DRIVE_BATCH}{batch_tag}"
     pipeline_tags = {_TAG_SINGLE_TURN_DRIVE, target_tag}
     deleted = 0
-    for run in find_single_turn_batch_runs(task, batch_tag):
+    batch_runs = (
+        run for run in task.runs(readonly=True) if target_tag in (run.tags or [])
+    )
+    for run in batch_runs:
         if set(run.tags or []) != pipeline_tags or _is_annotated(run):
             logger.info(
                 "Skipping delete of single-turn run %s: claimed by another flow",

@@ -867,12 +867,17 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
 
     @classmethod
     def from_id_and_parent_path(
-        cls: Type[PT], id: str, parent_path: Path | None
+        cls: Type[PT], id: str, parent_path: Path | None, readonly: bool = False
     ) -> PT | None:
         """
         Fast search by ID using the cache. Avoids the model_copy overhead on all but the exact match.
 
         Uses cache so still slow on first load.
+
+        Pass readonly=True for read-only consumers. The result then raises
+        ReadOnlyMutationError on assignment. With the model cache on, it is the shared
+        cached record rather than a copy, and the siblings read to check their ids are
+        cached too, so later lookups don't read them again.
         """
         if parent_path is None:
             return None
@@ -881,9 +886,9 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         for child_path in cls.iterate_children_paths_of_parent_path(parent_path):
             child_id = ModelCache.shared().get_model_id(child_path, cls)
             if child_id == id:
-                return cls.load_from_file(child_path)
+                return cls.load_from_file(child_path, readonly=readonly)
             if child_id is None:
-                child = cls.load_from_file(child_path)
+                child = cls.load_from_file(child_path, readonly=readonly)
                 if child.id == id:
                     return child
         return None

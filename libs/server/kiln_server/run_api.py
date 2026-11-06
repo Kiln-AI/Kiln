@@ -70,7 +70,9 @@ def _walk_run_chain(
         if current.parent_task_run_id in visited:
             chain.reverse()
             return chain, True
-        parent = TaskRun.from_id_and_parent_path(current.parent_task_run_id, task_path)
+        parent = TaskRun.from_id_and_parent_path(
+            current.parent_task_run_id, task_path, readonly=True
+        )
         if parent is None:
             chain.reverse()
             return chain, True
@@ -479,7 +481,7 @@ def connect_run_api(app: FastAPI):
         ],
     ) -> RunChainResponse:
         task = task_from_id(project_id, task_id)
-        leaf = TaskRun.from_id_and_parent_path(run_id, task.path)
+        leaf = TaskRun.from_id_and_parent_path(run_id, task.path, readonly=True)
         if leaf is None:
             raise HTTPException(
                 status_code=404,
@@ -582,9 +584,18 @@ def connect_run_api(app: FastAPI):
                 ge=1,
             ),
         ] = None,
+        run_ids: Annotated[
+            list[str] | None,
+            Query(
+                description="Only return the runs with these IDs. Repeat the parameter for each ID. IDs of intermediate runs, or IDs that match no run, are ignored. When omitted, runs are not filtered by ID.",
+            ),
+        ] = None,
     ) -> list[TaskRun]:
         task = task_from_id(project_id, task_id)
         runs = list(task.runs(readonly=True))
+        if run_ids is not None:
+            wanted_ids = set(run_ids)
+            runs = [run for run in runs if run.id in wanted_ids]
         runs.sort(key=lambda r: r.created_at, reverse=True)
         if limit is not None:
             runs = runs[:limit]
@@ -697,7 +708,7 @@ def connect_run_api(app: FastAPI):
 
         for run_id in run_ids:
             try:
-                run = TaskRun.from_id_and_parent_path(run_id, task.path)
+                run = TaskRun.from_id_and_parent_path(run_id, task.path, readonly=True)
                 if run is None:
                     record_failure(run_id, "Run not found")
                     continue
@@ -816,7 +827,9 @@ def connect_run_api(app: FastAPI):
         # just-saved run and tell the caller what happened.
         if request.parent_task_run_id is not None:
             parent_still_exists = (
-                TaskRun.from_id_and_parent_path(request.parent_task_run_id, task.path)
+                TaskRun.from_id_and_parent_path(
+                    request.parent_task_run_id, task.path, readonly=True
+                )
                 is not None
             )
             if not parent_still_exists:

@@ -15774,6 +15774,8 @@ export interface operations {
             query?: {
                 /** @description Maximum number of runs to return. When set, the most recent runs (by created_at) are returned. When omitted, all runs are returned. */
                 limit?: number | null;
+                /** @description Only return the runs with these IDs. Repeat the parameter for each ID. IDs of intermediate runs, or IDs that match no run, are ignored. When omitted, runs are not filtered by ID. */
+                run_ids?: string[] | null;
             };
             header?: never;
             path: {

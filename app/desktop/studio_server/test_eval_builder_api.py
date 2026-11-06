@@ -2008,9 +2008,11 @@ class TestJudgeTraces:
             trace = call.kwargs["trace"]
             assert any(m.get("role") == "system" for m in trace)
             assert any(m.get("role") == "tool" for m in trace)
-        # One bulk disk scan serves the whole batch.
+        # One bulk disk scan serves the whole batch, and reads it as readonly
+        # cached records rather than copies.
         judge_traces_seams["loader"].assert_called_once()
         assert judge_traces_seams["loader"].call_args.args[0] == {"leaf-0", "leaf-1"}
+        assert judge_traces_seams["loader"].call_args.kwargs == {"readonly": True}
 
     def test_case_index_follows_request_order(
         self, client, judge_traces_request, judge_traces_seams

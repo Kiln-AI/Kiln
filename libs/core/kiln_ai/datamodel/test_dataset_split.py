@@ -222,6 +222,25 @@ def test_dataset_split_with_high_rating_filter(sample_task, sample_task_runs):
     assert test_size == 1  # ~20% of 6
 
 
+def test_build_split_contents_reads_no_large_fields(
+    sample_task,
+    sample_task_runs,
+    model_cache_enabled,
+    evict_large_values,
+    large_field_restores,
+):
+    high_rated_ids = {run.id for run in sample_task_runs[:6]}
+    list(sample_task.runs(readonly=True))
+    evict_large_values()
+
+    dataset = DatasetSplit.from_task(
+        "Split Name", sample_task, AllSplitDefinition, filter_id="high_rating"
+    )
+
+    assert set(dataset.split_contents["all"]) == high_rated_ids
+    large_field_restores.assert_not_called()
+
+
 def test_dataset_split_with_single_split(sample_task, sample_task_runs):
     splits = [DatasetSplitDefinition(name="all", percentage=1.0)]
     dataset = DatasetSplit.from_task("Split Name", sample_task, splits)

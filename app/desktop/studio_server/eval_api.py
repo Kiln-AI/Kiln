@@ -3343,7 +3343,9 @@ def connect_evals_api(app: FastAPI):
             )
 
         filter = dataset_filter_from_id(eval.eval_configs_filter_id)
-        expected_dataset_items = {run.id: run for run in task.runs() if filter(run)}
+        expected_dataset_items = {
+            run.id: run for run in task.runs(readonly=True) if filter(run)
+        }
         expected_dataset_ids = set(expected_dataset_items.keys())
         if len(expected_dataset_ids) == 0:
             return EvalConfigCompareSummary(

@@ -9840,3 +9840,57 @@ def test_score_summaries_read_no_large_fields(
     )
     assert legacy.input.startswith("input ")
     assert large_field_restores.call_count == 1
+
+
+def test_eval_configs_score_summary_reads_no_large_fields(
+    client,
+    mock_task_from_id,
+    mock_task,
+    mock_eval,
+    mock_eval_config,
+    data_source,
+    model_cache_enabled,
+    evict_large_values,
+    large_field_restores,
+):
+    """The judge comparison page aggregates every golden item and eval run of a task,
+    so it must not re-read an evicted record's file."""
+    for human_rating in [2.0, 5.0]:
+        item = TaskRun(
+            parent=mock_task,
+            input="golden input " * 20,
+            input_source=data_source,
+            output=TaskOutput(
+                output="golden output " * 20,
+                rating=TaskOutputRating(value=human_rating),
+            ),
+            tags=["golden"],
+        )
+        item.save_to_file()
+        EvalRun(
+            eval_config_eval=True,
+            task_run_config_id=None,
+            scores={"score1": 3.0, "overall_rating": 4.0},
+            input="scored input " * 20,
+            output="scored output " * 20,
+            dataset_id=item.id,
+            parent=mock_eval_config,
+        ).save_to_file()
+
+    def fetch() -> dict:
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_configs_score_summary"
+        )
+        assert response.status_code == 200
+        return response.json()
+
+    model_cache_enabled.set_enabled(False)
+    cache_off = fetch()
+    model_cache_enabled.set_enabled(True)
+    list(mock_task.runs(readonly=True))
+    list(mock_eval_config.runs(readonly=True))
+    evict_large_values()
+
+    assert cache_off["dataset_size"] == 2
+    assert fetch() == cache_off
+    large_field_restores.assert_not_called()

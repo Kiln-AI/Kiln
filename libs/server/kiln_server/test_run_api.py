@@ -837,6 +837,30 @@ async def test_get_runs_with_limit(client, task_run_setup):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("limit", "expected_positions"), [(None, [3, 1]), (1, [3])])
+async def test_get_runs_with_run_ids(client, task_run_setup, limit, expected_positions):
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    runs = [
+        _make_run_with_date(task, datetime(2024, 1, i + 1, tzinfo=timezone.utc))
+        for i in range(5)
+    ]
+    params: dict[str, object] = {"run_ids": [runs[1].id, runs[3].id, "missing"]}
+    if limit is not None:
+        params["limit"] = limit
+
+    with patch("kiln_server.run_api.task_from_id", return_value=task):
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs", params=params
+        )
+
+    assert response.status_code == 200
+    assert [r["id"] for r in response.json()] == [
+        runs[i].id for i in expected_positions
+    ]
+
+
+@pytest.mark.asyncio
 async def test_get_runs_without_limit_returns_all(client, task_run_setup):
     project = task_run_setup["project"]
     task = task_run_setup["task"]
@@ -3554,3 +3578,62 @@ async def test_run_endpoints_match_cache_off_after_eviction(
     large_field_restores.assert_not_called()
     assert [fetch(path) for path in endpoints] == cache_off
     assert large_field_restores.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_get_chain_reads_only_the_leaf_large_fields(
+    client,
+    multiturn_task_run_setup,
+    model_cache_enabled,
+    evict_large_values,
+    large_field_restores,
+):
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+    _, _, leaf = _build_three_turn_chain(task)
+
+    def fetch_chain() -> object:
+        with patch("kiln_server.run_api.task_from_id", return_value=task):
+            response = client.get(
+                f"/api/projects/{project.id}/tasks/{task.id}/runs/{leaf.id}/chain"
+            )
+        assert response.status_code == 200
+        return response.json()
+
+    model_cache_enabled.set_enabled(False)
+    cache_off = fetch_chain()
+    model_cache_enabled.set_enabled(True)
+    list(task.runs(include_intermediate_runs=True, readonly=True))
+    evict_large_values()
+
+    assert fetch_chain() == cache_off
+    assert large_field_restores.call_count == 1
+    assert large_field_restores.call_args.args[0].path == leaf.path
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_reads_no_large_fields(
+    client,
+    task_run_setup,
+    model_cache_enabled,
+    evict_large_values,
+    large_field_restores,
+):
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    runs = [
+        _make_task_run(task, input_text=f"input {i}", output_text=f"output {i}")
+        for i in range(3)
+    ]
+    list(task.runs(readonly=True))
+    evict_large_values()
+
+    with patch("kiln_server.run_api.task_from_id", return_value=task):
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/delete",
+            json=[str(run.id) for run in runs],
+        )
+
+    assert response.status_code == 200
+    assert all(run.path is not None and not run.path.exists() for run in runs)
+    large_field_restores.assert_not_called()

@@ -718,6 +718,51 @@ def test_from_id_and_parent_path_without_parent():
     assert not_found is None
 
 
+def test_from_id_and_parent_path_readonly(test_base_parented_file, model_cache_enabled):
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+    child = DefaultParentedModel(parent=parent, name="Child")
+    child.save_to_file()
+    assert child.id is not None and child.path is not None
+
+    found = DefaultParentedModel.from_id_and_parent_path(
+        child.id, test_base_parented_file, readonly=True
+    )
+
+    assert found is DefaultParentedModel.load_from_file(child.path, readonly=True)
+    with pytest.raises(ReadOnlyMutationError):
+        found.name = "Renamed"
+    editable = DefaultParentedModel.from_id_and_parent_path(
+        child.id, test_base_parented_file
+    )
+    assert editable is not None and editable is not found
+    editable.name = "Renamed"
+
+
+@pytest.mark.parametrize("readonly", [True, False])
+def test_from_id_and_parent_path_caches_scanned_siblings_only_when_readonly(
+    test_base_parented_file, model_cache_enabled, readonly
+):
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+    children = [DefaultParentedModel(parent=parent, name=f"Child{i}") for i in range(3)]
+    for child in children:
+        child.save_to_file()
+
+    assert (
+        DefaultParentedModel.from_id_and_parent_path(
+            "missing", test_base_parented_file, readonly=readonly
+        )
+        is None
+    )
+
+    cached_ids = [
+        model_cache_enabled.get_model_id(child.path, DefaultParentedModel)
+        for child in children
+        if child.path is not None
+    ]
+    expected = [child.id for child in children] if readonly else [None] * 3
+    assert cached_ids == expected
+
+
 def test_from_ids_and_parent_path_basic(test_base_parented_file, model_cache_enabled):
     """Test basic functionality of from_ids_and_parent_path method"""
     # Set up parent and children models
