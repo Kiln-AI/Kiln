@@ -609,6 +609,8 @@ plumbing PR must not skip them.
 - Most GPT models use `json_schema` for structured output
 - GPT-5.x models support `available_thinking_levels` — see [Thinking Levels Reference](#thinking-levels-reference)
 - Reasoning summaries: set `openai_reasoning_summary="auto"` on the `openai` provider of GPT-5.4+ and GPT-6+ reasoning models, and of the Pro models LiteLLM already sends to `/v1/responses` (GPT-5.2 Pro, GPT-5.4 Pro). Kiln passes the value to OpenAI as `reasoning.summary` unchanged, and only sends it when the user turned on the reasoning summaries checkbox when connecting OpenAI. Leave it unset on every other provider, OpenRouter included, and on models without reasoning.
+- Tools on GPT-5.4+ and GPT-6+: leave `supports_function_calling` at its default on the `openai` provider. `/v1/chat/completions` rejects function tools while reasoning is on for these models, so LiteLLM sends those calls to `/v1/responses`. A tool run at `none` stays on Chat Completions. Add the model to `OPENAI_RESPONSES_TOOL_MODELS` in `libs/core/kiln_ai/adapters/model_adapters/test_paid_utils.py` and run `test_openai_tools_every_thinking_level_paid` (in `test_litellm_adapter_tools.py`). If tools fail only at `none`, report it before you remove the level: `none` is the default on several of these models.
+- Never offer `max` on an `openai` provider, even when the model page lists it. `/v1/chat/completions` rejects `max` with a 400 and only `/v1/responses` accepts it, and LiteLLM sends a call to Responses only when tools are attached or a reasoning summary is requested. So a `max` run without either fails. Reuse `GPT_6_OPENAI_DIRECT_THINKING_LEVELS` or `GPT_6_ASTRA_OPENAI_DIRECT_THINKING_LEVELS` when the levels match. OpenRouter accepts `max` and keeps it. `test_openai_direct_providers_hide_max` in `test_ml_model_list.py` enforces this.
 - Chat/instant variants (e.g. GPT-5.3 Instant) may not support reasoning effort
 - o-series models have fixed thinking tiers (separate model entries per tier, not configurable levels)
 
@@ -714,7 +716,7 @@ Two providers publish the thinking levels per model, and their list is the only 
 ### Lookup Chain
 
 1. **Vendor model page** (most authoritative)
-   - **OpenAI:** Each model page includes "Reasoning.effort supports: X, Y, Z" in the description text. URL: `https://developers.openai.com/api/docs/models/{model-id}`
+   - **OpenAI:** Each model page includes "Reasoning.effort supports: X, Y, Z" in the description text. URL: `https://developers.openai.com/api/docs/models/{model-id}`. Leave out `max` on the `openai` provider (see [OpenAI](#openai)).
    - **Anthropic:** The [effort docs](https://platform.claude.com/docs/en/build-with-claude/effort) list levels per model. Opus 4.6 supports `low, medium, high, max`; Sonnet 4.6 supports `low, medium, high`.
    - **Google Gemini:** The models API returns `thinking: true/false` (boolean only). Levels come from docs.
 
@@ -757,6 +759,10 @@ Reuse when levels match exactly. Create a new constant only if levels differ. Th
 |----------|--------|---------|---------|
 | `GPT_5_4_OPENAI_THINKING_LEVELS` | none, low, medium, high, xhigh | none | GPT-5.4 |
 | `GPT_5_4_PRO_OPENAI_THINKING_LEVELS` | medium, high, xhigh | medium | GPT-5.4 Pro |
+| `GPT_6_OPENAI_DIRECT_THINKING_LEVELS` | none, low, medium, high, xhigh | medium | GPT-6 Sol, GPT-6 Luna (OpenAI direct) |
+| `GPT_6_ASTRA_OPENAI_DIRECT_THINKING_LEVELS` | low, medium, high, xhigh | medium | GPT-6 Astra (OpenAI direct) |
+| `GPT_6_OPENAI_THINKING_LEVELS` | none, low, medium, high, xhigh, max | medium | GPT-6 Sol, GPT-6 Luna, their Pro models, GPT-6.1 Terra (OpenRouter) |
+| `GPT_6_ASTRA_OPENAI_THINKING_LEVELS` | low, medium, high, xhigh, max | medium | GPT-6 Astra, GPT-6.1 Sol, GPT-6.1 Sol Pro, GPT-6.1 Terra Pro (OpenRouter) |
 | `GPT_5_2_OPENAI_THINKING_LEVELS` | none, low, medium, high, xhigh | none | GPT-5.2, GPT-5.2 Chat |
 | `GPT_5_2_PRO_OPENAI_THINKING_LEVELS` | medium, high, xhigh | medium | GPT-5.2 Pro |
 | `GPT_5_1_OPENAI_THINKING_LEVELS` | none, low, medium, high | none | GPT-5.1 |

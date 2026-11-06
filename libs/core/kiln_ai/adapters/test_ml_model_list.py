@@ -500,6 +500,51 @@ def test_openai_reasoning_summary_only_on_responses_capable_openai_providers():
     }
 
 
+def test_openai_reasoning_summary_providers_support_tools():
+    """LiteLLM sends these providers' tool calls to /v1/responses, which accepts
+    function tools with reasoning on."""
+    providers = [
+        (model.name, provider)
+        for model in built_in_models
+        for provider in model.providers
+        if provider.name == ModelProviderName.openai
+        and provider.openai_reasoning_summary is not None
+    ]
+
+    assert providers
+    for model_name, provider in providers:
+        assert provider.supports_function_calling, model_name
+
+
+def test_openai_direct_providers_hide_max():
+    """/v1/chat/completions rejects `max`, and LiteLLM sends OpenAI calls without tools
+    or a reasoning summary there."""
+    for model in built_in_models:
+        for provider in model.providers:
+            if provider.name != ModelProviderName.openai:
+                continue
+            levels = provider.available_thinking_levels or {}
+            assert "max" not in levels.values(), model.name
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    [ModelName.gpt_6_astra, ModelName.gpt_6_sol, ModelName.gpt_6_luna],
+)
+def test_gpt_6_openai_direct_hides_only_max(model_name):
+    model = get_model_by_name(model_name)
+    levels = {
+        provider.name: provider.available_thinking_levels or {}
+        for provider in model.providers
+    }
+    openrouter_levels = levels[ModelProviderName.openrouter]
+
+    assert "max" in openrouter_levels.values()
+    assert levels[ModelProviderName.openai] == {
+        label: level for label, level in openrouter_levels.items() if level != "max"
+    }
+
+
 def test_no_empty_multimodal_mime_types():
     """Ensure that multimodal fields are self-consistent as they are interdependent"""
     for model in built_in_models:
