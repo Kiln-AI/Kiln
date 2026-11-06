@@ -8,11 +8,10 @@ import sys
 import threading
 import time
 import tracemalloc
-from collections.abc import Iterator
 from copy import deepcopy
 from pathlib import Path
 from typing import Annotated, Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from pydantic import (
@@ -29,7 +28,6 @@ from pydantic_core import PydanticSerializationError
 from typing_extensions import Self
 
 import kiln_ai.datamodel as datamodel_package
-from kiln_ai.datamodel import lazy_fields
 from kiln_ai.datamodel.basemodel import (
     KilnAttachmentModel,
     KilnBaseModel,
@@ -168,24 +166,10 @@ def cached(record_path, model_cache_enabled) -> LazyRecord:
     return load_cached(record_path)
 
 
-def evict_large_values(cache: ModelCache) -> None:
-    """Drop every entry's large values, keeping the records, as memory pressure does."""
-    with cache._lock:
-        for path in list(cache._loaded):
-            cache._drop_large_values(path)
-
-
 @pytest.fixture
-def evicted(cached, model_cache_enabled) -> LazyRecord:
-    evict_large_values(model_cache_enabled)
+def evicted(cached, evict_large_values) -> LazyRecord:
+    evict_large_values()
     return cached
-
-
-@pytest.fixture
-def restores() -> Iterator[MagicMock]:
-    """Counts the times a detached record re-reads its file."""
-    with patch.object(lazy_fields, "_restore", wraps=lazy_fields._restore) as spy:
-        yield spy
 
 
 def rewrite(path: Path, **changes: Any) -> None:
@@ -314,7 +298,7 @@ def test_cache_on_load_detaches_large_values(cached, model_cache_enabled):
 
 
 def test_detach_removes_values_and_keeps_real_none(
-    parent, model_cache_enabled, restores
+    parent, model_cache_enabled, large_field_restores
 ):
     record = load_cached(save_record(parent, notes=None))
 
@@ -330,7 +314,7 @@ def test_detach_removes_values_and_keeps_real_none(
     assert "trace" not in record.__dict__
     assert record._lazy is not None
     assert record._lazy.missing == {"body", "trace"}
-    restores.assert_not_called()
+    large_field_restores.assert_not_called()
 
 
 def test_detach_scrubs_private_references(parent, model_cache_enabled):
@@ -357,41 +341,45 @@ def test_detach_scrubs_private_references(parent, model_cache_enabled):
     assert with_values - without_values > 0.9 * (len(big_body) + len(big_output))
 
 
-def test_read_missing_field_uses_store(cached, restores):
+def test_read_missing_field_uses_store(cached, large_field_restores):
     assert cached.body == BODY
     assert cached.notes == NOTES
     assert cached.output.output == OUTPUT
-    restores.assert_not_called()
+    large_field_restores.assert_not_called()
 
 
-def test_read_missing_field_restores_from_disk(evicted, model_cache_enabled, restores):
+def test_read_missing_field_restores_from_disk(
+    evicted, model_cache_enabled, large_field_restores
+):
     uncached = load_uncached(evicted.path)
 
     assert evicted.output.output == uncached.output.output == OUTPUT
     assert evicted.trace == uncached.trace
     assert evicted.body == BODY
-    assert restores.call_count == 1
+    assert large_field_restores.call_count == 1
     assert model_cache_enabled.stats().records_with_large_values == 1
 
 
-def test_restore_reads_all_large_fields_once(evicted, restores):
+def test_restore_reads_all_large_fields_once(evicted, large_field_restores):
     evicted.trace
     evicted.body
     evicted.output.output
     evicted.model_dump()
 
-    assert restores.call_count == 1
+    assert large_field_restores.call_count == 1
 
 
 # A materialized content-parts list matches no member of the content union, so each
 # dump warns; materialize_lazy_content documents this as cosmetic.
 @pytest.mark.filterwarnings("ignore:Pydantic serializer warnings")
-def test_restore_materializes_trace_content(parent, model_cache_enabled):
+def test_restore_materializes_trace_content(
+    parent, model_cache_enabled, evict_large_values
+):
     parts_trace: list[ChatCompletionMessageParam] = [
         {"role": "user", "content": [{"type": "text", "text": "Hello"}]}
     ]
     record = load_cached(save_record(parent, trace=parts_trace))
-    evict_large_values(model_cache_enabled)
+    evict_large_values()
 
     trace = record.trace
     assert trace is not None
@@ -402,9 +390,9 @@ def test_restore_materializes_trace_content(parent, model_cache_enabled):
 
 
 @pytest.mark.parametrize("evict", [False, True], ids=["in_store", "evicted"])
-def test_dump_includes_missing_fields(cached, model_cache_enabled, evict):
+def test_dump_includes_missing_fields(cached, evict_large_values, evict):
     if evict:
-        evict_large_values(model_cache_enabled)
+        evict_large_values()
     uncached = load_uncached(cached.path)
 
     assert cached.model_dump() == uncached.model_dump()
@@ -460,10 +448,10 @@ def test_model_copy_update_keeps_update(evicted):
     )
 
 
-def test_model_copy_update_computes_summaries_live(evicted, restores):
+def test_model_copy_update_computes_summaries_live(evicted, large_field_restores):
     assert evicted.model_copy().trace_length == 2
     assert evicted.model_copy(update={"name": "renamed"}).trace_length == 2
-    restores.assert_not_called()
+    large_field_restores.assert_not_called()
 
     assert evicted.model_copy(update={"trace": None}).trace_length == 0
     assert (
@@ -500,9 +488,9 @@ def test_mutable_cache_hit_is_complete(cached):
 
 
 @pytest.mark.parametrize("evict", [False, True], ids=["in_store", "evicted"])
-def test_equality_with_fresh_load(cached, model_cache_enabled, evict):
+def test_equality_with_fresh_load(cached, evict_large_values, evict):
     if evict:
-        evict_large_values(model_cache_enabled)
+        evict_large_values()
     uncached = load_uncached(cached.path)
 
     assert cached == uncached
@@ -517,13 +505,13 @@ def test_iter_yields_every_field(evicted):
     assert dict(evicted) == dict(load_uncached(evicted.path))
 
 
-def test_repr_does_not_read_files(evicted, restores):
+def test_repr_does_not_read_files(evicted, large_field_restores):
     text = repr(evicted)
 
     assert "body=<not loaded>" in text
     assert "output=<not loaded>" in text
     assert "name='first'" in text
-    restores.assert_not_called()
+    large_field_restores.assert_not_called()
 
 
 def test_pickle_round_trip_is_complete(evicted):
@@ -586,7 +574,7 @@ def test_dump_inside_another_serializer_raises_naming_the_file(evicted):
 
 
 def test_restore_changed_file_returns_new_values(
-    evicted, model_cache_enabled, restores
+    evicted, model_cache_enabled, large_field_restores
 ):
     new_trace = [{"role": "user", "content": "A different question"}]
     rewrite(evicted.path, trace=new_trace)
@@ -596,14 +584,14 @@ def test_restore_changed_file_returns_new_values(
     assert model_cache_enabled.stats().records == 0
     assert evicted.body == BODY
     assert evicted.trace == new_trace
-    assert restores.call_count == 1
+    assert large_field_restores.call_count == 1
 
 
-def test_restore_shape_change_raises(parent, model_cache_enabled):
+def test_restore_shape_change_raises(parent, model_cache_enabled, evict_large_values):
     record = load_cached(
         save_record(parent, repaired_output=LazyOutput(output="repaired"))
     )
-    evict_large_values(model_cache_enabled)
+    evict_large_values()
     rewrite(record.path, repaired_output=None)
 
     with pytest.raises(
@@ -612,7 +600,7 @@ def test_restore_shape_change_raises(parent, model_cache_enabled):
         record.repaired_output.output
 
 
-def test_mutable_copy_of_changed_file_reloads(cached, restores):
+def test_mutable_copy_of_changed_file_reloads(cached, large_field_restores):
     rewrite(cached.path, name="changed", body="A new body")
 
     copy = cached.mutable_copy()
@@ -620,17 +608,17 @@ def test_mutable_copy_of_changed_file_reloads(cached, restores):
     assert (copy.name, copy.body) == ("changed", "A new body")
     assert copy._readonly is False
     assert copy._lazy is None
-    restores.assert_not_called()
+    large_field_restores.assert_not_called()
 
 
-def test_mutable_copy_of_unchanged_record_does_not_reload(cached, restores):
+def test_mutable_copy_of_unchanged_record_does_not_reload(cached, large_field_restores):
     with patch.object(
         LazyRecord, "load_from_file", wraps=LazyRecord.load_from_file
     ) as load:
         copy = cached.mutable_copy()
 
     load.assert_not_called()
-    restores.assert_not_called()
+    large_field_restores.assert_not_called()
     assert copy == load_uncached(cached.path).mutable_copy()
 
 
@@ -658,18 +646,18 @@ def test_mutable_copy_of_deleted_file_after_reading_a_newer_version_raises(evict
         evicted.mutable_copy()
 
 
-def test_orphan_keeps_local_values(cached, model_cache_enabled, restores):
+def test_orphan_keeps_local_values(cached, model_cache_enabled, large_field_restores):
     model_cache_enabled.clear()
 
     assert cached.body == BODY
     assert cached.output.output == OUTPUT
     assert cached.model_dump() == load_uncached(cached.path).model_dump()
-    assert restores.call_count == 1
+    assert large_field_restores.call_count == 1
     assert model_cache_enabled.stats().records == 0
 
 
 def test_large_values_bigger_than_budget_are_not_kept(
-    parent, model_cache_enabled, monkeypatch, restores
+    parent, model_cache_enabled, monkeypatch, large_field_restores
 ):
     path = save_record(parent, body="x" * 50_000)
     load_cached(path)
@@ -685,11 +673,11 @@ def test_large_values_bigger_than_budget_are_not_kept(
 
     assert record.body == "x" * 50_000
     assert record.body == "x" * 50_000
-    assert restores.call_count == 2
+    assert large_field_restores.call_count == 2
     assert small_cache.stats().records_with_large_values == 0
 
 
-def test_concurrent_reads_and_eviction(parent, model_cache_enabled, run_racing_threads):
+def test_concurrent_reads_and_eviction(parent, evict_large_values, run_racing_threads):
     paths = [
         save_record(parent, name=f"record {i}", body=f"{BODY} {i}") for i in range(12)
     ]
@@ -711,7 +699,7 @@ def test_concurrent_reads_and_eviction(parent, model_cache_enabled, run_racing_t
     def evict() -> None:
         try:
             while time.monotonic() < deadline:
-                evict_large_values(model_cache_enabled)
+                evict_large_values()
         except BaseException as error:
             errors.append(error)
 
@@ -728,7 +716,7 @@ def test_concurrent_reads_and_eviction(parent, model_cache_enabled, run_racing_t
 )
 @pytest.mark.parametrize("trace", [None, TRACE], ids=["no_trace", "trace"])
 def test_summary_values_match_live_values(
-    parent, model_cache_enabled, restores, body, trace
+    parent, model_cache_enabled, large_field_restores, body, trace
 ):
     path = save_record(parent, body=body, trace=trace)
     record = load_cached(path)
@@ -738,7 +726,7 @@ def test_summary_values_match_live_values(
     assert record.trace_length == uncached.trace_length
     assert record.output_preview == uncached.output_preview
     assert record.output.output_length == uncached.output.output_length
-    restores.assert_not_called()
+    large_field_restores.assert_not_called()
 
 
 def test_summary_values_not_serialized(cached):
@@ -768,6 +756,12 @@ def schema_record_class(lazy: bool) -> type[BaseModel]:
             @summary_value
             def body_length(self) -> int:
                 return len(self.body)
+
+            # Model validators wrap the model's core schema in function schemas, which
+            # the mixin's schema override has to look through.
+            @model_validator(mode="after")
+            def check_body(self) -> Self:
+                return self
 
         return SchemaRecord
 
@@ -808,7 +802,7 @@ def test_has_unloaded_fields(cached):
 
 
 def test_path_and_parent_assignment_leave_detached_record_unchanged(
-    evicted, parent, restores
+    evicted, parent, large_field_restores
 ):
     own_keys = set(evicted.__dict__)
     private_keys = set(evicted.__pydantic_private__ or {})
@@ -819,14 +813,16 @@ def test_path_and_parent_assignment_leave_detached_record_unchanged(
     assert set(evicted.__dict__) == own_keys
     assert set(evicted.__pydantic_private__ or {}) == private_keys
     assert evicted.cached_parent() is parent
-    restores.assert_not_called()
+    large_field_restores.assert_not_called()
     assert evicted.model_dump() == load_uncached(evicted.path).model_dump()
 
 
 @pytest.mark.parametrize("evict", [False, True], ids=["in_store", "evicted"])
-def test_delete_cached_record(cached, model_cache_enabled, restores, evict):
+def test_delete_cached_record(
+    cached, model_cache_enabled, large_field_restores, evict_large_values, evict
+):
     if evict:
-        evict_large_values(model_cache_enabled)
+        evict_large_values()
     path = cached.path
     assert path is not None
 
@@ -835,7 +831,7 @@ def test_delete_cached_record(cached, model_cache_enabled, restores, evict):
     assert not path.parent.exists()
     assert cached.path is None
     assert model_cache_enabled.stats().records == 0
-    restores.assert_not_called()
+    large_field_restores.assert_not_called()
 
 
 class SizedModel(BaseModel):

@@ -4,7 +4,7 @@ import sys
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Iterator
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from dotenv import load_dotenv
@@ -103,6 +103,31 @@ def model_cache_enabled() -> Iterator["ModelCache"]:
     ModelCache._shared_instance = cache
     yield cache
     ModelCache._shared_instance = previous
+
+
+@pytest.fixture
+def evict_large_values(model_cache_enabled: "ModelCache") -> Callable[[], None]:
+    """Drops the large values of every record in the test's cache, keeping the records.
+
+    That is what memory pressure does first. Reading a large field afterwards re-reads
+    the record's file.
+    """
+
+    def evict() -> None:
+        with model_cache_enabled._lock:
+            for path in list(model_cache_enabled._loaded):
+                model_cache_enabled._drop_large_values(path)
+
+    return evict
+
+
+@pytest.fixture
+def large_field_restores() -> Iterator[MagicMock]:
+    """Counts the times a cached record re-reads its file to get its large fields back."""
+    from kiln_ai.datamodel import lazy_fields
+
+    with patch.object(lazy_fields, "_restore", wraps=lazy_fields._restore) as spy:
+        yield spy
 
 
 # mock out the settings path so we don't clobber the user's actual settings during tests

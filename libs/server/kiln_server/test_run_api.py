@@ -33,6 +33,7 @@ from kiln_ai.utils.config import Config
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.run_api import (
     RunSummary,
+    _position_chain_turns,
     connect_run_api,
     deep_update,
     model_provider_from_string,
@@ -1083,6 +1084,7 @@ async def test_update_run_clear_repair_fields(client, task_run_setup):
 def test_run_summary_format_preview():
     assert RunSummary.format_preview(None) is None
     assert RunSummary.format_preview("short text") == "short text"
+    assert RunSummary.format_preview("a" * 100) == "a" * 100
     assert RunSummary.format_preview("a" * 101) == "a" * 100 + "…"
 
 
@@ -1091,6 +1093,7 @@ def test_run_summary_repair_status_display_name():
     run.repair_instructions = None
     run.output = MagicMock()
     run.output.rating = None
+    run.output_preview = "Some output"
     assert RunSummary.repair_status_display_name(run) == "NA"
 
     run.output.rating = TaskOutputRating(value=5.0, type=TaskOutputRatingType.five_star)
@@ -1100,11 +1103,32 @@ def test_run_summary_repair_status_display_name():
     assert RunSummary.repair_status_display_name(run) == "Unknown"
 
     run.output.rating = TaskOutputRating(value=3.0, type=TaskOutputRatingType.five_star)
-    run.output.output = "Some output"
     assert RunSummary.repair_status_display_name(run) == "Repair needed"
+
+    run.output_preview = None
+    assert RunSummary.repair_status_display_name(run) == "No output"
 
     run.output = None
     assert RunSummary.repair_status_display_name(run) == "No output"
+
+
+def test_run_summary_reads_no_large_fields(
+    task_run_setup, model_cache_enabled, evict_large_values, large_field_restores
+):
+    task = task_run_setup["task"]
+    runs = [
+        task_run_setup["task_run"],
+        _make_task_run(task, input_text="i" * 150, output_text=""),
+    ]
+    cached = [TaskRun.load_from_file(run.path, readonly=True) for run in runs]
+    evict_large_values()
+
+    assert [RunSummary.from_run(run) for run in cached] == [
+        RunSummary.from_run(run) for run in runs
+    ]
+    assert RunSummary.from_run(cached[1]).input_preview == "i" * 100 + "…"
+    assert RunSummary.from_run(cached[1]).repair_state == "NA"
+    large_field_restores.assert_not_called()
 
 
 def test_run_summary_from_run(task_run_setup):
@@ -3475,3 +3499,58 @@ async def test_bulk_upload_single_turn_response_has_null_conversation_count(
     body = response.json()
     assert body["imported_count"] == 1
     assert body["imported_conversation_count"] is None
+
+
+def test_position_chain_turns_reads_no_large_fields(
+    multiturn_task_run_setup,
+    model_cache_enabled,
+    evict_large_values,
+    large_field_restores,
+):
+    chain = list(_build_three_turn_chain(multiturn_task_run_setup["task"]))
+    cached = [TaskRun.load_from_file(run.path, readonly=True) for run in chain]
+    evict_large_values()
+
+    _, cached_starts, cached_broken = _position_chain_turns(cached, False)
+
+    assert (cached_starts, cached_broken) == ([0, 2, 4], False)
+    assert _position_chain_turns(chain, False)[1:] == (cached_starts, cached_broken)
+    large_field_restores.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_endpoints_match_cache_off_after_eviction(
+    client,
+    task_run_setup,
+    model_cache_enabled,
+    evict_large_values,
+    large_field_restores,
+):
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    run = task_run_setup["task_run"]
+    _make_task_run(
+        task,
+        input_text="A long input. " * 20,
+        output_text="A long output. " * 20,
+        trace=[_user_turn("A long input."), _assistant_turn("A long output.")],
+    )
+    base = f"/api/projects/{project.id}/tasks/{task.id}"
+
+    def fetch(path: str) -> object:
+        with patch("kiln_server.run_api.task_from_id", return_value=task):
+            response = client.get(f"{base}{path}")
+        assert response.status_code == 200
+        return response.json()
+
+    endpoints = ["/runs", f"/runs/{run.id}", "/runs_summaries"]
+    model_cache_enabled.set_enabled(False)
+    cache_off = [fetch(path) for path in endpoints]
+    model_cache_enabled.set_enabled(True)
+    list(task.runs(readonly=True))
+    evict_large_values()
+
+    assert fetch("/runs_summaries") == cache_off[2]
+    large_field_restores.assert_not_called()
+    assert [fetch(path) for path in endpoints] == cache_off
+    assert large_field_restores.call_count == 2

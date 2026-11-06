@@ -46,12 +46,13 @@ tool-call checks read the same.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, JsonValue, field_validator
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
+from kiln_ai.datamodel.lazy_fields import LargeField, LazyFieldsMixin, summary_value
 
 
 class OpenEnvTool(BaseModel):
@@ -87,7 +88,7 @@ class WorldReset(BaseModel):
     )
 
 
-class WorldEpisode(BaseModel):
+class WorldEpisode(LazyFieldsMixin):
     """One reset-to-close run on a world's environment, recorded on the trace of the
     task run that used it. The world's tools ran inside the episode; any other tools
     in the run config ran as themselves, outside the world.
@@ -112,10 +113,15 @@ class WorldEpisode(BaseModel):
         default_factory=dict,
         description="What the environment reported in the observation metadata when the episode was reset: facts about the starting state that judges may want, such as the scenario it started from or the clock it runs on.",
     )
-    final_state: dict[str, JsonValue] | None = Field(
+    final_state: Annotated[dict[str, JsonValue] | None, LargeField()] = Field(
         default=None,
         description="The environment's state() after generation, read when the episode ends. Whatever the environment chooses to report: a diff against its starting state, counters, an episode summary.",
     )
+
+    @summary_value
+    def has_final_state(self) -> bool:
+        """Whether the episode recorded a `final_state`."""
+        return self.final_state is not None
 
     def to_sandbox_dict(self) -> dict[str, JsonValue]:
         """The stdlib-only shape handed to code scorers as `world_episode`."""

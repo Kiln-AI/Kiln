@@ -728,6 +728,28 @@ def test_unsettled_world_trace_is_never_indexed(task):
     assert TraceIndex(task)._paths == {}
 
 
+def test_seeding_reads_no_large_fields(
+    task, model_cache_enabled, evict_large_values, large_field_restores
+):
+    """A seed keys every run of the task, so it must not re-read each evicted run file."""
+    settled = save_trace(task, source_id="item1", world_version="syn1:a")
+    unsettled = episode_for("item2", "syn1:a")
+    assert unsettled is not None
+    save_run(
+        task,
+        eval_source=EvalItemSource(source_type="eval_input", source_id="item2"),
+        world_episode=unsettled.model_copy(update={"final_state": None}),
+    )
+    list(task.runs(readonly=True, include_eval_generated=True))
+    evict_large_values()
+
+    tag = world_trace_tag("syn1:a", WorldReset(world_id="w1"))
+    assert TraceIndex(task)._paths == {
+        ("eval_input", "item1", "rc1", tag): settled.path
+    }
+    large_field_restores.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # Sharing across runners
 # ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import json
-from typing import TYPE_CHECKING, Dict, List, Literal, Union
+from typing import TYPE_CHECKING, Annotated, Dict, List, Literal, Union
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 from typing_extensions import Self
@@ -8,6 +8,12 @@ from kiln_ai.datamodel.basemodel import KilnParentedModel, KilnParentModel
 from kiln_ai.datamodel.claim_review import ClaimReview
 from kiln_ai.datamodel.feedback import Feedback
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
+from kiln_ai.datamodel.lazy_fields import (
+    LargeField,
+    LazyFieldsMixin,
+    preview_text,
+    summary_value,
+)
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_ai.datamodel.task_output import DataSource, TaskOutput
 from kiln_ai.datamodel.world import WorldEpisode
@@ -59,6 +65,7 @@ def eval_item_key(source: EvalItemSource) -> "ItemKey":
 
 
 class TaskRun(
+    LazyFieldsMixin,
     KilnParentedModel,
     KilnParentModel,
     parent_of={
@@ -73,7 +80,7 @@ class TaskRun(
     repair information if the output needed correction.
     """
 
-    input: str = Field(
+    input: Annotated[str, LargeField()] = Field(
         description="The inputs to the task. JSON formatted for structured input, plaintext for unstructured input."
     )
     input_source: DataSource | None = Field(
@@ -89,7 +96,7 @@ class TaskRun(
         default=None,
         description="An version of the output with issues fixed. This must be a 'fixed' version of the existing output, and not an entirely new output. If you wish to generate an ideal curatorial output for this task unrelated to this output, generate a new TaskOutput with type 'human' instead of using this field.",
     )
-    intermediate_outputs: Dict[str, str] | None = Field(
+    intermediate_outputs: Annotated[Dict[str, str] | None, LargeField()] = Field(
         default=None,
         description="Intermediate outputs from the task run. Keys are the names of the intermediate output steps (cot=chain of thought, etc), values are the output data.",
     )
@@ -119,7 +126,7 @@ class TaskRun(
             "legacy traces whose driver cost is fused into `usage`."
         ),
     )
-    trace: list[ChatCompletionMessageParam] | None = Field(
+    trace: Annotated[list[ChatCompletionMessageParam] | None, LargeField()] = Field(
         default=None,
         description="The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.",
     )
@@ -164,7 +171,27 @@ class TaskRun(
         """
         Does this run have thinking data that we can use to train a thinking model?
         """
+        return self.has_thinking
+
+    @summary_value
+    def has_thinking(self) -> bool:
+        """Whether `intermediate_outputs` holds reasoning or chain of thought to train a thinking model on."""
         return self.thinking_training_data() is not None
+
+    @summary_value
+    def input_preview(self) -> str | None:
+        """The first 100 characters of `input`, ending in "…" when cut."""
+        return preview_text(self.input)
+
+    @summary_value
+    def output_preview(self) -> str | None:
+        """The first 100 characters of `output.output`, ending in "…" when cut. None when the output is empty."""
+        return preview_text(self.output.output) if self.output.output else None
+
+    @summary_value
+    def trace_length(self) -> int:
+        """The number of messages in `trace`; 0 when there is no trace."""
+        return len(self.trace) if self.trace else 0
 
     def feedback(self, readonly: bool = False) -> list[Feedback]:
         return super().feedback(readonly=readonly)  # type: ignore

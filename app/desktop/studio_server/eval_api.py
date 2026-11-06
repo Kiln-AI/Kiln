@@ -668,7 +668,7 @@ def _split_judge_trace(eval_run: EvalRun) -> dict[str, Any]:
     """`eval_run` with its judge_trace dropped, and whether it had a non-empty one."""
     return {
         "eval_run": eval_run.model_copy(update={"judge_trace": None}),
-        "has_judge_trace": bool(eval_run.judge_trace),
+        "has_judge_trace": eval_run.judge_trace_length > 0,
     }
 
 

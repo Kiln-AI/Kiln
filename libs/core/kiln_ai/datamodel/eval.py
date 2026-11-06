@@ -41,6 +41,7 @@ from kiln_ai.datamodel.datamodel_enums import (
 )
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, EvalInputFilterId
 from kiln_ai.datamodel.json_schema import string_to_json_key
+from kiln_ai.datamodel.lazy_fields import LargeField, LazyFieldsMixin, summary_value
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance, provenance_field
 from kiln_ai.datamodel.task_run import Usage
 from kiln_ai.datamodel.tool_id import ToolId, validate_tool_allowlist
@@ -984,7 +985,7 @@ def validate_unique_display_names(output_scores: List[EvalOutputScore]) -> None:
         )
 
 
-class EvalRun(KilnParentedModel):
+class EvalRun(LazyFieldsMixin, KilnParentedModel):
     """
     The scores an eval produced for a single dataset item.
 
@@ -1027,26 +1028,26 @@ class EvalRun(KilnParentedModel):
         description="Whether this eval run to evaluate the parent eval config (evaluating the config using an existing dataset item). If true, task_run_config_id must be None, as we're not running the task.",
         default=False,
     )
-    input: str | None = Field(
+    input: Annotated[str | None, LargeField()] = Field(
         default=None,
         json_schema_extra={"deprecated": True},
         description="DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.input instead. The input to the task. JSON formatted for structured input, plaintext for unstructured input. Required on legacy records (those with neither a scored_run_id nor a skipped_reason), never set on new ones.",
     )
-    output: str | None = Field(
+    output: Annotated[str | None, LargeField()] = Field(
         default=None,
         json_schema_extra={"deprecated": True},
         description="DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.output.output instead. The output of the task. None for skipped-before-execution runs.",
     )
-    reference_answer: str | None = Field(
+    reference_answer: Annotated[str | None, LargeField()] = Field(
         default=None,
         json_schema_extra={"deprecated": True},
         description="DEPRECATED: the trace now lives on the TaskRun named by scored_run_id. The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.",
     )
-    intermediate_outputs: Dict[str, str] | None = Field(
+    intermediate_outputs: Annotated[Dict[str, str] | None, LargeField()] = Field(
         default=None,
         description="The intermediate outputs of the task (example, eval thinking).",
     )
-    task_run_trace: str | None = Field(
+    task_run_trace: Annotated[str | None, LargeField()] = Field(
         default=None,
         json_schema_extra={"deprecated": True},
         description="DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.trace instead. The JSON formatted trace of the task run that produced the output.",
@@ -1064,9 +1065,11 @@ class EvalRun(KilnParentedModel):
         default=None,
         description="The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field.",
     )
-    judge_trace: list[ChatCompletionMessageParam] | None = Field(
-        default=None,
-        description="The judge's full conversation in OpenAI format: the system prompt, the rendered judge prompt, and every reply. Structured messages, unlike the deprecated JSON-string task_run_trace. None for V1 evals, for evals that call no model (e.g. code evals), and for records that predate this field. Distinct from the evaluated task run's trace.",
+    judge_trace: Annotated[list[ChatCompletionMessageParam] | None, LargeField()] = (
+        Field(
+            default=None,
+            description="The judge's full conversation in OpenAI format: the system prompt, the rendered judge prompt, and every reply. Structured messages, unlike the deprecated JSON-string task_run_trace. None for V1 evals, for evals that call no model (e.g. code evals), and for records that predate this field. Distinct from the evaluated task run's trace.",
+        )
     )
 
     eval_input_id: ID_TYPE | None = Field(
@@ -1086,6 +1089,11 @@ class EvalRun(KilnParentedModel):
         if self.parent is not None and self.parent.__class__.__name__ != "EvalConfig":
             raise ValueError("parent must be an EvalConfig")
         return self.parent  # type: ignore
+
+    @summary_value
+    def judge_trace_length(self) -> int:
+        """The number of messages in `judge_trace`; 0 when there is no judge trace."""
+        return len(self.judge_trace) if self.judge_trace else 0
 
     @model_validator(mode="after")
     def validate_input_source(self) -> Self:

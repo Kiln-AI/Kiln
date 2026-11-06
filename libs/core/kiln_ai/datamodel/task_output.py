@@ -1,6 +1,6 @@
 import json
 from enum import Enum
-from typing import TYPE_CHECKING, Dict, List, Optional, Type, Union
+from typing import TYPE_CHECKING, Annotated, Dict, List, Optional, Type, Union
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 from typing_extensions import Self
@@ -8,6 +8,7 @@ from typing_extensions import Self
 from kiln_ai.datamodel.basemodel import ID_TYPE, KilnBaseModel
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
+from kiln_ai.datamodel.lazy_fields import LargeField, LazyFieldsMixin
 from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -343,7 +344,7 @@ class DataSource(BaseModel):
         return self
 
 
-class TaskOutput(KilnBaseModel):
+class TaskOutput(LazyFieldsMixin, KilnBaseModel):
     """
     An output for a specific task run.
 
@@ -351,7 +352,7 @@ class TaskOutput(KilnBaseModel):
     and optional rating information.
     """
 
-    output: str = Field(
+    output: Annotated[str, LargeField()] = Field(
         description="The output of the task. JSON formatted for structured output, plaintext for unstructured output."
     )
     source: DataSource | None = Field(

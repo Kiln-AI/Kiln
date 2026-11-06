@@ -124,6 +124,13 @@ def summary_value(fn: Callable[[M], T]) -> SummaryValue[M, T]:
     return SummaryValue(fn)
 
 
+def preview_text(text: str | None, max_length: int = 100) -> str | None:
+    """The first `max_length` characters of `text`, ending in "…" when cut. None stays None."""
+    if text is None or len(text) <= max_length:
+        return text
+    return text[:max_length] + "…"
+
+
 class LargeFieldUnavailableError(RuntimeError):
     """A cached record's large field couldn't be read back from its file.
 
@@ -708,6 +715,23 @@ def approx_value_size(value: Any) -> int:
     return total
 
 
+_VALIDATOR_SCHEMA_TYPES = ("function-after", "function-before", "function-wrap")
+
+
+def _without_own_serializer(schema: Any, cls: type) -> Any:
+    """A core schema with the serializer of `cls`'s own model node removed.
+
+    Model validators wrap the model node in function schemas, and pydantic passes the
+    outermost of them to `__get_pydantic_json_schema__`, so the model node can sit below.
+    Only the nodes on the way down are copied; `schema` itself is never modified.
+    """
+    if schema["type"] == "model" and schema["cls"] is cls:
+        return {key: value for key, value in schema.items() if key != "serialization"}
+    if schema["type"] in _VALIDATOR_SCHEMA_TYPES and "schema" in schema:
+        return {**schema, "schema": _without_own_serializer(schema["schema"], cls)}
+    return schema
+
+
 class _NotLoaded:
     def __repr__(self) -> str:
         return "<not loaded>"
@@ -791,14 +815,7 @@ class LazyFieldsMixin(BaseModel):
         # A wrap model_serializer makes pydantic describe this model's serialized form
         # as any value. Without it, the schema comes from the fields, as it does for a
         # model without the mixin. Nested models keep their own serializers.
-        if (
-            core_schema["type"] == "model"
-            and core_schema["cls"] is cls
-            and "serialization" in core_schema
-        ):
-            core_schema = core_schema.copy()
-            core_schema.pop("serialization")
-        return handler(core_schema)
+        return handler(_without_own_serializer(core_schema, cls))
 
     if not TYPE_CHECKING:
         # Kept from type checkers, so callers see pydantic's typed signatures.

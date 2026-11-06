@@ -96,7 +96,7 @@ def _stored_trace_key(run: TaskRun) -> TraceKey | None:
     """
     if run.eval_source is None:
         return None
-    if run.world_episode is not None and run.world_episode.final_state is None:
+    if run.world_episode is not None and not run.world_episode.has_final_state:
         return None
     run_config_id = run.output.source.run_config_id if run.output.source else None
     if not run_config_id:

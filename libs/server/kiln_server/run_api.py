@@ -16,6 +16,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import Task, TaskOutputRating, TaskOutputRatingType, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import StructuredInputType, TurnMode
+from kiln_ai.datamodel.lazy_fields import preview_text
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_ai.utils.dataset_import import (
@@ -182,7 +183,7 @@ def _position_chain_turns(
     starts: list[int | None] = []
     prev_len = 0
     for run in chain_runs:
-        trace_len = len(run.trace or [])
+        trace_len = run.trace_length
         if trace_len <= prev_len:
             kept, starts = [run], [None]
             chain_broken = True
@@ -331,11 +332,7 @@ class RunSummary(BaseModel):
 
     @classmethod
     def format_preview(cls, text: str | None, max_length: int = 100) -> str | None:
-        if text is None:
-            return None
-        if len(text) > max_length:
-            return text[:max_length] + "…"
-        return text
+        return preview_text(text, max_length)
 
     @classmethod
     def repair_status_display_name(cls, run: TaskRun) -> str:
@@ -344,7 +341,7 @@ class RunSummary(BaseModel):
         elif run.output and not run.output.rating:
             # A repair isn't requested until rated < 5 stars
             return "NA"
-        elif not run.output or not run.output.output:
+        elif not run.output or run.output_preview is None:
             return "No output"
         elif (
             run.output.rating
@@ -357,7 +354,7 @@ class RunSummary(BaseModel):
             and run.output.rating.type != TaskOutputRatingType.five_star
         ):
             return "Unknown"
-        elif run.output.output:
+        elif run.output_preview is not None:
             return "Repair needed"
         return "Unknown"
 
@@ -370,14 +367,13 @@ class RunSummary(BaseModel):
         )
         if not isinstance(model_name, str):
             model_name = None
-        output = run.output.output if run.output and run.output.output else None
 
         return RunSummary(
             id=run.id,
             rating=run.output.rating,
             tags=run.tags,
-            input_preview=RunSummary.format_preview(run.input),
-            output_preview=RunSummary.format_preview(output),
+            input_preview=run.input_preview,
+            output_preview=run.output_preview,
             created_at=run.created_at,
             repair_state=RunSummary.repair_status_display_name(run),
             model_name=model_name,
