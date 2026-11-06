@@ -91,11 +91,15 @@ def reset_model_cache() -> Iterator[None]:
 
 @pytest.fixture
 def model_cache_enabled() -> Iterator["ModelCache"]:
-    """Installs a fresh shared cache, turned on as the app hosts run it, for one test."""
+    """Installs a fresh shared cache, turned on as the app hosts run it, for one test.
+
+    Its budget is a fixed 1 GiB rather than a share of the machine's RAM, so whether a
+    test sees evictions doesn't depend on where it runs.
+    """
     from kiln_ai.datamodel.model_cache import ModelCache
 
     previous = ModelCache._shared_instance
-    cache = ModelCache(enabled=True)
+    cache = ModelCache(enabled=True, budget_bytes=1024**3)
     ModelCache._shared_instance = cache
     yield cache
     ModelCache._shared_instance = previous

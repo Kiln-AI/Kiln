@@ -33,7 +33,7 @@ from kiln_ai.datamodel.eval import (
     EvalDataType,
     EvalOutputScore,
 )
-from kiln_ai.datamodel.model_cache import FileIdentity, ModelCache
+from kiln_ai.datamodel.model_cache import MEMORY_FACTOR, FileIdentity, ModelCache
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
 
@@ -537,6 +537,50 @@ def test_readonly_loads_are_cached_when_enabled(test_base_file, model_cache_enab
     test_base_file.write_text(test_base_file.read_text() + "\n")
 
     assert KilnBaseModel.load_from_file(test_base_file, readonly=True) is not first
+
+
+def write_base_model_files(folder: Path, count: int) -> list[Path]:
+    """Files of equal size, so each cached record counts the same bytes."""
+    paths = [folder / f"model_{i}.kiln" for i in range(count)]
+    for path in paths:
+        path.write_text(
+            json.dumps({"v": 1, "model_type": "kiln_base_model"}, ensure_ascii=False)
+        )
+    return paths
+
+
+def install_shared_cache(monkeypatch, budget_bytes: int) -> None:
+    monkeypatch.setattr(
+        ModelCache,
+        "_shared_instance",
+        ModelCache(enabled=True, budget_bytes=budget_bytes),
+    )
+
+
+def test_readonly_load_evicts_least_recently_used(tmp_path, monkeypatch):
+    paths = write_base_model_files(tmp_path, 3)
+    record_bytes = int(paths[0].stat().st_size * MEMORY_FACTOR)
+    # Room for two records, so the third load evicts the first.
+    install_shared_cache(monkeypatch, int(2.5 * record_bytes))
+
+    first, second, third = [
+        KilnBaseModel.load_from_file(path, readonly=True) for path in paths
+    ]
+
+    assert KilnBaseModel.load_from_file(paths[1], readonly=True) is second
+    assert KilnBaseModel.load_from_file(paths[2], readonly=True) is third
+    assert KilnBaseModel.load_from_file(paths[0], readonly=True) is not first
+
+
+def test_readonly_load_larger_than_budget_is_served_not_cached(tmp_path, monkeypatch):
+    [path] = write_base_model_files(tmp_path, 1)
+    install_shared_cache(monkeypatch, path.stat().st_size)
+
+    first = KilnBaseModel.load_from_file(path, readonly=True)
+
+    assert first.path == path
+    assert KilnBaseModel.load_from_file(path, readonly=True) is not first
+    assert ModelCache.shared().stats().records == 0
 
 
 def test_save_to_file_invalidates_cache(test_base_file, model_cache_enabled):
