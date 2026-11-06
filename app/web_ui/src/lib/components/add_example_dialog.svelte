@@ -132,10 +132,12 @@
       loading_runs = false
     } else {
       try {
-        const result = await fetch_task_sample_candidates(project_id, task_id)
-        available_runs = result.available_runs.filter(
-          (r) => r.input_source?.type !== "synthetic",
+        const result = await fetch_task_sample_candidates(
+          project_id,
+          task_id,
+          (run) => run.input_source !== "synthetic",
         )
+        available_runs = result.available_runs
       } catch {
         // Non-critical
       } finally {
