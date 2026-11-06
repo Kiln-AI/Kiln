@@ -3,7 +3,7 @@ import shutil
 import sys
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Iterator
 from unittest.mock import patch
 
 import pytest
@@ -14,6 +14,7 @@ from kiln_ai.utils.config import Config
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.basemodel import KilnAttachmentModel
+    from kiln_ai.datamodel.model_cache import ModelCache
 
 
 @pytest.fixture(autouse=True)
@@ -70,6 +71,34 @@ def reset_config():
     Config._shared_instance = None
     yield
     Config._shared_instance = None
+
+
+def _drop_shared_model_cache() -> None:
+    # Importing kiln_ai.datamodel takes over a second, and some test runs never do.
+    # Until something imports it, there is no shared cache to drop.
+    model_cache_module = sys.modules.get("kiln_ai.datamodel.model_cache")
+    if model_cache_module is not None:
+        model_cache_module.ModelCache._shared_instance = None
+
+
+@pytest.fixture(autouse=True)
+def reset_model_cache() -> Iterator[None]:
+    """Each test starts with the library default: a fresh shared cache, turned off."""
+    _drop_shared_model_cache()
+    yield
+    _drop_shared_model_cache()
+
+
+@pytest.fixture
+def model_cache_enabled() -> Iterator["ModelCache"]:
+    """Installs a fresh shared cache, turned on as the app hosts run it, for one test."""
+    from kiln_ai.datamodel.model_cache import ModelCache
+
+    previous = ModelCache._shared_instance
+    cache = ModelCache(enabled=True)
+    ModelCache._shared_instance = cache
+    yield cache
+    ModelCache._shared_instance = previous
 
 
 # mock out the settings path so we don't clobber the user's actual settings during tests

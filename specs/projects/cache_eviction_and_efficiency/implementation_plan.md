@@ -8,7 +8,7 @@ Each phase ends with every project check passing (`uv run ./checks.sh --agent-mo
 
 ## Phases
 
-- [ ] Phase 1: **Cache on/off and change detection.**
+- [x] Phase 1: **Cache on/off and change detection.**
   - `FileIdentity` (modified time, size, file id), with the broken Linux check removed.
   - `set_model_cache_enabled` / `model_cache_enabled`, off by default.
   - The `model_cache_enabled` test fixture. Skip guards removed, and existing tests that need the cache take the fixture.

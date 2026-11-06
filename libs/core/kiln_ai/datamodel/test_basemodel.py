@@ -22,7 +22,7 @@ from kiln_ai.datamodel.basemodel import (
     string_to_valid_name,
 )
 from kiln_ai.datamodel.datamodel_enums import TurnMode
-from kiln_ai.datamodel.model_cache import ModelCache
+from kiln_ai.datamodel.model_cache import FileIdentity, ModelCache
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
 
@@ -57,17 +57,6 @@ def test_newer_file(tmp_path) -> Path:
         json.dump(data, file, indent=4)
 
     return test_file_path
-
-
-@pytest.fixture
-def tmp_model_cache():
-    temp_cache = ModelCache()
-    # We're testing integration, not cache functions, in this file
-    temp_cache._enabled = True
-    with (
-        patch("kiln_ai.datamodel.basemodel.ModelCache.shared", return_value=temp_cache),
-    ):
-        yield temp_cache
 
 
 def test_load_from_file(test_base_file):
@@ -493,18 +482,18 @@ def test_name_validator_error_conditions(name, min_length, max_length, should_pa
             validator(name)
 
 
-def test_load_from_file_with_cache(test_base_file, tmp_model_cache):
-    tmp_model_cache.get_model = MagicMock(return_value=None)
-    tmp_model_cache.set_model = MagicMock()
+def test_load_from_file_with_cache(test_base_file, model_cache_enabled):
+    model_cache_enabled.get_model = MagicMock(return_value=None)
+    model_cache_enabled.set_model = MagicMock()
 
     # Load the model with readonly=True to enable caching
     model = KilnBaseModel.load_from_file(test_base_file, readonly=True)
 
     # Check that the cache was checked and set
-    tmp_model_cache.get_model.assert_called_once_with(
+    model_cache_enabled.get_model.assert_called_once_with(
         test_base_file, KilnBaseModel, readonly=True
     )
-    tmp_model_cache.set_model.assert_called_once()
+    model_cache_enabled.set_model.assert_called_once()
 
     # Ensure the model is correctly loaded
     assert model.v == 1
@@ -512,19 +501,46 @@ def test_load_from_file_with_cache(test_base_file, tmp_model_cache):
     assert model._readonly is True
 
 
-def test_save_to_file_invalidates_cache(test_base_file, tmp_model_cache):
+def test_load_from_file_stores_identity(test_base_file, model_cache_enabled):
+    model_cache_enabled.set_model = MagicMock()
+
+    model = KilnBaseModel.load_from_file(test_base_file, readonly=True)
+
+    model_cache_enabled.set_model.assert_called_once_with(
+        test_base_file, model, FileIdentity.from_path(test_base_file)
+    )
+
+
+def test_readonly_loads_are_not_cached_by_default(test_base_file):
+    first = KilnBaseModel.load_from_file(test_base_file, readonly=True)
+    second = KilnBaseModel.load_from_file(test_base_file, readonly=True)
+
+    assert not ModelCache.shared().enabled
+    assert first is not second
+
+
+def test_readonly_loads_are_cached_when_enabled(test_base_file, model_cache_enabled):
+    first = KilnBaseModel.load_from_file(test_base_file, readonly=True)
+    assert KilnBaseModel.load_from_file(test_base_file, readonly=True) is first
+
+    test_base_file.write_text(test_base_file.read_text() + "\n")
+
+    assert KilnBaseModel.load_from_file(test_base_file, readonly=True) is not first
+
+
+def test_save_to_file_invalidates_cache(test_base_file, model_cache_enabled):
     # Create and save the model
     model = KilnBaseModel(path=test_base_file)
 
     # Set mock after to ignore any previous calls, we want to see save calls it
-    tmp_model_cache.invalidate = MagicMock()
+    model_cache_enabled.invalidate = MagicMock()
     model.save_to_file()
 
     # Check that the cache was invalidated. Might be called multiple times for setting props like path. but must be called at least once.
-    tmp_model_cache.invalidate.assert_called_with(test_base_file)
+    model_cache_enabled.invalidate.assert_called_with(test_base_file)
 
 
-def test_delete_invalidates_cache(tmp_path, tmp_model_cache):
+def test_delete_invalidates_cache(tmp_path, model_cache_enabled):
     # Create and save the model
     file_path = tmp_path / "test.kiln"
     model = KilnBaseModel(path=file_path)
@@ -532,32 +548,34 @@ def test_delete_invalidates_cache(tmp_path, tmp_model_cache):
 
     # populate and check cache with readonly=True
     model = KilnBaseModel.load_from_file(file_path, readonly=True)
-    cached_model = tmp_model_cache.get_model(file_path, KilnBaseModel, readonly=True)
+    cached_model = model_cache_enabled.get_model(
+        file_path, KilnBaseModel, readonly=True
+    )
     assert cached_model.id == model.id
 
-    tmp_model_cache.invalidate = MagicMock()
+    model_cache_enabled.invalidate = MagicMock()
 
     # Delete the model
     model.delete()
 
     # Check that the cache was invalidated
-    tmp_model_cache.invalidate.assert_called_with(file_path)
-    assert tmp_model_cache.get_model(file_path, KilnBaseModel) is None
+    model_cache_enabled.invalidate.assert_called_with(file_path)
+    assert model_cache_enabled.get_model(file_path, KilnBaseModel) is None
 
 
-def test_no_cache_when_readonly_false(test_base_file, tmp_model_cache):
+def test_no_cache_when_readonly_false(test_base_file, model_cache_enabled):
     """Test that models are not cached when loaded with readonly=False."""
-    tmp_model_cache.get_model = MagicMock(return_value=None)
-    tmp_model_cache.set_model = MagicMock()
+    model_cache_enabled.get_model = MagicMock(return_value=None)
+    model_cache_enabled.set_model = MagicMock()
 
     # Load the model with readonly=False (default)
     model = KilnBaseModel.load_from_file(test_base_file, readonly=False)
 
     # Check that the cache was checked but NOT set
-    tmp_model_cache.get_model.assert_called_once_with(
+    model_cache_enabled.get_model.assert_called_once_with(
         test_base_file, KilnBaseModel, readonly=False
     )
-    tmp_model_cache.set_model.assert_not_called()
+    model_cache_enabled.set_model.assert_not_called()
 
     # Ensure the model is correctly loaded but not readonly
     assert model.v == 1
@@ -565,17 +583,17 @@ def test_no_cache_when_readonly_false(test_base_file, tmp_model_cache):
     assert model._readonly is False
 
 
-def test_load_from_file_with_cached_model(test_base_file, tmp_model_cache):
+def test_load_from_file_with_cached_model(test_base_file, model_cache_enabled):
     # Set up the mock to return a cached model
     cached_model = KilnBaseModel(v=1, path=test_base_file)
-    tmp_model_cache.get_model = MagicMock(return_value=cached_model)
+    model_cache_enabled.get_model = MagicMock(return_value=cached_model)
 
     with patch("builtins.open", create=True) as mock_open:
         # Load the model
         model = KilnBaseModel.load_from_file(test_base_file)
 
         # Check that the cache was checked and the cached model was returned
-        tmp_model_cache.get_model.assert_called_once_with(
+        model_cache_enabled.get_model.assert_called_once_with(
             test_base_file, KilnBaseModel, readonly=False
         )
         assert model is cached_model
@@ -584,7 +602,7 @@ def test_load_from_file_with_cached_model(test_base_file, tmp_model_cache):
         mock_open.assert_not_called()
 
 
-def test_from_id_and_parent_path(test_base_parented_file, tmp_model_cache):
+def test_from_id_and_parent_path(test_base_parented_file, model_cache_enabled):
     # Set up parent and children models
     parent = BaseParentExample.load_from_file(test_base_parented_file)
 
@@ -614,7 +632,9 @@ def test_from_id_and_parent_path(test_base_parented_file, tmp_model_cache):
     assert not_found is None
 
 
-def test_from_id_and_parent_path_with_cache(test_base_parented_file, tmp_model_cache):
+def test_from_id_and_parent_path_with_cache(
+    test_base_parented_file, model_cache_enabled
+):
     # Set up parent and child
     parent = BaseParentExample.load_from_file(test_base_parented_file)
     child = DefaultParentedModel(parent=parent, name="Child")
@@ -625,7 +645,7 @@ def test_from_id_and_parent_path_with_cache(test_base_parented_file, tmp_model_c
     _ = DefaultParentedModel.from_id_and_parent_path(child.id, test_base_parented_file)
 
     # Mock cache to verify it's used
-    tmp_model_cache.get_model_id = MagicMock(return_value=child.id)
+    model_cache_enabled.get_model_id = MagicMock(return_value=child.id)
 
     # Load again - should use cache
     found_child = DefaultParentedModel.from_id_and_parent_path(
@@ -634,7 +654,7 @@ def test_from_id_and_parent_path_with_cache(test_base_parented_file, tmp_model_c
 
     assert found_child is not None
     assert found_child.id == child.id
-    tmp_model_cache.get_model_id.assert_called()
+    model_cache_enabled.get_model_id.assert_called()
 
 
 def test_from_id_and_parent_path_without_parent():
@@ -643,7 +663,7 @@ def test_from_id_and_parent_path_without_parent():
     assert not_found is None
 
 
-def test_from_ids_and_parent_path_basic(test_base_parented_file, tmp_model_cache):
+def test_from_ids_and_parent_path_basic(test_base_parented_file, model_cache_enabled):
     """Test basic functionality of from_ids_and_parent_path method"""
     # Set up parent and children models
     parent = BaseParentExample.load_from_file(test_base_parented_file)
@@ -693,7 +713,9 @@ def test_from_ids_and_parent_path_none_parent():
     assert found_children == {}
 
 
-def test_from_ids_and_parent_path_no_matches(test_base_parented_file, tmp_model_cache):
+def test_from_ids_and_parent_path_no_matches(
+    test_base_parented_file, model_cache_enabled
+):
     """Test from_ids_and_parent_path when no IDs match existing children"""
     # Set up parent and children models
     parent = BaseParentExample.load_from_file(test_base_parented_file)
@@ -709,7 +731,7 @@ def test_from_ids_and_parent_path_no_matches(test_base_parented_file, tmp_model_
 
 
 def test_from_ids_and_parent_path_partial_matches(
-    test_base_parented_file, tmp_model_cache
+    test_base_parented_file, model_cache_enabled
 ):
     """Test from_ids_and_parent_path when only some IDs match"""
     # Set up parent and children models
@@ -738,7 +760,7 @@ def test_from_ids_and_parent_path_partial_matches(
 
 
 def test_from_ids_and_parent_path_with_cache_fallback(
-    test_base_parented_file, tmp_model_cache
+    test_base_parented_file, model_cache_enabled
 ):
     """Test from_ids_and_parent_path when cache returns None and needs to load file"""
     # Set up parent and child
@@ -747,7 +769,7 @@ def test_from_ids_and_parent_path_with_cache_fallback(
     child.save_to_file()
 
     # Mock cache to return None for get_model_id, forcing file load
-    tmp_model_cache.get_model_id = MagicMock(return_value=None)
+    model_cache_enabled.get_model_id = MagicMock(return_value=None)
 
     # Test should still work by loading the file
     assert child.id is not None  # Type safety
@@ -760,11 +782,11 @@ def test_from_ids_and_parent_path_with_cache_fallback(
     assert found_children[child.id].name == "Child"
 
     # Verify cache was checked
-    tmp_model_cache.get_model_id.assert_called()
+    model_cache_enabled.get_model_id.assert_called()
 
 
 def test_from_ids_and_parent_path_equivalent_to_individual_lookups(
-    test_base_parented_file, tmp_model_cache
+    test_base_parented_file, model_cache_enabled
 ):
     """Test that from_ids_and_parent_path returns the same results as individual lookups"""
     # Set up parent and multiple children
@@ -816,7 +838,7 @@ def test_from_ids_and_parent_path_equivalent_to_individual_lookups(
 @pytest.mark.paid
 @pytest.mark.parametrize("num_children", [100, 1000, 2500, 5000])
 def test_from_ids_and_parent_path_benchmark(
-    test_base_parented_file, tmp_model_cache, num_children
+    test_base_parented_file, model_cache_enabled, num_children
 ):
     """Benchmark test for from_ids_and_parent_path method performance at scale"""
     # Set up parent and many children
@@ -1176,7 +1198,7 @@ def test_mutable_copy():
     assert model._readonly is True
 
 
-def test_readonly_cache_integration(tmp_model_cache, tmp_path):
+def test_readonly_cache_integration(model_cache_enabled, tmp_path):
     """Test that cache integration properly marks models as readonly."""
     # Create a test model file
     test_file = tmp_path / "test_readonly.kiln"
@@ -1542,13 +1564,6 @@ def _project_with_tasks(folder: Path, task_count: int = 2) -> Project:
 @pytest.fixture
 def project_with_tasks(tmp_path) -> Project:
     return _project_with_tasks(tmp_path)
-
-
-@pytest.fixture
-def model_cache_enabled(monkeypatch):
-    """The cache turns itself off on file systems with coarse timestamps (CI
-    runners among them). Tests of warm-cache behaviour turn it on regardless."""
-    monkeypatch.setattr(ModelCache.shared(), "_enabled", True)
 
 
 def test_child_method_attaches_a_mutable_parent_to_mutable_children(

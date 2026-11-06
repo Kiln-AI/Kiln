@@ -166,12 +166,12 @@ class ItemReference:
         re-compared, not just re-identified.
 
         The cache is dropped for this path first, and that is the point of the re-read
-        rather than an optimization detail. `ModelCache` validates on mtime alone, and the
-        plan's own `readonly=True` scan is what put this item in it — so a replacement
-        that preserves mtime (`rsync -t`, Syncthing, Dropbox, iCloud all do, by design)
-        would be served the plan's parse and pass a check whose entire job is to notice
-        that the plan is stale. Reading one small file at a known path is cheap; reading
-        the answer we are trying to invalidate is not cheap at all.
+        rather than an optimization detail. `ModelCache` checks file metadata (modified
+        time, size and file id), never content, and when it is on, the plan's own
+        `readonly=True` scan is what put this item in it — so an in-place rewrite that
+        keeps all three would be served the plan's parse and pass a check whose entire job
+        is to notice that the plan is stale. Reading one small file at a known path is
+        cheap; reading the answer we are trying to invalidate is not cheap at all.
         """
         source_type, item_id = self.key
         ModelCache.shared().invalidate(self.path)

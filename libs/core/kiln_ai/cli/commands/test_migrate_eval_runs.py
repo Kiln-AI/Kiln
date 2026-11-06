@@ -31,7 +31,7 @@ from kiln_ai.datamodel.eval import (
     TaskRunSplit,
     UserMessage,
 )
-from kiln_ai.datamodel.model_cache import ModelCache
+from kiln_ai.datamodel.model_cache import FileIdentity
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     McpRunConfigProperties,
@@ -858,40 +858,34 @@ def replace_item_with_another(item: TaskRun) -> None:
     item.path.write_text(json.dumps(swapped))
 
 
-@pytest.fixture
-def live_model_cache():
-    """Force `ModelCache` on for the test.
-
-    It is disabled wherever the filesystem reports coarse timestamps, which is the case in
-    CI — so a test of cache-related behavior is vacuous unless it turns the cache on
-    itself. On macOS and Windows, which is what Kiln ships to, it is always live.
+def rewrite_keeping_file_identity(path: Path, raw: dict) -> None:
+    """Rewrite `path` in place, padded to its old size and given back its old mtime, so
+    the model cache's metadata check (modified time, size, file id) can't see the change.
     """
-    cache = ModelCache.shared()
-    was_enabled = cache._enabled
-    cache._enabled = True
-    cache.clear()
-    yield cache
-    cache.clear()
-    cache._enabled = was_enabled
+    identity = FileIdentity.from_path(path)
+    assert identity is not None
+    rewritten = json.dumps(raw, ensure_ascii=False).encode()
+    assert len(rewritten) <= identity.size
+    path.write_bytes(rewritten.ljust(identity.size))
+    os.utime(path, ns=(identity.mtime_ns, identity.mtime_ns))
+    assert FileIdentity.from_path(path) == identity
 
 
-def test_an_item_replaced_without_touching_its_mtime_is_not_deferred_to(
-    fixture, live_model_cache
+def test_an_item_rewritten_without_changing_its_metadata_is_not_deferred_to(
+    fixture, model_cache_enabled
 ):
-    """`ModelCache` validates on mtime alone, and the plan's own scan is what populates
-    it. Every file-syncing tool preserves mtime by design, so a replacement that keeps it
-    would be served the plan's own parse — the check would confirm the plan against the
-    plan."""
+    """`ModelCache` checks file metadata, never content, and the plan's own scan is what
+    populates it. A rewrite that keeps the modified time, size and file id would be served
+    the plan's own parse — the check would confirm the plan against the plan."""
     plan = plan_project(fixture.project)
     path = fixture.dataset_item.path
     assert path is not None
-    planned_mtime = path.stat().st_mtime_ns
 
-    replace_item_with_another(fixture.dataset_item)
-    os.utime(path, ns=(planned_mtime, planned_mtime))
+    swapped = json.loads(path.read_text()) | {"id": "a-different-run"}
+    rewrite_keeping_file_identity(path, swapped)
 
     # Non-vacuous: without invalidation this is exactly what the re-read would be handed.
-    assert live_model_cache.get_model_id(path, TaskRun) == fixture.dataset_item.id
+    assert model_cache_enabled.get_model_id(path, TaskRun) == fixture.dataset_item.id
 
     failures = apply_plan(plan)
 
@@ -1094,16 +1088,16 @@ def rewrite_the_id(raw: dict) -> None:
 
 
 @pytest.mark.parametrize(
-    "tamper,keep_mtime",
+    "tamper,keep_file_identity",
     [
         (rewrite_the_output, False),
         (rewrite_the_output, True),
         (rewrite_the_id, False),
     ],
-    ids=["different output", "different output, same mtime", "different id"],
+    ids=["different output", "different output, same metadata", "different id"],
 )
 def test_a_trace_rewritten_after_planning_is_not_reused(
-    fixture, live_model_cache, tamper, keep_mtime
+    fixture, model_cache_enabled, tamper, keep_file_identity
 ):
     """Reuse picks a trace *because of its content*, so the write-time check re-asks the
     same question. Re-asking only the id would give that guarantee up at the one moment it
@@ -1124,12 +1118,12 @@ def test_a_trace_rewritten_after_planning_is_not_reused(
 
     # A sync replaces the trace with a version the plan did not match.
     trace_path = reuse.requires_item.path
-    planned_mtime = trace_path.stat().st_mtime_ns
     tampered = json.loads(trace_path.read_text())
     tamper(tampered)
-    trace_path.write_text(json.dumps(tampered))
-    if keep_mtime:
-        os.utime(trace_path, ns=(planned_mtime, planned_mtime))
+    if keep_file_identity:
+        rewrite_keeping_file_identity(trace_path, tampered)
+    else:
+        trace_path.write_text(json.dumps(tampered, ensure_ascii=False))
 
     failures = apply_plan(retry)
 

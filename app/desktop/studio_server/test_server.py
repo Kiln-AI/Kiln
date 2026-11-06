@@ -6,6 +6,7 @@ import pytest
 import requests
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from kiln_ai.datamodel.model_cache import model_cache_enabled
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_server.server import tags_metadata
 
@@ -14,10 +15,10 @@ from app.desktop.studio_server.webhost import HTMLStaticFiles
 
 
 @pytest.fixture
-def client(monkeypatch):
+def app(monkeypatch):
     # Ensure CORS origins use the default port (5173) regardless of environment
     monkeypatch.delenv("KILN_FRONTEND_PORT", raising=False)
-    # a client based on a mock studio path (skipping remote model list loading)
+    # an app based on a mock studio path (skipping remote model list loading)
     with (
         tempfile.TemporaryDirectory() as temp_dir,
         patch(
@@ -32,9 +33,13 @@ def client(monkeypatch):
             from app.desktop.studio_server.webhost import studio_path
 
             assert studio_path() == temp_dir  # Verify the patch is working
-            app = make_app()
-            with TestClient(app) as client:
-                yield client
+            yield make_app()
+
+
+@pytest.fixture
+def client(app):
+    with TestClient(app) as client:
+        yield client
 
 
 def test_ping(client):
@@ -46,6 +51,15 @@ def test_ping(client):
 # Check that the server is running in strict datamodel mode
 def test_strict_mode(client):
     assert strict_mode()
+
+
+def test_lifespan_enables_model_cache_and_restores_it(app):
+    assert not model_cache_enabled()
+
+    with TestClient(app):
+        assert model_cache_enabled()
+
+    assert not model_cache_enabled()
 
 
 def test_connect_ollama_success(client):

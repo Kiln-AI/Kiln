@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Sequence
 
 from kiln_ai.datamodel.external_tool_server import ToolServerType
+from kiln_ai.datamodel.model_cache import set_model_cache_enabled
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.tool_id import build_kiln_task_tool_id, build_rag_tool_id
 
@@ -155,6 +156,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         return
 
     logging.basicConfig(level=getattr(logging, args.log_level.upper(), logging.INFO))
+    set_model_cache_enabled(True)
 
     asyncio.run(
         _async_main(

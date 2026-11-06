@@ -1,151 +1,249 @@
+import os
 import sys
 import threading
 import time
 from pathlib import Path
-from unittest import mock
 
 import pytest
-from pydantic import BaseModel
 
 from kiln_ai.datamodel.basemodel import KilnBaseModel
-from kiln_ai.datamodel.model_cache import ModelCache
+from kiln_ai.datamodel.model_cache import (
+    FileIdentity,
+    ModelCache,
+    model_cache_enabled,
+    set_model_cache_enabled,
+)
 
 
-# Define a simple Pydantic model for testing
-class ModelTest(BaseModel):
-    name: str
-    value: int
-
-
-# Define a test model that inherits from KilnBaseModel for readonly testing
 class KilnModelTest(KilnBaseModel):
     name: str
     value: int
 
 
 @pytest.fixture
-def model_cache():
-    return ModelCache()
-
-
-def should_skip_test(model_cache):
-    return not model_cache._enabled
+def model_cache() -> ModelCache:
+    return ModelCache(enabled=True)
 
 
 @pytest.fixture
-def test_path(tmp_path):
-    # Create a temporary file path for testing
+def test_path(tmp_path) -> Path:
     test_file = tmp_path / "test_model.kiln"
-    test_file.touch()  # Create the file
+    test_file.write_text("original contents")
     return test_file
 
 
-def test_set_and_get_model(model_cache, test_path):
-    if not model_cache._enabled:
-        pytest.skip("Cache is disabled on this fs")
-
-    model = KilnModelTest(name="test", value=123)
-    model.mark_as_readonly()  # Mark as readonly before caching
-    mtime_ns = test_path.stat().st_mtime_ns
-
-    model_cache.set_model(test_path, model, mtime_ns)
-    cached_model = model_cache.get_model(test_path, KilnModelTest)
-
-    assert cached_model is not None
-    assert cached_model.name == "test"
-    assert cached_model.value == 123
+def readonly_model(name: str = "test", value: int = 123) -> KilnModelTest:
+    model = KilnModelTest(name=name, value=value)
+    model.mark_as_readonly()
+    return model
 
 
-def test_invalidate_model(model_cache, test_path):
-    model = KilnModelTest(name="test", value=123)
-    model.mark_as_readonly()  # Mark as readonly before caching
-    mtime = test_path.stat().st_mtime
-
-    model_cache.set_model(test_path, model, mtime)
-    model_cache.invalidate(test_path)
-    cached_model = model_cache.get_model(test_path, KilnModelTest)
-
-    assert cached_model is None
+def identity_of(path: Path) -> FileIdentity:
+    identity = FileIdentity.from_path(path)
+    assert identity is not None
+    return identity
 
 
-def test_clear_cache(model_cache, test_path):
-    model = KilnModelTest(name="test", value=123)
-    model.mark_as_readonly()  # Mark as readonly before caching
-    mtime = test_path.stat().st_mtime
-
-    model_cache.set_model(test_path, model, mtime)
-    model_cache.clear()
-    cached_model = model_cache.get_model(test_path, KilnModelTest)
-
-    assert cached_model is None
+def cache_with_model(cache: ModelCache, path: Path) -> KilnModelTest:
+    model = readonly_model()
+    cache.set_model(path, model, identity_of(path))
+    return model
 
 
-def test_cache_invalid_due_to_mtime_change(model_cache, test_path):
-    model = KilnModelTest(name="test", value=123)
-    model.mark_as_readonly()  # Mark as readonly before caching
-    mtime = test_path.stat().st_mtime
-
-    model_cache.set_model(test_path, model, mtime)
-
-    # Simulate a file modification by updating the mtime
-    test_path.touch()
-    cached_model = model_cache.get_model(test_path, KilnModelTest)
-
-    assert cached_model is None
+def restore_mtime(path: Path, identity: FileIdentity) -> None:
+    os.utime(path, ns=(identity.mtime_ns, identity.mtime_ns))
 
 
-def test_get_model_wrong_type(model_cache, test_path):
-    if not model_cache._enabled:
-        pytest.skip("Cache is disabled on this fs")
+def test_disabled_by_default(test_path):
+    for cache in (ModelCache(), ModelCache.shared()):
+        assert cache.enabled is False
+        cache_with_model(cache, test_path)
+        assert cache.get_model(test_path, KilnModelTest, readonly=True) is None
+        assert cache.get_model_id(test_path, KilnModelTest) is None
 
+
+def test_set_enabled_false_clears(model_cache, test_path):
+    cache_with_model(model_cache, test_path)
+
+    model_cache.set_enabled(False)
+    model_cache.set_enabled(True)
+
+    assert model_cache.get_model(test_path, KilnModelTest, readonly=True) is None
+
+
+def test_set_enabled_true_on_enabled_cache_keeps_entries(model_cache, test_path):
+    model = cache_with_model(model_cache, test_path)
+
+    model_cache.set_enabled(True)
+
+    assert model_cache.get_model(test_path, KilnModelTest, readonly=True) is model
+
+
+def test_set_model_cache_enabled_switch(test_path):
+    assert model_cache_enabled() is False
+
+    set_model_cache_enabled(True)
+    assert model_cache_enabled() is True
+    assert ModelCache.shared().enabled is True
+    model = cache_with_model(ModelCache.shared(), test_path)
+    assert ModelCache.shared().get_model(test_path, KilnModelTest, readonly=True) is (
+        model
+    )
+
+    set_model_cache_enabled(False)
+    assert model_cache_enabled() is False
+    set_model_cache_enabled(True)
+    assert ModelCache.shared().get_model(test_path, KilnModelTest, readonly=True) is (
+        None
+    )
+
+
+def test_hit_returns_same_instance_readonly_and_copy_mutable(model_cache, test_path):
+    model = cache_with_model(model_cache, test_path)
+
+    assert model_cache.get_model(test_path, KilnModelTest, readonly=True) is model
+
+    copy = model_cache.get_model(test_path, KilnModelTest)
+    assert copy is not None
+    assert copy is not model
+    assert copy._readonly is False
+    assert (copy.name, copy.value) == ("test", 123)
+
+    copy.name = "mutated"
+
+    assert model.name == "test"
+    assert model._readonly is True
+    cached = model_cache.get_model(test_path, KilnModelTest, readonly=True)
+    assert cached is model
+
+
+def test_get_model_id_returns_cached_id(model_cache, test_path):
+    model = cache_with_model(model_cache, test_path)
+
+    assert model_cache.get_model_id(test_path, KilnModelTest) == model.id
+
+    test_path.write_text("different, longer contents")
+
+    assert model_cache.get_model_id(test_path, KilnModelTest) is None
+
+
+def test_changed_mtime_invalidates(model_cache, test_path):
+    original = identity_of(test_path)
+    cache_with_model(model_cache, test_path)
+
+    os.utime(
+        test_path, ns=(original.mtime_ns + 1_000_000, original.mtime_ns + 1_000_000)
+    )
+    changed = identity_of(test_path)
+    assert (changed.size, changed.inode) == (original.size, original.inode)
+    assert changed.mtime_ns != original.mtime_ns
+
+    assert model_cache.get_model(test_path, KilnModelTest, readonly=True) is None
+
+
+def test_changed_size_invalidates(model_cache, test_path):
+    original = identity_of(test_path)
+    cache_with_model(model_cache, test_path)
+
+    test_path.write_text("different, longer contents")
+    restore_mtime(test_path, original)
+    changed = identity_of(test_path)
+    assert (changed.mtime_ns, changed.inode) == (original.mtime_ns, original.inode)
+    assert changed.size != original.size
+
+    assert model_cache.get_model(test_path, KilnModelTest, readonly=True) is None
+
+
+def test_replaced_file_new_inode_invalidates(model_cache, test_path):
+    original = identity_of(test_path)
+    cache_with_model(model_cache, test_path)
+
+    replacement = test_path.with_name("replacement.kiln")
+    replacement.write_text("replaced contents")
+    assert replacement.stat().st_size == original.size
+    os.replace(replacement, test_path)
+    restore_mtime(test_path, original)
+    changed = identity_of(test_path)
+    assert (changed.mtime_ns, changed.size) == (original.mtime_ns, original.size)
+    assert changed.inode != original.inode
+
+    assert model_cache.get_model(test_path, KilnModelTest, readonly=True) is None
+
+
+def test_deleted_file_invalidates(model_cache, test_path):
+    cache_with_model(model_cache, test_path)
+
+    test_path.unlink()
+
+    assert model_cache.get_model(test_path, KilnModelTest, readonly=True) is None
+    assert model_cache.get_model_id(test_path, KilnModelTest) is None
+
+
+def test_invalidated_entry_stays_gone_when_file_returns(model_cache, test_path):
+    original = identity_of(test_path)
+    cache_with_model(model_cache, test_path)
+    test_path.write_text("different, longer contents")
+    assert model_cache.get_model(test_path, KilnModelTest, readonly=True) is None
+
+    test_path.write_text("original contents")
+    restore_mtime(test_path, original)
+
+    assert model_cache.get_model(test_path, KilnModelTest, readonly=True) is None
+
+
+def test_wrong_type_raises_and_invalidates(model_cache, test_path):
     class AnotherModel(KilnBaseModel):
         other_field: str
 
-    model = KilnModelTest(name="test", value=123)
-    model.mark_as_readonly()  # Mark as readonly before caching
-    mtime_ns = test_path.stat().st_mtime_ns
+    cache_with_model(model_cache, test_path)
 
-    model_cache.set_model(test_path, model, mtime_ns)
-
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="is not of type AnotherModel"):
         model_cache.get_model(test_path, AnotherModel)
 
-    # Test that the cache invalidates
-    cached_model = model_cache.get_model(test_path, KilnModelTest)
-    assert cached_model is None
+    assert model_cache.get_model(test_path, KilnModelTest) is None
 
 
-def test_is_cache_valid_true(model_cache, test_path):
-    mtime_ns = test_path.stat().st_mtime_ns
-    assert model_cache._is_cache_valid(test_path, mtime_ns) is True
+def test_invalidate_model(model_cache, test_path):
+    cache_with_model(model_cache, test_path)
+
+    model_cache.invalidate(test_path)
+
+    assert model_cache.get_model(test_path, KilnModelTest) is None
 
 
-def test_is_cache_valid_false_due_to_mtime_change(model_cache, test_path):
-    if not model_cache._enabled:
-        pytest.skip("Cache is disabled on this fs")
+def test_clear_cache(model_cache, test_path):
+    cache_with_model(model_cache, test_path)
 
-    mtime_ns = test_path.stat().st_mtime_ns
-    # Simulate a file modification by updating the mtime
-    test_path.touch()
-    assert model_cache._is_cache_valid(test_path, mtime_ns) is False
+    model_cache.clear()
+
+    assert model_cache.get_model(test_path, KilnModelTest) is None
 
 
-def test_is_cache_valid_false_due_to_missing_file(model_cache):
-    non_existent_path = Path("/non/existent/path")
-    assert model_cache._is_cache_valid(non_existent_path, 0) is False
+def test_cache_mutable_model_raises_error(model_cache, test_path):
+    model = KilnModelTest(name="test", value=123)
+
+    with pytest.raises(
+        RuntimeError, match="Mutable models are not allowed to be cached"
+    ):
+        model_cache.set_model(test_path, model, identity_of(test_path))
+
+
+def test_file_identity_from_path_missing_file_is_none(tmp_path):
+    assert FileIdentity.from_path(tmp_path / "missing.kiln") is None
+
+
+def test_file_identity_from_stat_matches_fstat(test_path):
+    with open(test_path, "rb") as file:
+        from_fstat = FileIdentity.from_stat(os.fstat(file.fileno()))
+
+    assert from_fstat == FileIdentity.from_path(test_path)
 
 
 def test_benchmark_get_model(benchmark, model_cache, test_path):
-    model = KilnModelTest(name="test", value=123)
-    model.mark_as_readonly()  # Mark as readonly before caching
-    mtime = test_path.stat().st_mtime
+    cache_with_model(model_cache, test_path)
 
-    # Set the model in the cache
-    model_cache.set_model(test_path, model, mtime)
-
-    # Benchmark the get_model method
     def get_model():
-        return model_cache.get_model(test_path, KilnModelTest)
+        return model_cache.get_model(test_path, KilnModelTest, readonly=True)
 
     benchmark(get_model)
     stats = benchmark.stats.stats
@@ -158,197 +256,6 @@ def test_benchmark_get_model(benchmark, model_cache, test_path):
         )
 
 
-def test_get_model_returns_copy(model_cache, test_path):
-    if not model_cache._enabled:
-        pytest.skip("Cache is disabled on this fs")
-
-    model = KilnModelTest(name="test", value=123)
-    model.mark_as_readonly()  # Mark as readonly before caching
-    mtime_ns = test_path.stat().st_mtime_ns
-
-    # Set the model in the cache
-    model_cache.set_model(test_path, model, mtime_ns)
-
-    # Get a copy of the model from the cache (readonly should be the same instance)
-    readonly_cached_model = model_cache.get_model(
-        test_path, KilnModelTest, readonly=True
-    )
-    assert model == readonly_cached_model
-
-    # Get a copy of the model from the cache (mutable should be a different instance, but same data)
-    cached_model = model_cache.get_model(test_path, KilnModelTest, readonly=False)
-    assert cached_model is not model
-    assert cached_model.name == model.name
-    assert cached_model.value == model.value
-    assert cached_model._readonly is False  # Copy should be mutable
-    assert model._readonly is True  # Original should be readonly
-
-    # Mutate the cached model
-    cached_model.name = "mutated"
-
-    # Get the model again from the cache
-    new_cached_model = model_cache.get_model(test_path, KilnModelTest)
-
-    # Assert that the new cached model has the original values
-    assert new_cached_model.name == model.name == "test"
-    assert new_cached_model.value == model.value
-
-    # Save the mutated model back to the cache (not a normal flow)
-    cached_model.mark_as_readonly()  # Mark as readonly before caching
-    model_cache.set_model(test_path, cached_model, mtime_ns)
-
-    # Get the model again from the cache
-    updated_cached_model = model_cache.get_model(test_path, KilnModelTest)
-
-    # Assert that the updated cached model has the mutated values
-    assert updated_cached_model.name == "mutated"
-    assert updated_cached_model.value == 123
-
-
-def test_no_cache_when_no_fine_granularity(model_cache, test_path):
-    model = ModelTest(name="test", value=123)
-    mtime_ns = test_path.stat().st_mtime_ns
-
-    model_cache._enabled = False
-    model_cache.set_model(test_path, model, mtime_ns)
-    cached_model = model_cache.get_model(test_path, ModelTest)
-
-    # Assert that the model is not cached
-    assert cached_model is None
-    assert model_cache.model_cache == {}
-    assert model_cache._enabled is False
-
-
-def test_check_timestamp_granularity_macos():
-    with mock.patch("sys.platform", "darwin"):
-        cache = ModelCache()
-        assert cache._check_timestamp_granularity() is True
-        assert cache._enabled is True
-
-
-def test_check_timestamp_granularity_windows():
-    with mock.patch("sys.platform", "win32"):
-        cache = ModelCache()
-        assert cache._check_timestamp_granularity() is True
-        assert cache._enabled is True
-
-
-def test_check_timestamp_granularity_linux_good():
-    mock_stats = mock.Mock()
-    mock_stats.f_timespec = 9  # nanosecond precision
-
-    with (
-        mock.patch("sys.platform", "linux"),
-        mock.patch("os.statvfs", return_value=mock_stats),
-    ):
-        cache = ModelCache()
-        assert cache._check_timestamp_granularity() is True
-        assert cache._enabled is True
-
-
-def test_check_timestamp_granularity_linux_poor():
-    mock_stats = mock.Mock()
-    mock_stats.f_timespec = 3  # millisecond precision
-
-    with (
-        mock.patch("sys.platform", "linux"),
-        mock.patch("os.statvfs", return_value=mock_stats),
-    ):
-        cache = ModelCache()
-        assert cache._check_timestamp_granularity() is False
-        assert cache._enabled is False
-
-
-def test_check_timestamp_granularity_linux_error():
-    with (
-        mock.patch("sys.platform", "linux"),
-        mock.patch("os.statvfs", side_effect=OSError("Mock filesystem error")),
-    ):
-        cache = ModelCache()
-        assert cache._check_timestamp_granularity() is False
-        assert cache._enabled is False
-
-
-def test_get_model_readonly(model_cache, test_path):
-    if not model_cache._enabled:
-        pytest.skip("Cache is disabled on this fs")
-
-    model = KilnModelTest(name="test", value=123)
-    model.mark_as_readonly()  # Mark as readonly before caching
-    mtime_ns = test_path.stat().st_mtime_ns
-
-    # Set the model in the cache
-    model_cache.set_model(test_path, model, mtime_ns)
-
-    # Get the model in readonly mode
-    readonly_model = model_cache.get_model(test_path, KilnModelTest, readonly=True)
-    # Get a regular (copied/mutable) model
-    copied_model = model_cache.get_model(test_path, KilnModelTest)
-
-    # The readonly model should be the exact same instance as the cached model
-    assert readonly_model is model_cache.model_cache[test_path][0]
-    # While the regular get should be a different instance
-    assert copied_model is not model_cache.model_cache[test_path][0]
-
-    # Both should have the same data (but different readonly states)
-    assert readonly_model.name == copied_model.name == model.name
-    assert readonly_model.value == copied_model.value == model.value
-    assert readonly_model._readonly is True  # Readonly model should be readonly
-    assert copied_model._readonly is False  # Copied model should be mutable
-
-
-def test_cached_models_marked_readonly(model_cache, test_path):
-    """Test that models are marked as readonly when stored in cache."""
-    if not model_cache._enabled:
-        pytest.skip("Cache is disabled on this fs")
-
-    model = KilnModelTest(name="test_model", value=456)
-    mtime_ns = test_path.stat().st_mtime_ns
-
-    # Model should not be readonly initially
-    assert model._readonly is False
-
-    # Mark model as readonly before caching (this is what load_from_file does)
-    model.mark_as_readonly()
-
-    # Set the model in the cache
-    model_cache.set_model(test_path, model, mtime_ns)
-
-    # The original model should now be marked as readonly
-    assert model._readonly is True
-
-    # Get the model in readonly mode - should be the same instance
-    readonly_model = model_cache.get_model(test_path, KilnModelTest, readonly=True)
-    assert readonly_model is model  # Same instance
-    assert readonly_model._readonly is True
-
-    # Get the model in mutable mode - should be a copy
-    mutable_model = model_cache.get_model(test_path, KilnModelTest, readonly=False)
-    assert mutable_model is not model  # Different instance
-    assert mutable_model._readonly is False
-
-    # Should be able to mutate the copy
-    mutable_model.name = "mutated_name"
-    assert mutable_model.name == "mutated_name"
-
-    # Original should remain unchanged
-    assert model.name == "test_model"
-
-
-def test_cache_mutable_model_raises_error(model_cache, test_path):
-    if not model_cache._enabled:
-        pytest.skip("Cache is disabled on this fs")
-
-    # Not readonly, so should raise error. The Cache should not allow mutable models to be cached.
-    model = KilnModelTest(name="test", value=123)
-    mtime_ns = test_path.stat().st_mtime_ns
-
-    with pytest.raises(
-        RuntimeError, match="Mutable models are not allowed to be cached"
-    ):
-        model_cache.set_model(test_path, model, mtime_ns)
-
-
 def test_concurrent_access_from_threads_does_not_raise(model_cache, test_path):
     """The shared cache is used from the event loop and from worker threads at once.
 
@@ -358,13 +265,11 @@ def test_concurrent_access_from_threads_does_not_raise(model_cache, test_path):
     A tiny switch interval makes the interpreter change threads often enough to
     hit those windows in a short run.
     """
-    if not model_cache._enabled:
-        pytest.skip("Cache is disabled on this fs")
-
-    model = KilnModelTest(name="test", value=123)
-    model.mark_as_readonly()
-    fresh_mtime_ns = test_path.stat().st_mtime_ns
-    stale_mtime_ns = fresh_mtime_ns - 1
+    model = readonly_model()
+    fresh = identity_of(test_path)
+    stale = FileIdentity(
+        mtime_ns=fresh.mtime_ns - 1, size=fresh.size, inode=fresh.inode
+    )
     errors: list[BaseException] = []
     deadline = time.monotonic() + 0.5
 
@@ -380,11 +285,11 @@ def test_concurrent_access_from_threads_does_not_raise(model_cache, test_path):
         model_cache.get_model_id(test_path, KilnModelTest)
 
     def store_then_invalidate():
-        model_cache.set_model(test_path, model, fresh_mtime_ns)
+        model_cache.set_model(test_path, model, fresh)
         model_cache.invalidate(test_path)
 
     def store_stale():
-        model_cache.set_model(test_path, model, stale_mtime_ns)
+        model_cache.set_model(test_path, model, stale)
 
     steps = [read] * 4 + [store_then_invalidate] * 2 + [store_stale] * 2
     threads = [threading.Thread(target=run, args=(step,)) for step in steps]

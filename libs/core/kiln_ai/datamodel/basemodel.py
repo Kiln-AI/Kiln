@@ -28,7 +28,7 @@ from pydantic import (
 from pydantic_core import ErrorDetails
 from typing_extensions import Annotated, Self
 
-from kiln_ai.datamodel.model_cache import ModelCache
+from kiln_ai.datamodel.model_cache import FileIdentity, ModelCache
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.formatting import snake_case
 from kiln_ai.utils.mime_type import guess_extension
@@ -437,8 +437,8 @@ class KilnBaseModel(BaseModel):
                 cached_model.parent = parent  # type: ignore[attr-defined]
             return cached_model
         with open(path, "r", encoding="utf-8") as file:
-            # modified time of file for cache invalidation. From file descriptor so it's atomic w read.
-            mtime_ns = os.fstat(file.fileno()).st_mtime_ns
+            # From the open descriptor, so the identity describes the bytes read below.
+            identity = FileIdentity.from_stat(os.fstat(file.fileno()))
             file_data = file.read()
             parsed_json = json.loads(file_data)
             m = cls.model_validate(
@@ -471,7 +471,7 @@ class KilnBaseModel(BaseModel):
         if readonly:
             m.mark_as_readonly()
             # Cache, but only if readonly. Mutable models should not be cached.
-            ModelCache.shared().set_model(path, m, mtime_ns)
+            ModelCache.shared().set_model(path, m, identity)
 
         return m
 

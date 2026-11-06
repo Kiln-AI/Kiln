@@ -1,22 +1,20 @@
 """
-A simple cache for our datamodel.
+A process-wide cache of parsed, validated datamodel records, keyed by file path.
 
-Works at the file level, caching the pydantic model based on the file path.
-
-Keeping this really simple. Our goal is to really be "disk-backed" data model, so using disk primitives.
-
- - Use disk mtime to determine if the cached model is stale.
- - Still using glob for iterating over projects, just caching at the file level
- - Use path as the cache key
- - Cache always populated from a disk read, so we know it reflects what's on disk. Even if we had a memory-constructed version, we don't cache that.
- - Cache the parsed model, not the raw file contents. Parsing and validating is what's expensive. >99% speedup when measured.
+- Off by default. Hosts that want it (the desktop app, kiln_server, kiln_mcp) turn it on
+  with `set_model_cache_enabled(True)`, and library users can do the same.
+- Only readonly loads add to it, always straight from a disk read, so each cached record
+  matches the file it was parsed from. A record built in memory is never cached.
+- Before serving a record, the cache stats its file. If the modified time, size or file id
+  changed, or the file is gone, the entry is dropped and the caller reloads the file.
+- It caches the parsed model, not the raw file contents: parsing and validating is what's
+  expensive, and a cache hit is over 99% faster than a load.
 """
 
 import os
-import sys
-import warnings
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Optional, Tuple, Type, TypeVar
+from typing import TYPE_CHECKING, Optional, Type, TypeVar
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.basemodel import KilnBaseModel
@@ -26,43 +24,69 @@ else:
     T = TypeVar("T")
 
 
-class ModelCache:
-    _shared_instance = None
+@dataclass(frozen=True, slots=True)
+class FileIdentity:
+    """The facts about a file that tell the cache whether a cached record is stale."""
 
-    def __init__(self):
-        # Store both the model and the modified time of the cached file contents
-        self.model_cache: Dict[Path, Tuple[KilnBaseModel, int]] = {}
-        self._enabled = self._check_timestamp_granularity()
-        if not self._enabled:
-            warnings.warn(
-                "File system does not support fine-grained timestamps. "
-                "Model caching has been disabled to ensure consistency."
-            )
+    mtime_ns: int
+    size: int
+    inode: int
 
     @classmethod
-    def shared(cls):
+    def from_stat(cls, st: os.stat_result) -> "FileIdentity":
+        return cls(mtime_ns=st.st_mtime_ns, size=st.st_size, inode=st.st_ino)
+
+    @classmethod
+    def from_path(cls, path: Path) -> "FileIdentity | None":
+        """The file's current identity, or None if it can't be stat'ed."""
+        try:
+            return cls.from_stat(path.stat())
+        except (OSError, ValueError):
+            return None
+
+
+@dataclass(frozen=True, slots=True)
+class _Entry:
+    model: "KilnBaseModel"
+    identity: FileIdentity
+
+
+class ModelCache:
+    _shared_instance: "ModelCache | None" = None
+
+    def __init__(self, *, enabled: bool = False) -> None:
+        self._entries: dict[Path, _Entry] = {}
+        self._enabled = enabled
+
+    @classmethod
+    def shared(cls) -> "ModelCache":
         if cls._shared_instance is None:
             cls._shared_instance = cls()
         return cls._shared_instance
 
-    def _is_cache_valid(self, path: Path, cached_mtime_ns: int) -> bool:
-        try:
-            current_mtime_ns = path.stat().st_mtime_ns
-        except Exception:
-            return False
-        return cached_mtime_ns == current_mtime_ns
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    def set_enabled(self, value: bool) -> None:
+        """Turn caching on or off. Turning it off also drops every cached record."""
+        self._enabled = value
+        if not value:
+            self.clear()
 
     def _get_model(self, path: Path, model_type: Type[T]) -> Optional[T]:
+        if not self._enabled:
+            return None
         # One dict call, not a membership test and then an index: another thread
         # can remove the entry between the two, and the index raises KeyError.
-        entry = self.model_cache.get(path)
+        entry = self._entries.get(path)
         if entry is None:
             return None
-        model, cached_mtime_ns = entry
-        if not self._is_cache_valid(path, cached_mtime_ns):
+        if FileIdentity.from_path(path) != entry.identity:
             self.invalidate(path)
             return None
 
+        model = entry.model
         if not isinstance(model, model_type):
             self.invalidate(path)
             raise ValueError(f"Model at {path} is not of type {model_type.__name__}")
@@ -91,8 +115,14 @@ class ModelCache:
                 return id
         return None
 
-    def set_model(self, path: Path, model: "KilnBaseModel", mtime_ns: int):
-        # disable caching if the filesystem doesn't support fine-grained timestamps
+    def set_model(
+        self, path: Path, model: "KilnBaseModel", identity: FileIdentity
+    ) -> None:
+        """Cache a readonly record parsed from `path`.
+
+        `identity` must describe the exact bytes the record was parsed from, so take
+        it from the open file descriptor (`os.fstat`), not from a later stat.
+        """
         if not self._enabled:
             return
 
@@ -100,36 +130,28 @@ class ModelCache:
             raise RuntimeError(
                 "Mutable models are not allowed to be cached. Model should be readonly."
             )
-        self.model_cache[path] = (model, mtime_ns)
+        self._entries[path] = _Entry(model=model, identity=identity)
 
-    def invalidate(self, path: Path):
+    def invalidate(self, path: Path) -> None:
         # pop() with a default is one dict call, so two threads that invalidate the
         # same path at once cannot both pass a membership test and then both delete.
-        self.model_cache.pop(path, None)
+        self._entries.pop(path, None)
 
-    def clear(self):
-        self.model_cache.clear()
+    def clear(self) -> None:
+        self._entries.clear()
 
-    def _check_timestamp_granularity(self) -> bool:
-        """Check if filesystem supports fine-grained timestamps (microseconds or better)."""
 
-        # MacOS and Windows support fine-grained timestamps
-        if sys.platform in ["darwin", "win32"]:
-            return True
+def set_model_cache_enabled(value: bool) -> None:
+    """Turn the process-wide datamodel cache on or off.
 
-        # Linux supports fine-grained timestamps SOMETIMES. ext4 should work.
-        try:
-            # Get filesystem stats for the current directory
-            stats = os.statvfs(Path(__file__).parent)
+    Off by default in the library. With it on, readonly loads
+    (`load_from_file(..., readonly=True)`, `task.runs(readonly=True)`, ...) keep each
+    parsed record in memory and serve it again until its file changes. Turning it off
+    drops every cached record.
+    """
+    ModelCache.shared().set_enabled(value)
 
-            # f_timespec was added in Linux 5.6 (2020)
-            # Returns nanoseconds precision as a power of 10
-            # e.g., 1 = decisecond, 2 = centisecond, 3 = millisecond, etc.
-            timespec = getattr(stats, "f_timespec", 0)
 
-            # Consider microsecond precision (6) or better as "fine-grained"
-            return timespec >= 6
-        except (AttributeError, OSError):
-            # If f_timespec isn't available or other errors occur,
-            # assume poor granularity to be safe
-            return False
+def model_cache_enabled() -> bool:
+    """Whether the process-wide datamodel cache is on."""
+    return ModelCache.shared().enabled

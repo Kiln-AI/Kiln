@@ -37,6 +37,7 @@ from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.feedback import Feedback
 from kiln_ai.datamodel.finetune import Finetune
 from kiln_ai.datamodel.memory import Memory
+from kiln_ai.datamodel.model_cache import model_cache_enabled, set_model_cache_enabled
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
 from kiln_ai.datamodel.prompt_id import (
@@ -108,9 +109,11 @@ __all__ = [
     "eval",
     "extraction",
     "generate_model_id",
+    "model_cache_enabled",
     "prompt_generator_values",
     "rag",
     "reranker",
+    "set_model_cache_enabled",
     "strict_mode",
     "validate_derived_from_ids",
 ]

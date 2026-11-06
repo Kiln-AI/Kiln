@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from kiln_ai.datamodel.external_tool_server import ToolServerType
+from kiln_ai.datamodel.model_cache import model_cache_enabled
 from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallResult
 from mcp.types import (
     CallToolRequest,
@@ -369,3 +370,21 @@ class TestParseToolIds:
 
     def test_parse_tool_ids_splits_values(self) -> None:
         assert mcp._parse_tool_ids("a,b , c") == ["a", "b", "c"]
+
+
+def test_main_enables_model_cache_before_serving(tmp_path) -> None:
+    project_path = tmp_path / "project.kiln"
+    project_path.touch()
+    cache_enabled_while_serving: list[bool] = []
+
+    async def serve(**_: Any) -> None:
+        cache_enabled_while_serving.append(model_cache_enabled())
+
+    assert not model_cache_enabled()
+    with (
+        patch.object(mcp, "_async_main", side_effect=serve),
+        patch.object(mcp.logging, "basicConfig"),
+    ):
+        mcp.main([str(project_path)])
+
+    assert cache_enabled_while_serving == [True]

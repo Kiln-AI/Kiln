@@ -2278,6 +2278,7 @@ async def test_get_eval_run_results_content_part_trace_after_readonly_scan(
     mock_eval_config,
     mock_run_config,
     data_source,
+    model_cache_enabled,
 ):
     """List-valued message content is validated into a lazy iterator by pydantic. A
     readonly runs scan caches that instance, and the results endpoint's bulk trace load

@@ -2,10 +2,15 @@ name: Build and Test
 
 on:
   push:
+  release:
+    types: [created]
+  workflow_dispatch:
 
 jobs:
   build:
     name: Build, Typecheck, and Test Python
+    # A release's commit was already tested here when it was pushed.
+    if: github.event_name != 'release'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -46,6 +51,46 @@ jobs:
       - name: Build Server
         run: uv build
         working-directory: ./libs/server
+
+  # The full Python suite on the desktop app's other platforms. Too slow for every push,
+  # so it runs on release and when started by hand from the Actions tab.
+  test_macos_windows:
+    name: Test Python (${{ matrix.os }})
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    env:
+      UV_PYTHON: "3.13"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # No git operations after checkout; keep the token out of git config.
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install the project
+        run: uv sync --all-extras --dev
+
+      # The server expects the web UI build dir to exist.
+      - name: Mock Studio Web UI
+        run: mkdir -p ./app/web_ui/build && echo "test" > ./app/web_ui/build/index.html
+
+      - name: Test All Python
+        run: uv run python -m pytest --runslow .
 
   # The web host serves web app routes off the file system, and Windows rejects
   # filenames that our routes allow. Only a real Windows file system catches that,

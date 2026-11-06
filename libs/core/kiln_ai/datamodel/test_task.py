@@ -1150,7 +1150,9 @@ def test_task_runs_eval_child_does_not_hide_dataset_parent(tmp_path):
     } == {dataset_run.id, eval_child.id}
 
 
-def test_content_part_trace_bulk_load_after_readonly_scan(tmp_path):
+def test_content_part_trace_bulk_load_after_readonly_scan(
+    tmp_path, model_cache_enabled
+):
     """Pydantic validates list-valued message content into a lazy, single-use iterator.
     A readonly scan caches the loaded instance; a later default (mutable) load deep-copies
     the cached model, which crashes unless the content was materialized at validation."""

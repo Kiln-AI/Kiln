@@ -115,8 +115,8 @@ class _TaskTraces:
     """The state every `TraceIndex` on one task shares."""
 
     def __init__(self) -> None:
-        # Paths, not TaskRuns: reloading re-reads the record (ModelCache validates on
-        # path + mtime), so a long eval never serves a stale trace.
+        # Paths, not TaskRuns: reloading re-reads the record (ModelCache checks the
+        # file's modified time, size and id), so a long eval never serves a stale trace.
         self.paths: Dict[TraceKey, Path] = {}
         # Held only for dict operations, never across I/O: a seed in a worker thread and
         # jobs on the event loop both write `paths`.
