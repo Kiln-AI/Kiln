@@ -356,6 +356,7 @@ class ModelName(str, Enum):
     mimo_v2_6_pro_ultraspeed = "mimo_v2_6_pro_ultraspeed"
     mimo_v2_6_flash = "mimo_v2_6_flash"
     inkling = "inkling"
+    inkling_small = "inkling_small"
     jev_1_13 = "jev_1_13"
     lfm_2_5_24b_a2b = "lfm_2_5_24b_a2b"
     beam_1_0 = "beam_1_0"
@@ -11895,6 +11896,33 @@ built_in_models: List[KilnModel] = [
                 model_id="accounts/fireworks/models/inkling",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.thinking_machines,
+        name=ModelName.inkling_small,
+        friendly_name="Inkling Small",
+        editorial_notes="The smaller sibling of Thinking Machines' Inkling (Apache 2.0). A 276B-parameter MoE (12B active) with image and audio input and configurable reasoning.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="thinkingmachines/inkling-small",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                ],
             ),
         ],
     ),
