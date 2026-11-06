@@ -360,7 +360,8 @@ describe("ConnectProviders Cloudflare", () => {
   )
 })
 
-const reasoning_summaries_label = "Show reasoning summaries"
+const reasoning_summaries_label =
+  "Show reasoning summaries (requires Org verification)"
 
 function reasoning_summaries_checkbox(): HTMLInputElement {
   return screen.getByRole("checkbox", {

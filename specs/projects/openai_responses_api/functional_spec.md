@@ -23,10 +23,10 @@ All of the models below are on the **OpenAI provider only** (`ModelProviderName.
 
 Turning tools on reaches every installed app through the remote model list, including old versions that lack the new LiteLLM. So the work ships on two branches:
 
-- **Branch 1 — code, plus the one model-list change the release needs.** Merged to `main` and shipped in the next app release. Contains F1, F2, F5 and the branch-1 part of F7 below. F5 includes the new `openai_reasoning_summary` provider field and its values on the twelve providers. That model-list change is safe for old apps, because they ignore fields they don't know, and the released app needs it in its bundled model list.
+- **Branch 1 — code, plus the one model-list change the release needs.** Merged to `main` and shipped in the next app release. Contains F1, F2, F5 and the branch-1 part of F7 below. F5 includes the new `openai_reasoning_summary` provider field and its values on the twelve providers. That model-list change is safe for old apps, because they ignore fields they don't know. The released app needs it in the published remote model list, not only in its bundled one: at startup the app replaces its bundled list with the published list, without merging. So the field is published by a push to `remote_config` after branch 1 merges, before or with the release.
 - **Branch 2 — every other model-list change.** Built on branch 1. Merged to `main` only **after** the release with branch 1 is live, then published by pushing to the `remote_config` branch. Contains F3, F4, F6 and the rest of F7.
 
-Merging to `main` does not publish the remote model list; only a push to `remote_config` does. The release checklist must hold the branch 2 merge and the `remote_config` push until the release is out.
+Merging to `main` does not publish the remote model list; only a push to `remote_config` does. The release checklist has two pushes. The first follows the branch 1 merge and goes out before or with the release. The second follows the branch 2 merge. The branch 2 merge and the second push both wait until the release is out.
 
 ## Features
 
@@ -90,7 +90,7 @@ Merging to `main` does not publish the remote model list; only a push to `remote
 - When streaming, all parts appear in the reasoning stream in order. None go missing or onto a different stream.
 - A run at thinking level `none`, or a reply where OpenAI returns no summary, has no reasoning. That is not an error.
 
-**When the org isn't verified.** OpenAI rejects the request with HTTP 400 and the message "Your organization must be verified to generate reasoning summaries…". Kiln currently turns every unrecognized LiteLLM error into "An unexpected error occurred.", so OpenAI's message would never reach the user. Kiln recognizes this one error and shows: "Your OpenAI organization must be verified to show reasoning summaries. Verify it in your OpenAI organization settings (https://platform.openai.com/settings/organization/general), or reconnect OpenAI in Kiln with reasoning summaries turned off." The run fails; there is no silent retry. Other errors are unchanged.
+**When the org isn't verified.** OpenAI rejects the request with HTTP 400 and the message "Your organization must be verified to generate reasoning summaries…". Kiln currently turns every unrecognized LiteLLM error into "An unexpected error occurred.", so OpenAI's message would never reach the user. Kiln recognizes this one error and shows: "Your OpenAI organization must be verified to show reasoning summaries. Verify it in your OpenAI organization settings (https://platform.openai.com/settings/organization/general), or disconnect OpenAI in Kiln settings and reconnect with reasoning summaries turned off." The run fails; there is no silent retry. Other errors are unchanged.
 
 ### F6. Check GPT-6.1 Terra with tools at `none` (branch 2)
 
@@ -107,9 +107,10 @@ Merging to `main` does not publish the remote model list; only a push to `remote
 ## Rollout
 
 1. Branch 1 merges after its tests and the full paid suite pass.
-2. The app release with branch 1 ships. New apps send `store: false`, offer the summaries setting, and have the fixed LiteLLM. Their bundled model list still has tools off on the ten models.
-3. Branch 2 merges to `main`.
-4. Someone pushes to `remote_config`. All apps, old and new, receive tools on (and hidden `max`) on their next startup.
+2. Someone pushes to `remote_config`, before the app release or with it. The published model list then carries `openai_reasoning_summary`, which old apps ignore. If the release ships first, new apps replace their bundled list with the older published one at startup, and turning on summaries has no effect until this push.
+3. The app release with branch 1 ships. New apps send `store: false`, offer the summaries setting, and have the fixed LiteLLM. The model list still has tools off on the ten models.
+4. Branch 2 merges to `main`.
+5. Someone pushes to `remote_config` again. All apps, old and new, receive tools on (and hidden `max`) on their next startup.
 
 **Accepted risk for old apps.** An old app that receives the new model list lets users attach tools to the ten models without the fixed LiteLLM:
 - On GPT-6 models (Astra, Sol, Luna, 6.1 Sol, 6.1 Terra), old apps on LiteLLM 1.87.1 get OpenAI's 400 error.
