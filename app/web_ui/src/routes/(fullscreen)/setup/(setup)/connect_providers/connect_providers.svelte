@@ -75,8 +75,8 @@
       api_key_options: [
         {
           id: "reasoning_summaries",
-          label: "Show reasoning summaries",
-          info: "Shows a summary of the model's reasoning for newer GPT models. OpenAI requires [organization verification](https://platform.openai.com/settings/organization/general) for this; runs fail if your organization isn't verified. To change this later, disconnect and reconnect OpenAI.",
+          label: "Show reasoning summaries (requires Org verification)",
+          info: "Shows a summary of the model's reasoning for newer GPT models. OpenAI requires [organization verification](https://platform.openai.com/settings/organization/general) for this; runs fail if your organization isn't verified.",
         },
       ],
     },

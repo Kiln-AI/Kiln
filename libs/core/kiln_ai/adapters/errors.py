@@ -31,8 +31,8 @@ EMPTY_RESPONSE_ERROR_MESSAGE = (
 REASONING_SUMMARY_VERIFICATION_ERROR_MESSAGE = (
     "Your OpenAI organization must be verified to show reasoning summaries. "
     "Verify it in your OpenAI organization settings "
-    "(https://platform.openai.com/settings/organization/general), or reconnect "
-    "OpenAI in Kiln with reasoning summaries turned off."
+    "(https://platform.openai.com/settings/organization/general), or disconnect "
+    "OpenAI in Kiln settings and reconnect with reasoning summaries turned off."
 )
 
 _OPENAI_UNVERIFIED_ORG_SUMMARY_ERROR = (
