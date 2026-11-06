@@ -11899,7 +11899,6 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Inkling Small (Thinking Machines)
     KilnModel(
         family=ModelFamily.thinking_machines,
         name=ModelName.inkling_small,
