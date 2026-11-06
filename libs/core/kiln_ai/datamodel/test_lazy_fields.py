@@ -8,7 +8,9 @@ import sys
 import threading
 import time
 import tracemalloc
+from collections import OrderedDict
 from copy import deepcopy
+from enum import Enum, IntEnum
 from pathlib import Path
 from typing import Annotated, Any
 from unittest.mock import patch
@@ -43,7 +45,7 @@ from kiln_ai.datamodel.lazy_fields import (
     declares_large_field,
     summary_value,
 )
-from kiln_ai.datamodel.model_cache import ModelCache
+from kiln_ai.datamodel.model_cache import ModelCache, _cache_key
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionMessageParam,
     materialize_lazy_content,
@@ -661,7 +663,7 @@ def test_large_values_bigger_than_budget_are_not_kept(
 ):
     path = save_record(parent, body="x" * 50_000)
     load_cached(path)
-    entry = model_cache_enabled._records[path]
+    entry = model_cache_enabled._records[_cache_key(path)]
     budget = (entry.normal_bytes + entry.large_bytes) // 2
     assert entry.normal_bytes < budget < entry.large_bytes
     small_cache = ModelCache(enabled=True, budget_bytes=budget)
@@ -838,13 +840,26 @@ class SizedModel(BaseModel):
     text: str
 
 
+class SizedRole(str, Enum):
+    USER = "user"
+
+
+class SizedLevel(IntEnum):
+    HIGH = 3
+
+
 def test_approx_value_size():
     assert approx_value_size("abc") == 52
     assert approx_value_size(b"ab") == 35
     assert {approx_value_size(v) for v in (None, True, 7, 1.5)} == {28}
     assert approx_value_size(["a", ("b",)]) == (56 + 16) + 50 + (56 + 8 + 50)
+    assert approx_value_size([1.5, 2, True]) == (56 + 24) + 3 * 28
+    assert approx_value_size([1.5, None]) == (56 + 16) + 2 * 28
     assert approx_value_size({"k": 1}) == 64 + 40 + 50 + 28
     assert approx_value_size(SizedModel(text="a")) == 56 + 50
+    assert approx_value_size(SizedRole.USER) == 49 + 4
+    assert approx_value_size(SizedLevel.HIGH) == 28
+    assert approx_value_size(OrderedDict(k=1)) == 64 + 40 + 50 + 28
     marker = object()
     assert approx_value_size(marker) == sys.getsizeof(marker)
 

@@ -115,8 +115,8 @@ def evict_large_values(model_cache_enabled: "ModelCache") -> Callable[[], None]:
 
     def evict() -> None:
         with model_cache_enabled._lock:
-            for path in list(model_cache_enabled._loaded):
-                model_cache_enabled._drop_large_values(path)
+            for key in list(model_cache_enabled._loaded):
+                model_cache_enabled._drop_large_values(key)
 
     return evict
 

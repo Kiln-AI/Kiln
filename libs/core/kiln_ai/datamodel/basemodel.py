@@ -457,7 +457,7 @@ class KilnBaseModel(BaseModel):
 
         Args:
             path (Path): Path to the model file
-            readonly (bool): If True, the model will be returned in readonly mode (cached instance, not a copy, not safe to mutate)
+            readonly (bool): If True, return a readonly model, which raises ReadOnlyMutationError on assignment. With the model cache on, it is the shared cached record rather than a copy.
             parent (KilnBaseModel | None): The already-loaded parent of this model, if the caller has it. Only for parented models. Attached before validators that read `self.parent` run, so they don't reload the parent from disk once per child.
 
         Returns:

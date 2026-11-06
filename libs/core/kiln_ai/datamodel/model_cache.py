@@ -40,14 +40,34 @@ else:
 
 logger = logging.getLogger(__name__)
 
-# A parsed record takes 1.15-1.5x its file size in memory, measured on task runs.
 MEMORY_FACTOR = 1.3
-# The least a record without its large values counts, whatever its file size says.
-MIN_RECORD_BYTES = 1024
+"""Estimated in-memory bytes per file byte of a parsed record.
+
+Task runs of 10 to 100 turns measure about 1.15 to 1.4.
+"""
+
+MIN_RECORD_BYTES = 8 * 1024
+"""The least a record with large values counts for its other fields, whatever its file
+size says.
+
+Measured without their large values, a cached task run takes about 9 KiB, an eval run
+about 6 KiB and a chunk embeddings record about 3 KiB, almost all of it fixed overhead.
+
+Records without large values count `MEMORY_FACTOR` times their file size, with no floor.
+"""
+
 MAX_BUDGET_BYTES = 2 * 1024**3
+"""The largest memory budget, however much RAM the machine has."""
+
 RAM_FRACTION = 0.2
+"""The share of physical RAM the budget takes, up to `MAX_BUDGET_BYTES`."""
+
 FALLBACK_BUDGET_BYTES = 1 * 1024**3
+"""The budget when the platform doesn't report its physical RAM."""
+
 EVICTION_TARGET_FRACTION = 0.9
+"""An add that takes the total over budget evicts down to this share of the budget, so
+the adds after it don't each evict again."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,15 +80,41 @@ class FileIdentity:
 
     @classmethod
     def from_stat(cls, st: os.stat_result) -> "FileIdentity":
+        """The identity a stat result describes."""
         return cls(mtime_ns=st.st_mtime_ns, size=st.st_size, inode=st.st_ino)
 
     @classmethod
     def from_path(cls, path: Path) -> "FileIdentity | None":
         """The file's current identity, or None if it can't be stat'ed."""
-        try:
-            return cls.from_stat(path.stat())
-        except (OSError, ValueError):
-            return None
+        st = _stat(path)
+        return None if st is None else cls.from_stat(st)
+
+    def matches(self, st: os.stat_result) -> bool:
+        """Whether `st` describes the file this identity was taken from, unchanged.
+
+        Equal to `FileIdentity.from_stat(st) == self`, without building an identity on
+        every cache hit.
+        """
+        return (
+            st.st_mtime_ns == self.mtime_ns
+            and st.st_size == self.size
+            and st.st_ino == self.inode
+        )
+
+
+def _stat(path: Path) -> os.stat_result | None:
+    try:
+        return os.stat(path)
+    except (OSError, ValueError):
+        return None
+
+
+def _cache_key(path: Path) -> str:
+    """The key for `path` in the cache's dicts: `os.path.normcase(path)`, which folds
+    case on Windows the way `Path` equality does."""
+    # str, not Path: a warm list load does several lookups per record, and str keys
+    # hash and compare in C where Path keys do both in Python.
+    return os.path.normcase(path)
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +159,18 @@ class _Entry:
 
 
 class ModelCache:
+    """Parsed readonly records, keyed by file path, within a memory budget.
+
+    The process shares one instance, `ModelCache.shared()`, which starts off;
+    `set_model_cache_enabled` turns it on. `KilnBaseModel` fills and reads it: readonly
+    loads add records, saves and deletes invalidate them, and a hit is served only while
+    its file is unchanged. Constructing a `ModelCache` gives a separate cache, for
+    example one with a small budget.
+
+    Safe to use from several threads. The lock that guards the bookkeeping is never held
+    during file I/O or while copying a record.
+    """
+
     _shared_instance: "ModelCache | None" = None
 
     def __init__(
@@ -123,22 +181,26 @@ class ModelCache:
         self._budget_bytes = (
             default_cache_budget_bytes() if budget_bytes is None else budget_bytes
         )
-        # Least recently used first. Guarded by _lock, which is never held during file I/O.
-        self._records: OrderedDict[Path, _Entry] = OrderedDict()
-        # The entries whose large values are in memory, least recently used first.
-        self._loaded: OrderedDict[Path, None] = OrderedDict()
+        # Keyed by _cache_key, least recently used first. Guarded by _lock.
+        self._records: OrderedDict[str, _Entry] = OrderedDict()
+        # The keys of the entries whose large values are in memory, least recently used
+        # first.
+        self._loaded: OrderedDict[str, None] = OrderedDict()
         # normal_bytes of every entry, plus large_bytes of the entries in _loaded.
         self._total_bytes = 0
         self._lock = threading.RLock()
 
     @classmethod
     def shared(cls) -> "ModelCache":
+        """The process-wide cache that datamodel loads use. Off until
+        `set_model_cache_enabled(True)`."""
         if cls._shared_instance is None:
             cls._shared_instance = cls()
         return cls._shared_instance
 
     @property
     def enabled(self) -> bool:
+        """Whether this cache stores and serves records."""
         return self._enabled
 
     def set_enabled(self, value: bool) -> None:
@@ -150,31 +212,37 @@ class ModelCache:
     def _get_model(self, path: Path, model_type: Type[T]) -> Optional[T]:
         if not self._enabled:
             return None
+        key = _cache_key(path)
         with self._lock:
-            entry = self._records.get(path)
+            entry = self._records.get(key)
         if entry is None:
             return None
-        identity = FileIdentity.from_path(path)
+        st = _stat(path)
 
         with self._lock:
             # Another thread removed or replaced the entry during the stat. A
             # replacement is a newer load, so leave it for the next read to check.
-            if self._records.get(path) is not entry:
+            if self._records.get(key) is not entry:
                 return None
-            if identity != entry.identity:
-                self._remove(path)
+            if st is None or not entry.identity.matches(st):
+                self._remove(key)
                 return None
             if not isinstance(entry.model, model_type):
-                self._remove(path)
+                self._remove(key)
                 raise ValueError(
                     f"Model at {path} is not of type {model_type.__name__}"
                 )
-            self._records.move_to_end(path)
+            self._records.move_to_end(key)
             return entry.model
 
     def get_model(
         self, path: Path, model_type: Type[T], readonly: bool = False
     ) -> Optional[T]:
+        """The cached record for `path`, or None if there is none or its file changed.
+
+        `readonly=True` returns the shared cached instance; otherwise an editable copy.
+        Raises ValueError if the cached record isn't a `model_type`.
+        """
         # We return a copy by default, so in-memory edits don't impact the cache until they are saved
         # Benchmark shows about 2x slower, but much more foolproof
         model = self._get_model(path, model_type)
@@ -188,6 +256,8 @@ class ModelCache:
     def get_model_id(
         self, path: Path, model_type: Type["KilnBaseModel"]
     ) -> Optional[str]:
+        """The `id` of the cached record for `path`, or None if there is none or its
+        file changed."""
         model = self._get_model(path, model_type)
         if model and hasattr(model, "id"):
             id = model.id  # type: ignore
@@ -227,35 +297,36 @@ class ModelCache:
             )
         else:
             entry = _Entry(model=model, identity=identity, normal_bytes=estimated_bytes)
+        key = _cache_key(path)
         with self._lock:
-            self._remove(path)
+            self._remove(key)
             if entry.normal_bytes > self._budget_bytes:
                 return
-            self._records[path] = entry
+            self._records[key] = entry
             self._total_bytes += entry.normal_bytes
             if (
                 detached is not None
                 and entry.large_owner is not None
                 and entry.large_bytes <= self._budget_bytes
             ):
-                self._load_large_values(path, entry, detached.values)
+                self._load_large_values(key, entry, detached.values)
             if self._total_bytes <= self._budget_bytes:
                 return
             eviction = self._evict()
         eviction.log()
 
     def _load_large_values(
-        self, path: Path, entry: _Entry, values: "Mapping[FieldPath, Any]"
+        self, key: str, entry: _Entry, values: "Mapping[FieldPath, Any]"
     ) -> None:
         """Call with the lock held, for an entry in `_records` without loaded values."""
         entry.large_values = values
-        self._loaded[path] = None
+        self._loaded[key] = None
         self._total_bytes += entry.large_bytes
 
-    def _drop_large_values(self, path: Path) -> None:
-        """Call with the lock held, for a path in `_loaded`."""
-        del self._loaded[path]
-        entry = self._records[path]
+    def _drop_large_values(self, key: str) -> None:
+        """Call with the lock held, for a key in `_loaded`."""
+        del self._loaded[key]
+        entry = self._records[key]
         entry.large_values = None
         self._total_bytes -= entry.large_bytes
 
@@ -278,27 +349,30 @@ class ModelCache:
             evicted_records += 1
         return _Eviction(evicted_large_values, evicted_records, self.stats())
 
-    def _remove(self, path: Path) -> None:
+    def _remove(self, key: str) -> None:
         """Call with the lock held."""
-        entry = self._records.pop(path, None)
+        entry = self._records.pop(key, None)
         if entry is None:
             return
         self._total_bytes -= entry.normal_bytes
-        if path in self._loaded:
-            del self._loaded[path]
+        if key in self._loaded:
+            del self._loaded[key]
             self._total_bytes -= entry.large_bytes
 
     def invalidate(self, path: Path) -> None:
+        """Drop the cached record for `path`, if there is one."""
         with self._lock:
-            self._remove(path)
+            self._remove(_cache_key(path))
 
     def clear(self) -> None:
+        """Drop every cached record."""
         with self._lock:
             self._records.clear()
             self._loaded.clear()
             self._total_bytes = 0
 
     def stats(self) -> CacheStats:
+        """The cache's record counts, accounted bytes and budget, read together."""
         with self._lock:
             return CacheStats(
                 records=len(self._records),
@@ -315,16 +389,17 @@ class ModelCache:
         Marks the record and its values recently used. Code that gets the values keeps
         a valid mapping even if they're evicted afterwards.
         """
+        key = _cache_key(path)
         with self._lock:
-            entry = self._records.get(path)
+            entry = self._records.get(key)
             if (
                 entry is None
                 or entry.large_owner is not owner
                 or entry.large_values is None
             ):
                 return None
-            self._records.move_to_end(path)
-            self._loaded.move_to_end(path)
+            self._records.move_to_end(key)
+            self._loaded.move_to_end(key)
             return entry.large_values
 
     def store_restored_values(
@@ -342,8 +417,9 @@ class ModelCache:
         is over the whole budget. When the values are already in memory (another thread
         restored them first), keeps those and returns True.
         """
+        key = _cache_key(path)
         with self._lock:
-            entry = self._records.get(path)
+            entry = self._records.get(key)
             if (
                 entry is None
                 or entry.large_owner is not owner
@@ -351,12 +427,12 @@ class ModelCache:
                 or size > self._budget_bytes
             ):
                 return False
-            self._records.move_to_end(path)
+            self._records.move_to_end(key)
             if entry.large_values is not None:
-                self._loaded.move_to_end(path)
+                self._loaded.move_to_end(key)
                 return True
             entry.large_bytes = size
-            self._load_large_values(path, entry, values)
+            self._load_large_values(key, entry, values)
             if self._total_bytes <= self._budget_bytes:
                 return True
             eviction = self._evict()
@@ -366,14 +442,14 @@ class ModelCache:
     def is_current_entry(self, path: Path, owner: object) -> bool:
         """Whether this cache still holds the detached record `owner` stands for."""
         with self._lock:
-            entry = self._records.get(path)
+            entry = self._records.get(_cache_key(path))
             return entry is not None and entry.large_owner is owner
 
     def drop_entry(self, path: Path, owner: object) -> None:
         """Remove the entry for `path` if it holds the detached record `owner` stands for."""
         with self._lock:
             if self.is_current_entry(path, owner):
-                self._remove(path)
+                self._remove(_cache_key(path))
 
 
 def set_model_cache_enabled(value: bool) -> None:

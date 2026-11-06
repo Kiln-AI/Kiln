@@ -1,6 +1,6 @@
 import json
 from enum import Enum
-from typing import TYPE_CHECKING, Annotated, Dict, List, Optional, Type, Union
+from typing import TYPE_CHECKING, Annotated, ClassVar, Dict, List, Optional, Type, Union
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 from typing_extensions import Self
@@ -233,7 +233,9 @@ class DataSource(BaseModel):
             self.run_config_id = None
         return self
 
-    _data_source_properties = [
+    # A ClassVar, so instances share it: pydantic would otherwise make this a private
+    # attribute and deep-copy the whole table into every DataSource it validates.
+    _data_source_properties: ClassVar[tuple[DataSourceProperty, ...]] = (
         DataSourceProperty(
             name="created_by",
             type=str,
@@ -304,7 +306,7 @@ class DataSource(BaseModel):
                 DataSourceType.tool_call,
             ],
         ),
-    ]
+    )
 
     @model_validator(mode="after")
     def validate_type(self) -> "DataSource":

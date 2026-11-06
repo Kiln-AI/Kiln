@@ -18,6 +18,7 @@ from kiln_ai.datamodel.model_cache import (
     MIN_RECORD_BYTES,
     FileIdentity,
     ModelCache,
+    _cache_key,
     default_cache_budget_bytes,
     model_cache_enabled,
     physical_memory_bytes,
@@ -25,11 +26,12 @@ from kiln_ai.datamodel.model_cache import (
 )
 
 GIB = 1024**3
-RECORD_FILE_BYTES = 1000
+RECORD_FILE_BYTES = 10_000
 RECORD_BYTES = int(RECORD_FILE_BYTES * MEMORY_FACTOR)
 # A record with large values, split into the part the cache keeps and the large values.
-DETACHED_FILE_BYTES = 4000
-LARGE_BYTES = 4000
+# The part it keeps is over MIN_RECORD_BYTES, so its estimate comes from the file size.
+DETACHED_FILE_BYTES = 40_000
+LARGE_BYTES = 40_000
 DETACHED_NORMAL_BYTES = int(DETACHED_FILE_BYTES * MEMORY_FACTOR) - LARGE_BYTES
 DETACHED_RECORD_BYTES = DETACHED_NORMAL_BYTES + LARGE_BYTES
 LARGE_VALUES = {("body",): "a large value"}
@@ -90,9 +92,10 @@ def cache_with_detached(
 
 
 def drop_large_values(cache: ModelCache, path: Path) -> None:
+    key = _cache_key(path)
     with cache._lock:
-        if path in cache._loaded:
-            cache._drop_large_values(path)
+        if key in cache._loaded:
+            cache._drop_large_values(key)
 
 
 def restore_mtime(path: Path, identity: FileIdentity) -> None:
@@ -126,12 +129,12 @@ def cache_with_budget_for(records: float) -> ModelCache:
 
 def cached_paths(cache: ModelCache) -> list[Path]:
     """Cached paths, least recently used first."""
-    return list(cache._records)
+    return [Path(key) for key in cache._records]
 
 
 def loaded_paths(cache: ModelCache) -> list[Path]:
     """Paths whose large values are cached, least recently used first."""
-    return list(cache._loaded)
+    return [Path(key) for key in cache._loaded]
 
 
 def assert_accounting_consistent(cache: ModelCache) -> None:
@@ -139,12 +142,12 @@ def assert_accounting_consistent(cache: ModelCache) -> None:
     entries = cache._records
     assert stats.records == len(entries)
     assert stats.records_with_large_values == len(cache._loaded)
-    for path, entry in entries.items():
-        assert (entry.large_values is not None) == (path in cache._loaded)
+    for key, entry in entries.items():
+        assert (entry.large_values is not None) == (key in cache._loaded)
     assert set(cache._loaded) <= set(entries)
     assert stats.total_bytes == sum(
         entry.normal_bytes for entry in entries.values()
-    ) + sum(entries[path].large_bytes for path in cache._loaded)
+    ) + sum(entries[key].large_bytes for key in cache._loaded)
     assert stats.total_bytes <= stats.budget_bytes
 
 
@@ -328,6 +331,28 @@ def test_file_identity_from_stat_matches_fstat(test_path):
         from_fstat = FileIdentity.from_stat(os.fstat(file.fileno()))
 
     assert from_fstat == FileIdentity.from_path(test_path)
+
+
+def test_file_identity_matches_stat(test_path):
+    identity = identity_of(test_path)
+    st = os.stat(test_path)
+    assert identity.matches(st)
+
+    for changed in (
+        FileIdentity(mtime_ns=st.st_mtime_ns + 1, size=st.st_size, inode=st.st_ino),
+        FileIdentity(mtime_ns=st.st_mtime_ns, size=st.st_size + 1, inode=st.st_ino),
+        FileIdentity(mtime_ns=st.st_mtime_ns, size=st.st_size, inode=st.st_ino + 1),
+    ):
+        assert not changed.matches(st)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="paths are case-sensitive here")
+def test_paths_differing_only_in_case_share_an_entry_on_windows(model_cache, test_path):
+    model = cache_with_model(model_cache, test_path)
+    other_case = Path(str(test_path).upper())
+    assert model_cache.get_model(other_case, KilnModelTest, readonly=True) is model
+    model_cache.invalidate(other_case)
+    assert model_cache.get_model(test_path, KilnModelTest, readonly=True) is None
 
 
 def test_benchmark_get_model(benchmark, model_cache, test_path):
@@ -651,15 +676,15 @@ def test_entry_replaced_during_freshness_stat_is_kept_but_not_served(
 ):
     cache_with_model(model_cache, test_path)
     replacement = readonly_model(name="replacement")
-    real_from_path = FileIdentity.from_path
 
-    def replace_entry_then_stat(path: Path) -> FileIdentity | None:
-        identity = real_from_path(path)
-        assert identity is not None
-        model_cache.set_model(path, replacement, identity)
-        return identity
+    def replace_entry_then_stat(path: Path) -> os.stat_result:
+        st = os.stat(path)
+        model_cache.set_model(path, replacement, FileIdentity.from_stat(st))
+        return st
 
-    with patch.object(FileIdentity, "from_path", side_effect=replace_entry_then_stat):
+    with patch(
+        "kiln_ai.datamodel.model_cache._stat", side_effect=replace_entry_then_stat
+    ):
         assert model_cache.get_model(test_path, KilnModelTest, readonly=True) is None
 
     assert model_cache.get_model(test_path, KilnModelTest, readonly=True) is (

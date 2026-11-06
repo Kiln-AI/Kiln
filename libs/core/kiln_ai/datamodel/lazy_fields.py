@@ -685,6 +685,9 @@ def reload_path_for_editable_copy(model: BaseModel) -> Path | None:
     return None if current == root.identity else root.path
 
 
+_NUMBER_TYPES = frozenset({float, int, bool})
+
+
 def approx_value_size(value: Any) -> int:
     """Estimated in-memory bytes of `value`, for decoded JSON-like values and models.
 
@@ -694,9 +697,27 @@ def approx_value_size(value: Any) -> int:
     pending: list[Any] = [value]
     while pending:
         item = pending.pop()
-        if isinstance(item, str):
+        # The exact JSON types first. They are nearly every item in a trace or an
+        # embedding, and the isinstance chain below tests several types per item.
+        kind = type(item)
+        if kind is str:
             total += 49 + len(item)
-        elif item is None or isinstance(item, (bool, int, float)):
+        elif kind is dict:
+            total += 64 + 40 * len(item)
+            pending.extend(item.keys())
+            pending.extend(item.values())
+        elif kind is list:
+            total += 56 + 8 * len(item)
+            # An embedding vector is thousands of floats: size them in one C-level pass.
+            if set(map(type, item)) <= _NUMBER_TYPES:
+                total += 28 * len(item)
+            else:
+                pending.extend(item)
+        elif kind is float or kind is int or kind is bool or item is None:
+            total += 28
+        elif isinstance(item, str):
+            total += 49 + len(item)
+        elif isinstance(item, (int, float)):
             total += 28
         elif isinstance(item, (list, tuple)):
             total += 56 + 8 * len(item)

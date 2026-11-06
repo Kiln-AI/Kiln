@@ -174,3 +174,14 @@ def test_private_data_source_properties_not_serialized():
         "model_provider": "OpenAI",
         "adapter_name": "langchain",
     }
+
+
+def test_data_source_property_table_shared_by_instances():
+    """A copy of the table in each instance would be half of a cached run's memory."""
+    human = DataSource(type=DataSourceType.human, properties={"created_by": "John"})
+    file_import = DataSource(
+        type=DataSourceType.file_import, properties={"file_name": "data.csv"}
+    )
+
+    assert "_data_source_properties" not in DataSource.__private_attributes__
+    assert human._data_source_properties is file_import._data_source_properties

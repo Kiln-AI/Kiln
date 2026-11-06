@@ -83,9 +83,7 @@ markers = [
 ]
 # pydantic deprecation warnings come from dependencies (not our code).
 # The benchmark fixture "not used at all" warning is a false-positive from pytest-benchmark.
-# File system timestamp warning is an intentional Kiln warning.
 filterwarnings = [
-    "ignore:File system does not support fine-grained timestamps",
     "ignore::pydantic.PydanticDeprecatedSince20",
     "ignore:Benchmark fixture was not used at all in this test",
     "ignore::DeprecationWarning:websockets.legacy",
