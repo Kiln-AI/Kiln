@@ -41,6 +41,7 @@ The library has a [comprehensive set of docs](https://kiln-ai.github.io/Kiln/kil
   - [Load an Existing Dataset into a Kiln Task Dataset](#load-an-existing-dataset-into-a-kiln-task-dataset)
   - [Using your Kiln Dataset in a Notebook or Project](#using-your-kiln-dataset-in-a-notebook-or-project)
   - [Using Kiln Dataset in Pandas](#using-kiln-dataset-in-pandas)
+  - [Caching Loaded Records](#caching-loaded-records)
   - [Building and Running a Kiln Task from Code](#building-and-running-a-kiln-task-from-code)
   - [Tagging Task Runs Programmatically](#tagging-task-runs-programmatically)
   - [Adding Custom Model or AI Provider from Code](#adding-custom-model-or-ai-provider-from-code)
@@ -263,6 +264,22 @@ for file in glob.glob(dataitem_glob):
 final_df = pd.concat(dfs, ignore_index=True)
 print(final_df)
 ```
+
+### Caching Loaded Records
+
+By default, the library reads and validates a record from disk each time you load it. If your code loads the same records many times, for example a notebook that calls `task.runs()` in several cells, turn on the cache that the Kiln app uses:
+
+```python
+from kiln_ai.datamodel import set_model_cache_enabled
+
+set_model_cache_enabled(True)
+
+runs = task.runs(readonly=True)
+```
+
+With the cache on, readonly loads (`readonly=True`) keep each record in memory and return it again until its file changes on disk. Readonly records are shared, so assigning to one raises an error. Load without `readonly=True` to get a copy you can edit and save.
+
+The cache keeps its memory under 2 GB or 20% of RAM, whichever is smaller. To stay under it, the cache can drop the large fields of a record, such as a run's input, output and trace, and read them back from disk the next time your code uses them. `set_model_cache_enabled(False)` turns the cache off and empties it.
 
 ### Building and Running a Kiln Task from Code
 
