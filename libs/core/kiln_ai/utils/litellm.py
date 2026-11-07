@@ -77,6 +77,9 @@ def get_litellm_provider_info(
         case ModelProviderName.cloudflare:
             # LiteLLM's built-in cloudflare/ provider drops most request params and the gateway header
             is_custom = True
+        case ModelProviderName.openllm:
+            # OpenLLM is an OpenAI-compatible gateway reached at a user-set base URL
+            is_custom = True
         case ModelProviderName.openai_compatible:
             is_custom = True
         case ModelProviderName.kiln_custom_registry:

@@ -255,6 +255,21 @@
       optional_fields: ["AI Gateway ID - Optional"],
     },
     {
+      name: "OpenLLM",
+      id: "openllm",
+      description:
+        "One endpoint for your API keys, subscriptions and local models.",
+      featured: false,
+      api_key_steps: [
+        "Install OpenLLM with `curl -fsSL https://www.openllm.sh/install | bash`, then run `openllm start` and `openllm login`. Docs: https://docs.openllm.sh",
+        "The local daemon needs no API key. Leave both fields empty to connect to http://127.0.0.1:8787/v1",
+        "Optional: to use the cloud instead, enter the Base URL https://www.openllm.sh/v1 and an API key that starts with sk-llm-",
+        "Click 'Connect'",
+      ],
+      api_key_fields: ["Base URL - Optional", "API Key - Optional"],
+      optional_fields: ["Base URL - Optional", "API Key - Optional"],
+    },
+    {
       name: "TypeSafe AI",
       id: "typesafe",
       description:
@@ -411,6 +426,12 @@
       custom_description: null,
     },
     cloudflare: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    openllm: {
       connected: false,
       connecting: false,
       error: null,
@@ -821,6 +842,9 @@
       }
       if (data["cloudflare_api_key"] && data["cloudflare_account_id"]) {
         status.cloudflare.connected = true
+      }
+      if (data["openllm_base_url"]) {
+        status.openllm.connected = true
       }
       if (data["typesafe_api_key"]) {
         status.typesafe.connected = true

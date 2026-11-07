@@ -357,3 +357,114 @@ describe("ConnectProviders Cloudflare", () => {
     },
   )
 })
+
+const openllm_description =
+  "One endpoint for your API keys, subscriptions and local models."
+const openllm_base_url_field = "Base URL - Optional"
+const openllm_api_key_field = "API Key - Optional"
+
+function openllm_row(): HTMLElement {
+  return screen.getByAltText("OpenLLM").parentElement as HTMLElement
+}
+
+function mock_connect_success(message: string) {
+  mock_fetch.mockImplementationOnce(
+    async () =>
+      ({
+        status: 200,
+        json: async () => ({ message }),
+      }) as unknown as Response,
+  )
+}
+
+describe("ConnectProviders OpenLLM", () => {
+  it("renders the OpenLLM card with its logo and description", async () => {
+    await render_connect_providers()
+
+    const image = screen.getByAltText("OpenLLM") as HTMLImageElement
+    expect(image.getAttribute("src")).toBe("/images/openllm.svg")
+    expect(within(openllm_row()).getByText(openllm_description)).toBeTruthy()
+    expect(
+      within(openllm_row()).getByRole("button", { name: "Connect" }),
+    ).toBeTruthy()
+  })
+
+  it("shows two optional fields and links to the docs", async () => {
+    await render_connect_providers()
+    await open_provider_dialog("OpenLLM")
+
+    expect(screen.getByText("Connect OpenLLM")).toBeTruthy()
+    const inputs = Array.from(
+      document.querySelectorAll("#api-key-fields input"),
+    ).map((input) => input.getAttribute("placeholder"))
+    expect(inputs).toEqual([openllm_base_url_field, openllm_api_key_field])
+    expect(screen.getAllByRole("listitem")).toHaveLength(4)
+    expect(
+      screen
+        .getByRole("link", { name: "https://docs.openllm.sh" })
+        .getAttribute("href"),
+    ).toBe("https://docs.openllm.sh")
+  })
+
+  it("connects to the local daemon with both fields empty", async () => {
+    await render_connect_providers()
+    await open_provider_dialog("OpenLLM")
+
+    mock_connect_success("Connected to OpenLLM")
+    await fireEvent.click(screen.getByRole("button", { name: "Connect" }))
+
+    await waitFor(() =>
+      expect(screen.queryByText("Connect OpenLLM")).toBeNull(),
+    )
+    expect(connect_request_bodies()).toEqual([
+      { provider: "openllm", key_data: {} },
+    ])
+    expect(within(openllm_row()).getByAltText("Connected")).toBeTruthy()
+  })
+
+  it("submits the base URL and API key when entered", async () => {
+    await render_connect_providers()
+    await open_provider_dialog("OpenLLM")
+
+    await fill_field(openllm_base_url_field, "https://www.openllm.sh/v1")
+    await fill_field(openllm_api_key_field, "sk-llm-test")
+    mock_connect_success("Connected to OpenLLM")
+    await fireEvent.click(screen.getByRole("button", { name: "Connect" }))
+
+    await waitFor(() => expect(connect_request_bodies()).toHaveLength(1))
+    expect(connect_request_bodies()[0]).toEqual({
+      provider: "openllm",
+      key_data: {
+        [openllm_base_url_field]: "https://www.openllm.sh/v1",
+        [openllm_api_key_field]: "sk-llm-test",
+      },
+    })
+  })
+
+  it("shows the server's start-the-daemon message when the connection fails", async () => {
+    await render_connect_providers()
+    await open_provider_dialog("OpenLLM")
+
+    const message =
+      "Failed to connect to OpenLLM. Could not reach OpenLLM at http://127.0.0.1:8787/v1. Start the daemon with `openllm start`."
+    mock_fetch.mockImplementationOnce(
+      async () =>
+        ({
+          status: 400,
+          json: async () => ({ message }),
+        }) as unknown as Response,
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Connect" }))
+
+    await waitFor(() => expect(screen.getByText(message)).toBeTruthy())
+    expect(screen.getByText("Connect OpenLLM")).toBeTruthy()
+  })
+
+  it("shows OpenLLM as connected when a base URL is saved", async () => {
+    mock_saved_settings({ openllm_base_url: "http://127.0.0.1:8787/v1" })
+
+    await render_connect_providers()
+
+    expect(within(openllm_row()).getByAltText("Connected")).toBeTruthy()
+  })
+})

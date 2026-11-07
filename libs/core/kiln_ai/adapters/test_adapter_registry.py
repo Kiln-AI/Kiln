@@ -67,6 +67,8 @@ def mock_config():
         mock.shared.return_value.cloudflare_api_key = "test-cloudflare-key"
         mock.shared.return_value.cloudflare_account_id = "test-cloudflare-account"
         mock.shared.return_value.cloudflare_ai_gateway_id = None
+        mock.shared.return_value.openllm_base_url = "http://127.0.0.1:8787/v1"
+        mock.shared.return_value.openllm_api_key = None
         mock.shared.return_value.docker_model_runner_base_url = (
             "http://localhost:12434/engines/llama.cpp"
         )
@@ -235,6 +237,25 @@ def test_cloudflare_adapter_creation(
     )
     assert adapter.config.default_headers == expected_headers
     assert adapter.config.additional_body_options == {"api_key": "test-cloudflare-key"}
+
+
+def test_openllm_adapter_creation(mock_config, basic_task):
+    adapter = adapter_for_task(
+        kiln_task=basic_task,
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="claude_code/claude-opus-4-8",
+            model_provider_name=ModelProviderName.openllm,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_instructions",
+        ),
+    )
+
+    assert isinstance(adapter, LiteLlmAdapter)
+    assert adapter.config.base_url == "http://127.0.0.1:8787/v1"
+    assert adapter.config.additional_body_options == {"api_key": "openllm"}
+    assert (
+        adapter.config.run_config_properties.model_name == "claude_code/claude-opus-4-8"
+    )
 
 
 def test_featherless_adapter_creation(mock_config, basic_task):
