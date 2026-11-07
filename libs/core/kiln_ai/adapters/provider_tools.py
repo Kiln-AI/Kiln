@@ -563,6 +563,8 @@ def provider_name_from_id(id: str) -> str:
                 return "Featherless AI"
             case ModelProviderName.cloudflare:
                 return "Cloudflare"
+            case ModelProviderName.openllm:
+                return "OpenLLM"
             case ModelProviderName.docker_model_runner:
                 return "Docker Model Runner"
             case ModelProviderName.typesafe:
@@ -641,6 +643,10 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
         required_config_keys=["cloudflare_api_key", "cloudflare_account_id"],
         message="Attempted to use Cloudflare without an API token and account ID set. \nCreate a token and find your account ID at https://dash.cloudflare.com/?to=/:account/ai/workers-ai",
     ),
+    ModelProviderName.openllm: ModelProviderWarning(
+        required_config_keys=["openllm_base_url"],
+        message="Attempted to use OpenLLM without a base URL set. \nConnect OpenLLM in Kiln's provider settings. Docs: https://docs.openllm.sh",
+    ),
     ModelProviderName.typesafe: ModelProviderWarning(
         required_config_keys=["typesafe_api_key"],
         message="Attempted to use TypeSafe AI without an API key set. \nGet your API key from https://console.typesafe.ai/keys",
@@ -675,6 +681,12 @@ def _cloudflare_core_config() -> LiteLlmCoreConfig:
         default_headers=cloudflare_headers(Config.shared().cloudflare_ai_gateway_id),
         additional_body_options={"api_key": Config.shared().cloudflare_api_key},
     )
+
+
+OPENLLM_DEFAULT_BASE_URL = "http://127.0.0.1:8787/v1"
+# The daemon treats a missing or non `sk-llm-` bearer as the saved login, but LiteLLM errors
+# without a key, so send this when the user set none.
+OPENLLM_PLACEHOLDER_API_KEY = "openllm"
 
 
 def lite_llm_core_config_for_provider(
@@ -827,6 +839,14 @@ def lite_llm_core_config_for_provider(
             )
         case ModelProviderName.cloudflare:
             return _cloudflare_core_config()
+        case ModelProviderName.openllm:
+            return LiteLlmCoreConfig(
+                base_url=Config.shared().openllm_base_url or OPENLLM_DEFAULT_BASE_URL,
+                additional_body_options={
+                    "api_key": Config.shared().openllm_api_key
+                    or OPENLLM_PLACEHOLDER_API_KEY,
+                },
+            )
         case ModelProviderName.openai_compatible:
             # openai compatible requires a model name in the format "provider::model_name"
             if openai_compatible_provider_name is None:

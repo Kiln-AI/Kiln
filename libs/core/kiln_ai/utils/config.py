@@ -105,6 +105,15 @@ class Config:
                 str,
                 env_var="CLOUDFLARE_AI_GATEWAY_ID",
             ),
+            "openllm_base_url": ConfigProperty(
+                str,
+                env_var="OPENLLM_BASE_URL",
+            ),
+            "openllm_api_key": ConfigProperty(
+                str,
+                env_var="OPENLLM_API_KEY",
+                sensitive=True,
+            ),
             "anthropic_api_key": ConfigProperty(
                 str,
                 env_var="ANTHROPIC_API_KEY",

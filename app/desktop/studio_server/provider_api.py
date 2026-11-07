@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Annotated, Any, Dict, List, Literal
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import httpx
 import litellm
@@ -36,6 +36,7 @@ from kiln_ai.adapters.ollama_tools import (
 )
 from kiln_ai.adapters.provider_tools import (
     CLOUDFLARE_API_BASE,
+    OPENLLM_DEFAULT_BASE_URL,
     PLACEHOLDER_API_KEY,
     cloudflare_base_url,
     cloudflare_headers,
@@ -343,6 +344,13 @@ def connect_provider_api(app: FastAPI):
                                 deprecated=provider.deprecated,
                             )
                         )
+
+        # OpenLLM is special: the gateway reports which models it can route
+        openllm_provider = next(
+            (m for m in models if m.provider_id == ModelProviderName.openllm), None
+        )
+        if openllm_provider:
+            openllm_provider.models.extend(await available_openllm_models())
 
         # Docker Model Runner is special: check which models are installed
         docker_models = await available_docker_model_runner_models()
@@ -916,6 +924,8 @@ def connect_provider_api(app: FastAPI):
                 return await connect_featherless(parse_api_key(key_data))
             case ModelProviderName.cloudflare:
                 return await connect_cloudflare(key_data)
+            case ModelProviderName.openllm:
+                return await connect_openllm(key_data)
             case ModelProviderName.typesafe:
                 return await connect_typesafe(parse_api_key(key_data))
             case (
@@ -997,6 +1007,9 @@ def connect_provider_api(app: FastAPI):
                     Config.shared().cloudflare_api_key = None
                     Config.shared().cloudflare_account_id = None
                     Config.shared().cloudflare_ai_gateway_id = None
+                case ModelProviderName.openllm:
+                    Config.shared().openllm_base_url = None
+                    Config.shared().openllm_api_key = None
                 case ModelProviderName.typesafe:
                     Config.shared().typesafe_api_key = None
                 case (
@@ -1727,6 +1740,108 @@ async def connect_cloudflare(key_data: dict):
         return _cloudflare_connect_error(400, f"Error: {str(e) or type(e).__name__}")
 
 
+OPENLLM_BASE_URL_FIELD = "Base URL - Optional"
+OPENLLM_API_KEY_FIELD = "API Key - Optional"
+OPENLLM_REQUEST_TIMEOUT_SECONDS = 10
+OPENLLM_UNREACHABLE_HELP = (
+    "Start the daemon with `openllm start`, or install it with "
+    "`curl -fsSL https://www.openllm.sh/install | bash`. Docs: https://docs.openllm.sh"
+)
+OPENLLM_LOCAL_AUTH_HELP = "Run `openllm login`, or enter an API key."
+OPENLLM_KEY_REQUIRED_HELP = (
+    "An API key is required for this Base URL. Create one at https://www.openllm.sh"
+)
+OPENLLM_LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
+def _openllm_field(key_data: dict, field: str) -> str | None:
+    value = key_data.get(field)
+    if not isinstance(value, str):
+        return None
+    return value.strip() or None
+
+
+def _openllm_auth_failure_message(base_url: str, api_key: str | None) -> str:
+    if api_key:
+        return "Invalid API key."
+    if urlparse(base_url).hostname in OPENLLM_LOOPBACK_HOSTS:
+        return OPENLLM_LOCAL_AUTH_HELP
+    return OPENLLM_KEY_REQUIRED_HELP
+
+
+def _openllm_connect_error(status_code: int, detail: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={"message": f"Failed to connect to OpenLLM. {detail}"},
+    )
+
+
+async def _get_openllm_models(base_url: str, api_key: str | None) -> httpx.Response:
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    async with httpx.AsyncClient() as client:
+        return await client.get(
+            f"{base_url}/models",
+            headers=headers,
+            timeout=OPENLLM_REQUEST_TIMEOUT_SECONDS,
+            follow_redirects=True,
+        )
+
+
+def _openllm_model_cards(response: httpx.Response) -> List[Dict[str, Any]]:
+    try:
+        cards = response.json()["data"]
+    except Exception:
+        raise ValueError("The /models response is not an OpenLLM model list.")
+    if not isinstance(cards, list):
+        raise ValueError("The /models response is not an OpenLLM model list.")
+    return [card for card in cards if isinstance(card, dict)]
+
+
+async def connect_openllm(key_data: dict):
+    try:
+        base_url = (
+            _openllm_field(key_data, OPENLLM_BASE_URL_FIELD) or OPENLLM_DEFAULT_BASE_URL
+        ).rstrip("/")
+        api_key = _openllm_field(key_data, OPENLLM_API_KEY_FIELD)
+        if not base_url.startswith(("http://", "https://")):
+            return _openllm_connect_error(
+                400, "Base URL must start with http:// or https://"
+            )
+
+        try:
+            response = await _get_openllm_models(base_url, api_key)
+        except httpx.ConnectError:
+            return _openllm_connect_error(
+                400,
+                f"Could not reach OpenLLM at {base_url}. {OPENLLM_UNREACHABLE_HELP}",
+            )
+
+        if response.status_code in (401, 403):
+            return _openllm_connect_error(
+                401, _openllm_auth_failure_message(base_url, api_key)
+            )
+        if response.status_code != 200:
+            return _openllm_connect_error(
+                400, f"Error: [{response.status_code}] {response.text}"
+            )
+        try:
+            _openllm_model_cards(response)
+        except ValueError:
+            return _openllm_connect_error(
+                400, f"{base_url}/models did not return an OpenLLM model list."
+            )
+
+        Config.shared().update_settings(
+            {"openllm_base_url": base_url, "openllm_api_key": api_key}
+        )
+        return JSONResponse(
+            status_code=200,
+            content={"message": "Connected to OpenLLM"},
+        )
+    except Exception as e:
+        return _openllm_connect_error(400, f"Error: {str(e) or type(e).__name__}")
+
+
 async def connect_typesafe(key: str):
     try:
         headers = {
@@ -2037,6 +2152,63 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
     except (HTTPException, openai.APIError, httpx.RequestError):
         # skip docker model runner if it's not available
         return None
+
+
+def openllm_model_details(card: Dict[str, Any]) -> ModelDetails | None:
+    """Builds the picker entry for one OpenLLM model card, or None if it is not a chat model."""
+    model_id = card.get("id")
+    capabilities = card.get("capabilities")
+    if not isinstance(model_id, str) or not isinstance(capabilities, list):
+        return None
+    if "chat" not in capabilities:
+        return None
+
+    supports_json_mode = "json_mode" in capabilities
+    display_name = card.get("display_name")
+    return ModelDetails(
+        id=model_id,
+        name=display_name
+        if isinstance(display_name, str) and display_name
+        else model_id,
+        supports_structured_output=supports_json_mode,
+        supports_data_gen=False,
+        supports_logprobs=False,
+        supports_function_calling="tools" in capabilities,
+        untested_model=True,
+        suggested_for_data_gen=False,
+        suggested_for_evals=False,
+        suggested_for_synthetic_user=False,
+        uncensored=False,
+        suggested_for_uncensored_data_gen=False,
+        # The gateway routes to many backends, so only JSON mode is trusted when it is advertised.
+        structured_output_mode=(
+            StructuredOutputMode.json_mode
+            if supports_json_mode
+            else StructuredOutputMode.json_instructions
+        ),
+        supports_vision="vision" in capabilities,
+        supports_doc_extraction=False,
+        suggested_for_doc_extraction=False,
+        multimodal_capable=False,
+        multimodal_mime_types=None,
+        deprecated=False,
+    )
+
+
+async def available_openllm_models() -> List[ModelDetails]:
+    base_url = (Config.shared().openllm_base_url or OPENLLM_DEFAULT_BASE_URL).rstrip(
+        "/"
+    )
+    try:
+        response = await _get_openllm_models(base_url, Config.shared().openllm_api_key)
+        response.raise_for_status()
+        cards = _openllm_model_cards(response)
+    except (httpx.HTTPError, ValueError) as e:
+        logger.info("Could not list OpenLLM models from %s: %s", base_url, e)
+        return []
+
+    details = (openllm_model_details(card) for card in cards)
+    return list({m.id: m for m in details if m is not None}.values())
 
 
 def models_from_docker_model_runner_id(

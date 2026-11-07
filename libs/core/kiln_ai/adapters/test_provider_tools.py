@@ -278,6 +278,7 @@ def test_provider_name_from_id_case_sensitivity():
         (ModelProviderName.siliconflow_cn, "SiliconFlow"),
         (ModelProviderName.featherless_ai, "Featherless AI"),
         (ModelProviderName.cloudflare, "Cloudflare"),
+        (ModelProviderName.openllm, "OpenLLM"),
         (ModelProviderName.typesafe, "TypeSafe AI"),
         (ModelProviderName.vertex, "Gemini Enterprise Agent Platform"),
         (ModelProviderName.kiln_fine_tune, "Fine Tuned Models"),
@@ -1247,6 +1248,52 @@ def test_lite_llm_core_config_for_provider_cloudflare_missing_account(
         ValueError, match="Attempted to use Cloudflare without an API token"
     ):
         lite_llm_core_config_for_provider(ModelProviderName.cloudflare)
+
+
+@pytest.mark.parametrize(
+    "base_url,api_key,expected_base_url,expected_api_key",
+    [
+        (None, None, "http://127.0.0.1:8787/v1", "openllm"),
+        ("", "", "http://127.0.0.1:8787/v1", "openllm"),
+        (
+            "https://www.openllm.sh/v1",
+            "sk-llm-test",
+            "https://www.openllm.sh/v1",
+            "sk-llm-test",
+        ),
+    ],
+)
+def test_lite_llm_core_config_for_provider_openllm(
+    mock_config_for_lite_llm_core_config,
+    base_url,
+    api_key,
+    expected_base_url,
+    expected_api_key,
+):
+    config_instance = mock_config_for_lite_llm_core_config.shared.return_value
+    config_instance.openllm_base_url = base_url
+    config_instance.openllm_api_key = api_key
+
+    config = lite_llm_core_config_for_provider(ModelProviderName.openllm)
+
+    assert config == LiteLlmCoreConfig(
+        base_url=expected_base_url,
+        additional_body_options={"api_key": expected_api_key},
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "config_values,expected",
+    [
+        ({"openllm_base_url": "http://127.0.0.1:8787/v1"}, True),
+        ({"openllm_base_url": None, "openllm_api_key": "sk-llm-test"}, False),
+    ],
+)
+async def test_provider_enabled_openllm(mock_config, config_values, expected):
+    mock_config.side_effect = lambda key: config_values.get(key)
+
+    assert await provider_enabled(ModelProviderName.openllm) is expected
 
 
 def test_lite_llm_core_config_for_provider_typesafe_raises(
