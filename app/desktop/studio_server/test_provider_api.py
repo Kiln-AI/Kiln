@@ -46,6 +46,7 @@ from app.desktop.studio_server.provider_api import (
     all_fine_tuned_models,
     available_ollama_embedding_models,
     available_ollama_models,
+    available_openllm_models,
     connect_anthropic,
     connect_azure_openai,
     connect_bedrock,
@@ -56,6 +57,7 @@ from app.desktop.studio_server.provider_api import (
     connect_groq,
     connect_huggingface,
     connect_ollama,
+    connect_openllm,
     connect_openrouter,
     connect_provider_api,
     connect_siliconflow,
@@ -68,6 +70,7 @@ from app.desktop.studio_server.provider_api import (
     models_from_ollama_tag,
     openai_compatible_providers,
     openai_compatible_providers_load_cache,
+    openllm_model_details,
     parse_url,
 )
 
@@ -133,6 +136,7 @@ def patched_non_builtin_available_model_sources(patch_openai_compatible: bool = 
         "siliconflow_cn",
         "featherless_ai",
         "cloudflare",
+        "openllm",
         "typesafe",
     ],
 )
@@ -2261,6 +2265,8 @@ def mock_config_all_providers():
     mock_config.cloudflare_api_key = "test_key"
     mock_config.cloudflare_account_id = "test_key"
     mock_config.cloudflare_ai_gateway_id = "test_key"
+    mock_config.openllm_base_url = "test_key"
+    mock_config.openllm_api_key = "test_key"
     mock_config.typesafe_api_key = "test_key"
     return mock_config
 
@@ -4704,6 +4710,421 @@ async def test_disconnect_api_key_cloudflare(client, mock_config_all_providers):
         assert mock_config_all_providers.cloudflare_account_id is None
         assert mock_config_all_providers.cloudflare_ai_gateway_id is None
         assert mock_config_all_providers.open_ai_api_key is not None
+
+
+# OpenLLM connection and model listing tests.
+
+OPENLLM_MODELS_URL = "http://127.0.0.1:8787/v1/models"
+OPENLLM_MODEL_LIST = {
+    "object": "list",
+    "data": [
+        {
+            "id": "ultra",
+            "display_name": "ultra",
+            "capabilities": ["chat", "vision", "tools", "streaming", "reasoning"],
+            "context_window": 1000000,
+        },
+        {
+            "id": "claude_code/claude-opus-4-8",
+            "capabilities": ["chat", "tools", "json_mode"],
+        },
+        {"id": "chatgpt/gpt-image-2", "capabilities": ["image_generation"]},
+        {"id": "grok/stt", "capabilities": ["transcription"]},
+    ],
+}
+
+
+def _openllm_response(status_code: int, body=None, text: str = ""):
+    response = MagicMock()
+    response.status_code = status_code
+    response.text = text
+    if body is None:
+        response.json.side_effect = ValueError("not json")
+    else:
+        response.json.return_value = body
+    return response
+
+
+@pytest.fixture
+def openllm_mocks():
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.httpx.AsyncClient.get"
+        ) as mock_get,
+        patch("app.desktop.studio_server.provider_api.Config.shared") as mock_shared,
+    ):
+        mock_get.return_value = _openllm_response(200, OPENLLM_MODEL_LIST)
+        yield mock_get, mock_shared
+
+
+@patch("app.desktop.studio_server.provider_api.connect_openllm")
+def test_connect_api_key_openllm_dispatch(mock_connect_openllm, client):
+    mock_connect_openllm.return_value = {"message": "Connected to OpenLLM"}
+    key_data = {"Base URL - Optional": "https://www.openllm.sh/v1"}
+
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "openllm", "key_data": key_data},
+    )
+
+    assert response.status_code == 200
+    mock_connect_openllm.assert_called_once_with(key_data)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("key_data", [{}, {"Base URL - Optional": "  "}])
+async def test_connect_openllm_defaults_to_local_daemon_without_key(
+    openllm_mocks, key_data
+):
+    mock_get, mock_shared = openllm_mocks
+
+    result = await connect_openllm(key_data)
+
+    assert result.status_code == 200
+    assert _json_body(result) == {"message": "Connected to OpenLLM"}
+    mock_get.assert_called_once_with(
+        OPENLLM_MODELS_URL, headers={}, timeout=10, follow_redirects=True
+    )
+    mock_shared.return_value.update_settings.assert_called_once_with(
+        {"openllm_base_url": "http://127.0.0.1:8787/v1", "openllm_api_key": None}
+    )
+
+
+@pytest.mark.asyncio
+async def test_connect_openllm_custom_url_and_key(openllm_mocks):
+    mock_get, mock_shared = openllm_mocks
+
+    result = await connect_openllm(
+        {
+            "Base URL - Optional": " https://www.openllm.sh/v1/ ",
+            "API Key - Optional": " sk-llm-test ",
+        }
+    )
+
+    assert result.status_code == 200
+    mock_get.assert_called_once_with(
+        "https://www.openllm.sh/v1/models",
+        headers={"Authorization": "Bearer sk-llm-test"},
+        timeout=10,
+        follow_redirects=True,
+    )
+    mock_shared.return_value.update_settings.assert_called_once_with(
+        {
+            "openllm_base_url": "https://www.openllm.sh/v1",
+            "openllm_api_key": "sk-llm-test",
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_connect_openllm_rejects_base_url_without_scheme(openllm_mocks):
+    mock_get, mock_shared = openllm_mocks
+
+    result = await connect_openllm({"Base URL - Optional": "localhost:8787/v1"})
+
+    assert result.status_code == 400
+    assert _json_body(result) == {
+        "message": "Failed to connect to OpenLLM. Base URL must start with http:// or https://"
+    }
+    mock_get.assert_not_called()
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_connect_openllm_connection_refused_explains_how_to_start(
+    openllm_mocks,
+):
+    mock_get, mock_shared = openllm_mocks
+    mock_get.side_effect = httpx.ConnectError("All connection attempts failed")
+
+    result = await connect_openllm({})
+
+    assert result.status_code == 400
+    message = _json_body(result)["message"]
+    assert "Could not reach OpenLLM at http://127.0.0.1:8787/v1." in message
+    assert "`openllm start`" in message
+    assert "curl -fsSL https://www.openllm.sh/install | bash" in message
+    assert "https://docs.openllm.sh" in message
+    mock_shared.assert_not_called()
+
+
+AUTH_ERROR_BODY = {"error": {"type": "auth_error", "message": "Not authenticated"}}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        None,
+        "http://127.0.0.1:8787/v1",
+        "http://localhost:8787/v1",
+        "http://[::1]:8787/v1",
+    ],
+)
+async def test_connect_openllm_loopback_without_key_suggests_login(
+    openllm_mocks, base_url
+):
+    mock_get, mock_shared = openllm_mocks
+    mock_get.return_value = _openllm_response(401, AUTH_ERROR_BODY)
+    key_data = {"Base URL - Optional": base_url} if base_url else {}
+
+    result = await connect_openllm(key_data)
+
+    assert result.status_code == 401
+    assert _json_body(result) == {
+        "message": "Failed to connect to OpenLLM. Run `openllm login`, or enter an API key."
+    }
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_connect_openllm_remote_without_key_requires_api_key(openllm_mocks):
+    mock_get, mock_shared = openllm_mocks
+    mock_get.return_value = _openllm_response(401, AUTH_ERROR_BODY)
+
+    result = await connect_openllm({"Base URL - Optional": "https://www.openllm.sh/v1"})
+
+    assert result.status_code == 401
+    assert _json_body(result) == {
+        "message": "Failed to connect to OpenLLM. An API key is required for this Base URL. Create one at https://www.openllm.sh"
+    }
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [401, 403])
+@pytest.mark.parametrize(
+    "base_url", ["http://127.0.0.1:8787/v1", "https://www.openllm.sh/v1"]
+)
+@pytest.mark.parametrize(
+    "body",
+    [AUTH_ERROR_BODY, {"error": "forbidden"}, None],
+    ids=["auth_error", "string", "non_json"],
+)
+async def test_connect_openllm_rejected_key_says_invalid(
+    openllm_mocks, status_code, base_url, body
+):
+    mock_get, mock_shared = openllm_mocks
+    mock_get.return_value = _openllm_response(status_code, body)
+
+    result = await connect_openllm(
+        {"Base URL - Optional": base_url, "API Key - Optional": "sk-llm-invalid.x"}
+    )
+
+    assert result.status_code == 401
+    assert _json_body(result) == {
+        "message": "Failed to connect to OpenLLM. Invalid API key."
+    }
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_connect_openllm_unexpected_status(openllm_mocks):
+    mock_get, mock_shared = openllm_mocks
+    mock_get.return_value = _openllm_response(502, text="Bad Gateway")
+
+    result = await connect_openllm({})
+
+    assert result.status_code == 400
+    assert _json_body(result) == {
+        "message": "Failed to connect to OpenLLM. Error: [502] Bad Gateway"
+    }
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body",
+    [None, {"status": "ok"}, {"data": "nope"}],
+    ids=["non_json", "no_data", "bad"],
+)
+async def test_connect_openllm_rejects_non_model_list(openllm_mocks, body):
+    mock_get, mock_shared = openllm_mocks
+    mock_get.return_value = _openllm_response(200, body)
+
+    result = await connect_openllm({})
+
+    assert result.status_code == 400
+    assert _json_body(result) == {
+        "message": "Failed to connect to OpenLLM. http://127.0.0.1:8787/v1/models did not return an OpenLLM model list."
+    }
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_connect_openllm_timeout_names_the_error(openllm_mocks):
+    mock_get, mock_shared = openllm_mocks
+    mock_get.side_effect = httpx.ReadTimeout("")
+
+    result = await connect_openllm({})
+
+    assert result.status_code == 400
+    assert _json_body(result) == {
+        "message": "Failed to connect to OpenLLM. Error: ReadTimeout"
+    }
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_disconnect_api_key_openllm(client, mock_config_all_providers):
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config.return_value = mock_config_all_providers
+
+        response = client.post(
+            "/api/provider/disconnect_api_key",
+            params={"provider_id": "openllm"},
+        )
+
+        assert response.status_code == 200
+        assert mock_config_all_providers.openllm_base_url is None
+        assert mock_config_all_providers.openllm_api_key is None
+        assert mock_config_all_providers.open_ai_api_key is not None
+
+
+def test_openllm_model_details_maps_capabilities():
+    details = openllm_model_details(OPENLLM_MODEL_LIST["data"][0])
+
+    assert details is not None
+    assert details.id == "ultra"
+    assert details.name == "ultra"
+    assert details.untested_model is True
+    assert details.supports_function_calling is True
+    assert details.supports_vision is True
+    assert details.supports_structured_output is False
+    assert details.structured_output_mode == "json_instructions"
+
+
+def test_openllm_model_details_keeps_id_verbatim_and_maps_json_mode():
+    details = openllm_model_details(OPENLLM_MODEL_LIST["data"][1])
+
+    assert details is not None
+    assert details.id == "claude_code/claude-opus-4-8"
+    assert details.name == "claude_code/claude-opus-4-8"
+    assert details.supports_structured_output is True
+    assert details.structured_output_mode == "json_mode"
+    assert details.supports_vision is False
+
+
+@pytest.mark.parametrize(
+    "card",
+    [
+        {"id": "chatgpt/gpt-image-2", "capabilities": ["image_generation"]},
+        {"id": "no-capabilities"},
+        {"id": "bad-capabilities", "capabilities": "chat"},
+        {"id": 5, "capabilities": ["chat"]},
+        {"capabilities": ["chat"]},
+    ],
+)
+def test_openllm_model_details_skips_non_chat_or_malformed_cards(card):
+    assert openllm_model_details(card) is None
+
+
+@pytest.mark.asyncio
+async def test_available_openllm_models_lists_chat_models_only(openllm_mocks):
+    mock_get, mock_shared = openllm_mocks
+    mock_shared.return_value.openllm_base_url = "https://www.openllm.sh/v1/"
+    mock_shared.return_value.openllm_api_key = "sk-llm-test"
+    duplicate = {"id": "ultra", "capabilities": ["chat"]}
+    mock_get.return_value = _openllm_response(
+        200,
+        {"data": [*OPENLLM_MODEL_LIST["data"], duplicate, "junk"]},
+    )
+
+    models = await available_openllm_models()
+
+    assert [m.id for m in models] == ["ultra", "claude_code/claude-opus-4-8"]
+    mock_get.assert_called_once_with(
+        "https://www.openllm.sh/v1/models",
+        headers={"Authorization": "Bearer sk-llm-test"},
+        timeout=10,
+        follow_redirects=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_available_openllm_models_defaults_to_local_daemon(openllm_mocks):
+    mock_get, mock_shared = openllm_mocks
+    mock_shared.return_value.openllm_base_url = None
+    mock_shared.return_value.openllm_api_key = None
+
+    models = await available_openllm_models()
+
+    assert len(models) == 2
+    mock_get.assert_called_once_with(
+        OPENLLM_MODELS_URL, headers={}, timeout=10, follow_redirects=True
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure",
+    [
+        httpx.ConnectError("refused"),
+        httpx.ReadTimeout("slow"),
+        _openllm_response(401, {"error": {"type": "auth_error"}}),
+        _openllm_response(200, {"status": "ok"}),
+    ],
+    ids=["refused", "timeout", "unauthorized", "not_a_model_list"],
+)
+async def test_available_openllm_models_returns_empty_when_unavailable(
+    openllm_mocks, failure
+):
+    mock_get, mock_shared = openllm_mocks
+    mock_shared.return_value.openllm_base_url = None
+    mock_shared.return_value.openllm_api_key = None
+    if isinstance(failure, Exception):
+        mock_get.side_effect = failure
+    else:
+        failure.raise_for_status.side_effect = (
+            httpx.HTTPStatusError("bad", request=MagicMock(), response=failure)
+            if failure.status_code >= 400
+            else None
+        )
+        mock_get.return_value = failure
+
+    assert await available_openllm_models() == []
+
+
+@pytest.mark.asyncio
+async def test_get_available_models_includes_openllm(app, client):
+    mock_config = MagicMock()
+    mock_config.get_value.return_value = "mock_key"
+    openllm_details = openllm_model_details(OPENLLM_MODEL_LIST["data"][1])
+    assert openllm_details is not None
+
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.Config.shared",
+            return_value=mock_config,
+        ),
+        patched_non_builtin_available_model_sources(),
+        patch(
+            "app.desktop.studio_server.provider_api.provider_warnings",
+            {
+                ModelProviderName.openllm: MagicMock(
+                    required_config_keys=["openllm_base_url"]
+                )
+            },
+        ),
+        patch("app.desktop.studio_server.provider_api.built_in_models", []),
+        patch(
+            "app.desktop.studio_server.provider_api.connect_ollama",
+            side_effect=HTTPException(status_code=500),
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.available_openllm_models",
+            return_value=[openllm_details],
+        ),
+    ):
+        response = client.get("/api/available_models")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["provider_id"] == "openllm"
+    assert body[0]["provider_name"] == "OpenLLM"
+    assert [m["id"] for m in body[0]["models"]] == ["claude_code/claude-opus-4-8"]
+    assert body[0]["models"][0]["untested_model"] is True
 
 
 # TypeSafe AI connection tests.
