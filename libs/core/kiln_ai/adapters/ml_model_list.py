@@ -7717,9 +7717,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 model_id="Qwen/Qwen3.8-2.4T-A95B",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
                 supports_function_calling=True,
