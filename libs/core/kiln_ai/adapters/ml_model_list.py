@@ -11487,6 +11487,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="minimax/minimax-m2.1",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 supports_data_gen=True,
@@ -11514,6 +11515,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="minimax/minimax-m2",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 supports_data_gen=True,
