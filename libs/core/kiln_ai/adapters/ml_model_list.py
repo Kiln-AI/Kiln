@@ -357,6 +357,7 @@ class ModelName(str, Enum):
     mimo_v2_6_flash = "mimo_v2_6_flash"
     inkling = "inkling"
     jev_1_13 = "jev_1_13"
+    lfm_3_1_7b = "lfm_3_1_7b"
     lfm_2_5_24b_a2b = "lfm_2_5_24b_a2b"
     beam_1_0 = "beam_1_0"
     glimpse = "glimpse"
@@ -12004,6 +12005,22 @@ built_in_models: List[KilnModel] = [
                 supports_logprobs=False,
                 supports_function_calling=False,
                 structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # LFM 3 1.7B
+    KilnModel(
+        family=ModelFamily.liquid,
+        name=ModelName.lfm_3_1_7b,
+        friendly_name="LFM 3 1.7B",
+        editorial_notes="Liquid AI's compact open-weights reasoning model (1.7B), post-trained for agents, tool calling and structured outputs. Text only, 256K context.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="liquid/lfm-3-1.7b",
+                # json_schema mode returned invalid JSON in the structured-output paid test.
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
             ),
         ],
     ),
