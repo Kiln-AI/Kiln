@@ -3050,6 +3050,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/run_openenv_server": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get Run Environment
+         * @description The environment a run with these tools would use, found from tool ids alone without contacting any server. Returns an error instead when the tools reach more than one environment.
+         */
+        post: operations["get_run_openenv_server_api_projects__project_id__tasks__task_id__run_openenv_server_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/skills": {
         parameters: {
             query?: never;
@@ -12181,6 +12201,31 @@ export interface components {
             mean_usage?: components["schemas"]["MeanUsage"] | null;
         };
         /**
+         * RunOpenEnvServerRequest
+         * @description The tools a run would use.
+         */
+        RunOpenEnvServerRequest: {
+            /**
+             * Tool Ids
+             * @description The run config's tool ids, saved or not yet saved.
+             */
+            tool_ids: string[];
+        };
+        /**
+         * RunOpenEnvServerResponse
+         * @description The environment a run with these tools would start a session on. Both fields
+         *     are null when the tools reach no environment.
+         */
+        RunOpenEnvServerResponse: {
+            /** @description The one environment the tools reach, directly or through code tools and Kiln task tools. */
+            openenv_server?: components["schemas"]["OpenEnvServerResponse"] | null;
+            /**
+             * Error
+             * @description Why the tools can't be run: they reach more than one environment, or the one they reach no longer exists.
+             */
+            error?: string | null;
+        };
+        /**
          * RunSummary
          * @description A summary of a task run for list views.
          */
@@ -14365,7 +14410,7 @@ export interface components {
          * ToolSetType
          * @enum {string}
          */
-        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin" | "code" | "sandbox_code";
+        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin" | "code" | "openenv" | "sandbox_code";
         /**
          * ToolsRunConfig
          * @description A config describing which tools are available to a task.
@@ -22111,6 +22156,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpenEnvToolResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_openenv_server_api_projects__project_id__tasks__task_id__run_openenv_server_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunOpenEnvServerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunOpenEnvServerResponse"];
                 };
             };
             /** @description Validation Error */

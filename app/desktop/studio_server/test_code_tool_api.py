@@ -175,6 +175,38 @@ class TestCreateCodeTool:
             )
         assert response.status_code == 200
 
+    def test_create_rejects_allowlist_reaching_two_openenv_servers(
+        self, client, test_project, mock_project_from_id, create_request
+    ):
+        acme, beta = (
+            OpenEnvServer(name=n, parent=test_project) for n in ("Acme", "Beta")
+        )
+        acme.save_to_file()
+        beta.save_to_file()
+        nested = CodeTool(
+            name="beta_lookup",
+            tool_function_name="beta_lookup",
+            tool_description="d",
+            parameters_schema=SIMPLE_SCHEMA,
+            code=SIMPLE_CODE,
+            tool_allowlist=[build_openenv_tool_id(beta.id, "search")],
+            parent=test_project,
+        )
+        nested.save_to_file()
+
+        create_request["tool_allowlist"] = [
+            build_openenv_tool_id(acme.id, "get"),
+            f"kiln_tool::code::{nested.id}",
+        ]
+        with patch(TRUST_PATCH, return_value=True):
+            response = client.post(
+                f"/api/projects/{test_project.id}/code_tools",
+                json=create_request,
+            )
+        assert response.status_code == 400
+        assert "more than one OpenEnv server (Acme, Beta)" in response.json()["message"]
+        assert [ct.id for ct in test_project.code_tools()] == [nested.id]
+
     def test_create_validation_error(self, client, test_project, mock_project_from_id):
         with patch(TRUST_PATCH, return_value=True):
             response = client.post(

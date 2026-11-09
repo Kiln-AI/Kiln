@@ -369,3 +369,73 @@ class TestTools:
             assert tools[1]["input_schema"] == {"type": "object", "properties": {}}
             server = session_manager._servers[openenv_server_id]
             assert server.openenv_version == f"{ENV_NAME}@{ENV_VERSION}"
+
+
+class TestRunOpenEnvServer:
+    @pytest.fixture
+    def task(self, project):
+        task = Task(name="T", instruction="i", parent=project)
+        task.save_to_file()
+        with patch("kiln_server.task_api.project_from_id", return_value=project):
+            yield task
+
+    @pytest.fixture
+    def lookup(self, client, task):
+        def _lookup(tool_ids: list[str]) -> dict:
+            r = client.post(
+                f"/api/projects/p1/tasks/{task.id}/run_openenv_server",
+                json={"tool_ids": tool_ids},
+            )
+            assert r.status_code == 200, r.text
+            return r.json()
+
+        return _lookup
+
+    @pytest.fixture
+    def make_openenv_server(self, client):
+        def _make(name: str) -> str:
+            r = client.post(
+                "/api/projects/p1/openenv_servers",
+                json={"name": name, "named_reset_kwargs": ACME_OPTIONS},
+            )
+            assert r.status_code == 200, r.text
+            return r.json()["id"]
+
+        return _make
+
+    def test_no_openenv_server(self, lookup):
+        empty = {"openenv_server": None, "error": None}
+        assert lookup([]) == empty
+        assert lookup(["kiln_tool::add_numbers"]) == empty
+
+    def test_one_openenv_server(self, lookup, make_openenv_server):
+        acme = make_openenv_server("Acme")
+        body = lookup(
+            [build_openenv_tool_id(acme, "search"), build_openenv_tool_id(acme, "get")]
+        )
+        assert body["error"] is None
+        assert body["openenv_server"]["id"] == acme
+        assert body["openenv_server"]["named_reset_kwargs"] == ACME_OPTIONS
+
+    def test_two_openenv_servers(self, lookup, make_openenv_server):
+        acme, beta = make_openenv_server("Acme"), make_openenv_server("Beta")
+        body = lookup(
+            [
+                build_openenv_tool_id(acme, "search"),
+                build_openenv_tool_id(beta, "search"),
+            ]
+        )
+        assert body == {
+            "openenv_server": None,
+            "error": "Your tools use more than one OpenEnv server (Acme, Beta). A run can only use one.",
+        }
+
+    def test_missing_openenv_server(self, lookup):
+        body = lookup([build_openenv_tool_id("gone", "search")])
+        assert body == {"openenv_server": None, "error": "OpenEnv gone wasn't found."}
+
+    def test_unknown_task(self, client, task):
+        r = client.post(
+            "/api/projects/p1/tasks/nope/run_openenv_server", json={"tool_ids": []}
+        )
+        assert r.status_code == 404

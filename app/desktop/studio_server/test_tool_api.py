@@ -1,3 +1,4 @@
+import asyncio
 import re
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -9,6 +10,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.openenv import OpenEnvServer, OpenEnvTool
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.rag import RagConfig
@@ -17,6 +19,7 @@ from kiln_ai.datamodel.task import Task, TaskRunConfig
 from kiln_ai.datamodel.tool_id import (
     KILN_TASK_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
+    build_openenv_tool_id,
 )
 from kiln_ai.tools.mcp_session_manager import KilnMCPError
 from kiln_ai.utils.config import MCP_SECRETS_KEY
@@ -28,6 +31,7 @@ from app.desktop.studio_server.tool_api import (
     ExternalToolApiDescription,
     ToolSetType,
     available_mcp_tools,
+    available_openenv_tool_sets,
     connect_tool_servers_api,
     tool_server_from_id,
     validate_tool_server_connectivity,
@@ -563,6 +567,92 @@ def test_get_available_tools_empty(client, test_project):
         assert tool_ids == {"kiln_tool::llm", "kiln_tool::llm_judge"}
         # Call Kiln API is intentionally not listed.
         assert "kiln_tool::call_kiln_api" not in tool_ids
+
+
+class _FakeOpenEnvSessionManager:
+    """Serves tools per environment name: a list, an exception to raise, or
+    "slow" to never answer."""
+
+    def __init__(self, by_name):
+        self.by_name = by_name
+        self.fresh_calls = []
+
+    async def list_tools(self, openenv_server, fresh=False):
+        self.fresh_calls.append(fresh)
+        served = self.by_name[openenv_server.name]
+        if served == "slow":
+            await asyncio.sleep(10)
+        if isinstance(served, Exception):
+            raise served
+        return served
+
+
+@pytest.fixture
+def make_openenv_server(test_project):
+    def _make(name, url="http://127.0.0.1:8004"):
+        openenv_server = OpenEnvServer(name=name, url=url, parent=test_project)
+        openenv_server.save_to_file()
+        return openenv_server
+
+    return _make
+
+
+SEARCH_TOOL = OpenEnvTool(name="search", description="Search tickets")
+
+
+async def test_openenv_tool_sets_list_each_openenv_server(make_openenv_server):
+    acme = make_openenv_server("Acme")
+    manager = _FakeOpenEnvSessionManager({"Acme": [SEARCH_TOOL]})
+
+    sets = await available_openenv_tool_sets([acme], manager)
+
+    assert [s.model_dump(mode="json") for s in sets] == [
+        {
+            "type": "openenv",
+            "set_name": "OpenEnv: Acme",
+            "tools": [
+                {
+                    "id": build_openenv_tool_id(acme.id, "search"),
+                    "name": "search",
+                    "description": "Search tickets",
+                    "function_name": "search",
+                }
+            ],
+        }
+    ]
+    assert manager.fresh_calls == [True]
+
+
+async def test_openenv_tool_sets_skip_unlisted_openenv_servers(make_openenv_server):
+    openenv_servers = [
+        make_openenv_server("Acme"),
+        make_openenv_server("NoUrl", url=None),
+        make_openenv_server("Down"),
+        make_openenv_server("Slow"),
+    ]
+    manager = _FakeOpenEnvSessionManager(
+        {"Acme": [SEARCH_TOOL], "Down": ConnectionError("refused"), "Slow": "slow"}
+    )
+
+    sets = await available_openenv_tool_sets(openenv_servers, manager, timeout_s=0.05)
+
+    assert [s.set_name for s in sets] == ["OpenEnv: Acme"]
+
+
+def test_get_available_tools_includes_openenv_sets(
+    client, test_project, mock_project_from_id, make_openenv_server
+):
+    make_openenv_server("Acme")
+    manager = _FakeOpenEnvSessionManager({"Acme": [SEARCH_TOOL]})
+    with patch(
+        "app.desktop.studio_server.tool_api.shared_session_manager",
+        return_value=manager,
+    ):
+        response = client.get(f"/api/projects/{test_project.id}/available_tools")
+
+    assert response.status_code == 200
+    openenv_sets = [s for s in response.json() if s["type"] == "openenv"]
+    assert [s["set_name"] for s in openenv_sets] == ["OpenEnv: Acme"]
 
 
 async def test_get_available_tools_success_single_server(client, test_project):

@@ -13,9 +13,11 @@ from typing import Annotated, Any
 from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.datamodel.basemodel import FilenameString
 from kiln_ai.datamodel.openenv import NamedResetKwargs, OpenEnvServer
-from kiln_ai.datamodel.tool_id import build_openenv_tool_id
+from kiln_ai.datamodel.tool_id import ToolId, build_openenv_tool_id
 from kiln_ai.openenv.session_manager import OpenEnvError, shared_session_manager
+from kiln_ai.tools.openenv_reach import OpenEnvReachError, single_openenv_server_id
 from kiln_server.project_api import project_from_id
+from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     agent_policy_require_approval,
@@ -114,6 +116,30 @@ class OpenEnvToolResponse(BaseModel):
     )
     input_schema: dict[str, Any] = Field(
         default_factory=dict, description="JSON schema of the tool's arguments."
+    )
+
+
+class RunOpenEnvServerRequest(BaseModel):
+    """The tools a run would use."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tool_ids: list[ToolId] = Field(
+        description="The run config's tool ids, saved or not yet saved."
+    )
+
+
+class RunOpenEnvServerResponse(BaseModel):
+    """The environment a run with these tools would start a session on. Both fields
+    are null when the tools reach no environment."""
+
+    openenv_server: OpenEnvServerResponse | None = Field(
+        default=None,
+        description="The one environment the tools reach, directly or through code tools and Kiln task tools.",
+    )
+    error: str | None = Field(
+        default=None,
+        description="Why the tools can't be run: they reach more than one environment, or the one they reach no longer exists.",
     )
 
 
@@ -336,3 +362,38 @@ def connect_openenv_server_api(app: FastAPI):
             )
             for tool in tools
         ]
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/run_openenv_server",
+        summary="Get Run Environment",
+        description="The environment a run with these tools would use, found from tool ids alone without contacting any server. Returns an error instead when the tools reach more than one environment.",
+        tags=["OpenEnv Servers"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_run_openenv_server(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[str, Path(description="The unique identifier of the task.")],
+        request: RunOpenEnvServerRequest,
+    ) -> RunOpenEnvServerResponse:
+        project = project_from_id(project_id)
+        task_from_id(project_id, task_id)
+        try:
+            openenv_server_id = single_openenv_server_id(
+                project, list(request.tool_ids)
+            )
+        except OpenEnvReachError as e:
+            return RunOpenEnvServerResponse(error=e.message)
+        if openenv_server_id is None:
+            return RunOpenEnvServerResponse()
+        openenv_server = OpenEnvServer.from_id_and_parent_path(
+            openenv_server_id, project.path
+        )
+        if openenv_server is None:
+            return RunOpenEnvServerResponse(
+                error=f"OpenEnv {openenv_server_id} wasn't found."
+            )
+        return RunOpenEnvServerResponse(
+            openenv_server=_openenv_server_response(openenv_server)
+        )

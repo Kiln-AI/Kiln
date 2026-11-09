@@ -32,6 +32,7 @@ from kiln_ai.datamodel.tool_id import (
     openenv_and_tool_name_from_id,
     skill_id_from_tool_id,
 )
+from kiln_ai.tools.openenv_reach import single_openenv_server_id
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
@@ -99,20 +100,17 @@ async def validate_run_config_tool_names(
     was created.
 
     OpenEnv tools (`kiln_tool::openenv::<openenv_server_id>::<tool_name>`) resolve only inside
-    an episode of their OpenEnv server, which only the eval runner starts, so they are not
-    resolved here. Their OpenEnv server must exist in the task's project, all of them must
-    come from one OpenEnv server (a job runs in one OpenEnv server), and the name the model sees
-    (the id's tool_name) must not collide with another selected tool. Whether the
-    environment really serves that tool is checked at runtime, inside the episode.
+    an episode of their OpenEnv server, so they are not resolved here. Their OpenEnv server
+    must exist in the task's project, the whole run config must reach at most one OpenEnv
+    server (see `single_openenv_server_id`), and the name the model sees (the id's
+    tool_name) must not collide with another selected tool. Whether the environment really
+    serves that tool is checked at runtime, inside the episode.
     """
     if run_config_properties.type != "kiln_agent":
         return
     tools_config = as_kiln_agent_run_config(run_config_properties).tools_config
     if tools_config is None or not tools_config.tools:
         return
-    openenv_tool_ids = [
-        tid for tid in tools_config.tools if tid.startswith(OPENENV_TOOL_ID_PREFIX)
-    ]
     project_tool_ids = [
         tid for tid in tools_config.tools if not tid.startswith(OPENENV_TOOL_ID_PREFIX)
     ]
@@ -120,36 +118,40 @@ async def validate_run_config_tool_names(
     tools = await assemble_unique_agent_tools(
         task, project_tool_ids, list(skills.values())
     )
-    if openenv_tool_ids:
-        tool_names = [await tool.name() for tool in tools]
-        validate_openenv_tool_ids(task, openenv_tool_ids, tool_names)
+    tool_names = [await tool.name() for tool in tools]
+    validate_openenv_tool_ids(task, tools_config.tools, tool_names)
 
 
 def validate_openenv_tool_ids(
     task: datamodel.Task,
-    openenv_tool_ids: list[str],
+    tool_ids: list[str],
     project_tool_names: list[str],
 ) -> None:
-    """Check a run config's OpenEnv tool ids without an active episode.
+    """Check the OpenEnv servers a run config's tools reach, without an active episode.
 
-    Raises ValueError when an OpenEnv server is not in the task's project, when the ids
-    name more than one OpenEnv server, or when an OpenEnv tool's name collides with another
+    *tool_ids* is the run config's whole tool list. Raises ValueError when a listed
+    OpenEnv tool's OpenEnv server is not in the task's project, when the tools reach
+    more than one OpenEnv server directly or through code tools and Kiln task tools
+    (OpenEnvReachError), or when an OpenEnv tool's name collides with another
     OpenEnv tool or with one of *project_tool_names* (the names of the run config's
     resolved project tools, including the "skill" tool when skills are selected).
     """
+    openenv_tool_ids = [t for t in tool_ids if t.startswith(OPENENV_TOOL_ID_PREFIX)]
+    project = task.parent_project()
+    if project is None:
+        if openenv_tool_ids:
+            raise ValueError(
+                "OpenEnv tools require the task to belong to a project: "
+                f"{', '.join(openenv_tool_ids)}"
+            )
+        return
+
     openenv_and_tool_names = [
         openenv_and_tool_name_from_id(t) for t in openenv_tool_ids
     ]
     openenv_server_ids = sorted(
         {openenv_server_id for openenv_server_id, _ in openenv_and_tool_names}
     )
-
-    project = task.parent_project()
-    if project is None:
-        raise ValueError(
-            "OpenEnv tools require the task to belong to a project: "
-            f"{', '.join(openenv_tool_ids)}"
-        )
     found = OpenEnvServer.from_ids_and_parent_path(
         set(openenv_server_ids), project.path, readonly=True
     )
@@ -164,11 +166,7 @@ def validate_openenv_tool_ids(
             f"config not found in project {project.id}. Create the OpenEnv server first, or "
             "remove its tools from the run config."
         )
-    if len(openenv_server_ids) > 1:
-        raise ValueError(
-            f"Run config lists tools from more than one OpenEnv server ({', '.join(openenv_server_ids)}). "
-            "A job runs in one OpenEnv server, so all OpenEnv tools must come from the same OpenEnv server."
-        )
+    single_openenv_server_id(project, tool_ids)
 
     tool_names = project_tool_names + [name for _, name in openenv_and_tool_names]
     if len(tool_names) != len(set(tool_names)):

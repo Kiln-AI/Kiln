@@ -14,6 +14,7 @@ from kiln_ai.datamodel.tool_id import ToolId
 from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.code_tool import ChildOutcome, PythonCodeTool
 from kiln_ai.tools.mcp_session_manager import mcp_session_scope
+from kiln_ai.tools.openenv_reach import single_openenv_server_id
 from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
 from kiln_ai.tools.tool_registry import validate_unique_allowlist_tool_names
 from kiln_server.project_api import project_from_id
@@ -232,6 +233,7 @@ def connect_code_tool_api(app: FastAPI):
 
         try:
             await validate_unique_allowlist_tool_names(request.tool_allowlist, project)
+            single_openenv_server_id(project, request.tool_allowlist)
             code_tool = CodeTool(
                 name=request.name,
                 description=request.description,

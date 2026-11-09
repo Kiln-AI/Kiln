@@ -1359,8 +1359,56 @@ class TestValidateRunConfigToolNames:
                 ]
             )
         )
-        with pytest.raises(ValueError, match="more than one OpenEnv server"):
+        with pytest.raises(ValueError, match=r"more than one OpenEnv server \(a, b\)"):
             await validate_run_config_tool_names(task, rc)
+
+    def _make_code_tool_reaching(
+        self, project, function_name: str, openenv_tool_id: str
+    ):
+        code_tool = CodeTool(
+            name=function_name,
+            tool_function_name=function_name,
+            tool_description="d",
+            parameters_schema={"type": "object", "properties": {}},
+            code="def run() -> str:\n    return 'ok'\n",
+            tool_allowlist=[openenv_tool_id],
+            parent=project,
+        )
+        code_tool.save_to_file()
+        return code_tool
+
+    async def test_rejects_second_openenv_server_reached_through_code_tool(
+        self, project_task, _agent_config
+    ):
+        project, task = project_task
+        openenv_server_a = self._make_openenv_server(project, "a")
+        openenv_server_b = self._make_openenv_server(project, "b")
+        code_tool = self._make_code_tool_reaching(
+            project, "lookup", build_openenv_tool_id(openenv_server_b.id, "search")
+        )
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(
+                tools=[
+                    build_openenv_tool_id(openenv_server_a.id, "graphql"),
+                    f"kiln_tool::code::{code_tool.id}",
+                ]
+            )
+        )
+        with pytest.raises(ValueError, match=r"b \(code tool lookup\)"):
+            await validate_run_config_tool_names(task, rc)
+
+    async def test_accepts_one_openenv_server_reached_only_through_code_tool(
+        self, project_task, _agent_config
+    ):
+        project, task = project_task
+        openenv_server = self._make_openenv_server(project)
+        code_tool = self._make_code_tool_reaching(
+            project, "lookup", build_openenv_tool_id(openenv_server.id, "search")
+        )
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(tools=[f"kiln_tool::code::{code_tool.id}"])
+        )
+        await validate_run_config_tool_names(task, rc)
 
     async def test_rejects_openenv_tool_colliding_with_project_tool(
         self, project_task, _agent_config

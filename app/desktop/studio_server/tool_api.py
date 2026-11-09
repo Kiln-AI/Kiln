@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime
 from enum import Enum
@@ -13,6 +14,7 @@ from kiln_ai.datamodel.external_tool_server import (
     ToolServerType,
     tool_server_type_to_string,
 )
+from kiln_ai.datamodel.openenv import OpenEnvServer
 from kiln_ai.datamodel.tool_id import (
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
@@ -20,8 +22,13 @@ from kiln_ai.datamodel.tool_id import (
     ToolId,
     build_code_tool_id,
     build_kiln_task_tool_id,
+    build_openenv_tool_id,
     build_rag_tool_id,
     build_skill_tool_id,
+)
+from kiln_ai.openenv.session_manager import (
+    OpenEnvSessionManager,
+    shared_session_manager,
 )
 from kiln_ai.tools.kiln_task_tool import KilnTaskTool
 from kiln_ai.tools.mcp_session_manager import (
@@ -42,6 +49,8 @@ from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+OPENENV_LIST_TOOLS_TIMEOUT_S = 5.0
 
 
 class KilnToolServerDescription(BaseModel):
@@ -196,6 +205,7 @@ class ToolSetType(Enum):
     SKILL = "skill"
     BUILTIN = "builtin"
     CODE = "code"
+    OPENENV = "openenv"
     # Tools that only user-authored sandboxed code can call, over the sandbox
     # bridge (`kiln.tools`). They are not agent tools -- an agent cannot select
     # one and one can never appear in an agent's trace -- so a picker offering
@@ -269,6 +279,52 @@ async def available_mcp_tools(
             )
             for tool in tools_result.tools
         ]
+
+
+async def available_openenv_tool_sets(
+    openenv_servers: list[OpenEnvServer],
+    session_manager: OpenEnvSessionManager,
+    timeout_s: float = OPENENV_LIST_TOOLS_TIMEOUT_S,
+) -> list[ToolSetApiDescription]:
+    """One tool set per environment that lists its tools within *timeout_s*.
+
+    OpenEnvServers are asked in parallel. One that has no url, fails or times out
+    is left out, like an MCP server that can't be reached. Tools are read fresh so an
+    environment that has gone offline drops out rather than being served from cache.
+    """
+    reachable = [e for e in openenv_servers if e.url and e.id is not None]
+    results = await asyncio.gather(
+        *(
+            asyncio.wait_for(session_manager.list_tools(e, fresh=True), timeout_s)
+            for e in reachable
+        ),
+        return_exceptions=True,
+    )
+    tool_sets: list[ToolSetApiDescription] = []
+    for openenv_server, result in zip(reachable, results):
+        if isinstance(result, BaseException):
+            logger.warning(
+                "Skipping OpenEnv server '%s' in available tools: %r",
+                openenv_server.name,
+                result,
+            )
+            continue
+        tool_sets.append(
+            ToolSetApiDescription(
+                type=ToolSetType.OPENENV,
+                set_name="OpenEnv: " + openenv_server.name,
+                tools=[
+                    ToolApiDescription(
+                        id=build_openenv_tool_id(openenv_server.id, tool.name),
+                        name=tool.name,
+                        description=tool.description,
+                        function_name=tool.name,
+                    )
+                    for tool in result
+                ],
+            )
+        )
+    return tool_sets
 
 
 async def validate_tool_server_connectivity(tool_server: ExternalToolServer):
@@ -401,6 +457,12 @@ def connect_tool_servers_api(app: FastAPI):
         # Add MCP tool sets
         if len(mcp_tool_sets) > 0:
             tool_sets.extend(mcp_tool_sets)
+
+        openenv_servers = project.openenv_servers(readonly=True)
+        openenv_servers.sort(key=lambda e: e.created_at or datetime.min)
+        tool_sets.extend(
+            await available_openenv_tool_sets(openenv_servers, shared_session_manager())
+        )
 
         skills = project.skills(readonly=True)
         if skills:
