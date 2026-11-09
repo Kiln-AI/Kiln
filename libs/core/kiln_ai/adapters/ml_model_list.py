@@ -330,6 +330,7 @@ class ModelName(str, Enum):
     glm_z1_32b_0414 = "glm_z1_32b_0414"
     glm_z1_9b_0414 = "glm_z1_9b_0414"
     ernie_4_5_300b_a47b = "ernie_4_5_300b_a47b"
+    hunyuan_hy4 = "hunyuan_hy4"
     hunyuan_hy3 = "hunyuan_hy3"
     hunyuan_a13b = "hunyuan_a13b"
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
@@ -11155,6 +11156,34 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Hunyuan Hy4 — Tencent's successor to Hy3, 1M context, text and image input.
+    # reasoning_capable left False: reasoning is on by default but can be turned off with the "none" effort.
+    KilnModel(
+        family=ModelFamily.hunyuan,
+        name=ModelName.hunyuan_hy4,
+        friendly_name="Hunyuan Hy4",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="tencent/hy4",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
             ),
         ],
     ),
