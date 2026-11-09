@@ -2233,6 +2233,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="gpt-4.1-nano",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
                 supports_doc_extraction=True,
@@ -2379,6 +2380,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o4-mini",
+                deprecated=True,
                 available_thinking_levels={"Low": "low"},
                 default_thinking_level="low",
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -2401,6 +2403,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o4-mini",
+                deprecated=True,
                 available_thinking_levels={"Medium": "medium"},
                 default_thinking_level="medium",
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -2429,6 +2432,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o4-mini",
+                deprecated=True,
                 available_thinking_levels={"High": "high"},
                 default_thinking_level="high",
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -2523,6 +2527,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o3-mini",
+                deprecated=True,
                 available_thinking_levels={"Low": "low"},
                 default_thinking_level="low",
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -2545,6 +2550,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o3-mini",
+                deprecated=True,
                 available_thinking_levels={"Medium": "medium"},
                 default_thinking_level="medium",
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -2567,6 +2573,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o3-mini",
+                deprecated=True,
                 available_thinking_levels={"High": "high"},
                 default_thinking_level="high",
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -2669,6 +2676,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o1",
+                deprecated=True,
                 available_thinking_levels={"Low": "low"},
                 default_thinking_level="low",
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -2691,6 +2699,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o1",
+                deprecated=True,
                 available_thinking_levels={"Medium": "medium"},
                 default_thinking_level="medium",
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -2713,6 +2722,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o1",
+                deprecated=True,
                 available_thinking_levels={"High": "high"},
                 default_thinking_level="high",
                 structured_output_mode=StructuredOutputMode.json_schema,
