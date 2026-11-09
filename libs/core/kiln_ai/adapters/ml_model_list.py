@@ -789,6 +789,16 @@ FUGU_ULTRA_OPENROUTER_THINKING_LEVELS = {
     "Max": "max",
 }
 
+# Inkling and Inkling Small on OpenRouter: the catalog lists all six efforts, default "high".
+INKLING_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Minimal": "minimal",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Max": "max",
+}
+
 KIMI_K3_OPENROUTER_THINKING_LEVELS = {
     "Low": "low",
     "High": "high",
@@ -11884,6 +11894,9 @@ built_in_models: List[KilnModel] = [
                 model_id="thinkingmachines/inkling",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
+                available_thinking_levels=INKLING_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
@@ -11910,6 +11923,9 @@ built_in_models: List[KilnModel] = [
                 model_id="thinkingmachines/inkling-small",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
+                available_thinking_levels=INKLING_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
                 multimodal_capable=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
