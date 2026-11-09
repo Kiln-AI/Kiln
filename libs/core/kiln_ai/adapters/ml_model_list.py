@@ -53,6 +53,7 @@ class ModelFamily(str, Enum):
     inception = "inception"
     prismml = "prismml"
     paper_instruments = "paper_instruments"
+    ricursive = "ricursive"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -367,6 +368,7 @@ class ModelName(str, Enum):
     mercury_3 = "mercury_3"
     ternary_bonsai_2_9b = "ternary_bonsai_2_9b"
     ultramarine_1_flash = "ultramarine_1_flash"
+    ripple_65b_preview = "ripple_65b_preview"
 
 
 class ModelParserID(str, Enum):
@@ -10733,6 +10735,16 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MOV,
                 ],
             ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="moonshotai/Kimi-K3.1-Pro",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="moonshotai/Kimi-K3.1-Pro",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
         ],
     ),
     # Kimi K3
@@ -12221,6 +12233,26 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.ricursive,
+        name=ModelName.ripple_65b_preview,
+        friendly_name="Ripple 65B Preview",
+        editorial_notes="ricursiveAI's 65B preview model with native tool calling. Text only, 1M context.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="ricursiveai/ripple-65b-preview",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="ricursive-ai/Ripple-65B-Preview",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
             ),
         ],
     ),
