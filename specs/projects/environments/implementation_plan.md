@@ -9,7 +9,7 @@ Phases follow `architecture.md` section 1. Each phase leaves all checks passing.
 ## Phases
 
 - [x] Phase 1: Rename World to Environment across core, server, web and tests, with no behaviour change. Delete the `*_worlds*` annotation files and regenerate the OpenAPI schema and annotations (architecture section 2).
-- [ ] Phase 2: `NamedResetKwargs` and `Environment.named_reset_kwargs`, with the create and update routes accepting them (section 3).
+- [x] Phase 2: `NamedResetKwargs` and `Environment.named_reset_kwargs`, with the create and update routes accepting them (section 3).
 - [ ] Phase 3: `core/tools/env_reach.py`, used on run config save and code tool create; the `run_environment` lookup endpoint; OpenEnv tool sets in `available_tools` with the 5-second timeout (sections 4 and 7, server side).
 - [ ] Phase 4: Single-turn sessions: `environment_for_run` in `BaseAdapter.invoke`, `env_reset_kwargs` on `AdapterConfig` and `RunTaskRequest`, `env_episode` saved on the run, errors mapped to HTTP statuses (section 5).
 - [ ] Phase 5: Multi-turn sessions: `read_state`, the `ConversationSessions` registry with its reaper, the latest-turn and fork rules, and the delete and shutdown hooks (section 6).

@@ -12,7 +12,7 @@ from typing import Annotated, Any
 
 from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.datamodel.basemodel import FilenameString
-from kiln_ai.datamodel.openenv import OpenEnvServer
+from kiln_ai.datamodel.openenv import NamedResetKwargs, OpenEnvServer
 from kiln_ai.datamodel.tool_id import build_openenv_tool_id
 from kiln_ai.openenv.session_manager import OpenEnvError, shared_session_manager
 from kiln_server.project_api import project_from_id
@@ -20,7 +20,7 @@ from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     agent_policy_require_approval,
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from pydantic import ValidationError as PydanticValidationError
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,28 @@ _URL_DESCRIPTION = (
     "http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in "
     "this OpenEnv server send their tool calls to it."
 )
+_NAMED_RESET_KWARGS_DESCRIPTION = (
+    "Named reset kwargs a run can start the environment with, in order. The first is "
+    "the default. Names must be unique."
+)
+_URL_ERROR = (
+    "Enter a full URL starting with http:// or https://, like http://127.0.0.1:8004."
+)
+_RESET_KWARGS_NOT_OBJECT_ERROR = "Reset arguments must be a JSON object."
+
+
+class NamedResetKwargsRequest(BaseModel):
+    """Reset kwargs saved under a name, shown in the UI as an Environment Option."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(description="User-facing name, unique within the environment.")
+    # Any JSON is accepted here so a non-object gets the friendly 400 from the
+    # handler instead of FastAPI's generic 422; OpenEnv enforces the object type.
+    reset_kwargs: JsonValue = Field(
+        default_factory=dict,
+        description="Keyword arguments for the environment's reset(), as a JSON object.",
+    )
 
 
 class OpenEnvServerCreateRequest(BaseModel):
@@ -43,16 +65,23 @@ class OpenEnvServerCreateRequest(BaseModel):
     name: FilenameString = Field(description=_NAME_DESCRIPTION)
     description: str | None = Field(default=None, description=_DESCRIPTION_DESCRIPTION)
     url: str | None = Field(default=None, description=_URL_DESCRIPTION)
+    named_reset_kwargs: list[NamedResetKwargsRequest] = Field(
+        default_factory=list, description=_NAMED_RESET_KWARGS_DESCRIPTION
+    )
 
 
 class OpenEnvServerUpdateRequest(BaseModel):
-    """Changes to an OpenEnv server. Only the fields sent are changed."""
+    """Changes to an OpenEnv server. Only the fields sent are changed, and
+    `named_reset_kwargs`, when sent, replaces the whole list."""
 
     model_config = ConfigDict(extra="forbid")
 
     name: FilenameString | None = Field(default=None, description=_NAME_DESCRIPTION)
     description: str | None = Field(default=None, description=_DESCRIPTION_DESCRIPTION)
     url: str | None = Field(default=None, description=_URL_DESCRIPTION)
+    named_reset_kwargs: list[NamedResetKwargsRequest] | None = Field(
+        default=None, description=_NAMED_RESET_KWARGS_DESCRIPTION
+    )
 
 
 class OpenEnvServerResponse(BaseModel):
@@ -62,6 +91,9 @@ class OpenEnvServerResponse(BaseModel):
     name: str = Field(description=_NAME_DESCRIPTION)
     description: str | None = Field(default=None, description=_DESCRIPTION_DESCRIPTION)
     url: str | None = Field(default=None, description=_URL_DESCRIPTION)
+    named_reset_kwargs: list[NamedResetKwargs] = Field(
+        default_factory=list, description=_NAMED_RESET_KWARGS_DESCRIPTION
+    )
     created_at: datetime | None = Field(
         default=None, description="When the OpenEnv server was created."
     )
@@ -101,9 +133,27 @@ def _openenv_server_response(openenv_server: OpenEnvServer) -> OpenEnvServerResp
         name=openenv_server.name,
         description=openenv_server.description,
         url=openenv_server.url,
+        named_reset_kwargs=openenv_server.named_reset_kwargs,
         created_at=openenv_server.created_at,
         created_by=openenv_server.created_by,
     )
+
+
+def _friendly_error(error: PydanticValidationError) -> str:
+    """The first validation error, in the words the UI shows the user."""
+    first = error.errors()[0]
+    loc = first["loc"]
+    if loc[:1] == ("url",):
+        return _URL_ERROR
+    if (
+        loc[:1] == ("named_reset_kwargs",)
+        and loc[-1:] == ("reset_kwargs",)
+        and first["type"] == "dict_type"
+    ):
+        return _RESET_KWARGS_NOT_OBJECT_ERROR
+    if first["type"] == "value_error":
+        return str(first["ctx"]["error"])
+    return str(error)
 
 
 def connect_openenv_server_api(app: FastAPI):
@@ -127,9 +177,14 @@ def connect_openenv_server_api(app: FastAPI):
                 name=request.name,
                 description=request.description,
                 url=request.url,
+                named_reset_kwargs=[
+                    option.model_dump() for option in request.named_reset_kwargs
+                ],
                 parent=project,
             )
-        except (ValueError, PydanticValidationError) as e:
+        except PydanticValidationError as e:
+            raise HTTPException(status_code=400, detail=_friendly_error(e))
+        except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         openenv_server.save_to_file()
         return _openenv_server_response(openenv_server)
@@ -194,7 +249,9 @@ def connect_openenv_server_api(app: FastAPI):
         try:
             for field, value in request.model_dump(exclude_unset=True).items():
                 setattr(openenv_server, field, value)
-        except (ValueError, PydanticValidationError) as e:
+        except PydanticValidationError as e:
+            raise HTTPException(status_code=400, detail=_friendly_error(e))
+        except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         openenv_server.save_to_file()
         return _openenv_server_response(openenv_server)

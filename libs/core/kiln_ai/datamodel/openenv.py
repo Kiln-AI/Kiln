@@ -46,10 +46,10 @@ tool-call checks read the same.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, JsonValue, field_validator
+from pydantic import BaseModel, Field, JsonValue, StringConstraints, field_validator
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
 
@@ -134,6 +134,21 @@ class OpenEnvEpisode(BaseModel):
         }
 
 
+class NamedResetKwargs(BaseModel):
+    """Reset keyword arguments saved under a name, so a run can pick them by name.
+
+    Shown in the UI as an Environment Option. A run records the kwargs it used, not
+    the name, because an option can be renamed or removed later."""
+
+    name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
+    ] = Field(description="User-facing name, unique within its environment.")
+    reset_kwargs: dict[str, JsonValue] = Field(
+        default_factory=dict,
+        description="Keyword arguments for the environment's reset(), passed verbatim.",
+    )
+
+
 class OpenEnvServer(KilnParentedModel):
     """Kiln's saved pointer to a running OpenEnv environment.
 
@@ -149,6 +164,24 @@ class OpenEnvServer(KilnParentedModel):
         default=None,
         description="Base URL of the running OpenEnv server (e.g. http://127.0.0.1:8004). Kiln connects to it; it never starts one.",
     )
+    named_reset_kwargs: list[NamedResetKwargs] = Field(
+        default_factory=list,
+        description="Named reset kwargs a run can start the environment with, in the order they were added. The first is the default.",
+    )
+
+    @field_validator("named_reset_kwargs")
+    @classmethod
+    def unique_option_names(
+        cls, value: list[NamedResetKwargs]
+    ) -> list[NamedResetKwargs]:
+        seen: set[str] = set()
+        for option in value:
+            if option.name in seen:
+                raise ValueError(
+                    f"An Environment Option named {option.name} already exists."
+                )
+            seen.add(option.name)
+        return value
 
     @classmethod
     def type_name(cls) -> str:

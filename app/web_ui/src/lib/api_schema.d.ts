@@ -10481,6 +10481,40 @@ export interface components {
             [key: string]: unknown;
         };
         /**
+         * NamedResetKwargs
+         * @description Reset keyword arguments saved under a name, so a run can pick them by name.
+         *
+         *     Shown in the UI as an Environment Option. A run records the kwargs it used, not
+         *     the name, because an option can be renamed or removed later.
+         */
+        NamedResetKwargs: {
+            /**
+             * Name
+             * @description User-facing name, unique within its environment.
+             */
+            name: string;
+            /**
+             * Reset Kwargs
+             * @description Keyword arguments for the environment's reset(), passed verbatim.
+             */
+            reset_kwargs?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
+        /**
+         * NamedResetKwargsRequest
+         * @description Reset kwargs saved under a name, shown in the UI as an Environment Option.
+         */
+        NamedResetKwargsRequest: {
+            /**
+             * Name
+             * @description User-facing name, unique within the environment.
+             */
+            name: string;
+            /** @description Keyword arguments for the environment's reset(), as a JSON object. */
+            reset_kwargs?: components["schemas"]["JsonValue"];
+        };
+        /**
          * NewProposedSpecEditApi
          * @description A proposed edit to a spec field.
          */
@@ -10694,6 +10728,11 @@ export interface components {
              * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this OpenEnv server send their tool calls to it.
              */
             url?: string | null;
+            /**
+             * Named Reset Kwargs
+             * @description Named reset kwargs a run can start the environment with, in order. The first is the default. Names must be unique.
+             */
+            named_reset_kwargs?: components["schemas"]["NamedResetKwargsRequest"][];
         };
         /**
          * OpenEnvServerResponse
@@ -10721,6 +10760,11 @@ export interface components {
              */
             url?: string | null;
             /**
+             * Named Reset Kwargs
+             * @description Named reset kwargs a run can start the environment with, in order. The first is the default. Names must be unique.
+             */
+            named_reset_kwargs?: components["schemas"]["NamedResetKwargs"][];
+            /**
              * Created At
              * @description When the OpenEnv server was created.
              */
@@ -10733,7 +10777,8 @@ export interface components {
         };
         /**
          * OpenEnvServerUpdateRequest
-         * @description Changes to an OpenEnv server. Only the fields sent are changed.
+         * @description Changes to an OpenEnv server. Only the fields sent are changed, and
+         *     `named_reset_kwargs`, when sent, replaces the whole list.
          */
         OpenEnvServerUpdateRequest: {
             /**
@@ -10751,6 +10796,11 @@ export interface components {
              * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this OpenEnv server send their tool calls to it.
              */
             url?: string | null;
+            /**
+             * Named Reset Kwargs
+             * @description Named reset kwargs a run can start the environment with, in order. The first is the default. Names must be unique.
+             */
+            named_reset_kwargs?: components["schemas"]["NamedResetKwargsRequest"][] | null;
         };
         /**
          * OpenEnvToolResponse

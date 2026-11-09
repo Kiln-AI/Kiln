@@ -19,6 +19,14 @@ from kiln_server.custom_errors import connect_custom_errors
 
 from app.desktop.studio_server.openenv_server_api import connect_openenv_server_api
 
+URL_ERROR = (
+    "Enter a full URL starting with http:// or https://, like http://127.0.0.1:8004."
+)
+ACME_OPTIONS = [
+    {"name": "Acme Manager", "reset_kwargs": {"company": "acme", "user": "manager"}},
+    {"name": "Acme Tech", "reset_kwargs": {"company": "acme", "user": {"id": 7}}},
+]
+
 SESSION_MANAGER_PATCH = (
     "app.desktop.studio_server.openenv_server_api.shared_session_manager"
 )
@@ -95,6 +103,7 @@ class TestOpenEnvServers:
             "name",
             "description",
             "url",
+            "named_reset_kwargs",
             "created_at",
             "created_by",
         }
@@ -131,7 +140,7 @@ class TestOpenEnvServers:
             json={"url": "not a url"},
         )
         assert r.status_code == 400
-        assert "url must be an http:// or https:// URL" in r.json()["message"]
+        assert r.json()["message"] == URL_ERROR
 
     def test_delete(self, client, openenv_server_id):
         assert (
@@ -194,6 +203,7 @@ class TestOpenEnvServers:
             "/api/projects/p1/openenv_servers", json={"name": "Notes", "url": url}
         )
         assert r.status_code == 400
+        assert r.json()["message"] == URL_ERROR
 
     def test_missing_openenv_server(self, client):
         assert client.get("/api/projects/p1/openenv_servers/nope").status_code == 404
@@ -204,6 +214,115 @@ class TestOpenEnvServers:
             == 404
         )
         assert client.delete("/api/projects/p1/openenv_servers/nope").status_code == 404
+
+
+class TestEnvironmentOptions:
+    def test_create_with_named_reset_kwargs(self, client, project):
+        r = client.post(
+            "/api/projects/p1/openenv_servers",
+            json={"name": "Acme", "named_reset_kwargs": ACME_OPTIONS},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["named_reset_kwargs"] == ACME_OPTIONS
+        saved = _load_openenv_server(project, r.json()["id"]).named_reset_kwargs
+        assert [o.model_dump() for o in saved] == ACME_OPTIONS
+        got = client.get(f"/api/projects/p1/openenv_servers/{r.json()['id']}").json()
+        assert got["named_reset_kwargs"] == ACME_OPTIONS
+
+    def test_created_without_options_lists_none(self, client, openenv_server_id):
+        got = client.get(f"/api/projects/p1/openenv_servers/{openenv_server_id}").json()
+        assert got["named_reset_kwargs"] == []
+
+    def test_option_without_reset_kwargs_defaults_to_empty_object(self, client):
+        r = client.post(
+            "/api/projects/p1/openenv_servers",
+            json={"name": "Acme", "named_reset_kwargs": [{"name": "Default"}]},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["named_reset_kwargs"] == [
+            {"name": "Default", "reset_kwargs": {}}
+        ]
+
+    def test_patch_replaces_whole_list(self, client, project, openenv_server_id):
+        url = f"/api/projects/p1/openenv_servers/{openenv_server_id}"
+        r = client.patch(url, json={"named_reset_kwargs": ACME_OPTIONS})
+        assert r.status_code == 200, r.text
+        assert r.json()["named_reset_kwargs"] == ACME_OPTIONS
+
+        reordered = [ACME_OPTIONS[1], {"name": "Beta", "reset_kwargs": {}}]
+        r = client.patch(url, json={"named_reset_kwargs": reordered})
+        assert r.json()["named_reset_kwargs"] == reordered
+
+        r = client.patch(url, json={"description": "d"})
+        assert r.json()["named_reset_kwargs"] == reordered
+
+        r = client.patch(url, json={"named_reset_kwargs": []})
+        assert r.json()["named_reset_kwargs"] == []
+        assert _load_openenv_server(project, openenv_server_id).named_reset_kwargs == []
+
+    def test_duplicate_name_on_create_is_400(self, client, project):
+        r = client.post(
+            "/api/projects/p1/openenv_servers",
+            json={
+                "name": "Acme",
+                "named_reset_kwargs": [ACME_OPTIONS[0], ACME_OPTIONS[0]],
+            },
+        )
+        assert r.status_code == 400
+        assert (
+            r.json()["message"]
+            == "An Environment Option named Acme Manager already exists."
+        )
+        assert project.openenv_servers() == []
+
+    def test_duplicate_name_on_patch_is_400_and_leaves_disk_unchanged(
+        self, client, project, openenv_server_id
+    ):
+        url = f"/api/projects/p1/openenv_servers/{openenv_server_id}"
+        client.patch(url, json={"named_reset_kwargs": ACME_OPTIONS})
+        duplicate = {"name": " Acme Tech ", "reset_kwargs": {}}
+        r = client.patch(
+            url,
+            json={
+                "description": "changed",
+                "named_reset_kwargs": [*ACME_OPTIONS, duplicate],
+            },
+        )
+        assert r.status_code == 400
+        assert (
+            r.json()["message"]
+            == "An Environment Option named Acme Tech already exists."
+        )
+        openenv_server = _load_openenv_server(project, openenv_server_id)
+        assert [
+            o.model_dump() for o in openenv_server.named_reset_kwargs
+        ] == ACME_OPTIONS
+        assert openenv_server.description is None
+
+    @pytest.mark.parametrize("reset_kwargs", [[1, 2], "acme", 3, None])
+    def test_non_object_reset_kwargs_is_400(
+        self, client, openenv_server_id, reset_kwargs
+    ):
+        option = {"name": "Acme", "reset_kwargs": reset_kwargs}
+        r = client.post(
+            "/api/projects/p1/openenv_servers",
+            json={"name": "Bad", "named_reset_kwargs": [option]},
+        )
+        assert r.status_code == 400
+        assert r.json()["message"] == "Reset arguments must be a JSON object."
+        r = client.patch(
+            f"/api/projects/p1/openenv_servers/{openenv_server_id}",
+            json={"named_reset_kwargs": [option]},
+        )
+        assert r.status_code == 400
+        assert r.json()["message"] == "Reset arguments must be a JSON object."
+
+    def test_blank_option_name_is_400(self, client):
+        r = client.post(
+            "/api/projects/p1/openenv_servers",
+            json={"name": "Bad", "named_reset_kwargs": [{"name": "  "}]},
+        )
+        assert r.status_code == 400
 
 
 class TestTools:

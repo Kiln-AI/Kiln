@@ -15,6 +15,7 @@ from kiln_ai.datamodel.eval import (
     UserMessage,
 )
 from kiln_ai.datamodel.openenv import (
+    NamedResetKwargs,
     OpenEnvEpisode,
     OpenEnvReset,
     OpenEnvServer,
@@ -89,6 +90,72 @@ def test_project_lists_its_openenv_servers(project):
     )
     openenv_server.save_to_file()
     assert [saved.id for saved in project.openenv_servers()] == [openenv_server.id]
+
+
+class TestNamedResetKwargs:
+    def test_default_empty(self, openenv_server):
+        assert openenv_server.named_reset_kwargs == []
+
+    def test_round_trip_preserves_order_and_nested_json(self, project):
+        options = [
+            NamedResetKwargs(
+                name="Acme Manager",
+                reset_kwargs={"company": "acme", "user": {"role": "manager"}},
+            ),
+            NamedResetKwargs(name="Beta Tech", reset_kwargs={"seeds": [1, 2, None]}),
+            NamedResetKwargs(name="Empty"),
+        ]
+        env = OpenEnvServer(name="Opts", parent=project, named_reset_kwargs=options)
+        env.save_to_file()
+        assert env.id is not None
+        loaded = OpenEnvServer.from_id_and_parent_path(env.id, project.path)
+        assert loaded is not None
+        assert loaded.named_reset_kwargs == options
+        assert loaded.named_reset_kwargs[2].reset_kwargs == {}
+
+    def test_duplicate_names_rejected(self):
+        with pytest.raises(
+            ValidationError,
+            match="An Environment Option named Acme Manager already exists",
+        ):
+            OpenEnvServer(
+                name="E",
+                named_reset_kwargs=[
+                    NamedResetKwargs(name="Acme Manager"),
+                    NamedResetKwargs(name=" Acme Manager  "),
+                ],
+            )
+
+    def test_names_differing_by_case_are_distinct(self):
+        env = OpenEnvServer(
+            name="E",
+            named_reset_kwargs=[
+                NamedResetKwargs(name="acme"),
+                NamedResetKwargs(name="Acme"),
+            ],
+        )
+        assert [o.name for o in env.named_reset_kwargs] == ["acme", "Acme"]
+
+    def test_duplicate_rejected_on_assignment(self, openenv_server):
+        with pytest.raises(ValidationError, match="named Beta already exists"):
+            openenv_server.named_reset_kwargs = [
+                NamedResetKwargs(name="Beta"),
+                NamedResetKwargs(name="Beta"),
+            ]
+
+    @pytest.mark.parametrize("reset_kwargs", [[1, 2], "acme", 3, None])
+    def test_non_object_reset_kwargs_rejected(self, reset_kwargs):
+        with pytest.raises(ValidationError):
+            NamedResetKwargs(name="Acme", reset_kwargs=reset_kwargs)
+
+    @pytest.mark.parametrize("name", ["", "   ", "x" * 121])
+    def test_name_bounds(self, name):
+        with pytest.raises(ValidationError):
+            NamedResetKwargs(name=name)
+
+    def test_name_stored_stripped(self):
+        assert NamedResetKwargs(name="  Acme  ").name == "Acme"
+        assert NamedResetKwargs(name="x" * 120).name == "x" * 120
 
 
 class TestOpenEnvTool:
