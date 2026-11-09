@@ -97,3 +97,7 @@ def custom_middleware(inputs, next_level, options)
   - It might be the right call to add "code tasks", reusing infra from code tools. Then we could keep "a middleware can be any task conforming to the middleware schema".
 
 The big win is that Kiln is designed to optimize and evaluate tasks, so you get the chance to optimize and evaluate middleware. Now: should that ever be done on just a middleware and not the whole agent? Hard to say. The optimizer looking at the top level could add/remove/change middleware.
+
+## Research
+
+Background research on competitors, decision-model vendors and provider constraints: [research/routing_and_decision_layers/summary.md](research/routing_and_decision_layers/summary.md). The open design questions file in that folder is a research agent's unverified opinions, not decisions.
