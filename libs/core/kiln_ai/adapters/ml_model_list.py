@@ -796,7 +796,6 @@ FUGU_ULTRA_OPENROUTER_THINKING_LEVELS = {
     "Max": "max",
 }
 
-# Inkling and Inkling Small on OpenRouter: the catalog lists all six efforts, default "high".
 INKLING_OPENROUTER_THINKING_LEVELS = {
     "Off/None": "none",
     "Minimal": "minimal",
@@ -11246,7 +11245,6 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Hunyuan Hy4 — Tencent's successor to Hy3, 1M context, text and image input.
     # reasoning_capable left False: reasoning is on by default but can be turned off with the "none" effort.
     KilnModel(
         family=ModelFamily.hunyuan,
