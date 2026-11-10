@@ -6,7 +6,7 @@ status: complete
 
 Every screen reuses an existing Kiln pattern. OpenEnv environments are managed next to MCP servers, and their screens copy the tool server screens. The run page gains one dropdown.
 
-The UI calls the thing "OpenEnv", the way MCP servers are shown as "MCP Server". It calls a named reset kwargs entry an **Environment Option**, and the kwargs themselves **Reset Arguments**: "kwargs" is Python jargon, and Kiln's labels use plain, full words. The data model keeps `reset_kwargs`, the way MCP tools show "Arguments" for a schema's `parameters`. In code these are `Environment` and `named_reset_kwargs` (see the functional spec's Naming section).
+The UI calls the thing "OpenEnv", the way MCP servers are shown as "MCP Server". It calls a named reset kwargs entry an **Environment Option**, and the kwargs themselves **Reset Arguments**: "kwargs" is Python jargon, and Kiln's labels use plain, full words. The data model keeps `reset_kwargs`, the way MCP tools show "Arguments" for a schema's `parameters`. In code these are `OpenEnvServer` and `named_reset_kwargs` (see the functional spec's Naming section).
 
 ## Page inventory
 
@@ -15,7 +15,7 @@ The UI calls the thing "OpenEnv", the way MCP servers are shown as "MCP Server".
 | Tools list (existing) | `tools/[project_id]` | Gains OpenEnv rows |
 | Add Tools (existing) | `tools/[project_id]/add_tools` | Gains an "OpenEnv" item |
 | Connect OpenEnv | `tools/[project_id]/add_tools/openenv` | Remote MCP connect form |
-| OpenEnv detail | `tools/[project_id]/environments/[environment_id]` | Tool server detail page |
+| OpenEnv detail | `tools/[project_id]/openenv_servers/[openenv_server_id]` | Tool server detail page |
 | Edit OpenEnv dialog | Overlay on OpenEnv detail | `edit_dialog.svelte` |
 | Environment Option dialog | Overlay on OpenEnv detail | `dialog.svelte` with a form |
 | Run page (existing) | `run` | Gains the Environment Options dropdown |
@@ -96,7 +96,7 @@ Remove takes effect right away, with no confirmation. An Environment Option is o
 The existing `tools_selector.svelte` multi-select, fed by `available_tools`. OpenEnv tools need no new control.
 
 - Each environment is its own option group after the MCP server groups, labelled "OpenEnv: Acme", like "MCP Server: Docs Search".
-- An offline environment is hidden from the picker, the same as an MCP server that can't be reached (`available_tools` skips it). Tools already selected from it stay selected: `drop_unselectable_tools` in `tools_selector.svelte` must not drop `kiln_tool::env::` ids. Run then fails with the can't-reach error. The environment's page shows why.
+- An offline environment is hidden from the picker, the same as an MCP server that can't be reached (`available_tools` skips it). Tools already selected from it stay selected: `drop_unselectable_tools` in `tools_selector.svelte` must not drop `kiln_tool::openenv::` ids. Run then fails with the can't-reach error. The environment's page shows why.
 - Nothing is disabled. Selecting tools from two environments is allowed in the picker; the Environment Options field and Run report it.
 
 ## Run page
@@ -136,7 +136,7 @@ On the conversation page:
 
 ## Run output
 
-The run sidebar has Rating and Feedback, Tags and Usage today, with no general property list. When a run has an environment, a `PropertyList` titled "OpenEnv" is added after Usage, with OpenEnv and Reset Arguments (from `env_episode`). Raw Data already includes `env_episode`, with the kwargs and final state.
+The run sidebar has Rating and Feedback, Tags and Usage today, with no general property list. When a run has an environment, a `PropertyList` titled "OpenEnv" is added after Usage, with OpenEnv and Reset Arguments (from `openenv_episode`). Raw Data already includes `openenv_episode`, with the kwargs and final state.
 
 ## Errors
 

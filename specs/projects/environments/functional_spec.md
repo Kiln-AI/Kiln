@@ -20,16 +20,16 @@ Today's code calls these "worlds". This project renames them to environments, in
 
 | Today | Renamed |
 |---|---|
-| `World` (`datamodel/world.py`) | `Environment` (`datamodel/environment.py`) |
-| `worlds/<id> - <name>/world.kiln` | `environments/<id> - <name>/environment.kiln` |
-| `Project.worlds()` | `Project.environments()` |
-| `kiln_tool::world::<id>::<tool>` | `kiln_tool::env::<id>::<tool>` |
-| `/api/projects/{project_id}/worlds` | `/api/projects/{project_id}/environments` |
-| `WorldReset`, `EvalInput.world_reset` | `EnvironmentReset`, `EvalInput.env_reset` |
-| `WorldEpisode`, `TaskRun.world_episode` | `EnvironmentEpisode`, `TaskRun.env_episode` |
-| `kiln_ai/worlds/session_manager.py` | `kiln_ai/environments/session_manager.py` |
-| `WorldReset.world_id`, `WorldEpisode.world_version` | `EnvironmentReset.environment_id`, `EnvironmentEpisode.env_version` |
-| `world_api.py`, `validate_world_tool_ids` | `environment_api.py`, `validate_env_tool_ids` |
+| `World` (`datamodel/world.py`) | `OpenEnvServer` (`datamodel/openenv.py`) |
+| `worlds/<id> - <name>/world.kiln` | `openenv_servers/<id> - <name>/openenv_server.kiln` |
+| `Project.worlds()` | `Project.openenv_servers()` |
+| `kiln_tool::world::<id>::<tool>` | `kiln_tool::openenv::<id>::<tool>` |
+| `/api/projects/{project_id}/worlds` | `/api/projects/{project_id}/openenv_servers` |
+| `WorldReset`, `EvalInput.world_reset` | `OpenEnvReset`, `EvalInput.openenv_reset` |
+| `WorldEpisode`, `TaskRun.world_episode` | `OpenEnvEpisode`, `TaskRun.openenv_episode` |
+| `kiln_ai/worlds/session_manager.py` | `kiln_ai/openenv/session_manager.py` |
+| `WorldReset.world_id`, `WorldEpisode.world_version` | `OpenEnvReset.openenv_server_id`, `OpenEnvEpisode.openenv_version` |
+| `world_api.py`, `validate_world_tool_ids` | `openenv_server_api.py`, `validate_openenv_tool_ids` |
 
 `OpenEnvSessionManager` keeps its name, since it already names the protocol.
 
@@ -42,7 +42,7 @@ The rename is its own first phase: a pure rename with no behaviour change, so it
 In scope:
 
 - The rename above.
-- `named_reset_kwargs` on `Environment`.
+- `named_reset_kwargs` on `OpenEnvServer`.
 - OpenEnv pages in the Tools area, next to MCP servers: Add Tools, Connect OpenEnv, the detail page and Edit OpenEnv.
 - Adding `@codemirror/lang-json` so the code editor can edit JSON.
 - OpenEnv tools in the tool picker.
@@ -54,7 +54,7 @@ In scope:
 Out of scope:
 
 - `ToolDefinition`s and swapping real tools for synthetic ones. These are V2.
-- Changes to evals beyond the rename. Eval inputs keep their own `env_reset`.
+- Changes to evals beyond the rename. Eval inputs keep their own `openenv_reset`.
 - Eval Builder generating data tied to an environment. This is a separate spec.
 - A free-form JSON override for reset kwargs on the run page.
 - Running environment tools from the code tool test panel. A call there fails with a clear error.
@@ -65,14 +65,14 @@ Out of scope:
 
 ## Named reset kwargs
 
-`Environment` gains:
+`OpenEnvServer` gains:
 
 ```python
 class NamedResetKwargs(BaseModel):
     name: str                    # e.g. "Acme Tech"
     reset_kwargs: dict[str, Any] # e.g. {"fixture": "acme", "role": "tech"}
 
-class Environment:
+class OpenEnvServer:
     named_reset_kwargs: list[NamedResetKwargs] = []
 ```
 
@@ -88,8 +88,8 @@ Rules:
 
 Environments are managed in the Tools area, next to MCP servers. See `ui_design.md`.
 
-- **Connect and edit:** name, description and `env_url`. The existing create and update routes are reused. The URL stays editable, because a local server's port can change, and a new environment would mean a new id in every saved tool id. Each run records the version the server reported.
-- **Tools:** the detail page shows the tools the environment serves, read live from `GET /api/projects/{project_id}/environments/{environment_id}/tools`. If it's offline, the page shows the error instead.
+- **Connect and edit:** name, description and `url`. The existing create and update routes are reused. The URL stays editable, because a local server's port can change, and a new environment would mean a new id in every saved tool id. Each run records the version the server reported.
+- **Tools:** the detail page shows the tools the environment serves, read live from `GET /api/projects/{project_id}/openenv_servers/{openenv_server_id}/tools`. If it's offline, the page shows the error instead.
 - **Environment Options:** each entry is a name and a JSON editor for its kwargs, using the app's code editor in JSON mode. Invalid JSON, or JSON that isn't an object, is shown inline and blocks saving.
 - **No delete in V1:** the UI has no way to delete an environment. The existing delete route and its rule (refused while a saved eval input resets into the environment) are unchanged.
 - **Seahaven:** a callout at the top of the Connect OpenEnv page promotes Kiln Seahaven (https://github.com/Kiln-AI/Seahaven) for people who don't have an environment yet.
@@ -101,7 +101,7 @@ Environment tools appear in the tool picker, grouped as "OpenEnv: Acme", like "M
 
 - Each tool shows the name the environment serves. These names can't be renamed in Kiln.
 - Environment tools come from `available_tools`, which already lists each MCP server's tools live.
-- An offline environment is hidden from the picker, like an MCP server that can't be reached. Tools already selected from it stay selected (the picker never drops `kiln_tool::env::` ids), so Run fails with the can't-reach error rather than the selection silently changing. Showing an offline group is a possible later change.
+- An offline environment is hidden from the picker, like an MCP server that can't be reached. Tools already selected from it stay selected (the picker never drops `kiln_tool::openenv::` ids), so Run fails with the can't-reach error rather than the selection silently changing. Showing an offline group is a possible later change.
 - Nothing is disabled. Tools from several environments can be selected, and the one-environment error appears in the Environment Options field and when Run is clicked.
 
 ## One environment per run
@@ -112,7 +112,7 @@ A run can reach at most one environment. The environment ids a run can reach are
 - The allowlists of code tools it lists, including code tools nested inside those code tools.
 - The run configs of Kiln task tools it lists. A Kiln task tool's sub-run shares the parent's session.
 
-Every environment tool id names its environment (`kiln_tool::env::<environment_id>::<tool>`), so this is a check on lists of ids, never on code. A code tool can only call tools on its allowlist.
+Every environment tool id names its environment (`kiln_tool::openenv::<openenv_server_id>::<tool>`), so this is a check on lists of ids, never on code. A code tool can only call tools on its allowlist.
 
 The check runs:
 
@@ -151,13 +151,13 @@ Multi-turn tasks:
 
 ### Run records
 
-Each run with an environment saves `env_episode` as evals do today, including the reset kwargs it used and the final state. A saved run shows the environment and those kwargs, not the option's name, because options can be renamed or removed later.
+Each run with an environment saves `openenv_episode` as evals do today, including the reset kwargs it used and the final state. A saved run shows the environment and those kwargs, not the option's name, because options can be renamed or removed later.
 
 ## Run API and library
 
 The page runs through the run API, so these changes apply to every caller:
 
-- **Run API:** the run request takes optional `env_reset_kwargs`. The environment comes from the run config. Sending kwargs for a config that reaches no environment is refused.
+- **Run API:** the run request takes optional `openenv_reset_kwargs`. The environment comes from the run config. Sending kwargs for a config that reaches no environment is refused.
 - **Python library:** the adapter's config takes the same option.
 - **Kiln Assistant:** gets the same option through the run API.
 
@@ -190,7 +190,7 @@ Planned next, not built in this project. The goal is to run the same run config 
 
 - A **`ToolDefinition`** saves what the model sees: `tool_function_name`, `tool_description`, `parameters_schema`. It's immutable. Run configs and code tools list definitions instead of environment or MCP tool ids.
 - A **mapping object (name TBD)** maps definitions to real tools (OpenEnv or MCP), with an environment id and default reset kwargs. It's append-only and archived rather than deleted.
-- Eval inputs replace `env_reset` with a setup that names the mapping object and optional reset kwargs.
+- Eval inputs replace `openenv_reset` with a setup that names the mapping object and optional reset kwargs.
 - A mapped tool must accept everything its definition can send. This is checked on save and at run start.
 - Code judges have no mapping.
 
