@@ -4,6 +4,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import RunInputForm from "../../../routes/(app)/run/run_input_form.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import Warning from "$lib/ui/warning.svelte"
   import ForkIcon from "$lib/ui/icons/fork_icon.svelte"
   import {
     send_multiturn,
@@ -45,6 +46,10 @@
   // When true, sending with no parent_task_run_id starts a new root
   // conversation (the first turn). Used by the /run page.
   export let allow_root_turn: boolean = false
+  // A send the server refuses with one of these HTTP statuses is shown as an
+  // error Warning above the composer instead of the form's error line, for
+  // errors that end the conversation rather than this one message.
+  export let warning_error_statuses: number[] = []
 
   // forked_turn_index is required when mode is "fork" — it's used for both
   // the context-strip heading and dirty-tracking baseline. Callers always
@@ -59,6 +64,7 @@
   let input_form: RunInputForm
   let submitting = false
   let run_error: KilnError | null = null
+  let warning_error: KilnError | null = null
   let discard_dialog: Dialog | null = null
   // Used by the dirty-confirm swap flow (see request_swap). When set, the
   // confirmation dialog runs this callback on Discard instead of on_cancel.
@@ -132,6 +138,7 @@
 
   async function handle_submit() {
     run_error = null
+    warning_error = null
     submitting = true
     // Capture the text, surface it optimistically, and clear the textarea
     // immediately so the composer reads as "sent". The text is passed to
@@ -154,17 +161,23 @@
       })
       if (result.ok) {
         ok = true
+      } else if (
+        result.status !== undefined &&
+        warning_error_statuses.includes(result.status)
+      ) {
+        warning_error = createKilnError(result.error)
       } else {
         run_error = createKilnError(result.error)
       }
     } catch (e) {
-      // on_success threw (e.g. goto/load_run failed).
+      // on_success threw (e.g. goto/load_run failed), or the run options
+      // refused the send (e.g. the OpenEnv lookup failed).
       run_error = createKilnError(e)
     } finally {
       if (!ok) {
         // Restore the message so it isn't lost, and surface the failure.
         input_form?.set_plaintext_input?.(text)
-        if (!run_error) {
+        if (!run_error && !warning_error) {
           run_error = createKilnError(new Error("Failed to send message."))
         }
       }
@@ -199,6 +212,11 @@
 </script>
 
 <div data-testid="multiturn-composer" class="flex flex-col gap-4">
+  {#if warning_error}
+    <div role="alert" data-testid="multiturn-composer-warning">
+      <Warning warning_message={warning_error.getMessage()} />
+    </div>
+  {/if}
   {#if mode === "fork"}
     <!-- Status header for the composer, not a chat bubble. The fork
          affordance is metadata about what Send will do, so it's styled as a
