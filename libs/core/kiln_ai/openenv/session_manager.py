@@ -34,7 +34,7 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Protocol
+from typing import Any, AsyncIterator
 
 import httpx
 from pydantic import JsonValue
@@ -155,49 +155,6 @@ class ToolCallOutcome:
     error_details: Any = None
 
 
-class OpenEnvSessionManager(Protocol):
-    """The OpenEnv session seam the eval runner and the tool proxies call.
-    `RemoteOpenEnvSessionManager` is the implementation; tests substitute a fake."""
-
-    async def openenv_version(self, openenv: OpenEnv) -> str:
-        """Identity of the environment code an episode would run, without starting one.
-        One per environment, whatever an episode is reset with. Folded into the trace
-        fingerprint: change it and traces regenerate."""
-
-    async def refresh(self, openenv: OpenEnv) -> None:
-        """Re-read the environment's identity, so an environment restarted at a new
-        version on the same URL is seen as new. Its tools are re-listed when the
-        version changed."""
-
-    async def list_tools(
-        self, openenv: OpenEnv, fresh: bool = False
-    ) -> list[OpenEnvTool]:
-        """The tools the environment serves. Cached per environment version;
-        `fresh` re-reads the environment's metadata and tools."""
-
-    async def start_episode(
-        self, openenv: OpenEnv, reset_kwargs: dict[str, JsonValue]
-    ) -> OpenEnvEpisode:
-        """Open a session on the environment and reset it with `reset_kwargs`.
-        The session stays live until `end_episode` or `release`."""
-
-    async def call_tool(
-        self, episode: OpenEnvEpisode, tool_name: str, arguments: dict[str, Any]
-    ) -> ToolCallOutcome:
-        """Call one of the environment's tools inside a live episode."""
-
-    async def end_episode(self, episode: OpenEnvEpisode) -> OpenEnvEpisode:
-        """Read the environment's final state and close the session. Returns the
-        episode with `final_state` set: the durable record graders read."""
-
-    async def release(self, episode: OpenEnvEpisode) -> None:
-        """Close an episode's session without reading its state, e.g. after a
-        failed generation."""
-
-    async def shutdown(self) -> None:
-        """Close every live session and forget every environment."""
-
-
 @dataclass
 class _OpenEnvServer:
     base_url: str
@@ -217,11 +174,12 @@ class _Session:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
-class RemoteOpenEnvSessionManager:
-    """Drives sessions on running OpenEnv environments.
+class OpenEnvSessionManager:
+    """Drives sessions on running OpenEnv environments, for the eval runner and the
+    tool proxies.
 
-    What Kiln knows about each environment (its version and tools) is cached per environment
-    and re-read when the environment's URL changes or `refresh` is called."""
+    What Kiln knows about each environment (its version and tools) is cached per OpenEnv
+    and re-read when the OpenEnv's URL changes or `refresh` is called."""
 
     def __init__(self, step_timeout_s: float = STEP_TIMEOUT_S) -> None:
         self._step_timeout_s = step_timeout_s
@@ -229,18 +187,26 @@ class RemoteOpenEnvSessionManager:
         self._server_locks: dict[str, asyncio.Lock] = {}
         self._sessions: dict[str, _Session] = {}
 
-    # ---- protocol ----
+    # ---- public ----
 
     async def openenv_version(self, openenv: OpenEnv) -> str:
+        """Identity of the environment code an episode would run, without starting one.
+        One per environment, whatever an episode is reset with. Folded into the trace
+        fingerprint: change it and traces regenerate."""
         server = await self._server_for(openenv)
         return server.openenv_version
 
     async def refresh(self, openenv: OpenEnv) -> None:
+        """Re-read the environment's identity, so an environment restarted at a new
+        version on the same URL is seen as new. Its tools are re-listed when the
+        version changed."""
         await self._server_for(openenv, refresh=True)
 
     async def list_tools(
         self, openenv: OpenEnv, fresh: bool = False
     ) -> list[OpenEnvTool]:
+        """The tools the environment serves. Cached per environment version;
+        `fresh` re-reads the environment's metadata and tools."""
         server = await self._server_for(openenv, refresh=fresh)
         if server.tools is not None and not fresh:
             return server.tools
@@ -265,6 +231,8 @@ class RemoteOpenEnvSessionManager:
     async def start_episode(
         self, openenv: OpenEnv, reset_kwargs: dict[str, JsonValue]
     ) -> OpenEnvEpisode:
+        """Open a session on the environment and reset it with `reset_kwargs`.
+        The session stays live until `end_episode` or `release`."""
         if openenv.id is None:
             raise ValueError("OpenEnv must be saved before starting an episode")
         server = await self._server_for(openenv)
@@ -297,6 +265,7 @@ class RemoteOpenEnvSessionManager:
     async def call_tool(
         self, episode: OpenEnvEpisode, tool_name: str, arguments: dict[str, Any]
     ) -> ToolCallOutcome:
+        """Call one of the environment's tools inside a live episode."""
         session = self._sessions.get(episode.episode_id)
         if session is None:
             raise RuntimeError(
@@ -342,6 +311,8 @@ class RemoteOpenEnvSessionManager:
         )
 
     async def end_episode(self, episode: OpenEnvEpisode) -> OpenEnvEpisode:
+        """Read the environment's final state and close the session. Returns the
+        episode with `final_state` set: the durable record graders read."""
         session = self._sessions.pop(episode.episode_id, None)
         if session is None:
             return episode
@@ -354,11 +325,14 @@ class RemoteOpenEnvSessionManager:
         return episode.model_copy(update={"final_state": state})
 
     async def release(self, episode: OpenEnvEpisode) -> None:
+        """Close an episode's session without reading its state, e.g. after a
+        failed generation."""
         session = self._sessions.pop(episode.episode_id, None)
         if session is not None:
             await self._end_session(session.ws)
 
     async def shutdown(self) -> None:
+        """Close every live session and forget every environment."""
         sessions = list(self._sessions.values())
         self._sessions.clear()
         self._servers.clear()
@@ -526,15 +500,15 @@ class RemoteOpenEnvSessionManager:
             pass
 
 
-_shared: RemoteOpenEnvSessionManager | None = None
+_shared: OpenEnvSessionManager | None = None
 
 
-def shared_session_manager() -> RemoteOpenEnvSessionManager:
+def shared_session_manager() -> OpenEnvSessionManager:
     """The process-wide session manager, so what Kiln knows about each environment is read
     once and reused across eval runs."""
     global _shared
     if _shared is None:
-        _shared = RemoteOpenEnvSessionManager()
+        _shared = OpenEnvSessionManager()
     return _shared
 
 

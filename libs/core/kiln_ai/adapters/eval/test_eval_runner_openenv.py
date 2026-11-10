@@ -63,8 +63,8 @@ from kiln_ai.datamodel.tool_id import build_code_tool_id, build_openenv_tool_id
 from kiln_ai.openenv.session_manager import (
     OpenEnvError,
     OpenEnvRejectedError,
+    OpenEnvSessionManager,
     OpenEnvTransientError,
-    RemoteOpenEnvSessionManager,
 )
 from kiln_ai.openenv.testing import ENV_NAME, free_port, serve_in_thread
 from kiln_ai.run_context import get_episode
@@ -133,7 +133,7 @@ def openenv(project, openenv_server):
 
 @pytest.fixture
 async def session_manager(tmp_path):
-    session_manager = RemoteOpenEnvSessionManager()
+    session_manager = OpenEnvSessionManager()
     try:
         yield session_manager
     finally:

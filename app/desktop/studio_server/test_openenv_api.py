@@ -8,7 +8,7 @@ from kiln_ai.datamodel.openenv import OpenEnv, OpenEnvReset
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import build_openenv_tool_id
-from kiln_ai.openenv.session_manager import RemoteOpenEnvSessionManager
+from kiln_ai.openenv.session_manager import OpenEnvSessionManager
 from kiln_ai.openenv.testing import (
     ENV_NAME,
     ENV_VERSION,
@@ -66,7 +66,7 @@ def openenv_id(client):
 @pytest.fixture
 def session_manager(tmp_path):
     """A session manager standing in for the process-wide one."""
-    instance = RemoteOpenEnvSessionManager()
+    instance = OpenEnvSessionManager()
     with patch(SESSION_MANAGER_PATCH, return_value=instance):
         yield instance
     import asyncio
