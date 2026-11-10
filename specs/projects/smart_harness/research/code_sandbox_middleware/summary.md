@@ -9,7 +9,8 @@ Explored 2026-11-10 at repo commit `57c7c126`. The question: if a middleware is 
 - **Calling out.** Inside the code, `from kiln import tools` gives `tools.<name>(**kwargs)`. The call goes over a queue to the parent, which checks the name against the run's allowlist of tool IDs, validates the arguments against the tool's schema, runs the tool **in the parent process**, and sends back the tool's output **as a string** (`libs/core/kiln_ai/tools/sandbox_bridge.py:179-381`, `sandbox/tools_api.py`). `kiln.async_tools` is the awaitable version, so `asyncio.gather` runs calls in parallel.
 - **Errors.** Nested call failures raise `ToolNotAllowed`, `ToolTimeout` or `ToolCallError` in the code.
 - **Limits.** One wall-clock timeout covers the whole run, nested calls included. Nesting depth is capped at 10. At most 16 top-level runs at once across the process.
-- **Where it runs.** A local child process, desktop only. The code tools spec rules out server-side execution. Saving or testing new code needs a project trust check.
+- **Where it runs.** A local child process of whatever process imports `kiln_ai`: the desktop app, or a plain script or server using the library. The code tools spec's "Desktop-only, forever" rules out Kiln's own hosted servers, not the library. The trust check applies only in the desktop API when saving or testing code.
+- **Not a security boundary.** The child has the same access to files, network and imports as its parent. The isolation is for timeouts and crashes.
 - **Testing.** `libs/core/kiln_ai/tool_testing/` gives authors a pytest fixture with a fake `kiln.tools`, so code that calls tools can be unit-tested without the sandbox.
 
 ## What code can already call
@@ -30,6 +31,10 @@ One policy was written three ways. Each run received `messages` and `turn_number
 | 2. Inline Jev call (same tool, `model="jev_1_13"`, `provider="typesafe"`; Jev's HTTP client was faked, since there is no TypeSafe key here) | Yes. The call reached the Jev adapter, which turned the inline schema into one request with two questions. | Sandbox overhead about 77 ms. Jev latency not measured. | The JSON values only. The fake answered `hours` at probability 0.94 and `needs_smart_model` at 0.04; the code received `"hours"` and `false`. |
 | 3. Saved Kiln task (`tools.support_triage(input=...)`) | Yes. | About 1.1–1.5 s per call. Sandbox overhead about 80 ms. | The JSON values only. Three runs were saved in the triage task's dataset, tagged `tool_call`, each with tokens and cost. |
 
+## Library check
+
+An agent task with one code tool in its tool list was run from a plain Python script with `adapter_for_task(...).invoke(...)`: no desktop app, no API server. The model called the tool, the code ran in a child process (a different pid from the script), and the model answered from the result. Code tools work in the library today.
+
 ## Gaps for middleware use
 
 1. **Nothing acts on the result.** The harness has no code that takes "respond", "call this tool" or "use these settings" from a code run and applies it to the turn. This is the main new work, and it is the same work whatever form a middleware takes.
@@ -40,7 +45,8 @@ One policy was written three ways. Each run received `messages` and `turn_number
 6. **The inline tool is narrow.** It takes one rendered prompt string. No message list, no temperature, no thinking level, no tools.
 7. **A saved task needs a wrapper.** Calling a task requires a `kiln_task` tool server object for that task and run config, and its tool ID on the allowlist.
 8. **No memory between turns.** Every run is a fresh process. Anything carried across turns has to be passed in by the harness.
-9. **Desktop only, 16 at a time.** See "Where it runs" and "Limits" above. Evals run many turns in parallel and would share the cap with code tools and code judges.
+9. **16 at a time.** Evals run many turns in parallel and would share the cap with code tools and code judges.
+10. **Needs process spawning with queues.** The sandbox uses `multiprocessing` spawn and `multiprocessing.Queue`. Hosts that restrict those would not run it. No such host was tested.
 
 ## Appendix: prototype script
 
