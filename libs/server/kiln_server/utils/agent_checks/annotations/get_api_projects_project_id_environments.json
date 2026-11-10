@@ -1,6 +1,6 @@
 {
   "method": "get",
-  "path": "/api/projects/{project_id}/worlds/{world_id}",
+  "path": "/api/projects/{project_id}/environments",
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false

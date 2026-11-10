@@ -102,8 +102,8 @@ def _check_eval_job_request(params: EvalJobParams) -> None:
     is missing, 422 if the eval has no such split or if `item_ids` names an item that is
     not in the split, and 400 for the checks the run_comparison endpoint also makes
     before it runs (a V1 judge on items it can't score, multi-turn items that can't be
-    driven), and for the world checks that need no environment (see
-    `EvalRunner.validate_world_readiness`). Without those, the job would start and fail
+    driven), and for the environment checks that need no running server (see
+    `EvalRunner.validate_environment_readiness`). Without those, the job would start and fail
     every item one by one.
 
     Deliberately discards what it resolved. The worker resolves the split again when the
@@ -142,7 +142,7 @@ def _check_eval_job_request(params: EvalJobParams) -> None:
             judge=params.judge,
         )
         runner.validate_multi_turn_drive_readiness()
-        runner.validate_world_readiness()
+        runner.validate_environment_readiness()
     except json.JSONDecodeError:
         # A ValueError too, but a torn read of a file, not a bad request.
         raise
@@ -292,17 +292,17 @@ def connect_jobs_api(app: FastAPI) -> None:
         someone resumes it, so check `status` and call
         `POST /api/jobs/{id}/resume` if the job must run. Poll
         `GET /api/jobs/{id}` or `POST /api/jobs/wait` for progress and the
-        result. An item with a `world_reset` runs in a fresh episode of its world
-        when the run config lists that world's tools. A 404 means that the eval,
+        result. An item with an `env_reset` runs in a fresh episode of its environment
+        when the run config lists that environment's tools. A 404 means that the eval,
         the eval config or the run config does not exist. A 422 means that the
         eval has no such split, or that `item_ids` names an item outside it. A 400
         means that the job cannot run as requested: a V1 judge on items it cannot
         score, multi-turn items that cannot be driven, or, with a V2 judge, items
-        that the run config's world tools cannot run, or a world that the project
-        does not have while the run config lists tools. World problems that need
-        the world's environment fail item by item, in `GET /api/jobs/{id}/errors`:
+        that the run config's environment tools cannot run, or an environment that the project
+        does not have while the run config lists tools. Problems that need
+        the running server fail item by item, in `GET /api/jobs/{id}/errors`:
         an environment that cannot be reached or refuses a reset, and a run config
-        that lists the project's own version of a tool that the world serves. A
+        that lists the project's own version of a tool that the environment serves. A
         503 means that a project file was not readable, for example while another
         job wrote it. Send the request again.
 

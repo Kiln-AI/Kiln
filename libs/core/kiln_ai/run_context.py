@@ -11,8 +11,8 @@ import uuid
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 
-from kiln_ai.datamodel.world import OpenEnvTool, World, WorldEpisode
-from kiln_ai.worlds.session_manager import WorldSessionManager
+from kiln_ai.datamodel.environment import Environment, EnvironmentEpisode, OpenEnvTool
+from kiln_ai.environments.session_manager import EnvironmentSessionManager
 
 _agent_run_id: ContextVar[str | None] = ContextVar("agent_run_id", default=None)
 
@@ -36,14 +36,14 @@ def generate_agent_run_id() -> str:
 @dataclass(frozen=True)
 class EpisodeContext:
     """The episode an eval job is generating against, plus what the tool registry
-    needs to resolve the world's tool ids: the world, the session manager that holds the
+    needs to resolve the environment's tool ids: the environment, the session manager that holds the
     live session, and the tools the environment serves (by function name), resolved once
-    per world per eval run.
+    per environment per eval run.
     """
 
-    episode: "WorldEpisode"
-    world: "World"
-    session_manager: "WorldSessionManager"
+    episode: "EnvironmentEpisode"
+    environment: "Environment"
+    session_manager: "EnvironmentSessionManager"
     tools: dict[str, "OpenEnvTool"] = field(default_factory=dict)
 
 
@@ -51,13 +51,13 @@ class EpisodeContext:
 # `finally`. The reset is correctness, not hygiene: `AsyncJobRunner` reuses long-lived
 # worker tasks, and consecutive jobs on one worker share a context. Request handlers and
 # other tasks copy the *server's* context at creation, so they never observe a job's
-# value; that is why world tool ids can never resolve in API, chat, or export code
+# value; that is why environment tool ids can never resolve in API, chat, or export code
 # paths. Graders read the episode from the trace, not from here.
 _episode: ContextVar["EpisodeContext | None"] = ContextVar("episode", default=None)
 
 
 def get_episode() -> "EpisodeContext | None":
-    """The episode the current task is running against, or None outside a world."""
+    """The episode the current task is running against, or None outside an environment."""
     return _episode.get()
 
 

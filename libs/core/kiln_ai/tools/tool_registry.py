@@ -1,23 +1,23 @@
+from kiln_ai.datamodel.environment import Environment
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import (
     CODE_TOOL_ID_PREFIX,
+    ENV_TOOL_ID_PREFIX,
     KILN_TASK_TOOL_ID_PREFIX,
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
     MEMORY_TOOL_ID_PREFIX,
     RAG_TOOL_ID_PREFIX,
     SKILL_TOOL_ID_PREFIX,
-    WORLD_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     code_tool_id_from_tool_id,
+    env_and_tool_name_from_id,
     kiln_task_server_id_from_tool_id,
     mcp_server_and_tool_name_from_id,
     rag_config_id_from_id,
-    world_and_tool_name_from_id,
 )
-from kiln_ai.datamodel.world import World
 from kiln_ai.run_context import EpisodeContext, get_episode
 from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallDefinition
 from kiln_ai.tools.built_in_tools.kiln_api_call_tool import KilnApiCallTool
@@ -43,35 +43,35 @@ def tool_from_id_and_project(
     This is the core resolution function. ``tool_from_id`` is a thin
     wrapper that derives the project from the task.
 
-    A world tool id (`kiln_tool::world::<world_id>::<tool_name>`)
-    resolves to the tool the world's environment serves, and only while an episode of
-    that world is active (set by the eval runner for one job). Project tool ids resolve
+    An environment tool id (`kiln_tool::env::<environment_id>::<tool_name>`)
+    resolves to the tool the environment serves, and only while an episode of
+    that environment is active (set by the eval runner for one job). Project tool ids resolve
     to the project tool whether or not an episode is active: a run config chooses the
     environment's tools by listing their ids, never by substitution.
     """
-    if tool_id.startswith(WORLD_TOOL_ID_PREFIX):
-        return _world_tool(tool_id, get_episode())
+    if tool_id.startswith(ENV_TOOL_ID_PREFIX):
+        return _env_tool(tool_id, get_episode())
     return _resolve_project_tool(tool_id, project, task)
 
 
-def _world_tool(tool_id: str, episode_ctx: EpisodeContext | None) -> KilnToolInterface:
-    """The tool a world's environment serves under *tool_name*. Only meaningful while
-    an episode of that world is active."""
-    world_id, tool_name = world_and_tool_name_from_id(tool_id)
-    if episode_ctx is None or episode_ctx.world.id != world_id:
+def _env_tool(tool_id: str, episode_ctx: EpisodeContext | None) -> KilnToolInterface:
+    """The tool an environment serves under *tool_name*. Only meaningful while
+    an episode of that environment is active."""
+    environment_id, tool_name = env_and_tool_name_from_id(tool_id)
+    if episode_ctx is None or episode_ctx.environment.id != environment_id:
         raise ValueError(
-            f"World tool {tool_id} can only be used while an episode of "
-            f"world {world_id} is active: run it from an eval whose inputs carry a "
-            "world_reset naming that world."
+            f"Environment tool {tool_id} can only be used while an episode of "
+            f"environment {environment_id} is active: run it from an eval whose inputs carry an "
+            "env_reset naming that environment."
         )
     env_tool = episode_ctx.tools.get(tool_name)
     if env_tool is None:
         raise ValueError(
-            f"World '{episode_ctx.world.name}' does not serve a tool "
+            f"Environment '{episode_ctx.environment.name}' does not serve a tool "
             f"named '{tool_name}' (for {tool_id}); it serves "
             f"{sorted(episode_ctx.tools)}"
         )
-    from kiln_ai.tools.world_tool import OpenEnvToolProxy
+    from kiln_ai.tools.env_tool import OpenEnvToolProxy
 
     return OpenEnvToolProxy(tool_id, env_tool, episode_ctx)
 
@@ -249,15 +249,15 @@ async def validate_unique_allowlist_tool_names(
     call-time ambiguity error remains the backstop — for those, and because
     tools can be renamed after the allowlist is saved.
 
-    World tools resolve only inside an episode of their world, so they are not
-    resolved here: their name is the last segment of their id, and their world
-    must exist in *project*. Whether the world serves the tool is checked at
+    Environment tools resolve only inside an episode of their environment, so they are not
+    resolved here: their name is the last segment of their id, and their environment
+    must exist in *project*. Whether the environment serves the tool is checked at
     runtime, inside the episode.
     """
     carriers: dict[str, list[str]] = {}
     for tool_id in tool_allowlist:
-        if tool_id.startswith(WORLD_TOOL_ID_PREFIX):
-            name = world_and_tool_name_from_id(tool_id)[1]
+        if tool_id.startswith(ENV_TOOL_ID_PREFIX):
+            name = env_and_tool_name_from_id(tool_id)[1]
         else:
             name = await tool_from_id_and_project(
                 tool_id, project=project, task=task
@@ -275,18 +275,20 @@ async def validate_unique_allowlist_tool_names(
             "code, so each tool in the allowlist must have a unique name."
         )
 
-    world_ids = {
-        world_and_tool_name_from_id(t)[0]
+    environment_ids = {
+        env_and_tool_name_from_id(t)[0]
         for t in tool_allowlist
-        if t.startswith(WORLD_TOOL_ID_PREFIX)
+        if t.startswith(ENV_TOOL_ID_PREFIX)
     }
-    if world_ids:
-        found = World.from_ids_and_parent_path(world_ids, project.path, readonly=True)
-        missing = sorted(world_ids - set(found))
+    if environment_ids:
+        found = Environment.from_ids_and_parent_path(
+            environment_ids, project.path, readonly=True
+        )
+        missing = sorted(environment_ids - set(found))
         if missing:
             raise ValueError(
-                f"World(s) {', '.join(missing)} referenced by world tools in the "
-                f"tool_allowlist not found in project {project.id}. Create the world "
+                f"Environment(s) {', '.join(missing)} referenced by environment tools in the "
+                f"tool_allowlist not found in project {project.id}. Create the environment "
                 "first, or remove its tools from the tool_allowlist."
             )
 
@@ -317,7 +319,7 @@ def is_mcp_tool_id(tool_id: str) -> bool:
 def project_tool_function_name(tool_id: str, project: Project | None) -> str | None:
     """The function name a project tool presents to the model, read without contacting
     anything: MCP names ride in the id, the rest are on disk. None for ids that are not
-    project tools (built-ins, skills, unmanaged, world) or that cannot be found."""
+    project tools (built-ins, skills, unmanaged, environment) or that cannot be found."""
     if project is None:
         return None
     try:

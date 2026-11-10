@@ -155,13 +155,13 @@ class EvalJobParams(BaseModel):
     judge: bool = Field(
         default=True,
         description="Whether to judge the items. False drives each item exactly as a "
-        "judged job does (a fresh episode for an item with a world_reset, the synthetic "
+        "judged job does (a fresh episode for an item with an env_reset, the synthetic "
         "user for a multi-turn item) and saves its trace as a task run with its usage, "
         "but runs no judge and stores no score. Every item is driven again, scored or "
         "not, so the usage is of this job. `result.driven_runs` names the task runs. A "
         "later judged job on the same items and run config reuses these traces instead "
-        "of driving again. For an item in a world, only while the item's world_reset "
-        "and the world's version are unchanged: a trace is reused only for the reset "
+        "of driving again. For an item in an environment, only while the item's env_reset "
+        "and the environment's version are unchanged: a trace is reused only for the reset "
         "and version it ran with. Needs a V2 eval config. A drive-only job is never "
         "deduplicated and cannot be paused: each one is a new measurement.",
     )

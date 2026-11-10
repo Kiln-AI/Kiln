@@ -25,8 +25,8 @@ from kiln_ai.adapters.eval.trace_index import (
     TraceIndex,
     TraceIndexRegistry,
     TraceKey,
+    env_trace_tag,
     trace_key,
-    world_trace_tag,
 )
 from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
@@ -42,6 +42,11 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.dataset_filters import (
     DatasetFilterId,
     dataset_filter_from_id,
+)
+from kiln_ai.datamodel.environment import (
+    Environment,
+    EnvironmentReset,
+    OpenEnvTool,
 )
 from kiln_ai.datamodel.eval import (
     Eval,
@@ -71,14 +76,16 @@ from kiln_ai.datamodel.run_config import (
 from kiln_ai.datamodel.task import Task, TaskRunConfig
 from kiln_ai.datamodel.task_run import EvalItemSource, TaskRun, Usage
 from kiln_ai.datamodel.tool_id import (
-    WORLD_TOOL_ID_PREFIX,
-    world_and_tool_name_from_id,
+    ENV_TOOL_ID_PREFIX,
+    build_env_tool_id,
+    env_and_tool_name_from_id,
 )
 from kiln_ai.datamodel.usage import MessageUsage
-from kiln_ai.datamodel.world import (
-    OpenEnvTool,
-    World,
-    WorldReset,
+from kiln_ai.environments.session_manager import (
+    EnvironmentSessionManager,
+    OpenEnvError,
+    OpenEnvTransientError,
+    shared_session_manager,
 )
 from kiln_ai.run_context import (
     EpisodeContext,
@@ -103,12 +110,6 @@ from kiln_ai.utils.lock import AsyncLockManager
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam, serialize_trace
 from kiln_ai.utils.slow_operation import log_if_slow
 from kiln_ai.utils.torn_read import to_thread_retrying_torn_read
-from kiln_ai.worlds.session_manager import (
-    OpenEnvError,
-    OpenEnvTransientError,
-    WorldSessionManager,
-    shared_session_manager,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,7 @@ DEFAULT_EVAL_CONCURRENCY = 25
 """How many eval items `EvalRunner.run()` evaluates in parallel when the caller passes no `concurrency`."""
 
 _MAX_LISTED_ITEMS = 10
-"""How many item ids one problem of `validate_world_readiness` names before it counts the rest."""
+"""How many item ids one problem of `validate_environment_readiness` names before it counts the rest."""
 
 
 @dataclass
@@ -237,22 +238,22 @@ def _splits_a_turn_into_two_messages(
 
 
 @dataclass(frozen=True)
-class _WorldTarget:
-    """A resolved world: what a job needs to launch episodes and to key its traces.
-    Resolved once per world per eval run, so every job in the run keys its traces by
+class _EnvTarget:
+    """A resolved environment: what a job needs to launch episodes and to key its traces.
+    Resolved once per environment per eval run, so every job in the run keys its traces by
     the same environment version."""
 
-    world: World
-    session_manager: WorldSessionManager
+    environment: Environment
+    session_manager: EnvironmentSessionManager
     tools: dict[str, OpenEnvTool]
-    world_version: str
+    env_version: str
 
 
 @dataclass(frozen=True)
 class _Generation:
     """How a job produces its trace: the key it files under, and the call that makes
     it. `generate` returns the run stamped but unsaved, so the caller saves it exactly
-    once, after anything else the trace must record (a world's ended episode). Built
+    once, after anything else the trace must record (an environment's ended episode). Built
     per lane, run through the trace index by the caller."""
 
     key: TraceKey
@@ -276,11 +277,11 @@ class _Skip:
     detail: str
 
 
-def _world_reset_of(job: EvalJob) -> WorldReset | None:
-    """The world reset a job's item declares, if it is an EvalInput with one."""
+def _env_reset_of(job: EvalJob) -> EnvironmentReset | None:
+    """The environment reset a job's item declares, if it is an EvalInput with one."""
     item = getattr(job, "item", None)
     if isinstance(item, EvalInput):
-        return item.world_reset
+        return item.env_reset
     return None
 
 
@@ -289,95 +290,97 @@ def _run_config_tool_ids(run_config: TaskRunConfig) -> list[str]:
     return list(tools_config.tools) if tools_config is not None else []
 
 
-_WorldToolMismatch = Literal["no_world_reset", "stored_task_run", "other_world"]
-"""Why a run config's world tools cannot run an item (see `_world_tool_mismatch`)."""
+_EnvToolMismatch = Literal["no_env_reset", "stored_task_run", "other_env"]
+"""Why a run config's environment tools cannot run an item (see `_env_tool_mismatch`)."""
 
 
-def _world_tool_ids(run_config: TaskRunConfig) -> list[str]:
+def _env_tool_ids(run_config: TaskRunConfig) -> list[str]:
     return [
-        t
-        for t in _run_config_tool_ids(run_config)
-        if t.startswith(WORLD_TOOL_ID_PREFIX)
+        t for t in _run_config_tool_ids(run_config) if t.startswith(ENV_TOOL_ID_PREFIX)
     ]
 
 
-def _world_tool_mismatch(
+def _env_tool_mismatch(
     run_config: TaskRunConfig,
     item: EvalInput | TaskRun,
-    world_reset: WorldReset | None,
-) -> _WorldToolMismatch | None:
-    """Why the run config's world tools cannot run this item, or None when they can or
-    the run config lists no world tools. The one rule behind the per-job refusal
-    (`_uses_world`) and the request-time check (`validate_world_readiness`)."""
-    world_tool_ids = _world_tool_ids(run_config)
-    if not world_tool_ids:
+    env_reset: EnvironmentReset | None,
+) -> _EnvToolMismatch | None:
+    """Why the run config's environment tools cannot run this item, or None when they can or
+    the run config lists no environment tools. The one rule behind the per-job refusal
+    (`_uses_environment`) and the request-time check (`validate_environment_readiness`)."""
+    env_tool_ids = _env_tool_ids(run_config)
+    if not env_tool_ids:
         return None
-    if world_reset is None:
-        # A stored TaskRun never carries a world_reset; only an EvalInput can.
-        return "stored_task_run" if isinstance(item, TaskRun) else "no_world_reset"
-    worlds = {world_and_tool_name_from_id(t)[0] for t in world_tool_ids}
-    if worlds != {world_reset.world_id}:
-        return "other_world"
+    if env_reset is None:
+        # A stored TaskRun never carries an env_reset; only an EvalInput can.
+        return "stored_task_run" if isinstance(item, TaskRun) else "no_env_reset"
+    environments = {env_and_tool_name_from_id(t)[0] for t in env_tool_ids}
+    if environments != {env_reset.environment_id}:
+        return "other_env"
     return None
 
 
-def _uses_world(
+def _uses_environment(
     run_config: TaskRunConfig,
     item: EvalInput | TaskRun,
-    world_reset: WorldReset | None,
+    env_reset: EnvironmentReset | None,
 ) -> bool:
-    """Whether this job runs in the input's world: only when the run config
-    lists that world's tools. A run config with no world tools runs the input
-    against project tools and never launches an episode, world or not. World
-    tools without a world_reset, or from a different world, are an error rather than
-    a silent run against the wrong tools. (Real versions of the world's own tools are
-    refused separately, once the world's tools are known.)"""
-    world_tool_ids = _world_tool_ids(run_config)
-    mismatch = _world_tool_mismatch(run_config, item, world_reset)
-    if mismatch == "no_world_reset":
+    """Whether this job runs in the input's environment: only when the run config
+    lists that environment's tools. A run config with no environment tools runs the input
+    against project tools and never launches an episode, environment or not. Environment
+    tools without an env_reset, or from a different environment, are an error rather than
+    a silent run against the wrong tools. (Real versions of the environment's own tools are
+    refused separately, once the environment's tools are known.)"""
+    env_tool_ids = _env_tool_ids(run_config)
+    mismatch = _env_tool_mismatch(run_config, item, env_reset)
+    if mismatch == "no_env_reset":
         raise ValueError(
-            f"Run config '{run_config.name}' lists world tools "
-            f"({', '.join(world_tool_ids)}) but eval input {item.id} has no "
-            "world_reset. Use a run config with project tools for this "
-            "input, or give the input a world_reset."
+            f"Run config '{run_config.name}' lists environment tools "
+            f"({', '.join(env_tool_ids)}) but eval input {item.id} has no "
+            "env_reset. Use a run config with project tools for this "
+            "input, or give the input an env_reset."
         )
     if mismatch == "stored_task_run":
         raise ValueError(
-            f"Run config '{run_config.name}' lists world tools "
-            f"({', '.join(world_tool_ids)}) but task run {item.id} is a stored task "
-            "run, which can't run in a world. Use a run config without world tools."
+            f"Run config '{run_config.name}' lists environment tools "
+            f"({', '.join(env_tool_ids)}) but task run {item.id} is a stored task "
+            "run, which can't run in an environment. Use a run config without environment tools."
         )
-    if mismatch == "other_world":
-        assert world_reset is not None
-        worlds = {world_and_tool_name_from_id(t)[0] for t in world_tool_ids}
+    if mismatch == "other_env":
+        assert env_reset is not None
+        environments = {env_and_tool_name_from_id(t)[0] for t in env_tool_ids}
         raise ValueError(
-            f"eval input {item.id} runs in world {world_reset.world_id}, but run "
-            f"config '{run_config.name}' lists tools from world(s) "
-            f"{sorted(worlds - {world_reset.world_id})}. A job runs in one world."
+            f"eval input {item.id} runs in environment {env_reset.environment_id}, but run "
+            f"config '{run_config.name}' lists tools from environment(s) "
+            f"{sorted(environments - {env_reset.environment_id})}. A job runs in one environment."
         )
-    return bool(world_tool_ids)
+    return bool(env_tool_ids)
 
 
-def _resolves_world(
-    run_config: TaskRunConfig, world_reset: WorldReset | None, uses_world: bool
+def _resolves_environment(
+    run_config: TaskRunConfig,
+    env_reset: EnvironmentReset | None,
+    uses_environment: bool,
 ) -> bool:
-    """Whether a job loads its item's world and lists the environment's tools: when it
-    runs in the world, and also when the run config lists project tools, to refuse the
-    project's own version of a tool the world serves. A run config with no tools never
-    needs the world."""
-    if world_reset is None:
+    """Whether a job loads its item's environment and lists the environment's tools: when it
+    runs in the environment, and also when the run config lists project tools, to refuse the
+    project's own version of a tool the environment serves. A run config with no tools never
+    needs the environment."""
+    if env_reset is None:
         return False
-    return uses_world or any(
-        not tool_id.startswith(WORLD_TOOL_ID_PREFIX)
+    return uses_environment or any(
+        not tool_id.startswith(ENV_TOOL_ID_PREFIX)
         for tool_id in _run_config_tool_ids(run_config)
     )
 
 
-def _world_not_found_message(world_id: str, project_id: ID_TYPE) -> str:
-    return f"World {world_id} not found in project {project_id}"
+def _env_not_found_message(environment_id: str, project_id: ID_TYPE) -> str:
+    return f"Environment {environment_id} not found in project {project_id}"
 
 
-_NO_PROJECT_FOR_WORLD_MESSAGE = "World resets require the task to belong to a project"
+_NO_PROJECT_FOR_ENVIRONMENT_MESSAGE = (
+    "Environment resets require the task to belong to a project"
+)
 
 
 def _listed_ids(ids: list[str]) -> str:
@@ -388,8 +391,8 @@ def _listed_ids(ids: list[str]) -> str:
 
 def _multi_turn_skip(data: MultiTurnSyntheticEvalInputData) -> _Skip | None:
     """Why a multi-turn synthetic input can't be driven, or None when it can. Checked
-    before anything is resolved or launched: a skipped item never needs its world's
-    environment, and never pays for a drive."""
+    before anything is resolved or launched: a skipped item never needs its environment's
+    server, and never pays for a drive."""
     if data.drive_config is None:
         return _Skip(
             SkippedReason.missing_drive_config,
@@ -404,12 +407,12 @@ def _multi_turn_skip(data: MultiTurnSyntheticEvalInputData) -> _Skip | None:
     return None
 
 
-def _skip_before_world_lane(
+def _skip_before_environment_lane(
     item: EvalInput | TaskRun, job_type: Literal["task_run_eval", "eval_config_eval"]
 ) -> _Skip | None:
-    """Why a V2 job is skipped before its world is resolved, or None. The one rule
-    behind `_run_v2_job` and `validate_world_readiness`: a skipped item never needs
-    its world's environment."""
+    """Why a V2 job is skipped before its environment is resolved, or None. The one rule
+    behind `_run_v2_job` and `validate_environment_readiness`: a skipped item never needs
+    its environment's server."""
     if job_type != "task_run_eval":
         return None
     if isinstance(item, EvalInput) and isinstance(
@@ -427,13 +430,13 @@ def _skip_before_world_lane(
 def _check_project_versions_of_served_tools(
     run_config: TaskRunConfig,
     item: EvalInput | TaskRun,
-    world: World,
+    environment: Environment,
     served: Iterable[str],
     project: Project | None,
 ) -> None:
-    """An input with a world may not meet the project's own version of any tool its
-    world serves: a run config listing one is refused before anything runs. Project
-    tools the world does not serve are fine. Names are compared offline.
+    """An input with an environment may not meet the project's own version of any tool its
+    environment serves: a run config listing one is refused before anything runs. Project
+    tools the environment does not serve are fine. Names are compared offline.
 
     Only the tools the run config lists directly are checked. Tools reached through
     another tool (a Kiln task tool's run config, a code tool's allowlist) and the tools
@@ -442,17 +445,17 @@ def _check_project_versions_of_served_tools(
     clashes = [
         f"{tool_id} ({name})"
         for tool_id in _run_config_tool_ids(run_config)
-        if not tool_id.startswith(WORLD_TOOL_ID_PREFIX)
+        if not tool_id.startswith(ENV_TOOL_ID_PREFIX)
         for name in [project_tool_function_name(tool_id, project)]
         if name is not None and name in served_names
     ]
     if clashes:
         raise ValueError(
-            f"eval input {item.id} runs in world '{world.name}', but "
+            f"eval input {item.id} runs in environment '{environment.name}', but "
             f"run config '{run_config.name}' lists the project's own version of tools the "
-            f"world serves: {', '.join(clashes)}. List the world's tools "
-            f"(kiln_tool::world::{world.id}::<tool_name>) instead, or use an "
-            "input without a world_reset to run against the project tools."
+            f"environment serves: {', '.join(clashes)}. List the environment's tools "
+            f"({build_env_tool_id(environment.id, '<tool_name>')}) instead, or use an "
+            "input without an env_reset to run against the project tools."
         )
 
 
@@ -505,7 +508,7 @@ class EvalRunner:
        chains are skipped.
 
     A task_run_eval runner made with `judge=False` drives without judging: each selected
-    item gets a fresh generation (a world episode and a synthetic user where the item
+    item gets a fresh generation (an environment episode and a synthetic user where the item
     has them), saved as a trace exactly as a judged run saves it, and nothing is scored.
     See `driven_runs`.
     """
@@ -518,7 +521,7 @@ class EvalRunner:
         split: ResolvedSplit | None = None,
         save_context: SaveContext | None = None,
         item_ids: Set[ID_TYPE] | None = None,
-        world_session_manager: WorldSessionManager | None = None,
+        env_session_manager: EnvironmentSessionManager | None = None,
         judge: bool = True,
         trace_index_registry: TraceIndexRegistry | None = None,
     ):
@@ -528,8 +531,8 @@ class EvalRunner:
         `judge=False` drives each selected item once per run config and judges nothing
         (task_run_eval mode only). Every item is driven again, scored or not, and the
         new trace replaces the item's earlier one in the trace index, so a later judged
-        run reuses it instead of driving again (for an item in a world, while its reset
-        and the world's version are unchanged, as for any trace). The drive uses the eval config only to
+        run reuses it instead of driving again (for an item in an environment, while its reset
+        and the environment's version are unchanged, as for any trace). The drive uses the eval config only to
         reach its generation path, so it takes exactly one, and a judge with a V2
         adapter: the legacy path generates and judges in one call.
 
@@ -617,11 +620,11 @@ class EvalRunner:
         self._trace_index_lock = threading.Lock()
         # A session manager passed in replaces the process-wide OpenEnv session manager
         # (tests pass their own).
-        self._world_session_manager_override = world_session_manager
-        # One resolution per world per run: the first job re-reads the environment's
+        self._env_session_manager_override = env_session_manager
+        # One resolution per environment per run: the first job re-reads the environment's
         # metadata, and every later job keys its traces by that same version.
-        self._world_targets: dict[str, _WorldTarget | Exception] = {}
-        self._world_target_locks = AsyncLockManager()
+        self._env_targets: dict[str, _EnvTarget | Exception] = {}
+        self._env_target_locks = AsyncLockManager()
 
     async def _trace_index(self) -> TraceIndex:
         index = self._trace_index_instance
@@ -837,22 +840,22 @@ class EvalRunner:
                 + "."
             )
 
-    def validate_world_readiness(self) -> None:
-        """Fail fast on the world problems that every affected job would hit: a run
-        config whose world tools cannot run an item (the item has no world_reset, is a
-        stored TaskRun, or runs in another world), and a world_reset that names a world
+    def validate_environment_readiness(self) -> None:
+        """Fail fast on the environment problems that every affected job would hit: a run
+        config whose environment tools cannot run an item (the item has no env_reset, is a
+        stored TaskRun, or runs in another environment), and an env_reset that names an environment
         the project does not have. Callers can invoke this before starting a batch, so
         the user gets one clear error instead of one failed item per job. The per-job
         checks stay as the backstop for standalone runner use.
 
-        It shares its rules with `_run_v2_job` (`_skip_before_world_lane`,
-        `_world_tool_mismatch`, `_resolves_world`), and it applies them only where the
+        It shares its rules with `_run_v2_job` (`_skip_before_environment_lane`,
+        `_env_tool_mismatch`, `_resolves_environment`), and it applies them only where the
         runner does: V2 judges that have an adapter. A legacy judge never reaches the
-        world lane.
+        environment lane.
 
-        It needs no environment, so it does not check the world problems that do: an
+        It needs no running server, so it does not check the problems that do: an
         environment that cannot be reached or refuses a reset, and a run config that
-        lists the project's own version of a tool the world serves. Those stay per job.
+        lists the project's own version of a tool the environment serves. Those stay per job.
 
         Like `validate_multi_turn_drive_readiness`, it checks every item the runner
         selects, scored or not, so it reads no EvalRun.
@@ -868,66 +871,71 @@ class EvalRunner:
             return
 
         run_configs = self.run_configs or []
-        mismatched: dict[tuple[int, _WorldToolMismatch], list[str]] = {}
-        # An ordered set per world: several run configs can name one item.
-        items_by_world: dict[str, dict[str, None]] = {}
+        mismatched: dict[tuple[int, _EnvToolMismatch], list[str]] = {}
+        # An ordered set per environment: several run configs can name one item.
+        items_by_environment: dict[str, dict[str, None]] = {}
         for item in self.split.items:
             if self.item_ids is not None and item.id not in self.item_ids:
                 continue
-            if _skip_before_world_lane(item, "task_run_eval") is not None:
+            if _skip_before_environment_lane(item, "task_run_eval") is not None:
                 continue
-            world_reset = item.world_reset if isinstance(item, EvalInput) else None
+            env_reset = item.env_reset if isinstance(item, EvalInput) else None
             for index, run_config in enumerate(run_configs):
-                mismatch = _world_tool_mismatch(run_config, item, world_reset)
+                mismatch = _env_tool_mismatch(run_config, item, env_reset)
                 if mismatch is not None:
                     mismatched.setdefault((index, mismatch), []).append(str(item.id))
                     continue
-                uses_world = bool(_world_tool_ids(run_config))
-                if _resolves_world(run_config, world_reset, uses_world):
-                    assert world_reset is not None
-                    items_by_world.setdefault(world_reset.world_id, {})[
+                uses_environment = bool(_env_tool_ids(run_config))
+                if _resolves_environment(run_config, env_reset, uses_environment):
+                    assert env_reset is not None
+                    items_by_environment.setdefault(env_reset.environment_id, {})[
                         str(item.id)
                     ] = None
 
         problems: list[str] = []
-        if items_by_world:
+        if items_by_environment:
             project = self.task.parent_project()
             if project is None:
-                problems.append(_NO_PROJECT_FOR_WORLD_MESSAGE)
+                problems.append(_NO_PROJECT_FOR_ENVIRONMENT_MESSAGE)
             else:
-                for world_id, ids in sorted(items_by_world.items()):
-                    if World.from_id_and_parent_path(world_id, project.path) is None:
+                for environment_id, ids in sorted(items_by_environment.items()):
+                    if (
+                        Environment.from_id_and_parent_path(
+                            environment_id, project.path
+                        )
+                        is None
+                    ):
                         problems.append(
-                            f"{_world_not_found_message(world_id, project.id)}, and "
+                            f"{_env_not_found_message(environment_id, project.id)}, and "
                             f"these items run in it: {_listed_ids(list(ids))}"
                         )
         for (index, mismatch), ids in mismatched.items():
             run_config = run_configs[index]
-            tools = ", ".join(_world_tool_ids(run_config))
+            tools = ", ".join(_env_tool_ids(run_config))
             listed = _listed_ids(ids)
-            if mismatch == "no_world_reset":
+            if mismatch == "no_env_reset":
                 problems.append(
-                    f"Run config '{run_config.name}' lists world tools ({tools}), but "
-                    f"these eval inputs have no world_reset: {listed}. Use a run "
-                    "config with project tools for them, give them a world_reset, "
+                    f"Run config '{run_config.name}' lists environment tools ({tools}), but "
+                    f"these eval inputs have no env_reset: {listed}. Use a run "
+                    "config with project tools for them, give them an env_reset, "
                     "or leave them out with item_ids"
                 )
             elif mismatch == "stored_task_run":
                 problems.append(
-                    f"Run config '{run_config.name}' lists world tools ({tools}), but "
-                    "these items are stored task runs, which can't run in a world: "
-                    f"{listed}. Use a run config without world tools"
+                    f"Run config '{run_config.name}' lists environment tools ({tools}), but "
+                    "these items are stored task runs, which can't run in an environment: "
+                    f"{listed}. Use a run config without environment tools"
                 )
             else:
                 problems.append(
-                    f"Run config '{run_config.name}' lists world tools ({tools}), but "
-                    f"these eval inputs run in another world: {listed}. A job runs in "
-                    "one world: use a run config with that world's tools, or leave "
+                    f"Run config '{run_config.name}' lists environment tools ({tools}), but "
+                    f"these eval inputs run in another environment: {listed}. A job runs in "
+                    "one environment: use a run config with that environment's tools, or leave "
                     "them out with item_ids"
                 )
         if problems:
             raise ValueError(
-                "Cannot run this eval's items in their worlds. "
+                "Cannot run this eval's items in their environments. "
                 + " ".join(f"{problem}." for problem in problems)
             )
 
@@ -1096,48 +1104,48 @@ class EvalRunner:
         )
 
         # Every skip comes before generation, so a job that can never be scored never
-        # pays for one, and before the world lane, so it never needs the environment.
-        skip = _skip_before_world_lane(job.item, job.type)
+        # pays for one, and before the environment lane, so it never needs the environment.
+        skip = _skip_before_environment_lane(job.item, job.type)
         if skip is not None:
             return await self._persist_skip(job, skip.reason, skip.detail)
 
-        # World lane. After every skip (a skipped item must never need the environment
+        # Environment lane. After every skip (a skipped item must never need the environment
         # or create an episode) and before either generation lane, so single-turn and
         # multi-turn inputs share one lifecycle: the multi-turn drive runs with the
         # episode in context for every turn, and the leaf trace records it.
-        world_reset = _world_reset_of(job)
-        uses_world = job.task_run_config is not None and _uses_world(
-            job.task_run_config, job.item, world_reset
+        env_reset = _env_reset_of(job)
+        uses_environment = job.task_run_config is not None and _uses_environment(
+            job.task_run_config, job.item, env_reset
         )
-        if job.task_run_config is not None and _resolves_world(
-            job.task_run_config, world_reset, uses_world
+        if job.task_run_config is not None and _resolves_environment(
+            job.task_run_config, env_reset, uses_environment
         ):
-            assert world_reset is not None
-            # Checked whether or not the job uses the world: a project-tools run config is
-            # exactly what an input's world reset must keep it away from. A run config
+            assert env_reset is not None
+            # Checked whether or not the job uses the environment: a project-tools run config is
+            # exactly what an input's environment reset must keep it away from. A run config
             # with no tools at all has nothing to check, and never needs the environment.
-            target = await self._resolve_world_target(world_reset)
+            target = await self._resolve_env_target(env_reset)
             _check_project_versions_of_served_tools(
                 job.task_run_config,
                 job.item,
-                target.world,
+                target.environment,
                 target.tools,
                 self.task.parent_project(),
             )
-            if uses_world:
-                world = world_trace_tag(target.world_version, world_reset)
+            if uses_environment:
+                env_tag = env_trace_tag(target.env_version, env_reset)
                 if is_multi_turn_input:
                     assert isinstance(job.item, EvalInput)
                     assert isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
                     generation = self._multi_turn_generation(
-                        job, job.item, job.item.data, world=world
+                        job, job.item, job.item.data, env_tag=env_tag
                     )
                 else:
                     generation = self._single_turn_generation(
-                        job, evaluator, world=world
+                        job, evaluator, env_tag=env_tag
                     )
-                return await self._run_v2_job_in_world(
-                    job, evaluator, target, world_reset, generation
+                return await self._run_v2_job_in_environment(
+                    job, evaluator, target, env_reset, generation
                 )
 
         if is_multi_turn_input:
@@ -1194,12 +1202,12 @@ class EvalRunner:
         result = await evaluator.evaluate(eval_task_input)
         return await self._persist_judgment(job, trace, result)
 
-    async def _run_v2_job_in_world(
+    async def _run_v2_job_in_environment(
         self,
         job: EvalJob,
         evaluator: BaseV2EvalBridge,
-        target: _WorldTarget,
-        world_reset: WorldReset,
+        target: _EnvTarget,
+        env_reset: EnvironmentReset,
         generation: _Generation,
     ) -> bool:
         """One job against an episode, for either generation lane.
@@ -1220,12 +1228,12 @@ class EvalRunner:
 
         async def generate() -> TaskRun:
             episode = await target.session_manager.start_episode(
-                target.world, world_reset.reset_kwargs
+                target.environment, env_reset.reset_kwargs
             )
             token = set_episode(
                 EpisodeContext(
                     episode=episode,
-                    world=target.world,
+                    environment=target.environment,
                     session_manager=target.session_manager,
                     tools=target.tools,
                 )
@@ -1244,10 +1252,10 @@ class EvalRunner:
             ended = await target.session_manager.end_episode(episode)
             if ended.final_state is None:
                 raise OpenEnvError(
-                    f"Episode {episode.episode_id} in world '{target.world.name}' "
+                    f"Episode {episode.episode_id} in environment '{target.environment.name}' "
                     "ended without a final state, so its trace was not saved"
                 )
-            run.world_episode = ended
+            run.env_episode = ended
             return await self._save_trace(run)
 
         try:
@@ -1260,71 +1268,71 @@ class EvalRunner:
             raise
         return await self._judge_trace(job, evaluator, trace)
 
-    async def _resolve_world_target(self, world_reset: WorldReset) -> _WorldTarget:
-        """The world an input names, the tools its environment serves, and the trace
-        world_version — or an error: never a silent fallback. The reset kwargs are the
+    async def _resolve_env_target(self, env_reset: EnvironmentReset) -> _EnvTarget:
+        """The environment an input names, the tools its environment serves, and the trace
+        env_version — or an error: never a silent fallback. The reset kwargs are the
         environment's to validate, which it does at reset.
 
-        Resolved once per world per run, re-reading the environment's metadata the
+        Resolved once per environment per run, re-reading the environment's metadata the
         first time: an environment restarted at a new version on the same URL keys
         this run's traces by its new version, never reusing the old version's. A
         failure is remembered for the run too, so an environment that is down or hangs
         costs one wait, not one per job. A transient failure is not: it asks the job
         runner for another attempt, which must reach the environment again."""
-        world_id = world_reset.world_id
-        async with self._world_target_locks.acquire(world_id):
-            cached = self._world_targets.get(world_id)
+        environment_id = env_reset.environment_id
+        async with self._env_target_locks.acquire(environment_id):
+            cached = self._env_targets.get(environment_id)
             if isinstance(cached, BaseException):
                 raise cached
             if cached is not None:
                 return cached
             try:
-                target = await self._load_world_target(world_id)
+                target = await self._load_env_target(environment_id)
             except OpenEnvTransientError as e:
                 raise RetryableError(str(e)) from e
             except Exception as e:
-                self._world_targets[world_id] = e
+                self._env_targets[environment_id] = e
                 raise
-            self._world_targets[world_id] = target
+            self._env_targets[environment_id] = target
             return target
 
-    async def _load_world_target(self, world_id: str) -> _WorldTarget:
+    async def _load_env_target(self, environment_id: str) -> _EnvTarget:
         project = self.task.parent_project()
         if project is None:
-            raise ValueError(_NO_PROJECT_FOR_WORLD_MESSAGE)
-        world = World.from_id_and_parent_path(world_id, project.path)
-        if world is None:
-            raise ValueError(_world_not_found_message(world_id, project.id))
-        session_manager = (
-            self._world_session_manager_override or shared_session_manager()
-        )
-        await session_manager.refresh(world)
-        tools = {tool.name: tool for tool in await session_manager.list_tools(world)}
-        return _WorldTarget(
-            world=world,
+            raise ValueError(_NO_PROJECT_FOR_ENVIRONMENT_MESSAGE)
+        environment = Environment.from_id_and_parent_path(environment_id, project.path)
+        if environment is None:
+            raise ValueError(_env_not_found_message(environment_id, project.id))
+        session_manager = self._env_session_manager_override or shared_session_manager()
+        await session_manager.refresh(environment)
+        tools = {
+            tool.name: tool for tool in await session_manager.list_tools(environment)
+        }
+        return _EnvTarget(
+            environment=environment,
             session_manager=session_manager,
             tools=tools,
             # Lives on a server, not in the project, so the trace key carries it: a
             # bump must not reuse traces made against the old code.
-            world_version=await session_manager.world_version(world),
+            env_version=await session_manager.env_version(environment),
         )
 
     def _single_turn_generation(
         self,
         job: EvalJob,
         evaluator: BaseV2EvalBridge,
-        world: str | None = None,
+        env_tag: str | None = None,
     ) -> _Generation:
         if job.task_run_config is None:
             raise ValueError("A task_run_eval job requires a run config")
-        key = trace_key(item_key(job.item), job.task_run_config.id, world)
+        key = trace_key(item_key(job.item), job.task_run_config.id, env_tag)
         return _Generation(
             key=key,
             generate=lambda: self._generate_trace(job, evaluator, key),
         )
 
     async def _generate_and_save(self, generation: _Generation) -> TaskRun:
-        """Generate outside any world, and make the result durable before scoring."""
+        """Generate outside any environment, and make the result durable before scoring."""
         return await self._save_trace(await generation.generate())
 
     async def _save_trace(self, run: TaskRun) -> TaskRun:
@@ -1467,7 +1475,7 @@ class EvalRunner:
         job: EvalJob,
         eval_input: EvalInput,
         data: MultiTurnSyntheticEvalInputData,
-        world: str | None = None,
+        env_tag: str | None = None,
     ) -> _Generation:
         """The generation for a task_run_eval over a multi-turn synthetic input that
         `_multi_turn_skip` has already cleared.
@@ -1506,7 +1514,7 @@ class EvalRunner:
                 f"drive config: {drive_config.model_provider}"
             ) from e
 
-        key = trace_key(item_key(eval_input), job.task_run_config.id, world)
+        key = trace_key(item_key(eval_input), job.task_run_config.id, env_tag)
 
         async def drive() -> TaskRun:
             # No app-level timeout on the re-drive: it terminates

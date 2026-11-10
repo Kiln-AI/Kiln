@@ -20,6 +20,7 @@ from kiln_ai.datamodel import (
     TaskOutputRatingType,
     TaskRun,
 )
+from kiln_ai.datamodel.environment import Environment, EnvironmentReset
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
@@ -34,8 +35,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
-from kiln_ai.datamodel.tool_id import build_world_tool_id
-from kiln_ai.datamodel.world import World, WorldReset
+from kiln_ai.datamodel.tool_id import build_env_tool_id
 from pydantic import BaseModel
 
 from app.desktop.studio_server.jobs import api as jobs_api
@@ -1095,85 +1095,91 @@ async def test_run_eval_job_drive_only_with_a_v1_judge_400(
 
 
 @pytest.fixture
-def world_eval(split_eval):
+def environment_eval(split_eval):
     """An EvalInput-backed eval with a V2 judge, a run config that lists the tools of
-    a world in the project, and two items: one in that world, one with no world. The
-    world's environment is never reached: the check needs none."""
+    an environment in the project, and two items: one in that environment, one with no environment. The
+    server is never reached: the check needs none."""
     task = split_eval.parent_task()
     assert task is not None
     project = task.parent_project()
     assert project is not None
-    world = World(
+    environment = Environment(
         id="w_offline", name="Offline", env_url="http://127.0.0.1:1", parent=project
     )
-    world.save_to_file()
+    environment.save_to_file()
     eval = Eval(
-        id="e_world",
-        name="World Eval",
+        id="e_environment",
+        name="Environment Eval",
         description="test",
-        splits={"test": EvalInputSplit(filter_id="tag::world_items")},
+        splits={"test": EvalInputSplit(filter_id="tag::environment_items")},
         output_scores=split_eval.output_scores,
         parent=task,
     )
     eval.save_to_file()
     EvalConfig(
-        id="ec_world",
+        id="ec_environment",
         name="Exact Match",
         config_type=EvalConfigType.v2,
         properties=ExactMatchProperties(expected_value="x"),
         parent=eval,
     ).save_to_file()
     TaskRunConfig(
-        id="rc_world",
-        name="World Run Config",
+        id="rc_environment",
+        name="Environment Run Config",
         run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id="simple_prompt_builder",
             structured_output_mode=StructuredOutputMode.json_schema,
             tools_config=ToolsRunConfig(
-                tools=[build_world_tool_id(world.id, "append_note")]
+                tools=[build_env_tool_id(environment.id, "append_note")]
             ),
         ),
         parent=task,
     ).save_to_file()
-    for item_id, world_reset in [
-        ("ei_in_world", WorldReset(world_id=world.id, reset_kwargs={})),
-        ("ei_no_world", None),
+    for item_id, env_reset in [
+        (
+            "ei_in_environment",
+            EnvironmentReset(environment_id=environment.id, reset_kwargs={}),
+        ),
+        ("ei_no_environment", None),
     ]:
         EvalInput(
             id=item_id,
             data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
-            tags=["world_items"],
-            world_reset=world_reset,
+            tags=["environment_items"],
+            env_reset=env_reset,
             parent=task,
         ).save_to_file()
     return eval
 
 
-_WORLD_EVAL_PARAMS = _eval_params(
-    eval_id="e_world", eval_config_id="ec_world", run_config_id="rc_world"
+_ENVIRONMENT_EVAL_PARAMS = _eval_params(
+    eval_id="e_environment",
+    eval_config_id="ec_environment",
+    run_config_id="rc_environment",
 )
 
 
 @pytest.mark.asyncio
-async def test_run_eval_job_with_an_item_outside_its_world_400(
-    client, registry, stub_eval_worker, world_eval
+async def test_run_eval_job_with_an_item_outside_its_environment_400(
+    client, registry, stub_eval_worker, environment_eval
 ):
-    resp = await client.post(_EVAL_RUN_PATH, json=_WORLD_EVAL_PARAMS)
+    resp = await client.post(_EVAL_RUN_PATH, json=_ENVIRONMENT_EVAL_PARAMS)
 
     assert resp.status_code == 400, resp.text
-    assert "have no world_reset: ei_no_world" in resp.text
-    assert "ei_in_world" not in resp.text
+    assert "have no env_reset: ei_no_environment" in resp.text
+    assert "ei_in_environment" not in resp.text
     assert registry._jobs == {}
 
 
 @pytest.mark.asyncio
-async def test_run_eval_job_checks_only_the_requested_items_in_their_worlds(
-    client, registry, stub_eval_worker, world_eval
+async def test_run_eval_job_checks_only_the_requested_items_in_their_environments(
+    client, registry, stub_eval_worker, environment_eval
 ):
     resp = await client.post(
-        _EVAL_RUN_PATH, json={**_WORLD_EVAL_PARAMS, "item_ids": ["ei_in_world"]}
+        _EVAL_RUN_PATH,
+        json={**_ENVIRONMENT_EVAL_PARAMS, "item_ids": ["ei_in_environment"]},
     )
 
     assert resp.status_code == 201, resp.text
@@ -1613,13 +1619,13 @@ async def test_identical_eval_job_request_returns_a_paused_job_as_is(
 
 @pytest.mark.asyncio
 async def test_run_eval_job_drive_only_creates_an_unpausable_job(
-    client, registry, stub_eval_worker, world_eval
+    client, registry, stub_eval_worker, environment_eval
 ):
     params = _eval_params(
-        eval_id="e_world",
-        eval_config_id="ec_world",
-        run_config_id="rc_world",
-        item_ids=["ei_in_world"],
+        eval_id="e_environment",
+        eval_config_id="ec_environment",
+        run_config_id="rc_environment",
+        item_ids=["ei_in_environment"],
         judge=False,
     )
     first = await client.post(_EVAL_RUN_PATH, json=params)

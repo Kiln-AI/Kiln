@@ -40,14 +40,14 @@ from kiln_ai.datamodel.datamodel_enums import (
     TaskOutputRatingType,
 )
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, EvalInputFilterId
+from kiln_ai.datamodel.environment import (
+    EnvironmentEpisode,
+    EnvironmentReset,
+)
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance, provenance_field
 from kiln_ai.datamodel.task_run import Usage
 from kiln_ai.datamodel.tool_id import ToolId, validate_tool_allowlist
-from kiln_ai.datamodel.world import (
-    WorldEpisode,
-    WorldReset,
-)
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionMessageParam,
@@ -719,9 +719,9 @@ class EvalInput(KilnParentedModel):
         default_factory=list,
         description="Tags for filtering eval inputs.",
     )
-    world_reset: WorldReset | None = Field(
+    env_reset: EnvironmentReset | None = Field(
         default=None,
-        description="Reset this world with these keyword arguments before the run; the reset starts the episode the trace records. A run config that lists the world's tools runs the input in that episode; a run config listing the project's own version of a tool the world serves is refused. None runs against the project tools.",
+        description="Reset this environment with these keyword arguments before the run; the reset starts the episode the trace records. A run config that lists the environment's tools runs the input in that episode; a run config listing the project's own version of a tool the environment serves is refused. None runs against the project tools.",
     )
 
     @model_validator(mode="after")
@@ -766,9 +766,9 @@ class EvalTaskInput(BaseModel):
         default=None,
         description="The original task input text.",
     )
-    world_episode: WorldEpisode | None = Field(
+    env_episode: EnvironmentEpisode | None = Field(
         default=None,
-        description="The world episode the trace's world tools ran in, when the run used a world: the reset it started from, what the environment reported at reset, and the environment's final state. Judges reference it in their prompt template (e.g. {{ world_episode.final_state }}); code scorers receive it as the `world_episode` argument.",
+        description="The environment episode the trace's environment tools ran in, when the run used an environment: the reset it started from, what the environment reported at reset, and the environment's final state. Judges reference it in their prompt template (e.g. {{ env_episode.final_state }}); code scorers receive it as the `env_episode` argument.",
     )
 
     @classmethod
@@ -828,7 +828,7 @@ class EvalTaskInput(BaseModel):
             trace=trace_data,
             reference_data=reference_data,
             task_input=task_input,
-            world_episode=trace.world_episode,
+            env_episode=trace.env_episode,
         )
 
     @classmethod

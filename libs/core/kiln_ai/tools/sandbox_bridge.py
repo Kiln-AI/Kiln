@@ -29,9 +29,9 @@ from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import (
-    WORLD_TOOL_ID_PREFIX,
+    ENV_TOOL_ID_PREFIX,
     ToolId,
-    world_and_tool_name_from_id,
+    env_and_tool_name_from_id,
 )
 from kiln_ai.sandbox.spawn import start_process_with_light_main
 from kiln_ai.tools.base_tool import ToolCallContext
@@ -172,7 +172,7 @@ class NestedToolServer:
         self._context = context
         self._recorder = recorder
         self._name_map: dict[str, list[ToolId]] | None = None
-        # Why each allowlisted world tool that failed to resolve is unavailable, by
+        # Why each allowlisted environment tool that failed to resolve is unavailable, by
         # the name the code calls it (the last segment of its id).
         self._unavailable: dict[str, str] = {}
 
@@ -418,12 +418,10 @@ class NestedToolServer:
                     tool_id,
                     exc,
                 )
-                # A world tool resolves only inside an episode of its world, but its
+                # An environment tool resolves only inside an episode of its environment, but its
                 # name is known without one: say why when the code calls it.
-                if tool_id.startswith(WORLD_TOOL_ID_PREFIX):
-                    self._unavailable[world_and_tool_name_from_id(tool_id)[1]] = str(
-                        exc
-                    )
+                if tool_id.startswith(ENV_TOOL_ID_PREFIX):
+                    self._unavailable[env_and_tool_name_from_id(tool_id)[1]] = str(exc)
                 continue
             name_map.setdefault(fn_name, []).append(tool_id)
 

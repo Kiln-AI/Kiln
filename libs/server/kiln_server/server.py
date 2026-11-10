@@ -110,8 +110,8 @@ tags_metadata = [
         "description": "Create, test, and manage user-authored Python code tools.",
     },
     {
-        "name": "Worlds",
-        "description": "Manage worlds: pointers to running OpenEnv environments that play an agent's tool set, and the tools they serve.",
+        "name": "Environments",
+        "description": "Manage environments: pointers to running OpenEnv servers that play an agent's tool set, and the tools they serve.",
     },
     {
         "name": "Tools & MCP",

@@ -29,6 +29,7 @@ from kiln_ai.adapters.provider_tools import (
 from kiln_ai.adapters.user_model_entry import UserModelEntry
 from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
+from kiln_ai.datamodel.environment import Environment
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     McpRunConfigProperties,
@@ -36,8 +37,7 @@ from kiln_ai.datamodel.run_config import (
     ToolsRunConfig,
 )
 from kiln_ai.datamodel.skill import Skill
-from kiln_ai.datamodel.tool_id import build_world_tool_id
-from kiln_ai.datamodel.world import World
+from kiln_ai.datamodel.tool_id import build_env_tool_id
 from kiln_ai.tools.tool_registry import tool_from_id
 
 
@@ -1282,92 +1282,94 @@ class TestValidateRunConfigToolNames:
         with pytest.raises(ValueError, match="not found in the project: missing_id"):
             await validate_run_config_tool_names(task, rc)
 
-    def _make_world(self, project, name: str = "depot") -> World:
-        world = World(name=name, parent=project)
-        world.save_to_file()
-        return world
+    def _make_environment(self, project, name: str = "depot") -> Environment:
+        environment = Environment(name=name, parent=project)
+        environment.save_to_file()
+        return environment
 
-    async def test_accepts_world_tools_of_an_existing_world(
+    async def test_accepts_env_tools_of_an_existing_environment(
         self, project_task, _agent_config
     ):
-        """World tools resolve only inside an episode, so creation checks the world
+        """Environment tools resolve only inside an episode, so creation checks the environment
         exists without resolving them."""
         project, task = project_task
-        world = self._make_world(project)
+        environment = self._make_environment(project)
         code_tool = self._make_code_tool(project, "lookup")
         rc = _agent_config(
             tools_config=ToolsRunConfig(
                 tools=[
-                    build_world_tool_id(world.id, "graphql"),
-                    build_world_tool_id(world.id, "search"),
+                    build_env_tool_id(environment.id, "graphql"),
+                    build_env_tool_id(environment.id, "search"),
                     f"kiln_tool::code::{code_tool.id}",
                 ]
             )
         )
         await validate_run_config_tool_names(task, rc)
 
-    async def test_world_tool_still_refused_outside_an_episode(
+    async def test_env_tool_still_refused_outside_an_episode(
         self, project_task, _agent_config
     ):
-        """Validation accepts a world tool, and tool_from_id still refuses it
+        """Validation accepts an environment tool, and tool_from_id still refuses it
         outside an episode."""
         project, task = project_task
-        world = self._make_world(project)
-        tool_id = build_world_tool_id(world.id, "graphql")
+        environment = self._make_environment(project)
+        tool_id = build_env_tool_id(environment.id, "graphql")
         await validate_run_config_tool_names(
             task, _agent_config(tools_config=ToolsRunConfig(tools=[tool_id]))
         )
         with pytest.raises(ValueError, match="can only be used while an episode"):
             tool_from_id(tool_id, task)
 
-    async def test_rejects_world_tool_of_unknown_world(
+    async def test_rejects_env_tool_of_unknown_environment(
         self, project_task, _agent_config
     ):
         _, task = project_task
         rc = _agent_config(
             tools_config=ToolsRunConfig(
-                tools=[build_world_tool_id("no_such_world", "graphql")]
+                tools=[build_env_tool_id("no_such_environment", "graphql")]
             )
         )
-        with pytest.raises(ValueError, match=r"World\(s\) no_such_world .* not found"):
+        with pytest.raises(
+            ValueError, match=r"Environment\(s\) no_such_environment .* not found"
+        ):
             await validate_run_config_tool_names(task, rc)
 
-    async def test_rejects_world_tools_for_task_without_project(
+    async def test_rejects_env_tools_for_task_without_project(
         self, basic_task, _agent_config
     ):
         rc = _agent_config(
-            tools_config=ToolsRunConfig(tools=[build_world_tool_id("w1", "graphql")])
+            tools_config=ToolsRunConfig(tools=[build_env_tool_id("w1", "graphql")])
         )
         with pytest.raises(ValueError, match="require the task to belong to a project"):
             await validate_run_config_tool_names(basic_task, rc)
 
-    async def test_rejects_world_tools_from_two_worlds(
+    async def test_rejects_env_tools_from_two_environments(
         self, project_task, _agent_config
     ):
         project, task = project_task
-        world_a = self._make_world(project, "a")
-        world_b = self._make_world(project, "b")
+        environment_a = self._make_environment(project, "a")
+        environment_b = self._make_environment(project, "b")
         rc = _agent_config(
             tools_config=ToolsRunConfig(
                 tools=[
-                    build_world_tool_id(world_a.id, "graphql"),
-                    build_world_tool_id(world_b.id, "search"),
+                    build_env_tool_id(environment_a.id, "graphql"),
+                    build_env_tool_id(environment_b.id, "search"),
                 ]
             )
         )
-        with pytest.raises(ValueError, match="more than one world"):
+        with pytest.raises(ValueError, match="more than one environment"):
             await validate_run_config_tool_names(task, rc)
 
-    async def test_rejects_world_tool_colliding_with_project_tool(
+    async def test_rejects_env_tool_colliding_with_project_tool(
         self, project_task, _agent_config
     ):
         project, task = project_task
-        world = self._make_world(project)
+        environment = self._make_environment(project)
         code_tool = self._make_code_tool(project, "graphql")
         rc = _agent_config(
             tools_config=ToolsRunConfig(
                 tools=[
-                    build_world_tool_id(world.id, "graphql"),
+                    build_env_tool_id(environment.id, "graphql"),
                     f"kiln_tool::code::{code_tool.id}",
                 ]
             )
@@ -1375,18 +1377,18 @@ class TestValidateRunConfigToolNames:
         with pytest.raises(ValueError, match="share the same function name: graphql"):
             await validate_run_config_tool_names(task, rc)
 
-    async def test_rejects_world_tool_named_like_skill_loader(
+    async def test_rejects_env_tool_named_like_skill_loader(
         self, project_task, _agent_config
     ):
         project, task = project_task
-        world = self._make_world(project)
+        environment = self._make_environment(project)
         skill = Skill(name="my-skill", description="d", parent=project)
         skill.save_to_file()
         skill.save_skill_md("body")
         rc = _agent_config(
             tools_config=ToolsRunConfig(
                 tools=[
-                    build_world_tool_id(world.id, "skill"),
+                    build_env_tool_id(environment.id, "skill"),
                     f"kiln_tool::skill::{skill.id}",
                 ]
             )
@@ -1394,22 +1396,22 @@ class TestValidateRunConfigToolNames:
         with pytest.raises(ValueError, match="share the same function name: skill"):
             await validate_run_config_tool_names(task, rc)
 
-    async def test_world_tools_do_not_skip_project_tool_checks(
+    async def test_env_tools_do_not_skip_project_tool_checks(
         self, project_task, _agent_config
     ):
-        """A missing skill or tool is still refused when world tools are listed too."""
+        """A missing skill or tool is still refused when environment tools are listed too."""
         project, task = project_task
-        world = self._make_world(project)
-        world_tool = build_world_tool_id(world.id, "graphql")
+        environment = self._make_environment(project)
+        env_tool = build_env_tool_id(environment.id, "graphql")
         rc = _agent_config(
             tools_config=ToolsRunConfig(
-                tools=[world_tool, "kiln_tool::skill::missing_id"]
+                tools=[env_tool, "kiln_tool::skill::missing_id"]
             )
         )
         with pytest.raises(ValueError, match="not found in the project: missing_id"):
             await validate_run_config_tool_names(task, rc)
         rc = _agent_config(
-            tools_config=ToolsRunConfig(tools=[world_tool, "kiln_tool::code::missing"])
+            tools_config=ToolsRunConfig(tools=[env_tool, "kiln_tool::code::missing"])
         )
         with pytest.raises(ValueError, match="Code tool not found"):
             await validate_run_config_tool_names(task, rc)

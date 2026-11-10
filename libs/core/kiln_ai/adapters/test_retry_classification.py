@@ -23,7 +23,7 @@ from kiln_ai.adapters.retry_classification import (
 from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task_output import TaskOutput
-from kiln_ai.worlds.session_manager import (
+from kiln_ai.environments.session_manager import (
     OpenEnvError,
     OpenEnvRejectedError,
     OpenEnvTransientError,

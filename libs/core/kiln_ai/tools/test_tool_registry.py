@@ -3,6 +3,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from kiln_ai.datamodel.environment import Environment
 from kiln_ai.datamodel.external_tool_server import (
     ExternalToolServer,
     ToolServerType,
@@ -16,11 +17,10 @@ from kiln_ai.datamodel.tool_id import (
     RAG_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     _check_tool_id,
-    build_world_tool_id,
+    build_env_tool_id,
     kiln_task_server_id_from_tool_id,
     mcp_server_and_tool_name_from_id,
 )
-from kiln_ai.datamodel.world import World
 from kiln_ai.tools.built_in_tools.kiln_api_call_tool import KilnApiCallTool
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
@@ -998,52 +998,52 @@ class TestValidateUniqueAllowlistToolNames:
                 project,
             )
 
-    def _make_world(self, project, name="depot"):
-        world = World(name=name, parent=project)
-        world.save_to_file()
-        return world
+    def _make_environment(self, project, name="depot"):
+        environment = Environment(name=name, parent=project)
+        environment.save_to_file()
+        return environment
 
-    async def test_accepts_world_tools_of_an_existing_world(self, project):
-        """World tools resolve only inside an episode, so the allowlist check finds
-        their world in the project and does not resolve them."""
-        world = self._make_world(project)
+    async def test_accepts_env_tools_of_an_existing_environment(self, project):
+        """Environment tools resolve only inside an episode, so the allowlist check finds
+        their environment in the project and does not resolve them."""
+        environment = self._make_environment(project)
         helper = self._make_code_tool(project, "helper")
         await validate_unique_allowlist_tool_names(
             [
-                build_world_tool_id(world.id, "sql_query"),
-                build_world_tool_id(world.id, "search"),
+                build_env_tool_id(environment.id, "sql_query"),
+                build_env_tool_id(environment.id, "search"),
                 f"kiln_tool::code::{helper.id}",
             ],
             project,
         )
 
-    async def test_world_tool_still_refused_outside_an_episode(self, project):
-        """The allowlist check accepts a world tool, and resolving it outside an
+    async def test_env_tool_still_refused_outside_an_episode(self, project):
+        """The allowlist check accepts an environment tool, and resolving it outside an
         episode still fails."""
-        world = self._make_world(project)
-        tool_id = build_world_tool_id(world.id, "sql_query")
+        environment = self._make_environment(project)
+        tool_id = build_env_tool_id(environment.id, "sql_query")
         await validate_unique_allowlist_tool_names([tool_id], project)
         with pytest.raises(ValueError, match="can only be used while an episode"):
             tool_from_id_and_project(tool_id, project=project)
 
-    async def test_rejects_world_tool_of_unknown_world(self, project):
+    async def test_rejects_env_tool_of_unknown_environment(self, project):
         with pytest.raises(
             ValueError,
-            match=r"World\(s\) no_such_world referenced by world tools in the "
+            match=r"Environment\(s\) no_such_environment referenced by environment tools in the "
             r"tool_allowlist not found",
         ):
             await validate_unique_allowlist_tool_names(
-                [build_world_tool_id("no_such_world", "sql_query")], project
+                [build_env_tool_id("no_such_environment", "sql_query")], project
             )
 
     @pytest.mark.parametrize("other_kind", ["code", "mcp"])
-    async def test_rejects_world_tool_colliding_with_another_tool(
+    async def test_rejects_env_tool_colliding_with_another_tool(
         self, project, other_kind
     ):
-        """Sandboxed code calls a world tool by the last segment of its id. A
-        collision with an MCP tool is refused too: the world tool is the one that
+        """Sandboxed code calls an environment tool by the last segment of its id. A
+        collision with an MCP tool is refused too: the environment tool is the one that
         can be dropped."""
-        world = self._make_world(project)
+        environment = self._make_environment(project)
         if other_kind == "code":
             other_id = (
                 f"kiln_tool::code::{self._make_code_tool(project, 'sql_query').id}"
@@ -1062,24 +1062,24 @@ class TestValidateUniqueAllowlistToolNames:
             other_id = f"mcp::remote::{server.id}::sql_query"
         with pytest.raises(ValueError, match="share the same function name: sql_query"):
             await validate_unique_allowlist_tool_names(
-                [build_world_tool_id(world.id, "sql_query"), other_id], project
+                [build_env_tool_id(environment.id, "sql_query"), other_id], project
             )
 
-    async def test_world_tools_do_not_skip_other_tool_checks(self, project):
+    async def test_env_tools_do_not_skip_other_tool_checks(self, project):
         """A missing tool or a name collision among the other tools is still refused
-        when world tools are listed too."""
-        world = self._make_world(project)
-        world_tool = build_world_tool_id(world.id, "sql_query")
+        when environment tools are listed too."""
+        environment = self._make_environment(project)
+        env_tool = build_env_tool_id(environment.id, "sql_query")
         with pytest.raises(ValueError, match="Code tool not found"):
             await validate_unique_allowlist_tool_names(
-                [world_tool, "kiln_tool::code::missing"], project
+                [env_tool, "kiln_tool::code::missing"], project
             )
         dup_a = self._make_code_tool(project, "dup_tool")
         dup_b = self._make_code_tool(project, "dup_tool")
         with pytest.raises(ValueError, match="share the same function name: dup_tool"):
             await validate_unique_allowlist_tool_names(
                 [
-                    world_tool,
+                    env_tool,
                     f"kiln_tool::code::{dup_a.id}",
                     f"kiln_tool::code::{dup_b.id}",
                 ],
@@ -1089,7 +1089,7 @@ class TestValidateUniqueAllowlistToolNames:
 
 class TestProjectToolFunctionName:
     """The offline name lookup the eval runner uses to compare a run config's real
-    tools with the tools a world serves."""
+    tools with the tools an environment serves."""
 
     @pytest.fixture
     def project(self, tmp_path):
@@ -1176,6 +1176,6 @@ class TestProjectToolFunctionName:
 
         assert project_tool_function_name("kiln_tool::add_numbers", project) is None
         assert project_tool_function_name("kiln_tool::skill::s1", project) is None
-        assert project_tool_function_name("kiln_tool::world::w::x", project) is None
+        assert project_tool_function_name("kiln_tool::env::w::x", project) is None
         assert project_tool_function_name("mcp::remote::srv1::lookup", None) is None
         assert project_tool_function_name("mcp::remote::broken", project) is None
