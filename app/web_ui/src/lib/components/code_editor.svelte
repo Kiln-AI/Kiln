@@ -1,10 +1,15 @@
 <script lang="ts">
   import { onMount, onDestroy, createEventDispatcher } from "svelte"
+  import {
+    load_language_extension,
+    type CodeEditorLanguage,
+  } from "./code_editor_language"
 
   export let value: string = ""
   export let readonly: boolean = false
   export let placeholder: string = ""
   export let min_height: string = "200px"
+  export let language: CodeEditorLanguage = "python"
 
   const dispatch = createEventDispatcher<{ change: string }>()
 
@@ -16,13 +21,13 @@
     const [
       { EditorView, keymap, placeholder: placeholderExt, lineNumbers },
       { EditorState },
-      { python },
+      language_extension,
       { defaultKeymap, history, historyKeymap },
       { syntaxHighlighting, defaultHighlightStyle },
     ] = await Promise.all([
       import("@codemirror/view"),
       import("@codemirror/state"),
-      import("@codemirror/lang-python"),
+      load_language_extension(language),
       import("@codemirror/commands"),
       import("@codemirror/language"),
     ])
@@ -31,7 +36,7 @@
       lineNumbers(),
       history(),
       syntaxHighlighting(defaultHighlightStyle),
-      python(),
+      language_extension,
       keymap.of([...defaultKeymap, ...historyKeymap]),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
