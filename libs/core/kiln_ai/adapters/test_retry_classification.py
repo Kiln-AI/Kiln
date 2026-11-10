@@ -18,12 +18,12 @@ from kiln_ai.adapters.retry_classification import (
     is_batch_fatal_error,
     is_retryable_error,
     is_run_ending_tool_error,
-    is_transient_environment_error,
+    is_transient_openenv_error,
 )
 from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task_output import TaskOutput
-from kiln_ai.environments.session_manager import (
+from kiln_ai.openenv.session_manager import (
     OpenEnvError,
     OpenEnvRejectedError,
     OpenEnvTransientError,
@@ -255,7 +255,7 @@ class TestEmptyModelResponseClassification:
 
 class TestToolErrorClassification:
     @pytest.mark.parametrize(
-        "error, transient_environment, run_ending",
+        "error, transient_openenv, run_ending",
         [
             (OpenEnvTransientError("dropped"), True, True),
             (_wrapped(OpenEnvTransientError("dropped")), True, True),
@@ -267,6 +267,6 @@ class TestToolErrorClassification:
             (ValueError("bad input"), False, False),
         ],
     )
-    def test_classification(self, error, transient_environment, run_ending):
-        assert is_transient_environment_error(error) is transient_environment
+    def test_classification(self, error, transient_openenv, run_ending):
+        assert is_transient_openenv_error(error) is transient_openenv
         assert is_run_ending_tool_error(error) is run_ending

@@ -8,17 +8,17 @@ import pytest
 from pydantic import ValidationError
 
 from kiln_ai.datamodel.code_tool import CodeTool
-from kiln_ai.datamodel.environment import (
-    Environment,
-    EnvironmentEpisode,
-    EnvironmentReset,
-    OpenEnvTool,
-)
 from kiln_ai.datamodel.eval import (
     EvalInput,
     EvalTaskInput,
     SingleTurnEvalInputData,
     UserMessage,
+)
+from kiln_ai.datamodel.openenv import (
+    OpenEnv,
+    OpenEnvEpisode,
+    OpenEnvReset,
+    OpenEnvTool,
 )
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.task import Task
@@ -26,8 +26,8 @@ from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_ai.datamodel.task_run import EvalItemSource, TaskRun
 from kiln_ai.datamodel.tool_id import (
     build_code_tool_id,
-    build_env_tool_id,
-    env_and_tool_name_from_id,
+    build_openenv_tool_id,
+    openenv_and_tool_name_from_id,
     validate_tool_allowlist,
 )
 
@@ -46,44 +46,45 @@ def project(tmp_path) -> Project:
 
 
 @pytest.fixture
-def environment(project) -> Environment:
-    w = Environment(name="Acme Environment", parent=project)
-    w.save_to_file()
-    return w
+def openenv(project) -> OpenEnv:
+    openenv = OpenEnv(name="Acme Environment", parent=project)
+    openenv.save_to_file()
+    return openenv
 
 
 class TestOnDiskLayout:
-    def test_environment_under_project(self, project, environment):
-        assert environment.path is not None
-        assert environment.path.parent.parent == project.path.parent / "environments"
-        assert environment.path.name == "environment.kiln"
-        assert project.environments()[0].id == environment.id
-        loaded = Environment.from_id_and_parent_path(environment.id, project.path)
+    def test_openenv_under_project(self, project, openenv):
+        assert openenv.path is not None
+        assert openenv.path.parent.parent == project.path.parent / "openenvs"
+        assert openenv.path.name == "openenv.kiln"
+        assert openenv.model_type == "openenv"
+        assert project.openenvs()[0].id == openenv.id
+        loaded = OpenEnv.from_id_and_parent_path(openenv.id, project.path)
         assert loaded is not None and loaded.name == "Acme Environment"
 
-    def test_environment_defaults(self, environment):
-        assert environment.env_url is None
-        assert environment.description is None
+    def test_openenv_defaults(self, openenv):
+        assert openenv.url is None
+        assert openenv.description is None
 
-    def test_environment_round_trip(self, project):
-        w = Environment(
+    def test_openenv_round_trip(self, project):
+        openenv = OpenEnv(
             name="Remote",
             parent=project,
-            env_url="http://localhost:8123",
+            url="http://localhost:8123",
             description="hosted",
         )
-        w.save_to_file()
-        assert w.id is not None
-        loaded = Environment.from_id_and_parent_path(w.id, project.path)
+        openenv.save_to_file()
+        assert openenv.id is not None
+        loaded = OpenEnv.from_id_and_parent_path(openenv.id, project.path)
         assert loaded is not None
-        assert loaded.env_url == "http://localhost:8123"
+        assert loaded.url == "http://localhost:8123"
         assert loaded.description == "hosted"
 
 
-def test_project_lists_its_environments(project):
-    environment = Environment(name="w", parent=project, env_url="http://127.0.0.1:8000")
-    environment.save_to_file()
-    assert [w.id for w in project.environments()] == [environment.id]
+def test_project_lists_its_openenvs(project):
+    openenv = OpenEnv(name="w", parent=project, url="http://127.0.0.1:8000")
+    openenv.save_to_file()
+    assert [saved.id for saved in project.openenvs()] == [openenv.id]
 
 
 class TestOpenEnvTool:
@@ -93,18 +94,20 @@ class TestOpenEnvTool:
 
 
 class TestToolIds:
-    def test_env_tool_id_round_trip(self):
-        tool_id = build_env_tool_id("w1", "lookup")
-        assert tool_id == "kiln_tool::env::w1::lookup"
-        assert env_and_tool_name_from_id(tool_id) == ("w1", "lookup")
+    def test_openenv_tool_id_round_trip(self):
+        tool_id = build_openenv_tool_id("w1", "lookup")
+        assert tool_id == "kiln_tool::openenv::w1::lookup"
+        assert openenv_and_tool_name_from_id(tool_id) == ("w1", "lookup")
 
-    @pytest.mark.parametrize("bad", ["kiln_tool::env::w1", "kiln_tool::env::::t1", "x"])
-    def test_env_tool_id_rejects_malformed(self, bad):
+    @pytest.mark.parametrize(
+        "bad", ["kiln_tool::openenv::w1", "kiln_tool::openenv::::t1", "x"]
+    )
+    def test_openenv_tool_id_rejects_malformed(self, bad):
         with pytest.raises(ValueError):
-            env_and_tool_name_from_id(bad)
+            openenv_and_tool_name_from_id(bad)
 
-    def test_env_tool_ids_accepted_in_allowlists(self):
-        validate_tool_allowlist(["kiln_tool::env::w1::t1"], caller="code tools")
+    def test_openenv_tool_ids_accepted_in_allowlists(self):
+        validate_tool_allowlist(["kiln_tool::openenv::w1::t1"], caller="code tools")
 
     def test_code_tool_self_reference_still_rejected(self, project):
         ct = CodeTool(
@@ -129,69 +132,67 @@ class TestToolIds:
 
 
 class TestResetAndEpisode:
-    def test_reset_requires_environment_id(self):
+    def test_reset_requires_openenv_id(self):
         with pytest.raises(ValidationError):
-            EnvironmentReset(environment_id="")
-        assert EnvironmentReset(environment_id="w").reset_kwargs == {}
+            OpenEnvReset(openenv_id="")
+        assert OpenEnvReset(openenv_id="w").reset_kwargs == {}
 
     def test_reset_kwargs_are_opaque_json(self):
-        env = EnvironmentReset(
-            environment_id="w",
+        reset = OpenEnvReset(
+            openenv_id="w",
             reset_kwargs={"fixture_id": "f", "seed": 42, "opts": {"a": [1, 2]}},
         )
-        assert env.reset_kwargs["opts"] == {"a": [1, 2]}
+        assert reset.reset_kwargs["opts"] == {"a": [1, 2]}
 
-    def test_eval_input_round_trips_env_reset(self, project):
+    def test_eval_input_round_trips_openenv_reset(self, project):
         task = Task(name="t", instruction="i", parent=project)
         task.save_to_file()
         ei = EvalInput(
             parent=task,
             data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
-            env_reset=EnvironmentReset(
-                environment_id="w1",
+            openenv_reset=OpenEnvReset(
+                openenv_id="w1",
                 reset_kwargs={"fixture_id": "f1", "frozen_time": NOW.isoformat()},
             ),
         )
         ei.save_to_file()
         loaded = task.eval_inputs()[0]
-        assert loaded.env_reset is not None
-        assert loaded.env_reset.reset_kwargs["fixture_id"] == "f1"
+        assert loaded.openenv_reset is not None
+        assert loaded.openenv_reset.reset_kwargs["fixture_id"] == "f1"
 
-    def test_eval_input_defaults_to_no_env_reset(self):
+    def test_eval_input_defaults_to_no_openenv_reset(self):
         ei = EvalInput(
             data=SingleTurnEvalInputData(user_message=UserMessage(text="hi"))
         )
-        assert ei.env_reset is None
+        assert ei.openenv_reset is None
 
-    def _episode(self, **overrides: Any) -> EnvironmentEpisode:
+    def _episode(self, **overrides: Any) -> OpenEnvEpisode:
         base: dict[str, Any] = dict(
-            reset=EnvironmentReset(
-                environment_id="w1", reset_kwargs={"fixture_id": "f1"}
-            ),
+            reset=OpenEnvReset(openenv_id="w1", reset_kwargs={"fixture_id": "f1"}),
             episode_id="ep_1",
-            env_version="acme@1.0.0",
+            openenv_version="acme@1.0.0",
             reset_metadata={"fixture_id": "f1", "frozen_time": NOW.isoformat()},
         )
         base.update(overrides)
-        return EnvironmentEpisode(**base)
+        return OpenEnvEpisode(**base)
 
     def test_episode_defaults(self):
         ep = self._episode()
         assert ep.final_state is None
-        assert list(EnvironmentEpisode.model_fields) == [
+        assert list(OpenEnvEpisode.model_fields) == [
             "reset",
             "episode_id",
-            "env_version",
+            "openenv_version",
             "reset_metadata",
             "final_state",
         ]
 
     def test_final_state_round_trip(self):
         ep = self._episode(final_state={"notes": ["a", "b"], "step_count": 2})
-        again = EnvironmentEpisode.model_validate_json(ep.model_dump_json())
+        again = OpenEnvEpisode.model_validate_json(ep.model_dump_json())
         assert again.final_state == {"notes": ["a", "b"], "step_count": 2}
-        assert again.reset == EnvironmentReset(
-            environment_id="w1", reset_kwargs={"fixture_id": "f1"}
+        assert again.reset == OpenEnvReset(
+            openenv_id="w1", reset_kwargs={"fixture_id": "f1"}
         )
 
     def test_sandbox_dict_is_plain_json(self):
@@ -199,29 +200,29 @@ class TestResetAndEpisode:
         assert set(d) == {
             "reset",
             "episode_id",
-            "env_version",
+            "openenv_version",
             "reset_metadata",
             "final_state",
         }
         assert d["reset"] == {
-            "environment_id": "w1",
+            "openenv_id": "w1",
             "reset_kwargs": {"fixture_id": "f1"},
         }
         assert d["reset_metadata"] == {
             "fixture_id": "f1",
             "frozen_time": NOW.isoformat(),
         }
-        assert d["env_version"] == "acme@1.0.0"
+        assert d["openenv_version"] == "acme@1.0.0"
         assert d["final_state"] == {"notes": []}
         json.dumps(d)  # JSON-serializable
 
     def test_eval_task_input_carries_the_full_episode(self):
         ep = self._episode(final_state={"big": list(range(100))})
-        eval_input = EvalTaskInput(final_message="done", env_episode=ep)
+        eval_input = EvalTaskInput(final_message="done", openenv_episode=ep)
         restored = EvalTaskInput.model_validate_json(eval_input.model_dump_json())
-        assert restored.env_episode == ep
+        assert restored.openenv_episode == ep
 
-    def test_files_saved_before_environments_still_load(self):
+    def test_files_saved_before_openenvs_still_load(self):
         """Records written before environments existed carry none of the new fields."""
         legacy_input = EvalInput.model_validate(
             {
@@ -231,13 +232,13 @@ class TestResetAndEpisode:
                 }
             }
         )
-        assert legacy_input.env_reset is None
+        assert legacy_input.openenv_reset is None
         legacy_run = TaskRun.model_validate(
             {"input": "hi", "output": {"output": "hello"}}
         )
-        assert legacy_run.env_episode is None
+        assert legacy_run.openenv_episode is None
 
-    def test_task_run_persists_env_episode(self, project):
+    def test_task_run_persists_openenv_episode(self, project):
         task = Task(name="t", instruction="i", parent=project)
         task.save_to_file()
         run = TaskRun(
@@ -256,21 +257,21 @@ class TestResetAndEpisode:
                 ),
             ),
             eval_source=EvalItemSource(source_type="eval_input", source_id="i1"),
-            env_episode=self._episode(final_state={"notes": ["a"]}),
+            openenv_episode=self._episode(final_state={"notes": ["a"]}),
         )
         run.save_to_file()
         assert run.path is not None
         loaded = TaskRun.load_from_file(run.path)
         assert loaded.eval_source is not None
-        assert loaded.env_episode is not None
-        assert loaded.env_episode.env_version == "acme@1.0.0"
-        assert loaded.env_episode.episode_id == "ep_1"
-        assert loaded.env_episode.final_state == {"notes": ["a"]}
+        assert loaded.openenv_episode is not None
+        assert loaded.openenv_episode.openenv_version == "acme@1.0.0"
+        assert loaded.openenv_episode.episode_id == "ep_1"
+        assert loaded.openenv_episode.final_state == {"notes": ["a"]}
         eti = EvalTaskInput.from_task_run(loaded)
-        assert eti.env_episode is not None
-        assert eti.env_episode.reset.reset_kwargs == {"fixture_id": "f1"}
+        assert eti.openenv_episode is not None
+        assert eti.openenv_episode.reset.reset_kwargs == {"fixture_id": "f1"}
 
-    def test_from_trace_without_env_episode(self, project):
+    def test_from_trace_without_openenv_episode(self, project):
         task = Task(name="t", instruction="i", parent=project)
         run = TaskRun(
             parent=task,
@@ -282,4 +283,4 @@ class TestResetAndEpisode:
                 ),
             ),
         )
-        assert EvalTaskInput.from_task_run(run).env_episode is None
+        assert EvalTaskInput.from_task_run(run).openenv_episode is None

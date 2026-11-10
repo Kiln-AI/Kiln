@@ -1,6 +1,6 @@
 """Tools served by an episode.
 
-A run config lists an environment's tools by id, ``kiln_tool::env::<environment_id>::
+A run config lists an environment's tools by id, ``kiln_tool::openenv::<openenv_id>::
 <tool_name>``. While an episode of that environment is active the registry resolves such an
 id to ``OpenEnvToolProxy``: ``toolcall_definition()`` is what the environment reported
 for the tool, and ``run()`` calls it through ``step(CallToolAction)`` on the episode's
@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from kiln_ai.datamodel.environment import OpenEnvTool
+from kiln_ai.datamodel.openenv import OpenEnvTool
 from kiln_ai.datamodel.tool_id import ToolId
 from kiln_ai.run_context import EpisodeContext
 from kiln_ai.tools.base_tool import (
@@ -52,7 +52,7 @@ class OpenEnvToolProxy(KilnToolInterface):
         self._ctx = context
 
     @property
-    def env_tool(self) -> OpenEnvTool:
+    def openenv_tool(self) -> OpenEnvTool:
         return self._tool
 
     async def id(self) -> ToolId:

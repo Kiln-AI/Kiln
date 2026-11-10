@@ -15,7 +15,7 @@ from kiln_ai.adapters.eval.trace_index import (
     TraceIndex,
     TraceIndexRegistry,
     TraceKey,
-    env_trace_tag,
+    openenv_trace_tag,
     trace_key,
 )
 from kiln_ai.datamodel import (
@@ -25,8 +25,8 @@ from kiln_ai.datamodel import (
     TaskOutput,
     TaskRun,
 )
-from kiln_ai.datamodel.environment import EnvironmentEpisode, EnvironmentReset
 from kiln_ai.datamodel.eval_splits import ItemSource
+from kiln_ai.datamodel.openenv import OpenEnvEpisode, OpenEnvReset
 from kiln_ai.datamodel.task_run import EvalItemSource, eval_item_key
 
 KEY: TraceKey = ("eval_input", "item1", "rc1", "")
@@ -67,14 +67,14 @@ def save_run(
     run_config_id: str | None = "rc1",
     eval_source: EvalItemSource | None = None,
     output: str = "generated",
-    env_episode: EnvironmentEpisode | None = None,
+    openenv_episode: OpenEnvEpisode | None = None,
 ) -> TaskRun:
     run = TaskRun(
         parent=task,
         input="the input",
         output=TaskOutput(output=output, source=output_source(run_config_id)),
         eval_source=eval_source,
-        env_episode=env_episode,
+        openenv_episode=openenv_episode,
     )
     run.save_to_file()
     return run
@@ -87,26 +87,26 @@ def save_trace(
     source_id: str = "item1",
     run_config_id: str | None = "rc1",
     output: str = "generated",
-    env_version: str | None = None,
+    openenv_version: str | None = None,
 ) -> TaskRun:
     return save_run(
         task,
         run_config_id=run_config_id,
         eval_source=EvalItemSource(source_type=source_type, source_id=source_id),
         output=output,
-        env_episode=episode_for(source_id, env_version),
+        openenv_episode=episode_for(source_id, openenv_version),
     )
 
 
-def episode_for(source_id: str, env_version: str | None) -> EnvironmentEpisode | None:
+def episode_for(source_id: str, openenv_version: str | None) -> OpenEnvEpisode | None:
     """An environment run's settled episode record, carrying the version the trace key is read
     from."""
-    if not env_version:
+    if not openenv_version:
         return None
-    return EnvironmentEpisode(
-        reset=EnvironmentReset(environment_id="w1"),
+    return OpenEnvEpisode(
+        reset=OpenEnvReset(openenv_id="w1"),
         episode_id=f"ep_{source_id}",
-        env_version=env_version,
+        openenv_version=openenv_version,
         final_state={"notes": []},
     )
 
@@ -127,7 +127,7 @@ class Generator:
         self.rendezvous: "Rendezvous | None" = None
 
     def for_key(self, key: TraceKey) -> Callable[[], Awaitable[TaskRun]]:
-        source_type, source_id, run_config_id, env_version = key
+        source_type, source_id, run_config_id, openenv_version = key
 
         async def generate() -> TaskRun:
             self.calls += 1
@@ -150,7 +150,7 @@ class Generator:
                         source_type=source_type,
                         source_id=source_id,
                     ),
-                    env_episode=episode_for(source_id, env_version),
+                    openenv_episode=episode_for(source_id, openenv_version),
                 )
             return save_trace(
                 self.task,
@@ -158,7 +158,7 @@ class Generator:
                 source_id=source_id,
                 run_config_id=run_config_id,
                 output=f"generated {self.calls}",
-                env_version=env_version or None,
+                openenv_version=openenv_version or None,
             )
 
         return generate
@@ -655,9 +655,9 @@ async def test_corrupt_trace_file_regenerates(task, caplog, corrupt_content):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("env_version", [None, ""])
-def test_trace_key_without_variant_is_empty_string(env_version):
-    assert trace_key(("eval_input", "item1"), "rc1", env_version) == (
+@pytest.mark.parametrize("openenv_version", [None, ""])
+def test_trace_key_without_variant_is_empty_string(openenv_version):
+    assert trace_key(("eval_input", "item1"), "rc1", openenv_version) == (
         "eval_input",
         "item1",
         "rc1",
@@ -674,7 +674,7 @@ def test_trace_key_carries_variant():
     )
 
 
-def test_stored_env_version_separates_traces(task):
+def test_stored_openenv_version_separates_traces(task):
     """Two generations of one item under one run config, in different environment versions, are
     two entries, keyed by the version on each run's episode; a job without an environment never
     matches an environment trace."""
@@ -684,43 +684,37 @@ def test_stored_env_version_separates_traces(task):
     fixture_a = save_run(
         task,
         eval_source=EvalItemSource(source_type="eval_input", source_id="item1"),
-        env_episode=episode_for("item1", "syn1:a"),
+        openenv_episode=episode_for("item1", "syn1:a"),
         output="from fixture a",
     )
     index = TraceIndex(task)
-    reset = EnvironmentReset(environment_id="w1")
+    reset = OpenEnvReset(openenv_id="w1")
     assert index._paths[("eval_input", "item1", "rc1", "")] == plain.path
     assert (
-        index._paths[("eval_input", "item1", "rc1", env_trace_tag("syn1:a", reset))]
+        index._paths[("eval_input", "item1", "rc1", openenv_trace_tag("syn1:a", reset))]
         == fixture_a.path
     )
     assert (
         "eval_input",
         "item1",
         "rc1",
-        env_trace_tag("syn1:b", reset),
+        openenv_trace_tag("syn1:b", reset),
     ) not in index._paths
 
 
-def test_env_trace_tag_separates_resets():
+def test_openenv_trace_tag_separates_resets():
     """The environment half of the key covers the reset as well as the version, so an input
-    whose env_reset was edited no longer matches the trace made from the old one."""
-    a = EnvironmentReset(
-        environment_id="w1", reset_kwargs={"fixture_id": "a", "seed": 1}
-    )
-    same_a = EnvironmentReset(
-        environment_id="w1", reset_kwargs={"seed": 1, "fixture_id": "a"}
-    )
-    b = EnvironmentReset(
-        environment_id="w1", reset_kwargs={"fixture_id": "b", "seed": 1}
-    )
-    assert env_trace_tag("env@1", a) == env_trace_tag("env@1", same_a)
-    assert env_trace_tag("env@1", a) != env_trace_tag("env@1", b)
-    assert env_trace_tag("env@1", a) != env_trace_tag("env@2", a)
-    assert env_trace_tag("env@1", a).startswith("env@1#")
+    whose openenv_reset was edited no longer matches the trace made from the old one."""
+    a = OpenEnvReset(openenv_id="w1", reset_kwargs={"fixture_id": "a", "seed": 1})
+    same_a = OpenEnvReset(openenv_id="w1", reset_kwargs={"seed": 1, "fixture_id": "a"})
+    b = OpenEnvReset(openenv_id="w1", reset_kwargs={"fixture_id": "b", "seed": 1})
+    assert openenv_trace_tag("env@1", a) == openenv_trace_tag("env@1", same_a)
+    assert openenv_trace_tag("env@1", a) != openenv_trace_tag("env@1", b)
+    assert openenv_trace_tag("env@1", a) != openenv_trace_tag("env@2", a)
+    assert openenv_trace_tag("env@1", a).startswith("env@1#")
 
 
-def test_unsettled_environment_trace_is_never_indexed(task):
+def test_unsettled_openenv_trace_is_never_indexed(task):
     """An environment trace saved before its episode ended records no final state, which is
     what graders read: it files under no key, so its job regenerates rather than
     reusing it."""
@@ -729,7 +723,7 @@ def test_unsettled_environment_trace_is_never_indexed(task):
     save_run(
         task,
         eval_source=EvalItemSource(source_type="eval_input", source_id="item1"),
-        env_episode=unsettled.model_copy(update={"final_state": None}),
+        openenv_episode=unsettled.model_copy(update={"final_state": None}),
     )
     assert TraceIndex(task)._paths == {}
 

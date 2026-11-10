@@ -20,7 +20,6 @@ from kiln_ai.datamodel import (
     TaskOutputRatingType,
     TaskRun,
 )
-from kiln_ai.datamodel.environment import Environment, EnvironmentReset
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
@@ -35,11 +34,12 @@ from kiln_ai.datamodel.eval import (
     TaskRunSplit,
     UserMessage,
 )
+from kiln_ai.datamodel.openenv import OpenEnv, OpenEnvReset
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
-from kiln_ai.datamodel.tool_id import build_env_tool_id
-from kiln_ai.environments.session_manager import shutdown_shared_session_manager
-from kiln_ai.environments.testing import serve_in_thread
+from kiln_ai.datamodel.tool_id import build_openenv_tool_id
+from kiln_ai.openenv.session_manager import shutdown_shared_session_manager
+from kiln_ai.openenv.testing import serve_in_thread
 from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.async_job_runner import Progress, RetryableError
@@ -1580,17 +1580,17 @@ async def test_compute_state_measures_only_the_named_items(
 
 
 @pytest.fixture
-def environment(project):
+def openenv(project):
     with serve_in_thread() as base_url:
-        environment = Environment(
-            id="environment1", name="Environment", parent=project, env_url=base_url
+        openenv = OpenEnv(
+            id="environment1", name="Environment", parent=project, url=base_url
         )
-        environment.save_to_file()
-        yield environment
+        openenv.save_to_file()
+        yield openenv
 
 
 @pytest.fixture
-async def shared_environment_sessions(environment):
+async def shared_openenv_sessions(openenv):
     """The worker runs on the process-wide session manager, as the server does. It
     starts empty, and its sessions close before the test server stops (this fixture
     depends on `environment`, so it tears down first)."""
@@ -1600,9 +1600,9 @@ async def shared_environment_sessions(environment):
 
 
 @pytest.fixture
-def environment_run_config(task, environment):
+def openenv_run_config(task, openenv):
     run_config = TaskRunConfig(
-        id="rc_environment",
+        id="rc_openenv",
         name="Environment Run Config",
         parent=task,
         run_config_properties=KilnAgentRunConfigProperties(
@@ -1611,7 +1611,7 @@ def environment_run_config(task, environment):
             prompt_id="simple_prompt_builder",
             structured_output_mode=StructuredOutputMode.json_schema,
             tools_config=ToolsRunConfig(
-                tools=[build_env_tool_id(environment.id, "append_note")]
+                tools=[build_openenv_tool_id(openenv.id, "append_note")]
             ),
         ),
     )
@@ -1620,9 +1620,9 @@ def environment_run_config(task, environment):
 
 
 @pytest.fixture
-def environment_eval_config(input_backed_eval):
+def openenv_eval_config(input_backed_eval):
     eval_config = EvalConfig(
-        id="eval_config_environment",
+        id="eval_config_openenv",
         name="Exact Match",
         config_type=EvalConfigType.v2,
         properties=ExactMatchProperties(expected_value="noted:1"),
@@ -1632,7 +1632,7 @@ def environment_eval_config(input_backed_eval):
     return eval_config
 
 
-class _EnvToolGenerator:
+class _OpenEnvToolGenerator:
     """Stands in for the model: calls the run config's environment tool once, through the
     tool registry, so the call reaches the episode the job started."""
 
@@ -1663,13 +1663,13 @@ class _EnvToolGenerator:
         return run
 
 
-async def test_run_works_an_item_in_its_environment_and_logs_a_refused_reset(
+async def test_run_works_an_item_in_its_openenv_and_logs_a_refused_reset(
     resolve_project,
     task,
-    environment,
-    environment_run_config,
-    environment_eval_config,
-    shared_environment_sessions,
+    openenv,
+    openenv_run_config,
+    openenv_eval_config,
+    shared_openenv_sessions,
 ):
     # End to end on the job path: the worker builds a real EvalRunner, which starts
     # an episode per item on the environment. One item runs and is scored
@@ -1678,19 +1678,19 @@ async def test_run_works_an_item_in_its_environment_and_logs_a_refused_reset(
     ok = _make_eval_input(
         task,
         "inputs",
-        env_reset=EnvironmentReset(
-            environment_id=environment.id, reset_kwargs={"fixture_id": "a"}
+        openenv_reset=OpenEnvReset(
+            openenv_id=openenv.id, reset_kwargs={"fixture_id": "a"}
         ),
     )
     refused = _make_eval_input(
         task,
         "inputs",
-        env_reset=EnvironmentReset(
-            environment_id=environment.id, reset_kwargs={"fail_reset": True}
+        openenv_reset=OpenEnvReset(
+            openenv_id=openenv.id, reset_kwargs={"fail_reset": True}
         ),
     )
-    generator = _EnvToolGenerator(
-        task, build_env_tool_id(environment.id, "append_note")
+    generator = _OpenEnvToolGenerator(
+        task, build_openenv_tool_id(openenv.id, "append_note")
     )
     ctx = _RecordingCtx()
 
@@ -1701,8 +1701,8 @@ async def test_run_works_an_item_in_its_environment_and_logs_a_refused_reset(
             EvalJobParams(
                 **{
                     **_input_backed_params().model_dump(),
-                    "eval_config_id": environment_eval_config.id,
-                    "run_config_id": environment_run_config.id,
+                    "eval_config_id": openenv_eval_config.id,
+                    "run_config_id": openenv_run_config.id,
                 }
             ),
             ctx,
@@ -1710,7 +1710,7 @@ async def test_run_works_an_item_in_its_environment_and_logs_a_refused_reset(
 
     assert result == EvalJobResult(total=2, success=1, error=1)
 
-    (score,) = environment_eval_config.runs(readonly=True)
+    (score,) = openenv_eval_config.runs(readonly=True)
     assert score.eval_input_id == ok.id
     assert score.scores == {"accuracy": 1.0}
     (trace,) = [
@@ -1718,31 +1718,31 @@ async def test_run_works_an_item_in_its_environment_and_logs_a_refused_reset(
         for run in task.runs(readonly=True, include_eval_generated=True)
         if run.eval_source is not None
     ]
-    assert trace.env_episode is not None
-    assert trace.env_episode.reset.environment_id == environment.id
+    assert trace.openenv_episode is not None
+    assert trace.openenv_episode.reset.openenv_id == openenv.id
     # The item's reset kwargs reached the environment.
-    assert trace.env_episode.final_state["fixture_id"] == "a"
-    assert trace.env_episode.final_state["notes"] == ["hi"]
+    assert trace.openenv_episode.final_state["fixture_id"] == "a"
+    assert trace.openenv_episode.final_state["notes"] == ["hi"]
 
     (error,) = ctx.errors
     message, extra = error
     assert "reset refused" in message
     assert extra["dataset_id"] == refused.id
     assert extra["item_source"] == "eval_input"
-    assert extra["run_config_id"] == environment_run_config.id
+    assert extra["run_config_id"] == openenv_run_config.id
 
 
 # -- drive-only (judge=False) ------------------------------------------------
 
 
-def _env_params(
-    environment_eval_config, environment_run_config, **overrides
+def _openenv_params(
+    openenv_eval_config, openenv_run_config, **overrides
 ) -> EvalJobParams:
     return EvalJobParams(
         **{
             **_input_backed_params().model_dump(),
-            "eval_config_id": environment_eval_config.id,
-            "run_config_id": environment_run_config.id,
+            "eval_config_id": openenv_eval_config.id,
+            "run_config_id": openenv_run_config.id,
             **overrides,
         }
     )
@@ -1756,13 +1756,13 @@ def _eval_traces(task) -> list[TaskRun]:
     ]
 
 
-async def test_drive_only_job_drives_in_the_environment_and_names_its_task_runs(
+async def test_drive_only_job_drives_in_the_openenv_and_names_its_task_runs(
     resolve_project,
     task,
-    environment,
-    environment_run_config,
-    environment_eval_config,
-    shared_environment_sessions,
+    openenv,
+    openenv_run_config,
+    openenv_eval_config,
+    shared_openenv_sessions,
 ):
     # End to end on the job path: each item runs in a fresh episode, its trace is
     # saved with the episode, no judge runs and no score is stored, and the result
@@ -1771,24 +1771,24 @@ async def test_drive_only_job_drives_in_the_environment_and_names_its_task_runs(
         _make_eval_input(
             task,
             "inputs",
-            env_reset=EnvironmentReset(
-                environment_id=environment.id, reset_kwargs={"fixture_id": fixture}
+            openenv_reset=OpenEnvReset(
+                openenv_id=openenv.id, reset_kwargs={"fixture_id": fixture}
             ),
         )
         for fixture in ("a", "b")
     ]
-    generator = _EnvToolGenerator(
-        task, build_env_tool_id(environment.id, "append_note")
+    generator = _OpenEnvToolGenerator(
+        task, build_openenv_tool_id(openenv.id, "append_note")
     )
     ctx = _RecordingCtx()
 
     with patch.object(BaseV2EvalBridge, "run_task", new=generator):
         result = await EvalJobWorker().run(
-            _env_params(environment_eval_config, environment_run_config, judge=False),
+            _openenv_params(openenv_eval_config, openenv_run_config, judge=False),
             ctx,
         )
 
-    assert environment_eval_config.runs(readonly=True) == []
+    assert openenv_eval_config.runs(readonly=True) == []
     traces = {str(run.id): run for run in _eval_traces(task)}
     assert len(traces) == 2
     assert result.total == 2 and result.success == 2 and result.error == 0
@@ -1801,41 +1801,41 @@ async def test_drive_only_job_drives_in_the_environment_and_names_its_task_runs(
         trace = traces[driven.task_run_id]
         assert trace.eval_source is not None
         assert trace.eval_source.source_id == driven.item_id
-        assert trace.env_episode is not None
-        assert trace.env_episode.final_state["notes"] == ["hi"]
+        assert trace.openenv_episode is not None
+        assert trace.openenv_episode.final_state["notes"] == ["hi"]
     assert ctx.progress[-1] == (2, 0, 2)
 
 
 async def test_drive_only_job_drives_scored_items_again(
     resolve_project,
     task,
-    environment,
-    environment_run_config,
-    environment_eval_config,
-    shared_environment_sessions,
+    openenv,
+    openenv_run_config,
+    openenv_eval_config,
+    shared_openenv_sessions,
 ):
     # A drive-only job measures its own drives: an item that a judged job scored is
     # driven again, and a later judged job finds nothing left to drive or score.
     item = _make_eval_input(
         task,
         "inputs",
-        env_reset=EnvironmentReset(
-            environment_id=environment.id, reset_kwargs={"fixture_id": "a"}
+        openenv_reset=OpenEnvReset(
+            openenv_id=openenv.id, reset_kwargs={"fixture_id": "a"}
         ),
     )
-    generator = _EnvToolGenerator(
-        task, build_env_tool_id(environment.id, "append_note")
+    generator = _OpenEnvToolGenerator(
+        task, build_openenv_tool_id(openenv.id, "append_note")
     )
     worker = EvalJobWorker()
 
     with patch.object(BaseV2EvalBridge, "run_task", new=generator):
         judged = await worker.run(
-            _env_params(environment_eval_config, environment_run_config),
+            _openenv_params(openenv_eval_config, openenv_run_config),
             _RecordingCtx(),
         )
         assert judged == EvalJobResult(total=1, success=1, error=0)
         driven = await worker.run(
-            _env_params(environment_eval_config, environment_run_config, judge=False),
+            _openenv_params(openenv_eval_config, openenv_run_config, judge=False),
             _RecordingCtx(),
         )
 
@@ -1845,7 +1845,7 @@ async def test_drive_only_job_drives_scored_items_again(
         item_source="eval_input", item_id=str(item.id), task_run_id=run.task_run_id
     )
     assert len(_eval_traces(task)) == 2
-    assert len(environment_eval_config.runs(readonly=True)) == 1
+    assert len(openenv_eval_config.runs(readonly=True)) == 1
 
 
 async def test_drive_only_job_has_no_derived_state(

@@ -103,7 +103,7 @@ def _check_eval_job_request(params: EvalJobParams) -> None:
     not in the split, and 400 for the checks the run_comparison endpoint also makes
     before it runs (a V1 judge on items it can't score, multi-turn items that can't be
     driven), and for the environment checks that need no running server (see
-    `EvalRunner.validate_environment_readiness`). Without those, the job would start and fail
+    `EvalRunner.validate_openenv_readiness`). Without those, the job would start and fail
     every item one by one.
 
     Deliberately discards what it resolved. The worker resolves the split again when the
@@ -142,7 +142,7 @@ def _check_eval_job_request(params: EvalJobParams) -> None:
             judge=params.judge,
         )
         runner.validate_multi_turn_drive_readiness()
-        runner.validate_environment_readiness()
+        runner.validate_openenv_readiness()
     except json.JSONDecodeError:
         # A ValueError too, but a torn read of a file, not a bad request.
         raise
@@ -292,7 +292,7 @@ def connect_jobs_api(app: FastAPI) -> None:
         someone resumes it, so check `status` and call
         `POST /api/jobs/{id}/resume` if the job must run. Poll
         `GET /api/jobs/{id}` or `POST /api/jobs/wait` for progress and the
-        result. An item with an `env_reset` runs in a fresh episode of its environment
+        result. An item with an `openenv_reset` runs in a fresh episode of its environment
         when the run config lists that environment's tools. A 404 means that the eval,
         the eval config or the run config does not exist. A 422 means that the
         eval has no such split, or that `item_ids` names an item outside it. A 400

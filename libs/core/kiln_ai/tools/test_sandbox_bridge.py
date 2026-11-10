@@ -292,13 +292,13 @@ class TestNestedToolServer:
         assert log[0].is_error is True
 
     @pytest.mark.asyncio
-    async def test_serve_says_why_env_tool_is_unavailable(self, tmp_path):
+    async def test_serve_says_why_openenv_tool_is_unavailable(self, tmp_path):
         """Outside an episode an environment tool does not resolve; a call to it gets the
         reason, while other unknown names keep the plain not-allowed error."""
         project = _make_project(tmp_path)
         log: list[ToolCallLogEntry] = []
         server = NestedToolServer(
-            allowlist=["kiln_tool::env::w1::sql_query"],
+            allowlist=["kiln_tool::openenv::w1::sql_query"],
             project=project,
             task=None,
             context=None,
@@ -314,18 +314,18 @@ class TestNestedToolServer:
             }
             await server.serve(msg, responses)
 
-        environment_err, other_err = (m["error"] for m in responses.messages)
-        assert environment_err["kind"] == "not_allowed"
-        assert environment_err["message"].startswith(
-            "Tool 'sql_query' is not available: Environment tool "
-            "kiln_tool::env::w1::sql_query can only be used while an episode"
+        openenv_err, other_err = (m["error"] for m in responses.messages)
+        assert openenv_err["kind"] == "not_allowed"
+        assert openenv_err["message"].startswith(
+            "Tool 'sql_query' is not available: OpenEnv tool "
+            "kiln_tool::openenv::w1::sql_query can only be used while an episode"
         )
         assert (
             other_err["message"]
             == "Tool 'other' is not available. Available tools: []."
         )
         assert [entry.output_preview for entry in log] == [
-            environment_err["message"],
+            openenv_err["message"],
             "not allowed",
         ]
 

@@ -8,10 +8,10 @@ from kiln_ai.datamodel.basemodel import (
 from kiln_ai.datamodel.chunk import ChunkerConfig
 from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.embedding import EmbeddingConfig
-from kiln_ai.datamodel.environment import Environment
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.extraction import Document, ExtractorConfig
 from kiln_ai.datamodel.memory import Memory
+from kiln_ai.datamodel.openenv import OpenEnv
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.reranker import RerankerConfig
 from kiln_ai.datamodel.skill import Skill
@@ -36,7 +36,7 @@ class Project(
         "memories": ParentOfRelationship(
             model=Memory, filesystem_name="assistant_memory"
         ),
-        "environments": Environment,
+        "openenvs": OpenEnv,
     },
 ):
     """
@@ -89,5 +89,5 @@ class Project(
     def memories(self, readonly: bool = False) -> list[Memory]:
         return super().memories(readonly=readonly)  # type: ignore
 
-    def environments(self, readonly: bool = False) -> list[Environment]:
-        return super().environments(readonly=readonly)  # type: ignore  # pragma: no cover
+    def openenvs(self, readonly: bool = False) -> list[OpenEnv]:
+        return super().openenvs(readonly=readonly)  # type: ignore  # pragma: no cover

@@ -18,7 +18,7 @@ from kiln_ai.adapters.provider_tools import (
     kiln_model_provider_from,
     lite_llm_core_config_for_provider,
 )
-from kiln_ai.datamodel.environment import Environment
+from kiln_ai.datamodel.openenv import OpenEnv
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     McpRunConfigProperties,
@@ -27,9 +27,9 @@ from kiln_ai.datamodel.run_config import (
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.tool_id import (
-    ENV_TOOL_ID_PREFIX,
+    OPENENV_TOOL_ID_PREFIX,
     SKILL_TOOL_ID_PREFIX,
-    env_and_tool_name_from_id,
+    openenv_and_tool_name_from_id,
     skill_id_from_tool_id,
 )
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -98,7 +98,7 @@ async def validate_run_config_tool_names(
     runtime check remains the backstop for tools renamed after the run config
     was created.
 
-    Environment tools (`kiln_tool::env::<environment_id>::<tool_name>`) resolve only inside
+    OpenEnv tools (`kiln_tool::openenv::<openenv_id>::<tool_name>`) resolve only inside
     an episode of their environment, which only the eval runner starts, so they are not
     resolved here. Their environment must exist in the task's project, all of them must
     come from one environment (a job runs in one environment), and the name the model sees
@@ -110,24 +110,24 @@ async def validate_run_config_tool_names(
     tools_config = as_kiln_agent_run_config(run_config_properties).tools_config
     if tools_config is None or not tools_config.tools:
         return
-    env_tool_ids = [
-        tid for tid in tools_config.tools if tid.startswith(ENV_TOOL_ID_PREFIX)
+    openenv_tool_ids = [
+        tid for tid in tools_config.tools if tid.startswith(OPENENV_TOOL_ID_PREFIX)
     ]
     project_tool_ids = [
-        tid for tid in tools_config.tools if not tid.startswith(ENV_TOOL_ID_PREFIX)
+        tid for tid in tools_config.tools if not tid.startswith(OPENENV_TOOL_ID_PREFIX)
     ]
     skills = load_skills_from_tool_ids(task, project_tool_ids, require_all=True)
     tools = await assemble_unique_agent_tools(
         task, project_tool_ids, list(skills.values())
     )
-    if env_tool_ids:
+    if openenv_tool_ids:
         tool_names = [await tool.name() for tool in tools]
-        validate_env_tool_ids(task, env_tool_ids, tool_names)
+        validate_openenv_tool_ids(task, openenv_tool_ids, tool_names)
 
 
-def validate_env_tool_ids(
+def validate_openenv_tool_ids(
     task: datamodel.Task,
-    env_tool_ids: list[str],
+    openenv_tool_ids: list[str],
     project_tool_names: list[str],
 ) -> None:
     """Check a run config's environment tool ids without an active episode.
@@ -137,38 +137,34 @@ def validate_env_tool_ids(
     environment tool or with one of *project_tool_names* (the names of the run config's
     resolved project tools, including the "skill" tool when skills are selected).
     """
-    env_and_tool_names = [env_and_tool_name_from_id(t) for t in env_tool_ids]
-    environment_ids = sorted(
-        {environment_id for environment_id, _ in env_and_tool_names}
-    )
+    openenv_and_tool_names = [
+        openenv_and_tool_name_from_id(t) for t in openenv_tool_ids
+    ]
+    openenv_ids = sorted({openenv_id for openenv_id, _ in openenv_and_tool_names})
 
     project = task.parent_project()
     if project is None:
         raise ValueError(
-            "Environment tools require the task to belong to a project: "
-            f"{', '.join(env_tool_ids)}"
+            "OpenEnv tools require the task to belong to a project: "
+            f"{', '.join(openenv_tool_ids)}"
         )
-    found = Environment.from_ids_and_parent_path(
-        set(environment_ids), project.path, readonly=True
+    found = OpenEnv.from_ids_and_parent_path(
+        set(openenv_ids), project.path, readonly=True
     )
-    missing = [
-        environment_id
-        for environment_id in environment_ids
-        if environment_id not in found
-    ]
+    missing = [openenv_id for openenv_id in openenv_ids if openenv_id not in found]
     if missing:
         raise ValueError(
-            f"Environment(s) {', '.join(missing)} referenced by environment tools in the run "
+            f"OpenEnv(s) {', '.join(missing)} referenced by environment tools in the run "
             f"config not found in project {project.id}. Create the environment first, or "
             "remove its tools from the run config."
         )
-    if len(environment_ids) > 1:
+    if len(openenv_ids) > 1:
         raise ValueError(
-            f"Run config lists tools from more than one environment ({', '.join(environment_ids)}). "
+            f"Run config lists tools from more than one environment ({', '.join(openenv_ids)}). "
             "A job runs in one environment, so all environment tools must come from the same environment."
         )
 
-    tool_names = project_tool_names + [name for _, name in env_and_tool_names]
+    tool_names = project_tool_names + [name for _, name in openenv_and_tool_names]
     if len(tool_names) != len(set(tool_names)):
         duplicates = sorted({n for n in tool_names if tool_names.count(n) > 1})
         raise ValueError(

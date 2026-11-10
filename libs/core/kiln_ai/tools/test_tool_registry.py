@@ -3,11 +3,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from kiln_ai.datamodel.environment import Environment
 from kiln_ai.datamodel.external_tool_server import (
     ExternalToolServer,
     ToolServerType,
 )
+from kiln_ai.datamodel.openenv import OpenEnv
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import (
@@ -17,7 +17,7 @@ from kiln_ai.datamodel.tool_id import (
     RAG_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     _check_tool_id,
-    build_env_tool_id,
+    build_openenv_tool_id,
     kiln_task_server_id_from_tool_id,
     mcp_server_and_tool_name_from_id,
 )
@@ -998,52 +998,52 @@ class TestValidateUniqueAllowlistToolNames:
                 project,
             )
 
-    def _make_environment(self, project, name="depot"):
-        environment = Environment(name=name, parent=project)
-        environment.save_to_file()
-        return environment
+    def _make_openenv(self, project, name="depot"):
+        openenv = OpenEnv(name=name, parent=project)
+        openenv.save_to_file()
+        return openenv
 
-    async def test_accepts_env_tools_of_an_existing_environment(self, project):
-        """Environment tools resolve only inside an episode, so the allowlist check finds
+    async def test_accepts_openenv_tools_of_an_existing_openenv(self, project):
+        """OpenEnv tools resolve only inside an episode, so the allowlist check finds
         their environment in the project and does not resolve them."""
-        environment = self._make_environment(project)
+        openenv = self._make_openenv(project)
         helper = self._make_code_tool(project, "helper")
         await validate_unique_allowlist_tool_names(
             [
-                build_env_tool_id(environment.id, "sql_query"),
-                build_env_tool_id(environment.id, "search"),
+                build_openenv_tool_id(openenv.id, "sql_query"),
+                build_openenv_tool_id(openenv.id, "search"),
                 f"kiln_tool::code::{helper.id}",
             ],
             project,
         )
 
-    async def test_env_tool_still_refused_outside_an_episode(self, project):
+    async def test_openenv_tool_still_refused_outside_an_episode(self, project):
         """The allowlist check accepts an environment tool, and resolving it outside an
         episode still fails."""
-        environment = self._make_environment(project)
-        tool_id = build_env_tool_id(environment.id, "sql_query")
+        openenv = self._make_openenv(project)
+        tool_id = build_openenv_tool_id(openenv.id, "sql_query")
         await validate_unique_allowlist_tool_names([tool_id], project)
         with pytest.raises(ValueError, match="can only be used while an episode"):
             tool_from_id_and_project(tool_id, project=project)
 
-    async def test_rejects_env_tool_of_unknown_environment(self, project):
+    async def test_rejects_openenv_tool_of_unknown_openenv(self, project):
         with pytest.raises(
             ValueError,
-            match=r"Environment\(s\) no_such_environment referenced by environment tools in the "
+            match=r"OpenEnv\(s\) no_such_openenv referenced by environment tools in the "
             r"tool_allowlist not found",
         ):
             await validate_unique_allowlist_tool_names(
-                [build_env_tool_id("no_such_environment", "sql_query")], project
+                [build_openenv_tool_id("no_such_openenv", "sql_query")], project
             )
 
     @pytest.mark.parametrize("other_kind", ["code", "mcp"])
-    async def test_rejects_env_tool_colliding_with_another_tool(
+    async def test_rejects_openenv_tool_colliding_with_another_tool(
         self, project, other_kind
     ):
         """Sandboxed code calls an environment tool by the last segment of its id. A
         collision with an MCP tool is refused too: the environment tool is the one that
         can be dropped."""
-        environment = self._make_environment(project)
+        openenv = self._make_openenv(project)
         if other_kind == "code":
             other_id = (
                 f"kiln_tool::code::{self._make_code_tool(project, 'sql_query').id}"
@@ -1062,24 +1062,24 @@ class TestValidateUniqueAllowlistToolNames:
             other_id = f"mcp::remote::{server.id}::sql_query"
         with pytest.raises(ValueError, match="share the same function name: sql_query"):
             await validate_unique_allowlist_tool_names(
-                [build_env_tool_id(environment.id, "sql_query"), other_id], project
+                [build_openenv_tool_id(openenv.id, "sql_query"), other_id], project
             )
 
-    async def test_env_tools_do_not_skip_other_tool_checks(self, project):
+    async def test_openenv_tools_do_not_skip_other_tool_checks(self, project):
         """A missing tool or a name collision among the other tools is still refused
         when environment tools are listed too."""
-        environment = self._make_environment(project)
-        env_tool = build_env_tool_id(environment.id, "sql_query")
+        openenv = self._make_openenv(project)
+        openenv_tool = build_openenv_tool_id(openenv.id, "sql_query")
         with pytest.raises(ValueError, match="Code tool not found"):
             await validate_unique_allowlist_tool_names(
-                [env_tool, "kiln_tool::code::missing"], project
+                [openenv_tool, "kiln_tool::code::missing"], project
             )
         dup_a = self._make_code_tool(project, "dup_tool")
         dup_b = self._make_code_tool(project, "dup_tool")
         with pytest.raises(ValueError, match="share the same function name: dup_tool"):
             await validate_unique_allowlist_tool_names(
                 [
-                    env_tool,
+                    openenv_tool,
                     f"kiln_tool::code::{dup_a.id}",
                     f"kiln_tool::code::{dup_b.id}",
                 ],
@@ -1176,6 +1176,6 @@ class TestProjectToolFunctionName:
 
         assert project_tool_function_name("kiln_tool::add_numbers", project) is None
         assert project_tool_function_name("kiln_tool::skill::s1", project) is None
-        assert project_tool_function_name("kiln_tool::env::w::x", project) is None
+        assert project_tool_function_name("kiln_tool::openenv::w::x", project) is None
         assert project_tool_function_name("mcp::remote::srv1::lookup", None) is None
         assert project_tool_function_name("mcp::remote::broken", project) is None

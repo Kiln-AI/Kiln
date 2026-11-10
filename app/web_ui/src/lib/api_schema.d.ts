@@ -2985,51 +2985,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/environments": {
+    "/api/projects/{project_id}/openenvs": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List Environments */
-        get: operations["list_environments_api_projects__project_id__environments_get"];
+        /** List OpenEnvs */
+        get: operations["list_openenvs_api_projects__project_id__openenvs_get"];
         put?: never;
-        /** Create Environment */
-        post: operations["create_environment_api_projects__project_id__environments_post"];
+        /** Create OpenEnv */
+        post: operations["create_openenv_api_projects__project_id__openenvs_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/environments/{environment_id}": {
+    "/api/projects/{project_id}/openenvs/{openenv_id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Environment */
-        get: operations["get_environment_api_projects__project_id__environments__environment_id__get"];
+        /** Get OpenEnv */
+        get: operations["get_openenv_api_projects__project_id__openenvs__openenv_id__get"];
         put?: never;
         post?: never;
         /**
-         * Delete Environment
+         * Delete OpenEnv
          * @description Delete an environment, if no saved eval input still resets into it.
          *
          *     409 when one does. An eval input names its environment by id, so a delete that went
          *     through would leave every eval run on it failing to resolve the environment.
          *     Traces made in the environment keep their own copy of the episode, and stay readable.
          */
-        delete: operations["delete_environment_api_projects__project_id__environments__environment_id__delete"];
+        delete: operations["delete_openenv_api_projects__project_id__openenvs__openenv_id__delete"];
         options?: never;
         head?: never;
-        /** Update Environment */
-        patch: operations["update_environment_api_projects__project_id__environments__environment_id__patch"];
+        /** Update OpenEnv */
+        patch: operations["update_openenv_api_projects__project_id__openenvs__openenv_id__patch"];
         trace?: never;
     };
-    "/api/projects/{project_id}/environments/{environment_id}/tools": {
+    "/api/projects/{project_id}/openenvs/{openenv_id}/tools": {
         parameters: {
             query?: never;
             header?: never;
@@ -3037,10 +3037,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List Environment Tools
-         * @description The tools the OpenEnv environment serves, read fresh from the running server at env_url.
+         * List OpenEnv Tools
+         * @description The tools the OpenEnv environment serves, read fresh from the running server at url.
          */
-        get: operations["list_environment_tools_api_projects__project_id__environments__environment_id__tools_get"];
+        get: operations["list_openenv_tools_api_projects__project_id__openenvs__openenv_id__tools_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4222,7 +4222,7 @@ export interface paths {
          *     someone resumes it, so check `status` and call
          *     `POST /api/jobs/{id}/resume` if the job must run. Poll
          *     `GET /api/jobs/{id}` or `POST /api/jobs/wait` for progress and the
-         *     result. An item with an `env_reset` runs in a fresh episode of its environment
+         *     result. An item with an `openenv_reset` runs in a fresh episode of its environment
          *     when the run config lists that environment's tools. A 404 means that the eval,
          *     the eval config or the run config does not exist. A 422 means that the
          *     eval has no such split, or that `item_ids` names an item outside it. A 400
@@ -6009,7 +6009,7 @@ export interface components {
              */
             tags?: string[];
             /** @description Optional environment to run this item in: an environment in this project, plus the keyword arguments its reset() is called with. A run config that lists that environment's tools runs the item in the episode the reset starts; omit it and the item runs against the project's own tools. Like the scenario, it cannot be changed afterwards — send a new item instead. */
-            env_reset?: components["schemas"]["EnvironmentReset"] | null;
+            openenv_reset?: components["schemas"]["OpenEnvReset"] | null;
         };
         /**
          * CreateEvaluatorRequest
@@ -7112,175 +7112,6 @@ export interface components {
             models: components["schemas"]["EmbeddingModelDetails"][];
         };
         /**
-         * EnvironmentCreateRequest
-         * @description A new environment: a pointer to a running OpenEnv environment.
-         */
-        EnvironmentCreateRequest: {
-            /**
-             * Name
-             * @description User-facing display name.
-             */
-            name: string;
-            /**
-             * Description
-             * @description User-facing notes about the environment.
-             */
-            description?: string | null;
-            /**
-             * Env Url
-             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this environment send their tool calls to it.
-             */
-            env_url?: string | null;
-        };
-        /**
-         * EnvironmentEpisode
-         * @description One reset-to-close run on an environment, recorded on the trace of the
-         *     task run that used it. The environment's tools ran inside the episode; any other tools
-         *     in the run config ran as themselves, outside the environment.
-         *
-         *     Persisted on `TaskRun.env_episode` so graders (including judges added later,
-         *     which reuse the same trace) can read what the run left behind. The live session is
-         *     closed when the episode ends; `final_state` is the durable record.
-         */
-        EnvironmentEpisode: {
-            /** @description The environment and reset() keyword arguments this episode was started from: the input's env_reset. */
-            reset: components["schemas"]["EnvironmentReset"];
-            /**
-             * Episode Id
-             * @description Kiln's id for this episode, passed to the environment's reset() as `episode_id`.
-             */
-            episode_id: string;
-            /**
-             * Env Version
-             * @description The environment's name@version as its server reported it when the episode started: what produced this state. Kiln trusts a version to be immutable.
-             */
-            env_version: string;
-            /**
-             * Reset Metadata
-             * @description What the environment reported in the observation metadata when the episode was reset: facts about the starting state that judges may want, such as the scenario it started from or the clock it runs on.
-             */
-            reset_metadata?: {
-                [key: string]: components["schemas"]["JsonValue"];
-            };
-            /**
-             * Final State
-             * @description The environment's state() after generation, read when the episode ends. Whatever the environment chooses to report: a diff against its starting state, counters, an episode summary.
-             */
-            final_state?: {
-                [key: string]: components["schemas"]["JsonValue"];
-            } | null;
-        };
-        /**
-         * EnvironmentReset
-         * @description Reset this environment with these keyword arguments before the run; the reset starts
-         *     the episode the trace records.
-         *
-         *     `reset_kwargs` is opaque to Kiln: it is passed as the keyword arguments of the
-         *     environment's `reset` (a dataset or scenario identifier, a seed, a clock override). The
-         *     trace key carries a digest of the whole reset, so an input whose reset is edited
-         *     after its trace was made generates a new one rather than reusing it.
-         */
-        EnvironmentReset: {
-            /**
-             * Environment Id
-             * @description The Environment to run in.
-             */
-            environment_id: string;
-            /**
-             * Reset Kwargs
-             * @description Keyword arguments for the environment's reset(), passed verbatim. Which keywords exist is the environment's business, e.g. which dataset or scenario to start from, a seed, a clock override.
-             */
-            reset_kwargs?: {
-                [key: string]: components["schemas"]["JsonValue"];
-            };
-        };
-        /**
-         * EnvironmentResponse
-         * @description An environment: a pointer to a running OpenEnv environment.
-         */
-        EnvironmentResponse: {
-            /**
-             * Id
-             * @description The environment's id.
-             */
-            id?: string | null;
-            /**
-             * Name
-             * @description User-facing display name.
-             */
-            name: string;
-            /**
-             * Description
-             * @description User-facing notes about the environment.
-             */
-            description?: string | null;
-            /**
-             * Env Url
-             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this environment send their tool calls to it.
-             */
-            env_url?: string | null;
-            /**
-             * Created At
-             * @description When the environment was created.
-             */
-            created_at?: string | null;
-            /**
-             * Created By
-             * @description Who created the environment.
-             */
-            created_by?: string | null;
-        };
-        /**
-         * EnvironmentToolResponse
-         * @description One tool the environment serves.
-         */
-        EnvironmentToolResponse: {
-            /**
-             * Tool Id
-             * @description The id a run config uses to list this tool directly: kiln_tool::env::<environment_id>::<tool_name>.
-             */
-            tool_id: string;
-            /**
-             * Name
-             * @description The tool's function name, as the model sees it.
-             */
-            name: string;
-            /**
-             * Description
-             * @description The tool's description, as the model sees it.
-             * @default
-             */
-            description: string;
-            /**
-             * Input Schema
-             * @description JSON schema of the tool's arguments.
-             */
-            input_schema?: {
-                [key: string]: unknown;
-            };
-        };
-        /**
-         * EnvironmentUpdateRequest
-         * @description Changes to an environment. Only the fields sent are changed.
-         */
-        EnvironmentUpdateRequest: {
-            /**
-             * Name
-             * @description User-facing display name.
-             */
-            name?: string | null;
-            /**
-             * Description
-             * @description User-facing notes about the environment.
-             */
-            description?: string | null;
-            /**
-             * Env Url
-             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this environment send their tool calls to it.
-             */
-            env_url?: string | null;
-        };
-        /**
          * EphemeralSplitChunk
          * @description A single chunk from an ephemeral split.
          */
@@ -7641,7 +7472,7 @@ export interface components {
              */
             tags?: string[];
             /** @description Reset this environment with these keyword arguments before the run; the reset starts the episode the trace records. A run config that lists the environment's tools runs the input in that episode; a run config listing the project's own version of a tool the environment serves is refused. None runs against the project tools. */
-            env_reset?: components["schemas"]["EnvironmentReset"] | null;
+            openenv_reset?: components["schemas"]["OpenEnvReset"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -7744,7 +7575,7 @@ export interface components {
             item_ids?: string[] | null;
             /**
              * Judge
-             * @description Whether to judge the items. False drives each item exactly as a judged job does (a fresh episode for an item with an env_reset, the synthetic user for a multi-turn item) and saves its trace as a task run with its usage, but runs no judge and stores no score. Every item is driven again, scored or not, so the usage is of this job. `result.driven_runs` names the task runs. A later judged job on the same items and run config reuses these traces instead of driving again. For an item in an environment, only while the item's env_reset and the environment's version are unchanged: a trace is reused only for the reset and version it ran with. Needs a V2 eval config. A drive-only job is never deduplicated and cannot be paused: each one is a new measurement.
+             * @description Whether to judge the items. False drives each item exactly as a judged job does (a fresh episode for an item with an openenv_reset, the synthetic user for a multi-turn item) and saves its trace as a task run with its usage, but runs no judge and stores no score. Every item is driven again, scored or not, so the usage is of this job. `result.driven_runs` names the task runs. A later judged job on the same items and run config reuses these traces instead of driving again. For an item in an environment, only while the item's openenv_reset and the environment's version are unchanged: a trace is reused only for the reset and version it ran with. Needs a V2 eval config. A drive-only job is never deduplicated and cannot be paused: each one is a new measurement.
              * @default true
              */
             judge: boolean;
@@ -8170,8 +8001,8 @@ export interface components {
              * @description The original task input text.
              */
             task_input?: string | null;
-            /** @description The environment episode the trace's environment tools ran in, when the run used an environment: the reset it started from, what the environment reported at reset, and the environment's final state. Judges reference it in their prompt template (e.g. {{ env_episode.final_state }}); code scorers receive it as the `env_episode` argument. */
-            env_episode?: components["schemas"]["EnvironmentEpisode"] | null;
+            /** @description The environment episode the trace's environment tools ran in, when the run used an environment: the reset it started from, what the environment reported at reset, and the environment's final state. Judges reference it in their prompt template (e.g. {{ openenv_episode.final_state }}); code scorers receive it as the `openenv_episode` argument. */
+            openenv_episode?: components["schemas"]["OpenEnvEpisode"] | null;
         };
         /**
          * EvalTemplateId
@@ -10778,6 +10609,175 @@ export interface components {
              * @description API key for authentication.
              */
             api_key: string;
+        };
+        /**
+         * OpenEnvCreateRequest
+         * @description A new environment: a pointer to a running OpenEnv environment.
+         */
+        OpenEnvCreateRequest: {
+            /**
+             * Name
+             * @description User-facing display name.
+             */
+            name: string;
+            /**
+             * Description
+             * @description User-facing notes about the environment.
+             */
+            description?: string | null;
+            /**
+             * Url
+             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this environment send their tool calls to it.
+             */
+            url?: string | null;
+        };
+        /**
+         * OpenEnvEpisode
+         * @description One reset-to-close run on an environment, recorded on the trace of the
+         *     task run that used it. The environment's tools ran inside the episode; any other tools
+         *     in the run config ran as themselves, outside the environment.
+         *
+         *     Persisted on `TaskRun.openenv_episode` so graders (including judges added later,
+         *     which reuse the same trace) can read what the run left behind. The live session is
+         *     closed when the episode ends; `final_state` is the durable record.
+         */
+        OpenEnvEpisode: {
+            /** @description The environment and reset() keyword arguments this episode was started from: the input's openenv_reset. */
+            reset: components["schemas"]["OpenEnvReset"];
+            /**
+             * Episode Id
+             * @description Kiln's id for this episode, passed to the environment's reset() as `episode_id`.
+             */
+            episode_id: string;
+            /**
+             * Openenv Version
+             * @description The environment's name@version as its server reported it when the episode started: what produced this state. Kiln trusts a version to be immutable.
+             */
+            openenv_version: string;
+            /**
+             * Reset Metadata
+             * @description What the environment reported in the observation metadata when the episode was reset: facts about the starting state that judges may want, such as the scenario it started from or the clock it runs on.
+             */
+            reset_metadata?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Final State
+             * @description The environment's state() after generation, read when the episode ends. Whatever the environment chooses to report: a diff against its starting state, counters, an episode summary.
+             */
+            final_state?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+        };
+        /**
+         * OpenEnvReset
+         * @description Reset this environment with these keyword arguments before the run; the reset starts
+         *     the episode the trace records.
+         *
+         *     `reset_kwargs` is opaque to Kiln: it is passed as the keyword arguments of the
+         *     environment's `reset` (a dataset or scenario identifier, a seed, a clock override). The
+         *     trace key carries a digest of the whole reset, so an input whose reset is edited
+         *     after its trace was made generates a new one rather than reusing it.
+         */
+        OpenEnvReset: {
+            /**
+             * Openenv Id
+             * @description The OpenEnv to run in.
+             */
+            openenv_id: string;
+            /**
+             * Reset Kwargs
+             * @description Keyword arguments for the environment's reset(), passed verbatim. Which keywords exist is the environment's business, e.g. which dataset or scenario to start from, a seed, a clock override.
+             */
+            reset_kwargs?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
+        /**
+         * OpenEnvResponse
+         * @description An environment: a pointer to a running OpenEnv environment.
+         */
+        OpenEnvResponse: {
+            /**
+             * Id
+             * @description The environment's id.
+             */
+            id?: string | null;
+            /**
+             * Name
+             * @description User-facing display name.
+             */
+            name: string;
+            /**
+             * Description
+             * @description User-facing notes about the environment.
+             */
+            description?: string | null;
+            /**
+             * Url
+             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this environment send their tool calls to it.
+             */
+            url?: string | null;
+            /**
+             * Created At
+             * @description When the environment was created.
+             */
+            created_at?: string | null;
+            /**
+             * Created By
+             * @description Who created the environment.
+             */
+            created_by?: string | null;
+        };
+        /**
+         * OpenEnvToolResponse
+         * @description One tool the environment serves.
+         */
+        OpenEnvToolResponse: {
+            /**
+             * Tool Id
+             * @description The id a run config uses to list this tool directly: kiln_tool::openenv::<openenv_id>::<tool_name>.
+             */
+            tool_id: string;
+            /**
+             * Name
+             * @description The tool's function name, as the model sees it.
+             */
+            name: string;
+            /**
+             * Description
+             * @description The tool's description, as the model sees it.
+             * @default
+             */
+            description: string;
+            /**
+             * Input Schema
+             * @description JSON schema of the tool's arguments.
+             */
+            input_schema?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * OpenEnvUpdateRequest
+         * @description Changes to an environment. Only the fields sent are changed.
+         */
+        OpenEnvUpdateRequest: {
+            /**
+             * Name
+             * @description User-facing display name.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description User-facing notes about the environment.
+             */
+            description?: string | null;
+            /**
+             * Url
+             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this environment send their tool calls to it.
+             */
+            url?: string | null;
         };
         /**
          * OpenFileResponse
@@ -13688,7 +13688,7 @@ export interface components {
             /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
             eval_source?: components["schemas"]["EvalItemSource"] | null;
             /** @description Set when this run used an environment: the episode its environment tools ran in, ending with the environment's final state so graders can inspect what the run did there. Project tools in the run config ran as themselves, outside the environment. */
-            env_episode?: components["schemas"]["EnvironmentEpisode"] | null;
+            openenv_episode?: components["schemas"]["OpenEnvEpisode"] | null;
         };
         /**
          * TaskRun
@@ -13773,7 +13773,7 @@ export interface components {
             /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
             eval_source?: components["schemas"]["EvalItemSource"] | null;
             /** @description Set when this run used an environment: the episode its environment tools ran in, ending with the environment's final state so graders can inspect what the run did there. Project tools in the run config ran as themselves, outside the environment. */
-            env_episode?: components["schemas"]["EnvironmentEpisode"] | null;
+            openenv_episode?: components["schemas"]["OpenEnvEpisode"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -14412,10 +14412,10 @@ export interface components {
          * UpdateEvalInputRequest
          * @description Partial update of an eval input item. Omitted fields are left unchanged.
          *
-         *     `data` and `env_reset` are deliberately absent, and `extra="forbid"` turns an
+         *     `data` and `openenv_reset` are deliberately absent, and `extra="forbid"` turns an
          *     attempt to send either into a 422 rather than a silent no-op the caller reads as
          *     success. They are what genuinely cannot be edited in place: trace reuse
-         *     (`TraceIndex`) keys on `(source_type, item_id, run_config_id, env_version)`, and
+         *     (`TraceIndex`) keys on `(source_type, item_id, run_config_id, openenv_version)`, and
          *     the item id stands for the item's whole content, so a later eval would hand a judge
          *     a conversation generated from the scenario this item *used to* have — or, for a
          *     environment item, one recorded in an episode the environment was reset into differently.
@@ -21864,7 +21864,7 @@ export interface operations {
             };
         };
     };
-    list_environments_api_projects__project_id__environments_get: {
+    list_openenvs_api_projects__project_id__openenvs_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -21882,7 +21882,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EnvironmentResponse"][];
+                    "application/json": components["schemas"]["OpenEnvResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -21896,7 +21896,7 @@ export interface operations {
             };
         };
     };
-    create_environment_api_projects__project_id__environments_post: {
+    create_openenv_api_projects__project_id__openenvs_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -21908,7 +21908,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["EnvironmentCreateRequest"];
+                "application/json": components["schemas"]["OpenEnvCreateRequest"];
             };
         };
         responses: {
@@ -21918,7 +21918,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EnvironmentResponse"];
+                    "application/json": components["schemas"]["OpenEnvResponse"];
                 };
             };
             /** @description Validation Error */
@@ -21932,7 +21932,7 @@ export interface operations {
             };
         };
     };
-    get_environment_api_projects__project_id__environments__environment_id__get: {
+    get_openenv_api_projects__project_id__openenvs__openenv_id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -21940,7 +21940,7 @@ export interface operations {
                 /** @description The unique identifier of the project. */
                 project_id: string;
                 /** @description The unique identifier of the environment. */
-                environment_id: string;
+                openenv_id: string;
             };
             cookie?: never;
         };
@@ -21952,7 +21952,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EnvironmentResponse"];
+                    "application/json": components["schemas"]["OpenEnvResponse"];
                 };
             };
             /** @description Validation Error */
@@ -21966,7 +21966,7 @@ export interface operations {
             };
         };
     };
-    delete_environment_api_projects__project_id__environments__environment_id__delete: {
+    delete_openenv_api_projects__project_id__openenvs__openenv_id__delete: {
         parameters: {
             query?: never;
             header?: never;
@@ -21974,7 +21974,7 @@ export interface operations {
                 /** @description The unique identifier of the project. */
                 project_id: string;
                 /** @description The unique identifier of the environment. */
-                environment_id: string;
+                openenv_id: string;
             };
             cookie?: never;
         };
@@ -22000,7 +22000,7 @@ export interface operations {
             };
         };
     };
-    update_environment_api_projects__project_id__environments__environment_id__patch: {
+    update_openenv_api_projects__project_id__openenvs__openenv_id__patch: {
         parameters: {
             query?: never;
             header?: never;
@@ -22008,13 +22008,13 @@ export interface operations {
                 /** @description The unique identifier of the project. */
                 project_id: string;
                 /** @description The unique identifier of the environment. */
-                environment_id: string;
+                openenv_id: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["EnvironmentUpdateRequest"];
+                "application/json": components["schemas"]["OpenEnvUpdateRequest"];
             };
         };
         responses: {
@@ -22024,7 +22024,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EnvironmentResponse"];
+                    "application/json": components["schemas"]["OpenEnvResponse"];
                 };
             };
             /** @description Validation Error */
@@ -22038,7 +22038,7 @@ export interface operations {
             };
         };
     };
-    list_environment_tools_api_projects__project_id__environments__environment_id__tools_get: {
+    list_openenv_tools_api_projects__project_id__openenvs__openenv_id__tools_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -22046,7 +22046,7 @@ export interface operations {
                 /** @description The unique identifier of the project. */
                 project_id: string;
                 /** @description The unique identifier of the environment. */
-                environment_id: string;
+                openenv_id: string;
             };
             cookie?: never;
         };
@@ -22058,7 +22058,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EnvironmentToolResponse"][];
+                    "application/json": components["schemas"]["OpenEnvToolResponse"][];
                 };
             };
             /** @description Validation Error */

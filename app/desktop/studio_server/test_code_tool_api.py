@@ -4,10 +4,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.code_tool import CodeTool
-from kiln_ai.datamodel.environment import Environment
+from kiln_ai.datamodel.openenv import OpenEnv
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance
-from kiln_ai.datamodel.tool_id import build_env_tool_id
+from kiln_ai.datamodel.tool_id import build_openenv_tool_id
 from kiln_ai.tools.code_tool import ChildOutcome, PythonCodeTool
 from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
 from kiln_server.custom_errors import connect_custom_errors
@@ -772,15 +772,15 @@ class TestAvailableToolsCodeGroup:
         assert len(code_sets) == 0
 
 
-class TestCodeToolEnvironmentTools:
-    """Environment tools resolve only inside an episode of their environment. Creating a code
+class TestCodeToolOpenEnvTools:
+    """OpenEnv tools resolve only inside an episode of their environment. Creating a code
     tool checks them without one; testing one runs outside any episode."""
 
     @pytest.fixture
-    def environment(self, test_project):
-        environment = Environment(name="Depot", parent=test_project)
-        environment.save_to_file()
-        return environment
+    def openenv(self, test_project):
+        openenv = OpenEnv(name="Depot", parent=test_project)
+        openenv.save_to_file()
+        return openenv
 
     def _create(self, client, test_project, create_request, tool_allowlist):
         create_request["tool_allowlist"] = tool_allowlist
@@ -789,8 +789,8 @@ class TestCodeToolEnvironmentTools:
                 f"/api/projects/{test_project.id}/code_tools", json=create_request
             )
 
-    def test_create_accepts_env_tools(
-        self, client, test_project, mock_project_from_id, create_request, environment
+    def test_create_accepts_openenv_tools(
+        self, client, test_project, mock_project_from_id, create_request, openenv
     ):
         helper = CodeTool(
             name="helper",
@@ -802,7 +802,7 @@ class TestCodeToolEnvironmentTools:
         )
         helper.save_to_file()
         allowlist = [
-            build_env_tool_id(environment.id, "sql_query"),
+            build_openenv_tool_id(openenv.id, "sql_query"),
             f"kiln_tool::code::{helper.id}",
         ]
 
@@ -815,28 +815,28 @@ class TestCodeToolEnvironmentTools:
         assert loaded is not None
         assert loaded.tool_allowlist == allowlist
 
-    def test_create_rejects_env_tool_of_unknown_environment(
+    def test_create_rejects_openenv_tool_of_unknown_openenv(
         self, client, test_project, mock_project_from_id, create_request
     ):
         response = self._create(
             client,
             test_project,
             create_request,
-            [build_env_tool_id("no_such_environment", "sql_query")],
+            [build_openenv_tool_id("no_such_openenv", "sql_query")],
         )
 
         assert response.status_code == 400
-        assert "no_such_environment" in response.json()["message"]
+        assert "no_such_openenv" in response.json()["message"]
         assert "not found in project" in response.json()["message"]
         assert test_project.code_tools(readonly=True) == []
 
-    def test_create_rejects_env_tool_name_collision(
+    def test_create_rejects_openenv_tool_name_collision(
         self,
         client,
         test_project,
         mock_project_from_id,
         create_request,
-        environment,
+        openenv,
         saved_code_tool,
     ):
         response = self._create(
@@ -844,7 +844,7 @@ class TestCodeToolEnvironmentTools:
             test_project,
             create_request,
             [
-                build_env_tool_id(environment.id, saved_code_tool.tool_function_name),
+                build_openenv_tool_id(openenv.id, saved_code_tool.tool_function_name),
                 f"kiln_tool::code::{saved_code_tool.id}",
             ],
         )
@@ -855,10 +855,10 @@ class TestCodeToolEnvironmentTools:
             in response.json()["message"]
         )
 
-    def test_patch_keeps_env_tool_allowlist(
-        self, client, test_project, mock_project_from_id, create_request, environment
+    def test_patch_keeps_openenv_tool_allowlist(
+        self, client, test_project, mock_project_from_id, create_request, openenv
     ):
-        allowlist = [build_env_tool_id(environment.id, "sql_query")]
+        allowlist = [build_openenv_tool_id(openenv.id, "sql_query")]
         created = self._create(client, test_project, create_request, allowlist)
         assert created.status_code == 200, created.text
 
@@ -871,17 +871,17 @@ class TestCodeToolEnvironmentTools:
         assert response.json()["name"] == "renamed"
         assert response.json()["tool_allowlist"] == allowlist
 
-    def _test_request(self, environment_id: str, code: str) -> dict:
+    def _test_request(self, openenv_id: str, code: str) -> dict:
         return {
             "tool_function_name": "sql_preview",
             "parameters_schema": SIMPLE_SCHEMA,
             "code": code,
-            "tool_allowlist": [build_env_tool_id(environment_id, "sql_query")],
+            "tool_allowlist": [build_openenv_tool_id(openenv_id, "sql_query")],
             "params": {"x": 5},
         }
 
-    def test_test_says_why_env_tool_call_is_refused(
-        self, client, test_project, mock_project_from_id, environment
+    def test_test_says_why_openenv_tool_call_is_refused(
+        self, client, test_project, mock_project_from_id, openenv
     ):
         """Runs the sandbox for real: the test runs outside any episode, so the environment
         tool is refused, and the error says why instead of listing no tools."""
@@ -893,15 +893,15 @@ class TestCodeToolEnvironmentTools:
         with patch(TRUST_PATCH, return_value=True):
             response = client.post(
                 f"/api/projects/{test_project.id}/test_code_tool",
-                json=self._test_request(environment.id, code),
+                json=self._test_request(openenv.id, code),
             )
 
         assert response.status_code == 200, response.text
         body = response.json()
         assert body["result"] is None
-        assert "Tool 'sql_query' is not available: Environment tool" in body["error"]
+        assert "Tool 'sql_query' is not available: OpenEnv tool" in body["error"]
         assert "can only be used while an episode" in body["error"]
         (entry,) = body["tool_call_log"]
         assert entry["output_preview"].startswith(
-            "Tool 'sql_query' is not available: Environment tool"
+            "Tool 'sql_query' is not available: OpenEnv tool"
         )

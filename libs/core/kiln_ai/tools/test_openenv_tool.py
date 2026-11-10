@@ -8,19 +8,19 @@ from typing import Any
 import pytest
 
 from kiln_ai.datamodel.code_tool import CodeTool
-from kiln_ai.datamodel.environment import (
-    Environment,
-    EnvironmentEpisode,
-    EnvironmentReset,
+from kiln_ai.datamodel.openenv import (
+    OpenEnv,
+    OpenEnvEpisode,
+    OpenEnvReset,
     OpenEnvTool,
 )
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.tool_id import (
     KilnBuiltInToolId,
     build_code_tool_id,
-    build_env_tool_id,
+    build_openenv_tool_id,
 )
-from kiln_ai.environments.session_manager import ToolCallOutcome
+from kiln_ai.openenv.session_manager import ToolCallOutcome
 from kiln_ai.run_context import (
     EpisodeContext,
     get_episode,
@@ -30,7 +30,7 @@ from kiln_ai.run_context import (
 from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.built_in_tools.math_tools import AddTool
 from kiln_ai.tools.code_tool import PythonCodeTool
-from kiln_ai.tools.env_tool import (
+from kiln_ai.tools.openenv_tool import (
     OpenEnvToolProxy,
     openenv_toolcall_definition,
     render_tool_error,
@@ -85,10 +85,10 @@ def project_tool(project):
 
 
 @pytest.fixture
-def environment(project):
-    w = Environment(name="w", parent=project)
-    w.save_to_file()
-    return w
+def openenv(project):
+    openenv = OpenEnv(name="w", parent=project)
+    openenv.save_to_file()
+    return openenv
 
 
 @pytest.fixture
@@ -96,14 +96,14 @@ def session_manager():
     return FakeSessionManager()
 
 
-def _context(environment, session_manager):
+def _context(openenv, session_manager):
     return EpisodeContext(
-        episode=EnvironmentEpisode(
-            reset=EnvironmentReset(environment_id=environment.id),
+        episode=OpenEnvEpisode(
+            reset=OpenEnvReset(openenv_id=openenv.id),
             episode_id="ep_test",
-            env_version="w@1",
+            openenv_version="w@1",
         ),
-        environment=environment,
+        openenv=openenv,
         session_manager=session_manager,  # type: ignore[arg-type]
         tools={
             "lookup": OpenEnvTool(
@@ -114,8 +114,8 @@ def _context(environment, session_manager):
 
 
 @pytest.fixture
-def active(environment, session_manager):
-    ctx = _context(environment, session_manager)
+def active(openenv, session_manager):
+    ctx = _context(openenv, session_manager)
     token = set_episode(ctx)
     yield ctx
     reset_episode(token)
@@ -146,9 +146,9 @@ class TestProjectToolsAreNeverSwapped:
         )
 
 
-class TestEnvironmentToolIds:
-    async def test_resolves_to_env_tool(self, environment, active, session_manager):
-        tool_id = build_env_tool_id(environment.id, "lookup")
+class TestOpenEnvToolIds:
+    async def test_resolves_to_openenv_tool(self, openenv, active, session_manager):
+        tool_id = build_openenv_tool_id(openenv.id, "lookup")
         tool = tool_from_id_and_project(tool_id)
         assert isinstance(tool, OpenEnvToolProxy)
         assert await tool.id() == tool_id
@@ -157,25 +157,25 @@ class TestEnvironmentToolIds:
         definition = await tool.toolcall_definition()
         assert definition["function"]["name"] == "lookup"
         assert definition["function"]["parameters"] == ENV_SCHEMA
-        assert tool.env_tool is active.tools["lookup"]
+        assert tool.openenv_tool is active.tools["lookup"]
 
         result = await tool.run(ToolCallContext(), x="1")
         assert result.output == "env:ok" and not result.is_error
         assert session_manager.calls == [("ep_test", "lookup", {"x": "1"})]
 
     async def test_error_outcome_reaches_model_as_error(
-        self, environment, active, session_manager
+        self, openenv, active, session_manager
     ):
         session_manager.outcome = ToolCallOutcome(
             result=None, error="tool exploded", reward=-1.0, done=True
         )
-        tool = tool_from_id_and_project(build_env_tool_id(environment.id, "lookup"))
+        tool = tool_from_id_and_project(build_openenv_tool_id(openenv.id, "lookup"))
         result = await tool.run(ToolCallContext(), x="q")
         assert result.is_error and result.output == "tool exploded"
         assert result.error_message == "tool exploded"
 
     async def test_coded_error_reaches_the_model_as_a_structured_error(
-        self, environment, active, session_manager
+        self, openenv, active, session_manager
     ):
         """A code is rendered for the model to read, and the call is still a failure.
 
@@ -191,7 +191,7 @@ class TestEnvironmentToolIds:
             error_code="execution_error",
             error_details={"id": "ENG-99"},
         )
-        tool = tool_from_id_and_project(build_env_tool_id(environment.id, "lookup"))
+        tool = tool_from_id_and_project(build_openenv_tool_id(openenv.id, "lookup"))
         result = await tool.run(ToolCallContext(), x="q")
         assert result.is_error
         assert json.loads(result.output) == {
@@ -205,7 +205,7 @@ class TestEnvironmentToolIds:
         assert result.error_message == "issue ENG-99 not found"
 
     async def test_fastmcp_is_error_result_is_an_error(
-        self, environment, active, session_manager
+        self, openenv, active, session_manager
     ):
         session_manager.outcome = ToolCallOutcome(
             result={
@@ -217,18 +217,18 @@ class TestEnvironmentToolIds:
             reward=None,
             done=False,
         )
-        tool = tool_from_id_and_project(build_env_tool_id(environment.id, "lookup"))
+        tool = tool_from_id_and_project(build_openenv_tool_id(openenv.id, "lookup"))
         result = await tool.run(ToolCallContext(), x="q")
         assert result.is_error and result.output == "bad input"
         assert result.error_message == "bad input"
 
-    async def test_without_context(self, environment):
+    async def test_without_context(self, openenv):
         with pytest.raises(ValueError, match="only be used while an episode"):
-            tool_from_id_and_project(build_env_tool_id(environment.id, "lookup"))
+            tool_from_id_and_project(build_openenv_tool_id(openenv.id, "lookup"))
 
-    async def test_context_reset_restores_the_error(self, environment, session_manager):
-        tool_id = build_env_tool_id(environment.id, "lookup")
-        token = set_episode(_context(environment, session_manager))
+    async def test_context_reset_restores_the_error(self, openenv, session_manager):
+        tool_id = build_openenv_tool_id(openenv.id, "lookup")
+        token = set_episode(_context(openenv, session_manager))
         try:
             assert isinstance(tool_from_id_and_project(tool_id), OpenEnvToolProxy)
         finally:
@@ -236,13 +236,13 @@ class TestEnvironmentToolIds:
         with pytest.raises(ValueError, match="only be used while an episode"):
             tool_from_id_and_project(tool_id)
 
-    async def test_for_another_env(self, active):
+    async def test_for_another_openenv(self, active):
         with pytest.raises(ValueError, match="only be used while an episode"):
-            tool_from_id_and_project(build_env_tool_id("other_env", "lookup"))
+            tool_from_id_and_project(build_openenv_tool_id("other_openenv", "lookup"))
 
-    async def test_unknown_tool(self, environment, active):
+    async def test_unknown_tool(self, openenv, active):
         with pytest.raises(ValueError, match="does not serve a tool named 'nope'"):
-            tool_from_id_and_project(build_env_tool_id(environment.id, "nope"))
+            tool_from_id_and_project(build_openenv_tool_id(openenv.id, "nope"))
 
 
 class TestRenderError:

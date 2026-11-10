@@ -33,7 +33,7 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutpu
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task_output import TASK_OUTPUT_SCHEMA_ERROR_PREFIX
 from kiln_ai.datamodel.tool_id import ToolId
-from kiln_ai.environments.session_manager import (
+from kiln_ai.openenv.session_manager import (
     OpenEnvError,
     OpenEnvRejectedError,
     OpenEnvTransientError,
@@ -1311,7 +1311,7 @@ UNEXPECTED_ADD_FAILURE = (
             ],
             [("call_1", "add", '{"a": 2, "b": 2}')],
             [_tool_error("call_1", UNEXPECTED_ADD_FAILURE)],
-            id="environment_rejected_call_keeps_session",
+            id="openenv_rejected_call_keeps_session",
         ),
         pytest.param(
             [
@@ -1496,11 +1496,11 @@ async def test_process_tool_calls_broken_tool_schema_fails_run(
     [
         pytest.param(
             OpenEnvTransientError("connection dropped"),
-            id="environment_session_dropped",
+            id="openenv_session_dropped",
         ),
         pytest.param(
             OpenEnvError("The environment sent invalid JSON: <html>"),
-            id="environment_session_broken",
+            id="openenv_session_broken",
         ),
         pytest.param(
             litellm.RateLimitError(

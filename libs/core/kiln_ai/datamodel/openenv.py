@@ -1,8 +1,8 @@
-"""Environments: an OpenEnv environment that plays the tool set an agent sees, so evals can
+"""OpenEnvs: an OpenEnv environment that plays the tool set an agent sees, so evals can
 read and write against state the eval owns.
 
-An **environment** is a pointer to an OpenEnv environment (https://github.com/huggingface/OpenEnv)
-that is already running at `env_url`. Kiln never starts or stops environments, and holds
+An **OpenEnv** is Kiln's pointer to an OpenEnv environment (https://github.com/huggingface/OpenEnv)
+that is already running at `url`. Kiln never starts or stops environments, and holds
 none of their code: the environment implements OpenEnv's `reset`, `step` and `state`;
 its tools are served by `step(CallToolAction)` and discovered with `step(ListToolsAction)`.
 Nothing about an environment is Kiln-specific: an env author writes OpenEnv code and no Kiln
@@ -24,13 +24,13 @@ and allowing more than one requires the environment to keep its state per sessio
 capacity error before any model call, and re-running the eval runs only the jobs that
 failed.
 
-An eval input carries an `EnvironmentReset`: the environment plus `reset_kwargs`, the keyword
+An eval input carries an `OpenEnvReset`: the environment plus `reset_kwargs`, the keyword
 arguments of the environment's `reset`. An **episode** is one reset-to-close run on a session of
 that environment: the state one eval job acts on. Its outcome is recorded on the trace
-as `EnvironmentEpisode`, never stored as a project artifact.
+as `OpenEnvEpisode`, never stored as a project artifact.
 
 A run config chooses the environment's tools explicitly, by listing them as
-`kiln_tool::env::<environment_id>::<tool_name>`; nothing is substituted for the project's tools
+`kiln_tool::openenv::<openenv_id>::<tool_name>`; nothing is substituted for the project's tools
 behind the model's back. An episode is started only when the run config lists the
 input's environment's tools; a run config without environment tools runs the same input against
 project tools. A run config that lists the project's own version of a tool the environment serves is
@@ -46,7 +46,7 @@ tool-call checks read the same.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, JsonValue, field_validator
@@ -70,7 +70,7 @@ class OpenEnvTool(BaseModel):
     )
 
 
-class EnvironmentReset(BaseModel):
+class OpenEnvReset(BaseModel):
     """Reset this environment with these keyword arguments before the run; the reset starts
     the episode the trace records.
 
@@ -80,31 +80,31 @@ class EnvironmentReset(BaseModel):
     after its trace was made generates a new one rather than reusing it.
     """
 
-    environment_id: str = Field(min_length=1, description="The Environment to run in.")
+    openenv_id: str = Field(min_length=1, description="The OpenEnv to run in.")
     reset_kwargs: dict[str, JsonValue] = Field(
         default_factory=dict,
         description="Keyword arguments for the environment's reset(), passed verbatim. Which keywords exist is the environment's business, e.g. which dataset or scenario to start from, a seed, a clock override.",
     )
 
 
-class EnvironmentEpisode(BaseModel):
+class OpenEnvEpisode(BaseModel):
     """One reset-to-close run on an environment, recorded on the trace of the
     task run that used it. The environment's tools ran inside the episode; any other tools
     in the run config ran as themselves, outside the environment.
 
-    Persisted on `TaskRun.env_episode` so graders (including judges added later,
+    Persisted on `TaskRun.openenv_episode` so graders (including judges added later,
     which reuse the same trace) can read what the run left behind. The live session is
     closed when the episode ends; `final_state` is the durable record.
     """
 
-    reset: EnvironmentReset = Field(
-        description="The environment and reset() keyword arguments this episode was started from: the input's env_reset."
+    reset: OpenEnvReset = Field(
+        description="The environment and reset() keyword arguments this episode was started from: the input's openenv_reset."
     )
     episode_id: str = Field(
         min_length=1,
         description="Kiln's id for this episode, passed to the environment's reset() as `episode_id`.",
     )
-    env_version: str = Field(
+    openenv_version: str = Field(
         min_length=1,
         description="The environment's name@version as its server reported it when the episode started: what produced this state. Kiln trusts a version to be immutable.",
     )
@@ -118,38 +118,40 @@ class EnvironmentEpisode(BaseModel):
     )
 
     def to_sandbox_dict(self) -> dict[str, JsonValue]:
-        """The stdlib-only shape handed to code scorers as `env_episode`."""
+        """The stdlib-only shape handed to code scorers as `openenv_episode`."""
         return {
             "reset": {
-                "environment_id": self.reset.environment_id,
+                "openenv_id": self.reset.openenv_id,
                 "reset_kwargs": self.reset.reset_kwargs,
             },
             "episode_id": self.episode_id,
-            "env_version": self.env_version,
+            "openenv_version": self.openenv_version,
             "reset_metadata": self.reset_metadata,
             "final_state": self.final_state,
         }
 
 
-class Environment(KilnParentedModel):
+class OpenEnv(KilnParentedModel):
     """A pointer to a running OpenEnv environment."""
 
     name: FilenameString = Field(description="User-facing display name.")
     description: str | None = Field(
         default=None, description="User-facing notes about the environment."
     )
-    kind: Literal["openenv"] = Field(
-        default="openenv",
-        description="The kind of environment behind env_url. Only OpenEnv today.",
-    )
-    env_url: str | None = Field(
+    url: str | None = Field(
         default=None,
         description="Base URL of the running OpenEnv server for this environment (e.g. http://127.0.0.1:8004). Kiln connects to it; it never starts one.",
     )
 
-    @field_validator("env_url")
     @classmethod
-    def validate_env_url(cls, value: str | None) -> str | None:
+    def type_name(cls) -> str:
+        # The default snake-cases the class name to "open_env"; OpenEnv is one word,
+        # spelled "openenv" like the upstream package.
+        return "openenv"
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str | None) -> str | None:
         """Require an http(s) URL with a host, so a typo fails when the environment is saved
         rather than when an eval first connects."""
         if value is None:
@@ -157,6 +159,6 @@ class Environment(KilnParentedModel):
         parts = urlsplit(value)
         if parts.scheme not in ("http", "https") or not parts.hostname:
             raise ValueError(
-                f"env_url must be an http:// or https:// URL with a host, got {value!r}"
+                f"url must be an http:// or https:// URL with a host, got {value!r}"
             )
         return value

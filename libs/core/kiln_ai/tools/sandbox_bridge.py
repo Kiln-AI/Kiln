@@ -29,9 +29,9 @@ from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import (
-    ENV_TOOL_ID_PREFIX,
+    OPENENV_TOOL_ID_PREFIX,
     ToolId,
-    env_and_tool_name_from_id,
+    openenv_and_tool_name_from_id,
 )
 from kiln_ai.sandbox.spawn import start_process_with_light_main
 from kiln_ai.tools.base_tool import ToolCallContext
@@ -420,8 +420,10 @@ class NestedToolServer:
                 )
                 # An environment tool resolves only inside an episode of its environment, but its
                 # name is known without one: say why when the code calls it.
-                if tool_id.startswith(ENV_TOOL_ID_PREFIX):
-                    self._unavailable[env_and_tool_name_from_id(tool_id)[1]] = str(exc)
+                if tool_id.startswith(OPENENV_TOOL_ID_PREFIX):
+                    self._unavailable[openenv_and_tool_name_from_id(tool_id)[1]] = str(
+                        exc
+                    )
                 continue
             name_map.setdefault(fn_name, []).append(tool_id)
 

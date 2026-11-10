@@ -11,8 +11,8 @@ import uuid
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 
-from kiln_ai.datamodel.environment import Environment, EnvironmentEpisode, OpenEnvTool
-from kiln_ai.environments.session_manager import EnvironmentSessionManager
+from kiln_ai.datamodel.openenv import OpenEnv, OpenEnvEpisode, OpenEnvTool
+from kiln_ai.openenv.session_manager import SessionManager
 
 _agent_run_id: ContextVar[str | None] = ContextVar("agent_run_id", default=None)
 
@@ -41,9 +41,9 @@ class EpisodeContext:
     per environment per eval run.
     """
 
-    episode: "EnvironmentEpisode"
-    environment: "Environment"
-    session_manager: "EnvironmentSessionManager"
+    episode: "OpenEnvEpisode"
+    openenv: "OpenEnv"
+    session_manager: "SessionManager"
     tools: dict[str, "OpenEnvTool"] = field(default_factory=dict)
 
 

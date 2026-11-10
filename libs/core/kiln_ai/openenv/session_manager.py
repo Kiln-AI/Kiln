@@ -1,20 +1,21 @@
-"""Environment sessions: the OpenEnv sessions Kiln opens, resets, drives and settles for
-one episode each.
+"""OpenEnv sessions: the sessions Kiln opens, resets, drives and settles on an OpenEnv
+server, one per episode.
 
-OpenEnv (https://github.com/huggingface/OpenEnv) splits an environment in two. The
-`Environment` is what an env does: `reset`, `step`, `state`, `close`. A *provider* is
-how you obtain a running one. Today Kiln does not start or stop environments: an environment
-names the URL of one that is already running (`Environment.env_url`). The session manager
-here is the session layer plus the bookkeeping only Kiln needs: keying the trace by the
-environment's content, recording what graders will read, and closing sessions. It is
-also the place that will own launching local environments when Kiln does that, the way
-`MCPSessionManager` spawns local MCP servers and connects to remote ones behind one
-interface.
+Upstream OpenEnv (https://github.com/huggingface/OpenEnv)
+splits an environment in two: its `Environment` class is what an environment does
+(`reset`, `step`, `state`, `close`), and a *provider* is how you obtain a running one.
+Kiln's datamodel class `OpenEnv` is neither: it is a saved pointer to an upstream
+environment that is already running at `OpenEnv.url`, since Kiln does not start or stop
+environments today. The session manager here is the session layer plus the bookkeeping
+only Kiln needs: keying the trace by the environment's content, recording what graders
+will read, and closing sessions. It is also the place that will own launching local
+environments when Kiln does that, the way `MCPSessionManager` spawns local MCP servers
+and connects to remote ones behind one interface.
 
 An env author writes OpenEnv code and no Kiln code. Every Kiln-side value derives from
 what OpenEnv already exposes:
 
-    env_version     the environment's reported name and version
+    openenv_version the environment's reported name and version
     refresh         re-read `/metadata`, so a new version on the same URL is seen
     start_episode   open a `/ws` session and `reset(**reset_kwargs)`
     call_tool       `step(CallToolAction)`
@@ -40,10 +41,10 @@ from pydantic import JsonValue
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
-from kiln_ai.datamodel.environment import (
-    Environment,
-    EnvironmentEpisode,
-    EnvironmentReset,
+from kiln_ai.datamodel.openenv import (
+    OpenEnv,
+    OpenEnvEpisode,
+    OpenEnvReset,
     OpenEnvTool,
 )
 
@@ -154,42 +155,42 @@ class ToolCallOutcome:
     error_details: Any = None
 
 
-class EnvironmentSessionManager(Protocol):
+class SessionManager(Protocol):
     """The seam the eval runner and the tool proxies call. `OpenEnvSessionManager` is the
     implementation; tests substitute a fake."""
 
-    async def env_version(self, environment: Environment) -> str:
+    async def openenv_version(self, openenv: OpenEnv) -> str:
         """Identity of the environment code an episode would run, without starting one.
         One per environment, whatever an episode is reset with. Folded into the trace
         fingerprint: change it and traces regenerate."""
 
-    async def refresh(self, environment: Environment) -> None:
+    async def refresh(self, openenv: OpenEnv) -> None:
         """Re-read the environment's identity, so an environment restarted at a new
         version on the same URL is seen as new. Its tools are re-listed when the
         version changed."""
 
     async def list_tools(
-        self, environment: Environment, fresh: bool = False
+        self, openenv: OpenEnv, fresh: bool = False
     ) -> list[OpenEnvTool]:
         """The tools the environment serves. Cached per environment version;
         `fresh` re-reads the environment's metadata and tools."""
 
     async def start_episode(
-        self, environment: Environment, reset_kwargs: dict[str, JsonValue]
-    ) -> EnvironmentEpisode:
+        self, openenv: OpenEnv, reset_kwargs: dict[str, JsonValue]
+    ) -> OpenEnvEpisode:
         """Open a session on the environment and reset it with `reset_kwargs`.
         The session stays live until `end_episode` or `release`."""
 
     async def call_tool(
-        self, episode: EnvironmentEpisode, tool_name: str, arguments: dict[str, Any]
+        self, episode: OpenEnvEpisode, tool_name: str, arguments: dict[str, Any]
     ) -> ToolCallOutcome:
         """Call one of the environment's tools inside a live episode."""
 
-    async def end_episode(self, episode: EnvironmentEpisode) -> EnvironmentEpisode:
+    async def end_episode(self, episode: OpenEnvEpisode) -> OpenEnvEpisode:
         """Read the environment's final state and close the session. Returns the
         episode with `final_state` set: the durable record graders read."""
 
-    async def release(self, episode: EnvironmentEpisode) -> None:
+    async def release(self, episode: OpenEnvEpisode) -> None:
         """Close an episode's session without reading its state, e.g. after a
         failed generation."""
 
@@ -198,10 +199,10 @@ class EnvironmentSessionManager(Protocol):
 
 
 @dataclass
-class _EnvServer:
-    environment_id: str
+class _OpenEnvServer:
+    openenv_id: str
     base_url: str
-    env_version: str
+    openenv_version: str
     tools: list[OpenEnvTool] | None = None
 
     @property
@@ -225,23 +226,23 @@ class OpenEnvSessionManager:
 
     def __init__(self, step_timeout_s: float = STEP_TIMEOUT_S) -> None:
         self._step_timeout_s = step_timeout_s
-        self._servers: dict[str, _EnvServer] = {}
+        self._servers: dict[str, _OpenEnvServer] = {}
         self._server_locks: dict[str, asyncio.Lock] = {}
         self._sessions: dict[str, _Session] = {}
 
     # ---- protocol ----
 
-    async def env_version(self, environment: Environment) -> str:
-        server = await self._server_for(environment)
-        return server.env_version
+    async def openenv_version(self, openenv: OpenEnv) -> str:
+        server = await self._server_for(openenv)
+        return server.openenv_version
 
-    async def refresh(self, environment: Environment) -> None:
-        await self._server_for(environment, refresh=True)
+    async def refresh(self, openenv: OpenEnv) -> None:
+        await self._server_for(openenv, refresh=True)
 
     async def list_tools(
-        self, environment: Environment, fresh: bool = False
+        self, openenv: OpenEnv, fresh: bool = False
     ) -> list[OpenEnvTool]:
-        server = await self._server_for(environment, refresh=fresh)
+        server = await self._server_for(openenv, refresh=fresh)
         if server.tools is not None and not fresh:
             return server.tools
         async with self._connect(server) as ws:
@@ -263,11 +264,11 @@ class OpenEnvSessionManager:
         return tools
 
     async def start_episode(
-        self, environment: Environment, reset_kwargs: dict[str, JsonValue]
-    ) -> EnvironmentEpisode:
-        if environment.id is None:
-            raise ValueError("Environment must be saved before starting an episode")
-        server = await self._server_for(environment)
+        self, openenv: OpenEnv, reset_kwargs: dict[str, JsonValue]
+    ) -> OpenEnvEpisode:
+        if openenv.id is None:
+            raise ValueError("OpenEnv must be saved before starting an episode")
+        server = await self._server_for(openenv)
         episode_id = f"ep_{uuid.uuid4().hex[:16]}"
         ws = await self._open(server)
         try:
@@ -287,17 +288,15 @@ class OpenEnvSessionManager:
             reported = (data.get("observation") or {}).get("metadata")
         if isinstance(reported, dict):
             reset_metadata.update({str(k): v for k, v in reported.items()})
-        return EnvironmentEpisode(
-            reset=EnvironmentReset(
-                environment_id=environment.id, reset_kwargs=reset_kwargs
-            ),
+        return OpenEnvEpisode(
+            reset=OpenEnvReset(openenv_id=openenv.id, reset_kwargs=reset_kwargs),
             episode_id=episode_id,
-            env_version=server.env_version,
+            openenv_version=server.openenv_version,
             reset_metadata=reset_metadata,
         )
 
     async def call_tool(
-        self, episode: EnvironmentEpisode, tool_name: str, arguments: dict[str, Any]
+        self, episode: OpenEnvEpisode, tool_name: str, arguments: dict[str, Any]
     ) -> ToolCallOutcome:
         session = self._sessions.get(episode.episode_id)
         if session is None:
@@ -343,7 +342,7 @@ class OpenEnvSessionManager:
             error_details=error_details,
         )
 
-    async def end_episode(self, episode: EnvironmentEpisode) -> EnvironmentEpisode:
+    async def end_episode(self, episode: OpenEnvEpisode) -> OpenEnvEpisode:
         session = self._sessions.pop(episode.episode_id, None)
         if session is None:
             return episode
@@ -355,7 +354,7 @@ class OpenEnvSessionManager:
         state: dict[str, JsonValue] = {str(k): v for k, v in data.items()}
         return episode.model_copy(update={"final_state": state})
 
-    async def release(self, episode: EnvironmentEpisode) -> None:
+    async def release(self, episode: OpenEnvEpisode) -> None:
         session = self._sessions.pop(episode.episode_id, None)
         if session is not None:
             await self._end_session(session.ws)
@@ -369,38 +368,39 @@ class OpenEnvSessionManager:
     # ---- servers ----
 
     async def _server_for(
-        self, environment: Environment, refresh: bool = False
-    ) -> _EnvServer:
+        self, openenv: OpenEnv, refresh: bool = False
+    ) -> _OpenEnvServer:
         """What Kiln knows about the environment: its address, reported
         identity and content version. Cached per environment; re-read when the environment's URL
         changes or on `refresh`. A refresh that finds the same version keeps the
         cached tools; a new version re-lists them."""
-        if environment.id is None:
-            raise ValueError("Environment must be saved before it can be used")
-        if not environment.env_url:
+        if openenv.id is None:
+            raise ValueError("OpenEnv must be saved before it can be used")
+        if not openenv.url:
             raise OpenEnvError(
-                f"Environment '{environment.name}' has no env_url. Kiln does not start "
+                f"OpenEnv '{openenv.name}' has no url. Kiln does not start "
                 "environments: run the OpenEnv server yourself and point the environment at "
                 "it (e.g. http://127.0.0.1:8000)."
             )
-        base_url = environment.env_url.rstrip("/")
-        lock = self._server_locks.setdefault(environment.id, asyncio.Lock())
+        base_url = openenv.url.rstrip("/")
+        lock = self._server_locks.setdefault(openenv.id, asyncio.Lock())
         async with lock:
-            current = self._servers.get(environment.id)
+            current = self._servers.get(openenv.id)
             if current is not None and current.base_url != base_url:
                 current = None
             if current is not None and not refresh:
                 return current
-            server = await self._connect_remote(environment, base_url)
-            if current is not None and current.env_version == server.env_version:
+            server = await self._connect_remote(openenv, base_url)
+            if (
+                current is not None
+                and current.openenv_version == server.openenv_version
+            ):
                 server.tools = current.tools
-            self._servers[environment.id] = server
+            self._servers[openenv.id] = server
             return server
 
-    async def _connect_remote(
-        self, environment: Environment, base_url: str
-    ) -> _EnvServer:
-        assert environment.id
+    async def _connect_remote(self, openenv: OpenEnv, base_url: str) -> _OpenEnvServer:
+        assert openenv.id
         async with httpx.AsyncClient(timeout=CONNECT_TIMEOUT_S) as client:
             try:
                 response = await client.get(f"{base_url}/metadata")
@@ -408,27 +408,27 @@ class OpenEnvSessionManager:
                 meta = response.json()
             except Exception as e:
                 raise OpenEnvError(
-                    f"Environment '{environment.name}' points at {base_url}, which did "
+                    f"OpenEnv '{openenv.name}' points at {base_url}, which did "
                     f"not answer /metadata: {e}"
                 ) from e
         if not isinstance(meta, dict):
             raise OpenEnvError(
-                f"Environment '{environment.name}' points at {base_url}, whose /metadata is not "
+                f"OpenEnv '{openenv.name}' points at {base_url}, whose /metadata is not "
                 f"a JSON object: {_preview(meta)}"
             )
-        name = str(meta.get("name") or environment.name)
+        name = str(meta.get("name") or openenv.name)
         version = meta.get("version")
-        return _EnvServer(
-            environment_id=environment.id,
+        return _OpenEnvServer(
+            openenv_id=openenv.id,
             base_url=base_url,
-            env_version=_compose_env_version(
+            openenv_version=_compose_openenv_version(
                 name, str(version) if version is not None else None
             ),
         )
 
     # ---- sessions ----
 
-    async def _open(self, server: _EnvServer) -> ClientConnection:
+    async def _open(self, server: _OpenEnvServer) -> ClientConnection:
         try:
             return await connect(
                 server.ws_url,
@@ -447,7 +447,7 @@ class OpenEnvSessionManager:
             ) from e
 
     @asynccontextmanager
-    async def _connect(self, server: _EnvServer) -> AsyncIterator[ClientConnection]:
+    async def _connect(self, server: _OpenEnvServer) -> AsyncIterator[ClientConnection]:
         """A short-lived session for one request, ended however the request went."""
         ws = await self._open(server)
         try:
@@ -553,7 +553,7 @@ async def shutdown_shared_session_manager() -> None:
 # ---- helpers ----
 
 
-def _compose_env_version(name: str, version: str | None) -> str:
+def _compose_openenv_version(name: str, version: str | None) -> str:
     """The environment's identity as it reports it, readable on a trace: a run keyed by
     `helpdesk_toy@1.0.0` says what produced its state.
 

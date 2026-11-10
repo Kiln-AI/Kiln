@@ -16,7 +16,7 @@ from kiln_ai.adapters.errors import (
 )
 from kiln_ai.adapters.jev import JevApiError
 from kiln_ai.datamodel.task_output import TASK_OUTPUT_SCHEMA_ERROR_PREFIX
-from kiln_ai.environments.session_manager import (
+from kiln_ai.openenv.session_manager import (
     OpenEnvError,
     OpenEnvTransientError,
     tool_call_error_ends_session,
@@ -85,7 +85,7 @@ def is_retryable_error(e: BaseException) -> bool:
     return False
 
 
-def is_transient_environment_error(e: BaseException) -> bool:
+def is_transient_openenv_error(e: BaseException) -> bool:
     """True when an environment failed in a way a fresh session may not
     repeat (a dropped connection, a timeout, a full server). The eval runner
     retries the episode on a new session."""
@@ -98,10 +98,10 @@ def is_run_ending_tool_error(e: BaseException) -> bool:
     layer retries, or an environment error that ended the episode's
     session, after which none of the environment's tools can work."""
     cause = unwrap_kiln_run_error(e)
-    ends_environment_session = isinstance(cause, OpenEnvError) and (
+    ends_openenv_session = isinstance(cause, OpenEnvError) and (
         tool_call_error_ends_session(cause)
     )
-    return ends_environment_session or is_retryable_error(cause)
+    return ends_openenv_session or is_retryable_error(cause)
 
 
 def is_batch_fatal_error(e: BaseException) -> bool:
