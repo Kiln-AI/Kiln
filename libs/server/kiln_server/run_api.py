@@ -22,6 +22,7 @@ from kiln_ai.openenv.run_session import (
     OpenEnvRunError,
     OpenEnvRunErrorKind,
 )
+from kiln_ai.openenv.session_manager import shared_conversation_sessions
 from kiln_ai.utils.dataset_import import (
     DatasetFileImporter,
     DatasetImportFormat,
@@ -57,6 +58,7 @@ _OPENENV_RUN_ERROR_STATUS: dict[OpenEnvRunErrorKind, int] = {
     "session_ended": 409,
     "fork_refused": 409,
     "not_started_with_openenv": 409,
+    "openenv_changed": 409,
     "unreachable": 502,
     "at_capacity": 503,
 }
@@ -582,6 +584,9 @@ def connect_run_api(app: FastAPI):
         runs_to_delete = _collect_cascade_delete_runs(task, run)
         for r in runs_to_delete:
             r.delete()
+        await shared_conversation_sessions().release_runs(
+            str(r.id) for r in runs_to_delete
+        )
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/runs",
@@ -743,12 +748,15 @@ def connect_run_api(app: FastAPI):
             except Exception as e:
                 record_failure(run_id, str(e))
 
+        deleted_ids: list[str] = []
         for r in runs_to_delete:
             try:
                 r.delete()
+                deleted_ids.append(str(r.id))
             except Exception as e:
                 if r.id is not None:
                     record_failure(str(r.id), str(e))
+        await shared_conversation_sessions().release_runs(deleted_ids)
 
         if failed_runs:
             raise HTTPException(
@@ -856,6 +864,7 @@ def connect_run_api(app: FastAPI):
             if not parent_still_exists:
                 if run.path is not None:
                     run.delete()
+                await shared_conversation_sessions().release_runs([str(run.id)])
                 raise HTTPException(
                     status_code=409,
                     detail="The conversation was deleted while the response was being generated, so the new message was discarded.",

@@ -411,11 +411,14 @@ class BaseAdapter(metaclass=ABCMeta):
                 self.task,
                 self.run_config,
                 self.base_adapter_config.openenv_reset_kwargs,
+                parent_task_run,
             ) as openenv_run:
                 async with mcp_session_scope():
                     run, run_output = await self._run_returning_run_output(
                         input, input_source, prior_trace, parent_task_run
                     )
+                if openenv_run is not None:
+                    openenv_run.run_id = run.id
         if openenv_run is not None and openenv_run.episode is not None:
             run.openenv_episode = openenv_run.episode
             if run.path is not None:

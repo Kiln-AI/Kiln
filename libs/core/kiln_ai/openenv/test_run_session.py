@@ -2,6 +2,7 @@
 environment server. The adapter tests run the real `LiteLlmAdapter`, stubbed only at the
 model provider call."""
 
+import asyncio
 import json
 from contextlib import contextmanager
 from unittest.mock import patch
@@ -14,7 +15,11 @@ from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.ml_model_list import KilnModelProvider
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
-from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
+from kiln_ai.datamodel.datamodel_enums import (
+    ModelProviderName,
+    StructuredOutputMode,
+    TurnMode,
+)
 from kiln_ai.datamodel.openenv import OpenEnvServer
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import (
@@ -24,6 +29,7 @@ from kiln_ai.datamodel.run_config import (
     ToolsRunConfig,
 )
 from kiln_ai.datamodel.task import Task
+from kiln_ai.datamodel.task_output import TaskOutput
 from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.datamodel.tool_id import build_openenv_tool_id
 from kiln_ai.openenv.run_session import (
@@ -33,6 +39,7 @@ from kiln_ai.openenv.run_session import (
 from kiln_ai.openenv.session_manager import (
     OpenEnvRejectedError,
     OpenEnvSessionManager,
+    OpenEnvTransientError,
 )
 from kiln_ai.openenv.testing import free_port, serve_in_thread
 from kiln_ai.run_context import (
@@ -102,7 +109,7 @@ def _openenv_server_properties(openenv_server, tool_name="append_note"):
 
 async def _enter(task, properties, session_manager, reset_kwargs=None):
     async with openenv_for_run(
-        task, properties, reset_kwargs, session_manager
+        task, properties, reset_kwargs, session_manager=session_manager
     ) as handle:
         return handle
 
@@ -249,7 +256,7 @@ class TestSession:
     ):
         properties = _openenv_server_properties(openenv_server)
         async with openenv_for_run(
-            task, properties, {"fixture_id": "acme"}, session_manager
+            task, properties, {"fixture_id": "acme"}, session_manager=session_manager
         ) as handle:
             assert handle is not None
             assert get_episode() is handle.context
@@ -282,7 +289,10 @@ class TestSession:
     ):
         with pytest.raises(RuntimeError, match="model failed"):
             async with openenv_for_run(
-                task, _openenv_server_properties(openenv_server), None, session_manager
+                task,
+                _openenv_server_properties(openenv_server),
+                None,
+                session_manager=session_manager,
             ) as handle:
                 assert handle is not None
                 raise RuntimeError("model failed")
@@ -337,6 +347,10 @@ def _stubbed_model(session_manager, *replies):
         patch(
             "kiln_ai.openenv.run_session.shared_session_manager",
             return_value=session_manager,
+        ),
+        patch(
+            "kiln_ai.openenv.run_session.shared_conversation_sessions",
+            return_value=session_manager.conversations,
         ),
         patch.object(LiteLlmAdapter, "model_provider", return_value=provider),
         patch.object(LiteLlmAdapter, "build_completion_kwargs", return_value={}),
@@ -474,3 +488,395 @@ class TestStreaming:
         finally:
             reset_episode(token)
             await session_manager.release(episode)
+
+
+@pytest.fixture
+def multiturn_task(project):
+    t = Task(
+        name="chat",
+        instruction="keep notes",
+        parent=project,
+        turn_mode=TurnMode.multiturn,
+    )
+    t.save_to_file()
+    return t
+
+
+def _conversation_turn(task, properties, session_manager, parent, reset_kwargs=None):
+    return openenv_for_run(
+        task,
+        properties,
+        reset_kwargs,
+        parent,
+        session_manager,
+        session_manager.conversations,
+    )
+
+
+async def _turn(
+    task, properties, session_manager, parent=None, reset_kwargs=None, note=None
+):
+    """One conversation turn: optionally append a note through the environment's tool,
+    then record the turn as a run the way the adapter does."""
+    async with _conversation_turn(
+        task, properties, session_manager, parent, reset_kwargs
+    ) as handle:
+        assert handle is not None
+        if note is not None:
+            tool = tool_from_id(properties.tools_config.tools[0], task)
+            await tool.run(note=note)
+        run = TaskRun(
+            input="hi",
+            output=TaskOutput(output="ok"),
+            parent=task,
+            parent_task_run_id=parent.id if parent else None,
+        )
+        handle.run_id = run.id
+    run.openenv_episode = handle.episode
+    return run
+
+
+class TestConversation:
+    async def test_turns_share_one_session_and_record_their_state(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        properties = _openenv_server_properties(openenv_server)
+        first = await _turn(
+            multiturn_task,
+            properties,
+            session_manager,
+            reset_kwargs={"fixture_id": "acme"},
+            note="one",
+        )
+        second = await _turn(
+            multiturn_task,
+            properties,
+            session_manager,
+            parent=first,
+            reset_kwargs={"fixture_id": "beta"},
+            note="two",
+        )
+
+        assert first.openenv_episode is not None and second.openenv_episode is not None
+        assert first.openenv_episode.episode_id == second.openenv_episode.episode_id
+        assert first.openenv_episode.final_state is not None
+        assert first.openenv_episode.final_state["notes"] == ["one"]
+        assert second.openenv_episode.final_state is not None
+        assert second.openenv_episode.final_state["notes"] == ["one", "two"]
+        # Later turns ignore reset kwargs: the first turn fixed them.
+        assert second.openenv_episode.reset.reset_kwargs == {"fixture_id": "acme"}
+        assert second.openenv_episode.final_state["fixture_id"] == "acme"
+        assert get_episode() is None
+        assert list(session_manager._sessions) == [second.openenv_episode.episode_id]
+        assert session_manager.conversations.take(str(second.id)) is not None
+
+    async def test_continuing_an_earlier_turn_is_refused(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        properties = _openenv_server_properties(openenv_server)
+        first = await _turn(multiturn_task, properties, session_manager)
+        await _turn(multiturn_task, properties, session_manager, parent=first)
+        with pytest.raises(OpenEnvRunError) as raised:
+            await _turn(multiturn_task, properties, session_manager, parent=first)
+        assert raised.value.kind == "fork_refused"
+        assert raised.value.message == (
+            "This conversation uses an OpenEnv, so it can only continue from the "
+            "latest turn."
+        )
+
+    async def test_ended_session_is_refused(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        properties = _openenv_server_properties(openenv_server)
+        first = await _turn(multiturn_task, properties, session_manager)
+        await session_manager.conversations.release_runs([str(first.id)])
+        with pytest.raises(OpenEnvRunError) as raised:
+            await _turn(multiturn_task, properties, session_manager, parent=first)
+        assert raised.value.kind == "session_ended"
+        assert raised.value.message == (
+            "The OpenEnv session for this conversation ended. Start a new "
+            "conversation to keep using this OpenEnv."
+        )
+        assert session_manager._sessions == {}
+
+    async def test_conversation_started_without_an_openenv_server_is_refused(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        parent = TaskRun(
+            input="hi", output=TaskOutput(output="ok"), parent=multiturn_task
+        )
+        with pytest.raises(OpenEnvRunError) as raised:
+            await _turn(
+                multiturn_task,
+                _openenv_server_properties(openenv_server),
+                session_manager,
+                parent=parent,
+            )
+        assert raised.value.kind == "not_started_with_openenv"
+        assert raised.value.message == (
+            "This conversation started without an OpenEnv. Start a new conversation "
+            "to use one."
+        )
+        assert session_manager._sessions == {}
+
+    @pytest.mark.parametrize(
+        "other, expected",
+        [
+            ("Beta", "Start a new conversation to use Beta."),
+            (None, "Start a new conversation to run without it."),
+        ],
+    )
+    async def test_changing_openenv_server_is_refused_and_keeps_the_session(
+        self,
+        project,
+        multiturn_task,
+        openenv_server_url,
+        openenv_server,
+        session_manager,
+        other,
+        expected,
+    ):
+        first = await _turn(
+            multiturn_task, _openenv_server_properties(openenv_server), session_manager
+        )
+        properties = (
+            _openenv_server_properties(
+                _openenv_server(project, openenv_server_url, other)
+            )
+            if other
+            else _properties([])
+        )
+        with pytest.raises(OpenEnvRunError) as raised:
+            await _turn(multiturn_task, properties, session_manager, parent=first)
+        assert raised.value.kind == "openenv_changed"
+        assert (
+            raised.value.message == f"This conversation uses OpenEnv Acme. {expected}"
+        )
+        assert session_manager.conversations.holds_turn(str(first.id))
+        second = await _turn(
+            multiturn_task,
+            _openenv_server_properties(openenv_server),
+            session_manager,
+            parent=first,
+        )
+        assert second.openenv_episode is not None and first.openenv_episode is not None
+        assert second.openenv_episode.episode_id == first.openenv_episode.episode_id
+
+    async def test_failed_turn_can_be_retried(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        properties = _openenv_server_properties(openenv_server)
+        first = await _turn(multiturn_task, properties, session_manager, note="one")
+        with pytest.raises(KilnRunError):
+            async with _conversation_turn(
+                multiturn_task, properties, session_manager, first
+            ):
+                raise KilnRunError(
+                    "rate limited", partial_trace=None, original=RuntimeError("429")
+                )
+        retried = await _turn(
+            multiturn_task, properties, session_manager, parent=first, note="two"
+        )
+        assert retried.openenv_episode is not None
+        assert retried.openenv_episode.final_state is not None
+        assert retried.openenv_episode.final_state["notes"] == ["one", "two"]
+
+    async def test_turn_that_ends_the_session_releases_it(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        properties = _openenv_server_properties(openenv_server)
+        first = await _turn(multiturn_task, properties, session_manager)
+        with pytest.raises(KilnRunError):
+            async with _conversation_turn(
+                multiturn_task, properties, session_manager, first
+            ):
+                raise KilnRunError(
+                    "env dropped",
+                    partial_trace=None,
+                    original=OpenEnvTransientError("closed"),
+                )
+        assert session_manager._sessions == {}
+        with pytest.raises(OpenEnvRunError) as raised:
+            await _turn(multiturn_task, properties, session_manager, parent=first)
+        assert raised.value.kind == "session_ended"
+
+    async def test_failed_first_turn_releases_the_session(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        with pytest.raises(RuntimeError, match="model failed"):
+            async with _conversation_turn(
+                multiturn_task,
+                _openenv_server_properties(openenv_server),
+                session_manager,
+                None,
+            ):
+                raise RuntimeError("model failed")
+        assert session_manager._sessions == {}
+
+    async def test_rejected_state_keeps_the_session(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        first = await _turn(
+            multiturn_task,
+            _openenv_server_properties(openenv_server),
+            session_manager,
+            reset_kwargs={"fail_state": True},
+        )
+        assert first.openenv_episode is not None
+        assert first.openenv_episode.final_state is None
+        assert session_manager.conversations.holds_turn(str(first.id))
+
+    async def test_state_lost_with_the_session_ends_the_conversation(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        with patch.object(
+            session_manager, "read_state", side_effect=OpenEnvTransientError("closed")
+        ):
+            first = await _turn(
+                multiturn_task,
+                _openenv_server_properties(openenv_server),
+                session_manager,
+            )
+        assert first.openenv_episode is not None
+        assert first.openenv_episode.final_state is None
+        assert session_manager._sessions == {}
+        assert not session_manager.conversations.holds_turn(str(first.id))
+
+    async def test_turn_without_a_run_id_releases_the_session(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        async with _conversation_turn(
+            multiturn_task,
+            _openenv_server_properties(openenv_server),
+            session_manager,
+            None,
+        ) as handle:
+            assert handle is not None
+        assert handle.episode is not None
+        assert session_manager._sessions == {}
+
+    async def test_turn_without_an_openenv_server_is_unchanged(
+        self, multiturn_task, session_manager
+    ):
+        async with _conversation_turn(
+            multiturn_task, _properties([]), session_manager, None
+        ) as handle:
+            assert handle is None
+
+
+class TestAdapterConversation:
+    async def test_three_turns_share_one_episode(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        replies = []
+        for note in ("one", "two", "three"):
+            replies += [_model_reply(note=note), _model_reply(content=f"noted {note}")]
+        runs: list[TaskRun] = []
+        with _stubbed_model(session_manager, *replies):
+            for i in range(3):
+                adapter = adapter_for_task(
+                    multiturn_task,
+                    _openenv_server_properties(openenv_server),
+                    AdapterConfig(openenv_reset_kwargs={"fixture_id": "acme"}),
+                )
+                parent = runs[-1] if runs else None
+                runs.append(
+                    await adapter.invoke(
+                        f"turn {i}",
+                        prior_trace=parent.trace if parent else None,
+                        parent_task_run=parent,
+                    )
+                )
+
+        episodes = [run.openenv_episode for run in runs]
+        assert len({e.episode_id for e in episodes if e}) == 1
+        assert [e.final_state["notes"] for e in episodes if e and e.final_state] == [
+            ["one"],
+            ["one", "two"],
+            ["one", "two", "three"],
+        ]
+        for run in runs:
+            assert run.id is not None
+            saved = TaskRun.from_id_and_parent_path(run.id, multiturn_task.path)
+            assert saved is not None and saved.openenv_episode == run.openenv_episode
+        assert session_manager.conversations.holds_turn(str(runs[-1].id))
+
+
+def _openenv_adapter(task, openenv_server):
+    return adapter_for_task(
+        task, _openenv_server_properties(openenv_server), AdapterConfig()
+    )
+
+
+class TestLostConversationSession:
+    """A session lost during or between turns fails the turn that finds it gone."""
+
+    async def test_cancelled_turn_releases_the_session(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        properties = _openenv_server_properties(openenv_server)
+        first = await _turn(multiturn_task, properties, session_manager)
+        with pytest.raises(asyncio.CancelledError):
+            async with _conversation_turn(
+                multiturn_task, properties, session_manager, first
+            ):
+                raise asyncio.CancelledError()
+        assert session_manager._sessions == {}
+        assert not session_manager.conversations.holds_turn(str(first.id))
+
+    async def test_tool_error_that_drops_the_session_fails_the_turn(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        with _stubbed_model(
+            session_manager, _model_reply(content="hi"), _model_reply(note="two")
+        ):
+            first = await _openenv_adapter(multiturn_task, openenv_server).invoke(
+                "turn 0"
+            )
+            with patch.object(
+                session_manager,
+                "_request",
+                side_effect=RuntimeError("attached to a different loop"),
+            ):
+                with pytest.raises(KilnRunError):
+                    await _openenv_adapter(multiturn_task, openenv_server).invoke(
+                        "turn 1", prior_trace=first.trace, parent_task_run=first
+                    )
+            assert session_manager._sessions == {}
+            with pytest.raises(OpenEnvRunError) as raised:
+                await _openenv_adapter(multiturn_task, openenv_server).invoke(
+                    "turn 1 again", prior_trace=first.trace, parent_task_run=first
+                )
+        assert raised.value.kind == "session_ended"
+
+    @pytest.mark.parametrize("switch_openenv_server", [False, True])
+    def test_turn_on_another_event_loop_is_refused(
+        self,
+        project,
+        multiturn_task,
+        openenv_server_url,
+        openenv_server,
+        switch_openenv_server,
+    ):
+        """A library caller running each turn in its own `asyncio.run` can't reuse a
+        socket opened on the previous loop, whatever the later turn's tools reach."""
+        session_manager = OpenEnvSessionManager()
+        second_openenv_server = (
+            _openenv_server(project, openenv_server_url, "Beta")
+            if switch_openenv_server
+            else openenv_server
+        )
+        with _stubbed_model(session_manager, _model_reply(content="hi")) as model_call:
+            first = asyncio.run(
+                _openenv_adapter(multiturn_task, openenv_server).invoke("turn 0")
+            )
+            with pytest.raises(OpenEnvRunError) as raised:
+                asyncio.run(
+                    _openenv_adapter(multiturn_task, second_openenv_server).invoke(
+                        "turn 1", prior_trace=first.trace, parent_task_run=first
+                    )
+                )
+        assert raised.value.kind == "session_ended"
+        assert model_call.call_count == 1
+        assert first.openenv_episode is not None
+        assert first.openenv_episode.episode_id not in session_manager._sessions

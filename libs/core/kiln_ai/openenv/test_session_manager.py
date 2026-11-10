@@ -1,6 +1,7 @@
 """Tests for the OpenEnv session manager against the test environment server. Kiln only
 connects to a running server named by `url`; it never starts one."""
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -10,10 +11,12 @@ from websockets.exceptions import ConnectionClosed
 from kiln_ai.datamodel.openenv import OpenEnvServer
 from kiln_ai.datamodel.project import Project
 from kiln_ai.openenv import session_manager as session_manager_module
+from kiln_ai.openenv.conversations import HeldSession
 from kiln_ai.openenv.session_manager import (
     OpenEnvCapacityError,
     OpenEnvError,
     OpenEnvRejectedError,
+    OpenEnvSessionLostError,
     OpenEnvSessionManager,
     OpenEnvTransientError,
     read_observation_error,
@@ -23,6 +26,7 @@ from kiln_ai.openenv.testing import (
     free_port,
     serve_in_thread,
 )
+from kiln_ai.run_context import EpisodeContext
 
 
 @pytest.fixture
@@ -366,7 +370,123 @@ class TestUnexpectedReplies:
         ws.close.assert_awaited_once()
 
 
+class TestReadState:
+    async def test_reads_state_and_keeps_the_session(
+        self, session_manager, remote_openenv_server
+    ):
+        episode = await session_manager.start_episode(remote_openenv_server, {})
+        await session_manager.call_tool(episode, "append_note", {"note": "one"})
+        state = await session_manager.read_state(episode)
+        assert state["notes"] == ["one"]
+        await session_manager.call_tool(episode, "append_note", {"note": "two"})
+        assert (await session_manager.read_state(episode))["notes"] == ["one", "two"]
+        await session_manager.release(episode)
+
+    async def test_rejected_state_keeps_the_session(
+        self, session_manager, remote_openenv_server
+    ):
+        episode = await session_manager.start_episode(
+            remote_openenv_server, {"fail_state": True}
+        )
+        with pytest.raises(OpenEnvRejectedError, match="state unavailable"):
+            await session_manager.read_state(episode)
+        assert episode.episode_id in session_manager._sessions
+        await session_manager.release(episode)
+
+    async def test_closed_session_is_dropped(
+        self, session_manager, remote_openenv_server
+    ):
+        episode = await session_manager.start_episode(remote_openenv_server, {})
+        await session_manager._sessions[episode.episode_id].ws.close()
+        with pytest.raises(OpenEnvTransientError, match="closed the session"):
+            await session_manager.read_state(episode)
+        assert session_manager._sessions == {}
+
+    async def test_no_live_session_is_an_error(
+        self, session_manager, remote_openenv_server
+    ):
+        episode = await session_manager.start_episode(remote_openenv_server, {})
+        await session_manager.release(episode)
+        with pytest.raises(OpenEnvSessionLostError, match="no live session"):
+            await session_manager.read_state(episode)
+
+    async def test_shutdown_closes_held_conversation_sessions(
+        self, session_manager, remote_openenv_server
+    ):
+        episode = await session_manager.start_episode(remote_openenv_server, {})
+        session_manager.conversations.put(
+            "run-1",
+            HeldSession(
+                context=EpisodeContext(
+                    episode=episode,
+                    openenv_server=remote_openenv_server,
+                    session_manager=session_manager,
+                ),
+                loop=asyncio.get_running_loop(),
+            ),
+        )
+        await session_manager.shutdown()
+        assert not session_manager.conversations.holds_turn("run-1")
+        assert session_manager._sessions == {}
+
+
+class TestSessionLost:
+    """Any failure that drops a session surfaces as an `OpenEnvError`, so callers that
+    check for environment errors see the session end; cancellation is never wrapped."""
+
+    @pytest.mark.parametrize("method", ["call_tool", "read_state"])
+    async def test_unexpected_error_drops_and_is_wrapped(
+        self, session_manager, remote_openenv_server, method
+    ):
+        episode = await session_manager.start_episode(remote_openenv_server, {})
+        args = (episode, "read_notes", {}) if method == "call_tool" else (episode,)
+        cause = RuntimeError("attached to a different loop")
+        with patch.object(session_manager, "_request", side_effect=cause):
+            with pytest.raises(OpenEnvSessionLostError) as raised:
+                await getattr(session_manager, method)(*args)
+        assert raised.value.__cause__ is cause
+        assert session_manager._sessions == {}
+
+    async def test_cancellation_drops_and_is_not_wrapped(
+        self, session_manager, remote_openenv_server
+    ):
+        episode = await session_manager.start_episode(remote_openenv_server, {})
+        with patch.object(
+            session_manager, "_request", side_effect=asyncio.CancelledError()
+        ):
+            with pytest.raises(asyncio.CancelledError):
+                await session_manager.call_tool(episode, "read_notes", {})
+        assert session_manager._sessions == {}
+
+    async def test_forget_drops_the_reference_without_closing(
+        self, session_manager, remote_openenv_server
+    ):
+        episode = await session_manager.start_episode(remote_openenv_server, {})
+        session = session_manager._sessions[episode.episode_id]
+        session_manager.forget(episode)
+        session_manager.forget(episode)
+        assert session_manager._sessions == {}
+        assert session.ws.state.name == "OPEN"
+        await session.ws.close()
+
+    async def test_call_without_a_session_is_a_lost_session(
+        self, session_manager, remote_openenv_server
+    ):
+        episode = await session_manager.start_episode(remote_openenv_server, {})
+        await session_manager.release(episode)
+        with pytest.raises(OpenEnvSessionLostError, match="no live session"):
+            await session_manager.call_tool(episode, "read_notes", {})
+
+
 class TestSharedSessionManager:
+    async def test_shared_conversation_sessions_belong_to_the_shared_manager(self):
+        manager = session_manager_module.shared_session_manager()
+        assert (
+            session_manager_module.shared_conversation_sessions()
+            is manager.conversations
+        )
+        await session_manager_module.shutdown_shared_session_manager()
+
     async def test_one_manager_per_process_until_shutdown(self):
         first = session_manager_module.shared_session_manager()
         assert session_manager_module.shared_session_manager() is first
