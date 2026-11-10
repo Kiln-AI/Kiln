@@ -227,6 +227,29 @@ describe("ToolsSelector context scoping on the write path", () => {
 
     expect(tools).toEqual(["mcp::remote::demo::search"])
   })
+
+  it("keeps an offline OpenEnv's tools selected", async () => {
+    // An OpenEnv that can't be reached is missing from available_tools; its
+    // tools stay so Run reports the server is unreachable.
+    const task_id = "task_offline_openenv"
+    seed_persisted_tools(task_id, [
+      "mcp::remote::demo::search",
+      "kiln_tool::openenv::openenv_1::list_items",
+      "mcp::remote::demo::deleted",
+    ])
+
+    const tools = await bound_tools({
+      project_id: "proj_offline_openenv",
+      sandbox_code_context: "none",
+      task_id,
+    })
+
+    expect(tools).toEqual([
+      "mcp::remote::demo::search",
+      "kiln_tool::openenv::openenv_1::list_items",
+    ])
+    expect(persisted_tools(task_id)).toEqual(tools)
+  })
 })
 
 describe("ToolsSelector sandbox-only tool filtering", () => {

@@ -12,6 +12,7 @@
     build_tool_option_groups,
     selectable_tool_sets,
   } from "./tool_options"
+  import { is_openenv_tool_id } from "$lib/utils/openenv"
 
   export let project_id: string
   export let task_id: string | null = null
@@ -175,11 +176,16 @@
       sandbox_code_context,
     )
 
-    const dropped = current_tools.filter((tool_id) => !selectable.has(tool_id))
+    // An offline OpenEnv is missing from available_tools, but its tools stay
+    // selected so the run reports the server can't be reached rather than
+    // quietly running without them.
+    const keep = (tool_id: string) =>
+      selectable.has(tool_id) || is_openenv_tool_id(tool_id)
+    const dropped = current_tools.filter((tool_id) => !keep(tool_id))
 
     if (dropped.length > 0) {
       console.warn("Removing tools not selectable in this picker:", dropped)
-      tools = current_tools.filter((tool_id) => selectable.has(tool_id))
+      tools = current_tools.filter(keep)
     }
   }
 
