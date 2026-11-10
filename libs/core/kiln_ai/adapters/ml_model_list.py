@@ -54,6 +54,7 @@ class ModelFamily(str, Enum):
     prismml = "prismml"
     paper_instruments = "paper_instruments"
     ricursive = "ricursive"
+    nex = "nex"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -70,6 +71,7 @@ class ModelName(str, Enum):
     muse_spark_open = "muse_spark_open"
     muse_spark_1_2 = "muse_spark_1_2"
     muse_spark_1_1 = "muse_spark_1_1"
+    muse_ember = "muse_ember"
     muse_glimmer_30b = "muse_glimmer_30b"
     llama_3_1_8b = "llama_3_1_8b"
     llama_3_1_70b = "llama_3_1_70b"
@@ -370,6 +372,7 @@ class ModelName(str, Enum):
     ternary_bonsai_2_9b = "ternary_bonsai_2_9b"
     ultramarine_1_flash = "ultramarine_1_flash"
     ripple_65b_preview = "ripple_65b_preview"
+    nex_n2_6 = "nex_n2_6"
 
 
 class ModelParserID(str, Enum):
@@ -851,6 +854,21 @@ QWEN_3P8_GROQ_THINKING_LEVELS = {
 # so Extra High is left out here.
 MUSE_SPARK_OPEN_FIREWORKS_THINKING_LEVELS = {
     "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+}
+
+# OpenRouter rejects "none" for Muse Ember (reasoning cannot be turned off).
+MUSE_EMBER_OPENROUTER_THINKING_LEVELS = {
+    "Minimal": "minimal",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
+}
+
+NEX_N2_6_OPENROUTER_THINKING_LEVELS = {
     "Medium": "medium",
     "High": "high",
 }
@@ -5818,6 +5836,43 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Muse Ember
+    KilnModel(
+        family=ModelFamily.muse,
+        name=ModelName.muse_ember,
+        friendly_name="Muse Ember",
+        editorial_notes="Meta's smallest and most efficient Muse reasoning model, built for high-volume agent work such as tool calls and routing. 1M-token context.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="meta/muse-ember",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=MUSE_EMBER_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="max",
+                supports_function_calling=True,
+                supports_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents (html and csv excluded, as on the Muse Spark entries)
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio (ogg excluded, as on Muse Wonder)
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
@@ -12310,6 +12365,30 @@ built_in_models: List[KilnModel] = [
                 model_id="ricursive-ai/Ripple-65B-Preview",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.nex,
+        name=ModelName.nex_n2_6,
+        friendly_name="Nex N2.6",
+        editorial_notes="Nex AGI's agentic model, post-trained from GLM 5.3 Flash (about 321B parameters) for tool use, computer use and long-horizon tasks. Text and image input.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="nex-agi/nex-n2.6",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=NEX_N2_6_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                supports_data_gen=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
