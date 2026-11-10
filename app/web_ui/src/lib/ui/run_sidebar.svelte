@@ -26,6 +26,7 @@
   } from "$lib/stores/rating_options_store"
   import posthog from "posthog-js"
   import PropertyList from "$lib/ui/property_list.svelte"
+  import OpenEnvEpisodeProperties from "$lib/ui/openenv_episode_properties.svelte"
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
 
   export let project_id: string
@@ -766,6 +767,11 @@
       />
     {/if}
   </div>
+  {#if run.openenv_episode}
+    <div class="mt-8">
+      <OpenEnvEpisodeProperties {project_id} episode={run.openenv_episode} />
+    </div>
+  {/if}
 </div>
 
 <Dialog
