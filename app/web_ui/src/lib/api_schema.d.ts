@@ -12311,6 +12311,13 @@ export interface components {
              * @description The ID of the saved TaskRunConfig the caller used to populate run_config_properties, if any. Stored on the resulting TaskRun so the run can be traced back to its originating saved config. None for ad-hoc runs that were not initiated from a saved TaskRunConfig.
              */
             task_run_config_id?: string | null;
+            /**
+             * Openenv Reset Kwargs
+             * @description Keyword arguments for resetting the OpenEnv environment the run config's tools reach. Omit to reset it with none. Refused when the tools reach no environment.
+             */
+            openenv_reset_kwargs?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
         };
         /**
          * SampleApi

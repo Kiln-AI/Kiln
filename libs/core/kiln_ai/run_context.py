@@ -8,8 +8,10 @@ usable for logging, caching, metrics, or any run-scoped operations.
 """
 
 import uuid
+from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
+from typing import Iterator
 
 from kiln_ai.datamodel.openenv import OpenEnvEpisode, OpenEnvServer, OpenEnvTool
 from kiln_ai.openenv.session_manager import OpenEnvSessionManager
@@ -35,10 +37,9 @@ def generate_agent_run_id() -> str:
 
 @dataclass(frozen=True)
 class EpisodeContext:
-    """The episode an eval job is generating against, plus what the tool registry
-    needs to resolve the environment's tool ids: the environment, the session manager that holds the
-    live session, and the tools the environment serves (by function name), resolved once
-    per environment per eval run.
+    """The episode a run or eval job is generating against, plus what the tool registry
+    needs to resolve the environment's tool ids: the environment, the session manager that
+    holds the live session, and the tools the environment serves (by function name).
     """
 
     episode: "OpenEnvEpisode"
@@ -47,12 +48,12 @@ class EpisodeContext:
     tools: dict[str, "OpenEnvTool"] = field(default_factory=dict)
 
 
-# Set by the eval runner while one job generates, and reset with the token in a
-# `finally`. The reset is correctness, not hygiene: `AsyncJobRunner` reuses long-lived
-# worker tasks, and consecutive jobs on one worker share a context. Request handlers and
-# other tasks copy the *server's* context at creation, so they never observe a job's
-# value; that is why environment tool ids can never resolve in API, chat, or export code
-# paths. Graders read the episode from the trace, not from here.
+# Set while an episode's run generates (by the eval runner for a job, and by the adapter
+# for a run whose tools reach an environment), and reset with the token in a `finally`.
+# The reset is correctness, not hygiene: `AsyncJobRunner` reuses long-lived worker tasks,
+# and consecutive jobs on one worker share a context. Request handlers and other tasks
+# copy the *server's* context at creation, so they never observe another run's episode.
+# Graders read the episode from the trace, not from here.
 _episode: ContextVar["EpisodeContext | None"] = ContextVar("episode", default=None)
 
 
@@ -71,3 +72,26 @@ def set_episode(
 def reset_episode(token: Token["EpisodeContext | None"]) -> None:
     """Restore the episode that was current before the matching `set_episode`."""
     _episode.reset(token)
+
+
+# Set while a run that must not open its own environment session generates (eval
+# generation, which owns its episodes). Nested runs, such as a Kiln task tool's sub-run,
+# inherit it, so none of them opens a session either.
+_openenv_sessions_off: ContextVar[bool] = ContextVar(
+    "openenv_sessions_off", default=False
+)
+
+
+def openenv_sessions_off() -> bool:
+    """True when runs in the current context must not open environment sessions."""
+    return _openenv_sessions_off.get()
+
+
+@contextmanager
+def no_openenv_sessions() -> Iterator[None]:
+    """Stop runs in this block, and runs nested in them, opening environment sessions."""
+    token = _openenv_sessions_off.set(True)
+    try:
+        yield
+    finally:
+        _openenv_sessions_off.reset(token)

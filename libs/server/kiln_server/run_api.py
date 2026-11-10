@@ -18,6 +18,10 @@ from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import StructuredInputType, TurnMode
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
+from kiln_ai.openenv.run_session import (
+    OpenEnvRunError,
+    OpenEnvRunErrorKind,
+)
 from kiln_ai.utils.dataset_import import (
     DatasetFileImporter,
     DatasetImportFormat,
@@ -25,7 +29,7 @@ from kiln_ai.utils.dataset_import import (
     KilnInvalidImportFormat,
 )
 from kiln_ai.utils.torn_read import to_thread_retrying_torn_read
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
@@ -44,6 +48,18 @@ EVAL_TRACE_DELETE_MESSAGE = "This run can't be deleted because it's needed for a
 # Defensive cap on parent-chain depth. Real multiturn conversations are tiny
 # compared to this; the guard exists to terminate on disk corruption or cycles.
 _MAX_ANCESTOR_DEPTH = 1000
+
+_OPENENV_RUN_ERROR_STATUS: dict[OpenEnvRunErrorKind, int] = {
+    "reach": 400,
+    "kwargs_without_openenv": 400,
+    "reset_rejected": 400,
+    "not_found": 404,
+    "session_ended": 409,
+    "fork_refused": 409,
+    "not_started_with_openenv": 409,
+    "unreachable": 502,
+    "at_capacity": 503,
+}
 
 
 def _walk_run_chain(
@@ -237,6 +253,14 @@ class RunTaskRequest(BaseModel):
     task_run_config_id: str | None = Field(
         default=None,
         description="The ID of the saved TaskRunConfig the caller used to populate run_config_properties, if any. Stored on the resulting TaskRun so the run can be traced back to its originating saved config. None for ad-hoc runs that were not initiated from a saved TaskRunConfig.",
+    )
+    openenv_reset_kwargs: dict[str, JsonValue] | None = Field(
+        default=None,
+        description=(
+            "Keyword arguments for resetting the OpenEnv environment the run config's "
+            "tools reach. Omit to reset it with none. Refused when the tools reach no "
+            "environment."
+        ),
     )
 
     # Allows use of the model_name field (usually pydantic will reserve model_*)
@@ -782,6 +806,7 @@ def connect_run_api(app: FastAPI):
                 default_tags=request.tags,
                 skills=skills,
                 task_run_config_id=request.task_run_config_id,
+                openenv_reset_kwargs=request.openenv_reset_kwargs,
             ),
         )
 
@@ -808,11 +833,16 @@ def connect_run_api(app: FastAPI):
                 )
             prior_trace = parent_task_run.trace
 
-        run = await adapter.invoke(
-            input,
-            prior_trace=prior_trace,
-            parent_task_run=parent_task_run,
-        )
+        try:
+            run = await adapter.invoke(
+                input,
+                prior_trace=prior_trace,
+                parent_task_run=parent_task_run,
+            )
+        except OpenEnvRunError as e:
+            raise HTTPException(
+                status_code=_OPENENV_RUN_ERROR_STATUS[e.kind], detail=e.message
+            ) from e
 
         # The conversation may have been cascade-deleted while the model was
         # generating (invoke autosaves the new run before returning). Don't

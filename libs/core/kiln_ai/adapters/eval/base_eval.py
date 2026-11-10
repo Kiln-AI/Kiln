@@ -727,6 +727,7 @@ class BaseEval:
                 allow_saving=False,
                 skills=self.skills,
                 task_run_config_id=run_config_id,
+                open_openenv_session=False,
             ),
         )
 

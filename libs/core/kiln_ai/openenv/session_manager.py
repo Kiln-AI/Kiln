@@ -102,9 +102,17 @@ class OpenEnvTransientError(OpenEnvError):
     retries these."""
 
 
+class OpenEnvCapacityError(OpenEnvTransientError):
+    """The environment holds as many sessions as it allows and refused another."""
+
+
 class OpenEnvRejectedError(OpenEnvError):
     """The environment answered a message with an error. The session is still in
-    step, so it stays usable."""
+    step, so it stays usable. `server_message` is the environment's own text."""
+
+    def __init__(self, message: str, server_message: str | None = None) -> None:
+        super().__init__(message)
+        self.server_message = server_message
 
 
 def tool_call_error_ends_session(error: BaseException) -> bool:
@@ -445,9 +453,13 @@ class OpenEnvSessionManager:
             await self._send(ws, message)
             raw = await asyncio.wait_for(ws.recv(), timeout=self._step_timeout_s)
         except ConnectionClosed as e:
-            hint = _CAPACITY_HINT if kind == "reset" else ""
+            if kind == "reset":
+                # Some servers close the socket instead of answering a reset over capacity.
+                raise OpenEnvCapacityError(
+                    f"The environment closed the session: {e}.{_CAPACITY_HINT}"
+                ) from e
             raise OpenEnvTransientError(
-                f"The environment closed the session: {e}.{hint}"
+                f"The environment closed the session: {e}."
             ) from e
         except asyncio.TimeoutError as e:
             raise OpenEnvTransientError(
@@ -473,8 +485,8 @@ class OpenEnvSessionManager:
                 f"The environment rejected a '{kind}' message: {_preview(detail)}"
             )
             if str(code).lower() == "capacity_reached":
-                raise OpenEnvTransientError(rejection + _CAPACITY_HINT)
-            raise OpenEnvRejectedError(rejection)
+                raise OpenEnvCapacityError(rejection + _CAPACITY_HINT)
+            raise OpenEnvRejectedError(rejection, server_message=_preview(detail))
         if response_type != expected_type:
             raise OpenEnvError(
                 f"The environment answered a '{kind}' message with a "

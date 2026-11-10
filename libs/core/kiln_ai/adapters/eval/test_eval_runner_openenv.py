@@ -53,13 +53,18 @@ from kiln_ai.datamodel.eval import (
     V2EvalResult,
 )
 from kiln_ai.datamodel.eval_splits import resolve_split
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.openenv import OpenEnvReset, OpenEnvServer
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import Task, TaskRunConfig
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_ai.datamodel.task_run import TaskRun, Usage
-from kiln_ai.datamodel.tool_id import build_code_tool_id, build_openenv_tool_id
+from kiln_ai.datamodel.tool_id import (
+    build_code_tool_id,
+    build_kiln_task_tool_id,
+    build_openenv_tool_id,
+)
 from kiln_ai.openenv.session_manager import (
     OpenEnvError,
     OpenEnvRejectedError,
@@ -70,6 +75,7 @@ from kiln_ai.openenv.testing import ENV_NAME, free_port, serve_in_thread
 from kiln_ai.run_context import get_episode
 from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
 from kiln_ai.tools.base_tool import ToolCallContext
+from kiln_ai.tools.kiln_task_tool import KilnTaskTool
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.async_job_runner import AsyncJobRunnerObserver, RetryableError
 
@@ -1899,3 +1905,157 @@ def test_openenv_readiness_names_ten_items_and_counts_the_rest(
 
     assert message.count("ei_plain_") == 10
     assert ("and 0 more" not in message) and (suffix in message)
+
+
+# -- eval generation never opens the adapter's own session ---------------------------
+
+
+@contextmanager
+def _adapter_session_spy(session_manager):
+    """Points the adapter's own session setup at `session_manager` and records any
+    episode it starts."""
+    with (
+        patch(
+            "kiln_ai.openenv.run_session.shared_session_manager",
+            return_value=session_manager,
+        ),
+        patch.object(
+            session_manager, "start_episode", wraps=session_manager.start_episode
+        ) as start_episode,
+    ):
+        yield start_episode
+
+
+async def test_eval_reaching_an_openenv_server_through_a_code_tool_opens_no_session(
+    project, task, syn_tool_id, eval_, session_manager
+):
+    """The runner opens an episode only for environment tools listed directly. A run
+    config that reaches one through a code tool's allowlist runs without an episode."""
+    code_tool = CodeTool(
+        name="wrapper",
+        parent=project,
+        tool_function_name="wrapper",
+        tool_description="calls the environment",
+        parameters_schema=SCHEMA,
+        code="def run(note):\n    return 'x'\n",
+        tool_allowlist=[syn_tool_id],
+    )
+    code_tool.save_to_file()
+    run_config = _run_config(task, [build_code_tool_id(code_tool.id)])
+    _input(task, "note", None, id="ei_plain")
+    cfg = _config(eval_, ExactMatchProperties(expected_value="done"))
+
+    with (
+        _real_model_adapter(_model_reply(content="done")),
+        _adapter_session_spy(session_manager) as start_episode,
+        patch(
+            "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+            side_effect=lambda config, run_config, skills: RecordingJudge(
+                config, run_config, skills
+            ),
+        ),
+    ):
+        runner = _runner([cfg], run_config, session_manager)
+        await runner.run_job(runner.collect_tasks()[0])
+
+    start_episode.assert_not_called()
+    (trace,) = _traces(task)
+    assert trace.openenv_episode is None
+
+
+async def test_eval_reaching_an_openenv_server_through_a_kiln_task_tool_opens_no_session(
+    project, task, syn_tool_id, eval_, session_manager
+):
+    """The Kiln task tool's sub-run inherits the eval's no-session rule, so it fails to
+    resolve the environment tool instead of opening a default-reset session."""
+    sub_task = Task(name="sub", instruction="look it up", parent=project)
+    sub_task.save_to_file()
+    sub_run_config = _run_config(sub_task, [syn_tool_id], name="sub rc")
+    server = ExternalToolServer(
+        name="lookup_server",
+        type=ToolServerType.kiln_task,
+        properties={
+            "name": "lookup",
+            "description": "looks it up",
+            "task_id": sub_task.id,
+            "run_config_id": sub_run_config.id,
+            "is_archived": False,
+        },
+        parent=project,
+    )
+    server.save_to_file()
+    run_config = _run_config(task, [build_kiln_task_tool_id(server.id)])
+    _input(task, "note", None, id="ei_plain")
+    cfg = _config(eval_, ExactMatchProperties(expected_value="done"))
+
+    sub_run_errors: list[BaseException] = []
+    original_run = KilnTaskTool.run
+
+    async def recording_run(self, context=None, **kwargs):
+        try:
+            return await original_run(self, context, **kwargs)
+        except BaseException as e:
+            sub_run_errors.append(e)
+            raise
+
+    call_lookup = ModelResponse(
+        model="gpt-4",
+        choices=[
+            {
+                "message": {
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "lookup",
+                                "arguments": json.dumps({"input": "x"}),
+                            },
+                        }
+                    ],
+                }
+            }
+        ],
+    )
+    with (
+        _real_model_adapter(
+            (call_lookup, call_lookup.choices[0]),
+            _model_reply(note="hi"),
+            _model_reply(content="done"),
+        ),
+        _adapter_session_spy(session_manager) as start_episode,
+        patch("kiln_ai.tools.kiln_task_tool.project_from_id", return_value=project),
+        patch.object(KilnTaskTool, "run", new=recording_run),
+        patch(
+            "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+            side_effect=lambda config, run_config, skills: RecordingJudge(
+                config, run_config, skills
+            ),
+        ),
+    ):
+        runner = _runner([cfg], run_config, session_manager)
+        await runner.run_job(runner.collect_tasks()[0])
+
+    start_episode.assert_not_called()
+    (sub_run_error,) = sub_run_errors
+    assert "can only be used while an episode" in str(sub_run_error)
+
+
+async def test_v1_run_task_with_openenv_tools_fails_outside_an_episode(
+    task, run_config, eval_, session_manager
+):
+    """The V1 generation path runs the run config with no episode set, so a listed
+    environment tool fails to resolve rather than running in a default-reset session."""
+    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
+    evaluator = RecordingJudge(cfg, run_config.run_config_properties)
+    item = _input(task, "note", None, id="ei_v1")
+
+    with (
+        _real_model_adapter(_model_reply(note="hi")),
+        _adapter_session_spy(session_manager) as start_episode,
+    ):
+        with pytest.raises(KilnRunError, match="can only be used while an episode"):
+            await evaluator.run_task(item)
+
+    start_episode.assert_not_called()

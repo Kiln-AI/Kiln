@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import uuid
 from abc import ABCMeta, abstractmethod
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, AsyncIterator, Dict, Tuple
 
 from litellm.types.utils import ModelResponseStream
+from pydantic import JsonValue
 
 from kiln_ai.adapters.chat.chat_formatter import (
     ChatFormatter,
@@ -60,6 +62,11 @@ from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.task_output import TASK_OUTPUT_SCHEMA_ERROR_PREFIX
 from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX, skill_id_from_tool_id
+from kiln_ai.openenv.run_session import (
+    openenv_for_run,
+    reject_openenv_for_streaming,
+)
+from kiln_ai.run_context import no_openenv_sessions
 from kiln_ai.tools import KilnToolInterface
 from kiln_ai.tools.mcp_session_manager import mcp_session_scope
 from kiln_ai.tools.skill_tool import SkillTool
@@ -133,6 +140,27 @@ class AdapterConfig:
     requests. This is a cost optimization and does not affect model output.
     """
     automatic_prompt_caching: bool = False
+
+    """
+    Keyword arguments for resetting the OpenEnv environment the run's tools reach. None
+    resets it with none. Setting them for a run that reaches no environment is an error.
+    """
+    openenv_reset_kwargs: dict[str, JsonValue] | None = None
+
+    """
+    When False, neither this run nor any run nested in it (such as a Kiln task tool's
+    sub-run) opens an OpenEnv session: environment tools resolve only inside an episode
+    the caller has set. Eval generation turns this off, because evals open their own
+    episodes, reset from each eval input. Can't be combined with openenv_reset_kwargs.
+    """
+    open_openenv_session: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.open_openenv_session and self.openenv_reset_kwargs is not None:
+            raise ValueError(
+                "openenv_reset_kwargs need open_openenv_session: a run that doesn't "
+                "open its own environment session can't reset one."
+            )
 
 
 class BaseAdapter(metaclass=ABCMeta):
@@ -373,10 +401,26 @@ class BaseAdapter(metaclass=ABCMeta):
         prior_trace: list[ChatCompletionMessageParam] | None = None,
         parent_task_run: TaskRun | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
-        async with mcp_session_scope():
-            return await self._run_returning_run_output(
-                input, input_source, prior_trace, parent_task_run
-            )
+        sessions_scope = (
+            nullcontext()
+            if self.base_adapter_config.open_openenv_session
+            else no_openenv_sessions()
+        )
+        with sessions_scope:
+            async with openenv_for_run(
+                self.task,
+                self.run_config,
+                self.base_adapter_config.openenv_reset_kwargs,
+            ) as openenv_run:
+                async with mcp_session_scope():
+                    run, run_output = await self._run_returning_run_output(
+                        input, input_source, prior_trace, parent_task_run
+                    )
+        if openenv_run is not None and openenv_run.episode is not None:
+            run.openenv_episode = openenv_run.episode
+            if run.path is not None:
+                run.save_to_file()
+        return run, run_output
 
     def invoke_openai_stream(
         self,
@@ -422,6 +466,12 @@ class BaseAdapter(metaclass=ABCMeta):
         input: InputType,
         prior_trace: list[ChatCompletionMessageParam] | None,
     ) -> AdapterStream:
+        if self.base_adapter_config.open_openenv_session:
+            reject_openenv_for_streaming(
+                self.task,
+                self.run_config,
+                self.base_adapter_config.openenv_reset_kwargs,
+            )
         prior_trace = self._normalize_prior_trace(prior_trace)
         self._reject_multiturn_with_structured_input(prior_trace)
 

@@ -24,6 +24,11 @@ and allowing more than one requires the environment to keep its state per sessio
 capacity error before any model call, and re-running the eval runs only the jobs that
 failed.
 
+Outside evals, a run whose tools reach an OpenEnv server (directly, through code tools or
+through Kiln task tools) holds one session for the run too, reset with the run's
+`openenv_reset_kwargs`, and records its episode on the run (see
+`kiln_ai.openenv.run_session`).
+
 An eval input carries an `OpenEnvReset`: the OpenEnv server plus `reset_kwargs`, the keyword
 arguments of the environment's `reset`. An **episode** is one reset-to-close run on a session of
 that environment: the state one eval job acts on. Its outcome is recorded on the trace

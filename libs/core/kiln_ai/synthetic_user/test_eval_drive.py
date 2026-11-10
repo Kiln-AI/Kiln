@@ -168,6 +168,8 @@ async def test_adapter_configured_transient(fake_adapter, fake_su_driver) -> Non
     assert captured["adapter_config"].skills is skills
     # A multi-turn drive re-sends its history every call: ask providers to cache it.
     assert captured["adapter_config"].automatic_prompt_caching is True
+    # The eval runner sets the drive's episode, if any; the adapter never opens its own.
+    assert captured["adapter_config"].open_openenv_session is False
 
 
 @pytest.mark.asyncio

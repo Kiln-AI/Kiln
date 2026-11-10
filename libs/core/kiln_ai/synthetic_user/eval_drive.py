@@ -58,7 +58,10 @@ async def drive_case_for_eval(
         # hints let providers that need them (Anthropic) bill that repeated prefix as cache
         # reads. It does not change the output.
         base_adapter_config=AdapterConfig(
-            allow_saving=False, skills=skills, automatic_prompt_caching=True
+            allow_saving=False,
+            skills=skills,
+            automatic_prompt_caching=True,
+            open_openenv_session=False,
         ),
     )
     input_source = DataSource(

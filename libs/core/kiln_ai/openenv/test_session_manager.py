@@ -1,15 +1,17 @@
 """Tests for the OpenEnv session manager against the test environment server. Kiln only
 connects to a running server named by `url`; it never starts one."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from websockets.exceptions import ConnectionClosed
 
 from kiln_ai.datamodel.openenv import OpenEnvServer
 from kiln_ai.datamodel.project import Project
 from kiln_ai.openenv import session_manager as session_manager_module
 from kiln_ai.openenv.session_manager import (
+    OpenEnvCapacityError,
     OpenEnvError,
     OpenEnvRejectedError,
     OpenEnvSessionManager,
@@ -210,10 +212,11 @@ class TestFailurePaths:
     async def test_rejected_reset_leaves_no_session(
         self, session_manager, remote_openenv_server
     ):
-        with pytest.raises(OpenEnvRejectedError, match="reset refused"):
+        with pytest.raises(OpenEnvRejectedError, match="reset refused") as raised:
             await session_manager.start_episode(
                 remote_openenv_server, {"fail_reset": True}
             )
+        assert raised.value.server_message == "reset refused"
         assert session_manager._sessions == {}
 
     async def test_failed_state_still_ends_the_session(
@@ -234,7 +237,7 @@ class TestFailurePaths:
             openenv_server = OpenEnvServer(name="full", parent=project, url=base_url)
             openenv_server.save_to_file()
             first = await session_manager.start_episode(openenv_server, {})
-            with pytest.raises(OpenEnvTransientError, match="max_concurrent_envs"):
+            with pytest.raises(OpenEnvCapacityError, match="max_concurrent_envs"):
                 await session_manager.start_episode(openenv_server, {})
             await session_manager.release(first)
             second = await session_manager.start_episode(openenv_server, {})
@@ -294,6 +297,19 @@ class TestUnexpectedReplies:
             await self._request(
                 session_manager, remote_openenv_server, {"type": "close"}
             )
+
+    @pytest.mark.parametrize("kind, is_capacity", [("reset", True), ("state", False)])
+    async def test_only_a_session_closed_on_reset_is_a_capacity_error(
+        self, session_manager, remote_openenv_server, kind, is_capacity
+    ):
+        with patch.object(
+            session_manager, "_send", side_effect=ConnectionClosed(None, None)
+        ):
+            with pytest.raises(OpenEnvTransientError) as raised:
+                await self._request(
+                    session_manager, remote_openenv_server, {"type": kind}
+                )
+        assert isinstance(raised.value, OpenEnvCapacityError) is is_capacity
 
     async def test_unknown_action_is_rejected(
         self, session_manager, remote_openenv_server

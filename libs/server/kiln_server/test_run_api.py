@@ -28,6 +28,7 @@ from kiln_ai.datamodel.datamodel_enums import TurnMode
 from kiln_ai.datamodel.model_cache import ModelCache
 from kiln_ai.datamodel.task_run import EvalItemSource
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
+from kiln_ai.openenv.run_session import OpenEnvRunError
 from kiln_ai.utils.config import Config
 
 from kiln_server.custom_errors import connect_custom_errors
@@ -374,6 +375,77 @@ async def test_run_task_task_run_config_id_defaults_to_none(client, task_run_set
 
     assert response.status_code == 200
     assert captured["task_run_config_id"] is None
+
+
+def _post_run_with_fake_adapter(client, task_run_setup, request_extra, invoke):
+    """Post a run whose adapter is a fake with *invoke*; returns the response and
+    the AdapterConfig the endpoint built."""
+    task = task_run_setup["task"]
+    captured: dict = {}
+
+    def fake_adapter_for_task(task_arg, run_config_properties, base_adapter_config):
+        captured["config"] = base_adapter_config
+        mock_adapter = MagicMock()
+        mock_adapter.invoke = invoke
+        return mock_adapter
+
+    with (
+        patch("kiln_server.run_api.task_from_id", return_value=task),
+        patch(
+            "kiln_server.run_api.adapter_for_task", side_effect=fake_adapter_for_task
+        ),
+    ):
+        response = client.post(
+            f"/api/projects/project-1/tasks/{task.id}/run",
+            json={**task_run_setup["run_task_request"], **request_extra},
+        )
+    return response, captured["config"]
+
+
+@pytest.mark.parametrize(
+    "request_extra, expected",
+    [
+        (
+            {"openenv_reset_kwargs": {"role": "tech", "seats": [1, 2]}},
+            {"role": "tech", "seats": [1, 2]},
+        ),
+        ({}, None),
+    ],
+)
+def test_run_task_forwards_openenv_reset_kwargs(
+    client, task_run_setup, request_extra, expected
+):
+    response, config = _post_run_with_fake_adapter(
+        client,
+        task_run_setup,
+        request_extra,
+        AsyncMock(return_value=task_run_setup["task_run"]),
+    )
+    assert response.status_code == 200
+    assert config.openenv_reset_kwargs == expected
+
+
+@pytest.mark.parametrize(
+    "kind, status",
+    [
+        ("reach", 400),
+        ("kwargs_without_openenv", 400),
+        ("reset_rejected", 400),
+        ("not_found", 404),
+        ("session_ended", 409),
+        ("fork_refused", 409),
+        ("not_started_with_openenv", 409),
+        ("unreachable", 502),
+        ("at_capacity", 503),
+    ],
+)
+def test_run_task_maps_openenv_errors(client, task_run_setup, kind, status):
+    error = OpenEnvRunError(kind, f"OpenEnv Acme: {kind}")
+    response, _ = _post_run_with_fake_adapter(
+        client, task_run_setup, {}, AsyncMock(side_effect=error)
+    )
+    assert response.status_code == status
+    assert response.json() == {"message": f"OpenEnv Acme: {kind}"}
 
 
 def test_deep_update_with_empty_source():
