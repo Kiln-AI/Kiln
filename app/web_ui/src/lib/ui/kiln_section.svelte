@@ -21,6 +21,8 @@
           href={item.href}
           on_click={item.on_click}
           is_external={item.is_external || false}
+          link_label={item.link_label}
+          link_href={item.link_href}
         />
       {:else if item.type === "eval_template"}
         <SettingsItem

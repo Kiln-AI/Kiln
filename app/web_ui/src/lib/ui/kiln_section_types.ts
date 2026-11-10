@@ -11,6 +11,8 @@ export interface SettingsItem {
   on_click?: () => void
   is_external?: boolean
   badge_text?: string
+  link_label?: string
+  link_href?: string
 }
 
 export interface EvalTemplateItem {

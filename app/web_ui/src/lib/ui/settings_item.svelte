@@ -8,6 +8,10 @@
   export let on_click: (() => void) | undefined = undefined
   export let is_external: boolean = false
   export let badge_text: string | undefined = undefined
+  export let link_label: string | undefined = undefined
+  export let link_href: string | undefined = undefined
+
+  $: has_link = !!(link_label && link_href)
 
   function clicked() {
     if (on_click) {
@@ -20,10 +24,25 @@
       }
     }
   }
+
+  function keydown(event: KeyboardEvent) {
+    if (
+      event.target === event.currentTarget &&
+      (event.key === "Enter" || event.key === " ")
+    ) {
+      event.preventDefault()
+      clicked()
+    }
+  }
 </script>
 
-<button
+<!-- A link can't be nested in a <button>, so a row with a link is a div with the button role. -->
+<svelte:element
+  this={has_link ? "div" : "button"}
+  role={has_link ? "button" : undefined}
+  tabindex={has_link ? 0 : undefined}
   on:click={clicked}
+  on:keydown={has_link ? keydown : undefined}
   class="group flex items-center justify-between py-4 px-6 rounded-lg hover:bg-gray-50 transition-all duration-200 cursor-pointer w-full text-left"
 >
   <div class="flex-1 min-w-0">
@@ -40,6 +59,15 @@
 
     <p class="text-sm font-light text-gray-500 leading-relaxed">
       {description}
+      {#if has_link}
+        <a
+          href={link_href}
+          class="link"
+          target="_blank"
+          rel="noopener noreferrer"
+          on:click|stopPropagation>{link_label}</a
+        >
+      {/if}
     </p>
   </div>
 
@@ -51,4 +79,4 @@
       {button_text}
     </div>
   </div>
-</button>
+</svelte:element>
