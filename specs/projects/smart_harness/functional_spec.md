@@ -22,7 +22,7 @@ Not goals: a general workflow engine, or a replacement for the agent loop.
 
 | # | Topic | Decision | Status |
 |---|---|---|---|
-| 1 | Interface style: wrap with `next()`, or decide-and-return-an-action | Lean: both. Decide-style for every kind of middleware; wrap-style for in-process Python. | **Open until architecture**, when signatures are designed. |
+| 1 | The middleware interface | Getting this interface right is a key design goal of the project and is not to be glossed over. The overview's sketch (answer, tool call, overrides, do nothing) is rough: the interface must cover those cases, but they are not the interface. Earlier lean on style: both decide-and-return and wrap with `next()`. | **Open until architecture**, when signatures are designed. |
 | 2 | Hook points (turn start, turn end, each tool call, each LLM call in the tool loop) | None yet. | **Deferred to architecture.** A proposal is wanted there that balances function, complexity and design. Not to be picked in isolation. |
 | 3 | Overrides | Overrides chosen at turn start apply to every LLM call in that turn. Overridable: model and provider, thinking level, temperature, top_p. Not overridable: prompt, tools. When the model changes, structured output mode resets to the new model's default. | **Decided** (2026-11-10). Revisit only if architecture adds a per-LLM-call hook. |
 | 4 | Harness-initiated tool call (for example "on turn 1, call `get_user_info`") | Direction: it is a real tool call. The harness runs the tool and the conversation records the call and its result the same way it would if the model had asked for it. | **Direction chosen, probe half done.** The [docs check](research/harness_tool_call_probe/docs_probe.md) found the "breaks with thinking on" claim only partly right: current Claude models with adaptive thinking accept it; older Claude with manual-budget thinking, Gemini 3, DeepSeek and Kimi reject it unless a placeholder is added, and Gemini 3 through OpenRouter has no documented fix. The live check is still running. |
@@ -32,6 +32,9 @@ Not goals: a general workflow engine, or a replacement for the agent loop.
 | 8 | Middleware as the abstraction | Code that runs inside the harness around a turn. | **Decided** (2026-11-10). |
 | 9 | Middleware as a task, or as code | **Code.** A middleware is stored Python, a sibling of code tools and code judges, that returns an action. Tasks and inline model calls are things the code calls. Accepted costs: no dataset per middleware; an LLM cannot be a middleware without a few lines of code; no general code-task feature. | **Decided** (2026-11-10). |
 | 10 | How a middleware is judged | By whether the agent with it still meets the agent's goal, measured by running the whole agent with the agent's evals. The goal of a middleware is the agent's goal. No dataset or eval per middleware is wanted. | **Decided** (2026-11-10). |
+| 11 | Which tools a middleware can have the harness run | Only tools from the agent's own tool list. The call and its result go into the model's history, so the model has that tool's definition. | **Decided** (2026-11-10). |
+| 12 | When a middleware fails | The turn fails. This covers the code raising an error, running past its time limit, returning something invalid, and the sandbox itself failing. There is no skip-and-continue setting: an author who wants to continue catches the error in the code. | **Decided** (2026-11-10). |
+| 13 | Calls the code makes to decide | They are private. An inline model call, a saved task, or a tool on the middleware's own allowlist is never shown to the main model and is not a message in the conversation. These calls count toward cost and latency and are recorded. | **Stated, no objection** (2026-11-10). |
 
 ## Open items
 
