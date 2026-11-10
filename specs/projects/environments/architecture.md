@@ -19,6 +19,7 @@ File paths are relative to the repo root. `core` means `libs/core/kiln_ai`, `ser
 | 5 | Multi-turn session registry | Builds on phase 4 |
 | 6 | OpenEnv pages (Tools area) | UI on phase 2's API |
 | 7 | Picker, run page, conversation page, run sidebar | UI on phases 3 to 5 |
+| 8 | Reset argument forms from the server's reset schema | Added after phase 7; only the Environment Option dialog reads it (section 13) |
 
 Phases 6 and 7 include the small shared-component changes they need (section 9).
 
@@ -327,6 +328,7 @@ Python uses pytest, following `python_test_guide.md`. Web uses vitest, following
 | Run API multi-turn | Three turns share one episode. Each turn's `openenv_episode.final_state` comes from `read_state`. The run delete hook releases the session. |
 | `available_tools` | An OpenEnv set is listed. An offline environment is skipped. The timeout is respected. |
 | Web | `tool_options` rank, `drop_unselectable_tools` keeping env ids, all four `environment_options_field` states, the component prop defaults (each new prop off renders as before), and the request body including `openenv_reset_kwargs` |
+| Reset schema (phase 8) | Core: `/schema` with `reset`, fallback to `/seahaven/schemas`, neither, a non-object `reset`, unreachable. Endpoint: no url, 502, null and a schema. Web: the converter on the Seahaven schema shape (nullable `anyOf`, `$ref` to `$defs`, enums, defaults) and each unsupported construct returning null; `kwargs_fit_form` true and false cases; empty fields left out; the dialog's three states (no schema, form, Raw JSON locked on) and the toggle round trip. |
 
 After each phase, run `uv run ./checks.sh --agent-mode`, and regenerate the API schema when an endpoint changes.
 
@@ -340,3 +342,44 @@ These follow from the spec and the code. They're listed so a reviewer can disagr
 - **After a non-ending error, the session goes back under the parent turn,** so retrying the same message works.
 - **`available_tools` checks each environment with a 5-second timeout, in parallel,** so one slow server doesn't stall the picker.
 - **The eval runner keeps its own session code.** Only its names change. Merging it with `openenv_for_run` is a later cleanup.
+
+## 13. Phase 8: reset argument forms
+
+Behaviour is in the functional spec (Reset argument forms) and `ui_design.md` (Reset Arguments from a schema).
+
+### Reading the schema (`core/openenv/session_manager.py`)
+
+`OpenEnvSessionManager.reset_schema(openenv_server) -> dict[str, JsonValue] | None`:
+
+- Uses `httpx.AsyncClient` with `CONNECT_TIMEOUT_S`, as `_connect_remote` does for `/metadata`. It is always fresh: nothing is cached.
+- `GET {url}/schema`. If the answer is a JSON object whose `reset` is a JSON object, return that.
+- Otherwise `GET {url}/seahaven/schemas` and do the same. A 404 there means no schema.
+- Return `None` when neither has one. Raise `OpenEnvError` with the existing "can't reach" wording when the server can't be reached, as `list_tools` does.
+- The Seahaven fallback is one clearly commented block, so it can be deleted once Seahaven serves `reset` on `/schema`.
+
+### Endpoint (`studio/openenv_server_api.py`)
+
+`GET /api/projects/{project_id}/openenv_servers/{openenv_server_id}/reset_schema` returns `OpenEnvServerResetSchemaResponse { reset_schema: dict | None }`. It returns 400 when the record has no url, with the same message as the tools route, and 502 on `OpenEnvError` or `ValueError`. Tag "OpenEnv Servers", `ALLOW_AGENT`. Add its agent-check annotation and regenerate the API schema.
+
+### Converter (`web/lib/utils/openenv_reset_schema.ts`, new)
+
+Kiln's schema form reads `JsonSchemaProperty` (`lib/utils/json_schema_editor/json_schema_templates.ts`), which has no `anyOf`, `$ref` or `default`. Pydantic's `model_json_schema()` uses all three. The converter is a pure function:
+
+- `reset_schema_to_form_schema(schema: unknown): JsonSchemaProperty | null`
+  - Resolves local `$ref`s (`#/$defs/...`). A missing or cyclic ref returns null.
+  - Collapses `anyOf: [X, {type: "null"}]` to X, and marks that property not required.
+  - Keeps `title`, `description`, `enum`, `type`, `properties` and `required`. Drops `default` and `additionalProperties: false`.
+  - Returns null for the whole schema when it meets anything else: another `anyOf`, `oneOf` or `allOf`, a `type` list, a property with no type, or an object with no `properties` (a free-form dict). The dialog then stays on the JSON editor.
+- `kwargs_fit_form(kwargs, form_schema): { fits: true } | { fits: false, reason: string }`. Every key must be a known property, and every value must match its property's type or enum, recursively. `null` doesn't fit, because the form can't produce it.
+- `form_value_to_kwargs(value)`: drops empty strings, `undefined` and `null`, and objects left empty after that, recursively.
+
+### Dialog (`routes/(app)/tools/[project_id]/openenv_servers/[openenv_server_id]/environment_option_dialog.svelte`)
+
+- On open, call `load_openenv_server_reset_schema` (new, in `lib/api/openenv_server_api.ts`). Any error, or a null schema, means no schema. The error isn't shown: the detail page already shows offline state.
+- With a form schema, render `run_input_form.svelte` with `input_schema` set to the converted schema as a string, and `hide_label`. Read the value with `get_structured_input_data()`, then pass it through `form_value_to_kwargs`.
+- Prefill for Edit and Clone, and the switch from Raw JSON back to the form, need a way to set the form's structured value. If `run_input_form` has none, add an opt-in method such as `set_structured_input_data(value)`, as a shared-component change in its own commit, the same way the phase 6 and 7 components were changed. Existing callers must render exactly as before.
+- The Raw JSON toggle uses the control that `frontend_controls.md` names for an inline on/off switch. Its state lives only in the dialog.
+
+### Not in this phase
+
+The run page's Environment Options field and the run records are unchanged. They still show the saved `reset_kwargs` as JSON.

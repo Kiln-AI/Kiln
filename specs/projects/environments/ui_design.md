@@ -87,7 +87,20 @@ Row 3, **Available Tools**: the same table as a tool server's: Name, Description
 
 The code editor only loads Python today, so this adds the `@codemirror/lang-json` dependency.
 
-We considered a Name/Value row editor (`FormList`, as for MCP headers) with an "Edit as JSON" toggle, and decided against it for V1. Reset arguments are free-form and often nested, and the OpenEnv server publishes no schema to build a form from.
+We considered a Name/Value row editor (`FormList`, as for MCP headers) with an "Edit as JSON" toggle, and decided against it for V1: reset arguments are free-form and often nested. A form built from a schema the server publishes is different, and is added below.
+
+### Reset Arguments from a schema (phase 8)
+
+When the OpenEnv server publishes a reset schema (functional spec, Reset argument forms), Reset Arguments becomes a form:
+
+- The section keeps the label "Reset Arguments", with a "Raw JSON" toggle at the right of its label row. The toggle is off by default, which shows the form.
+- The form is the existing schema form from the run page (`run_input_form.svelte`, which builds `run_input_form_element` fields), so fields look and behave like structured task inputs: a dropdown for enums, a number input, a text input, a nested group for an object. Each field has the schema's title and description and an "optional" marker unless required.
+- Turning on Raw JSON shows the JSON editor with the form's current value. Turning it off reads the JSON back into the form. If the JSON is invalid, or has keys or values the form can't show, the toggle stays on and the form's inline error says why.
+- While the schema loads, the dialog shows the JSON editor, so a slow or offline server never blocks editing. A schema that arrives after the user has typed in the editor doesn't switch the view.
+- Edit and Clone open on the form when the option's arguments fit it, and on Raw JSON otherwise.
+- With no schema, there is no toggle, and the dialog is exactly the JSON editor described above.
+
+Enum fields use Kiln's dropdown, not the chip buttons in Seahaven's console, so the dialog matches the rest of Kiln.
 
 Remove takes effect right away, with no confirmation. An Environment Option is only a named shortcut for some kwargs, and past runs keep the kwargs they used.
 
@@ -165,6 +178,9 @@ New strings not already given above. The mockups' "All copy" section lists every
 | Version, offline | Can't reach OpenEnv: connection refused |
 | Offline troubleshooting steps | Check the OpenEnv server is running. / Check the Server URL. |
 | Reset Arguments errors | Reset arguments must be valid JSON. / Reset arguments must be a JSON object. |
+| Raw JSON toggle | Raw JSON |
+| Reset Arguments description, with a schema | From the OpenEnv server's reset schema. Leave a field empty to use the server's default. |
+| Raw JSON can't switch back | The form can't show these reset arguments: [what doesn't fit, e.g. "unknown field 'foo'"]. Edit them as JSON. |
 | Duplicate option name | An Environment Option named [name] already exists. |
 | Run error, unreachable | Can't reach OpenEnv [name] at [url]. Check the server is running. |
 | Run error, reset rejected | [name] rejected the reset arguments: [server's message] |

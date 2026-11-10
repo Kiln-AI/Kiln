@@ -84,13 +84,26 @@ Rules:
 - Entries can be added, edited, cloned and removed. Clone prefills a new entry named "[name] (copy)". Removing needs no confirmation. Past runs aren't affected, because each run saves the kwargs it used.
 - The UI calls each entry an "Environment Option".
 
+## Reset argument forms
+
+An OpenEnv server can publish a JSON schema for its reset arguments. When it does, the Environment Option dialog shows a form built from that schema instead of a JSON editor.
+
+- **Where the schema comes from:** Kiln reads the `reset` key of the server's `GET /schema` answer (OpenEnv 0.11 and later, from openenv/OpenEnv#1270). If that answer has no `reset` key, Kiln reads the `reset` key of `GET /seahaven/schemas`, which Seahaven serves until it moves to an OpenEnv version with #1270. If neither has one, or the server can't be reached, there is no schema.
+- **No schema:** the dialog is the JSON editor, as before, with no error or notice.
+- **The form:** one field per schema property, using Kiln's own form controls: a dropdown for an enum, number inputs for numbers and integers, a text input for strings, and a nested group for an object. Each field shows the schema's title and description, and is marked optional unless the schema requires it.
+- **Raw JSON:** a toggle switches between the form and the JSON editor. Values carry across in both directions.
+- **What gets saved:** an empty form field is left out of `reset_kwargs`, so the server uses its default. A nested object whose fields are all empty is left out too. Saving an explicit `null` needs Raw JSON.
+- **Checks:** the form checks what the schema states: types, enum values and required fields. It doesn't enforce rules the schema can't express, such as two fields that can't be combined. The schema is a description, not a contract: the server still checks the arguments when a run starts, with the existing reset error.
+- **When the form can't be used:** if the schema uses a construct the form can't show, the dialog stays on the JSON editor. If an existing option's arguments include keys or values the form can't show, the dialog opens on Raw JSON and switching to the form is disabled, with the reason. Nothing is dropped silently.
+- **Nothing new is saved.** The schema is read when the dialog opens. It isn't stored or cached on disk, and `reset_kwargs` keeps its shape.
+
 ## OpenEnv pages
 
 Environments are managed in the Tools area, next to MCP servers. See `ui_design.md`.
 
 - **Connect and edit:** name, description and `url`. The existing create and update routes are reused. The URL stays editable, because a local server's port can change, and a new environment would mean a new id in every saved tool id. Each run records the version the server reported.
 - **Tools:** the detail page shows the tools the environment serves, read live from `GET /api/projects/{project_id}/openenv_servers/{openenv_server_id}/tools`. If it's offline, the page shows the error instead.
-- **Environment Options:** each entry is a name and a JSON editor for its kwargs, using the app's code editor in JSON mode. Invalid JSON, or JSON that isn't an object, is shown inline and blocks saving.
+- **Environment Options:** each entry is a name and its kwargs. The kwargs are edited in a form built from the server's reset schema when it publishes one (see Reset argument forms), and otherwise in the app's code editor in JSON mode. Invalid JSON, or JSON that isn't an object, is shown inline and blocks saving.
 - **No delete in V1:** the UI has no way to delete an environment. The existing delete route and its rule (refused while a saved eval input resets into the environment) are unchanged.
 - **Seahaven:** a callout at the top of the Connect OpenEnv page promotes Kiln Seahaven (https://github.com/Kiln-AI/Seahaven) for people who don't have an environment yet.
 - **Docs:** the OpenEnv item on Add Tools ends with a "Learn more" link to the OpenEnv docs page, which needs writing.
