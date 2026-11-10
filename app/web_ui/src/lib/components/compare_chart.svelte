@@ -15,6 +15,7 @@
   } from "$lib/utils/run_config_formatters"
   import ChartNoData from "./chart_no_data.svelte"
   import { escape_html, formatLatency } from "$lib/utils/formatters"
+  import { CHART_PALETTE } from "$lib/utils/chart_palette"
 
   // Type for comparison features (same as parent page)
   type ComparisonFeature = {
@@ -190,6 +191,7 @@
 
     chartInstance.setOption(
       {
+        color: [...CHART_PALETTE],
         tooltip: {
           trigger: "item",
           formatter: function (params: {
