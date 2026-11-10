@@ -86,7 +86,7 @@ def project_tool(project):
 
 @pytest.fixture
 def openenv(project):
-    openenv = OpenEnv(name="w", parent=project)
+    openenv = OpenEnv(name="Notes", parent=project)
     openenv.save_to_file()
     return openenv
 
@@ -101,7 +101,7 @@ def _context(openenv, session_manager):
         episode=OpenEnvEpisode(
             reset=OpenEnvReset(openenv_id=openenv.id),
             episode_id="ep_test",
-            openenv_version="w@1",
+            openenv_version="notes@1",
         ),
         openenv=openenv,
         session_manager=session_manager,  # type: ignore[arg-type]

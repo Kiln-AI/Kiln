@@ -1582,9 +1582,7 @@ async def test_compute_state_measures_only_the_named_items(
 @pytest.fixture
 def openenv(project):
     with serve_in_thread() as base_url:
-        openenv = OpenEnv(
-            id="environment1", name="Environment", parent=project, url=base_url
-        )
+        openenv = OpenEnv(id="openenv1", name="Notes", parent=project, url=base_url)
         openenv.save_to_file()
         yield openenv
 
@@ -1593,7 +1591,7 @@ def openenv(project):
 async def shared_openenv_sessions(openenv):
     """The worker runs on the process-wide session manager, as the server does. It
     starts empty, and its sessions close before the test server stops (this fixture
-    depends on `environment`, so it tears down first)."""
+    depends on `openenv`, so it tears down first)."""
     await shutdown_shared_session_manager()
     yield
     await shutdown_shared_session_manager()

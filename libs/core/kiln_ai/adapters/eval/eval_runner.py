@@ -83,8 +83,8 @@ from kiln_ai.datamodel.tool_id import (
 from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.openenv.session_manager import (
     OpenEnvError,
+    OpenEnvSessionManager,
     OpenEnvTransientError,
-    SessionManager,
     shared_session_manager,
 )
 from kiln_ai.run_context import (
@@ -239,12 +239,12 @@ def _splits_a_turn_into_two_messages(
 
 @dataclass(frozen=True)
 class _OpenEnvTarget:
-    """A resolved environment: what a job needs to launch episodes and to key its traces.
-    Resolved once per environment per eval run, so every job in the run keys its traces by
+    """A resolved OpenEnv: what a job needs to launch episodes and to key its traces.
+    Resolved once per OpenEnv per eval run, so every job in the run keys its traces by
     the same environment version."""
 
     openenv: OpenEnv
-    session_manager: SessionManager
+    session_manager: OpenEnvSessionManager
     tools: dict[str, OpenEnvTool]
     openenv_version: str
 
@@ -291,7 +291,7 @@ def _run_config_tool_ids(run_config: TaskRunConfig) -> list[str]:
 
 
 _OpenEnvToolMismatch = Literal["no_openenv_reset", "stored_task_run", "other_openenv"]
-"""Why a run config's environment tools cannot run an item (see `_openenv_tool_mismatch`)."""
+"""Why a run config's OpenEnv tools cannot run an item (see `_openenv_tool_mismatch`)."""
 
 
 def _openenv_tool_ids(run_config: TaskRunConfig) -> list[str]:
@@ -307,8 +307,8 @@ def _openenv_tool_mismatch(
     item: EvalInput | TaskRun,
     openenv_reset: OpenEnvReset | None,
 ) -> _OpenEnvToolMismatch | None:
-    """Why the run config's environment tools cannot run this item, or None when they can or
-    the run config lists no environment tools. The one rule behind the per-job refusal
+    """Why the run config's OpenEnv tools cannot run this item, or None when they can or
+    the run config lists no OpenEnv tools. The one rule behind the per-job refusal
     (`_uses_openenv`) and the request-time check (`validate_openenv_readiness`)."""
     openenv_tool_ids = _openenv_tool_ids(run_config)
     if not openenv_tool_ids:
@@ -337,24 +337,24 @@ def _uses_openenv(
     mismatch = _openenv_tool_mismatch(run_config, item, openenv_reset)
     if mismatch == "no_openenv_reset":
         raise ValueError(
-            f"Run config '{run_config.name}' lists environment tools "
+            f"Run config '{run_config.name}' lists OpenEnv tools "
             f"({', '.join(openenv_tool_ids)}) but eval input {item.id} has no "
             "openenv_reset. Use a run config with project tools for this "
             "input, or give the input an openenv_reset."
         )
     if mismatch == "stored_task_run":
         raise ValueError(
-            f"Run config '{run_config.name}' lists environment tools "
+            f"Run config '{run_config.name}' lists OpenEnv tools "
             f"({', '.join(openenv_tool_ids)}) but task run {item.id} is a stored task "
-            "run, which can't run in an environment. Use a run config without environment tools."
+            "run, which can't run in an OpenEnv. Use a run config without OpenEnv tools."
         )
     if mismatch == "other_openenv":
         assert openenv_reset is not None
         openenvs = {openenv_and_tool_name_from_id(t)[0] for t in openenv_tool_ids}
         raise ValueError(
-            f"eval input {item.id} runs in environment {openenv_reset.openenv_id}, but run "
-            f"config '{run_config.name}' lists tools from environment(s) "
-            f"{sorted(openenvs - {openenv_reset.openenv_id})}. A job runs in one environment."
+            f"eval input {item.id} runs in OpenEnv {openenv_reset.openenv_id}, but run "
+            f"config '{run_config.name}' lists tools from OpenEnv(s) "
+            f"{sorted(openenvs - {openenv_reset.openenv_id})}. A job runs in one OpenEnv."
         )
     return bool(openenv_tool_ids)
 
@@ -453,9 +453,9 @@ def _check_project_versions_of_served_tools(
     ]
     if clashes:
         raise ValueError(
-            f"eval input {item.id} runs in environment '{openenv.name}', but "
+            f"eval input {item.id} runs in OpenEnv '{openenv.name}', but "
             f"run config '{run_config.name}' lists the project's own version of tools the "
-            f"environment serves: {', '.join(clashes)}. List the environment's tools "
+            f"OpenEnv serves: {', '.join(clashes)}. List the OpenEnv's tools "
             f"({build_openenv_tool_id(openenv.id, '<tool_name>')}) instead, or use an "
             "input without an openenv_reset to run against the project tools."
         )
@@ -523,7 +523,7 @@ class EvalRunner:
         split: ResolvedSplit | None = None,
         save_context: SaveContext | None = None,
         item_ids: Set[ID_TYPE] | None = None,
-        openenv_session_manager: SessionManager | None = None,
+        openenv_session_manager: OpenEnvSessionManager | None = None,
         judge: bool = True,
         trace_index_registry: TraceIndexRegistry | None = None,
     ):
@@ -915,27 +915,27 @@ class EvalRunner:
             listed = _listed_ids(ids)
             if mismatch == "no_openenv_reset":
                 problems.append(
-                    f"Run config '{run_config.name}' lists environment tools ({tools}), but "
+                    f"Run config '{run_config.name}' lists OpenEnv tools ({tools}), but "
                     f"these eval inputs have no openenv_reset: {listed}. Use a run "
                     "config with project tools for them, give them an openenv_reset, "
                     "or leave them out with item_ids"
                 )
             elif mismatch == "stored_task_run":
                 problems.append(
-                    f"Run config '{run_config.name}' lists environment tools ({tools}), but "
-                    "these items are stored task runs, which can't run in an environment: "
-                    f"{listed}. Use a run config without environment tools"
+                    f"Run config '{run_config.name}' lists OpenEnv tools ({tools}), but "
+                    "these items are stored task runs, which can't run in an OpenEnv: "
+                    f"{listed}. Use a run config without OpenEnv tools"
                 )
             else:
                 problems.append(
-                    f"Run config '{run_config.name}' lists environment tools ({tools}), but "
-                    f"these eval inputs run in another environment: {listed}. A job runs in "
-                    "one environment: use a run config with that environment's tools, or leave "
+                    f"Run config '{run_config.name}' lists OpenEnv tools ({tools}), but "
+                    f"these eval inputs run in another OpenEnv: {listed}. A job runs in "
+                    "one OpenEnv: use a run config with that OpenEnv's tools, or leave "
                     "them out with item_ids"
                 )
         if problems:
             raise ValueError(
-                "Cannot run this eval's items in their environments. "
+                "Cannot run this eval's items in their OpenEnvs. "
                 + " ".join(f"{problem}." for problem in problems)
             )
 
@@ -1252,7 +1252,7 @@ class EvalRunner:
             ended = await target.session_manager.end_episode(episode)
             if ended.final_state is None:
                 raise OpenEnvError(
-                    f"Episode {episode.episode_id} in environment '{target.openenv.name}' "
+                    f"Episode {episode.episode_id} in OpenEnv '{target.openenv.name}' "
                     "ended without a final state, so its trace was not saved"
                 )
             run.openenv_episode = ended

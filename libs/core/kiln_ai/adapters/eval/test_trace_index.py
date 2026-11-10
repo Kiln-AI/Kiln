@@ -104,7 +104,7 @@ def episode_for(source_id: str, openenv_version: str | None) -> OpenEnvEpisode |
     if not openenv_version:
         return None
     return OpenEnvEpisode(
-        reset=OpenEnvReset(openenv_id="w1"),
+        reset=OpenEnvReset(openenv_id="openenv1"),
         episode_id=f"ep_{source_id}",
         openenv_version=openenv_version,
         final_state={"notes": []},
@@ -688,7 +688,7 @@ def test_stored_openenv_version_separates_traces(task):
         output="from fixture a",
     )
     index = TraceIndex(task)
-    reset = OpenEnvReset(openenv_id="w1")
+    reset = OpenEnvReset(openenv_id="openenv1")
     assert index._paths[("eval_input", "item1", "rc1", "")] == plain.path
     assert (
         index._paths[("eval_input", "item1", "rc1", openenv_trace_tag("syn1:a", reset))]
@@ -705,9 +705,11 @@ def test_stored_openenv_version_separates_traces(task):
 def test_openenv_trace_tag_separates_resets():
     """The environment half of the key covers the reset as well as the version, so an input
     whose openenv_reset was edited no longer matches the trace made from the old one."""
-    a = OpenEnvReset(openenv_id="w1", reset_kwargs={"fixture_id": "a", "seed": 1})
-    same_a = OpenEnvReset(openenv_id="w1", reset_kwargs={"seed": 1, "fixture_id": "a"})
-    b = OpenEnvReset(openenv_id="w1", reset_kwargs={"fixture_id": "b", "seed": 1})
+    a = OpenEnvReset(openenv_id="openenv1", reset_kwargs={"fixture_id": "a", "seed": 1})
+    same_a = OpenEnvReset(
+        openenv_id="openenv1", reset_kwargs={"seed": 1, "fixture_id": "a"}
+    )
+    b = OpenEnvReset(openenv_id="openenv1", reset_kwargs={"fixture_id": "b", "seed": 1})
     assert openenv_trace_tag("env@1", a) == openenv_trace_tag("env@1", same_a)
     assert openenv_trace_tag("env@1", a) != openenv_trace_tag("env@1", b)
     assert openenv_trace_tag("env@1", a) != openenv_trace_tag("env@2", a)

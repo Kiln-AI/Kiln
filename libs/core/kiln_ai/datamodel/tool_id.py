@@ -19,8 +19,8 @@ Tool IDs can be one of:
 - A Kiln task tool: kiln_task::<server_id>
 - An assistant-memory tool: kiln_tool::memory::<operation> (project-bound)
 - An SDK / adapter-injected unmanaged tool: kiln_unmanaged::<id> (single slug, not from the registry)
-- An environment tool: kiln_tool::openenv::<openenv_id>::<tool_name>, a tool the environment's OpenEnv
-  server serves, usable only while an episode of that environment is active
+- An OpenEnv tool: kiln_tool::openenv::<openenv_id>::<tool_name>, a tool the OpenEnv's
+  server serves, usable only while an episode of that OpenEnv is active
 - More coming soon like kiln_project_tool::rag::RAG_CONFIG_ID
 """
 
@@ -261,15 +261,15 @@ def code_tool_id_from_tool_id(tool_id: str) -> str:
 
 
 def build_openenv_tool_id(openenv_id: ID_TYPE, tool_name: str) -> str:
-    """Construct the tool ID for a tool an environment serves."""
+    """Construct the tool ID for a tool an OpenEnv's environment serves."""
     return f"{OPENENV_TOOL_ID_PREFIX}{openenv_id}::{tool_name}"
 
 
 def openenv_and_tool_name_from_id(tool_id: str) -> tuple[str, str]:
-    """Extract ``(openenv_id, tool_name)`` from an environment tool ID.
+    """Extract ``(openenv_id, tool_name)`` from an OpenEnv tool ID.
 
-    Four segments, unlike every other ``kiln_tool::`` form, because an environment tool
-    is only meaningful inside the environment that serves it.
+    Four segments, unlike every other ``kiln_tool::`` form, because an OpenEnv tool
+    is only meaningful inside the OpenEnv that serves it.
     """
     parts = tool_id.split("::")
     if (
@@ -279,7 +279,7 @@ def openenv_and_tool_name_from_id(tool_id: str) -> tuple[str, str]:
         or not parts[3]
     ):
         raise ValueError(
-            f"Invalid environment tool ID: {tool_id}. Expected format: "
+            f"Invalid OpenEnv tool ID: {tool_id}. Expected format: "
             "'kiln_tool::openenv::<openenv_id>::<tool_name>'."
         )
     return parts[2], parts[3]

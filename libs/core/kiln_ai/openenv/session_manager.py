@@ -1,9 +1,9 @@
 """OpenEnv sessions: the sessions Kiln opens, resets, drives and settles on an OpenEnv
 server, one per episode.
 
-Upstream OpenEnv (https://github.com/huggingface/OpenEnv)
-splits an environment in two: its `Environment` class is what an environment does
-(`reset`, `step`, `state`, `close`), and a *provider* is how you obtain a running one.
+Upstream OpenEnv (https://github.com/huggingface/OpenEnv) splits an environment in two:
+its `Environment` class is what an environment does (`reset`, `step`, `state`,
+`close`), and a *provider* is how you obtain a running one.
 Kiln's datamodel class `OpenEnv` is neither: it is a saved pointer to an upstream
 environment that is already running at `OpenEnv.url`, since Kiln does not start or stop
 environments today. The session manager here is the session layer plus the bookkeeping
@@ -155,9 +155,9 @@ class ToolCallOutcome:
     error_details: Any = None
 
 
-class SessionManager(Protocol):
-    """The seam the eval runner and the tool proxies call. `OpenEnvSessionManager` is the
-    implementation; tests substitute a fake."""
+class OpenEnvSessionManager(Protocol):
+    """The OpenEnv session seam the eval runner and the tool proxies call.
+    `RemoteOpenEnvSessionManager` is the implementation; tests substitute a fake."""
 
     async def openenv_version(self, openenv: OpenEnv) -> str:
         """Identity of the environment code an episode would run, without starting one.
@@ -200,7 +200,6 @@ class SessionManager(Protocol):
 
 @dataclass
 class _OpenEnvServer:
-    openenv_id: str
     base_url: str
     openenv_version: str
     tools: list[OpenEnvTool] | None = None
@@ -218,7 +217,7 @@ class _Session:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
-class OpenEnvSessionManager:
+class RemoteOpenEnvSessionManager:
     """Drives sessions on running OpenEnv environments.
 
     What Kiln knows about each environment (its version and tools) is cached per environment
@@ -379,7 +378,7 @@ class OpenEnvSessionManager:
         if not openenv.url:
             raise OpenEnvError(
                 f"OpenEnv '{openenv.name}' has no url. Kiln does not start "
-                "environments: run the OpenEnv server yourself and point the environment at "
+                "environments: run the OpenEnv server yourself and point the OpenEnv at "
                 "it (e.g. http://127.0.0.1:8000)."
             )
         base_url = openenv.url.rstrip("/")
@@ -400,7 +399,6 @@ class OpenEnvSessionManager:
             return server
 
     async def _connect_remote(self, openenv: OpenEnv, base_url: str) -> _OpenEnvServer:
-        assert openenv.id
         async with httpx.AsyncClient(timeout=CONNECT_TIMEOUT_S) as client:
             try:
                 response = await client.get(f"{base_url}/metadata")
@@ -419,7 +417,6 @@ class OpenEnvSessionManager:
         name = str(meta.get("name") or openenv.name)
         version = meta.get("version")
         return _OpenEnvServer(
-            openenv_id=openenv.id,
             base_url=base_url,
             openenv_version=_compose_openenv_version(
                 name, str(version) if version is not None else None
@@ -529,15 +526,15 @@ class OpenEnvSessionManager:
             pass
 
 
-_shared: OpenEnvSessionManager | None = None
+_shared: RemoteOpenEnvSessionManager | None = None
 
 
-def shared_session_manager() -> OpenEnvSessionManager:
+def shared_session_manager() -> RemoteOpenEnvSessionManager:
     """The process-wide session manager, so what Kiln knows about each environment is read
     once and reused across eval runs."""
     global _shared
     if _shared is None:
-        _shared = OpenEnvSessionManager()
+        _shared = RemoteOpenEnvSessionManager()
     return _shared
 
 

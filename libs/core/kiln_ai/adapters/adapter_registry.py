@@ -99,9 +99,9 @@ async def validate_run_config_tool_names(
     was created.
 
     OpenEnv tools (`kiln_tool::openenv::<openenv_id>::<tool_name>`) resolve only inside
-    an episode of their environment, which only the eval runner starts, so they are not
-    resolved here. Their environment must exist in the task's project, all of them must
-    come from one environment (a job runs in one environment), and the name the model sees
+    an episode of their OpenEnv, which only the eval runner starts, so they are not
+    resolved here. Their OpenEnv must exist in the task's project, all of them must
+    come from one OpenEnv (a job runs in one OpenEnv), and the name the model sees
     (the id's tool_name) must not collide with another selected tool. Whether the
     environment really serves that tool is checked at runtime, inside the episode.
     """
@@ -130,11 +130,11 @@ def validate_openenv_tool_ids(
     openenv_tool_ids: list[str],
     project_tool_names: list[str],
 ) -> None:
-    """Check a run config's environment tool ids without an active episode.
+    """Check a run config's OpenEnv tool ids without an active episode.
 
-    Raises ValueError when an environment is not in the task's project, when the ids
-    name more than one environment, or when an environment tool's name collides with another
-    environment tool or with one of *project_tool_names* (the names of the run config's
+    Raises ValueError when an OpenEnv is not in the task's project, when the ids
+    name more than one OpenEnv, or when an OpenEnv tool's name collides with another
+    OpenEnv tool or with one of *project_tool_names* (the names of the run config's
     resolved project tools, including the "skill" tool when skills are selected).
     """
     openenv_and_tool_names = [
@@ -154,14 +154,14 @@ def validate_openenv_tool_ids(
     missing = [openenv_id for openenv_id in openenv_ids if openenv_id not in found]
     if missing:
         raise ValueError(
-            f"OpenEnv(s) {', '.join(missing)} referenced by environment tools in the run "
-            f"config not found in project {project.id}. Create the environment first, or "
+            f"OpenEnv(s) {', '.join(missing)} referenced by OpenEnv tools in the run "
+            f"config not found in project {project.id}. Create the OpenEnv first, or "
             "remove its tools from the run config."
         )
     if len(openenv_ids) > 1:
         raise ValueError(
-            f"Run config lists tools from more than one environment ({', '.join(openenv_ids)}). "
-            "A job runs in one environment, so all environment tools must come from the same environment."
+            f"Run config lists tools from more than one OpenEnv ({', '.join(openenv_ids)}). "
+            "A job runs in one OpenEnv, so all OpenEnv tools must come from the same OpenEnv."
         )
 
     tool_names = project_tool_names + [name for _, name in openenv_and_tool_names]
@@ -169,7 +169,7 @@ def validate_openenv_tool_ids(
         duplicates = sorted({n for n in tool_names if tool_names.count(n) > 1})
         raise ValueError(
             f"Multiple selected tools share the same function name: {', '.join(duplicates)}. "
-            "An environment tool's name is the last segment of its id. Each tool must have a "
+            "An OpenEnv tool's name is the last segment of its id. Each tool must have a "
             "unique name: de-select the duplicate tools, or rename the project tools."
         )
 

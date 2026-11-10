@@ -9439,9 +9439,9 @@ def _openenv_tools_run_config_body(tool_ids: list[str]) -> dict:
 async def test_create_task_run_config_accepts_openenv_tools(
     client, mock_task_from_id, mock_task
 ):
-    """OpenEnv tools resolve only inside an episode of their environment. Creation checks the
-    environment exists in the project and does not resolve them, so a run config for a
-    environment task can be created through the API."""
+    """OpenEnv tools resolve only inside an episode of their OpenEnv. Creation checks the
+    OpenEnv exists in the project and does not resolve them, so a run config for an
+    OpenEnv task can be created through the API."""
     from kiln_ai.datamodel.tool_id import build_openenv_tool_id
 
     mock_task_from_id.return_value = mock_task

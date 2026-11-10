@@ -83,8 +83,8 @@ class KilnToolInterface(ABC):
         Raise ToolCallError with a message written for the model to return that
         message to the model as an error result; the run continues. Errors that
         ``kiln_ai.adapters.retry_classification.is_run_ending_tool_error``
-        accepts (such as a provider rate limit or timeout, or an environment
-        environment error that ends the session) propagate and fail the run, so
+        accepts (such as a provider rate limit or timeout, or an OpenEnv
+        error that ends the session) propagate and fail the run, so
         a caller can retry the run or report the real cause. Any other
         exception is logged, and the model gets a generic error for that call.
         """

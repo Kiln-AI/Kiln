@@ -63,8 +63,8 @@ from kiln_ai.datamodel.tool_id import build_code_tool_id, build_openenv_tool_id
 from kiln_ai.openenv.session_manager import (
     OpenEnvError,
     OpenEnvRejectedError,
-    OpenEnvSessionManager,
     OpenEnvTransientError,
+    RemoteOpenEnvSessionManager,
 )
 from kiln_ai.openenv.testing import ENV_NAME, free_port, serve_in_thread
 from kiln_ai.run_context import get_episode
@@ -133,7 +133,7 @@ def openenv(project, openenv_server):
 
 @pytest.fixture
 async def session_manager(tmp_path):
-    session_manager = OpenEnvSessionManager()
+    session_manager = RemoteOpenEnvSessionManager()
     try:
         yield session_manager
     finally:
@@ -455,7 +455,7 @@ async def test_openenv_run_config_without_openenv_reset_is_an_error(
     with patch.object(BaseV2EvalBridge, "run_task", new=generator):
         await _expect_job_error(
             _runner([cfg], run_config, session_manager),
-            "lists environment tools .* has no openenv_reset",
+            "lists OpenEnv tools .* has no openenv_reset",
             session_manager,
             task,
         )
@@ -500,14 +500,14 @@ async def test_tools_from_another_openenv_are_an_error(
     with patch.object(BaseV2EvalBridge, "run_task", new=generator):
         await _expect_job_error(
             _runner([cfg], run_config, session_manager),
-            r"lists tools from environment\(s\) \['other_openenv'\]",
+            r"lists tools from OpenEnv\(s\) \['other_openenv'\]",
             session_manager,
             task,
         )
     assert generator.outputs == {}
 
 
-async def test_openenv_tool_id_outside_a_openenv_job_raises(task, syn_tool_id):
+async def test_openenv_tool_id_outside_an_openenv_job_raises(task, syn_tool_id):
     with pytest.raises(ValueError, match="can only be used while an episode"):
         tool_from_id(syn_tool_id, task)
 
@@ -551,7 +551,7 @@ async def test_later_judge_reuses_trace_and_episode(
 async def test_changed_openenv_version_regenerates_the_trace(
     project, task, eval_, session_manager, openenv_server
 ):
-    """Same environment, pointed at an environment reporting a new version: the content
+    """Same OpenEnv, pointed at a server reporting a new version: the content
     version moves, so the trace openenv_version moves and the item is generated again rather
     than reused."""
     openenv = OpenEnv(name="Versioned", parent=project, url=openenv_server)
@@ -1034,7 +1034,7 @@ async def test_missing_openenv_is_an_error_not_a_skip(
 async def test_unreachable_openenv_is_a_job_error(
     project, task, eval_, session_manager
 ):
-    """The environment resolves but its environment does not answer: the job errors before
+    """The OpenEnv record resolves but its server does not answer: the job errors before
     any generation and nothing is persisted."""
     openenv = OpenEnv(
         name="Dead", parent=project, url=f"http://127.0.0.1:{free_port()}"
@@ -1505,8 +1505,8 @@ async def test_project_versions_of_served_tools_are_refused(
     ):
         await _expect_job_error(
             _runner([cfg], project_run_config, session_manager),
-            "runs in environment 'Environment', but run config 'real rc' lists "
-            "the project's own version of tools the environment serves: "
+            "runs in OpenEnv 'Environment', but run config 'real rc' lists "
+            "the project's own version of tools the OpenEnv serves: "
             + re.escape(build_code_tool_id(project_tool.id))
             + r" \(append_note\)",
             session_manager,
@@ -1596,7 +1596,7 @@ def _readiness_error(eval_, run_configs, **kwargs) -> str:
     with pytest.raises(ValueError) as error:
         _readiness_runner(eval_, run_configs, **kwargs).validate_openenv_readiness()
     message = str(error.value)
-    assert message.startswith("Cannot run this eval's items in their environments. ")
+    assert message.startswith("Cannot run this eval's items in their OpenEnvs. ")
     assert message.endswith(".") and ".." not in message
     return message
 
@@ -1626,7 +1626,7 @@ def test_openenv_readiness_passes_for_items_in_the_run_configs_openenv(
     _readiness_runner(eval_, [offline_run_config]).validate_openenv_readiness()
 
 
-def test_openenv_readiness_groups_inputs_without_a_openenv(
+def test_openenv_readiness_groups_inputs_without_an_openenv(
     task, offline_openenv, offline_run_config, eval_
 ):
     _input(task, "a", _reset(offline_openenv, "a"), id="ei_a")
@@ -1652,8 +1652,8 @@ def test_openenv_readiness_refuses_openenv_tools_from_another_openenv(
 
     message = _readiness_error(eval_, [offline_run_config])
 
-    assert "these eval inputs run in another environment: ei_a" in message
-    assert "A job runs in one environment" in message
+    assert "these eval inputs run in another OpenEnv: ei_a" in message
+    assert "A job runs in one OpenEnv" in message
 
 
 def test_openenv_readiness_refuses_a_deleted_openenv_named_by_openenv_tools(
@@ -1661,12 +1661,19 @@ def test_openenv_readiness_refuses_a_deleted_openenv_named_by_openenv_tools(
 ):
     # The common case: the run config lists the tools of an environment that is not in the
     # project (deleted, or never synced), and the items reset that same environment.
-    run_config = _run_config(task, [build_openenv_tool_id("w_gone", "append_note")])
-    _input(task, "a", OpenEnvReset(openenv_id="w_gone", reset_kwargs={}), id="ei_a")
+    run_config = _run_config(
+        task, [build_openenv_tool_id("missing_openenv", "append_note")]
+    )
+    _input(
+        task,
+        "a",
+        OpenEnvReset(openenv_id="missing_openenv", reset_kwargs={}),
+        id="ei_a",
+    )
 
     message = _readiness_error(eval_, [run_config])
 
-    assert "OpenEnv w_gone not found in project" in message
+    assert "OpenEnv missing_openenv not found in project" in message
     assert "these items run in it: ei_a" in message
 
 
@@ -1675,11 +1682,16 @@ def test_openenv_readiness_refuses_a_missing_openenv_for_a_project_tools_run_con
 ):
     # A project-tools run config still resolves the item's environment, to refuse the
     # project's own version of a served tool. A missing environment fails every such job.
-    _input(task, "a", OpenEnvReset(openenv_id="w_gone", reset_kwargs={}), id="ei_a")
+    _input(
+        task,
+        "a",
+        OpenEnvReset(openenv_id="missing_openenv", reset_kwargs={}),
+        id="ei_a",
+    )
 
     message = _readiness_error(eval_, [project_run_config])
 
-    assert "OpenEnv w_gone not found in project" in message
+    assert "OpenEnv missing_openenv not found in project" in message
 
 
 def test_openenv_readiness_names_a_missing_openenv_once_and_first(
@@ -1691,22 +1703,29 @@ def test_openenv_readiness_names_a_missing_openenv_once_and_first(
         _input(
             task,
             f"a {i}",
-            OpenEnvReset(openenv_id="w_gone", reset_kwargs={}),
+            OpenEnvReset(openenv_id="missing_openenv", reset_kwargs={}),
             id=f"ei_{i}",
         )
 
     message = _readiness_error(eval_, [project_run_config, offline_run_config])
 
-    assert message.count("OpenEnv w_gone not found") == 1
-    assert message.index("OpenEnv w_gone not found") < message.index("Run config")
+    assert message.count("OpenEnv missing_openenv not found") == 1
+    assert message.index("OpenEnv missing_openenv not found") < message.index(
+        "Run config"
+    )
     missing = message[: message.index("Run config")]
     assert all(f"ei_{i}" in missing for i in range(3))
 
 
-def test_openenv_readiness_ignores_a_openenv_no_job_resolves(task, eval_):
+def test_openenv_readiness_ignores_an_openenv_no_job_resolves(task, eval_):
     # A run config with no tools never needs the item's environment, so the runner never
     # looks it up, and neither does the check.
-    _input(task, "a", OpenEnvReset(openenv_id="w_gone", reset_kwargs={}), id="ei_a")
+    _input(
+        task,
+        "a",
+        OpenEnvReset(openenv_id="missing_openenv", reset_kwargs={}),
+        id="ei_a",
+    )
 
     bare = _run_config(task, [], name="bare rc")
     _readiness_runner(eval_, [bare]).validate_openenv_readiness()
@@ -1794,9 +1813,8 @@ def test_openenv_readiness_names_stored_task_runs_as_task_runs(
 
     message = _readiness_error(stored_eval, [offline_run_config])
 
-    assert (
-        "these items are stored task runs, which can't run in an environment: tr_1"
-        in (message)
+    assert "these items are stored task runs, which can't run in an OpenEnv: tr_1" in (
+        message
     )
     assert "eval input" not in message
     assert "openenv_reset" not in message

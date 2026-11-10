@@ -40,9 +40,7 @@ from app.desktop.studio_server.import_api import connect_import_api
 from app.desktop.studio_server.jobs.api import connect_jobs_api
 from app.desktop.studio_server.jobs.registry import job_registry
 from app.desktop.studio_server.multiturn_sdg_api import connect_multiturn_sdg_api
-from app.desktop.studio_server.openenv_api import (
-    connect_openenv_api,
-)
+from app.desktop.studio_server.openenv_api import connect_openenv_api
 from app.desktop.studio_server.prompt_api import connect_prompt_api
 from app.desktop.studio_server.prompt_optimization_job_api import (
     connect_prompt_optimization_job_api,

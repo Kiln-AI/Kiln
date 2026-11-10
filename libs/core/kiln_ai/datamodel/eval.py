@@ -721,7 +721,7 @@ class EvalInput(KilnParentedModel):
     )
     openenv_reset: OpenEnvReset | None = Field(
         default=None,
-        description="Reset this environment with these keyword arguments before the run; the reset starts the episode the trace records. A run config that lists the environment's tools runs the input in that episode; a run config listing the project's own version of a tool the environment serves is refused. None runs against the project tools.",
+        description="Reset the OpenEnv named by openenv_id with these keyword arguments before the run; the reset starts the episode the trace records. A run config that lists the OpenEnv's tools runs the input in that episode; a run config listing the project's own version of a tool the environment serves is refused. None runs against the project tools.",
     )
 
     @model_validator(mode="after")
@@ -768,7 +768,7 @@ class EvalTaskInput(BaseModel):
     )
     openenv_episode: OpenEnvEpisode | None = Field(
         default=None,
-        description="The environment episode the trace's environment tools ran in, when the run used an environment: the reset it started from, what the environment reported at reset, and the environment's final state. Judges reference it in their prompt template (e.g. {{ openenv_episode.final_state }}); code scorers receive it as the `openenv_episode` argument.",
+        description="The OpenEnv episode the trace's OpenEnv tools ran in, when the run used an OpenEnv: the reset it started from, what the environment reported at reset, and the environment's final state. Judges reference it in their prompt template (e.g. {{ openenv_episode.final_state }}); code scorers receive it as the `openenv_episode` argument.",
     )
 
     @classmethod

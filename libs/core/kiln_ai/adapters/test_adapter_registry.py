@@ -1338,7 +1338,9 @@ class TestValidateRunConfigToolNames:
         self, basic_task, _agent_config
     ):
         rc = _agent_config(
-            tools_config=ToolsRunConfig(tools=[build_openenv_tool_id("w1", "graphql")])
+            tools_config=ToolsRunConfig(
+                tools=[build_openenv_tool_id("openenv1", "graphql")]
+            )
         )
         with pytest.raises(ValueError, match="require the task to belong to a project"):
             await validate_run_config_tool_names(basic_task, rc)
@@ -1357,7 +1359,7 @@ class TestValidateRunConfigToolNames:
                 ]
             )
         )
-        with pytest.raises(ValueError, match="more than one environment"):
+        with pytest.raises(ValueError, match="more than one OpenEnv"):
             await validate_run_config_tool_names(task, rc)
 
     async def test_rejects_openenv_tool_colliding_with_project_tool(

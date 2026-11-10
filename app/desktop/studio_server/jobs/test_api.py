@@ -1104,7 +1104,7 @@ def openenv_eval(split_eval):
     project = task.parent_project()
     assert project is not None
     openenv = OpenEnv(
-        id="w_offline", name="Offline", url="http://127.0.0.1:1", parent=project
+        id="offline_openenv", name="Offline", url="http://127.0.0.1:1", parent=project
     )
     openenv.save_to_file()
     eval = Eval(

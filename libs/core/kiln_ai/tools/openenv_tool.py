@@ -53,6 +53,7 @@ class OpenEnvToolProxy(KilnToolInterface):
 
     @property
     def openenv_tool(self) -> OpenEnvTool:
+        """The tool as the environment described it."""
         return self._tool
 
     async def id(self) -> ToolId:

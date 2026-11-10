@@ -43,11 +43,11 @@ def tool_from_id_and_project(
     This is the core resolution function. ``tool_from_id`` is a thin
     wrapper that derives the project from the task.
 
-    An environment tool id (`kiln_tool::openenv::<openenv_id>::<tool_name>`)
-    resolves to the tool the environment serves, and only while an episode of
-    that environment is active (set by the eval runner for one job). Project tool ids resolve
+    An OpenEnv tool id (`kiln_tool::openenv::<openenv_id>::<tool_name>`)
+    resolves to the tool the OpenEnv's environment serves, and only while an episode of
+    that OpenEnv is active (set by the eval runner for one job). Project tool ids resolve
     to the project tool whether or not an episode is active: a run config chooses the
-    environment's tools by listing their ids, never by substitution.
+    OpenEnv's tools by listing their ids, never by substitution.
     """
     if tool_id.startswith(OPENENV_TOOL_ID_PREFIX):
         return _openenv_tool(tool_id, get_episode())
@@ -57,17 +57,17 @@ def tool_from_id_and_project(
 def _openenv_tool(
     tool_id: str, episode_ctx: EpisodeContext | None
 ) -> KilnToolInterface:
-    """The tool an environment serves under *tool_name*. Only meaningful while
-    an episode of that environment is active."""
+    """The tool an OpenEnv's environment serves under *tool_name*. Only meaningful
+    while an episode of that OpenEnv is active."""
     openenv_id, tool_name = openenv_and_tool_name_from_id(tool_id)
     if episode_ctx is None or episode_ctx.openenv.id != openenv_id:
         raise ValueError(
             f"OpenEnv tool {tool_id} can only be used while an episode of "
-            f"environment {openenv_id} is active: run it from an eval whose inputs carry an "
-            "openenv_reset naming that environment."
+            f"OpenEnv {openenv_id} is active: run it from an eval whose inputs carry an "
+            "openenv_reset naming that OpenEnv."
         )
-    openenv_tool = episode_ctx.tools.get(tool_name)
-    if openenv_tool is None:
+    served_tool = episode_ctx.tools.get(tool_name)
+    if served_tool is None:
         raise ValueError(
             f"OpenEnv '{episode_ctx.openenv.name}' does not serve a tool "
             f"named '{tool_name}' (for {tool_id}); it serves "
@@ -75,7 +75,7 @@ def _openenv_tool(
         )
     from kiln_ai.tools.openenv_tool import OpenEnvToolProxy
 
-    return OpenEnvToolProxy(tool_id, openenv_tool, episode_ctx)
+    return OpenEnvToolProxy(tool_id, served_tool, episode_ctx)
 
 
 def _resolve_project_tool(
@@ -251,8 +251,8 @@ async def validate_unique_allowlist_tool_names(
     call-time ambiguity error remains the backstop — for those, and because
     tools can be renamed after the allowlist is saved.
 
-    OpenEnv tools resolve only inside an episode of their environment, so they are not
-    resolved here: their name is the last segment of their id, and their environment
+    OpenEnv tools resolve only inside an episode of their OpenEnv, so they are not
+    resolved here: their name is the last segment of their id, and their OpenEnv
     must exist in *project*. Whether the environment serves the tool is checked at
     runtime, inside the episode.
     """
@@ -289,8 +289,8 @@ async def validate_unique_allowlist_tool_names(
         missing = sorted(openenv_ids - set(found))
         if missing:
             raise ValueError(
-                f"OpenEnv(s) {', '.join(missing)} referenced by environment tools in the "
-                f"tool_allowlist not found in project {project.id}. Create the environment "
+                f"OpenEnv(s) {', '.join(missing)} referenced by OpenEnv tools in the "
+                f"tool_allowlist not found in project {project.id}. Create the OpenEnv "
                 "first, or remove its tools from the tool_allowlist."
             )
 
@@ -321,7 +321,7 @@ def is_mcp_tool_id(tool_id: str) -> bool:
 def project_tool_function_name(tool_id: str, project: Project | None) -> str | None:
     """The function name a project tool presents to the model, read without contacting
     anything: MCP names ride in the id, the rest are on disk. None for ids that are not
-    project tools (built-ins, skills, unmanaged, environment) or that cannot be found."""
+    project tools (built-ins, skills, unmanaged, OpenEnv) or that cannot be found."""
     if project is None:
         return None
     try:

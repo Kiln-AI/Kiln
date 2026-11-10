@@ -298,7 +298,7 @@ class TestNestedToolServer:
         project = _make_project(tmp_path)
         log: list[ToolCallLogEntry] = []
         server = NestedToolServer(
-            allowlist=["kiln_tool::openenv::w1::sql_query"],
+            allowlist=["kiln_tool::openenv::openenv1::sql_query"],
             project=project,
             task=None,
             context=None,
@@ -318,7 +318,7 @@ class TestNestedToolServer:
         assert openenv_err["kind"] == "not_allowed"
         assert openenv_err["message"].startswith(
             "Tool 'sql_query' is not available: OpenEnv tool "
-            "kiln_tool::openenv::w1::sql_query can only be used while an episode"
+            "kiln_tool::openenv::openenv1::sql_query can only be used while an episode"
         )
         assert (
             other_err["message"]

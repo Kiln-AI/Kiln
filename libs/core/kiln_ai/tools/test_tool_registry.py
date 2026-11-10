@@ -1029,7 +1029,7 @@ class TestValidateUniqueAllowlistToolNames:
     async def test_rejects_openenv_tool_of_unknown_openenv(self, project):
         with pytest.raises(
             ValueError,
-            match=r"OpenEnv\(s\) no_such_openenv referenced by environment tools in the "
+            match=r"OpenEnv\(s\) no_such_openenv referenced by OpenEnv tools in the "
             r"tool_allowlist not found",
         ):
             await validate_unique_allowlist_tool_names(
@@ -1176,6 +1176,9 @@ class TestProjectToolFunctionName:
 
         assert project_tool_function_name("kiln_tool::add_numbers", project) is None
         assert project_tool_function_name("kiln_tool::skill::s1", project) is None
-        assert project_tool_function_name("kiln_tool::openenv::w::x", project) is None
+        assert (
+            project_tool_function_name("kiln_tool::openenv::openenv1::lookup", project)
+            is None
+        )
         assert project_tool_function_name("mcp::remote::srv1::lookup", None) is None
         assert project_tool_function_name("mcp::remote::broken", project) is None

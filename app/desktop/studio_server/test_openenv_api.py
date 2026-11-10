@@ -8,7 +8,7 @@ from kiln_ai.datamodel.openenv import OpenEnv, OpenEnvReset
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import build_openenv_tool_id
-from kiln_ai.openenv.session_manager import OpenEnvSessionManager
+from kiln_ai.openenv.session_manager import RemoteOpenEnvSessionManager
 from kiln_ai.openenv.testing import (
     ENV_NAME,
     ENV_VERSION,
@@ -66,7 +66,7 @@ def openenv_id(client):
 @pytest.fixture
 def session_manager(tmp_path):
     """A session manager standing in for the process-wide one."""
-    instance = OpenEnvSessionManager()
+    instance = RemoteOpenEnvSessionManager()
     with patch(SESSION_MANAGER_PATCH, return_value=instance):
         yield instance
     import asyncio
@@ -86,6 +86,14 @@ class TestOpenEnvs:
         listed = client.get("/api/projects/p1/openenvs").json()
         assert [item["id"] for item in listed] == [openenv_id]
         got = client.get(f"/api/projects/p1/openenvs/{openenv_id}").json()
+        assert set(got) == {
+            "id",
+            "name",
+            "description",
+            "url",
+            "created_at",
+            "created_by",
+        }
         assert got["name"] == "Environment A"
         assert got["url"] == "http://localhost:8123"
 
@@ -158,7 +166,7 @@ class TestOpenEnvs:
 
     @pytest.mark.parametrize("url", ["ftp://host", "localhost:8000", "http://"])
     def test_invalid_url(self, client, url):
-        r = client.post("/api/projects/p1/openenvs", json={"name": "W", "url": url})
+        r = client.post("/api/projects/p1/openenvs", json={"name": "Notes", "url": url})
         assert r.status_code == 400
 
     def test_missing_openenv(self, client):
@@ -173,7 +181,7 @@ class TestOpenEnvs:
 
 
 class TestTools:
-    def test_no_openenv_is_400(self, client, project):
+    def test_list_tools_without_url_is_400(self, client, project):
         r = client.post("/api/projects/p1/openenvs", json={"name": "Empty"})
         openenv_id = r.json()["id"]
         r = client.get(f"/api/projects/p1/openenvs/{openenv_id}/tools")

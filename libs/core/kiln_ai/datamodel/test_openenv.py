@@ -1,4 +1,4 @@
-"""Tests for the environment datamodel: environments, resets, episode records and environment tool ids."""
+"""Tests for the OpenEnv datamodel: OpenEnv records, resets, episode records and OpenEnv tool ids."""
 
 import json
 from datetime import datetime, timezone
@@ -82,7 +82,7 @@ class TestOnDiskLayout:
 
 
 def test_project_lists_its_openenvs(project):
-    openenv = OpenEnv(name="w", parent=project, url="http://127.0.0.1:8000")
+    openenv = OpenEnv(name="Notes", parent=project, url="http://127.0.0.1:8000")
     openenv.save_to_file()
     assert [saved.id for saved in project.openenvs()] == [openenv.id]
 
@@ -95,19 +95,21 @@ class TestOpenEnvTool:
 
 class TestToolIds:
     def test_openenv_tool_id_round_trip(self):
-        tool_id = build_openenv_tool_id("w1", "lookup")
-        assert tool_id == "kiln_tool::openenv::w1::lookup"
-        assert openenv_and_tool_name_from_id(tool_id) == ("w1", "lookup")
+        tool_id = build_openenv_tool_id("openenv1", "lookup")
+        assert tool_id == "kiln_tool::openenv::openenv1::lookup"
+        assert openenv_and_tool_name_from_id(tool_id) == ("openenv1", "lookup")
 
     @pytest.mark.parametrize(
-        "bad", ["kiln_tool::openenv::w1", "kiln_tool::openenv::::t1", "x"]
+        "bad", ["kiln_tool::openenv::openenv1", "kiln_tool::openenv::::t1", "x"]
     )
     def test_openenv_tool_id_rejects_malformed(self, bad):
         with pytest.raises(ValueError):
             openenv_and_tool_name_from_id(bad)
 
     def test_openenv_tool_ids_accepted_in_allowlists(self):
-        validate_tool_allowlist(["kiln_tool::openenv::w1::t1"], caller="code tools")
+        validate_tool_allowlist(
+            ["kiln_tool::openenv::openenv1::t1"], caller="code tools"
+        )
 
     def test_code_tool_self_reference_still_rejected(self, project):
         ct = CodeTool(
@@ -135,11 +137,11 @@ class TestResetAndEpisode:
     def test_reset_requires_openenv_id(self):
         with pytest.raises(ValidationError):
             OpenEnvReset(openenv_id="")
-        assert OpenEnvReset(openenv_id="w").reset_kwargs == {}
+        assert OpenEnvReset(openenv_id="openenv1").reset_kwargs == {}
 
     def test_reset_kwargs_are_opaque_json(self):
         reset = OpenEnvReset(
-            openenv_id="w",
+            openenv_id="openenv1",
             reset_kwargs={"fixture_id": "f", "seed": 42, "opts": {"a": [1, 2]}},
         )
         assert reset.reset_kwargs["opts"] == {"a": [1, 2]}
@@ -151,7 +153,7 @@ class TestResetAndEpisode:
             parent=task,
             data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
             openenv_reset=OpenEnvReset(
-                openenv_id="w1",
+                openenv_id="openenv1",
                 reset_kwargs={"fixture_id": "f1", "frozen_time": NOW.isoformat()},
             ),
         )
@@ -168,7 +170,9 @@ class TestResetAndEpisode:
 
     def _episode(self, **overrides: Any) -> OpenEnvEpisode:
         base: dict[str, Any] = dict(
-            reset=OpenEnvReset(openenv_id="w1", reset_kwargs={"fixture_id": "f1"}),
+            reset=OpenEnvReset(
+                openenv_id="openenv1", reset_kwargs={"fixture_id": "f1"}
+            ),
             episode_id="ep_1",
             openenv_version="acme@1.0.0",
             reset_metadata={"fixture_id": "f1", "frozen_time": NOW.isoformat()},
@@ -192,7 +196,7 @@ class TestResetAndEpisode:
         again = OpenEnvEpisode.model_validate_json(ep.model_dump_json())
         assert again.final_state == {"notes": ["a", "b"], "step_count": 2}
         assert again.reset == OpenEnvReset(
-            openenv_id="w1", reset_kwargs={"fixture_id": "f1"}
+            openenv_id="openenv1", reset_kwargs={"fixture_id": "f1"}
         )
 
     def test_sandbox_dict_is_plain_json(self):
@@ -205,7 +209,7 @@ class TestResetAndEpisode:
             "final_state",
         }
         assert d["reset"] == {
-            "openenv_id": "w1",
+            "openenv_id": "openenv1",
             "reset_kwargs": {"fixture_id": "f1"},
         }
         assert d["reset_metadata"] == {

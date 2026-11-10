@@ -12,8 +12,8 @@ from kiln_ai.openenv import session_manager as session_manager_module
 from kiln_ai.openenv.session_manager import (
     OpenEnvError,
     OpenEnvRejectedError,
-    OpenEnvSessionManager,
     OpenEnvTransientError,
+    RemoteOpenEnvSessionManager,
     read_observation_error,
 )
 from kiln_ai.openenv.testing import (
@@ -46,7 +46,7 @@ def remote_openenv(project, server_url):
 
 @pytest.fixture
 async def session_manager():
-    session_manager = OpenEnvSessionManager()
+    session_manager = RemoteOpenEnvSessionManager()
     try:
         yield session_manager
     finally:
@@ -176,7 +176,7 @@ class TestFailurePaths:
         `end_episode` would record it as the final state."""
         openenv = OpenEnv(name="slow", parent=project, url=server_url)
         openenv.save_to_file()
-        session_manager = OpenEnvSessionManager(step_timeout_s=0.3)
+        session_manager = RemoteOpenEnvSessionManager(step_timeout_s=0.3)
         try:
             episode = await session_manager.start_episode(openenv, {})
             with pytest.raises(OpenEnvTransientError, match=r"within 0\.3s"):

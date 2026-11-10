@@ -3016,11 +3016,11 @@ export interface paths {
         post?: never;
         /**
          * Delete OpenEnv
-         * @description Delete an environment, if no saved eval input still resets into it.
+         * @description Delete an OpenEnv, if no saved eval input still resets into it.
          *
-         *     409 when one does. An eval input names its environment by id, so a delete that went
-         *     through would leave every eval run on it failing to resolve the environment.
-         *     Traces made in the environment keep their own copy of the episode, and stay readable.
+         *     409 when one does. An eval input names its OpenEnv by id, so a delete that went
+         *     through would leave every eval run on it failing to resolve the OpenEnv.
+         *     Traces made in the OpenEnv keep their own copy of the episode, and stay readable.
          */
         delete: operations["delete_openenv_api_projects__project_id__openenvs__openenv_id__delete"];
         options?: never;
@@ -7471,7 +7471,7 @@ export interface components {
              * @description Tags for filtering eval inputs.
              */
             tags?: string[];
-            /** @description Reset this environment with these keyword arguments before the run; the reset starts the episode the trace records. A run config that lists the environment's tools runs the input in that episode; a run config listing the project's own version of a tool the environment serves is refused. None runs against the project tools. */
+            /** @description Reset the OpenEnv named by openenv_id with these keyword arguments before the run; the reset starts the episode the trace records. A run config that lists the OpenEnv's tools runs the input in that episode; a run config listing the project's own version of a tool the environment serves is refused. None runs against the project tools. */
             openenv_reset?: components["schemas"]["OpenEnvReset"] | null;
             /** Model Type */
             readonly model_type: string;
@@ -8001,7 +8001,7 @@ export interface components {
              * @description The original task input text.
              */
             task_input?: string | null;
-            /** @description The environment episode the trace's environment tools ran in, when the run used an environment: the reset it started from, what the environment reported at reset, and the environment's final state. Judges reference it in their prompt template (e.g. {{ openenv_episode.final_state }}); code scorers receive it as the `openenv_episode` argument. */
+            /** @description The OpenEnv episode the trace's OpenEnv tools ran in, when the run used an OpenEnv: the reset it started from, what the environment reported at reset, and the environment's final state. Judges reference it in their prompt template (e.g. {{ openenv_episode.final_state }}); code scorers receive it as the `openenv_episode` argument. */
             openenv_episode?: components["schemas"]["OpenEnvEpisode"] | null;
         };
         /**
@@ -10612,7 +10612,7 @@ export interface components {
         };
         /**
          * OpenEnvCreateRequest
-         * @description A new environment: a pointer to a running OpenEnv environment.
+         * @description A new OpenEnv: Kiln's pointer to a running OpenEnv environment.
          */
         OpenEnvCreateRequest: {
             /**
@@ -10622,12 +10622,12 @@ export interface components {
             name: string;
             /**
              * Description
-             * @description User-facing notes about the environment.
+             * @description User-facing notes about the OpenEnv.
              */
             description?: string | null;
             /**
              * Url
-             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this environment send their tool calls to it.
+             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this OpenEnv send their tool calls to it.
              */
             url?: string | null;
         };
@@ -10642,7 +10642,7 @@ export interface components {
          *     closed when the episode ends; `final_state` is the durable record.
          */
         OpenEnvEpisode: {
-            /** @description The environment and reset() keyword arguments this episode was started from: the input's openenv_reset. */
+            /** @description The OpenEnv and reset() keyword arguments this episode was started from: the input's openenv_reset. */
             reset: components["schemas"]["OpenEnvReset"];
             /**
              * Episode Id
@@ -10651,7 +10651,7 @@ export interface components {
             episode_id: string;
             /**
              * Openenv Version
-             * @description The environment's name@version as its server reported it when the episode started: what produced this state. Kiln trusts a version to be immutable.
+             * @description The environment's name@version as its server reported it when the episode started (not the version of the openenv package): what produced this state. Kiln trusts a version to be immutable.
              */
             openenv_version: string;
             /**
@@ -10671,8 +10671,8 @@ export interface components {
         };
         /**
          * OpenEnvReset
-         * @description Reset this environment with these keyword arguments before the run; the reset starts
-         *     the episode the trace records.
+         * @description Reset the OpenEnv named by `openenv_id` with these keyword arguments before the
+         *     run; the reset starts the episode the trace records.
          *
          *     `reset_kwargs` is opaque to Kiln: it is passed as the keyword arguments of the
          *     environment's `reset` (a dataset or scenario identifier, a seed, a clock override). The
@@ -10682,7 +10682,7 @@ export interface components {
         OpenEnvReset: {
             /**
              * Openenv Id
-             * @description The OpenEnv to run in.
+             * @description ID of the OpenEnv to reset and run in.
              */
             openenv_id: string;
             /**
@@ -10695,12 +10695,12 @@ export interface components {
         };
         /**
          * OpenEnvResponse
-         * @description An environment: a pointer to a running OpenEnv environment.
+         * @description An OpenEnv: Kiln's pointer to a running OpenEnv environment.
          */
         OpenEnvResponse: {
             /**
              * Id
-             * @description The environment's id.
+             * @description The OpenEnv's id.
              */
             id?: string | null;
             /**
@@ -10710,28 +10710,28 @@ export interface components {
             name: string;
             /**
              * Description
-             * @description User-facing notes about the environment.
+             * @description User-facing notes about the OpenEnv.
              */
             description?: string | null;
             /**
              * Url
-             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this environment send their tool calls to it.
+             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this OpenEnv send their tool calls to it.
              */
             url?: string | null;
             /**
              * Created At
-             * @description When the environment was created.
+             * @description When the OpenEnv was created.
              */
             created_at?: string | null;
             /**
              * Created By
-             * @description Who created the environment.
+             * @description Who created the OpenEnv.
              */
             created_by?: string | null;
         };
         /**
          * OpenEnvToolResponse
-         * @description One tool the environment serves.
+         * @description One tool the OpenEnv's environment serves.
          */
         OpenEnvToolResponse: {
             /**
@@ -10760,7 +10760,7 @@ export interface components {
         };
         /**
          * OpenEnvUpdateRequest
-         * @description Changes to an environment. Only the fields sent are changed.
+         * @description Changes to an OpenEnv. Only the fields sent are changed.
          */
         OpenEnvUpdateRequest: {
             /**
@@ -10770,12 +10770,12 @@ export interface components {
             name?: string | null;
             /**
              * Description
-             * @description User-facing notes about the environment.
+             * @description User-facing notes about the OpenEnv.
              */
             description?: string | null;
             /**
              * Url
-             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this environment send their tool calls to it.
+             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this OpenEnv send their tool calls to it.
              */
             url?: string | null;
         };
@@ -14417,8 +14417,8 @@ export interface components {
          *     success. They are what genuinely cannot be edited in place: trace reuse
          *     (`TraceIndex`) keys on `(source_type, item_id, run_config_id, openenv_version)`, and
          *     the item id stands for the item's whole content, so a later eval would hand a judge
-         *     a conversation generated from the scenario this item *used to* have — or, for a
-         *     environment item, one recorded in an episode the environment was reset into differently.
+         *     a conversation generated from the scenario this item *used to* have — or, for an
+         *     OpenEnv item, one recorded in an episode the environment was reset into differently.
          *     Changing either means POSTing a new item.
          *
          *     `reference` does not have that problem and is editable. It keys nothing: stored
@@ -21939,7 +21939,7 @@ export interface operations {
             path: {
                 /** @description The unique identifier of the project. */
                 project_id: string;
-                /** @description The unique identifier of the environment. */
+                /** @description The unique identifier of the OpenEnv. */
                 openenv_id: string;
             };
             cookie?: never;
@@ -21973,7 +21973,7 @@ export interface operations {
             path: {
                 /** @description The unique identifier of the project. */
                 project_id: string;
-                /** @description The unique identifier of the environment. */
+                /** @description The unique identifier of the OpenEnv. */
                 openenv_id: string;
             };
             cookie?: never;
@@ -22007,7 +22007,7 @@ export interface operations {
             path: {
                 /** @description The unique identifier of the project. */
                 project_id: string;
-                /** @description The unique identifier of the environment. */
+                /** @description The unique identifier of the OpenEnv. */
                 openenv_id: string;
             };
             cookie?: never;
@@ -22045,7 +22045,7 @@ export interface operations {
             path: {
                 /** @description The unique identifier of the project. */
                 project_id: string;
-                /** @description The unique identifier of the environment. */
+                /** @description The unique identifier of the OpenEnv. */
                 openenv_id: string;
             };
             cookie?: never;

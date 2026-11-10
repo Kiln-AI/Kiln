@@ -1,5 +1,5 @@
-"""OpenEnvs: an OpenEnv environment that plays the tool set an agent sees, so evals can
-read and write against state the eval owns.
+"""OpenEnv environments that serve the tool set an agent sees, so evals can read and
+write against state the eval owns.
 
 An **OpenEnv** is Kiln's pointer to an OpenEnv environment (https://github.com/huggingface/OpenEnv)
 that is already running at `url`. Kiln never starts or stops environments, and holds
@@ -24,22 +24,22 @@ and allowing more than one requires the environment to keep its state per sessio
 capacity error before any model call, and re-running the eval runs only the jobs that
 failed.
 
-An eval input carries an `OpenEnvReset`: the environment plus `reset_kwargs`, the keyword
+An eval input carries an `OpenEnvReset`: the OpenEnv plus `reset_kwargs`, the keyword
 arguments of the environment's `reset`. An **episode** is one reset-to-close run on a session of
 that environment: the state one eval job acts on. Its outcome is recorded on the trace
 as `OpenEnvEpisode`, never stored as a project artifact.
 
-A run config chooses the environment's tools explicitly, by listing them as
+A run config chooses the OpenEnv's tools explicitly, by listing them as
 `kiln_tool::openenv::<openenv_id>::<tool_name>`; nothing is substituted for the project's tools
 behind the model's back. An episode is started only when the run config lists the
-input's environment's tools; a run config without environment tools runs the same input against
+input's OpenEnv's tools; a run config without OpenEnv tools runs the same input against
 project tools. A run config that lists the project's own version of a tool the environment serves is
 refused for such an input; project tools the environment does not serve are always allowed. The
 check covers the tools a run config lists directly. It does not follow tools reached
 through another tool: a Kiln task tool's own run config, a code tool's allowlist, or the
 tools of an MCP-type run config can still reach the project's version of a tool the environment
-serves. The eval runner also refuses environment tools without an environment on the input, or from a
-different environment. Because
+serves. The eval runner also refuses OpenEnv tools without an OpenEnv on the input, or from a
+different OpenEnv. Because
 the environment serves the same function names as the project tools, the trace and
 tool-call checks read the same.
 """
@@ -71,8 +71,8 @@ class OpenEnvTool(BaseModel):
 
 
 class OpenEnvReset(BaseModel):
-    """Reset this environment with these keyword arguments before the run; the reset starts
-    the episode the trace records.
+    """Reset the OpenEnv named by `openenv_id` with these keyword arguments before the
+    run; the reset starts the episode the trace records.
 
     `reset_kwargs` is opaque to Kiln: it is passed as the keyword arguments of the
     environment's `reset` (a dataset or scenario identifier, a seed, a clock override). The
@@ -80,7 +80,9 @@ class OpenEnvReset(BaseModel):
     after its trace was made generates a new one rather than reusing it.
     """
 
-    openenv_id: str = Field(min_length=1, description="The OpenEnv to run in.")
+    openenv_id: str = Field(
+        min_length=1, description="ID of the OpenEnv to reset and run in."
+    )
     reset_kwargs: dict[str, JsonValue] = Field(
         default_factory=dict,
         description="Keyword arguments for the environment's reset(), passed verbatim. Which keywords exist is the environment's business, e.g. which dataset or scenario to start from, a seed, a clock override.",
@@ -98,7 +100,7 @@ class OpenEnvEpisode(BaseModel):
     """
 
     reset: OpenEnvReset = Field(
-        description="The environment and reset() keyword arguments this episode was started from: the input's openenv_reset."
+        description="The OpenEnv and reset() keyword arguments this episode was started from: the input's openenv_reset."
     )
     episode_id: str = Field(
         min_length=1,
@@ -106,7 +108,7 @@ class OpenEnvEpisode(BaseModel):
     )
     openenv_version: str = Field(
         min_length=1,
-        description="The environment's name@version as its server reported it when the episode started: what produced this state. Kiln trusts a version to be immutable.",
+        description="The environment's name@version as its server reported it when the episode started (not the version of the openenv package): what produced this state. Kiln trusts a version to be immutable.",
     )
     reset_metadata: dict[str, JsonValue] = Field(
         default_factory=dict,
@@ -132,15 +134,19 @@ class OpenEnvEpisode(BaseModel):
 
 
 class OpenEnv(KilnParentedModel):
-    """A pointer to a running OpenEnv environment."""
+    """Kiln's saved pointer to a running OpenEnv environment.
+
+    Lives under a project (`project.openenvs()`). `url` may be None while the record is
+    being set up, but an eval that runs in this OpenEnv needs it set. Kiln reads the
+    environment's identity and tools from the server at `url` and holds none of its code."""
 
     name: FilenameString = Field(description="User-facing display name.")
     description: str | None = Field(
-        default=None, description="User-facing notes about the environment."
+        default=None, description="User-facing notes about the OpenEnv."
     )
     url: str | None = Field(
         default=None,
-        description="Base URL of the running OpenEnv server for this environment (e.g. http://127.0.0.1:8004). Kiln connects to it; it never starts one.",
+        description="Base URL of the running OpenEnv server for this OpenEnv (e.g. http://127.0.0.1:8004). Kiln connects to it; it never starts one.",
     )
 
     @classmethod
@@ -152,7 +158,7 @@ class OpenEnv(KilnParentedModel):
     @field_validator("url")
     @classmethod
     def validate_url(cls, value: str | None) -> str | None:
-        """Require an http(s) URL with a host, so a typo fails when the environment is saved
+        """Require an http(s) URL with a host, so a typo fails when the OpenEnv is saved
         rather than when an eval first connects."""
         if value is None:
             return None

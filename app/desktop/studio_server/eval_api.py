@@ -898,8 +898,8 @@ class UpdateEvalInputRequest(BaseModel):
     success. They are what genuinely cannot be edited in place: trace reuse
     (`TraceIndex`) keys on `(source_type, item_id, run_config_id, openenv_version)`, and
     the item id stands for the item's whole content, so a later eval would hand a judge
-    a conversation generated from the scenario this item *used to* have — or, for a
-    environment item, one recorded in an episode the environment was reset into differently.
+    a conversation generated from the scenario this item *used to* have — or, for an
+    OpenEnv item, one recorded in an episode the environment was reset into differently.
     Changing either means POSTing a new item.
 
     `reference` does not have that problem and is editable. It keys nothing: stored

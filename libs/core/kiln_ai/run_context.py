@@ -12,7 +12,7 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 
 from kiln_ai.datamodel.openenv import OpenEnv, OpenEnvEpisode, OpenEnvTool
-from kiln_ai.openenv.session_manager import SessionManager
+from kiln_ai.openenv.session_manager import OpenEnvSessionManager
 
 _agent_run_id: ContextVar[str | None] = ContextVar("agent_run_id", default=None)
 
@@ -43,7 +43,7 @@ class EpisodeContext:
 
     episode: "OpenEnvEpisode"
     openenv: "OpenEnv"
-    session_manager: "SessionManager"
+    session_manager: "OpenEnvSessionManager"
     tools: dict[str, "OpenEnvTool"] = field(default_factory=dict)
 
 

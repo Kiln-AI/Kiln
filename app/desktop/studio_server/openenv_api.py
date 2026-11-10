@@ -27,16 +27,16 @@ logger = logging.getLogger(__name__)
 
 
 _NAME_DESCRIPTION = "User-facing display name."
-_DESCRIPTION_DESCRIPTION = "User-facing notes about the environment."
+_DESCRIPTION_DESCRIPTION = "User-facing notes about the OpenEnv."
 _URL_DESCRIPTION = (
     "Base URL of an OpenEnv server that is already running (e.g. "
     "http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in "
-    "this environment send their tool calls to it."
+    "this OpenEnv send their tool calls to it."
 )
 
 
 class OpenEnvCreateRequest(BaseModel):
-    """A new environment: a pointer to a running OpenEnv environment."""
+    """A new OpenEnv: Kiln's pointer to a running OpenEnv environment."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -46,7 +46,7 @@ class OpenEnvCreateRequest(BaseModel):
 
 
 class OpenEnvUpdateRequest(BaseModel):
-    """Changes to an environment. Only the fields sent are changed."""
+    """Changes to an OpenEnv. Only the fields sent are changed."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -56,22 +56,20 @@ class OpenEnvUpdateRequest(BaseModel):
 
 
 class OpenEnvResponse(BaseModel):
-    """An environment: a pointer to a running OpenEnv environment."""
+    """An OpenEnv: Kiln's pointer to a running OpenEnv environment."""
 
-    id: str | None = Field(default=None, description="The environment's id.")
+    id: str | None = Field(default=None, description="The OpenEnv's id.")
     name: str = Field(description=_NAME_DESCRIPTION)
     description: str | None = Field(default=None, description=_DESCRIPTION_DESCRIPTION)
     url: str | None = Field(default=None, description=_URL_DESCRIPTION)
     created_at: datetime | None = Field(
-        default=None, description="When the environment was created."
+        default=None, description="When the OpenEnv was created."
     )
-    created_by: str | None = Field(
-        default=None, description="Who created the environment."
-    )
+    created_by: str | None = Field(default=None, description="Who created the OpenEnv.")
 
 
 class OpenEnvToolResponse(BaseModel):
-    """One tool the environment serves."""
+    """One tool the OpenEnv's environment serves."""
 
     tool_id: str = Field(
         description="The id a run config uses to list this tool directly: kiln_tool::openenv::<openenv_id>::<tool_name>."
@@ -145,8 +143,8 @@ def connect_openenv_api(app: FastAPI):
     ) -> list[OpenEnvResponse]:
         project = project_from_id(project_id)
         openenvs = project.openenvs(readonly=True)
-        openenvs.sort(key=lambda e: e.created_at or datetime.min)
-        return [_openenv_response(e) for e in openenvs]
+        openenvs.sort(key=lambda openenv: openenv.created_at or datetime.min)
+        return [_openenv_response(openenv) for openenv in openenvs]
 
     @app.get(
         "/api/projects/{project_id}/openenvs/{openenv_id}",
@@ -159,7 +157,7 @@ def connect_openenv_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
         openenv_id: Annotated[
-            str, Path(description="The unique identifier of the environment.")
+            str, Path(description="The unique identifier of the OpenEnv.")
         ],
     ) -> OpenEnvResponse:
         return _openenv_response(_openenv_from_id(project_id, openenv_id))
@@ -177,7 +175,7 @@ def connect_openenv_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
         openenv_id: Annotated[
-            str, Path(description="The unique identifier of the environment.")
+            str, Path(description="The unique identifier of the OpenEnv.")
         ],
         request: OpenEnvUpdateRequest,
     ) -> OpenEnvResponse:
@@ -203,14 +201,14 @@ def connect_openenv_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
         openenv_id: Annotated[
-            str, Path(description="The unique identifier of the environment.")
+            str, Path(description="The unique identifier of the OpenEnv.")
         ],
     ) -> None:
-        """Delete an environment, if no saved eval input still resets into it.
+        """Delete an OpenEnv, if no saved eval input still resets into it.
 
-        409 when one does. An eval input names its environment by id, so a delete that went
-        through would leave every eval run on it failing to resolve the environment.
-        Traces made in the environment keep their own copy of the episode, and stay readable.
+        409 when one does. An eval input names its OpenEnv by id, so a delete that went
+        through would leave every eval run on it failing to resolve the OpenEnv.
+        Traces made in the OpenEnv keep their own copy of the episode, and stay readable.
         """
         project = project_from_id(project_id)
         openenv = _openenv_from_id(project_id, openenv_id)
@@ -244,7 +242,7 @@ def connect_openenv_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
         openenv_id: Annotated[
-            str, Path(description="The unique identifier of the environment.")
+            str, Path(description="The unique identifier of the OpenEnv.")
         ],
     ) -> list[OpenEnvToolResponse]:
         openenv = _openenv_from_id(project_id, openenv_id)
