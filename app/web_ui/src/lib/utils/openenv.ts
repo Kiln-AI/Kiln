@@ -68,6 +68,23 @@ export function is_openenv_tool_id(tool_id: string): boolean {
   return tool_id.startsWith(OPENENV_TOOL_ID_PREFIX)
 }
 
+/**
+ * The tool name in an OpenEnv tool id (kiln_tool::openenv::<openenv_server_id>::<tool_name>),
+ * or null when the id isn't a well-formed one. Matches openenv_and_tool_name_from_id in
+ * libs/core. An offline OpenEnv is missing from available_tools, so its tools are
+ * named from their ids.
+ */
+export function openenv_tool_name(tool_id: string): string | null {
+  if (!is_openenv_tool_id(tool_id)) {
+    return null
+  }
+  const parts = tool_id.split("::")
+  if (parts.length !== 4 || !parts[2] || !parts[3]) {
+    return null
+  }
+  return parts[3]
+}
+
 export function openenv_server_detail_link(
   project_id: string,
   openenv_server_id: string,

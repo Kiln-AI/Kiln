@@ -12,7 +12,7 @@
     build_tool_option_groups,
     selectable_tool_sets,
   } from "./tool_options"
-  import { is_openenv_tool_id } from "$lib/utils/openenv"
+  import { openenv_tool_name, is_openenv_tool_id } from "$lib/utils/openenv"
 
   export let project_id: string
   export let task_id: string | null = null
@@ -242,6 +242,10 @@
     empty_state_link: `/tools/${project_id}/add_tools`,
     disabled: tools_selector_settings.disabled,
     optional: tools_selector_settings.optional,
+    // drop_unselectable_tools keeps an offline OpenEnv's tools, which have no
+    // option, so the label names them from their ids.
+    unlisted_value_label: (value: unknown) =>
+      typeof value === "string" ? openenv_tool_name(value) : null,
   }
 </script>
 

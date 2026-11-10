@@ -7,6 +7,7 @@ import {
   environment_field_state,
   environment_option_groups,
   format_reset_arguments,
+  openenv_tool_name,
   is_openenv_tool_id,
   parse_reset_arguments,
   reset_kwargs_for,
@@ -98,6 +99,26 @@ describe("is_openenv_tool_id", () => {
     ).toBe(true)
     expect(is_openenv_tool_id("mcp::remote::server::search")).toBe(false)
     expect(is_openenv_tool_id("kiln_tool::add_numbers")).toBe(false)
+  })
+})
+
+describe("openenv_tool_name", () => {
+  it("takes the tool name from an OpenEnv tool id", () => {
+    expect(openenv_tool_name("kiln_tool::openenv::openenv_1::list_items")).toBe(
+      "list_items",
+    )
+  })
+
+  it("is null for other tool ids", () => {
+    expect(openenv_tool_name("mcp::remote::server::search")).toBe(null)
+    expect(openenv_tool_name("kiln_tool::add_numbers")).toBe(null)
+  })
+
+  it("is null for a malformed OpenEnv tool id", () => {
+    expect(openenv_tool_name("kiln_tool::openenv::openenv_1")).toBe(null)
+    expect(openenv_tool_name("kiln_tool::openenv::openenv_1::")).toBe(null)
+    expect(openenv_tool_name("kiln_tool::openenv::::list_items")).toBe(null)
+    expect(openenv_tool_name("kiln_tool::openenv::openenv_1::a::b")).toBe(null)
   })
 })
 

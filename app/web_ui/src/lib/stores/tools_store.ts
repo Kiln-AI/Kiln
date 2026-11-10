@@ -8,6 +8,7 @@ import { writable } from "svelte/store"
 import { tool_link } from "$lib/utils/link_builder"
 import { indexedDBStore } from "./index_db_store"
 import { LLM_JUDGE_TOOL_ID } from "$lib/utils/built_in_tool_ids"
+import { openenv_tool_name } from "$lib/utils/openenv"
 
 type ToolsStore = {
   selected_tool_ids_by_task_id: Record<string, string[]>
@@ -110,7 +111,9 @@ export function get_tool_names_from_ids(
     all_tools.map((tool) => [tool.id, tool_display_name(tool, duplicates)]),
   )
 
-  return tool_ids.map((id) => tool_map.get(id) || id) // Fall back to ID if name not found
+  // A tool missing from the project falls back to its id, except an offline
+  // OpenEnv's tool, whose id carries its tool name.
+  return tool_ids.map((id) => tool_map.get(id) || openenv_tool_name(id) || id)
 }
 
 // Tool names carried by more than one tool. Counted across every tool set it is

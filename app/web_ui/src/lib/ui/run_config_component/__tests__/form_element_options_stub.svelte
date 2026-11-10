@@ -3,6 +3,8 @@
 
   export let fancy_select_options: OptionGroup[] = []
   export let value: string[] = []
+  export let unlisted_value_label: ((value: unknown) => string | null) | null =
+    null
 </script>
 
 <!-- FancySelect renders its empty state when the OPTION GROUP list is empty, so the
@@ -17,4 +19,7 @@
     ),
   )}
   data-value={JSON.stringify(value)}
+  data-unlisted-labels={JSON.stringify(
+    value.map((v) => unlisted_value_label?.(v) ?? null),
+  )}
 ></div>

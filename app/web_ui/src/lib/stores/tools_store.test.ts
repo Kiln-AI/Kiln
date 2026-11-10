@@ -216,6 +216,15 @@ describe("tools_store", () => {
           ),
         ).toEqual(["kiln_task::999"])
       })
+
+      it("names an offline OpenEnv's tool by its tool name", () => {
+        expect(
+          get_tool_names_from_ids(
+            ["kiln_tool::openenv::openenv_1::list_items"],
+            [kiln_task_set([summarize_tool])],
+          ),
+        ).toEqual(["list_items"])
+      })
     })
   })
 })

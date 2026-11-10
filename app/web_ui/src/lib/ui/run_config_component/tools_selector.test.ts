@@ -250,6 +250,35 @@ describe("ToolsSelector context scoping on the write path", () => {
     ])
     expect(persisted_tools(task_id)).toEqual(tools)
   })
+
+  it("names an offline OpenEnv's tools by tool name in the label", async () => {
+    // The OpenEnv has no option, so without this the label read "None".
+    const task_id = "task_offline_openenv_label"
+    seed_persisted_tools(task_id, [
+      "mcp::remote::demo::search",
+      "kiln_tool::openenv::openenv_1::list_items",
+    ])
+    available_tools.set({ proj_offline_label: [ai_models_set, mcp_set] })
+    const { container } = render(ToolsSelector, {
+      props: {
+        project_id: "proj_offline_label",
+        task_id,
+        settings: { sandbox_code_context: "none" },
+      },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await tick()
+    const el = container.querySelector('[data-testid="form-element-options"]')
+
+    // Listed tools are named by their option; only the OpenEnv tool needs a name.
+    expect(
+      JSON.parse(el?.getAttribute("data-unlisted-labels") ?? "null"),
+    ).toEqual([null, "list_items"])
+    // The offline OpenEnv stays out of the option list.
+    expect(
+      JSON.parse(el?.getAttribute("data-option-values") ?? "[]"),
+    ).not.toContain("kiln_tool::openenv::openenv_1::list_items")
+  })
 })
 
 describe("ToolsSelector sandbox-only tool filtering", () => {
