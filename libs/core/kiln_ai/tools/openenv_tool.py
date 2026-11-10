@@ -1,6 +1,6 @@
 """Tools served by an episode.
 
-A run config lists an environment's tools by id, ``kiln_tool::openenv::<openenv_id>::
+A run config lists an environment's tools by id, ``kiln_tool::openenv::<openenv_server_id>::
 <tool_name>``. While an episode of that environment is active the registry resolves such an
 id to ``OpenEnvToolProxy``: ``toolcall_definition()`` is what the environment reported
 for the tool, and ``run()`` calls it through ``step(CallToolAction)`` on the episode's

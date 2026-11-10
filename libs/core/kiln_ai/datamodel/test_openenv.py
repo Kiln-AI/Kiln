@@ -1,4 +1,4 @@
-"""Tests for the OpenEnv datamodel: OpenEnv records, resets, episode records and OpenEnv tool ids."""
+"""Tests for the OpenEnv datamodel: OpenEnv server records, resets, episode records and OpenEnv tool ids."""
 
 import json
 from datetime import datetime, timezone
@@ -15,9 +15,9 @@ from kiln_ai.datamodel.eval import (
     UserMessage,
 )
 from kiln_ai.datamodel.openenv import (
-    OpenEnv,
     OpenEnvEpisode,
     OpenEnvReset,
+    OpenEnvServer,
     OpenEnvTool,
 )
 from kiln_ai.datamodel.project import Project
@@ -46,45 +46,49 @@ def project(tmp_path) -> Project:
 
 
 @pytest.fixture
-def openenv(project) -> OpenEnv:
-    openenv = OpenEnv(name="Acme Environment", parent=project)
-    openenv.save_to_file()
-    return openenv
+def openenv_server(project) -> OpenEnvServer:
+    openenv_server = OpenEnvServer(name="Acme Environment", parent=project)
+    openenv_server.save_to_file()
+    return openenv_server
 
 
 class TestOnDiskLayout:
-    def test_openenv_under_project(self, project, openenv):
-        assert openenv.path is not None
-        assert openenv.path.parent.parent == project.path.parent / "openenvs"
-        assert openenv.path.name == "openenv.kiln"
-        assert openenv.model_type == "openenv"
-        assert project.openenvs()[0].id == openenv.id
-        loaded = OpenEnv.from_id_and_parent_path(openenv.id, project.path)
+    def test_openenv_server_under_project(self, project, openenv_server):
+        assert openenv_server.path is not None
+        assert (
+            openenv_server.path.parent.parent == project.path.parent / "openenv_servers"
+        )
+        assert openenv_server.path.name == "openenv_server.kiln"
+        assert openenv_server.model_type == "openenv_server"
+        assert project.openenv_servers()[0].id == openenv_server.id
+        loaded = OpenEnvServer.from_id_and_parent_path(openenv_server.id, project.path)
         assert loaded is not None and loaded.name == "Acme Environment"
 
-    def test_openenv_defaults(self, openenv):
-        assert openenv.url is None
-        assert openenv.description is None
+    def test_openenv_server_defaults(self, openenv_server):
+        assert openenv_server.url is None
+        assert openenv_server.description is None
 
-    def test_openenv_round_trip(self, project):
-        openenv = OpenEnv(
+    def test_openenv_server_round_trip(self, project):
+        openenv_server = OpenEnvServer(
             name="Remote",
             parent=project,
             url="http://localhost:8123",
             description="hosted",
         )
-        openenv.save_to_file()
-        assert openenv.id is not None
-        loaded = OpenEnv.from_id_and_parent_path(openenv.id, project.path)
+        openenv_server.save_to_file()
+        assert openenv_server.id is not None
+        loaded = OpenEnvServer.from_id_and_parent_path(openenv_server.id, project.path)
         assert loaded is not None
         assert loaded.url == "http://localhost:8123"
         assert loaded.description == "hosted"
 
 
-def test_project_lists_its_openenvs(project):
-    openenv = OpenEnv(name="Notes", parent=project, url="http://127.0.0.1:8000")
-    openenv.save_to_file()
-    assert [saved.id for saved in project.openenvs()] == [openenv.id]
+def test_project_lists_its_openenv_servers(project):
+    openenv_server = OpenEnvServer(
+        name="Notes", parent=project, url="http://127.0.0.1:8000"
+    )
+    openenv_server.save_to_file()
+    assert [saved.id for saved in project.openenv_servers()] == [openenv_server.id]
 
 
 class TestOpenEnvTool:
@@ -134,14 +138,14 @@ class TestToolIds:
 
 
 class TestResetAndEpisode:
-    def test_reset_requires_openenv_id(self):
+    def test_reset_requires_openenv_server_id(self):
         with pytest.raises(ValidationError):
-            OpenEnvReset(openenv_id="")
-        assert OpenEnvReset(openenv_id="openenv1").reset_kwargs == {}
+            OpenEnvReset(openenv_server_id="")
+        assert OpenEnvReset(openenv_server_id="openenv1").reset_kwargs == {}
 
     def test_reset_kwargs_are_opaque_json(self):
         reset = OpenEnvReset(
-            openenv_id="openenv1",
+            openenv_server_id="openenv1",
             reset_kwargs={"fixture_id": "f", "seed": 42, "opts": {"a": [1, 2]}},
         )
         assert reset.reset_kwargs["opts"] == {"a": [1, 2]}
@@ -153,7 +157,7 @@ class TestResetAndEpisode:
             parent=task,
             data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
             openenv_reset=OpenEnvReset(
-                openenv_id="openenv1",
+                openenv_server_id="openenv1",
                 reset_kwargs={"fixture_id": "f1", "frozen_time": NOW.isoformat()},
             ),
         )
@@ -171,7 +175,7 @@ class TestResetAndEpisode:
     def _episode(self, **overrides: Any) -> OpenEnvEpisode:
         base: dict[str, Any] = dict(
             reset=OpenEnvReset(
-                openenv_id="openenv1", reset_kwargs={"fixture_id": "f1"}
+                openenv_server_id="openenv1", reset_kwargs={"fixture_id": "f1"}
             ),
             episode_id="ep_1",
             openenv_version="acme@1.0.0",
@@ -196,7 +200,7 @@ class TestResetAndEpisode:
         again = OpenEnvEpisode.model_validate_json(ep.model_dump_json())
         assert again.final_state == {"notes": ["a", "b"], "step_count": 2}
         assert again.reset == OpenEnvReset(
-            openenv_id="openenv1", reset_kwargs={"fixture_id": "f1"}
+            openenv_server_id="openenv1", reset_kwargs={"fixture_id": "f1"}
         )
 
     def test_sandbox_dict_is_plain_json(self):
@@ -209,7 +213,7 @@ class TestResetAndEpisode:
             "final_state",
         }
         assert d["reset"] == {
-            "openenv_id": "openenv1",
+            "openenv_server_id": "openenv1",
             "reset_kwargs": {"fixture_id": "f1"},
         }
         assert d["reset_metadata"] == {

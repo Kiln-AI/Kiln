@@ -7,7 +7,7 @@ from kiln_ai.datamodel.external_tool_server import (
     ExternalToolServer,
     ToolServerType,
 )
-from kiln_ai.datamodel.openenv import OpenEnv
+from kiln_ai.datamodel.openenv import OpenEnvServer
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import (
@@ -998,20 +998,20 @@ class TestValidateUniqueAllowlistToolNames:
                 project,
             )
 
-    def _make_openenv(self, project, name="depot"):
-        openenv = OpenEnv(name=name, parent=project)
-        openenv.save_to_file()
-        return openenv
+    def _make_openenv_server(self, project, name="depot"):
+        openenv_server = OpenEnvServer(name=name, parent=project)
+        openenv_server.save_to_file()
+        return openenv_server
 
-    async def test_accepts_openenv_tools_of_an_existing_openenv(self, project):
+    async def test_accepts_openenv_tools_of_an_existing_openenv_server(self, project):
         """OpenEnv tools resolve only inside an episode, so the allowlist check finds
         their environment in the project and does not resolve them."""
-        openenv = self._make_openenv(project)
+        openenv_server = self._make_openenv_server(project)
         helper = self._make_code_tool(project, "helper")
         await validate_unique_allowlist_tool_names(
             [
-                build_openenv_tool_id(openenv.id, "sql_query"),
-                build_openenv_tool_id(openenv.id, "search"),
+                build_openenv_tool_id(openenv_server.id, "sql_query"),
+                build_openenv_tool_id(openenv_server.id, "search"),
                 f"kiln_tool::code::{helper.id}",
             ],
             project,
@@ -1020,16 +1020,16 @@ class TestValidateUniqueAllowlistToolNames:
     async def test_openenv_tool_still_refused_outside_an_episode(self, project):
         """The allowlist check accepts an environment tool, and resolving it outside an
         episode still fails."""
-        openenv = self._make_openenv(project)
-        tool_id = build_openenv_tool_id(openenv.id, "sql_query")
+        openenv_server = self._make_openenv_server(project)
+        tool_id = build_openenv_tool_id(openenv_server.id, "sql_query")
         await validate_unique_allowlist_tool_names([tool_id], project)
         with pytest.raises(ValueError, match="can only be used while an episode"):
             tool_from_id_and_project(tool_id, project=project)
 
-    async def test_rejects_openenv_tool_of_unknown_openenv(self, project):
+    async def test_rejects_openenv_tool_of_unknown_openenv_server(self, project):
         with pytest.raises(
             ValueError,
-            match=r"OpenEnv\(s\) no_such_openenv referenced by OpenEnv tools in the "
+            match=r"OpenEnv server\(s\) no_such_openenv referenced by OpenEnv tools in the "
             r"tool_allowlist not found",
         ):
             await validate_unique_allowlist_tool_names(
@@ -1043,7 +1043,7 @@ class TestValidateUniqueAllowlistToolNames:
         """Sandboxed code calls an environment tool by the last segment of its id. A
         collision with an MCP tool is refused too: the environment tool is the one that
         can be dropped."""
-        openenv = self._make_openenv(project)
+        openenv_server = self._make_openenv_server(project)
         if other_kind == "code":
             other_id = (
                 f"kiln_tool::code::{self._make_code_tool(project, 'sql_query').id}"
@@ -1062,14 +1062,15 @@ class TestValidateUniqueAllowlistToolNames:
             other_id = f"mcp::remote::{server.id}::sql_query"
         with pytest.raises(ValueError, match="share the same function name: sql_query"):
             await validate_unique_allowlist_tool_names(
-                [build_openenv_tool_id(openenv.id, "sql_query"), other_id], project
+                [build_openenv_tool_id(openenv_server.id, "sql_query"), other_id],
+                project,
             )
 
     async def test_openenv_tools_do_not_skip_other_tool_checks(self, project):
         """A missing tool or a name collision among the other tools is still refused
         when environment tools are listed too."""
-        openenv = self._make_openenv(project)
-        openenv_tool = build_openenv_tool_id(openenv.id, "sql_query")
+        openenv_server = self._make_openenv_server(project)
+        openenv_tool = build_openenv_tool_id(openenv_server.id, "sql_query")
         with pytest.raises(ValueError, match="Code tool not found"):
             await validate_unique_allowlist_tool_names(
                 [openenv_tool, "kiln_tool::code::missing"], project

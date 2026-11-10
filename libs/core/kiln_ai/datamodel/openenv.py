@@ -1,7 +1,7 @@
 """OpenEnv environments that serve the tool set an agent sees, so evals can read and
 write against state the eval owns.
 
-An **OpenEnv** is Kiln's pointer to an OpenEnv environment (https://github.com/huggingface/OpenEnv)
+An **OpenEnv server** is Kiln's saved pointer to an OpenEnv environment (https://github.com/openenv/OpenEnv)
 that is already running at `url`. Kiln never starts or stops environments, and holds
 none of their code: the environment implements OpenEnv's `reset`, `step` and `state`;
 its tools are served by `step(CallToolAction)` and discovered with `step(ListToolsAction)`.
@@ -24,22 +24,22 @@ and allowing more than one requires the environment to keep its state per sessio
 capacity error before any model call, and re-running the eval runs only the jobs that
 failed.
 
-An eval input carries an `OpenEnvReset`: the OpenEnv plus `reset_kwargs`, the keyword
+An eval input carries an `OpenEnvReset`: the OpenEnv server plus `reset_kwargs`, the keyword
 arguments of the environment's `reset`. An **episode** is one reset-to-close run on a session of
 that environment: the state one eval job acts on. Its outcome is recorded on the trace
 as `OpenEnvEpisode`, never stored as a project artifact.
 
-A run config chooses the OpenEnv's tools explicitly, by listing them as
-`kiln_tool::openenv::<openenv_id>::<tool_name>`; nothing is substituted for the project's tools
+A run config chooses the OpenEnv server's tools explicitly, by listing them as
+`kiln_tool::openenv::<openenv_server_id>::<tool_name>`; nothing is substituted for the project's tools
 behind the model's back. An episode is started only when the run config lists the
-input's OpenEnv's tools; a run config without OpenEnv tools runs the same input against
+input's OpenEnv server's tools; a run config without OpenEnv tools runs the same input against
 project tools. A run config that lists the project's own version of a tool the environment serves is
 refused for such an input; project tools the environment does not serve are always allowed. The
 check covers the tools a run config lists directly. It does not follow tools reached
 through another tool: a Kiln task tool's own run config, a code tool's allowlist, or the
 tools of an MCP-type run config can still reach the project's version of a tool the environment
-serves. The eval runner also refuses OpenEnv tools without an OpenEnv on the input, or from a
-different OpenEnv. Because
+serves. The eval runner also refuses OpenEnv tools without an OpenEnv server on the input, or from a
+different OpenEnv server. Because
 the environment serves the same function names as the project tools, the trace and
 tool-call checks read the same.
 """
@@ -71,7 +71,7 @@ class OpenEnvTool(BaseModel):
 
 
 class OpenEnvReset(BaseModel):
-    """Reset the OpenEnv named by `openenv_id` with these keyword arguments before the
+    """Reset the OpenEnv server named by `openenv_server_id` with these keyword arguments before the
     run; the reset starts the episode the trace records.
 
     `reset_kwargs` is opaque to Kiln: it is passed as the keyword arguments of the
@@ -80,8 +80,8 @@ class OpenEnvReset(BaseModel):
     after its trace was made generates a new one rather than reusing it.
     """
 
-    openenv_id: str = Field(
-        min_length=1, description="ID of the OpenEnv to reset and run in."
+    openenv_server_id: str = Field(
+        min_length=1, description="ID of the OpenEnv server to reset and run in."
     )
     reset_kwargs: dict[str, JsonValue] = Field(
         default_factory=dict,
@@ -100,7 +100,7 @@ class OpenEnvEpisode(BaseModel):
     """
 
     reset: OpenEnvReset = Field(
-        description="The OpenEnv and reset() keyword arguments this episode was started from: the input's openenv_reset."
+        description="The OpenEnv server and reset() keyword arguments this episode was started from: the input's openenv_reset."
     )
     episode_id: str = Field(
         min_length=1,
@@ -123,7 +123,7 @@ class OpenEnvEpisode(BaseModel):
         """The stdlib-only shape handed to code scorers as `openenv_episode`."""
         return {
             "reset": {
-                "openenv_id": self.reset.openenv_id,
+                "openenv_server_id": self.reset.openenv_server_id,
                 "reset_kwargs": self.reset.reset_kwargs,
             },
             "episode_id": self.episode_id,
@@ -133,32 +133,32 @@ class OpenEnvEpisode(BaseModel):
         }
 
 
-class OpenEnv(KilnParentedModel):
+class OpenEnvServer(KilnParentedModel):
     """Kiln's saved pointer to a running OpenEnv environment.
 
-    Lives under a project (`project.openenvs()`). `url` may be None while the record is
-    being set up, but an eval that runs in this OpenEnv needs it set. Kiln reads the
+    Lives under a project (`project.openenv_servers()`). `url` may be None while the record is
+    being set up, but an eval that runs in this OpenEnv server needs it set. Kiln reads the
     environment's identity and tools from the server at `url` and holds none of its code."""
 
     name: FilenameString = Field(description="User-facing display name.")
     description: str | None = Field(
-        default=None, description="User-facing notes about the OpenEnv."
+        default=None, description="User-facing notes about the OpenEnv server."
     )
     url: str | None = Field(
         default=None,
-        description="Base URL of the running OpenEnv server for this OpenEnv (e.g. http://127.0.0.1:8004). Kiln connects to it; it never starts one.",
+        description="Base URL of the running OpenEnv server (e.g. http://127.0.0.1:8004). Kiln connects to it; it never starts one.",
     )
 
     @classmethod
     def type_name(cls) -> str:
-        # The default snake-cases the class name to "open_env"; OpenEnv is one word,
-        # spelled "openenv" like the upstream package.
-        return "openenv"
+        # The default snake-cases the class name to "open_env_server"; OpenEnv is one
+        # word, spelled "openenv" like the upstream package.
+        return "openenv_server"
 
     @field_validator("url")
     @classmethod
     def validate_url(cls, value: str | None) -> str | None:
-        """Require an http(s) URL with a host, so a typo fails when the OpenEnv is saved
+        """Require an http(s) URL with a host, so a typo fails when the OpenEnv server is saved
         rather than when an eval first connects."""
         if value is None:
             return None

@@ -1,9 +1,0 @@
-{
-  "method": "post",
-  "path": "/api/projects/{project_id}/openenvs",
-  "agent_policy": {
-    "permission": "allow",
-    "requires_approval": true,
-    "approval_description": "Allow agent to create an OpenEnv? Evals run in it will send their data to its URL."
-  }
-}

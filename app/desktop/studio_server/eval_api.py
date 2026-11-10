@@ -75,7 +75,7 @@ from kiln_ai.datamodel.eval_splits import (
     resolve_split,
 )
 from kiln_ai.datamodel.json_schema import string_to_json_key
-from kiln_ai.datamodel.openenv import OpenEnv, OpenEnvReset
+from kiln_ai.datamodel.openenv import OpenEnvReset, OpenEnvServer
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
 from kiln_ai.datamodel.prompt_type import generator_label
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance
@@ -2355,18 +2355,18 @@ def connect_evals_api(app: FastAPI):
             # What reset_kwargs may contain is the environment's business, checked when
             # it resets, so nothing here looks inside them.
             project = task.parent_project()
-            openenv = (
+            openenv_server = (
                 None
                 if project is None
-                else OpenEnv.from_id_and_parent_path(
-                    request.openenv_reset.openenv_id, project.path
+                else OpenEnvServer.from_id_and_parent_path(
+                    request.openenv_reset.openenv_server_id, project.path
                 )
             )
-            if openenv is None:
+            if openenv_server is None:
                 raise HTTPException(
                     status_code=422,
-                    detail=f"OpenEnv {request.openenv_reset.openenv_id} not found in this "
-                    "project. Create the OpenEnv first, or omit openenv_reset to run this "
+                    detail=f"OpenEnv server {request.openenv_reset.openenv_server_id} not found in this "
+                    "project. Create the OpenEnv server first, or omit openenv_reset to run this "
                     "item against the project's own tools.",
                 )
         eval_input = EvalInput(

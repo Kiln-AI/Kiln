@@ -110,8 +110,8 @@ tags_metadata = [
         "description": "Create, test, and manage user-authored Python code tools.",
     },
     {
-        "name": "OpenEnvs",
-        "description": "Manage OpenEnvs: pointers to running OpenEnv servers that play an agent's tool set, and the tools they serve.",
+        "name": "OpenEnv Servers",
+        "description": "Manage OpenEnv servers: Kiln's saved pointers to running OpenEnv environments that play an agent's tool set, and the tools they serve.",
     },
     {
         "name": "Tools & MCP",

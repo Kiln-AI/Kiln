@@ -29,7 +29,7 @@ from kiln_ai.adapters.provider_tools import (
 from kiln_ai.adapters.user_model_entry import UserModelEntry
 from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
-from kiln_ai.datamodel.openenv import OpenEnv
+from kiln_ai.datamodel.openenv import OpenEnvServer
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     McpRunConfigProperties,
@@ -1282,24 +1282,24 @@ class TestValidateRunConfigToolNames:
         with pytest.raises(ValueError, match="not found in the project: missing_id"):
             await validate_run_config_tool_names(task, rc)
 
-    def _make_openenv(self, project, name: str = "depot") -> OpenEnv:
-        openenv = OpenEnv(name=name, parent=project)
-        openenv.save_to_file()
-        return openenv
+    def _make_openenv_server(self, project, name: str = "depot") -> OpenEnvServer:
+        openenv_server = OpenEnvServer(name=name, parent=project)
+        openenv_server.save_to_file()
+        return openenv_server
 
-    async def test_accepts_openenv_tools_of_an_existing_openenv(
+    async def test_accepts_openenv_tools_of_an_existing_openenv_server(
         self, project_task, _agent_config
     ):
         """OpenEnv tools resolve only inside an episode, so creation checks the environment
         exists without resolving them."""
         project, task = project_task
-        openenv = self._make_openenv(project)
+        openenv_server = self._make_openenv_server(project)
         code_tool = self._make_code_tool(project, "lookup")
         rc = _agent_config(
             tools_config=ToolsRunConfig(
                 tools=[
-                    build_openenv_tool_id(openenv.id, "graphql"),
-                    build_openenv_tool_id(openenv.id, "search"),
+                    build_openenv_tool_id(openenv_server.id, "graphql"),
+                    build_openenv_tool_id(openenv_server.id, "search"),
                     f"kiln_tool::code::{code_tool.id}",
                 ]
             )
@@ -1312,15 +1312,15 @@ class TestValidateRunConfigToolNames:
         """Validation accepts an environment tool, and tool_from_id still refuses it
         outside an episode."""
         project, task = project_task
-        openenv = self._make_openenv(project)
-        tool_id = build_openenv_tool_id(openenv.id, "graphql")
+        openenv_server = self._make_openenv_server(project)
+        tool_id = build_openenv_tool_id(openenv_server.id, "graphql")
         await validate_run_config_tool_names(
             task, _agent_config(tools_config=ToolsRunConfig(tools=[tool_id]))
         )
         with pytest.raises(ValueError, match="can only be used while an episode"):
             tool_from_id(tool_id, task)
 
-    async def test_rejects_openenv_tool_of_unknown_openenv(
+    async def test_rejects_openenv_tool_of_unknown_openenv_server(
         self, project_task, _agent_config
     ):
         _, task = project_task
@@ -1330,7 +1330,7 @@ class TestValidateRunConfigToolNames:
             )
         )
         with pytest.raises(
-            ValueError, match=r"OpenEnv\(s\) no_such_openenv .* not found"
+            ValueError, match=r"OpenEnv server\(s\) no_such_openenv .* not found"
         ):
             await validate_run_config_tool_names(task, rc)
 
@@ -1345,33 +1345,33 @@ class TestValidateRunConfigToolNames:
         with pytest.raises(ValueError, match="require the task to belong to a project"):
             await validate_run_config_tool_names(basic_task, rc)
 
-    async def test_rejects_openenv_tools_from_two_openenvs(
+    async def test_rejects_openenv_tools_from_two_openenv_servers(
         self, project_task, _agent_config
     ):
         project, task = project_task
-        openenv_a = self._make_openenv(project, "a")
-        openenv_b = self._make_openenv(project, "b")
+        openenv_server_a = self._make_openenv_server(project, "a")
+        openenv_server_b = self._make_openenv_server(project, "b")
         rc = _agent_config(
             tools_config=ToolsRunConfig(
                 tools=[
-                    build_openenv_tool_id(openenv_a.id, "graphql"),
-                    build_openenv_tool_id(openenv_b.id, "search"),
+                    build_openenv_tool_id(openenv_server_a.id, "graphql"),
+                    build_openenv_tool_id(openenv_server_b.id, "search"),
                 ]
             )
         )
-        with pytest.raises(ValueError, match="more than one OpenEnv"):
+        with pytest.raises(ValueError, match="more than one OpenEnv server"):
             await validate_run_config_tool_names(task, rc)
 
     async def test_rejects_openenv_tool_colliding_with_project_tool(
         self, project_task, _agent_config
     ):
         project, task = project_task
-        openenv = self._make_openenv(project)
+        openenv_server = self._make_openenv_server(project)
         code_tool = self._make_code_tool(project, "graphql")
         rc = _agent_config(
             tools_config=ToolsRunConfig(
                 tools=[
-                    build_openenv_tool_id(openenv.id, "graphql"),
+                    build_openenv_tool_id(openenv_server.id, "graphql"),
                     f"kiln_tool::code::{code_tool.id}",
                 ]
             )
@@ -1383,14 +1383,14 @@ class TestValidateRunConfigToolNames:
         self, project_task, _agent_config
     ):
         project, task = project_task
-        openenv = self._make_openenv(project)
+        openenv_server = self._make_openenv_server(project)
         skill = Skill(name="my-skill", description="d", parent=project)
         skill.save_to_file()
         skill.save_skill_md("body")
         rc = _agent_config(
             tools_config=ToolsRunConfig(
                 tools=[
-                    build_openenv_tool_id(openenv.id, "skill"),
+                    build_openenv_tool_id(openenv_server.id, "skill"),
                     f"kiln_tool::skill::{skill.id}",
                 ]
             )
@@ -1403,8 +1403,8 @@ class TestValidateRunConfigToolNames:
     ):
         """A missing skill or tool is still refused when environment tools are listed too."""
         project, task = project_task
-        openenv = self._make_openenv(project)
-        openenv_tool = build_openenv_tool_id(openenv.id, "graphql")
+        openenv_server = self._make_openenv_server(project)
+        openenv_tool = build_openenv_tool_id(openenv_server.id, "graphql")
         rc = _agent_config(
             tools_config=ToolsRunConfig(
                 tools=[openenv_tool, "kiln_tool::skill::missing_id"]

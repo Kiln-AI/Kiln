@@ -19,8 +19,8 @@ Tool IDs can be one of:
 - A Kiln task tool: kiln_task::<server_id>
 - An assistant-memory tool: kiln_tool::memory::<operation> (project-bound)
 - An SDK / adapter-injected unmanaged tool: kiln_unmanaged::<id> (single slug, not from the registry)
-- An OpenEnv tool: kiln_tool::openenv::<openenv_id>::<tool_name>, a tool the OpenEnv's
-  server serves, usable only while an episode of that OpenEnv is active
+- An OpenEnv tool: kiln_tool::openenv::<openenv_server_id>::<tool_name>, a tool the OpenEnv
+  server serves, usable only while an episode of that OpenEnv server is active
 - More coming soon like kiln_project_tool::rag::RAG_CONFIG_ID
 """
 
@@ -151,7 +151,7 @@ def _check_tool_id(id: str) -> str:
         kiln_unmanaged_tool_slug_from_id(id)
         return id
 
-    # OpenEnv tools must have format: kiln_tool::openenv::<openenv_id>::<tool_name>
+    # OpenEnv tools must have format: kiln_tool::openenv::<openenv_server_id>::<tool_name>
     if id.startswith(OPENENV_TOOL_ID_PREFIX):
         openenv_and_tool_name_from_id(id)
         return id
@@ -260,16 +260,16 @@ def code_tool_id_from_tool_id(tool_id: str) -> str:
     return parts[2]
 
 
-def build_openenv_tool_id(openenv_id: ID_TYPE, tool_name: str) -> str:
-    """Construct the tool ID for a tool an OpenEnv's environment serves."""
-    return f"{OPENENV_TOOL_ID_PREFIX}{openenv_id}::{tool_name}"
+def build_openenv_tool_id(openenv_server_id: ID_TYPE, tool_name: str) -> str:
+    """Construct the tool ID for a tool an OpenEnv server's environment serves."""
+    return f"{OPENENV_TOOL_ID_PREFIX}{openenv_server_id}::{tool_name}"
 
 
 def openenv_and_tool_name_from_id(tool_id: str) -> tuple[str, str]:
-    """Extract ``(openenv_id, tool_name)`` from an OpenEnv tool ID.
+    """Extract ``(openenv_server_id, tool_name)`` from an OpenEnv tool ID.
 
     Four segments, unlike every other ``kiln_tool::`` form, because an OpenEnv tool
-    is only meaningful inside the OpenEnv that serves it.
+    is only meaningful inside the OpenEnv server that serves it.
     """
     parts = tool_id.split("::")
     if (
@@ -280,7 +280,7 @@ def openenv_and_tool_name_from_id(tool_id: str) -> tuple[str, str]:
     ):
         raise ValueError(
             f"Invalid OpenEnv tool ID: {tool_id}. Expected format: "
-            "'kiln_tool::openenv::<openenv_id>::<tool_name>'."
+            "'kiln_tool::openenv::<openenv_server_id>::<tool_name>'."
         )
     return parts[2], parts[3]
 

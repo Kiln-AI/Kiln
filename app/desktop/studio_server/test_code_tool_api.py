@@ -4,7 +4,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.code_tool import CodeTool
-from kiln_ai.datamodel.openenv import OpenEnv
+from kiln_ai.datamodel.openenv import OpenEnvServer
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.tool_id import build_openenv_tool_id
@@ -777,10 +777,10 @@ class TestCodeToolOpenEnvTools:
     tool checks them without one; testing one runs outside any episode."""
 
     @pytest.fixture
-    def openenv(self, test_project):
-        openenv = OpenEnv(name="Depot", parent=test_project)
-        openenv.save_to_file()
-        return openenv
+    def openenv_server(self, test_project):
+        openenv_server = OpenEnvServer(name="Depot", parent=test_project)
+        openenv_server.save_to_file()
+        return openenv_server
 
     def _create(self, client, test_project, create_request, tool_allowlist):
         create_request["tool_allowlist"] = tool_allowlist
@@ -790,7 +790,7 @@ class TestCodeToolOpenEnvTools:
             )
 
     def test_create_accepts_openenv_tools(
-        self, client, test_project, mock_project_from_id, create_request, openenv
+        self, client, test_project, mock_project_from_id, create_request, openenv_server
     ):
         helper = CodeTool(
             name="helper",
@@ -802,7 +802,7 @@ class TestCodeToolOpenEnvTools:
         )
         helper.save_to_file()
         allowlist = [
-            build_openenv_tool_id(openenv.id, "sql_query"),
+            build_openenv_tool_id(openenv_server.id, "sql_query"),
             f"kiln_tool::code::{helper.id}",
         ]
 
@@ -815,7 +815,7 @@ class TestCodeToolOpenEnvTools:
         assert loaded is not None
         assert loaded.tool_allowlist == allowlist
 
-    def test_create_rejects_openenv_tool_of_unknown_openenv(
+    def test_create_rejects_openenv_tool_of_unknown_openenv_server(
         self, client, test_project, mock_project_from_id, create_request
     ):
         response = self._create(
@@ -836,7 +836,7 @@ class TestCodeToolOpenEnvTools:
         test_project,
         mock_project_from_id,
         create_request,
-        openenv,
+        openenv_server,
         saved_code_tool,
     ):
         response = self._create(
@@ -844,7 +844,9 @@ class TestCodeToolOpenEnvTools:
             test_project,
             create_request,
             [
-                build_openenv_tool_id(openenv.id, saved_code_tool.tool_function_name),
+                build_openenv_tool_id(
+                    openenv_server.id, saved_code_tool.tool_function_name
+                ),
                 f"kiln_tool::code::{saved_code_tool.id}",
             ],
         )
@@ -856,9 +858,9 @@ class TestCodeToolOpenEnvTools:
         )
 
     def test_patch_keeps_openenv_tool_allowlist(
-        self, client, test_project, mock_project_from_id, create_request, openenv
+        self, client, test_project, mock_project_from_id, create_request, openenv_server
     ):
-        allowlist = [build_openenv_tool_id(openenv.id, "sql_query")]
+        allowlist = [build_openenv_tool_id(openenv_server.id, "sql_query")]
         created = self._create(client, test_project, create_request, allowlist)
         assert created.status_code == 200, created.text
 
@@ -871,17 +873,17 @@ class TestCodeToolOpenEnvTools:
         assert response.json()["name"] == "renamed"
         assert response.json()["tool_allowlist"] == allowlist
 
-    def _test_request(self, openenv_id: str, code: str) -> dict:
+    def _test_request(self, openenv_server_id: str, code: str) -> dict:
         return {
             "tool_function_name": "sql_preview",
             "parameters_schema": SIMPLE_SCHEMA,
             "code": code,
-            "tool_allowlist": [build_openenv_tool_id(openenv_id, "sql_query")],
+            "tool_allowlist": [build_openenv_tool_id(openenv_server_id, "sql_query")],
             "params": {"x": 5},
         }
 
     def test_test_says_why_openenv_tool_call_is_refused(
-        self, client, test_project, mock_project_from_id, openenv
+        self, client, test_project, mock_project_from_id, openenv_server
     ):
         """Runs the sandbox for real: the test runs outside any episode, so the environment
         tool is refused, and the error says why instead of listing no tools."""
@@ -893,7 +895,7 @@ class TestCodeToolOpenEnvTools:
         with patch(TRUST_PATCH, return_value=True):
             response = client.post(
                 f"/api/projects/{test_project.id}/test_code_tool",
-                json=self._test_request(openenv.id, code),
+                json=self._test_request(openenv_server.id, code),
             )
 
         assert response.status_code == 200, response.text

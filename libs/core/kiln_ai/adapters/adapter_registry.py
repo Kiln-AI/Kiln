@@ -18,7 +18,7 @@ from kiln_ai.adapters.provider_tools import (
     kiln_model_provider_from,
     lite_llm_core_config_for_provider,
 )
-from kiln_ai.datamodel.openenv import OpenEnv
+from kiln_ai.datamodel.openenv import OpenEnvServer
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     McpRunConfigProperties,
@@ -98,10 +98,10 @@ async def validate_run_config_tool_names(
     runtime check remains the backstop for tools renamed after the run config
     was created.
 
-    OpenEnv tools (`kiln_tool::openenv::<openenv_id>::<tool_name>`) resolve only inside
-    an episode of their OpenEnv, which only the eval runner starts, so they are not
-    resolved here. Their OpenEnv must exist in the task's project, all of them must
-    come from one OpenEnv (a job runs in one OpenEnv), and the name the model sees
+    OpenEnv tools (`kiln_tool::openenv::<openenv_server_id>::<tool_name>`) resolve only inside
+    an episode of their OpenEnv server, which only the eval runner starts, so they are not
+    resolved here. Their OpenEnv server must exist in the task's project, all of them must
+    come from one OpenEnv server (a job runs in one OpenEnv server), and the name the model sees
     (the id's tool_name) must not collide with another selected tool. Whether the
     environment really serves that tool is checked at runtime, inside the episode.
     """
@@ -132,15 +132,17 @@ def validate_openenv_tool_ids(
 ) -> None:
     """Check a run config's OpenEnv tool ids without an active episode.
 
-    Raises ValueError when an OpenEnv is not in the task's project, when the ids
-    name more than one OpenEnv, or when an OpenEnv tool's name collides with another
+    Raises ValueError when an OpenEnv server is not in the task's project, when the ids
+    name more than one OpenEnv server, or when an OpenEnv tool's name collides with another
     OpenEnv tool or with one of *project_tool_names* (the names of the run config's
     resolved project tools, including the "skill" tool when skills are selected).
     """
     openenv_and_tool_names = [
         openenv_and_tool_name_from_id(t) for t in openenv_tool_ids
     ]
-    openenv_ids = sorted({openenv_id for openenv_id, _ in openenv_and_tool_names})
+    openenv_server_ids = sorted(
+        {openenv_server_id for openenv_server_id, _ in openenv_and_tool_names}
+    )
 
     project = task.parent_project()
     if project is None:
@@ -148,20 +150,24 @@ def validate_openenv_tool_ids(
             "OpenEnv tools require the task to belong to a project: "
             f"{', '.join(openenv_tool_ids)}"
         )
-    found = OpenEnv.from_ids_and_parent_path(
-        set(openenv_ids), project.path, readonly=True
+    found = OpenEnvServer.from_ids_and_parent_path(
+        set(openenv_server_ids), project.path, readonly=True
     )
-    missing = [openenv_id for openenv_id in openenv_ids if openenv_id not in found]
+    missing = [
+        openenv_server_id
+        for openenv_server_id in openenv_server_ids
+        if openenv_server_id not in found
+    ]
     if missing:
         raise ValueError(
-            f"OpenEnv(s) {', '.join(missing)} referenced by OpenEnv tools in the run "
-            f"config not found in project {project.id}. Create the OpenEnv first, or "
+            f"OpenEnv server(s) {', '.join(missing)} referenced by OpenEnv tools in the run "
+            f"config not found in project {project.id}. Create the OpenEnv server first, or "
             "remove its tools from the run config."
         )
-    if len(openenv_ids) > 1:
+    if len(openenv_server_ids) > 1:
         raise ValueError(
-            f"Run config lists tools from more than one OpenEnv ({', '.join(openenv_ids)}). "
-            "A job runs in one OpenEnv, so all OpenEnv tools must come from the same OpenEnv."
+            f"Run config lists tools from more than one OpenEnv server ({', '.join(openenv_server_ids)}). "
+            "A job runs in one OpenEnv server, so all OpenEnv tools must come from the same OpenEnv server."
         )
 
     tool_names = project_tool_names + [name for _, name in openenv_and_tool_names]

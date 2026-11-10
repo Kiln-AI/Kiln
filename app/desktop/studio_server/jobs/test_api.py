@@ -32,7 +32,7 @@ from kiln_ai.datamodel.eval import (
     SingleTurnEvalInputData,
     UserMessage,
 )
-from kiln_ai.datamodel.openenv import OpenEnv, OpenEnvReset
+from kiln_ai.datamodel.openenv import OpenEnvReset, OpenEnvServer
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
 from kiln_ai.datamodel.tool_id import build_openenv_tool_id
@@ -1103,10 +1103,13 @@ def openenv_eval(split_eval):
     assert task is not None
     project = task.parent_project()
     assert project is not None
-    openenv = OpenEnv(
-        id="offline_openenv", name="Offline", url="http://127.0.0.1:1", parent=project
+    openenv_server = OpenEnvServer(
+        id="offline_openenv_server",
+        name="Offline",
+        url="http://127.0.0.1:1",
+        parent=project,
     )
-    openenv.save_to_file()
+    openenv_server.save_to_file()
     eval = Eval(
         id="e_openenv",
         name="Environment Eval",
@@ -1132,7 +1135,7 @@ def openenv_eval(split_eval):
             prompt_id="simple_prompt_builder",
             structured_output_mode=StructuredOutputMode.json_schema,
             tools_config=ToolsRunConfig(
-                tools=[build_openenv_tool_id(openenv.id, "append_note")]
+                tools=[build_openenv_tool_id(openenv_server.id, "append_note")]
             ),
         ),
         parent=task,
@@ -1140,9 +1143,9 @@ def openenv_eval(split_eval):
     for item_id, openenv_reset in [
         (
             "ei_in_openenv",
-            OpenEnvReset(openenv_id=openenv.id, reset_kwargs={}),
+            OpenEnvReset(openenv_server_id=openenv_server.id, reset_kwargs={}),
         ),
-        ("ei_no_openenv", None),
+        ("ei_no_openenv_server", None),
     ]:
         EvalInput(
             id=item_id,
@@ -1168,13 +1171,13 @@ async def test_run_eval_job_with_an_item_outside_its_openenv_400(
     resp = await client.post(_EVAL_RUN_PATH, json=_OPENENV_EVAL_PARAMS)
 
     assert resp.status_code == 400, resp.text
-    assert "have no openenv_reset: ei_no_openenv" in resp.text
+    assert "have no openenv_reset: ei_no_openenv_server" in resp.text
     assert "ei_in_openenv" not in resp.text
     assert registry._jobs == {}
 
 
 @pytest.mark.asyncio
-async def test_run_eval_job_checks_only_the_requested_items_in_their_openenvs(
+async def test_run_eval_job_checks_only_the_requested_items_in_their_openenv_servers(
     client, registry, stub_eval_worker, openenv_eval
 ):
     resp = await client.post(

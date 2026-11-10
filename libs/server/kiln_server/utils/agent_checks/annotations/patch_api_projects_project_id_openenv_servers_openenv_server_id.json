@@ -1,0 +1,9 @@
+{
+  "method": "patch",
+  "path": "/api/projects/{project_id}/openenv_servers/{openenv_server_id}",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": true,
+    "approval_description": "Allow agent to update an OpenEnv server? Changing its URL changes where evals run in it send their data."
+  }
+}

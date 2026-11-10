@@ -34,7 +34,7 @@ from kiln_ai.datamodel.eval import (
     TaskRunSplit,
     UserMessage,
 )
-from kiln_ai.datamodel.openenv import OpenEnv, OpenEnvReset
+from kiln_ai.datamodel.openenv import OpenEnvReset, OpenEnvServer
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
 from kiln_ai.datamodel.tool_id import build_openenv_tool_id
@@ -1580,25 +1580,27 @@ async def test_compute_state_measures_only_the_named_items(
 
 
 @pytest.fixture
-def openenv(project):
+def openenv_server(project):
     with serve_in_thread() as base_url:
-        openenv = OpenEnv(id="openenv1", name="Notes", parent=project, url=base_url)
-        openenv.save_to_file()
-        yield openenv
+        openenv_server = OpenEnvServer(
+            id="openenv1", name="Notes", parent=project, url=base_url
+        )
+        openenv_server.save_to_file()
+        yield openenv_server
 
 
 @pytest.fixture
-async def shared_openenv_sessions(openenv):
+async def shared_openenv_sessions(openenv_server):
     """The worker runs on the process-wide session manager, as the server does. It
     starts empty, and its sessions close before the test server stops (this fixture
-    depends on `openenv`, so it tears down first)."""
+    depends on `openenv_server`, so it tears down first)."""
     await shutdown_shared_session_manager()
     yield
     await shutdown_shared_session_manager()
 
 
 @pytest.fixture
-def openenv_run_config(task, openenv):
+def openenv_run_config(task, openenv_server):
     run_config = TaskRunConfig(
         id="rc_openenv",
         name="Environment Run Config",
@@ -1609,7 +1611,7 @@ def openenv_run_config(task, openenv):
             prompt_id="simple_prompt_builder",
             structured_output_mode=StructuredOutputMode.json_schema,
             tools_config=ToolsRunConfig(
-                tools=[build_openenv_tool_id(openenv.id, "append_note")]
+                tools=[build_openenv_tool_id(openenv_server.id, "append_note")]
             ),
         ),
     )
@@ -1664,7 +1666,7 @@ class _OpenEnvToolGenerator:
 async def test_run_works_an_item_in_its_openenv_and_logs_a_refused_reset(
     resolve_project,
     task,
-    openenv,
+    openenv_server,
     openenv_run_config,
     openenv_eval_config,
     shared_openenv_sessions,
@@ -1677,18 +1679,18 @@ async def test_run_works_an_item_in_its_openenv_and_logs_a_refused_reset(
         task,
         "inputs",
         openenv_reset=OpenEnvReset(
-            openenv_id=openenv.id, reset_kwargs={"fixture_id": "a"}
+            openenv_server_id=openenv_server.id, reset_kwargs={"fixture_id": "a"}
         ),
     )
     refused = _make_eval_input(
         task,
         "inputs",
         openenv_reset=OpenEnvReset(
-            openenv_id=openenv.id, reset_kwargs={"fail_reset": True}
+            openenv_server_id=openenv_server.id, reset_kwargs={"fail_reset": True}
         ),
     )
     generator = _OpenEnvToolGenerator(
-        task, build_openenv_tool_id(openenv.id, "append_note")
+        task, build_openenv_tool_id(openenv_server.id, "append_note")
     )
     ctx = _RecordingCtx()
 
@@ -1717,7 +1719,7 @@ async def test_run_works_an_item_in_its_openenv_and_logs_a_refused_reset(
         if run.eval_source is not None
     ]
     assert trace.openenv_episode is not None
-    assert trace.openenv_episode.reset.openenv_id == openenv.id
+    assert trace.openenv_episode.reset.openenv_server_id == openenv_server.id
     # The item's reset kwargs reached the environment.
     assert trace.openenv_episode.final_state["fixture_id"] == "a"
     assert trace.openenv_episode.final_state["notes"] == ["hi"]
@@ -1757,7 +1759,7 @@ def _eval_traces(task) -> list[TaskRun]:
 async def test_drive_only_job_drives_in_the_openenv_and_names_its_task_runs(
     resolve_project,
     task,
-    openenv,
+    openenv_server,
     openenv_run_config,
     openenv_eval_config,
     shared_openenv_sessions,
@@ -1770,13 +1772,14 @@ async def test_drive_only_job_drives_in_the_openenv_and_names_its_task_runs(
             task,
             "inputs",
             openenv_reset=OpenEnvReset(
-                openenv_id=openenv.id, reset_kwargs={"fixture_id": fixture}
+                openenv_server_id=openenv_server.id,
+                reset_kwargs={"fixture_id": fixture},
             ),
         )
         for fixture in ("a", "b")
     ]
     generator = _OpenEnvToolGenerator(
-        task, build_openenv_tool_id(openenv.id, "append_note")
+        task, build_openenv_tool_id(openenv_server.id, "append_note")
     )
     ctx = _RecordingCtx()
 
@@ -1807,7 +1810,7 @@ async def test_drive_only_job_drives_in_the_openenv_and_names_its_task_runs(
 async def test_drive_only_job_drives_scored_items_again(
     resolve_project,
     task,
-    openenv,
+    openenv_server,
     openenv_run_config,
     openenv_eval_config,
     shared_openenv_sessions,
@@ -1818,11 +1821,11 @@ async def test_drive_only_job_drives_scored_items_again(
         task,
         "inputs",
         openenv_reset=OpenEnvReset(
-            openenv_id=openenv.id, reset_kwargs={"fixture_id": "a"}
+            openenv_server_id=openenv_server.id, reset_kwargs={"fixture_id": "a"}
         ),
     )
     generator = _OpenEnvToolGenerator(
-        task, build_openenv_tool_id(openenv.id, "append_note")
+        task, build_openenv_tool_id(openenv_server.id, "append_note")
     )
     worker = EvalJobWorker()
 

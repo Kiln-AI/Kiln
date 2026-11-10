@@ -362,7 +362,7 @@ class TestEpisodeHandoff:
             code="def score(output, openenv_episode):\n    return {'accuracy': 1.0}\n"
         )
         episode = OpenEnvEpisode(
-            reset=OpenEnvReset(openenv_id="openenv1"),
+            reset=OpenEnvReset(openenv_server_id="openenv1"),
             episode_id="ep_x",
             openenv_version="notes@1",
             final_state={"notes": ["a"]},
@@ -388,7 +388,10 @@ class TestEpisodeHandoff:
         from kiln_ai.adapters.eval.conftest import run_scorer
 
         record = {
-            "reset": {"openenv_id": "openenv1", "reset_kwargs": {"fixture_id": "f"}},
+            "reset": {
+                "openenv_server_id": "openenv1",
+                "reset_kwargs": {"fixture_id": "f"},
+            },
             "episode_id": "ep_1",
             "openenv_version": "notes@1",
             "reset_metadata": {"frozen_time": "2026-07-14T00:00:00+00:00"},

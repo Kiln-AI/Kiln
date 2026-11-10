@@ -52,7 +52,7 @@ from kiln_ai.datamodel.eval import (
     UserMessage,
 )
 from kiln_ai.datamodel.eval_splits import ItemSource, ResolvedSplit
-from kiln_ai.datamodel.openenv import OpenEnv, OpenEnvReset
+from kiln_ai.datamodel.openenv import OpenEnvReset, OpenEnvServer
 from kiln_ai.datamodel.prompt import BasePrompt
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
@@ -8547,8 +8547,10 @@ def test_create_eval_input_with_openenv_reset(client, mock_task, mock_task_from_
     """An environment item carries the environment it runs in and the kwargs its environment resets
     with. Both have to survive the save, not just the response: the runner reads them
     off the stored item, and neither can be added later."""
-    openenv = OpenEnv(name="Notebook Environment", parent=mock_task.parent_project())
-    openenv.save_to_file()
+    openenv_server = OpenEnvServer(
+        name="Notebook Environment", parent=mock_task.parent_project()
+    )
+    openenv_server.save_to_file()
 
     response = client.post(
         "/api/projects/project1/tasks/task1/eval_inputs",
@@ -8556,18 +8558,18 @@ def test_create_eval_input_with_openenv_reset(client, mock_task, mock_task_from_
             "data": {"type": "single_turn", "user_message": {"text": "add a note"}},
             "tags": ["corpus"],
             "openenv_reset": {
-                "openenv_id": openenv.id,
+                "openenv_server_id": openenv_server.id,
                 "reset_kwargs": {"fixture_id": "f1", "seed": 7},
             },
         },
     )
 
     assert response.status_code == 200
-    assert response.json()["openenv_reset"]["openenv_id"] == openenv.id
+    assert response.json()["openenv_reset"]["openenv_server_id"] == openenv_server.id
 
     on_disk = mock_task.eval_inputs(readonly=True)[0]
     assert on_disk.openenv_reset is not None
-    assert on_disk.openenv_reset.openenv_id == openenv.id
+    assert on_disk.openenv_reset.openenv_server_id == openenv_server.id
     # reset_kwargs are the environment's vocabulary, passed through verbatim: they must
     # not be normalized, filtered, or coerced on the way to disk.
     assert on_disk.openenv_reset.reset_kwargs == {"fixture_id": "f1", "seed": 7}
@@ -8587,7 +8589,7 @@ def test_create_eval_input_without_openenv_reset_is_openenv_free(
     assert mock_task.eval_inputs(readonly=True)[0].openenv_reset is None
 
 
-def test_create_eval_input_unknown_openenv_is_rejected(
+def test_create_eval_input_unknown_openenv_server_is_rejected(
     client, mock_task, mock_task_from_id
 ):
     """An environment this project doesn't have is refused at creation. Left to run time it
@@ -8596,7 +8598,7 @@ def test_create_eval_input_unknown_openenv_is_rejected(
         "/api/projects/project1/tasks/task1/eval_inputs",
         json={
             "data": {"type": "single_turn", "user_message": {"text": "add a note"}},
-            "openenv_reset": {"openenv_id": "no_such_openenv"},
+            "openenv_reset": {"openenv_server_id": "no_such_openenv"},
         },
     )
 
@@ -8800,13 +8802,15 @@ def test_update_eval_input_rejects_openenv_reset_edits(
     """Re-resetting an item in place must fail loudly, for the reason a scenario edit
     does: the item id stands for the item's content in the trace key, so a later eval
     would score a trace recorded in the episode this item used to start."""
-    openenv = OpenEnv(name="Notebook Environment", parent=mock_task.parent_project())
-    openenv.save_to_file()
+    openenv_server = OpenEnvServer(
+        name="Notebook Environment", parent=mock_task.parent_project()
+    )
+    openenv_server.save_to_file()
     eval_input = EvalInput(
         data=SingleTurnEvalInputData(user_message=UserMessage(text="add a note")),
         tags=["corpus"],
         openenv_reset=OpenEnvReset(
-            openenv_id=openenv.id, reset_kwargs={"fixture_id": "f1"}
+            openenv_server_id=openenv_server.id, reset_kwargs={"fixture_id": "f1"}
         ),
         parent=mock_task,
     )
@@ -8817,7 +8821,7 @@ def test_update_eval_input_rejects_openenv_reset_edits(
         json={
             "tags": ["corpus", "extra"],
             "openenv_reset": {
-                "openenv_id": openenv.id,
+                "openenv_server_id": openenv_server.id,
                 "reset_kwargs": {"fixture_id": "f2"},
             },
         },
@@ -9439,17 +9443,17 @@ def _openenv_tools_run_config_body(tool_ids: list[str]) -> dict:
 async def test_create_task_run_config_accepts_openenv_tools(
     client, mock_task_from_id, mock_task
 ):
-    """OpenEnv tools resolve only inside an episode of their OpenEnv. Creation checks the
-    OpenEnv exists in the project and does not resolve them, so a run config for an
-    OpenEnv task can be created through the API."""
+    """OpenEnv tools resolve only inside an episode of their OpenEnv server. Creation checks the
+    OpenEnv server exists in the project and does not resolve them, so a run config
+    for an OpenEnv task can be created through the API."""
     from kiln_ai.datamodel.tool_id import build_openenv_tool_id
 
     mock_task_from_id.return_value = mock_task
-    openenv = OpenEnv(name="Depot", parent=mock_task.parent_project())
-    openenv.save_to_file()
+    openenv_server = OpenEnvServer(name="Depot", parent=mock_task.parent_project())
+    openenv_server.save_to_file()
     tool_ids = [
-        build_openenv_tool_id(openenv.id, "graphql"),
-        build_openenv_tool_id(openenv.id, "search"),
+        build_openenv_tool_id(openenv_server.id, "graphql"),
+        build_openenv_tool_id(openenv_server.id, "search"),
     ]
 
     response = client.post(
@@ -9466,7 +9470,7 @@ async def test_create_task_run_config_accepts_openenv_tools(
 
 
 @pytest.mark.asyncio
-async def test_create_task_run_config_rejects_openenv_tool_of_unknown_openenv(
+async def test_create_task_run_config_rejects_openenv_tool_of_unknown_openenv_server(
     client, mock_task_from_id, mock_task
 ):
     mock_task_from_id.return_value = mock_task
@@ -9492,14 +9496,14 @@ async def test_create_task_run_config_with_openenv_tools_still_rejects_missing_s
     from kiln_ai.datamodel.tool_id import build_openenv_tool_id
 
     mock_task_from_id.return_value = mock_task
-    openenv = OpenEnv(name="Depot", parent=mock_task.parent_project())
-    openenv.save_to_file()
+    openenv_server = OpenEnvServer(name="Depot", parent=mock_task.parent_project())
+    openenv_server.save_to_file()
 
     response = client.post(
         "/api/projects/project1/tasks/task1/run_configs",
         json=_openenv_tools_run_config_body(
             [
-                build_openenv_tool_id(openenv.id, "graphql"),
+                build_openenv_tool_id(openenv_server.id, "graphql"),
                 "kiln_tool::skill::missing_id",
             ]
         ),

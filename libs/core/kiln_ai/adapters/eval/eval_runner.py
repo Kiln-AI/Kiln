@@ -64,8 +64,8 @@ from kiln_ai.datamodel.eval_splits import (
     item_key,
 )
 from kiln_ai.datamodel.openenv import (
-    OpenEnv,
     OpenEnvReset,
+    OpenEnvServer,
     OpenEnvTool,
 )
 from kiln_ai.datamodel.project import Project
@@ -239,11 +239,11 @@ def _splits_a_turn_into_two_messages(
 
 @dataclass(frozen=True)
 class _OpenEnvTarget:
-    """A resolved OpenEnv: what a job needs to launch episodes and to key its traces.
-    Resolved once per OpenEnv per eval run, so every job in the run keys its traces by
+    """A resolved OpenEnv server: what a job needs to launch episodes and to key its traces.
+    Resolved once per OpenEnv server per eval run, so every job in the run keys its traces by
     the same environment version."""
 
-    openenv: OpenEnv
+    openenv_server: OpenEnvServer
     session_manager: OpenEnvSessionManager
     tools: dict[str, OpenEnvTool]
     openenv_version: str
@@ -316,8 +316,8 @@ def _openenv_tool_mismatch(
     if openenv_reset is None:
         # A stored TaskRun never carries an openenv_reset; only an EvalInput can.
         return "stored_task_run" if isinstance(item, TaskRun) else "no_openenv_reset"
-    openenvs = {openenv_and_tool_name_from_id(t)[0] for t in openenv_tool_ids}
-    if openenvs != {openenv_reset.openenv_id}:
+    openenv_servers = {openenv_and_tool_name_from_id(t)[0] for t in openenv_tool_ids}
+    if openenv_servers != {openenv_reset.openenv_server_id}:
         return "other_openenv"
     return None
 
@@ -346,15 +346,17 @@ def _uses_openenv(
         raise ValueError(
             f"Run config '{run_config.name}' lists OpenEnv tools "
             f"({', '.join(openenv_tool_ids)}) but task run {item.id} is a stored task "
-            "run, which can't run in an OpenEnv. Use a run config without OpenEnv tools."
+            "run, which can't run in an OpenEnv server. Use a run config without OpenEnv tools."
         )
     if mismatch == "other_openenv":
         assert openenv_reset is not None
-        openenvs = {openenv_and_tool_name_from_id(t)[0] for t in openenv_tool_ids}
+        openenv_servers = {
+            openenv_and_tool_name_from_id(t)[0] for t in openenv_tool_ids
+        }
         raise ValueError(
-            f"eval input {item.id} runs in OpenEnv {openenv_reset.openenv_id}, but run "
-            f"config '{run_config.name}' lists tools from OpenEnv(s) "
-            f"{sorted(openenvs - {openenv_reset.openenv_id})}. A job runs in one OpenEnv."
+            f"eval input {item.id} runs in OpenEnv server {openenv_reset.openenv_server_id}, but run "
+            f"config '{run_config.name}' lists tools from OpenEnv server(s) "
+            f"{sorted(openenv_servers - {openenv_reset.openenv_server_id})}. A job runs in one OpenEnv server."
         )
     return bool(openenv_tool_ids)
 
@@ -376,8 +378,10 @@ def _resolves_openenv(
     )
 
 
-def _openenv_not_found_message(openenv_id: str, project_id: ID_TYPE) -> str:
-    return f"OpenEnv {openenv_id} not found in project {project_id}"
+def _openenv_server_not_found_message(
+    openenv_server_id: str, project_id: ID_TYPE
+) -> str:
+    return f"OpenEnv server {openenv_server_id} not found in project {project_id}"
 
 
 _NO_PROJECT_FOR_OPENENV_MESSAGE = (
@@ -432,7 +436,7 @@ def _skip_before_openenv_lane(
 def _check_project_versions_of_served_tools(
     run_config: TaskRunConfig,
     item: EvalInput | TaskRun,
-    openenv: OpenEnv,
+    openenv_server: OpenEnvServer,
     served: Iterable[str],
     project: Project | None,
 ) -> None:
@@ -453,10 +457,10 @@ def _check_project_versions_of_served_tools(
     ]
     if clashes:
         raise ValueError(
-            f"eval input {item.id} runs in OpenEnv '{openenv.name}', but "
+            f"eval input {item.id} runs in OpenEnv server '{openenv_server.name}', but "
             f"run config '{run_config.name}' lists the project's own version of tools the "
-            f"OpenEnv serves: {', '.join(clashes)}. List the OpenEnv's tools "
-            f"({build_openenv_tool_id(openenv.id, '<tool_name>')}) instead, or use an "
+            f"OpenEnv server serves: {', '.join(clashes)}. List the OpenEnv server's tools "
+            f"({build_openenv_tool_id(openenv_server.id, '<tool_name>')}) instead, or use an "
             "input without an openenv_reset to run against the project tools."
         )
 
@@ -875,7 +879,7 @@ class EvalRunner:
         run_configs = self.run_configs or []
         mismatched: dict[tuple[int, _OpenEnvToolMismatch], list[str]] = {}
         # An ordered set per environment: several run configs can name one item.
-        items_by_openenv: dict[str, dict[str, None]] = {}
+        items_by_openenv_server: dict[str, dict[str, None]] = {}
         for item in self.split.items:
             if self.item_ids is not None and item.id not in self.item_ids:
                 continue
@@ -890,23 +894,25 @@ class EvalRunner:
                 uses_openenv = bool(_openenv_tool_ids(run_config))
                 if _resolves_openenv(run_config, openenv_reset, uses_openenv):
                     assert openenv_reset is not None
-                    items_by_openenv.setdefault(openenv_reset.openenv_id, {})[
-                        str(item.id)
-                    ] = None
+                    items_by_openenv_server.setdefault(
+                        openenv_reset.openenv_server_id, {}
+                    )[str(item.id)] = None
 
         problems: list[str] = []
-        if items_by_openenv:
+        if items_by_openenv_server:
             project = self.task.parent_project()
             if project is None:
                 problems.append(_NO_PROJECT_FOR_OPENENV_MESSAGE)
             else:
-                for openenv_id, ids in sorted(items_by_openenv.items()):
+                for openenv_server_id, ids in sorted(items_by_openenv_server.items()):
                     if (
-                        OpenEnv.from_id_and_parent_path(openenv_id, project.path)
+                        OpenEnvServer.from_id_and_parent_path(
+                            openenv_server_id, project.path
+                        )
                         is None
                     ):
                         problems.append(
-                            f"{_openenv_not_found_message(openenv_id, project.id)}, and "
+                            f"{_openenv_server_not_found_message(openenv_server_id, project.id)}, and "
                             f"these items run in it: {_listed_ids(list(ids))}"
                         )
         for (index, mismatch), ids in mismatched.items():
@@ -923,19 +929,19 @@ class EvalRunner:
             elif mismatch == "stored_task_run":
                 problems.append(
                     f"Run config '{run_config.name}' lists OpenEnv tools ({tools}), but "
-                    "these items are stored task runs, which can't run in an OpenEnv: "
+                    "these items are stored task runs, which can't run in an OpenEnv server: "
                     f"{listed}. Use a run config without OpenEnv tools"
                 )
             else:
                 problems.append(
                     f"Run config '{run_config.name}' lists OpenEnv tools ({tools}), but "
-                    f"these eval inputs run in another OpenEnv: {listed}. A job runs in "
-                    "one OpenEnv: use a run config with that OpenEnv's tools, or leave "
+                    f"these eval inputs run in another OpenEnv server: {listed}. A job runs in "
+                    "one OpenEnv server: use a run config with that OpenEnv server's tools, or leave "
                     "them out with item_ids"
                 )
         if problems:
             raise ValueError(
-                "Cannot run this eval's items in their OpenEnvs. "
+                "Cannot run this eval's items in their OpenEnv servers. "
                 + " ".join(f"{problem}." for problem in problems)
             )
 
@@ -1128,7 +1134,7 @@ class EvalRunner:
             _check_project_versions_of_served_tools(
                 job.task_run_config,
                 job.item,
-                target.openenv,
+                target.openenv_server,
                 target.tools,
                 self.task.parent_project(),
             )
@@ -1228,12 +1234,12 @@ class EvalRunner:
 
         async def generate() -> TaskRun:
             episode = await target.session_manager.start_episode(
-                target.openenv, openenv_reset.reset_kwargs
+                target.openenv_server, openenv_reset.reset_kwargs
             )
             token = set_episode(
                 EpisodeContext(
                     episode=episode,
-                    openenv=target.openenv,
+                    openenv_server=target.openenv_server,
                     session_manager=target.session_manager,
                     tools=target.tools,
                 )
@@ -1252,7 +1258,7 @@ class EvalRunner:
             ended = await target.session_manager.end_episode(episode)
             if ended.final_state is None:
                 raise OpenEnvError(
-                    f"Episode {episode.episode_id} in OpenEnv '{target.openenv.name}' "
+                    f"Episode {episode.episode_id} in OpenEnv server '{target.openenv_server.name}' "
                     "ended without a final state, so its trace was not saved"
                 )
             run.openenv_episode = ended
@@ -1281,42 +1287,48 @@ class EvalRunner:
         failure is remembered for the run too, so an environment that is down or hangs
         costs one wait, not one per job. A transient failure is not: it asks the job
         runner for another attempt, which must reach the environment again."""
-        openenv_id = openenv_reset.openenv_id
-        async with self._openenv_target_locks.acquire(openenv_id):
-            cached = self._openenv_targets.get(openenv_id)
+        openenv_server_id = openenv_reset.openenv_server_id
+        async with self._openenv_target_locks.acquire(openenv_server_id):
+            cached = self._openenv_targets.get(openenv_server_id)
             if isinstance(cached, BaseException):
                 raise cached
             if cached is not None:
                 return cached
             try:
-                target = await self._load_openenv_target(openenv_id)
+                target = await self._load_openenv_target(openenv_server_id)
             except OpenEnvTransientError as e:
                 raise RetryableError(str(e)) from e
             except Exception as e:
-                self._openenv_targets[openenv_id] = e
+                self._openenv_targets[openenv_server_id] = e
                 raise
-            self._openenv_targets[openenv_id] = target
+            self._openenv_targets[openenv_server_id] = target
             return target
 
-    async def _load_openenv_target(self, openenv_id: str) -> _OpenEnvTarget:
+    async def _load_openenv_target(self, openenv_server_id: str) -> _OpenEnvTarget:
         project = self.task.parent_project()
         if project is None:
             raise ValueError(_NO_PROJECT_FOR_OPENENV_MESSAGE)
-        openenv = OpenEnv.from_id_and_parent_path(openenv_id, project.path)
-        if openenv is None:
-            raise ValueError(_openenv_not_found_message(openenv_id, project.id))
+        openenv_server = OpenEnvServer.from_id_and_parent_path(
+            openenv_server_id, project.path
+        )
+        if openenv_server is None:
+            raise ValueError(
+                _openenv_server_not_found_message(openenv_server_id, project.id)
+            )
         session_manager = (
             self._openenv_session_manager_override or shared_session_manager()
         )
-        await session_manager.refresh(openenv)
-        tools = {tool.name: tool for tool in await session_manager.list_tools(openenv)}
+        await session_manager.refresh(openenv_server)
+        tools = {
+            tool.name: tool for tool in await session_manager.list_tools(openenv_server)
+        }
         return _OpenEnvTarget(
-            openenv=openenv,
+            openenv_server=openenv_server,
             session_manager=session_manager,
             tools=tools,
             # Lives on a server, not in the project, so the trace key carries it: a
             # bump must not reuse traces made against the old code.
-            openenv_version=await session_manager.openenv_version(openenv),
+            openenv_version=await session_manager.openenv_version(openenv_server),
         )
 
     def _single_turn_generation(

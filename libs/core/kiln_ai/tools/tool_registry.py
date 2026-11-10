@@ -1,4 +1,4 @@
-from kiln_ai.datamodel.openenv import OpenEnv
+from kiln_ai.datamodel.openenv import OpenEnvServer
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.task import Task
@@ -43,11 +43,11 @@ def tool_from_id_and_project(
     This is the core resolution function. ``tool_from_id`` is a thin
     wrapper that derives the project from the task.
 
-    An OpenEnv tool id (`kiln_tool::openenv::<openenv_id>::<tool_name>`)
-    resolves to the tool the OpenEnv's environment serves, and only while an episode of
-    that OpenEnv is active (set by the eval runner for one job). Project tool ids resolve
+    An OpenEnv tool id (`kiln_tool::openenv::<openenv_server_id>::<tool_name>`)
+    resolves to the tool the OpenEnv server's environment serves, and only while an episode of
+    that OpenEnv server is active (set by the eval runner for one job). Project tool ids resolve
     to the project tool whether or not an episode is active: a run config chooses the
-    OpenEnv's tools by listing their ids, never by substitution.
+    OpenEnv server's tools by listing their ids, never by substitution.
     """
     if tool_id.startswith(OPENENV_TOOL_ID_PREFIX):
         return _openenv_tool(tool_id, get_episode())
@@ -57,19 +57,19 @@ def tool_from_id_and_project(
 def _openenv_tool(
     tool_id: str, episode_ctx: EpisodeContext | None
 ) -> KilnToolInterface:
-    """The tool an OpenEnv's environment serves under *tool_name*. Only meaningful
-    while an episode of that OpenEnv is active."""
-    openenv_id, tool_name = openenv_and_tool_name_from_id(tool_id)
-    if episode_ctx is None or episode_ctx.openenv.id != openenv_id:
+    """The tool an OpenEnv server's environment serves under *tool_name*. Only meaningful
+    while an episode of that OpenEnv server is active."""
+    openenv_server_id, tool_name = openenv_and_tool_name_from_id(tool_id)
+    if episode_ctx is None or episode_ctx.openenv_server.id != openenv_server_id:
         raise ValueError(
             f"OpenEnv tool {tool_id} can only be used while an episode of "
-            f"OpenEnv {openenv_id} is active: run it from an eval whose inputs carry an "
-            "openenv_reset naming that OpenEnv."
+            f"OpenEnv server {openenv_server_id} is active: run it from an eval whose inputs carry an "
+            "openenv_reset naming that OpenEnv server."
         )
     served_tool = episode_ctx.tools.get(tool_name)
     if served_tool is None:
         raise ValueError(
-            f"OpenEnv '{episode_ctx.openenv.name}' does not serve a tool "
+            f"OpenEnv server '{episode_ctx.openenv_server.name}' does not serve a tool "
             f"named '{tool_name}' (for {tool_id}); it serves "
             f"{sorted(episode_ctx.tools)}"
         )
@@ -251,8 +251,8 @@ async def validate_unique_allowlist_tool_names(
     call-time ambiguity error remains the backstop — for those, and because
     tools can be renamed after the allowlist is saved.
 
-    OpenEnv tools resolve only inside an episode of their OpenEnv, so they are not
-    resolved here: their name is the last segment of their id, and their OpenEnv
+    OpenEnv tools resolve only inside an episode of their OpenEnv server, so they are not
+    resolved here: their name is the last segment of their id, and their OpenEnv server
     must exist in *project*. Whether the environment serves the tool is checked at
     runtime, inside the episode.
     """
@@ -277,20 +277,20 @@ async def validate_unique_allowlist_tool_names(
             "code, so each tool in the allowlist must have a unique name."
         )
 
-    openenv_ids = {
+    openenv_server_ids = {
         openenv_and_tool_name_from_id(t)[0]
         for t in tool_allowlist
         if t.startswith(OPENENV_TOOL_ID_PREFIX)
     }
-    if openenv_ids:
-        found = OpenEnv.from_ids_and_parent_path(
-            openenv_ids, project.path, readonly=True
+    if openenv_server_ids:
+        found = OpenEnvServer.from_ids_and_parent_path(
+            openenv_server_ids, project.path, readonly=True
         )
-        missing = sorted(openenv_ids - set(found))
+        missing = sorted(openenv_server_ids - set(found))
         if missing:
             raise ValueError(
-                f"OpenEnv(s) {', '.join(missing)} referenced by OpenEnv tools in the "
-                f"tool_allowlist not found in project {project.id}. Create the OpenEnv "
+                f"OpenEnv server(s) {', '.join(missing)} referenced by OpenEnv tools in the "
+                f"tool_allowlist not found in project {project.id}. Create the OpenEnv server "
                 "first, or remove its tools from the tool_allowlist."
             )
 

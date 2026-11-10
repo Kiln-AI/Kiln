@@ -11,7 +11,7 @@ from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.extraction import Document, ExtractorConfig
 from kiln_ai.datamodel.memory import Memory
-from kiln_ai.datamodel.openenv import OpenEnv
+from kiln_ai.datamodel.openenv import OpenEnvServer
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.reranker import RerankerConfig
 from kiln_ai.datamodel.skill import Skill
@@ -36,7 +36,7 @@ class Project(
         "memories": ParentOfRelationship(
             model=Memory, filesystem_name="assistant_memory"
         ),
-        "openenvs": OpenEnv,
+        "openenv_servers": OpenEnvServer,
     },
 ):
     """
@@ -89,5 +89,5 @@ class Project(
     def memories(self, readonly: bool = False) -> list[Memory]:
         return super().memories(readonly=readonly)  # type: ignore
 
-    def openenvs(self, readonly: bool = False) -> list[OpenEnv]:
-        return super().openenvs(readonly=readonly)  # type: ignore  # pragma: no cover
+    def openenv_servers(self, readonly: bool = False) -> list[OpenEnvServer]:
+        return super().openenv_servers(readonly=readonly)  # type: ignore  # pragma: no cover
