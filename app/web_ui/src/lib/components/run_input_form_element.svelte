@@ -9,6 +9,7 @@
   } from "$lib/utils/missing_required_property_error"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import RunInputArrayElement from "./run_input_array_element.svelte"
+  import { field_value_from_json, json_property } from "./run_input_form_value"
 
   export let property: SchemaModelProperty
   let value: string = ""
@@ -282,6 +283,21 @@
     }
 
     throw new Error("Unknown property type: " + property.type + " at " + path)
+  }
+
+  /** Fill this field, and every field under it, from a JSON value. */
+  export async function set_value(json_value: unknown): Promise<void> {
+    if (arrayComponent) {
+      await arrayComponent.set_array_value(json_value)
+    } else if (isObjectProperty(property) && !isGenericObject(property)) {
+      await Promise.all(
+        Object.entries(nestedComponents).map(([id, nestedComponent]) =>
+          nestedComponent.set_value(json_property(json_value, id)),
+        ),
+      )
+    } else {
+      value = field_value_from_json(property, json_value)
+    }
   }
 
   function getInfoDescription(

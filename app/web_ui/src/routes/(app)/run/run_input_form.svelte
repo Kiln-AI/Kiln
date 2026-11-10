@@ -25,7 +25,10 @@
   $: void (plaintext_input, onInputChange?.())
 
   // Store ref to the root form element
-  let rootFormElement: { buildValue(): unknown } | null = null
+  let rootFormElement: {
+    buildValue(): unknown
+    set_value(value: unknown): Promise<void>
+  } | null = null
 
   // Key to force component remount when needed
   let formKey = 0
@@ -54,6 +57,13 @@
     plaintext_input = ""
     // resets the form to its initial state
     formKey += 1
+  }
+
+  // Fill the structured form from a JSON value matching input_schema. No-op in
+  // plaintext mode.
+  export async function set_structured_input_data(value: unknown) {
+    if (!input_schema) return
+    await rootFormElement?.set_value(value)
   }
 
   // Set the plaintext input value. No-op when the form is in structured mode

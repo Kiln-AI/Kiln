@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte"
   import FormList from "$lib/utils/form_list.svelte"
   import RunInputFormElement from "./run_input_form_element.svelte"
   import RunInputFormElementRefCapture from "./run_input_form_element_ref_capture.svelte"
@@ -12,6 +13,18 @@
   let content: unknown[] = []
 
   let arrayComponents = new Map<unknown, RunInputFormElement>()
+
+  /** Replace the items with one per element of a JSON array, each filled from it. */
+  export async function set_array_value(json_value: unknown): Promise<void> {
+    const items = Array.isArray(json_value) ? json_value : []
+    content = items.map(() => Math.random().toString(36))
+    await tick()
+    await Promise.all(
+      content.map((item, index) =>
+        arrayComponents.get(item)?.set_value(items[index]),
+      ),
+    )
+  }
 
   export function buildArrayValue(): unknown[] | undefined {
     if (content.length === 0) {
