@@ -5,19 +5,7 @@ import {
   parse_reset_arguments,
 } from "$lib/utils/openenv"
 
-export async function load_openenv_server(
-  project_id: string,
-  openenv_server_id: string,
-): Promise<OpenEnvServer> {
-  const { data, error } = await client.GET(
-    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}",
-    { params: { path: { project_id, openenv_server_id } } },
-  )
-  if (error) {
-    throw error
-  }
-  return data
-}
+export { load_openenv_server } from "$lib/api/openenv_server_api"
 
 export async function load_openenv_server_tools(
   project_id: string,

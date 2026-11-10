@@ -1,4 +1,9 @@
-import type { NamedResetKwargs } from "$lib/types"
+import type { OptionGroup } from "$lib/ui/fancy_select_types"
+import type {
+  OpenEnvServer,
+  NamedResetKwargs,
+  RunOpenEnvServer,
+} from "$lib/types"
 
 // There's no OpenEnv docs page yet, so this links the tools docs.
 export const OPENENV_DOCS_URL = "https://docs.kiln.tech/docs/tools-and-mcp"
@@ -52,4 +57,85 @@ export function parse_reset_arguments(text: string): ParsedResetArguments {
     return { reset_kwargs: null, error: RESET_ARGUMENTS_NOT_OBJECT }
   }
   return { reset_kwargs: parsed as ResetKwargs, error: null }
+}
+
+export const FORK_DISABLED_WITH_OPENENV =
+  "This conversation uses an OpenEnv, so it can only continue from the latest turn."
+
+const OPENENV_TOOL_ID_PREFIX = "kiln_tool::openenv::"
+
+export function is_openenv_tool_id(tool_id: string): boolean {
+  return tool_id.startsWith(OPENENV_TOOL_ID_PREFIX)
+}
+
+export function openenv_server_detail_link(
+  project_id: string,
+  openenv_server_id: string,
+): string {
+  return `/tools/${project_id}/openenv_servers/${openenv_server_id}`
+}
+
+/** What the run page's Environment Options field shows for the selected tools. */
+export type EnvironmentFieldState =
+  | { kind: "hidden" }
+  | { kind: "error"; message: string }
+  | { kind: "empty"; openenv_server: OpenEnvServer }
+  | { kind: "options"; openenv_server: OpenEnvServer }
+
+export function environment_field_state(
+  run_openenv_server: RunOpenEnvServer,
+): EnvironmentFieldState {
+  if (run_openenv_server.error) {
+    return { kind: "error", message: run_openenv_server.error }
+  }
+  const openenv_server = run_openenv_server.openenv_server
+  if (!openenv_server) {
+    return { kind: "hidden" }
+  }
+  if (!openenv_server.named_reset_kwargs?.length) {
+    return { kind: "empty", openenv_server }
+  }
+  return { kind: "options", openenv_server }
+}
+
+/** One option per Environment Option, in order, valued by its unique name. */
+export function environment_option_groups(
+  openenv_server: OpenEnvServer,
+): OptionGroup[] {
+  return [
+    {
+      options: (openenv_server.named_reset_kwargs ?? []).map((option) => ({
+        label: option.name,
+        value: option.name,
+        description: format_reset_arguments(option.reset_kwargs),
+        description_preformatted: true,
+      })),
+    },
+  ]
+}
+
+/**
+ * The option to select after the environment is looked up again: the same
+ * name if it's still there, otherwise the first (the default), or null when
+ * there are none.
+ */
+export function selected_option_after_change(
+  openenv_server: OpenEnvServer,
+  previous_name: string | null,
+): string | null {
+  const names = (openenv_server.named_reset_kwargs ?? []).map((o) => o.name)
+  if (previous_name !== null && names.includes(previous_name)) {
+    return previous_name
+  }
+  return names[0] ?? null
+}
+
+export function reset_kwargs_for(
+  openenv_server: OpenEnvServer,
+  option_name: string | null,
+): ResetKwargs | null {
+  const option = openenv_server.named_reset_kwargs?.find(
+    (o) => o.name === option_name,
+  )
+  return option ? option.reset_kwargs ?? {} : null
 }
