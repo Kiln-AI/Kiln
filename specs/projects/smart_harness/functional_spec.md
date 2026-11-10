@@ -8,6 +8,16 @@ status: draft
 
 Inputs: [project overview](project_overview.md), [research on routing and decision layers](research/routing_and_decision_layers/summary.md), [how the harness works today](research/current_harness/summary.md), [probe of harness-initiated tool calls](research/harness_tool_call_probe/).
 
+## Goals (proposed, not yet confirmed)
+
+The overview lists mechanisms but does not say what "better" means. Proposed:
+
+1. A Kiln agent spends less time and money per turn by handling known situations without the main model, or with a cheaper setting, and quality as measured by the task's evals does not drop.
+2. Every such shortcut is data on the run config. It shows in the UI, it can be compared by evals against the same run config without it, and the optimizer can change it.
+3. Every decision a shortcut makes is recorded on the run, so it can be reviewed and turned into eval data.
+
+Not goals: a general workflow engine, or a replacement for the agent loop.
+
 ## Decision log
 
 | # | Topic | Decision | Status |
