@@ -53,6 +53,9 @@
   export let empty_state_message: string = "No options available"
   export let empty_state_subtitle: string | null = null
   export let empty_state_link: string | null = null
+  // Passed to FancySelect: names a selected value that has no option.
+  export let unlisted_value_label: ((value: unknown) => string | null) | null =
+    null
   export let inline_action: InlineAction | null = null
   export let aria_label: string | null = null
   // The id of an element elsewhere on the page that describes this field — a
@@ -324,6 +327,7 @@
         {empty_state_message}
         {empty_state_subtitle}
         {empty_state_link}
+        {unlisted_value_label}
       />
     {:else if inputType === "radio"}
       <div

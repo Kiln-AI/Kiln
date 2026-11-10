@@ -18,6 +18,11 @@
   export let multi_select: boolean = false
   export let disabled: boolean = false
   export let error_outline: boolean = false
+  // Names a selected value that has no option, for a picker that keeps a
+  // selection it can't offer. Returning null, or leaving this unset, shows
+  // empty_label as before.
+  export let unlisted_value_label: ((value: unknown) => string | null) | null =
+    null
 
   // Add this variable to track scrollability
   let isMenuScrollable = false
@@ -442,7 +447,10 @@
     selected_values: unknown[],
     options: OptionGroup[],
     empty_label: string,
+    unlisted_value_label: ((value: unknown) => string | null) | null,
   ) {
+    const unlisted_label = (value: unknown) =>
+      unlisted_value_label?.(value) ?? empty_label
     if (multi_select && selected_values.length > 1) {
       return (
         "" +
@@ -454,7 +462,7 @@
             const selectedOption = flatOptions.find(
               (item) => item.value === value,
             )
-            return selectedOption ? selectedOption.label : empty_label
+            return selectedOption ? selectedOption.label : unlisted_label(value)
           })
           .join(", ")
       )
@@ -474,7 +482,9 @@
     const selectedOption = flatOptions.find(
       (item) => item.value === effective_selected,
     )
-    return selectedOption ? selectedOption.label : empty_label
+    return selectedOption
+      ? selectedOption.label
+      : unlisted_label(effective_selected)
   }
 
   function containerKeyDown(event: KeyboardEvent) {
@@ -574,7 +584,13 @@
     on:keydown={containerKeyDown}
   >
     <span class="truncate">
-      {selectedLabel(selected, selected_values, options, empty_label)}
+      {selectedLabel(
+        selected,
+        selected_values,
+        options,
+        empty_label,
+        unlisted_value_label,
+      )}
     </span>
   </div>
 
