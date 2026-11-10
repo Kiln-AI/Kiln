@@ -1,7 +1,7 @@
 """Tools served by an episode.
 
-A run config lists an environment's tools by id, ``kiln_tool::world::<world_id>::
-<tool_name>``. While an episode of that world is active the registry resolves such an
+A run config lists an environment's tools by id, ``kiln_tool::openenv::<openenv_server_id>::
+<tool_name>``. While an episode of that environment is active the registry resolves such an
 id to ``OpenEnvToolProxy``: ``toolcall_definition()`` is what the environment reported
 for the tool, and ``run()`` calls it through ``step(CallToolAction)`` on the episode's
 session. Nothing is stored for these tools on disk; the environment is the source of
@@ -13,8 +13,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from kiln_ai.datamodel.openenv import OpenEnvTool
 from kiln_ai.datamodel.tool_id import ToolId
-from kiln_ai.datamodel.world import OpenEnvTool
 from kiln_ai.run_context import EpisodeContext
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
@@ -38,7 +38,7 @@ def openenv_toolcall_definition(tool: OpenEnvTool) -> ToolCallDefinition:
 
 
 class OpenEnvToolProxy(KilnToolInterface):
-    """One of a world's tools, called on the live session of the episode in `context`.
+    """One of an environment's tools, called on the live session of the episode in `context`.
     Its name, description and schema are whatever the environment reported."""
 
     def __init__(
@@ -52,7 +52,8 @@ class OpenEnvToolProxy(KilnToolInterface):
         self._ctx = context
 
     @property
-    def env_tool(self) -> OpenEnvTool:
+    def openenv_tool(self) -> OpenEnvTool:
+        """The tool as the environment described it."""
         return self._tool
 
     async def id(self) -> ToolId:

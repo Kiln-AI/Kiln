@@ -1,6 +1,6 @@
 {
   "method": "get",
-  "path": "/api/projects/{project_id}/worlds/{world_id}/tools",
+  "path": "/api/projects/{project_id}/openenv_servers",
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
