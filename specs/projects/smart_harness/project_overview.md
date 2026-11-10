@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Kiln Smart Harness

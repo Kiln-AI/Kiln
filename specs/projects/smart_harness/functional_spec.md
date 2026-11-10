@@ -1,10 +1,10 @@
 ---
-status: draft
+status: complete
 ---
 
 # Functional Spec: Kiln Smart Harness
 
-> Decisions are made in chat and recorded here with their number in the [decision log](#decision-log). Nothing in this file is a proposal. Two parts are not designed in this file: [the interface](#6-the-interface-designed-at-architecture) and [the trace](#8-what-is-recorded). What is still unanswered is listed under [open items](#12-open-items).
+> Decisions are made in chat and recorded here with their number in the [decision log](#decision-log). Nothing in this file is a proposal. Two parts are designed at architecture, not in this file: [the interface](#6-the-interface-designed-at-architecture) and [the trace](#8-what-is-recorded). Items that carry over to architecture are listed under [open items](#12-open-items).
 
 Inputs: [project overview](project_overview.md), [research on routing and decision layers](research/routing_and_decision_layers/summary.md), [how the harness works today](research/current_harness/summary.md), [probe of harness-initiated tool calls](research/harness_tool_call_probe/summary.md), [middleware-style code in the code sandbox](research/code_sandbox_middleware/summary.md).
 
@@ -167,14 +167,14 @@ The interface is not designed yet, but the cases above need at least this:
 
 ### 7.7 Cost and latency
 
-Cost and latency must be correct (decision 18).
+Cost and latency must be correct (decisions 18 and 21).
 
 Today neither is. A run's cost covers only the main model's own calls, so a model call made by a code tool or by a subagent is not included. A run's latency is the time spent waiting on the main model, so a turn answered without the model would show zero.
 
-- **Cost.** A turn's cost is the main model's calls plus every model call its middleware made, inline or through a saved task.
-- **Code tools too.** The same rule applies to code tools: a model call a code tool makes counts toward the turn that called the tool. Code tools and middleware share the sandbox, so this is one fix.
+- **Cost is reported as line items.** The cost Kiln reports today keeps its meaning: the main model's own calls. Beside it, a turn reports three more: the model calls its middleware made, the model calls its code tools made, and the cost of the subagents it called. Old runs keep their numbers and their meaning.
+- **A total.** A turn also reports the sum of the line items. Comparisons between run configs use the total, so a stack that answers with a cheap model call is not shown as free.
+- **Precedent.** Kiln already records one cost beside the main one: the synthetic user's spend, kept separate so the main number stays assistant-only.
 - **Latency.** The time middleware takes counts toward the turn, whether or not it calls a model. A turn reports the time spent in middleware next to the time spent waiting on the main model, and a total of the two.
-- **Shown separately.** The middleware share of cost and of time is also shown by itself, so a reader can see what the stack added and what it saved.
 
 ### 7.8 Probabilities from decision models
 
@@ -196,7 +196,7 @@ The project owner set three requirements for the trace:
 2. It works as the history for the next turn on any model.
 3. It shows when there was a settings override, a code-based decision, and so on.
 
-The design of the trace is a large part of this project and has not been started. It is not designed in this draft.
+The design of the trace is a large part of this project. It is designed at architecture together with the interface, because what a middleware returns and what is recorded are two sides of one design (decision 22). The read-only view in the app depends on it, so the order is: interface and trace, then the UI design step, then the rest of architecture.
 
 ## 9. Storage and API
 
@@ -231,9 +231,10 @@ The app gets a read-only view (decision 14). Screens are designed in the UI desi
 
 ## 12. Open items
 
+Nothing here blocks this spec. Each item carries over to architecture or to other work.
+
 - **The interface**, with hook points and ordering. Designed at architecture against [section 6](#6-the-interface-designed-at-architecture).
-- **The trace.** Not started ([section 8](#8-what-is-recorded)). When it is designed is not yet agreed.
-- **Subagent cost.** A subagent's model calls are recorded on the subagent's own run today and are not in the calling turn's cost. Whether they should count toward the calling turn, as middleware and code tool calls now do, is unanswered.
+- **The trace.** Designed at architecture with the interface ([section 8](#8-what-is-recorded)).
 - **Harness-run tool calls on providers' own APIs.** The probe ran through OpenRouter only. Docs say Google's own Gemini 3 API and older Claude models with a manual thinking budget reject a tool call the model did not write, and that LiteLLM patches the Gemini case. Checking needs direct Anthropic, Google and OpenAI keys. One model, `thinkingmachines/inkling-small`, stopped reasoning after a harness-written call.
 - **The decision-model interface.** Outside this project. Case 8 (thresholds on probabilities) waits on it.
 - **The sandbox's limit of 16 runs at once.** An architecture question ([7.9](#79-limits)).
@@ -259,6 +260,8 @@ The app gets a read-only view (decision 14). Screens are designed in the UI desi
 | 15 | Cases the interface is judged against | The 27 cases in section 6.2. Sixteen must work in the first version. The rest are checked in design whether or not they ship first. | **Decided** (2026-11-10). |
 | 16 | How the spec is settled | In chat. The spec file records decisions and carries nothing marked as proposed. | **Decided** (2026-11-10). |
 | 17 | Changing a middleware's code | Not allowed after creation. A change is a new middleware. Standard for Kiln: immutable, for history. | **Decided** (2026-11-10). |
-| 18 | Cost and latency | Both must be correct. A turn's cost includes every model call its middleware made, and the same applies to model calls made by code tools. A turn's latency includes the time middleware takes, whether or not it calls a model, reported next to main-model time with a total. The middleware share is also shown separately. | **Decided** (2026-11-10). Subagent cost is an open item. |
+| 18 | Cost and latency | Both must be correct. A turn's cost includes every model call its middleware made, and the same applies to model calls made by code tools. A turn's latency includes the time middleware takes, whether or not it calls a model, reported next to main-model time with a total. The middleware share is also shown separately. | **Decided** (2026-11-10). How cost is reported is decision 21. |
 | 19 | Remaining behavior in sections 2, 3, 6.1, 7, 9 and 11 | Accepted as written in the first draft: the goals; a paused and resumed turn is one turn; middleware runs on every run that uses the run config, in both streaming and non-streaming paths, on agent run configs only; a reply for a structured task must match its schema; harness-run tool calls are validated and run like model-requested ones, including client-run tools; an unrunnable override fails the turn; a failed turn names the middleware; each middleware has a time limit; storage and API follow code tools, behind the same trust check; a middleware can be unit-tested with the existing pytest fixture; no in-process variant. | **Decided** (2026-11-10). |
 | 20 | Design quality | The design should be great, including for features that do not ship in the first version. The later cases are checked in design. If the design is better for covering them, good. If there is a tradeoff, it is discussed. | **Decided** (2026-11-10). |
+| 21 | How cost is reported | As line items, so no existing number changes meaning. The cost Kiln reports today stays the main model's own calls. Beside it: middleware model calls, code tool model calls, and subagent cost. A total sums them, and comparisons between run configs use the total. | **Decided** (2026-11-10). |
+| 22 | When the trace is designed | At architecture, together with the interface. Then the UI design step, then the rest of architecture. | **Decided** (2026-11-10). |
