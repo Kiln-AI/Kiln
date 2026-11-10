@@ -3050,6 +3050,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Environment Version
+         * @description The name@version the environment's OpenEnv server reports, read fresh from the running server at url.
+         */
+        get: operations["get_openenv_server_version_api_projects__project_id__openenv_servers__openenv_server_id__version_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/run_openenv_server": {
         parameters: {
             query?: never;
@@ -10821,6 +10841,17 @@ export interface components {
              * @description Named reset kwargs a run can start the environment with, in order. The first is the default. Names must be unique.
              */
             named_reset_kwargs?: components["schemas"]["NamedResetKwargsRequest"][] | null;
+        };
+        /**
+         * OpenEnvServerVersionResponse
+         * @description What the environment's OpenEnv server reports about itself.
+         */
+        OpenEnvServerVersionResponse: {
+            /**
+             * Openenv Version
+             * @description The name@version the server reports, or its name alone when it reports no version.
+             */
+            openenv_version: string;
         };
         /**
          * OpenEnvToolResponse
@@ -22163,6 +22194,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpenEnvToolResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_openenv_server_version_api_projects__project_id__openenv_servers__openenv_server_id__version_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the environment. */
+                openenv_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenEnvServerVersionResponse"];
                 };
             };
             /** @description Validation Error */

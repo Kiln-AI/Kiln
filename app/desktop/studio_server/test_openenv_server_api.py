@@ -371,6 +371,55 @@ class TestTools:
             assert server.openenv_version == f"{ENV_NAME}@{ENV_VERSION}"
 
 
+class TestVersion:
+    def test_reports_server_version(self, client, session_manager):
+        with serve_in_thread() as base_url:
+            r = client.post(
+                "/api/projects/p1/openenv_servers",
+                json={"name": "Live", "url": base_url},
+            )
+            openenv_server_id = r.json()["id"]
+            r = client.get(
+                f"/api/projects/p1/openenv_servers/{openenv_server_id}/version"
+            )
+            assert r.status_code == 200, r.text
+            assert r.json() == {"openenv_version": f"{ENV_NAME}@{ENV_VERSION}"}
+
+    def test_rereads_version_after_server_restart(self, client, session_manager):
+        port = free_port()
+        r = client.post(
+            "/api/projects/p1/openenv_servers",
+            json={"name": "Live", "url": f"http://127.0.0.1:{port}"},
+        )
+        openenv_server_id = r.json()["id"]
+        url = f"/api/projects/p1/openenv_servers/{openenv_server_id}/version"
+        with serve_in_thread(port=port, version="1.0.0"):
+            assert client.get(url).json()["openenv_version"] == f"{ENV_NAME}@1.0.0"
+        with serve_in_thread(port=port, version="2.0.0"):
+            assert client.get(url).json()["openenv_version"] == f"{ENV_NAME}@2.0.0"
+
+    def test_unreachable_url_is_502(self, client, session_manager):
+        r = client.post(
+            "/api/projects/p1/openenv_servers",
+            json={"name": "Down", "url": f"http://127.0.0.1:{free_port()}"},
+        )
+        openenv_server_id = r.json()["id"]
+        r = client.get(f"/api/projects/p1/openenv_servers/{openenv_server_id}/version")
+        assert r.status_code == 502
+        assert "/metadata" in r.json()["message"]
+
+    def test_no_url_is_502(self, client, session_manager):
+        r = client.post("/api/projects/p1/openenv_servers", json={"name": "Empty"})
+        openenv_server_id = r.json()["id"]
+        r = client.get(f"/api/projects/p1/openenv_servers/{openenv_server_id}/version")
+        assert r.status_code == 502
+        assert "no url" in r.json()["message"]
+
+    def test_missing_openenv_server_is_404(self, client):
+        r = client.get("/api/projects/p1/openenv_servers/nope/version")
+        assert r.status_code == 404
+
+
 class TestRunOpenEnvServer:
     @pytest.fixture
     def task(self, project):

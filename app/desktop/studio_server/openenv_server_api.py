@@ -119,6 +119,14 @@ class OpenEnvToolResponse(BaseModel):
     )
 
 
+class OpenEnvServerVersionResponse(BaseModel):
+    """What the environment's OpenEnv server reports about itself."""
+
+    openenv_version: str = Field(
+        description="The name@version the server reports, or its name alone when it reports no version."
+    )
+
+
 class RunOpenEnvServerRequest(BaseModel):
     """The tools a run would use."""
 
@@ -362,6 +370,30 @@ def connect_openenv_server_api(app: FastAPI):
             )
             for tool in tools
         ]
+
+    @app.get(
+        "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/version",
+        summary="Get Environment Version",
+        description="The name@version the environment's OpenEnv server reports, read fresh from the running server at url.",
+        tags=["OpenEnv Servers"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_openenv_server_version(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        openenv_server_id: Annotated[
+            str, Path(description="The unique identifier of the environment.")
+        ],
+    ) -> OpenEnvServerVersionResponse:
+        openenv_server = _openenv_server_from_id(project_id, openenv_server_id)
+        session_manager = shared_session_manager()
+        try:
+            await session_manager.refresh(openenv_server)
+            openenv_version = await session_manager.openenv_version(openenv_server)
+        except (OpenEnvError, ValueError) as e:
+            raise HTTPException(status_code=502, detail=str(e))
+        return OpenEnvServerVersionResponse(openenv_version=openenv_version)
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/run_openenv_server",
