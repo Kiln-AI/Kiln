@@ -24,6 +24,7 @@
   import ErrorWithTraceComponent from "$lib/ui/error_with_trace.svelte"
   import type { ErrorWithTrace } from "$lib/types"
   import { is_error_with_trace } from "./error_with_trace_detection"
+  import { build_run_request } from "./run_request"
 
   $: agentInfo.set({
     name: "Run",
@@ -143,6 +144,14 @@
         selected_run_config_id && selected_run_config_id !== "custom"
           ? selected_run_config_id
           : null
+      const body = await build_run_request({
+        run_config_properties,
+        plaintext_input: input_form.get_plaintext_input_data(),
+        // @ts-expect-error - let the server verify the type. TS isn't ideal for runtime type checking.
+        structured_input: input_form.get_structured_input_data(),
+        task_run_config_id,
+        get_openenv_reset_kwargs: run_config_component.get_openenv_reset_kwargs,
+      })
       const { data, error: fetch_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/run",
         {
@@ -152,14 +161,7 @@
               task_id: task_id,
             },
           },
-          body: {
-            run_config_properties: run_config_properties,
-            plaintext_input: input_form.get_plaintext_input_data(),
-            // @ts-expect-error - let the server verify the type. TS isn't ideal for runtime type checking.
-            structured_input: input_form.get_structured_input_data(),
-            tags: ["manual_run"],
-            task_run_config_id: task_run_config_id,
-          },
+          body,
         },
       )
       if (fetch_error) {
@@ -354,6 +356,7 @@
             {pending_tool_id}
             {pending_run_config_id}
             show_name_field={false}
+            show_environment_options={true}
           />
         </div>
       </div>
@@ -400,6 +403,7 @@
               {pending_tool_id}
               {pending_run_config_id}
               show_name_field={false}
+              show_environment_options={true}
             />
           </div>
         {/if}

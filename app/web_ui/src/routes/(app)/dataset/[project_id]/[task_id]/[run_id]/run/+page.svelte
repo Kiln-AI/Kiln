@@ -59,6 +59,7 @@
   import { isKilnAgentRunConfig, type TaskRunConfig } from "$lib/types"
   import Warning from "$lib/ui/warning.svelte"
   import RunSidebar from "$lib/ui/run_sidebar.svelte"
+  import { FORK_DISABLED_WITH_OPENENV } from "$lib/utils/openenv"
   import {
     compute_forkable_run_ids,
     fork_target_from_assistant_block,
@@ -978,6 +979,9 @@
                     truncate_at_trace_index={fork_target?.trace_index ??
                       fork_send_trace_index}
                     {on_fork}
+                    fork_disabled_reason={run.openenv_episode
+                      ? FORK_DISABLED_WITH_OPENENV
+                      : null}
                     show_per_message_usage={task?.turn_mode === "multiturn"}
                   />
                   {#if awaiting_response}
@@ -1013,6 +1017,7 @@
                       parent_task_run_id={run.id ?? null}
                       run_config_component={multiturn_run_config_component}
                       busy={awaiting_response}
+                      warning_error_statuses={run.openenv_episode ? [409] : []}
                       on_success={handle_send}
                       on_send_start={handle_send_start}
                       on_send_settled={handle_send_settled}
