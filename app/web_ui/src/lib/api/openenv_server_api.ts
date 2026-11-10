@@ -15,6 +15,21 @@ export async function load_openenv_server(
   return data
 }
 
+/** The JSON schema the OpenEnv server publishes for its reset arguments, or null. */
+export async function load_openenv_server_reset_schema(
+  project_id: string,
+  openenv_server_id: string,
+): Promise<Record<string, unknown> | null> {
+  const { data, error } = await client.GET(
+    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/reset_schema",
+    { params: { path: { project_id, openenv_server_id } } },
+  )
+  if (error) {
+    throw error
+  }
+  return data.reset_schema ?? null
+}
+
 /** The one OpenEnv a run with these tools would use, or why it can't run. */
 export async function lookup_run_openenv_server(
   project_id: string,

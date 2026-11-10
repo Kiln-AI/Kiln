@@ -371,6 +371,51 @@ class TestTools:
             assert server.openenv_version == f"{ENV_NAME}@{ENV_VERSION}"
 
 
+RESET_SCHEMA = {
+    "type": "object",
+    "properties": {"company": {"type": "string", "enum": ["acme", "beta"]}},
+}
+
+
+class TestResetSchema:
+    def _url(self, openenv_server_id: str) -> str:
+        return f"/api/projects/p1/openenv_servers/{openenv_server_id}/reset_schema"
+
+    def _create(self, client, url: str | None) -> str:
+        body = {"name": "Live"} if url is None else {"name": "Live", "url": url}
+        r = client.post("/api/projects/p1/openenv_servers", json=body)
+        return r.json()["id"]
+
+    def test_no_url_is_400(self, client, session_manager):
+        r = client.get(self._url(self._create(client, None)))
+        assert r.status_code == 400
+        assert "no url" in r.json()["message"]
+
+    def test_unreachable_url_is_502(self, client, session_manager):
+        r = client.get(
+            self._url(self._create(client, f"http://127.0.0.1:{free_port()}"))
+        )
+        assert r.status_code == 502
+        assert "/schema" in r.json()["message"]
+
+    def test_server_without_a_schema_is_null(self, client, session_manager):
+        with serve_in_thread() as base_url:
+            r = client.get(self._url(self._create(client, base_url)))
+        assert r.status_code == 200, r.text
+        assert r.json() == {"reset_schema": None}
+
+    def test_returns_the_reset_schema(self, client, session_manager):
+        with serve_in_thread(
+            extra_routes={"/schema": {"reset": RESET_SCHEMA}}
+        ) as base_url:
+            r = client.get(self._url(self._create(client, base_url)))
+        assert r.status_code == 200, r.text
+        assert r.json() == {"reset_schema": RESET_SCHEMA}
+
+    def test_missing_openenv_server_is_404(self, client):
+        assert client.get(self._url("nope")).status_code == 404
+
+
 class TestVersion:
     def test_reports_server_version(self, client, session_manager):
         with serve_in_thread() as base_url:

@@ -345,6 +345,8 @@
 
       <EnvironmentOptionDialog
         bind:this={option_dialog}
+        {project_id}
+        {openenv_server_id}
         {options}
         save={save_options}
       />

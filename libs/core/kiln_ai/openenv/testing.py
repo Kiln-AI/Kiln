@@ -262,7 +262,10 @@ def _run_session(websocket: ServerConnection) -> None:
 
 
 def _http_routes(
-    version: str, refuse_sessions: bool, metadata: Any
+    version: str,
+    refuse_sessions: bool,
+    metadata: Any,
+    extra_routes: dict[str, Any] | None,
 ) -> Callable[[ServerConnection, Request], Response | None]:
     """Answer the plain HTTP endpoints; `/ws` falls through to the WebSocket handshake."""
     bodies: dict[str, Any] = {
@@ -270,6 +273,7 @@ def _http_routes(
         "/metadata": metadata
         if metadata is not None
         else {"name": ENV_NAME, "version": version, "description": "test env"},
+        **(extra_routes or {}),
     }
 
     def process_request(
@@ -302,15 +306,17 @@ def serve_in_thread(
     max_sessions: int | None = None,
     refuse_sessions: bool = False,
     metadata: Any = None,
+    extra_routes: dict[str, Any] | None = None,
 ) -> Iterator[str]:
     """Run the test environment on localhost in a background thread; yields its base URL.
-    `metadata` replaces the `/metadata` body."""
+    `metadata` replaces the `/metadata` body. `extra_routes` maps more paths to the
+    JSON bodies they answer."""
     port = port or free_port()
     server = serve(
         _session_handler(_Capacity(max_sessions)),
         "127.0.0.1",
         port,
-        process_request=_http_routes(version, refuse_sessions, metadata),
+        process_request=_http_routes(version, refuse_sessions, metadata, extra_routes),
         max_size=None,
     )
     thread = threading.Thread(target=server.serve_forever, daemon=True)

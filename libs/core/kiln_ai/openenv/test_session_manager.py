@@ -612,3 +612,60 @@ class TestKeepalive:
         assert seen["ping_timeout"] == session_manager_module.PING_TIMEOUT_S
         assert seen["ping_timeout"] > 20, "the library default is what we are avoiding"
         await session_manager.release(episode)
+
+
+RESET_SCHEMA = {
+    "type": "object",
+    "properties": {"company": {"type": "string", "enum": ["acme", "beta"]}},
+}
+
+
+class TestResetSchema:
+    def _server(self, project, url: str | None) -> OpenEnvServer:
+        openenv_server = OpenEnvServer(name="schema", parent=project, url=url)
+        openenv_server.save_to_file()
+        return openenv_server
+
+    @pytest.mark.parametrize(
+        "routes",
+        [
+            {"/schema": {"action": {}, "reset": RESET_SCHEMA}},
+            {
+                "/schema": {"action": {}},
+                "/seahaven/schemas": {"reset": RESET_SCHEMA},
+            },
+            {"/seahaven/schemas": {"reset": RESET_SCHEMA}},
+            {"/schema": {"reset": [1]}, "/seahaven/schemas": {"reset": RESET_SCHEMA}},
+        ],
+        ids=["schema", "seahaven_fallback", "no_schema_route", "non_object_reset"],
+    )
+    async def test_reads_the_reset_schema(self, session_manager, project, routes):
+        with serve_in_thread(extra_routes=routes) as base_url:
+            schema = await session_manager.reset_schema(self._server(project, base_url))
+        assert schema == RESET_SCHEMA
+
+    @pytest.mark.parametrize(
+        "routes",
+        [
+            {},
+            {"/schema": {"action": {}}, "/seahaven/schemas": {"action": {}}},
+            {"/schema": ["not", "an", "object"]},
+            {"/schema": {"reset": "nope"}, "/seahaven/schemas": {"reset": None}},
+        ],
+        ids=["neither_route", "no_reset_key", "non_object_body", "non_object_resets"],
+    )
+    async def test_no_schema_is_none(self, session_manager, project, routes):
+        with serve_in_thread(extra_routes=routes) as base_url:
+            assert (
+                await session_manager.reset_schema(self._server(project, base_url))
+                is None
+            )
+
+    async def test_unreachable_url_is_an_error(self, session_manager, project):
+        openenv_server = self._server(project, f"http://127.0.0.1:{free_port()}")
+        with pytest.raises(OpenEnvError, match="did not answer /schema"):
+            await session_manager.reset_schema(openenv_server)
+
+    async def test_no_url_is_an_error(self, session_manager, project):
+        with pytest.raises(OpenEnvError, match="has no url"):
+            await session_manager.reset_schema(self._server(project, None))

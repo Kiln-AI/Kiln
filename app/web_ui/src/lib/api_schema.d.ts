@@ -3050,6 +3050,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/reset_schema": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get OpenEnv Server Reset Schema
+         * @description The JSON schema the OpenEnv server publishes for its reset arguments, read fresh from the running server at url. Null when it publishes none.
+         */
+        get: operations["get_openenv_server_reset_schema_api_projects__project_id__openenv_servers__openenv_server_id__reset_schema_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/version": {
         parameters: {
             query?: never;
@@ -10773,6 +10793,19 @@ export interface components {
              * @description Named reset kwargs a run can start the environment with, in order. The first is the default. Names must be unique.
              */
             named_reset_kwargs?: components["schemas"]["NamedResetKwargsRequest"][];
+        };
+        /**
+         * OpenEnvServerResetSchemaResponse
+         * @description The JSON schema the OpenEnv server publishes for its reset arguments.
+         */
+        OpenEnvServerResetSchemaResponse: {
+            /**
+             * Reset Schema
+             * @description The JSON schema of the server's reset arguments, or null when it publishes none.
+             */
+            reset_schema?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * OpenEnvServerResponse
@@ -22194,6 +22227,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpenEnvToolResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_openenv_server_reset_schema_api_projects__project_id__openenv_servers__openenv_server_id__reset_schema_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the OpenEnv server. */
+                openenv_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenEnvServerResetSchemaResponse"];
                 };
             };
             /** @description Validation Error */

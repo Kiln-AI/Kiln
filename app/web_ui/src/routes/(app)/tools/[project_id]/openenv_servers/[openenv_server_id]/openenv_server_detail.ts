@@ -3,9 +3,18 @@ import type { OpenEnvServer, OpenEnvTool, NamedResetKwargs } from "$lib/types"
 import {
   format_reset_arguments,
   parse_reset_arguments,
+  type ResetKwargs,
 } from "$lib/utils/openenv"
+import {
+  form_value_to_kwargs,
+  kwargs_fit_form,
+} from "$lib/utils/openenv_reset_schema"
+import type { JsonSchemaProperty } from "$lib/utils/json_schema_editor/json_schema_templates"
 
-export { load_openenv_server } from "$lib/api/openenv_server_api"
+export {
+  load_openenv_server,
+  load_openenv_server_reset_schema,
+} from "$lib/api/openenv_server_api"
 
 export async function load_openenv_server_tools(
   project_id: string,
@@ -106,6 +115,39 @@ export function options_with_draft(
     ),
     error: null,
   }
+}
+
+export const RESET_ARGUMENTS_DESCRIPTION =
+  "Passed to the OpenEnv's reset(). Which keys exist depends on the server."
+export const RESET_ARGUMENTS_SCHEMA_DESCRIPTION =
+  "From the OpenEnv server's reset schema. Leave a field empty to use the server's default."
+
+export type FormSwitch = { form_value: ResetKwargs } | { error: string }
+
+/**
+ * The value to show in the reset schema form for the Reset Arguments editor's
+ * text, or why the form can't show it.
+ */
+export function reset_arguments_for_form(
+  text: string,
+  form_schema: JsonSchemaProperty,
+): FormSwitch {
+  const parsed = parse_reset_arguments(text)
+  if (parsed.error !== null) {
+    return { error: parsed.error }
+  }
+  const fit = kwargs_fit_form(parsed.reset_kwargs, form_schema)
+  if (!fit.fits) {
+    return {
+      error: `The form can't show these reset arguments: ${fit.reason}. Edit them as JSON.`,
+    }
+  }
+  return { form_value: parsed.reset_kwargs }
+}
+
+/** The Reset Arguments editor's text for a value read from the form. */
+export function reset_arguments_from_form(form_value: unknown): string {
+  return format_reset_arguments(form_value_to_kwargs(form_value) as ResetKwargs)
 }
 
 export function options_without(

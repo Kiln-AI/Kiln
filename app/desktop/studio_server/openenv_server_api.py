@@ -127,6 +127,15 @@ class OpenEnvServerVersionResponse(BaseModel):
     )
 
 
+class OpenEnvServerResetSchemaResponse(BaseModel):
+    """The JSON schema the OpenEnv server publishes for its reset arguments."""
+
+    reset_schema: dict[str, Any] | None = Field(
+        default=None,
+        description="The JSON schema of the server's reset arguments, or null when it publishes none.",
+    )
+
+
 class RunOpenEnvServerRequest(BaseModel):
     """The tools a run would use."""
 
@@ -159,6 +168,15 @@ def _openenv_server_from_id(project_id: str, openenv_server_id: str) -> OpenEnvS
     if openenv_server is None:
         raise HTTPException(status_code=404, detail="OpenEnv server not found")
     return openenv_server
+
+
+def _require_url(openenv_server: OpenEnvServer) -> None:
+    if not openenv_server.url:
+        raise HTTPException(
+            status_code=400,
+            detail=f"OpenEnv server '{openenv_server.name}' has no url. Kiln does not "
+            "start environments: run the OpenEnv server and set url.",
+        )
 
 
 def _openenv_server_response(openenv_server: OpenEnvServer) -> OpenEnvServerResponse:
@@ -349,12 +367,7 @@ def connect_openenv_server_api(app: FastAPI):
         ],
     ) -> list[OpenEnvToolResponse]:
         openenv_server = _openenv_server_from_id(project_id, openenv_server_id)
-        if not openenv_server.url:
-            raise HTTPException(
-                status_code=400,
-                detail=f"OpenEnv server '{openenv_server.name}' has no url. Kiln does not "
-                "start environments: run the OpenEnv server and set url.",
-            )
+        _require_url(openenv_server)
         try:
             tools = await shared_session_manager().list_tools(
                 openenv_server, fresh=True
@@ -370,6 +383,29 @@ def connect_openenv_server_api(app: FastAPI):
             )
             for tool in tools
         ]
+
+    @app.get(
+        "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/reset_schema",
+        summary="Get OpenEnv Server Reset Schema",
+        description="The JSON schema the OpenEnv server publishes for its reset arguments, read fresh from the running server at url. Null when it publishes none.",
+        tags=["OpenEnv Servers"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_openenv_server_reset_schema(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        openenv_server_id: Annotated[
+            str, Path(description="The unique identifier of the OpenEnv server.")
+        ],
+    ) -> OpenEnvServerResetSchemaResponse:
+        openenv_server = _openenv_server_from_id(project_id, openenv_server_id)
+        _require_url(openenv_server)
+        try:
+            reset_schema = await shared_session_manager().reset_schema(openenv_server)
+        except (OpenEnvError, ValueError) as e:
+            raise HTTPException(status_code=502, detail=str(e))
+        return OpenEnvServerResetSchemaResponse(reset_schema=reset_schema)
 
     @app.get(
         "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/version",

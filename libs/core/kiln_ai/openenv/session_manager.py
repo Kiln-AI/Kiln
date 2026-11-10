@@ -17,6 +17,7 @@ what OpenEnv already exposes:
 
     openenv_version the environment's reported name and version
     refresh         re-read `/metadata`, so a new version on the same URL is seen
+    reset_schema    the `reset` JSON schema from `/schema`
     start_episode   open a `/ws` session and `reset(**reset_kwargs)`
     call_tool       `step(CallToolAction)`
     read_state      `state`, leaving the session open
@@ -246,6 +247,26 @@ class OpenEnvSessionManager:
         server.tools = tools
         return tools
 
+    async def reset_schema(
+        self, openenv_server: OpenEnvServer
+    ) -> dict[str, JsonValue] | None:
+        """The JSON schema the environment publishes for its reset arguments, read
+        fresh on every call. None when it publishes none. Raises `OpenEnvError` when
+        the server can't be reached."""
+        if not openenv_server.url:
+            raise OpenEnvError(_no_url_message(openenv_server))
+        base_url = openenv_server.url.rstrip("/")
+        async with httpx.AsyncClient(timeout=CONNECT_TIMEOUT_S) as client:
+            schema = await _reset_schema_at(client, openenv_server, base_url, "/schema")
+            if schema is not None:
+                return schema
+            # Seahaven serves its reset schema here until it moves to an OpenEnv
+            # release whose /schema has a `reset` key (openenv/OpenEnv#1270). Delete
+            # this fallback once it does.
+            return await _reset_schema_at(
+                client, openenv_server, base_url, "/seahaven/schemas"
+            )
+
     async def start_episode(
         self, openenv_server: OpenEnvServer, reset_kwargs: dict[str, JsonValue]
     ) -> OpenEnvEpisode:
@@ -385,11 +406,7 @@ class OpenEnvSessionManager:
         if openenv_server.id is None:
             raise ValueError("OpenEnv server must be saved before it can be used")
         if not openenv_server.url:
-            raise OpenEnvError(
-                f"OpenEnv server '{openenv_server.name}' has no url. Kiln does not start "
-                "environments: run the OpenEnv server yourself and set its "
-                "url to it (e.g. http://127.0.0.1:8000)."
-            )
+            raise OpenEnvError(_no_url_message(openenv_server))
         base_url = openenv_server.url.rstrip("/")
         lock = self._server_locks.setdefault(openenv_server.id, asyncio.Lock())
         async with lock:
@@ -602,6 +619,39 @@ def _compose_openenv_version(name: str, version: str | None) -> str:
     `get_metadata()` and bump its version whenever its behaviour changes. One that
     reports no version is keyed by its name alone and never regenerates."""
     return f"{name}@{version}" if version else name
+
+
+def _no_url_message(openenv_server: OpenEnvServer) -> str:
+    return (
+        f"OpenEnv server '{openenv_server.name}' has no url. Kiln does not start "
+        "environments: run the OpenEnv server yourself and set its "
+        "url to it (e.g. http://127.0.0.1:8000)."
+    )
+
+
+async def _reset_schema_at(
+    client: httpx.AsyncClient,
+    openenv_server: OpenEnvServer,
+    base_url: str,
+    path: str,
+) -> dict[str, JsonValue] | None:
+    """The `reset` object of the JSON object served at `path`, or None when the path
+    is missing, isn't JSON, or has no `reset` object."""
+    try:
+        response = await client.get(f"{base_url}{path}")
+    except httpx.TransportError as e:
+        raise OpenEnvError(
+            f"OpenEnv server '{openenv_server.name}' points at {base_url}, which did "
+            f"not answer {path}: {e}"
+        ) from e
+    if not response.is_success:
+        return None
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    reset = body.get("reset") if isinstance(body, dict) else None
+    return reset if isinstance(reset, dict) else None
 
 
 def _preview(value: Any) -> str:

@@ -21,11 +21,15 @@ import {
   draft_from,
   load_openenv_server,
   load_openenv_server_tools,
+  load_openenv_server_reset_schema,
   load_openenv_server_version,
   options_with_draft,
   options_without,
+  reset_arguments_for_form,
+  reset_arguments_from_form,
   save_environment_options,
 } from "./openenv_server_detail"
+import type { JsonSchemaProperty } from "$lib/utils/json_schema_editor/json_schema_templates"
 
 const ACME_MANAGER: NamedResetKwargs = {
   name: "Acme Manager",
@@ -130,6 +134,64 @@ describe("options_without", () => {
   })
 })
 
+const FORM_SCHEMA: JsonSchemaProperty = {
+  type: "object",
+  properties: {
+    company: { type: "string", enum: ["acme", "beta"] },
+    user: { type: "object", properties: { id: { type: "integer" } } },
+  },
+}
+
+describe("reset_arguments_for_form", () => {
+  it("is an empty form for blank text", () => {
+    expect(reset_arguments_for_form("  ", FORM_SCHEMA)).toEqual({
+      form_value: {},
+    })
+  })
+
+  it("is the parsed arguments when the form can show them", () => {
+    expect(
+      reset_arguments_for_form(
+        '{"company": "acme", "user": {"id": 7}}',
+        FORM_SCHEMA,
+      ),
+    ).toEqual({ form_value: { company: "acme", user: { id: 7 } } })
+  })
+
+  it.each([
+    ["invalid JSON", "{", RESET_ARGUMENTS_INVALID_JSON],
+    ["JSON that isn't an object", "[1]", RESET_ARGUMENTS_NOT_OBJECT],
+    [
+      "an unknown key",
+      '{"foo": 1}',
+      "The form can't show these reset arguments: unknown field 'foo'. Edit them as JSON.",
+    ],
+    [
+      "a value the form can't hold",
+      '{"user": {"id": null}}',
+      "The form can't show these reset arguments: 'user.id' is null. Edit them as JSON.",
+    ],
+  ])("refuses %s", (_, text, error) => {
+    expect(reset_arguments_for_form(text, FORM_SCHEMA)).toEqual({ error })
+  })
+})
+
+describe("reset_arguments_from_form", () => {
+  it("formats the form value without its empty fields", () => {
+    expect(
+      reset_arguments_from_form({ company: "acme", user: { id: undefined } }),
+    ).toBe('{\n  "company": "acme"\n}')
+  })
+
+  it("round trips through the form", () => {
+    const text = '{\n  "company": "beta",\n  "user": {\n    "id": 7\n  }\n}'
+    const result = reset_arguments_for_form(text, FORM_SCHEMA)
+    expect(
+      "form_value" in result && reset_arguments_from_form(result.form_value),
+    ).toBe(text)
+  })
+})
+
 describe("API calls", () => {
   const path = { project_id: "p1", openenv_server_id: "e1" }
 
@@ -193,6 +255,30 @@ describe("API calls", () => {
     expect(mockPatch).toHaveBeenCalledWith(
       "/api/projects/{project_id}/openenv_servers/{openenv_server_id}",
       { params: { path }, body: { named_reset_kwargs: OPTIONS } },
+    )
+  })
+
+  it("loads the reset schema, null when there is none", async () => {
+    const reset_schema = { type: "object", properties: {} }
+    mockGet.mockResolvedValueOnce({ data: { reset_schema }, error: undefined })
+    await expect(load_openenv_server_reset_schema("p1", "e1")).resolves.toBe(
+      reset_schema,
+    )
+    expect(mockGet).toHaveBeenCalledWith(
+      "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/reset_schema",
+      { params: { path } },
+    )
+    mockGet.mockResolvedValueOnce({ data: {}, error: undefined })
+    await expect(load_openenv_server_reset_schema("p1", "e1")).resolves.toBe(
+      null,
+    )
+  })
+
+  it("throws the server's error when the reset schema can't be read", async () => {
+    const error = { message: "did not answer /schema" }
+    mockGet.mockResolvedValue({ data: undefined, error })
+    await expect(load_openenv_server_reset_schema("p1", "e1")).rejects.toBe(
+      error,
     )
   })
 

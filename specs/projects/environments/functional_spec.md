@@ -94,7 +94,8 @@ An OpenEnv server can publish a JSON schema for its reset arguments. When it doe
 - **Raw JSON:** a toggle switches between the form and the JSON editor. Values carry across in both directions.
 - **What gets saved:** an empty form field is left out of `reset_kwargs`, so the server uses its default. A nested object whose fields are all empty is left out too. Saving an explicit `null` needs Raw JSON.
 - **Checks:** the form checks what the schema states: types, enum values and required fields. It doesn't enforce rules the schema can't express, such as two fields that can't be combined. The schema is a description, not a contract: the server still checks the arguments when a run starts, with the existing reset error.
-- **When the form can't be used:** if the schema uses a construct the form can't show, the dialog stays on the JSON editor. If an existing option's arguments include keys or values the form can't show, the dialog opens on Raw JSON and switching to the form is disabled, with the reason. Nothing is dropped silently.
+- **When the form can't be used:** if the schema uses a construct the form can't show, the dialog stays on the JSON editor. If an existing option's arguments include keys or values the form can't show, the dialog opens on Raw JSON, and switching to the form is refused with the reason. Nothing is dropped silently.
+- **Fields Kiln sets:** the form leaves out `episode_id`, which OpenEnv's base reset request declares but Kiln sets on every reset; saved arguments that include it open on Raw JSON, and switching to the form is refused with that reason.
 - **Nothing new is saved.** The schema is read when the dialog opens. It isn't stored or cached on disk, and `reset_kwargs` keeps its shape.
 
 ## OpenEnv pages
