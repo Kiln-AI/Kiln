@@ -71,8 +71,9 @@ class OpenEnvTool(BaseModel):
 
 
 class OpenEnvReset(BaseModel):
-    """Reset the OpenEnv server named by `openenv_server_id` with these keyword arguments before the
-    run; the reset starts the episode the trace records.
+    """Start a new episode on the OpenEnv server named by `openenv_server_id`, by calling the
+    environment's `reset()` with these keyword arguments before the run. The trace records
+    that episode.
 
     `reset_kwargs` is opaque to Kiln: it is passed as the keyword arguments of the
     environment's `reset` (a dataset or scenario identifier, a seed, a clock override). The
@@ -81,7 +82,7 @@ class OpenEnvReset(BaseModel):
     """
 
     openenv_server_id: str = Field(
-        min_length=1, description="ID of the OpenEnv server to reset and run in."
+        min_length=1, description="ID of the OpenEnv server to start the episode on."
     )
     reset_kwargs: dict[str, JsonValue] = Field(
         default_factory=dict,

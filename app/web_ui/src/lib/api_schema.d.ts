@@ -7472,7 +7472,7 @@ export interface components {
              * @description Tags for filtering eval inputs.
              */
             tags?: string[];
-            /** @description Reset the OpenEnv server named by openenv_server_id with these keyword arguments before the run; the reset starts the episode the trace records. A run config that lists the OpenEnv server's tools runs the input in that episode; a run config listing the project's own version of a tool the environment serves is refused. None runs against the project tools. */
+            /** @description Start a new episode on the OpenEnv server named by openenv_server_id before the run, by calling the environment's reset() with these keyword arguments. The trace records that episode. A run config that lists the OpenEnv server's tools runs the input in that episode; a run config listing the project's own version of a tool the environment serves is refused. None runs against the project tools. */
             openenv_reset?: components["schemas"]["OpenEnvReset"] | null;
             /** Model Type */
             readonly model_type: string;
@@ -10651,8 +10651,9 @@ export interface components {
         };
         /**
          * OpenEnvReset
-         * @description Reset the OpenEnv server named by `openenv_server_id` with these keyword arguments before the
-         *     run; the reset starts the episode the trace records.
+         * @description Start a new episode on the OpenEnv server named by `openenv_server_id`, by calling the
+         *     environment's `reset()` with these keyword arguments before the run. The trace records
+         *     that episode.
          *
          *     `reset_kwargs` is opaque to Kiln: it is passed as the keyword arguments of the
          *     environment's `reset` (a dataset or scenario identifier, a seed, a clock override). The
@@ -10662,7 +10663,7 @@ export interface components {
         OpenEnvReset: {
             /**
              * Openenv Server Id
-             * @description ID of the OpenEnv server to reset and run in.
+             * @description ID of the OpenEnv server to start the episode on.
              */
             openenv_server_id: string;
             /**

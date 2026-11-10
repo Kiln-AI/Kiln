@@ -721,7 +721,7 @@ class EvalInput(KilnParentedModel):
     )
     openenv_reset: OpenEnvReset | None = Field(
         default=None,
-        description="Reset the OpenEnv server named by openenv_server_id with these keyword arguments before the run; the reset starts the episode the trace records. A run config that lists the OpenEnv server's tools runs the input in that episode; a run config listing the project's own version of a tool the environment serves is refused. None runs against the project tools.",
+        description="Start a new episode on the OpenEnv server named by openenv_server_id before the run, by calling the environment's reset() with these keyword arguments. The trace records that episode. A run config that lists the OpenEnv server's tools runs the input in that episode; a run config listing the project's own version of a tool the environment serves is refused. None runs against the project tools.",
     )
 
     @model_validator(mode="after")
