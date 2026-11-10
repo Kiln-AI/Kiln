@@ -11,6 +11,8 @@
   export let show_fork: boolean = false
   export let on_usage: () => void = () => {}
   export let on_fork: () => void = () => {}
+  // When set, Fork is shown disabled with this text as its tooltip.
+  export let fork_disabled_reason: string | null = null
 </script>
 
 <!-- Space is reserved (no height animation); only opacity fades the icons in.
@@ -33,7 +35,21 @@
       Usage
     </button>
   {/if}
-  {#if show_fork}
+  {#if show_fork && fork_disabled_reason}
+    <!-- A disabled button gets no hover events, so the tooltip sits on a wrapper. -->
+    <div class="tooltip tooltip-bottom" data-tip={fork_disabled_reason}>
+      <button
+        type="button"
+        class="btn btn-xs btn-ghost gap-1 text-gray-400"
+        aria-label="Fork from this turn"
+        title={fork_disabled_reason}
+        disabled
+      >
+        <span class="block h-4 w-4"><ForkIcon /></span>
+        Fork
+      </button>
+    </div>
+  {:else if show_fork}
     <button
       type="button"
       class="btn btn-xs btn-ghost gap-1 text-gray-400 hover:text-gray-700"

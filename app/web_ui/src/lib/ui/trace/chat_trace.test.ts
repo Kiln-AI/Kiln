@@ -1032,6 +1032,50 @@ describe("ChatTrace component — fork affordance", () => {
     expect(on_fork).toHaveBeenCalledWith("run-leaf", 2)
   })
 
+  it("leaves the fork button enabled with no tooltip by default", () => {
+    const trace: TraceType = [userMsg("u1"), assistantMsg("a1"), userMsg("u2")]
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        forkable_run_ids: [null, "run-2", null],
+        on_fork: vi.fn(),
+      },
+    })
+    const button = fork_button(container)[0]
+    expect(button.disabled).toBe(false)
+    expect(container.querySelector(".tooltip")).toBeNull()
+  })
+
+  it("disables every fork button with the given reason as its tooltip", async () => {
+    const reason =
+      "This conversation uses an OpenEnv, so it can only continue from the latest turn."
+    const trace: TraceType = [
+      userMsg("u1"),
+      assistantMsg("a1"),
+      userMsg("u2"),
+      assistantMsg("a2"),
+      userMsg("u3"),
+    ]
+    const on_fork = vi.fn()
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        forkable_run_ids: [null, "run-2", null, "run-3", null],
+        on_fork,
+        fork_disabled_reason: reason,
+      },
+    })
+    const buttons = fork_button(container)
+    expect(buttons.length).toBe(2)
+    for (const button of buttons) {
+      expect(button.disabled).toBe(true)
+      expect(button.parentElement?.getAttribute("data-tip")).toBe(reason)
+      expect(button.title).toBe(reason)
+      await fireEvent.click(button)
+    }
+    expect(on_fork).not.toHaveBeenCalled()
+  })
+
   it("does NOT render any fork button when on_fork is not provided", () => {
     const trace: TraceType = [userMsg("u1"), assistantMsg("a1")]
     const forkable_run_ids = [null, "run-1"]
