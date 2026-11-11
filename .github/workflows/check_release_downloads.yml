@@ -245,8 +245,8 @@ jobs:
           $installer = Join-Path $env:RUNNER_TEMP "extracted\$env:INSTALLER"
           $installDir = Join-Path $env:RUNNER_TEMP 'KilnInstall'
           $installLog = Join-Path $env:RUNNER_TEMP 'installer.log'
-          # Inno Setup's unattended install options. /DIR fixes where the app
-          # lands, which otherwise depends on whether Setup runs elevated.
+          # Inno Setup's unattended install options. /DIR installs to a known
+          # folder, so this step can find Kiln.exe for the launch step.
           $setupArguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$installDir`"", "/LOG=`"$installLog`"")
           $setup = Start-Process -FilePath $installer -ArgumentList $setupArguments -Wait -PassThru
           $executable = Join-Path $installDir 'Kiln.exe'
@@ -419,7 +419,7 @@ jobs:
               problem="$problem; its last answer was \`$body\`"
             fi
             echo "- $problem" >> "$problems"
-            for log_file in "$app_output" "$HOME/.kiln_ai/logs/kiln_desktop.log"; do
+            for log_file in "$app_output" "$HOME/.kiln_ai/logs/kiln_desktop.log" "$RUNNER_TEMP/xvfb.log"; do
               if [ -f "$log_file" ]; then
                 echo "::group::$log_file"
                 cat "$log_file"
