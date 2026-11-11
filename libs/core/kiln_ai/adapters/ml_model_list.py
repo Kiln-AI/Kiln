@@ -55,6 +55,7 @@ class ModelFamily(str, Enum):
     paper_instruments = "paper_instruments"
     ricursive = "ricursive"
     nex = "nex"
+    kt = "kt"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -197,6 +198,7 @@ class ModelName(str, Enum):
     gemini_3_1_flash_lite_preview = "gemini_3_1_flash_lite_preview"
     gemini_3_1_pro_preview = "gemini_3_1_pro_preview"
     gemini_3_pro_preview = "gemini_3_pro_preview"
+    gemini_4_carbon = "gemini_4_carbon"
     gemini_4_argon = "gemini_4_argon"
     gemini_3_8_flash = "gemini_3_8_flash"
     gemini_3_7_flash = "gemini_3_7_flash"
@@ -374,6 +376,7 @@ class ModelName(str, Enum):
     ultramarine_1_flash = "ultramarine_1_flash"
     ripple_65b_preview = "ripple_65b_preview"
     nex_n2_6 = "nex_n2_6"
+    midm_k_3_0_pro = "midm_k_3_0_pro"
 
 
 class ModelParserID(str, Enum):
@@ -3589,6 +3592,46 @@ built_in_models: List[KilnModel] = [
                 model_id="claude-3-5-haiku",
                 deprecated=True,
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_4_carbon,
+        friendly_name="Gemini 4 Carbon",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-4-carbon",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                # lowest level that returns reasoning on OpenRouter
+                default_thinking_level="low",
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
             ),
         ],
     ),
@@ -12438,6 +12481,21 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.kt,
+        name=ModelName.midm_k_3_0_pro,
+        friendly_name="Mi:dm K 3.0 Pro",
+        editorial_notes="KT's 120B mixture-of-experts reasoning model (12B active), with a hybrid Mamba, MoE and attention architecture. Text only, no tool calling.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="kt/midm-k-3.0-pro",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_function_calling=False,
             ),
         ],
     ),
