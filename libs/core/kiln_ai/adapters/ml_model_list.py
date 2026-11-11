@@ -333,6 +333,7 @@ class ModelName(str, Enum):
     glm_4_1v_9b_thinking = "glm_4_1v_9b_thinking"
     glm_z1_32b_0414 = "glm_z1_32b_0414"
     glm_z1_9b_0414 = "glm_z1_9b_0414"
+    ernie_light_dt_1_0 = "ernie_light_dt_1_0"
     ernie_4_5_300b_a47b = "ernie_4_5_300b_a47b"
     hunyuan_hy4 = "hunyuan_hy4"
     hunyuan_hy3 = "hunyuan_hy3"
@@ -871,6 +872,13 @@ MUSE_EMBER_OPENROUTER_THINKING_LEVELS = {
 NEX_N2_6_OPENROUTER_THINKING_LEVELS = {
     "Medium": "medium",
     "High": "high",
+}
+
+ERNIE_LIGHT_DT_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "High": "high",
+    "Max": "max",
 }
 
 # Fireworks: GLM 5.3 Flash is thinking-only ("none" is rejected). With no
@@ -11267,6 +11275,23 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.ernie,
+        name=ModelName.ernie_light_dt_1_0,
+        friendly_name="Ernie Light DT 1.0",
+        editorial_notes="Baidu's ERNIE-Light-DT-1.0, built on open GLM models with Baidu Sparse Attention. Text only, 1M context.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="baidu/ernie-light-dt-1.0-intl",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=ERNIE_LIGHT_DT_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="max",
+                openrouter_reasoning_object=True,
+                supports_data_gen=True,
             ),
         ],
     ),
